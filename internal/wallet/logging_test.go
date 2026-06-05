@@ -75,3 +75,77 @@ func TestPresentationSubmissionLogDetailsIncludePresentedCredentialMaterial(t *t
 		t.Fatalf("expected selected claims in verbose details, got %#v", item["claims"])
 	}
 }
+
+func TestPresentationResponseLogDetailsExcludeRequestMaterial(t *testing.T) {
+	w := &Wallet{Credentials: []StoredCredential{
+		{
+			ID:     "cred-1",
+			Format: "dc+sd-jwt",
+			Raw:    "issuer.jwt~disclosure~kb.jwt",
+			VCT:    "urn:eudi:pid:1",
+		},
+	}}
+
+	details := PresentationResponseLogDetails(
+		&AuthorizationRequestParams{
+			ClientID:         "verifier.example",
+			ResponseMode:     "direct_post",
+			ResponseURI:      "https://verifier.example/response",
+			RedirectURI:      "https://verifier.example/redirect",
+			Nonce:            "request-nonce",
+			State:            "state-1",
+			RequestURIMethod: "post",
+			RequestOrigin:    "https://rp.example",
+			ClientMetadata:   map[string]any{"client_name": "Verifier"},
+			DCQLQuery:        map[string]any{"credentials": []any{}},
+			RequestPayload:   map[string]any{"nonce": "request-nonce"},
+			Source:           "api",
+		},
+		w,
+		[]CredentialMatch{
+			{
+				QueryID:      "pid",
+				CredentialID: "cred-1",
+				Format:       "dc+sd-jwt",
+				VCT:          "urn:eudi:pid:1",
+				SelectedKeys: []string{"given_name"},
+			},
+		},
+		&VPTokenMapResult{TokenMap: map[string]string{"pid": "presented.sdjwt~kb.jwt"}},
+		"id.jwt",
+		"https://verifier.example/response",
+	)
+
+	for _, key := range []string{
+		"client_id",
+		"response_type",
+		"response_mode",
+		"response_uri",
+		"redirect_uri",
+		"nonce",
+		"request_uri_method",
+		"request_origin",
+		"client_metadata",
+		"dcql_query",
+		"request_object",
+	} {
+		if _, ok := details[key]; ok {
+			t.Fatalf("presentation response details should not include request field %q: %#v", key, details)
+		}
+	}
+	if details["vp_token"] == nil {
+		t.Fatalf("expected vp_token response payload: %#v", details)
+	}
+	if details["id_token"] != "id.jwt" {
+		t.Fatalf("expected id_token response payload: %#v", details)
+	}
+	if details["state"] != "state-1" {
+		t.Fatalf("expected state response payload: %#v", details)
+	}
+	if details["submission_uri"] != "https://verifier.example/response" {
+		t.Fatalf("expected submission_uri routing detail: %#v", details)
+	}
+	if details["presented_credentials"] == nil {
+		t.Fatalf("expected presented credential details: %#v", details)
+	}
+}

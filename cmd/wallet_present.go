@@ -387,11 +387,8 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	}
 
 	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
-	responseDetails := wallet.PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, nil)
+	responseDetails := wallet.PresentationResponseLogDetails(authReq, w, matches, vpResult, idToken, responseURI)
 	responseDetails["event"] = "presentation_response"
-	responseDetails["direction"] = "outbound"
-	responseDetails["source"] = "cli"
-	responseDetails["submission_uri"] = responseURI
 	w.AddLogDetails("presentation", fmt.Sprintf("Sending presentation response to %s", parsed.ClientID), true, responseDetails)
 
 	result, err := w.SubmitPresentation(vpResult, idToken, parsed.State, responseURI, params)

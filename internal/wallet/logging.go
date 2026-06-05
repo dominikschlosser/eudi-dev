@@ -126,10 +126,40 @@ func presentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wa
 }
 
 func presentationResponseLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, prepared *preparedPresentation) map[string]any {
-	details := presentationSubmissionLogDetails(authReq, w, matches, prepared, nil)
-	details["direction"] = "outbound"
+	var vpResult *VPTokenMapResult
+	var idToken string
+	var submissionURI string
+	if prepared != nil {
+		vpResult = prepared.VPResult
+		idToken = prepared.IDToken
+		submissionURI = prepared.ResponseURI
+	}
+	return PresentationResponseLogDetails(authReq, w, matches, vpResult, idToken, submissionURI)
+}
+
+// PresentationResponseLogDetails returns only the wallet's outbound
+// authorization response details. Request-only material such as DCQL,
+// request objects, client metadata, and nonce stays on presentation_request.
+func PresentationResponseLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, vpResult *VPTokenMapResult, idToken, submissionURI string) map[string]any {
+	details := map[string]any{
+		"direction": "outbound",
+	}
+	addStringDetail(details, "submission_uri", submissionURI)
+	addStringDetail(details, "state", authReq.State)
 	if authReq.Source != "" {
 		details["source"] = authReq.Source
+	}
+	if vpResult != nil {
+		details["vp_token"] = vpResult.VPToken()
+	}
+	if idToken != "" {
+		details["id_token"] = idToken
+	}
+	if sent := sentCredentialLogDetails(matches); len(sent) > 0 {
+		details["sent_credentials"] = sent
+	}
+	if presented := presentedCredentialLogDetails(w, matches, vpResult); len(presented) > 0 {
+		details["presented_credentials"] = presented
 	}
 	return details
 }

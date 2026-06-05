@@ -988,6 +988,7 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 	assertWalletLogEvent(t, srv.wallet.GetLog(), "presentation_request")
 	assertWalletLogEvent(t, srv.wallet.GetLog(), "presentation_response")
 	assertWalletLogEvent(t, srv.wallet.GetLog(), "verifier_response")
+	assertWalletLogEventExcludes(t, srv.wallet.GetLog(), "presentation_response", "dcql_query", "request_object", "client_metadata", "nonce")
 }
 
 func assertWalletLogEvent(t *testing.T, entries []LogEntry, event string) {
@@ -999,6 +1000,22 @@ func assertWalletLogEvent(t *testing.T, entries []LogEntry, event string) {
 		if entry.Details["event"] == event {
 			return
 		}
+	}
+	t.Fatalf("missing wallet log event %q in %#v", event, entries)
+}
+
+func assertWalletLogEventExcludes(t *testing.T, entries []LogEntry, event string, excludedKeys ...string) {
+	t.Helper()
+	for _, entry := range entries {
+		if entry.Details == nil || entry.Details["event"] != event {
+			continue
+		}
+		for _, key := range excludedKeys {
+			if _, ok := entry.Details[key]; ok {
+				t.Fatalf("wallet log event %q should not include %q: %#v", event, key, entry.Details)
+			}
+		}
+		return
 	}
 	t.Fatalf("missing wallet log event %q in %#v", event, entries)
 }
