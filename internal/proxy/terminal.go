@@ -39,7 +39,6 @@ var (
 type TerminalWriter struct {
 	AllTraffic    bool
 	DashboardPort int // if > 0, print /decode links
-	lastFlowID    string
 }
 
 type renderedField struct {
@@ -55,12 +54,6 @@ type renderedSection struct {
 func (tw *TerminalWriter) WriteEntry(entry *TrafficEntry) {
 	if entry.Class == ClassUnknown && !tw.AllTraffic {
 		return
-	}
-	if entry.FlowID != "" && entry.FlowID != tw.lastFlowID {
-		printFlowHeader(entry)
-		tw.lastFlowID = entry.FlowID
-	} else if entry.FlowID == "" {
-		tw.lastFlowID = ""
 	}
 	PrintEntry(entry, tw.DashboardPort)
 }
@@ -78,7 +71,7 @@ func PrintEntry(entry *TrafficEntry, dashboardPort int) {
 	fmt.Printf("%s %s %s %s  %s  %s\n",
 		dimColor.Sprint("━━━"),
 		dimColor.Sprintf("[%s]", ts),
-		headerColor.Sprintf("%s %s", entry.Method, truncateURL(entry.URL, 80)),
+		headerColor.Sprintf("%s %s", entry.Method, entry.URL),
 		statusFn("← %d", entry.StatusCode),
 		dimColor.Sprintf("(%dms)", entry.DurationMS),
 		classColor.Sprintf("[%s]", entry.ClassLabel),
@@ -106,22 +99,6 @@ func PrintEntry(entry *TrafficEntry, dashboardPort int) {
 	fmt.Println()
 }
 
-func printFlowHeader(entry *TrafficEntry) {
-	title := flowTitle(entry)
-	summary := flowSummary(entry)
-
-	fmt.Printf("%s %s  %s\n",
-		dimColor.Sprint("═══"),
-		classColor.Sprintf("[%s]", entry.FlowID),
-		headerColor.Sprint(title),
-	)
-	if summary != "" {
-		dimColor.Printf("    %s\n\n", summary)
-	} else {
-		fmt.Println()
-	}
-}
-
 func flowTitle(entry *TrafficEntry) string {
 	keys := ExtractCorrelationKeys(entry)
 	if hasKeyPrefix(keys, "vp:") || strings.HasPrefix(entry.ClassLabel, "VP") {
@@ -142,26 +119,6 @@ func flowTitle(entry *TrafficEntry) string {
 	return "Flow"
 }
 
-func flowSummary(entry *TrafficEntry) string {
-	keys := ExtractCorrelationKeys(entry)
-	parts := make([]string, 0, 3)
-	for _, key := range keys {
-		label, value := describeFlowKey(key)
-		if label == "" || value == "" {
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s=%s", label, value))
-		if len(parts) == 3 {
-			break
-		}
-	}
-	return strings.Join(parts, "  ")
-}
-
-func describeFlowKey(key string) (string, string) {
-	return describeCorrelationKey(key)
-}
-
 func hasKeyPrefix(keys []string, prefix string) bool {
 	for _, key := range keys {
 		if strings.HasPrefix(key, prefix) {
@@ -173,6 +130,7 @@ func hasKeyPrefix(keys []string, prefix string) bool {
 
 func buildRenderedSections(entry *TrafficEntry) []renderedSection {
 	var sections []renderedSection
+	sections = appendSection(sections, "classification", sortedRenderedFields(classificationLogDetails(entry), entry.Class, "classification"))
 	if shouldRenderRawRequest(entry) {
 		sections = appendSection(sections, "request headers", sortedRenderedFields(headerFieldsForDisplay(entry.RequestHeaders), entry.Class, "request_headers"))
 		sections = appendSection(sections, "request body", sortedRenderedFields(rawBodyFields(entry.RequestBody), entry.Class, "request_body"))
@@ -207,6 +165,20 @@ func buildRenderedSections(entry *TrafficEntry) []renderedSection {
 	}
 
 	return sections
+}
+
+func classificationLogDetails(entry *TrafficEntry) map[string]any {
+	details := map[string]any{
+		"class":     entry.ClassLabel,
+		"flow_type": flowTitle(entry),
+	}
+	if entry.FlowID != "" {
+		details["flow_id"] = entry.FlowID
+	}
+	if keys := ExtractCorrelationKeys(entry); len(keys) > 0 {
+		details["correlation_keys"] = keys
+	}
+	return details
 }
 
 func appendSection(sections []renderedSection, title string, fields []renderedField) []renderedSection {
@@ -264,6 +236,10 @@ func sortedFieldKeys(fields map[string]any, class TrafficClass, section string) 
 
 func fieldPriority(key string, class TrafficClass, section string) int {
 	priorities := map[string]int{
+		"class":                   1,
+		"flow_type":               2,
+		"flow_id":                 3,
+		"correlation_keys":        4,
 		"Host":                    5,
 		"Authorization":           6,
 		"DPoP":                    7,
@@ -436,11 +412,4 @@ func printDecodeHint(credential, label string, dashboardPort int) {
 		dimColor.Print("link: ")
 	}
 	dimColor.Println("oid4vc-dev decode")
-}
-
-func truncateURL(u string, maxLen int) string {
-	if len(u) <= maxLen {
-		return u
-	}
-	return u[:maxLen] + "..."
 }

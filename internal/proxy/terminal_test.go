@@ -170,31 +170,13 @@ func TestPrintDecodeHintEscapesCredentialQueryParam(t *testing.T) {
 	}
 }
 
-func TestTruncateURL(t *testing.T) {
-	tests := []struct {
-		url    string
-		maxLen int
-		want   string
-	}{
-		{"http://example.com/short", 100, "http://example.com/short"},
-		{"http://example.com/very-long-path", 20, "http://example.com/v..."},
-		{"exact", 5, "exact"},
-		{"", 10, ""},
-	}
-
-	for _, tt := range tests {
-		got := truncateURL(tt.url, tt.maxLen)
-		if got != tt.want {
-			t.Errorf("truncateURL(%q, %d) = %q, want %q", tt.url, tt.maxLen, got, tt.want)
-		}
-	}
-}
-
 func TestPrintEntryGroupsRequestResponseAndDecodeSections(t *testing.T) {
+	longURL := "http://issuer.example/oauth/token?client_id=wallet-app&request_uri=https%3A%2F%2Fverifier.example%2Frequest%2Fabc123&state=state-with-debug-value&nonce=nonce-with-debug-value"
 	entry := &TrafficEntry{
 		Method:     "POST",
-		URL:        "http://issuer.example/oauth/token",
+		URL:        longURL,
 		StatusCode: 200,
+		FlowID:     "flow-7",
 		Class:      ClassVCITokenRequest,
 		ClassLabel: "VCI Token Request",
 		RequestHeaders: http.Header{
@@ -220,14 +202,28 @@ func TestPrintEntryGroupsRequestResponseAndDecodeSections(t *testing.T) {
 
 	output := captureOutput(t, func() { PrintEntry(entry, 9091) })
 
+	if !strings.Contains(output, longURL) {
+		t.Fatalf("expected full URL in entry header, got %q", output)
+	}
+	if strings.Contains(output, "http://issuer.example/oauth/token?...") {
+		t.Fatalf("expected URL not to be truncated, got %q", output)
+	}
+
+	classificationIndex := strings.Index(output, "  classification:\n")
 	requestIndex := strings.Index(output, "  request:\n")
 	responseIndex := strings.Index(output, "  response:\n")
 	decodeIndex := strings.Index(output, "  decode:\n")
-	if requestIndex < 0 || responseIndex < 0 || decodeIndex < 0 {
-		t.Fatalf("expected request/response/decode sections, got %q", output)
+	if classificationIndex < 0 || requestIndex < 0 || responseIndex < 0 || decodeIndex < 0 {
+		t.Fatalf("expected classification/request/response/decode sections, got %q", output)
 	}
-	if !(requestIndex < responseIndex && responseIndex < decodeIndex) {
-		t.Fatalf("expected request, response, then decode order, got %q", output)
+	if !(classificationIndex < requestIndex && requestIndex < responseIndex && responseIndex < decodeIndex) {
+		t.Fatalf("expected classification, request, response, then decode order, got %q", output)
+	}
+	if !strings.Contains(output, "class: VCI Token Request") {
+		t.Fatalf("expected classification class label, got %q", output)
+	}
+	if !strings.Contains(output, "flow_id: flow-7") {
+		t.Fatalf("expected flow id in classification section, got %q", output)
 	}
 	if !strings.Contains(output, "\n\n  response:\n") {
 		t.Fatalf("expected blank line between request and response sections, got %q", output)
@@ -283,7 +279,7 @@ func TestPrintEntryShowsPostHeadersAndBodyButFiltersInternalHeaders(t *testing.T
 	}
 }
 
-func TestTerminalWriterGroupsConsecutiveEntriesByFlow(t *testing.T) {
+func TestTerminalWriterLogsEntriesWithoutFlowSummary(t *testing.T) {
 	tw := &TerminalWriter{}
 
 	first := &TrafficEntry{
@@ -321,13 +317,19 @@ func TestTerminalWriterGroupsConsecutiveEntriesByFlow(t *testing.T) {
 		tw.WriteEntry(second)
 	})
 
-	if strings.Count(output, "[flow-7]") != 1 {
-		t.Fatalf("expected one flow header for consecutive flow entries, got %q", output)
+	if strings.Contains(output, "[flow-7]") {
+		t.Fatalf("expected no separate flow header, got %q", output)
 	}
 	if !strings.Contains(output, "VCI Authorization Code Flow") {
-		t.Fatalf("expected VCI flow title, got %q", output)
+		t.Fatalf("expected flow type in classification section, got %q", output)
 	}
-	if !strings.Contains(output, "code=issued-code") {
-		t.Fatalf("expected flow summary with code, got %q", output)
+	if strings.Contains(output, "code=issued-code  access_token=token-123") {
+		t.Fatalf("expected no flow summary line, got %q", output)
+	}
+	if strings.Count(output, "  classification:\n") != 2 {
+		t.Fatalf("expected classification section per entry, got %q", output)
+	}
+	if strings.Count(output, "flow_id: flow-7") != 2 {
+		t.Fatalf("expected flow id as per-entry classification detail, got %q", output)
 	}
 }

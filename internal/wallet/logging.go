@@ -111,20 +111,6 @@ func PresentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wa
 	return details
 }
 
-func presentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, prepared *preparedPresentation, result *DirectPostResult) map[string]any {
-	var vpResult *VPTokenMapResult
-	var idToken string
-	if prepared != nil {
-		vpResult = prepared.VPResult
-		idToken = prepared.IDToken
-	}
-	details := PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, result)
-	if prepared != nil {
-		addStringDetail(details, "submission_uri", prepared.ResponseURI)
-	}
-	return details
-}
-
 func presentationResponseLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, prepared *preparedPresentation) map[string]any {
 	var vpResult *VPTokenMapResult
 	var idToken string
