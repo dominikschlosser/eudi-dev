@@ -209,8 +209,8 @@ set_user_password() {
 
 update_identity_provider() {
   local instance_json
-  local sandbox_pem_path=""
-  local sandbox_verifier_info_path=""
+  local sandbox_pem_path="/dev/null"
+  local sandbox_verifier_info_path="/dev/null"
   local public_wallet_flag="false"
 
   if [[ "${OID4VP_PUBLIC_WALLET}" == "true" ]]; then
@@ -225,6 +225,8 @@ update_identity_provider() {
         || example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCENARIO_DIR}" \
         || true
     )"
+    require_file "${sandbox_pem_path}"
+    require_file "${sandbox_verifier_info_path}"
   fi
 
   instance_json="$(
@@ -242,7 +244,11 @@ update_identity_provider() {
           .firstBrokerLoginFlowAlias = $first_broker_flow_alias
           | .config.allowedIssuers = $allowed_issuer
           | .config.sameDeviceEnabled = "true"
-          | .config.crossDeviceEnabled = (if $public_wallet_flag == "true" then "true" else (.config.crossDeviceEnabled // "false") end)
+          | .config.crossDeviceEnabled = (if $public_wallet_flag == "true" then "true" else "false" end)
+          | .config.enforceHaip = (if $public_wallet_flag == "true" then "true" else "false" end)
+          | .config.responseMode = (if $public_wallet_flag == "true" then "direct_post.jwt" else "direct_post" end)
+          | .config.clientIdScheme = (if $public_wallet_flag == "true" then "x509_hash" else "plain" end)
+          | .config.trustedAuthoritiesMode = "none"
           | .config.dcqlQuery = $dcql_query
           | if $trust_mode == "trustlist" then
               .config.trustListUrl = $trust_list_url
@@ -251,10 +257,9 @@ update_identity_provider() {
               .config |= del(.trustListUrl, .trustListLoTEType)
             end
           | if $public_wallet_flag == "true" and ($sandbox_pem | length) > 0 then
-              .config.clientIdScheme = "x509_san_dns"
-              | .config.x509CertificatePem = $sandbox_pem
+              .config.x509CertificatePem = $sandbox_pem
             else
-              .
+              .config |= del(.x509CertificatePem, .verifierInfo)
             end
           | if $public_wallet_flag == "true" and ($verifier_info | length) > 0 then
               .config.verifierInfo = $verifier_info
