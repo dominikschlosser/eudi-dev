@@ -102,12 +102,13 @@ pre {
 .offer-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
   align-items: start;
 }
 
 .qr-panel {
   display: inline-flex;
+  max-width: 100%;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -117,8 +118,7 @@ pre {
 
 .qr-code {
   display: block;
-  width: 240px;
-  max-width: 100%;
+  width: min(420px, 100%);
   height: auto;
 }
 

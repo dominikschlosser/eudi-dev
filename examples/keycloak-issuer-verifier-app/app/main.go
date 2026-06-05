@@ -31,6 +31,8 @@ import (
 //go:embed templates/*.html static/*
 var uiFS embed.FS
 
+const credentialOfferQRCodeSize = 640
+
 type config struct {
 	AppHost                string
 	AppPort                string
@@ -331,7 +333,7 @@ func credentialOfferPayload(raw string) string {
 }
 
 func qrCodeDataURL(content string) (template.URL, error) {
-	matrix, err := qrcode.NewQRCodeWriter().Encode(content, gozxing.BarcodeFormat_QR_CODE, 320, 320, nil)
+	matrix, err := qrcode.NewQRCodeWriter().Encode(content, gozxing.BarcodeFormat_QR_CODE, credentialOfferQRCodeSize, credentialOfferQRCodeSize, nil)
 	if err != nil {
 		return "", fmt.Errorf("encoding QR code: %w", err)
 	}
