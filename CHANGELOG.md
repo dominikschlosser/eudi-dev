@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+
+- removed the dedicated HAIP Keycloak example now that the combined issuer+verifier app covers the HAIP verifier flow
+
 ## [1.9.2] - 2026-04-18
 
 ### Fixed 
@@ -56,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- aligned the HAIP Keycloak example structure and docs with the baseline issuer+verifier example so both are easier to compare as reference setups
+- aligned the dedicated HAIP Keycloak example structure and docs with the baseline issuer+verifier example so both are easier to compare as reference setups
 
 ### Fixed
 
@@ -68,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- a new `keycloak-issuer-verifier-haip-app` example covering HAIP-style authorization-code issuance and x509-based verifier authentication
+- a new dedicated HAIP Keycloak example covering HAIP-style authorization-code issuance and x509-based verifier authentication
 - wallet support for interactive authorization-code issuance callbacks via the local `/callback` endpoint
 
 ### Changed

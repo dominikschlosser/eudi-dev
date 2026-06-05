@@ -37,7 +37,7 @@ It includes:
 
 Folder: [`examples/keycloak-issuer-verifier-app`](../examples/keycloak-issuer-verifier-app/README.md)
 
-Use this when you want a more complete local integration: one Keycloak `26.6.0` instance issues a credential, the same Keycloak instance verifies it through `keycloak-extension-oid4vp`, and a sample application drives both steps.
+Use this when you want a more complete local integration: one Keycloak `26.6.0` instance issues a credential, the same Keycloak instance verifies it through `keycloak-extension-oid4vp` with HAIP-style verifier settings, and a sample application drives both steps.
 
 It includes:
 
@@ -45,7 +45,8 @@ It includes:
 - a realm bootstrap script for issuance and verification together
 - a custom first-broker authenticator that links the verified credential back to the existing Keycloak user by `keycloak_user_id`
 - a small local demo application with issue and login actions
-- both verifier trust setups: HTTP plus a generated trust list by default, and HTTPS plus issuer metadata as an option
+- HAIP verifier settings using `haip-vp://`, `direct_post.jwt`, and `x509_hash`
+- local issuer metadata / JWKS trust, plus public ngrok mode with a generated Keycloak signing-certificate trust list
 - a headless smoke test for the combined flow
 
 ## Notes

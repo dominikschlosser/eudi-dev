@@ -20,5 +20,4 @@ The example scripts are written for Bash. On Windows, run them from Git Bash or 
 |--------|---------|
 | `keycloak-issuer-wallet` | Smallest issuer example: one imported realm, one demo user, one credential configuration, and `oid4vc-dev` as the wallet |
 | `keycloak-verifier-oid4vp` | Smallest verifier example: one imported realm plus `keycloak-extension-oid4vp`, using `oid4vc-dev` as the wallet |
-| `keycloak-issuer-verifier-app` | Combined issuance and verification demo with a small Go app; keeps dynamic bootstrap only for the pieces that depend on runtime trust and signing material |
-| `keycloak-issuer-verifier-haip-app` | Combined demo with the same app structure as the baseline example, but HAIP-style verifier settings (`haip-vp://`, `direct_post.jwt`, `x509_hash`) and explicit notes about the current Keycloak issuance deviations |
+| `keycloak-issuer-verifier-app` | Combined issuance and HAIP verification demo with a small Go app; uses `haip-vp://`, `direct_post.jwt`, `x509_hash`, and runtime trust material where needed |
