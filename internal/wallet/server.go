@@ -60,6 +60,11 @@ type presentationRequestOptions struct {
 // NewServer creates a new wallet HTTP server.
 // onSave is called after credential-changing operations (import, delete, issuance).
 func NewServer(w *Wallet, port int, onSave func()) *Server {
+	w.SetLogSink(func(LogEntry) {
+		if onSave != nil {
+			onSave()
+		}
+	})
 	s := &Server{
 		wallet:          w,
 		port:            port,
@@ -460,9 +465,12 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		VCIRedirectURI:          src.VCIRedirectURI,
 		Requests:                make(map[string]*ConsentRequest),
 		Log:                     append([]LogEntry(nil), src.Log...),
-		subscribers:             make(map[int64]chan *ConsentRequest),
-		errSubscribers:          make(map[int64]chan WalletError),
-		authCodeCallbacks:       make(map[string]chan url.Values),
+		logSink: func(entry LogEntry) {
+			src.appendLogEntry(entry)
+		},
+		subscribers:       make(map[int64]chan *ConsentRequest),
+		errSubscribers:    make(map[int64]chan WalletError),
+		authCodeCallbacks: make(map[string]chan url.Values),
 	}
 
 	if opts.AutoAccept {
@@ -515,6 +523,9 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	s.log("Received credential offer")
 	uriDisplay := format.Truncate(body.URI, 120)
 	s.log("  URI: %s", uriDisplay)
+	offerDetails := map[string]any{"offer_uri": body.URI}
+	addStringDetail(offerDetails, "tx_code", body.TxCode)
+	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
 	if body.TxCode != "" {
 		s.wallet.mu.Lock()
@@ -575,7 +586,15 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 			if result.VerificationDetail != "" {
 				s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
 			}
-			s.wallet.AddLog("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true)
+			s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
+				"offer_uri":            consentReq.OfferURI,
+				"credential_id":        result.CredentialID,
+				"format":               result.Format,
+				"issuer":               result.Issuer,
+				"verification_status":  result.VerificationStatus,
+				"verification_detail":  result.VerificationDetail,
+				"credential_requested": consentReq.OfferConfigs,
+			})
 			s.triggerSave()
 			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK}
 			writeJSON(w, http.StatusOK, result)
@@ -608,7 +627,14 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	if result.VerificationDetail != "" {
 		s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
 	}
-	s.wallet.AddLog("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true)
+	s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
+		"offer_uri":           body.URI,
+		"credential_id":       result.CredentialID,
+		"format":              result.Format,
+		"issuer":              result.Issuer,
+		"verification_status": result.VerificationStatus,
+		"verification_detail": result.VerificationDetail,
+	})
 	s.triggerSave()
 	writeJSON(w, http.StatusOK, result)
 }

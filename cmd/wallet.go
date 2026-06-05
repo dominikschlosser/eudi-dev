@@ -57,6 +57,7 @@ func init() {
 	walletCmd.AddCommand(walletGeneratePIDCmd())
 	walletCmd.AddCommand(walletAcceptCmd())
 	walletCmd.AddCommand(walletScanCmd())
+	walletCmd.AddCommand(walletLogsCmd())
 	walletCmd.AddCommand(walletRegisterCmd())
 	walletCmd.AddCommand(walletUnregisterCmd())
 	walletCmd.AddCommand(walletTrustListCmd())

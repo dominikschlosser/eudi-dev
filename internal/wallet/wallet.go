@@ -84,6 +84,7 @@ type Wallet struct {
 	TxCode                  string `json:"-"` // one-shot tx_code for OID4VCI token request
 	Log                     []LogEntry
 	mu                      sync.RWMutex
+	logSink                 func(LogEntry)
 	nextError               *NextErrorOverride
 	subscribers             map[int64]chan *ConsentRequest
 	subID                   int64
@@ -181,10 +182,11 @@ type SubmissionResult struct {
 
 // LogEntry records a wallet action.
 type LogEntry struct {
-	Time    time.Time `json:"time"`
-	Action  string    `json:"action"`
-	Detail  string    `json:"detail"`
-	Success bool      `json:"success"`
+	Time    time.Time      `json:"time"`
+	Action  string         `json:"action"`
+	Detail  string         `json:"detail"`
+	Success bool           `json:"success"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 // New creates a new wallet with the given options.
@@ -430,16 +432,48 @@ func (w *Wallet) GetCredential(id string) (StoredCredential, bool) {
 	return StoredCredential{}, false
 }
 
-// AddLog records a log entry.
-func (w *Wallet) AddLog(action, detail string, success bool) {
+// SetLogSink sets a callback invoked after each log entry is appended.
+func (w *Wallet) SetLogSink(fn func(LogEntry)) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.Log = append(w.Log, LogEntry{
+	w.logSink = fn
+}
+
+// AddLog records a log entry.
+func (w *Wallet) AddLog(action, detail string, success bool) {
+	w.AddLogDetails(action, detail, success, nil)
+}
+
+// AddLogDetails records a log entry with structured verbose details.
+func (w *Wallet) AddLogDetails(action, detail string, success bool, details map[string]any) {
+	w.appendLogEntry(LogEntry{
 		Time:    time.Now(),
 		Action:  action,
 		Detail:  detail,
 		Success: success,
+		Details: cloneLogDetails(details),
 	})
+}
+
+func (w *Wallet) appendLogEntry(entry LogEntry) {
+	w.mu.Lock()
+	w.Log = append(w.Log, entry)
+	sink := w.logSink
+	w.mu.Unlock()
+	if sink != nil {
+		sink(entry)
+	}
+}
+
+func cloneLogDetails(details map[string]any) map[string]any {
+	if len(details) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(details))
+	for key, value := range details {
+		out[key] = value
+	}
+	return out
 }
 
 // GetLog returns a snapshot of log entries.

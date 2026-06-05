@@ -59,6 +59,8 @@ type preparedPresentation struct {
 
 // handleAuthFlow is the core OID4VP flow handler.
 func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationRequestParams) {
+	s.addPresentationRequestLog(authReq, "authorize")
+
 	// Check one-shot error override
 	if override := s.wallet.ConsumeNextError(); override != nil {
 		s.log("  Next-error override consumed: %s", override.Error)
@@ -344,7 +346,14 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 		s.log("  Redirect:      %s", result.RedirectURI)
 	}
 
-	s.wallet.AddLog("presentation", fmt.Sprintf("Sent authorization error to %s: %s", authReq.ClientID, FormatDirectPostResult(result)), true)
+	errorDetails := presentationRequestLogDetails(authReq)
+	addStringDetail(errorDetails, "submission_uri", responseURI)
+	errorDetails["status_code"] = result.StatusCode
+	addStringDetail(errorDetails, "redirect_uri", result.RedirectURI)
+	addStringDetail(errorDetails, "response_body", result.Body)
+	errorDetails["error"] = errorCode
+	addStringDetail(errorDetails, "error_description", errorDescription)
+	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Sent authorization error to %s: %s", authReq.ClientID, FormatDirectPostResult(result)), true, errorDetails)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":            status,
@@ -407,7 +416,12 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 		s.log("  ERROR:         %s", result.Body)
 	}
 
-	s.wallet.AddLog("presentation", fmt.Sprintf("Presented to %s: %s", authReq.ClientID, FormatDirectPostResult(result)), true)
+	s.wallet.AddLogDetails(
+		"presentation",
+		fmt.Sprintf("Presented to %s: %s", authReq.ClientID, FormatDirectPostResult(result)),
+		true,
+		presentationSubmissionLogDetails(authReq, matches, prepared, result),
+	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "submitted",

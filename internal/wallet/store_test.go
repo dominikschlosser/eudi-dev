@@ -144,6 +144,109 @@ func TestWalletStore_SaveAndLoad_PersistsIssuerURLs(t *testing.T) {
 	}
 }
 
+func TestWalletStore_SaveAndLoad_PersistsLog(t *testing.T) {
+	dir := t.TempDir()
+	store := NewWalletStore(dir)
+
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	w.AddLogDetails("presentation", "Received presentation request from verifier.example", true, map[string]any{
+		"client_id":      "verifier.example",
+		"response_uri":   "https://verifier.example/callback",
+		"request_object": map[string]any{"nonce": "n-1"},
+	})
+
+	if err := store.Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	w2, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate after save: %v", err)
+	}
+
+	logs := w2.GetLog()
+	if len(logs) != 1 {
+		t.Fatalf("expected 1 persisted log entry, got %d", len(logs))
+	}
+	if logs[0].Action != "presentation" {
+		t.Fatalf("expected action presentation, got %s", logs[0].Action)
+	}
+	if logs[0].Details["client_id"] != "verifier.example" {
+		t.Fatalf("expected client_id detail, got %v", logs[0].Details["client_id"])
+	}
+	requestObject, ok := logs[0].Details["request_object"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected request_object detail, got %T", logs[0].Details["request_object"])
+	}
+	if requestObject["nonce"] != "n-1" {
+		t.Fatalf("expected nonce n-1, got %v", requestObject["nonce"])
+	}
+}
+
+func TestWalletStore_ClearLog(t *testing.T) {
+	dir := t.TempDir()
+	store := NewWalletStore(dir)
+
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	w.AddLog("issuance", "Received credential", true)
+	if err := store.Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if err := store.ClearLog(); err != nil {
+		t.Fatalf("ClearLog: %v", err)
+	}
+
+	w2, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate after clear: %v", err)
+	}
+	if got := len(w2.GetLog()); got != 0 {
+		t.Fatalf("expected cleared log, got %d entries", got)
+	}
+}
+
+func TestWalletStore_ClearLog_PreventsOldInMemoryLogsFromResurrecting(t *testing.T) {
+	dir := t.TempDir()
+	store := NewWalletStore(dir)
+
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	w.AddLog("issuance", "old credential", true)
+	if err := store.Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.ClearLog(); err != nil {
+		t.Fatalf("ClearLog: %v", err)
+	}
+
+	time.Sleep(time.Millisecond)
+	w.AddLog("issuance", "new credential", true)
+	if err := store.Save(w); err != nil {
+		t.Fatalf("Save after clean: %v", err)
+	}
+
+	w2, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate after save: %v", err)
+	}
+	logs := w2.GetLog()
+	if len(logs) != 1 {
+		t.Fatalf("expected only the new log entry, got %d", len(logs))
+	}
+	if logs[0].Detail != "new credential" {
+		t.Fatalf("expected new credential log, got %q", logs[0].Detail)
+	}
+}
+
 func TestWalletStore_KeyPersistence(t *testing.T) {
 	dir := t.TempDir()
 	store := NewWalletStore(dir)

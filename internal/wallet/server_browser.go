@@ -84,6 +84,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	if requestOrigin != "" {
 		reqServer.log("  Origin:        %s", requestOrigin)
 	}
+	reqServer.addPresentationRequestLog(authReq, "browser_api")
 
 	if override := reqServer.wallet.ConsumeNextError(); override != nil {
 		reqServer.log("  Next-error override consumed: %s", override.Error)
@@ -94,7 +95,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 			return
 		}
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true)
+		errorDetails := presentationRequestLogDetails(authReq)
+		errorDetails["error"] = override.Error
+		addStringDetail(errorDetails, "error_description", override.ErrorDescription)
+		reqServer.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
@@ -198,7 +202,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 				return
 			}
-			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true)
+			denialDetails := presentationRequestLogDetails(authReq)
+			denialDetails["error"] = "access_denied"
+			denialDetails["browser_api_result"] = browserResult
+			reqServer.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
 			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
 			writeJSON(w, http.StatusOK, browserResult)
 			return
@@ -241,7 +248,9 @@ func (s *Server) writeBrowserPresentationResult(w http.ResponseWriter, authReq *
 		s.log("  id_token:      created (SIOPv2)")
 	}
 
-	s.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API presentation to %s", authReq.ClientID), true)
+	details := presentationSubmissionLogDetails(authReq, matches, prepared, &DirectPostResult{StatusCode: http.StatusOK})
+	details["browser_api_result"] = result
+	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API presentation to %s", authReq.ClientID), true, details)
 	writeJSON(w, http.StatusOK, result)
 	return SubmissionResult{StatusCode: http.StatusOK}
 }

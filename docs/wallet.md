@@ -21,6 +21,7 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `generate-pid` | Generate default EUDI PID credentials (SD-JWT + mDoc)           |
 | `accept`       | Accept an OID4VP presentation request or OID4VCI credential offer (auto-detects) |
 | `scan`         | Scan a QR code and auto-dispatch to accept/import               |
+| `logs`         | Show persisted wallet-side OID4VP/OID4VCI interaction logs      |
 | `trust-list`   | Print the trust list JWT (or just the URL with `--url`)         |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
@@ -62,6 +63,10 @@ oid4vc-dev wallet accept 'openid-credential-offer://...'
 # Scan a QR code from screen and auto-detect the flow
 oid4vc-dev wallet scan --screen
 
+# Show wallet-side interactions
+oid4vc-dev wallet logs
+oid4vc-dev wallet logs -f
+
 # Import a credential from a file
 oid4vc-dev wallet import credential.txt
 
@@ -86,9 +91,12 @@ All wallet state is stored in `~/.oid4vc-dev/wallet/` by default:
     ├── wallet.json       # Credentials + metadata
     ├── holder.pem        # Holder EC private key (auto-generated on first use)
     ├── issuer.pem        # Issuer EC private key (for self-issued credentials)
+    ├── wallet-log-cleaned-at # Timestamp marker written by wallet logs clean
     ├── wallet-tls-cert.pem # HTTPS certificate for wallet endpoints on port+1
     └── wallet-tls-key.pem  # HTTPS private key for wallet endpoints on port+1
 ```
+
+Wallet interaction logs are stored in `wallet.json` under the top-level `log` field. `wallet logs clean` clears those entries and writes `wallet-log-cleaned-at` so an already-running wallet server cannot later save old in-memory log entries back to disk. If you use `--wallet-dir`, both files live in that custom wallet directory instead.
 
 Keys are P-256 EC keys, auto-generated on first use and reused across invocations. Wallets under the same wallet base directory share a persisted **CA key** and build certificate chains from it:
 
@@ -116,6 +124,26 @@ oid4vc-dev wallet show --decoded --json <id> # JSON output
 | Flag        | Default | Description                                          |
 |-------------|---------|------------------------------------------------------|
 | `--decoded` | `false` | Show human-readable decoded output instead of raw    |
+
+## `wallet logs`
+
+Displays persisted wallet-side interactions, including OID4VP presentation requests and responses, Browser API responses, OID4VCI credential offers, and received credentials.
+
+By default, every entry is printed on one line so the output is easy to scan and pipe. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, sent VP tokens, selected credentials, response bodies, and received credential metadata. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
+
+```bash
+oid4vc-dev wallet logs              # One line per persisted wallet interaction
+oid4vc-dev wallet logs -v           # Expand request/response details
+oid4vc-dev wallet logs -f           # Print existing logs, then follow new entries
+oid4vc-dev wallet logs clean        # Remove old persisted wallet logs
+oid4vc-dev wallet logs --json       # JSON array of log entries
+```
+
+| Flag       | Default | Description                                      |
+|------------|---------|--------------------------------------------------|
+| `-f, --follow` | `false` | Keep running and print new entries as they appear |
+| `-v, --verbose` | `false` | Global flag; expand structured log details        |
+| `--json`   | `false` | Global flag; output the persisted log entries as JSON. Cannot be combined with `--follow` |
 
 ## `wallet serve`
 

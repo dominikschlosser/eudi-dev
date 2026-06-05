@@ -37,6 +37,7 @@ type WalletStore struct {
 type walletJSON struct {
 	Credentials        []StoredCredential      `json:"credentials"`
 	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
+	Log                []LogEntry              `json:"log,omitempty"`
 	StatusEntries      map[string]StatusEntry  `json:"status_entries,omitempty"`
 	StatusListCounter  int                     `json:"status_list_counter,omitempty"`
 	BaseURL            string                  `json:"base_url,omitempty"`
@@ -107,6 +108,10 @@ func (s *WalletStore) issuerTLSKeyPath() string {
 	return filepath.Join(s.Dir, "wallet-tls-key.pem")
 }
 
+func (s *WalletStore) logCleanMarkerPath() string {
+	return filepath.Join(s.Dir, "wallet-log-cleaned-at")
+}
+
 func (s *WalletStore) legacyIssuerTLSCertPath() string {
 	return filepath.Join(s.Dir, "issuer-tls-cert.pem")
 }
@@ -151,6 +156,7 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 
 	w.Credentials = wj.Credentials
 	w.IssuedAttestations = dedupeIssuedAttestations(wj.IssuedAttestations)
+	w.Log = s.filterLogEntries(wj.Log)
 	w.StatusEntries = wj.StatusEntries
 	w.StatusListCounter = wj.StatusListCounter
 	w.BaseURL = wj.BaseURL
@@ -175,6 +181,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	creds := w.GetCredentials()
 	w.mu.RLock()
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
+	logEntries := s.filterLogEntries(w.Log)
 	statusEntries := w.StatusEntries
 	statusListCounter := w.StatusListCounter
 	baseURL := w.BaseURL
@@ -183,6 +190,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	wj := walletJSON{
 		Credentials:        creds,
 		IssuedAttestations: issuedAttestations,
+		Log:                logEntries,
 		StatusEntries:      statusEntries,
 		StatusListCounter:  statusListCounter,
 		BaseURL:            baseURL,
@@ -195,6 +203,54 @@ func (s *WalletStore) Save(w *Wallet) error {
 	}
 
 	return os.WriteFile(s.walletPath(), data, 0600)
+}
+
+// ClearLog removes all persisted wallet activity log entries.
+func (s *WalletStore) ClearLog() error {
+	w, err := s.LoadOrCreate()
+	if err != nil {
+		return err
+	}
+	if err := s.writeLogCleanMarker(time.Now()); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.Log = nil
+	w.mu.Unlock()
+	return s.Save(w)
+}
+
+func (s *WalletStore) filterLogEntries(entries []LogEntry) []LogEntry {
+	cleanedAt := s.loadLogCleanMarker()
+	if cleanedAt.IsZero() {
+		return append([]LogEntry(nil), entries...)
+	}
+	filtered := make([]LogEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Time.After(cleanedAt) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func (s *WalletStore) loadLogCleanMarker() time.Time {
+	data, err := os.ReadFile(s.logCleanMarkerPath())
+	if err != nil {
+		return time.Time{}
+	}
+	cleanedAt, err := time.Parse(time.RFC3339Nano, string(data))
+	if err != nil {
+		return time.Time{}
+	}
+	return cleanedAt
+}
+
+func (s *WalletStore) writeLogCleanMarker(cleanedAt time.Time) error {
+	if err := s.ensureDir(); err != nil {
+		return fmt.Errorf("creating wallet directory: %w", err)
+	}
+	return os.WriteFile(s.logCleanMarkerPath(), []byte(cleanedAt.Format(time.RFC3339Nano)), 0600)
 }
 
 // LoadOrCreateKeys loads holder and issuer keys from PEM files, generating them if they don't exist.

@@ -83,6 +83,7 @@ oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
 oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
 oid4vc-dev wallet accept 'openid4vp://authorize?...'
 oid4vc-dev wallet scan --screen         # QR scan → auto-dispatch
+oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
 ```
 
 > **Security:** The wallet server exposes unauthenticated HTTP endpoints for credential management and presentation flows. It is designed exclusively for **local development and testing** — never expose it to untrusted networks.
@@ -93,6 +94,7 @@ For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet
 - `wallet generate-pid` to preload PID credentials
 - `wallet trust-list` to get the verifier trust-list URL or JWT
+- `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material
 - `wallet --mode debug|strict` and `--preferred-format ...` to control runtime behavior
 
@@ -100,7 +102,7 @@ When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you 
 
 ![Wallet UI](docs/wallet-ui.png)
 
-→ [Full documentation](docs/wallet.md) — subcommands, flags, endpoints, trust lists, storage, URL scheme registration
+→ [Full documentation](docs/wallet.md) — subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
 → [Flow diagrams](docs/diagrams/README.md) — GitHub-rendered OID4VP / OID4VCI interaction diagrams and parameter checklists
 
 ---
