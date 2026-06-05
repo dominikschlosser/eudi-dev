@@ -138,6 +138,7 @@ func (s *Server) setupRoutes() {
 
 	// API: last error (polled on page load)
 	s.mux.HandleFunc("GET /api/error", s.withFreshStore(s.handleLastError))
+	s.mux.HandleFunc("DELETE /api/error", s.withFreshStore(s.handleClearLastError))
 
 	// Static files
 	sub, _ := fs.Sub(staticFiles, "static")
@@ -520,14 +521,11 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		IssuerURL:               src.IssuerURL,
 		VCIClientID:             src.VCIClientID,
 		VCIRedirectURI:          src.VCIRedirectURI,
-		Requests:                make(map[string]*ConsentRequest),
 		Log:                     append([]LogEntry(nil), src.Log...),
 		logSink: func(entry LogEntry) {
 			src.appendLogEntry(entry)
 		},
-		subscribers:       make(map[int64]chan *ConsentRequest),
-		errSubscribers:    make(map[int64]chan WalletError),
-		authCodeCallbacks: make(map[string]chan url.Values),
+		runtime: src.runtimeState(),
 	}
 
 	if opts.AutoAccept {
@@ -914,14 +912,20 @@ func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.wallet.GetLog())
 }
 
-// handleLastError returns and clears the last error, if any.
+// handleLastError returns the last error, if any.
 func (s *Server) handleLastError(w http.ResponseWriter, r *http.Request) {
-	err := s.wallet.PopLastError()
+	err := s.wallet.PeekLastError()
 	if err == nil {
 		writeJSON(w, http.StatusOK, nil)
 		return
 	}
 	writeJSON(w, http.StatusOK, err)
+}
+
+// handleClearLastError clears the last UI error.
+func (s *Server) handleClearLastError(w http.ResponseWriter, r *http.Request) {
+	s.wallet.ClearLastError()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 // handleTrustList generates and serves an ETSI trust list JWT from the wallet's issuer key.

@@ -80,18 +80,43 @@ type Wallet struct {
 	IssuerURL               string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
 	VCIClientID             string                 `json:"-"`
 	VCIRedirectURI          string                 `json:"-"`
-	Requests                map[string]*ConsentRequest
-	TxCode                  string `json:"-"` // one-shot tx_code for OID4VCI token request
+	TxCode                  string                 `json:"-"` // one-shot tx_code for OID4VCI token request
 	Log                     []LogEntry
 	mu                      sync.RWMutex
 	logSink                 func(LogEntry)
-	nextError               *NextErrorOverride
-	subscribers             map[int64]chan *ConsentRequest
-	subID                   int64
-	errSubscribers          map[int64]chan WalletError
-	errSubID                int64
-	lastError               *WalletError
-	authCodeCallbacks       map[string]chan url.Values
+	runtime                 *WalletRuntime
+}
+
+// WalletRuntime is the in-memory flow state shared by wallet instances backed
+// by the same store directory.
+type WalletRuntime struct {
+	mu                sync.RWMutex
+	requests          map[string]*ConsentRequest
+	nextError         *NextErrorOverride
+	subscribers       map[int64]chan *ConsentRequest
+	subID             int64
+	errSubscribers    map[int64]chan WalletError
+	errSubID          int64
+	lastError         *WalletError
+	authCodeCallbacks map[string]chan url.Values
+}
+
+func newWalletRuntime() *WalletRuntime {
+	return &WalletRuntime{
+		requests:          make(map[string]*ConsentRequest),
+		subscribers:       make(map[int64]chan *ConsentRequest),
+		errSubscribers:    make(map[int64]chan WalletError),
+		authCodeCallbacks: make(map[string]chan url.Values),
+	}
+}
+
+func (w *Wallet) runtimeState() *WalletRuntime {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.runtime == nil {
+		w.runtime = newWalletRuntime()
+	}
+	return w.runtime
 }
 
 // StatusListURL returns the preferred status list URL for generated credentials.
@@ -193,13 +218,11 @@ type LogEntry struct {
 // It generates a CA key and certificate chain (CA → leaf) for realistic x5c chains.
 func New(holderKey, issuerKey *ecdsa.PrivateKey, autoAccept bool) *Wallet {
 	w := &Wallet{
-		HolderKey:         holderKey,
-		IssuerKey:         issuerKey,
-		AutoAccept:        autoAccept,
-		ValidationMode:    ValidationModeDebug,
-		Requests:          make(map[string]*ConsentRequest),
-		subscribers:       make(map[int64]chan *ConsentRequest),
-		authCodeCallbacks: make(map[string]chan url.Values),
+		HolderKey:      holderKey,
+		IssuerKey:      issuerKey,
+		AutoAccept:     autoAccept,
+		ValidationMode: ValidationModeDebug,
+		runtime:        newWalletRuntime(),
 	}
 
 	// Generate CA key and certificate chain

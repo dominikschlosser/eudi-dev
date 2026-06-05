@@ -207,6 +207,28 @@ set_user_password() {
     }')" >/dev/null
 }
 
+update_credential_scope() {
+  local scope_name="$1"
+  local scope
+  local scope_id
+
+  scope="$(
+    api GET "/admin/realms/${KEYCLOAK_REALM}/client-scopes" \
+      | jq -c --arg scope_name "$scope_name" '.[] | select(.name == $scope_name)' \
+      | head -n 1
+  )"
+  if [[ -z "${scope}" ]]; then
+    echo "Credential client scope not found: ${scope_name}" >&2
+    exit 1
+  fi
+  scope_id="$(printf '%s' "${scope}" | jq -er '.id')"
+
+  api_json PUT "/admin/realms/${KEYCLOAK_REALM}/client-scopes/${scope_id}" \
+    "$(printf '%s' "${scope}" | jq -c --arg scope_name "$scope_name" '
+      .attributes."vc.credential_identifier" = $scope_name
+    ')" >/dev/null
+}
+
 update_identity_provider() {
   local instance_json
   local sandbox_pem_path
@@ -251,6 +273,7 @@ update_identity_provider() {
           | .config.sameDeviceEnabled = "true"
           | .config.crossDeviceEnabled = (if $public_wallet_flag == "true" then "true" else "false" end)
           | .config.enforceHaip = "true"
+          | .config.walletScheme = "haip-vp://"
           | .config.responseMode = "direct_post.jwt"
           | .config.clientIdScheme = "x509_hash"
           | .config.trustedAuthoritiesMode = "none"
@@ -316,6 +339,9 @@ set_realm_ssl_required "master" "NONE"
 
 echo "Setting password for ${OID4VCI_USER}..."
 set_user_password "${USER_ID}"
+
+echo "Updating credential scope for final OID4VCI credential identifiers..."
+update_credential_scope "${OID4VCI_CREDENTIAL_SCOPE}"
 
 if [[ "${OID4VP_TRUST_MODE}" == "trustlist" ]]; then
   echo "Generating trust list for the Keycloak signing certificate..."

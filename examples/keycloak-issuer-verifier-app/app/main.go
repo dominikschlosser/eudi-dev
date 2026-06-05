@@ -426,7 +426,7 @@ func (s *server) createOfferURI(accessToken string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return wrapCredentialOfferJSON(inlineOffer, "openid-credential-offer://")
+	return wrapCredentialOfferJSON(inlineOffer, "haip-vci://")
 }
 
 func (s *server) createLoginURL(mode string) (string, error) {

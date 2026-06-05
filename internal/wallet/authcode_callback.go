@@ -8,17 +8,15 @@ import (
 // The returned channel receives the eventual redirect query values.
 func (w *Wallet) RegisterAuthorizationCodeCallback(state string) (<-chan url.Values, func()) {
 	ch := make(chan url.Values, 1)
-	w.mu.Lock()
-	if w.authCodeCallbacks == nil {
-		w.authCodeCallbacks = make(map[string]chan url.Values)
-	}
-	w.authCodeCallbacks[state] = ch
-	w.mu.Unlock()
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.authCodeCallbacks[state] = ch
+	rt.mu.Unlock()
 
 	return ch, func() {
-		w.mu.Lock()
-		delete(w.authCodeCallbacks, state)
-		w.mu.Unlock()
+		rt.mu.Lock()
+		delete(rt.authCodeCallbacks, state)
+		rt.mu.Unlock()
 	}
 }
 
@@ -29,12 +27,13 @@ func (w *Wallet) CompleteAuthorizationCodeCallback(values url.Values) bool {
 		return false
 	}
 
-	w.mu.Lock()
-	ch, ok := w.authCodeCallbacks[state]
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	ch, ok := rt.authCodeCallbacks[state]
 	if ok {
-		delete(w.authCodeCallbacks, state)
+		delete(rt.authCodeCallbacks, state)
 	}
-	w.mu.Unlock()
+	rt.mu.Unlock()
 	if !ok {
 		return false
 	}

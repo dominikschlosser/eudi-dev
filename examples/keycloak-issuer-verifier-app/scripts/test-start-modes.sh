@@ -50,8 +50,10 @@ assert_contains "$START_SH" "start_public_proxy"
 assert_contains "$START_SH" "start_local_wallet"
 assert_contains "$START_SH" "start_keycloak_logs"
 assert_contains "$START_SH" 'docker compose "${compose_args[@]}" logs -f --tail=80 keycloak'
+assert_contains "$START_SH" 'docker compose "${compose_args[@]}" down -v --remove-orphans'
 assert_contains "$START_SH" "oid4vc-dev proxy"
 assert_contains "$START_SH" "--target \"http://127.0.0.1:\${route_proxy_port}\""
+assert_contains "$START_SH" 'ngrok_override="$(mktemp -t keycloak-issuer-verifier-app-ngrok.XXXXXX.yml)"'
 assert_contains "$START_SH" "example_detect_ngrok_domain_from_pem \"\${sandbox_pem_path}\""
 assert_contains "$START_SH" "wait_for_public_app"
 assert_contains "$START_SH" "auto)"
@@ -67,9 +69,12 @@ assert_contains "$START_SH" 'export OID4VP_TRUST_MODE="${trust_mode}"'
 
 assert_contains "$BOOTSTRAP_SH" ".config.enforceHaip = \"true\""
 assert_contains "$BOOTSTRAP_SH" 'OID4VP_TRUST_MODE="${OID4VP_TRUST_MODE:-metadata}"'
+assert_contains "$BOOTSTRAP_SH" ".config.walletScheme = \"haip-vp://\""
 assert_contains "$BOOTSTRAP_SH" ".config.responseMode = \"direct_post.jwt\""
 assert_contains "$BOOTSTRAP_SH" ".config.clientIdScheme = \"x509_hash\""
 assert_contains "$BOOTSTRAP_SH" "require_file \"\${sandbox_pem_path}\""
 assert_contains "$BOOTSTRAP_SH" ".config.x509CertificatePem = \$sandbox_pem"
+assert_contains "$BOOTSTRAP_SH" "update_credential_scope \"\${OID4VCI_CREDENTIAL_SCOPE}\""
+assert_contains "$BOOTSTRAP_SH" '.attributes."vc.credential_identifier" = $scope_name'
 
 echo "start mode contract checks passed"

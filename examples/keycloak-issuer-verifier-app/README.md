@@ -50,14 +50,14 @@ sequenceDiagram
     U->>APP: Issue membership credential
     APP->>KC: create-credential-offer
     KC-->>APP: issuer + nonce
-    APP->>W: openid-credential-offer://...?credential_offer=...
+    APP->>W: haip-vci://...?credential_offer=...
     W->>KC: redeem credential
     KC-->>W: sd-jwt credential with keycloak_user_id
 
     U->>APP: Log out, then sign in again
     APP->>KC: standard login
     KC->>EXT: brokered wallet login
-    EXT-->>W: openid4vp://authorize?request_uri=...
+    EXT-->>W: haip-vp://authorize?request_uri=...
     W->>EXT: present wallet credential
     EXT->>KC: verified user with keycloak_user_id
     KC->>BROKER: auto-link existing user
@@ -80,9 +80,9 @@ sequenceDiagram
     Note over APP,KC: Authorization: Bearer <wallet-app access_token>
     KC-->>APP: {issuer, nonce}
     APP->>KC: GET public credential-offer URI once
-    APP-->>U: HTML page with openid-credential-offer://?credential_offer=...
+    APP-->>U: HTML page with haip-vci://?credential_offer=...
 
-    U->>W: wallet accept 'openid-credential-offer://...?credential_offer=...'
+    U->>W: wallet accept 'haip-vci://...?credential_offer=...'
     W->>KC: GET /realms/wallet-app-demo/.well-known/openid-credential-issuer
     W->>KC: POST /realms/wallet-app-demo/protocol/oid4vc/credential
     Note over W,KC: pre-authorized flow<br/>proof.jwt=...
@@ -102,8 +102,8 @@ sequenceDiagram
     U->>APP: Open Keycloak sign-in again
     APP->>KC: GET /realms/wallet-app-demo/protocol/openid-connect/auth?client_id=wallet-app&redirect_uri=http://127.0.0.1:8090/callback&response_type=code&scope=openid&kc_idp_hint=oid4vp
     KC->>EXT: start brokered login for alias oid4vp
-    EXT-->>W: openid4vp://authorize?request_uri=...
-    Note over EXT,W: request object fields that matter:<br/>response_mode=direct_post<br/>walletScheme=openid4vp://<br/>dcqlQuery.credentials[0].id=membership_sd_jwt<br/>dcqlQuery.credentials[0].format=dc+sd-jwt<br/>dcqlQuery.credentials[0].meta.vct_values[0]=https://credentials.example.com/membership<br/>dcqlQuery.credentials[0].claims=[keycloak_user_id, given_name, family_name, email]
+    EXT-->>W: haip-vp://authorize?request_uri=...
+    Note over EXT,W: request object fields that matter:<br/>response_mode=direct_post.jwt<br/>walletScheme=haip-vp://<br/>dcqlQuery.credentials[0].id=membership_sd_jwt<br/>dcqlQuery.credentials[0].format=dc+sd-jwt<br/>dcqlQuery.credentials[0].meta.vct_values[0]=https://credentials.example.com/membership<br/>dcqlQuery.credentials[0].claims=[keycloak_user_id, given_name, family_name, email]
 
     W->>EXT: GET request_uri
     W->>EXT: POST response_uri
@@ -143,7 +143,7 @@ This example uses the OpenID4VCI by-value `credential_offer` form instead of han
 - Some external wallets dereference `credential_offer_uri` more than once across parse and issuance steps.
 - Current Keycloak behavior for that generated offer URI is effectively one-shot in this flow, so the second fetch fails with `invalid_credential_offer_request`.
 - The example therefore resolves the offer once server-side and gives the wallet an inline `credential_offer=...` URI instead.
-- The demo realm also omits `vc.credential_identifier`, so wallets that still request credentials by `credential_configuration_id` continue to interoperate. With that attribute set, Keycloak 26.6 requires a final `credential_identifier` field on the credential request.
+- The demo realm sets `vc.credential_identifier=membership-credential`, so Keycloak emits final-form `credential_identifiers` in the token response and wallets can send a final `credential_identifier` credential request.
 
 ## Quick Start
 
@@ -179,7 +179,7 @@ When both sandbox verifier files are present, `./start.sh` defaults to ngrok mod
 
 `--ngrok` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`; otherwise it detects the hostname from the sandbox certificate SAN, including when the sandbox files were found in a sibling worktree.
 
-Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in local mode, and:
+Each `./start.sh` run recreates the Keycloak container state and imports `realm/wallet-app-demo-realm.json` from scratch. Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in local mode, and:
 
 1. log in as `alice` / `alice`
 2. issue the membership credential
@@ -187,12 +187,12 @@ Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in l
 4. log out, sign in again, and choose the wallet option in Keycloak
 5. present the credential back to Keycloak
 
-`./start.sh` starts the local wallet server with `--register`, so custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `openid-credential-offer://` and `openid4vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
+`./start.sh` starts the local wallet server with `--register`, so custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `haip-vci://` and `haip-vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
 
 If your system does not handle the custom scheme directly:
 
-- issuance: use the offer page in the demo app and run the printed `oid4vc-dev wallet accept '<openid-credential-offer://...>'` command
-- verification: when Keycloak shows the wallet login page, copy the `openid4vp://...` link target and run `oid4vc-dev wallet accept '<openid4vp://...>'`
+- issuance: use the offer page in the demo app and run the printed `oid4vc-dev wallet accept '<haip-vci://...>'` command
+- verification: when Keycloak shows the wallet login page, copy the `haip-vp://...` link target and run `oid4vc-dev wallet accept '<haip-vp://...>'`
 
 Manual registration is still available if you want to run it yourself:
 

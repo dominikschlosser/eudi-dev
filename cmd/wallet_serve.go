@@ -264,7 +264,7 @@ so the wallet automatically receives incoming protocol requests.`,
 			// Open browser UI for incoming interactive presentation and issuance flows.
 			if !w.AutoAccept {
 				srv.SetOnUIRequest(func() {
-					url := fmt.Sprintf("http://localhost:%d", port)
+					url := fmt.Sprintf("http://localhost:%d/?focus=overview", port)
 					fmt.Printf("  Opening wallet UI: %s\n", url)
 					openBrowser(url)
 				})

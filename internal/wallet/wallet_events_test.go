@@ -248,3 +248,89 @@ func TestWallet_SubscribeErrors_Unsubscribe(t *testing.T) {
 		// Expected: nothing received
 	}
 }
+
+func TestWalletStore_LoadOrCreateSharesRuntimeForSameStore(t *testing.T) {
+	store := NewWalletStore(t.TempDir())
+	w1, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate w1: %v", err)
+	}
+	w2, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate w2: %v", err)
+	}
+
+	errorCh, unsubErrors := w1.SubscribeErrors()
+	defer unsubErrors()
+	requestCh, unsubRequests := w1.Subscribe()
+	defer unsubRequests()
+
+	w2.NotifyError(WalletError{Message: "shared error", Detail: "details"})
+	w2.CreateConsentRequest(&ConsentRequest{ID: "shared-request", Type: "presentation", Status: "pending"})
+
+	select {
+	case got := <-errorCh:
+		if got.Message != "shared error" {
+			t.Fatalf("expected shared error, got %q", got.Message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for shared error")
+	}
+
+	if got := w1.PeekLastError(); got == nil || got.Message != "shared error" {
+		t.Fatalf("expected peeked shared error, got %#v", got)
+	}
+
+	select {
+	case got := <-requestCh:
+		if got.ID != "shared-request" {
+			t.Fatalf("expected shared request, got %q", got.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for shared request")
+	}
+
+	if _, ok := w1.GetRequest("shared-request"); !ok {
+		t.Fatal("expected request to be visible through first wallet instance")
+	}
+}
+
+func TestWalletStore_LoadOrCreateRuntimeIsolatedByStore(t *testing.T) {
+	store1 := NewWalletStore(t.TempDir())
+	store2 := NewWalletStore(t.TempDir())
+	w1, err := store1.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate w1: %v", err)
+	}
+	w2, err := store2.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate w2: %v", err)
+	}
+
+	errorCh, unsubErrors := w1.SubscribeErrors()
+	defer unsubErrors()
+	requestCh, unsubRequests := w1.Subscribe()
+	defer unsubRequests()
+
+	w2.NotifyError(WalletError{Message: "other store"})
+	w2.CreateConsentRequest(&ConsentRequest{ID: "other-store-request", Type: "presentation", Status: "pending"})
+
+	select {
+	case got := <-errorCh:
+		t.Fatalf("did not expect error from other store, got %#v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	select {
+	case got := <-requestCh:
+		t.Fatalf("did not expect request from other store, got %#v", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	if got := w1.PeekLastError(); got != nil {
+		t.Fatalf("did not expect last error from other store, got %#v", got)
+	}
+	if _, ok := w1.GetRequest("other-store-request"); ok {
+		t.Fatal("did not expect request from other store")
+	}
+}

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
@@ -32,6 +33,8 @@ import (
 type WalletStore struct {
 	Dir string
 }
+
+var walletRuntimeRegistry sync.Map
 
 // walletJSON is the on-disk format of wallet.json.
 type walletJSON struct {
@@ -59,7 +62,22 @@ func NewWalletStore(dir string) *WalletStore {
 	if dir == "" {
 		dir = DefaultWalletDir()
 	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	return &WalletStore{Dir: dir}
+}
+
+func (s *WalletStore) runtime() *WalletRuntime {
+	key := s.Dir
+	if key == "" {
+		key = DefaultWalletDir()
+	}
+	if abs, err := filepath.Abs(key); err == nil {
+		key = abs
+	}
+	runtime, _ := walletRuntimeRegistry.LoadOrStore(key, newWalletRuntime())
+	return runtime.(*WalletRuntime)
 }
 
 // ensureDir creates the wallet directory if it doesn't exist.
@@ -137,6 +155,7 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 	}
 
 	w := New(holderKey, issuerKey, false)
+	w.runtime = s.runtime()
 	if err := w.SetCertificateAuthority(caKey, caCert); err != nil {
 		return nil, fmt.Errorf("configuring shared wallet CA: %w", err)
 	}

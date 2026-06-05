@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"image"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -51,5 +54,55 @@ func TestQRCodeCSSDisplaysLargeImage(t *testing.T) {
 	}
 	if !strings.Contains(css, "width: min(420px, 100%);") {
 		t.Fatalf("QR code CSS should display the image at a scan-friendly size")
+	}
+}
+
+func TestCreateOfferURIUsesHAIPScheme(t *testing.T) {
+	var issuerBase string
+	kc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/create-credential-offer"):
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"issuer": issuerBase + "/realms/wallet-app-demo",
+				"nonce":  "credential-offer/abc",
+			})
+		case r.URL.Path == "/realms/wallet-app-demo/credential-offer/abc":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"credential_issuer": issuerBase + "/realms/wallet-app-demo",
+				"credential_configuration_ids": []string{
+					"membership-credential",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer kc.Close()
+	issuerBase = kc.URL
+
+	s := newServer(config{
+		KeycloakBaseURL:        kc.URL,
+		KeycloakRealm:          "wallet-app-demo",
+		OID4VCICredentialScope: "membership-credential",
+	})
+
+	got, err := s.createOfferURI("access-token")
+	if err != nil {
+		t.Fatalf("createOfferURI() error = %v", err)
+	}
+	if !strings.HasPrefix(got, "haip-vci://?credential_offer=") {
+		t.Fatalf("createOfferURI() = %q, want haip-vci scheme", got)
+	}
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse offer URI: %v", err)
+	}
+	var offer map[string]any
+	if err := json.Unmarshal([]byte(parsed.Query().Get("credential_offer")), &offer); err != nil {
+		t.Fatalf("decode credential_offer: %v", err)
+	}
+	if offer["credential_issuer"] != kc.URL+"/realms/wallet-app-demo" {
+		t.Fatalf("credential_issuer = %v, want public keycloak URL", offer["credential_issuer"])
 	}
 }

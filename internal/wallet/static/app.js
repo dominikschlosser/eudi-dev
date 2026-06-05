@@ -257,6 +257,7 @@
     consentDialog.innerHTML = html;
     document.getElementById('error-dismiss').addEventListener('click', () => {
       consentOverlay.classList.remove('active');
+      fetch('/api/error', { method: 'DELETE' }).catch(() => {});
       loadLog();
     });
   }
@@ -412,6 +413,10 @@
   }
 
   // Initialize
+  if (new URLSearchParams(window.location.search).get('focus') === 'overview') {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
   loadCredentials();
   loadLog();
   loadPendingRequests();

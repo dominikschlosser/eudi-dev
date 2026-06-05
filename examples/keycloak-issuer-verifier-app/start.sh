@@ -55,7 +55,7 @@ Usage: ./start.sh [--http|--https] [--setup-only|--smoke] [--ngrok|--no-ngrok] [
   --http       Use local Keycloak on http://localhost:8080 when ngrok is disabled
   --https      Use local Keycloak on https://localhost:8443 when ngrok is disabled
   --smoke      Run the full headless smoke flow after setup
-  --setup-only Download/build dependencies, start Keycloak, and bootstrap the realm only
+  --setup-only Recreate Keycloak from the realm import, bootstrap it, and leave it running
   --ngrok      Publish Keycloak and the demo app through one ngrok HTTPS hostname
   --no-ngrok   Keep Keycloak and the demo app local
   --wallet-port  oid4vc-dev wallet port (default: 8087)
@@ -394,7 +394,7 @@ if [[ "${ngrok_mode}" == "true" ]]; then
   export ALLOWED_ISSUER="${public_base_url%/}/realms/${KEYCLOAK_REALM:-wallet-app-demo}"
   unset KEYCLOAK_CA_CERT
   compose_args=(-f docker-compose.yml)
-  ngrok_override="${SCRIPT_DIR}/docker-compose.ngrok.override.yml"
+  ngrok_override="$(mktemp -t keycloak-issuer-verifier-app-ngrok.XXXXXX.yml)"
   example_write_keycloak_public_override "${ngrok_override}" "${KEYCLOAK_BASE_URL}"
   compose_args+=(-f "${ngrok_override}")
   echo "Public URL: ${public_base_url}"
@@ -418,6 +418,8 @@ export OID4VP_TRUST_MODE="${trust_mode}"
 export KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH:-${SCRIPT_DIR}/keycloak-trustlist.jwt}"
 
 start_local_wallet
+echo "Recreating Keycloak realm from the checked-in import..."
+docker compose "${compose_args[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 docker compose "${compose_args[@]}" up -d --force-recreate
 start_keycloak_logs
 ./scripts/bootstrap.sh

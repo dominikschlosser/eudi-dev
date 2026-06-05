@@ -25,7 +25,7 @@
     </details>
   {{else}}
     <p>Sign in as <code>alice</code> / <code>alice</code>, issue the credential, then log out and sign in again through Keycloak to choose the wallet option there.</p>
-    <p>If your system does not open custom wallet links directly, use the CLI fallback: the issue page prints the exact offer command, and the Keycloak wallet page exposes the <code>openid4vp://...</code> link you can pass to <code>oid4vc-dev wallet accept</code>.</p>
+    <p>If your system does not open custom wallet links directly, use the CLI fallback: the issue page prints the exact offer command, and the Keycloak wallet page exposes the <code>haip-vp://...</code> link you can pass to <code>oid4vc-dev wallet accept</code>.</p>
     <div class="actions">
       <a class="button button-primary" href="/login">Sign in</a>
       <a class="button" href="{{.WalletUIURL}}">Open wallet UI</a>

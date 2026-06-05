@@ -16,13 +16,14 @@ package wallet
 
 // CreateConsentRequest creates a new consent request and notifies subscribers.
 func (w *Wallet) CreateConsentRequest(req *ConsentRequest) {
-	w.mu.Lock()
-	w.Requests[req.ID] = req
-	subs := make([]chan *ConsentRequest, 0, len(w.subscribers))
-	for _, ch := range w.subscribers {
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.requests[req.ID] = req
+	subs := make([]chan *ConsentRequest, 0, len(rt.subscribers))
+	for _, ch := range rt.subscribers {
 		subs = append(subs, ch)
 	}
-	w.mu.Unlock()
+	rt.mu.Unlock()
 
 	for _, ch := range subs {
 		select {
@@ -34,9 +35,10 @@ func (w *Wallet) CreateConsentRequest(req *ConsentRequest) {
 
 // GetRequest returns a consent request by ID.
 func (w *Wallet) GetRequest(id string) (*ConsentRequest, bool) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	req, ok := w.Requests[id]
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	req, ok := rt.requests[id]
 	return req, ok
 }
 
@@ -44,9 +46,10 @@ func (w *Wallet) GetRequest(id string) (*ConsentRequest, bool) {
 // the given status. It returns false if the request was not found or was
 // already resolved.
 func (w *Wallet) ResolveRequest(id, status string) (*ConsentRequest, bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	req, ok := w.Requests[id]
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	req, ok := rt.requests[id]
 	if !ok || req.Status != "pending" {
 		return req, false
 	}
@@ -56,10 +59,11 @@ func (w *Wallet) ResolveRequest(id, status string) (*ConsentRequest, bool) {
 
 // GetPendingRequests returns all pending consent requests.
 func (w *Wallet) GetPendingRequests() []*ConsentRequest {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
 	var out []*ConsentRequest
-	for _, r := range w.Requests {
+	for _, r := range rt.requests {
 		if r.Status == "pending" {
 			out = append(out, r)
 		}
@@ -70,16 +74,17 @@ func (w *Wallet) GetPendingRequests() []*ConsentRequest {
 // Subscribe returns a channel for new consent requests and an unsubscribe function.
 func (w *Wallet) Subscribe() (<-chan *ConsentRequest, func()) {
 	ch := make(chan *ConsentRequest, 16)
-	w.mu.Lock()
-	w.subID++
-	id := w.subID
-	w.subscribers[id] = ch
-	w.mu.Unlock()
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.subID++
+	id := rt.subID
+	rt.subscribers[id] = ch
+	rt.mu.Unlock()
 
 	return ch, func() {
-		w.mu.Lock()
-		delete(w.subscribers, id)
-		w.mu.Unlock()
+		rt.mu.Lock()
+		delete(rt.subscribers, id)
+		rt.mu.Unlock()
 		for {
 			select {
 			case <-ch:
@@ -93,19 +98,17 @@ func (w *Wallet) Subscribe() (<-chan *ConsentRequest, func()) {
 // SubscribeErrors returns a channel for error events and an unsubscribe function.
 func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 	ch := make(chan WalletError, 16)
-	w.mu.Lock()
-	w.errSubID++
-	id := w.errSubID
-	if w.errSubscribers == nil {
-		w.errSubscribers = make(map[int64]chan WalletError)
-	}
-	w.errSubscribers[id] = ch
-	w.mu.Unlock()
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.errSubID++
+	id := rt.errSubID
+	rt.errSubscribers[id] = ch
+	rt.mu.Unlock()
 
 	return ch, func() {
-		w.mu.Lock()
-		delete(w.errSubscribers, id)
-		w.mu.Unlock()
+		rt.mu.Lock()
+		delete(rt.errSubscribers, id)
+		rt.mu.Unlock()
 		for {
 			select {
 			case <-ch:
@@ -118,13 +121,14 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 
 // NotifyError sends an error event to all subscribers and stores it for polling.
 func (w *Wallet) NotifyError(err WalletError) {
-	w.mu.Lock()
-	w.lastError = &err
-	subs := make([]chan WalletError, 0, len(w.errSubscribers))
-	for _, ch := range w.errSubscribers {
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.lastError = &err
+	subs := make([]chan WalletError, 0, len(rt.errSubscribers))
+	for _, ch := range rt.errSubscribers {
 		subs = append(subs, ch)
 	}
-	w.mu.Unlock()
+	rt.mu.Unlock()
 
 	for _, ch := range subs {
 		select {
@@ -136,25 +140,48 @@ func (w *Wallet) NotifyError(err WalletError) {
 
 // PopLastError returns and clears the last error, if any.
 func (w *Wallet) PopLastError() *WalletError {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	err := w.lastError
-	w.lastError = nil
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	err := rt.lastError
+	rt.lastError = nil
 	return err
+}
+
+// PeekLastError returns the last error without clearing it.
+func (w *Wallet) PeekLastError() *WalletError {
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	if rt.lastError == nil {
+		return nil
+	}
+	err := *rt.lastError
+	return &err
+}
+
+// ClearLastError clears the last error, if any.
+func (w *Wallet) ClearLastError() {
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.lastError = nil
 }
 
 // SetNextError sets a one-shot error override for the next presentation request.
 func (w *Wallet) SetNextError(e *NextErrorOverride) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.nextError = e
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.nextError = e
 }
 
 // ConsumeNextError returns and clears the next error override, if any.
 func (w *Wallet) ConsumeNextError() *NextErrorOverride {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	e := w.nextError
-	w.nextError = nil
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	e := rt.nextError
+	rt.nextError = nil
 	return e
 }

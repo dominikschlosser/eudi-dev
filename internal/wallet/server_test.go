@@ -495,6 +495,55 @@ func TestPresentationAPI_InvalidURI(t *testing.T) {
 	}
 }
 
+func TestPresentationAPI_InvalidURIWithRequestScopedOptionsShowsErrorOnMainWallet(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	uiRequested := false
+	srv.SetOnUIRequest(func() {
+		uiRequested = true
+	})
+
+	w := serverRequest(t, srv, "POST", "/api/presentations", `{"uri":"not-a-valid-uri","mode":"strict"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+	if !uiRequested {
+		t.Fatal("expected UI request callback")
+	}
+
+	rec := serverRequest(t, srv, "GET", "/api/error", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /api/error, got %d", rec.Code)
+	}
+	var got WalletError
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode /api/error: %v", err)
+	}
+	if got.Message != "Failed to parse authorization request" {
+		t.Fatalf("unexpected error message: %#v", got)
+	}
+
+	rec = serverRequest(t, srv, "GET", "/api/error", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from second /api/error, got %d", rec.Code)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode second /api/error: %v", err)
+	}
+	if got.Message != "Failed to parse authorization request" {
+		t.Fatalf("expected error to remain until dismissed, got %#v", got)
+	}
+
+	rec = serverRequest(t, srv, "DELETE", "/api/error", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from DELETE /api/error, got %d", rec.Code)
+	}
+	rec = serverRequest(t, srv, "GET", "/api/error", "")
+	if strings.TrimSpace(rec.Body.String()) != "null" {
+		t.Fatalf("expected cleared error, got %s", rec.Body.String())
+	}
+}
+
 func TestPresentationAPI_AutoAcceptOverrideSkipsConsent(t *testing.T) {
 	srv := newTestServer(t, false)
 
