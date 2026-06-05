@@ -48,6 +48,8 @@ assert_contains "$START_SH" "candidate + 1"
 assert_contains "$START_SH" '${APP_PORT:-8090}'
 assert_contains "$START_SH" "start_public_proxy"
 assert_contains "$START_SH" "start_local_wallet"
+assert_contains "$START_SH" "start_keycloak_logs"
+assert_contains "$START_SH" 'docker compose "${compose_args[@]}" logs -f --tail=80 keycloak'
 assert_contains "$START_SH" "oid4vc-dev proxy"
 assert_contains "$START_SH" "--target \"http://127.0.0.1:\${route_proxy_port}\""
 assert_contains "$START_SH" "example_detect_ngrok_domain_from_pem \"\${sandbox_pem_path}\""

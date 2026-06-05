@@ -16,6 +16,10 @@ package cmd
 
 import (
 	"crypto"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -190,6 +194,90 @@ func TestEffectivePresentationPort(t *testing.T) {
 	if got, want := effectivePresentationPort(31127), 31127; got != want {
 		t.Fatalf("effectivePresentationPort(31127) = %d, want %d", got, want)
 	}
+}
+
+func TestRegisteredWalletListenerBaseURL(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	handlerDir := filepath.Join(home, ".oid4vc-dev")
+	if err := os.MkdirAll(handlerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	handler := `#!/bin/bash
+LISTENER="http://localhost:8091"
+PORT="8091"
+`
+	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(handler), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := registeredWalletListenerBaseURL(), "http://localhost:8091"; got != want {
+		t.Fatalf("registeredWalletListenerBaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestRunningWalletServerBaseURLsPrefersRegisteredWhenPortNotExplicit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	handlerDir := filepath.Join(home, ".oid4vc-dev")
+	if err := os.MkdirAll(handlerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(`LISTENER="http://localhost:8091"`), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runningWalletServerBaseURLs(dispatchOID4Opts{port: config.DefaultWalletPort})
+	want := []string{"http://localhost:8091", "http://localhost:8085"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("runningWalletServerBaseURLs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestRunningWalletServerBaseURLsHonorsExplicitPort(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	handlerDir := filepath.Join(home, ".oid4vc-dev")
+	if err := os.MkdirAll(handlerDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(`LISTENER="http://localhost:8091"`), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	got := runningWalletServerBaseURLs(dispatchOID4Opts{port: 8123, portExplicit: true})
+	want := []string{"http://localhost:8123"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("runningWalletServerBaseURLs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolvePresentationPortUsesFreePairWhenDefaultBusy(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	busyPort := busy.Addr().(*net.TCPAddr).Port
+
+	got, err := resolvePresentationPort(busyPort, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == busyPort {
+		t.Fatalf("resolvePresentationPort() = busy port %d", got)
+	}
+
+	httpCheck, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", got))
+	if err != nil {
+		t.Fatalf("fallback HTTP port %d is not free: %v", got, err)
+	}
+	_ = httpCheck.Close()
+	httpsCheck, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", got+1))
+	if err != nil {
+		t.Fatalf("fallback HTTPS port %d is not free: %v", got+1, err)
+	}
+	_ = httpsCheck.Close()
 }
 
 func TestIsHTTPURL(t *testing.T) {

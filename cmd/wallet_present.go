@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 // dispatchOID4Opts holds options for dispatching an OID4VP/VCI URI.
 type dispatchOID4Opts struct {
 	port              int
+	portExplicit      bool
 	autoAccept        bool
 	sessionTranscript string
 	txCode            string
@@ -73,7 +75,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if handled {
 			return nil
 		}
-		port, err := resolvePresentationPort(opts.port, opts.autoAccept)
+		port, err := resolvePresentationPort(opts.port, opts.autoAccept, opts.portExplicit)
 		if err != nil {
 			return err
 		}
@@ -176,46 +178,77 @@ func setLocalPresentationIssuerURL(w *wallet.Wallet, port int) {
 	w.IssuerURL = wallet.LocalIssuerURL(port+1, false)
 }
 
-func resolvePresentationPort(port int, autoAccept bool) (int, error) {
+func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int, error) {
 	port = effectivePresentationPort(port)
 
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err == nil {
-		_ = ln.Close()
+	if presentationPortPairAvailable(port) {
 		return port, nil
+	}
+
+	if !portExplicit {
+		fallbackPort, err := findFreePresentationPortPair(port + 1)
+		if err != nil {
+			return 0, err
+		}
+		yellow := color.New(color.FgYellow)
+		yellow.Printf("  Note: port %d/%d is already in use; using temporary port %d\n", port, port+1, fallbackPort)
+		return fallbackPort, nil
 	}
 
 	if !autoAccept {
 		return port, nil
 	}
 
-	fallback, err := net.Listen("tcp", "127.0.0.1:0")
+	fallbackPort, err := findFreePresentationPortPair(port + 1)
 	if err != nil {
 		return 0, fmt.Errorf("resolving temporary auto-accept port after %d was busy: %w", port, err)
-	}
-	fallbackPort := fallback.Addr().(*net.TCPAddr).Port
-	if err := fallback.Close(); err != nil {
-		return 0, fmt.Errorf("closing temporary auto-accept listener: %w", err)
 	}
 	yellow := color.New(color.FgYellow)
 	yellow.Printf("  Note: port %d is already in use; auto-accept will use temporary port %d\n", port, fallbackPort)
 	return fallbackPort, nil
 }
 
-func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error) {
-	if !opts.autoAccept {
-		return false, nil
+func presentationPortPairAvailable(port int) bool {
+	httpListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
 	}
+	_ = httpListener.Close()
 
-	port := effectivePresentationPort(opts.port)
-	baseURL := fmt.Sprintf("http://localhost:%d", port)
-	if !isRunningWalletServer(baseURL) {
+	httpsListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+1))
+	if err != nil {
+		return false
+	}
+	_ = httpsListener.Close()
+	return true
+}
+
+func findFreePresentationPortPair(start int) (int, error) {
+	for candidate := start; candidate <= start+100; candidate++ {
+		if presentationPortPairAvailable(candidate) {
+			return candidate, nil
+		}
+	}
+	return 0, fmt.Errorf("could not find free adjacent presentation ports near %d", start)
+}
+
+func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error) {
+	var baseURL string
+	for _, candidate := range runningWalletServerBaseURLs(opts) {
+		if isRunningWalletServer(candidate) {
+			baseURL = candidate
+			break
+		}
+	}
+	if baseURL == "" {
 		return false, nil
 	}
 
 	payload := map[string]any{
-		"uri":         uri,
-		"auto_accept": true,
+		"uri": uri,
+	}
+	if opts.autoAccept {
+		payload["auto_accept"] = true
 	}
 	if opts.sessionTranscript != "" {
 		payload["session_transcript"] = opts.sessionTranscript
@@ -289,6 +322,47 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 		}
 		return true, fmt.Errorf("unexpected running-wallet response status %q", result.Status)
 	}
+}
+
+func runningWalletServerBaseURLs(opts dispatchOID4Opts) []string {
+	seen := map[string]bool{}
+	add := func(url string, urls []string) []string {
+		if strings.TrimSpace(url) == "" || seen[url] {
+			return urls
+		}
+		seen[url] = true
+		return append(urls, url)
+	}
+
+	var urls []string
+	if !opts.portExplicit {
+		urls = add(registeredWalletListenerBaseURL(), urls)
+	}
+	urls = add(fmt.Sprintf("http://localhost:%d", effectivePresentationPort(opts.port)), urls)
+	return urls
+}
+
+func registeredWalletListenerBaseURL() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(home, ".oid4vc-dev", "url-handler.sh"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "LISTENER=") {
+			continue
+		}
+		value := strings.TrimPrefix(line, "LISTENER=")
+		value = strings.Trim(value, `"'`)
+		if strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://") {
+			return value
+		}
+	}
+	return ""
 }
 
 func isRunningWalletServer(baseURL string) bool {

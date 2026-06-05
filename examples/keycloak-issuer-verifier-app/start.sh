@@ -9,6 +9,7 @@ APP_PID=""
 DEBUG_PROXY_PID=""
 ROUTE_PROXY_PID=""
 WALLET_PID=""
+KEYCLOAK_LOGS_PID=""
 compose_args=(-f docker-compose.yml)
 transport="http"
 trust_mode="metadata"
@@ -78,6 +79,10 @@ cleanup() {
   if [[ -n "${WALLET_PID}" ]]; then
     kill "${WALLET_PID}" >/dev/null 2>&1 || true
     wait "${WALLET_PID}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${KEYCLOAK_LOGS_PID}" ]]; then
+    kill "${KEYCLOAK_LOGS_PID}" >/dev/null 2>&1 || true
+    wait "${KEYCLOAK_LOGS_PID}" >/dev/null 2>&1 || true
   fi
   if [[ "${cleanup_enabled}" == "true" ]]; then
     docker compose "${compose_args[@]}" down --remove-orphans >/dev/null 2>&1 || true
@@ -310,6 +315,13 @@ wallet_port_pair_available() {
   ! example_port_is_listening "${candidate}" && ! example_port_is_listening "${https_port}"
 }
 
+start_keycloak_logs() {
+  echo "Keycloak logs:"
+  docker compose "${compose_args[@]}" logs -f --tail=80 keycloak &
+  KEYCLOAK_LOGS_PID=$!
+  trap cleanup EXIT INT TERM
+}
+
 mode="app"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -407,6 +419,7 @@ export KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH:-${SCRIPT_DIR}/keycl
 
 start_local_wallet
 docker compose "${compose_args[@]}" up -d --force-recreate
+start_keycloak_logs
 ./scripts/bootstrap.sh
 
 case "${mode}" in

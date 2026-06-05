@@ -51,6 +51,7 @@ request boundaries, so later presentation requests see the new credential.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return dispatchURI(args[0], dispatchOID4Opts{
 				port:              port,
+				portExplicit:      cmd.Flags().Changed("port"),
 				autoAccept:        autoAccept,
 				sessionTranscript: sessionTranscript,
 				txCode:            txCode,
@@ -120,6 +121,7 @@ func walletScanCmd() *cobra.Command {
 			// For OID4 URIs, use the shared dispatch
 			return dispatchURI(content, dispatchOID4Opts{
 				port:              port,
+				portExplicit:      cmd.Flags().Changed("port"),
 				autoAccept:        autoAccept,
 				sessionTranscript: sessionTranscript,
 				mode:              walletValidationMode,
