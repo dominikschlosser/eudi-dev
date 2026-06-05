@@ -252,6 +252,44 @@ func TestRunningWalletServerBaseURLsHonorsExplicitPort(t *testing.T) {
 	}
 }
 
+func TestRunningWalletPresentationPayloadOmitsDefaultOverrides(t *testing.T) {
+	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
+		sessionTranscript: string(wallet.SessionTranscriptOID4VP),
+		mode:              string(wallet.ValidationModeDebug),
+	})
+
+	if got["uri"] != "openid4vp://request" {
+		t.Fatalf("uri = %v, want %q", got["uri"], "openid4vp://request")
+	}
+	if _, ok := got["session_transcript"]; ok {
+		t.Fatalf("default session_transcript should be omitted: %#v", got)
+	}
+	if _, ok := got["mode"]; ok {
+		t.Fatalf("default mode should be omitted: %#v", got)
+	}
+}
+
+func TestRunningWalletPresentationPayloadIncludesNonDefaultOverrides(t *testing.T) {
+	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
+		autoAccept:        true,
+		sessionTranscript: string(wallet.SessionTranscriptISO),
+		haip:              true,
+		mode:              string(wallet.ValidationModeStrict),
+	})
+
+	for key, want := range map[string]any{
+		"uri":                "openid4vp://request",
+		"auto_accept":        true,
+		"session_transcript": string(wallet.SessionTranscriptISO),
+		"haip":               true,
+		"mode":               string(wallet.ValidationModeStrict),
+	} {
+		if got[key] != want {
+			t.Fatalf("%s = %#v, want %#v in payload %#v", key, got[key], want, got)
+		}
+	}
+}
+
 func TestResolvePresentationPortUsesFreePairWhenDefaultBusy(t *testing.T) {
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

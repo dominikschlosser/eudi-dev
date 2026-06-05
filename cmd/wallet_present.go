@@ -244,21 +244,7 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 		return false, nil
 	}
 
-	payload := map[string]any{
-		"uri": uri,
-	}
-	if opts.autoAccept {
-		payload["auto_accept"] = true
-	}
-	if opts.sessionTranscript != "" {
-		payload["session_transcript"] = opts.sessionTranscript
-	}
-	if opts.haip {
-		payload["haip"] = true
-	}
-	if opts.mode != "" {
-		payload["mode"] = opts.mode
-	}
+	payload := runningWalletPresentationPayload(uri, opts)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -322,6 +308,25 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 		}
 		return true, fmt.Errorf("unexpected running-wallet response status %q", result.Status)
 	}
+}
+
+func runningWalletPresentationPayload(uri string, opts dispatchOID4Opts) map[string]any {
+	payload := map[string]any{
+		"uri": uri,
+	}
+	if opts.autoAccept {
+		payload["auto_accept"] = true
+	}
+	if opts.sessionTranscript != "" && opts.sessionTranscript != string(wallet.SessionTranscriptOID4VP) {
+		payload["session_transcript"] = opts.sessionTranscript
+	}
+	if opts.haip {
+		payload["haip"] = true
+	}
+	if opts.mode != "" && opts.mode != string(wallet.ValidationModeDebug) {
+		payload["mode"] = opts.mode
+	}
+	return payload
 }
 
 func runningWalletServerBaseURLs(opts dispatchOID4Opts) []string {

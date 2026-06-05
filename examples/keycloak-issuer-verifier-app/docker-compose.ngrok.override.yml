@@ -1,0 +1,5 @@
+services:
+  keycloak:
+    environment:
+      KC_HOSTNAME: "https://wallet-test.ngrok.dev"
+      KC_PROXY_HEADERS: xforwarded
