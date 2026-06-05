@@ -72,9 +72,9 @@ func PrintEntry(entry *TrafficEntry, dashboardPort int) {
 		dimColor.Sprint("━━━"),
 		dimColor.Sprintf("[%s]", ts),
 		headerColor.Sprintf("%s %s", entry.Method, entry.URL),
-		statusFn("← %d", entry.StatusCode),
+		statusFn("%s", responseSummary(entry)),
 		dimColor.Sprintf("(%dms)", entry.DurationMS),
-		classColor.Sprintf("[%s]", entry.ClassLabel),
+		classColor.Sprintf("[%s]", entryTitle(entry)),
 	)
 
 	sections := buildRenderedSections(entry)
@@ -99,41 +99,25 @@ func PrintEntry(entry *TrafficEntry, dashboardPort int) {
 	fmt.Println()
 }
 
-func flowTitle(entry *TrafficEntry) string {
-	keys := ExtractCorrelationKeys(entry)
-	if hasKeyPrefix(keys, "vp:") || strings.HasPrefix(entry.ClassLabel, "VP") {
-		return "VP Flow"
-	}
-	if hasKeyPrefix(keys, "vci:pre-authorized_code:") {
-		return "VCI Pre-Authorized Flow"
-	}
-	if hasKeyPrefix(keys, "vci:") && (hasKeyPrefix(keys, "oauth:code:") || entry.Class == ClassOIDCAuthRequest || entry.Class == ClassOIDCTokenRequest || entry.Class == ClassOIDCCallback) {
-		return "VCI Authorization Code Flow"
-	}
-	if hasKeyPrefix(keys, "vci:") || strings.HasPrefix(entry.ClassLabel, "VCI") {
-		return "VCI Flow"
-	}
-	if hasKeyPrefix(keys, "oidc:") || strings.HasPrefix(entry.ClassLabel, "OIDC") {
-		return "OIDC Flow"
-	}
-	return "Flow"
+func responseSummary(entry *TrafficEntry) string {
+	return fmt.Sprintf("%d", entry.StatusCode)
 }
 
-func hasKeyPrefix(keys []string, prefix string) bool {
-	for _, key := range keys {
-		if strings.HasPrefix(key, prefix) {
-			return true
-		}
+func entryTitle(entry *TrafficEntry) string {
+	if entry.FlowID == "" {
+		return entry.ClassLabel
 	}
-	return false
+	return entry.FlowID + " / " + entry.ClassLabel
 }
 
 func buildRenderedSections(entry *TrafficEntry) []renderedSection {
 	var sections []renderedSection
-	sections = appendSection(sections, "classification", sortedRenderedFields(classificationLogDetails(entry), entry.Class, "classification"))
 	if shouldRenderRawRequest(entry) {
 		sections = appendSection(sections, "request headers", sortedRenderedFields(headerFieldsForDisplay(entry.RequestHeaders), entry.Class, "request_headers"))
 		sections = appendSection(sections, "request body", sortedRenderedFields(rawBodyFields(entry.RequestBody), entry.Class, "request_body"))
+	}
+	if redirect := redirectResponseHeaderFields(entry); len(redirect) > 0 {
+		sections = appendSection(sections, "response headers", sortedRenderedFields(redirect, entry.Class, "response_headers"))
 	}
 
 	if entry.Decoded != nil {
@@ -167,18 +151,15 @@ func buildRenderedSections(entry *TrafficEntry) []renderedSection {
 	return sections
 }
 
-func classificationLogDetails(entry *TrafficEntry) map[string]any {
-	details := map[string]any{
-		"class":     entry.ClassLabel,
-		"flow_type": flowTitle(entry),
+func redirectResponseHeaderFields(entry *TrafficEntry) map[string]any {
+	if entry.StatusCode < 300 || entry.StatusCode >= 400 || entry.ResponseHeaders == nil {
+		return nil
 	}
-	if entry.FlowID != "" {
-		details["flow_id"] = entry.FlowID
+	location := entry.ResponseHeaders.Get("Location")
+	if location == "" {
+		return nil
 	}
-	if keys := ExtractCorrelationKeys(entry); len(keys) > 0 {
-		details["correlation_keys"] = keys
-	}
-	return details
+	return map[string]any{"Location": location}
 }
 
 func appendSection(sections []renderedSection, title string, fields []renderedField) []renderedSection {
@@ -236,10 +217,6 @@ func sortedFieldKeys(fields map[string]any, class TrafficClass, section string) 
 
 func fieldPriority(key string, class TrafficClass, section string) int {
 	priorities := map[string]int{
-		"class":                   1,
-		"flow_type":               2,
-		"flow_id":                 3,
-		"correlation_keys":        4,
 		"Host":                    5,
 		"Authorization":           6,
 		"DPoP":                    7,

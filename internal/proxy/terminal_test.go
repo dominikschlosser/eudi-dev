@@ -208,22 +208,23 @@ func TestPrintEntryGroupsRequestResponseAndDecodeSections(t *testing.T) {
 	if strings.Contains(output, "http://issuer.example/oauth/token?...") {
 		t.Fatalf("expected URL not to be truncated, got %q", output)
 	}
+	if !strings.Contains(output, "[flow-7 / VCI Token Request]") {
+		t.Fatalf("expected flow and class in entry header, got %q", output)
+	}
 
-	classificationIndex := strings.Index(output, "  classification:\n")
 	requestIndex := strings.Index(output, "  request:\n")
 	responseIndex := strings.Index(output, "  response:\n")
 	decodeIndex := strings.Index(output, "  decode:\n")
-	if classificationIndex < 0 || requestIndex < 0 || responseIndex < 0 || decodeIndex < 0 {
-		t.Fatalf("expected classification/request/response/decode sections, got %q", output)
+	if requestIndex < 0 || responseIndex < 0 || decodeIndex < 0 {
+		t.Fatalf("expected request/response/decode sections, got %q", output)
 	}
-	if !(classificationIndex < requestIndex && requestIndex < responseIndex && responseIndex < decodeIndex) {
-		t.Fatalf("expected classification, request, response, then decode order, got %q", output)
+	if !(requestIndex < responseIndex && responseIndex < decodeIndex) {
+		t.Fatalf("expected request, response, then decode order, got %q", output)
 	}
-	if !strings.Contains(output, "class: VCI Token Request") {
-		t.Fatalf("expected classification class label, got %q", output)
-	}
-	if !strings.Contains(output, "flow_id: flow-7") {
-		t.Fatalf("expected flow id in classification section, got %q", output)
+	for _, unwanted := range []string{"  classification:\n", "class:", "flow_type:", "flow_id:", "correlation_keys:"} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("expected no classification detail %q, got %q", unwanted, output)
+		}
 	}
 	if !strings.Contains(output, "\n\n  response:\n") {
 		t.Fatalf("expected blank line between request and response sections, got %q", output)
@@ -317,19 +318,50 @@ func TestTerminalWriterLogsEntriesWithoutFlowSummary(t *testing.T) {
 		tw.WriteEntry(second)
 	})
 
-	if strings.Contains(output, "[flow-7]") {
+	if strings.Contains(output, "═══ [flow-7]") {
 		t.Fatalf("expected no separate flow header, got %q", output)
-	}
-	if !strings.Contains(output, "VCI Authorization Code Flow") {
-		t.Fatalf("expected flow type in classification section, got %q", output)
 	}
 	if strings.Contains(output, "code=issued-code  access_token=token-123") {
 		t.Fatalf("expected no flow summary line, got %q", output)
 	}
-	if strings.Count(output, "  classification:\n") != 2 {
-		t.Fatalf("expected classification section per entry, got %q", output)
+	for _, unwanted := range []string{"  classification:\n", "VCI Authorization Code Flow", "flow_id: flow-7", "correlation_keys:"} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("expected no classification detail %q, got %q", unwanted, output)
+		}
 	}
-	if strings.Count(output, "flow_id: flow-7") != 2 {
-		t.Fatalf("expected flow id as per-entry classification detail, got %q", output)
+	if strings.Count(output, "[flow-7 / ") != 2 {
+		t.Fatalf("expected flow id and class in each entry header, got %q", output)
+	}
+}
+
+func TestPrintEntryShowsRedirectLocationAsResponseHeader(t *testing.T) {
+	entry := &TrafficEntry{
+		Method: "GET",
+		URL:    "http://issuer.example/auth?client_id=wallet-app&state=s1",
+		ResponseHeaders: http.Header{
+			"Location": {"https://wallet.example/callback?code=abc&state=s1"},
+		},
+		StatusCode: 302,
+		Class:      ClassOIDCCallback,
+		ClassLabel: "OIDC Callback",
+		FlowID:     "flow-redirect",
+	}
+
+	output := captureOutput(t, func() { PrintEntry(entry, 0) })
+
+	if strings.Contains(output, "302 https://wallet.example/callback?code=abc&state=s1") {
+		t.Fatalf("expected redirect location not to be adjacent to status in header, got %q", output)
+	}
+	if !strings.Contains(output, "  response headers:\n") {
+		t.Fatalf("expected response headers section for redirect location, got %q", output)
+	}
+	if !strings.Contains(output, "Location: https://wallet.example/callback?code=abc&state=s1") {
+		t.Fatalf("expected redirect Location in response headers, got %q", output)
+	}
+	if !strings.Contains(output, "[flow-redirect / OIDC Callback]") {
+		t.Fatalf("expected flow and class in redirect header, got %q", output)
+	}
+	if strings.Contains(output, "  request:\n") || strings.Contains(output, "  response:\n") {
+		t.Fatalf("expected redirect-only entry to avoid empty request/response body sections, got %q", output)
 	}
 }
