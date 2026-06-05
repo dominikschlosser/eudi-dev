@@ -143,7 +143,7 @@ This example uses the OpenID4VCI by-value `credential_offer` form instead of han
 - Some external wallets dereference `credential_offer_uri` more than once across parse and issuance steps.
 - Current Keycloak behavior for that generated offer URI is effectively one-shot in this flow, so the second fetch fails with `invalid_credential_offer_request`.
 - The example therefore resolves the offer once server-side and gives the wallet an inline `credential_offer=...` URI instead.
-- The demo realm sets `vc.credential_identifier=membership-credential`, so Keycloak emits final-form `credential_identifiers` in the token response and wallets can send a final `credential_identifier` credential request.
+- The demo realm omits `vc.credential_identifier`, so wallets can request the final credential by `credential_configuration_id`. Keycloak 26.6 rejects that request shape when the scope sets `vc.credential_identifier`.
 
 ## Quick Start
 

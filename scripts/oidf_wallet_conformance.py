@@ -595,9 +595,90 @@ def create_config(args: argparse.Namespace, suite_dir: Path, results_dir: Path, 
     return output
 
 
+VP_FINAL_MODULE_HAPPY_FLOW = "oid4vp-1final-wallet-happy-flow"
+VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW = "oid4vp-1final-wallet-alternate-happy-flow"
+VP_FINAL_MODULE_REQUEST_URI_METHOD_POST = "oid4vp-1final-wallet-request-uri-method-post"
+VP_FINAL_MODULE_FEWER_CLAIMS = "oid4vp-1final-wallet-fewer-claims-than-available"
+VP_FINAL_MODULE_OPTIONAL_CREDENTIAL_SET = "oid4vp-1final-wallet-optional-credential-set"
+VP_FINAL_MODULE_NO_CLAIMS = "oid4vp-1final-wallet-no-claims-in-dcql-query"
+VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID = "oid4vp-1final-wallet-negative-test-response-uri-not-client-id"
+VP_FINAL_MODULE_INVALID_REQUEST_SIGNATURE = "oid4vp-1final-wallet-negative-test-invalid-request-object-signature"
+VP_FINAL_MODULE_MULTISIGNED_ONE_INVALID = "oid4vp-1final-wallet-multisigned-one-invalid-signature"
+VP_FINAL_MODULE_MISMATCHED_CLIENT_ID = "oid4vp-1final-wallet-negative-test-mismatched-client-id"
+VP_FINAL_MODULE_REDIRECT_URI_WITH_DIRECT_POST = "oid4vp-1final-wallet-negative-test-redirect-uri-with-direct-post"
+VP_FINAL_MODULE_MISSING_NONCE = "oid4vp-1final-wallet-negative-test-missing-nonce"
+VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS = "oid4vp-1final-wallet-negative-test-wrong-expected-origins"
+VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX = "oid4vp-1final-wallet-negative-test-invalid-client-id-prefix"
+VP_FINAL_MODULE_UNKNOWN_TRANSACTION_DATA = "oid4vp-1final-wallet-negative-test-unknown-transaction-data-type"
+
+VP_FINAL_MODULES = (
+    VP_FINAL_MODULE_HAPPY_FLOW,
+    VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW,
+    VP_FINAL_MODULE_REQUEST_URI_METHOD_POST,
+    VP_FINAL_MODULE_FEWER_CLAIMS,
+    VP_FINAL_MODULE_OPTIONAL_CREDENTIAL_SET,
+    VP_FINAL_MODULE_NO_CLAIMS,
+    VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID,
+    VP_FINAL_MODULE_INVALID_REQUEST_SIGNATURE,
+    VP_FINAL_MODULE_MULTISIGNED_ONE_INVALID,
+    VP_FINAL_MODULE_MISMATCHED_CLIENT_ID,
+    VP_FINAL_MODULE_REDIRECT_URI_WITH_DIRECT_POST,
+    VP_FINAL_MODULE_MISSING_NONCE,
+    VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS,
+    VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX,
+    VP_FINAL_MODULE_UNKNOWN_TRANSACTION_DATA,
+)
+
+
+def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
+    if scenario.kind != "vp":
+        return None
+
+    modules = list(VP_FINAL_MODULES)
+    variant = scenario.variant
+    response_mode = variant.get("response_mode", "")
+    request_method = variant.get("request_method", "")
+    client_id_prefix = variant.get("client_id_prefix", "")
+
+    if scenario.requires_haip:
+        modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
+        if response_mode == "dc_api.jwt":
+            # release-v5.1.44 generates the unsigned web-origin negative module
+            # without a client_id, so the suite throws NullPointerException before
+            # invoking the wallet. Signed HAIP invalid-prefix coverage remains in
+            # the direct_post.jwt HAIP plan.
+            modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
+        return tuple(modules)
+
+    if response_mode == "direct_post":
+        # The release-v5.1.44 alternate direct_post module unconditionally
+        # replaces encrypted-response setup that is absent for plain direct_post.
+        modules.remove(VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW)
+    if client_id_prefix != "redirect_uri":
+        modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
+    if request_method in {"request_uri_unsigned", "url_query"}:
+        modules.remove(VP_FINAL_MODULE_INVALID_REQUEST_SIGNATURE)
+    if request_method != "request_uri_multisigned":
+        modules.remove(VP_FINAL_MODULE_MULTISIGNED_ONE_INVALID)
+    if response_mode in {"dc_api", "dc_api.jwt"}:
+        modules.remove(VP_FINAL_MODULE_REQUEST_URI_METHOD_POST)
+        modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
+        modules.remove(VP_FINAL_MODULE_MISMATCHED_CLIENT_ID)
+        modules.remove(VP_FINAL_MODULE_REDIRECT_URI_WITH_DIRECT_POST)
+    else:
+        modules.remove(VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS)
+
+    return tuple(modules)
+
+
 def scenario_plan_arg(scenario: PlanScenario) -> str:
     variant_suffix = "".join(f"[{key}={value}]" for key, value in scenario.variant.items())
-    return f"{scenario.plan_name}{variant_suffix}"
+    module_names = vp_modules_for_scenario(scenario)
+    module_suffix = ""
+    if module_names:
+        module_suffix = ":" + ",".join(module_names)
+    return f"{scenario.plan_name}{variant_suffix}{module_suffix}"
+
 
 
 def official_runner_args(

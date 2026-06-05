@@ -74,7 +74,7 @@ assert_contains "$BOOTSTRAP_SH" ".config.responseMode = \"direct_post.jwt\""
 assert_contains "$BOOTSTRAP_SH" ".config.clientIdScheme = \"x509_hash\""
 assert_contains "$BOOTSTRAP_SH" "require_file \"\${sandbox_pem_path}\""
 assert_contains "$BOOTSTRAP_SH" ".config.x509CertificatePem = \$sandbox_pem"
-assert_contains "$BOOTSTRAP_SH" "update_credential_scope \"\${OID4VCI_CREDENTIAL_SCOPE}\""
-assert_contains "$BOOTSTRAP_SH" '.attributes."vc.credential_identifier" = $scope_name'
+assert_contains "$BOOTSTRAP_SH" "normalize_credential_scope \"\${OID4VCI_CREDENTIAL_SCOPE}\""
+assert_contains "$BOOTSTRAP_SH" '.attributes |= del(."vc.credential_identifier")'
 
 echo "start mode contract checks passed"

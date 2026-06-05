@@ -30,7 +30,6 @@
       "attributes": {
         "include.in.token.scope": "true",
         "vc.credential_configuration_id": "membership-credential",
-        "vc.credential_identifier": "membership-credential",
         "vc.format": "dc+sd-jwt",
         "vc.verifiable_credential_type": "https://credentials.example.com/membership",
         "vc.credential_signing_alg": "RS256",
