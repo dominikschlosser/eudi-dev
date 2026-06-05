@@ -34,7 +34,19 @@ func TestWalletLogsCompactOneLinePerEntry(t *testing.T) {
 			Detail:  "Presented to verifier.example: Response: 200",
 			Success: true,
 			Details: map[string]any{
+				"client_id":      "verifier.example",
+				"response_mode":  "direct_post",
+				"nonce":          "n-1",
 				"request_object": map[string]any{"nonce": "n-1"},
+				"dcql_query":     map[string]any{"credentials": []any{map[string]any{"id": "pid"}}},
+				"sent_credentials": []any{
+					map[string]any{
+						"id":        "cred-1",
+						"format":    "dc+sd-jwt",
+						"disclosed": []any{"given_name", "family_name"},
+					},
+				},
+				"status_code": 200,
 			},
 		},
 		{
@@ -54,8 +66,21 @@ func TestWalletLogsCompactOneLinePerEntry(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 compact log lines, got %d:\n%s", len(lines), buf.String())
 	}
-	if strings.Contains(lines[0], "request_object") {
-		t.Fatalf("compact output should not include verbose details: %s", lines[0])
+	for _, want := range []string{
+		"client_id=verifier.example",
+		"response_mode=direct_post",
+		"nonce=n-1",
+		"request_object=yes",
+		"dcql_query=yes",
+		"sent_credentials=cred-1(dc+sd-jwt:given_name,family_name)",
+		"status_code=200",
+	} {
+		if !strings.Contains(lines[0], want) {
+			t.Fatalf("compact output missing %q: %s", want, lines[0])
+		}
+	}
+	if strings.Contains(lines[0], `"credentials"`) {
+		t.Fatalf("compact output should not include full DCQL payload: %s", lines[0])
 	}
 	if strings.Contains(lines[1], "\n") {
 		t.Fatalf("compact output should keep each entry on one line: %q", lines[1])

@@ -14,7 +14,11 @@
 
 package wallet
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+)
 
 func (s *Server) addPresentationRequestLog(authReq *AuthorizationRequestParams, source string) {
 	clientID := authReq.ClientID
@@ -51,27 +55,52 @@ func presentationRequestLogDetails(authReq *AuthorizationRequestParams) map[stri
 	return details
 }
 
-func presentationSubmissionLogDetails(authReq *AuthorizationRequestParams, matches []CredentialMatch, prepared *preparedPresentation, result *DirectPostResult) map[string]any {
-	details := presentationRequestLogDetails(authReq)
-	if prepared != nil {
-		addStringDetail(details, "submission_uri", prepared.ResponseURI)
+// RequestPayload returns the parsed request object payload when available,
+// otherwise the fallback authorization request payload.
+func RequestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
+	if reqObj != nil && reqObj.Payload != nil {
+		return reqObj.Payload
 	}
+	return fallback
+}
+
+// PresentationSubmissionLogDetails returns the structured detail payload used by
+// verbose wallet logs for successful presentation submissions.
+func PresentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, vpResult *VPTokenMapResult, idToken string, result *DirectPostResult) map[string]any {
+	details := presentationRequestLogDetails(authReq)
 	if result != nil {
 		details["status_code"] = result.StatusCode
 		addStringDetail(details, "redirect_uri", result.RedirectURI)
 		addStringDetail(details, "response_body", result.Body)
 	}
-	if prepared != nil && prepared.VPResult != nil {
-		details["vp_token"] = prepared.VPResult.VPToken()
+	if vpResult != nil {
+		details["vp_token"] = vpResult.VPToken()
 	}
-	if prepared != nil && prepared.IDToken != "" {
-		details["id_token"] = prepared.IDToken
+	if idToken != "" {
+		details["id_token"] = idToken
 	}
 	if authReq.State != "" {
 		details["state"] = authReq.State
 	}
 	if sent := sentCredentialLogDetails(matches); len(sent) > 0 {
 		details["sent_credentials"] = sent
+	}
+	if presented := presentedCredentialLogDetails(w, matches, vpResult); len(presented) > 0 {
+		details["presented_credentials"] = presented
+	}
+	return details
+}
+
+func presentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, prepared *preparedPresentation, result *DirectPostResult) map[string]any {
+	var vpResult *VPTokenMapResult
+	var idToken string
+	if prepared != nil {
+		vpResult = prepared.VPResult
+		idToken = prepared.IDToken
+	}
+	details := PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, result)
+	if prepared != nil {
+		addStringDetail(details, "submission_uri", prepared.ResponseURI)
 	}
 	return details
 }
@@ -90,6 +119,37 @@ func sentCredentialLogDetails(matches []CredentialMatch) []map[string]any {
 		}
 		addStringDetail(item, "vct", match.VCT)
 		addStringDetail(item, "doc_type", match.DocType)
+		out = append(out, item)
+	}
+	return out
+}
+
+func presentedCredentialLogDetails(w *Wallet, matches []CredentialMatch, vpResult *VPTokenMapResult) []map[string]any {
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(matches))
+	for _, match := range matches {
+		item := map[string]any{
+			"id":        match.CredentialID,
+			"query_id":  match.QueryID,
+			"format":    match.Format,
+			"disclosed": append([]string(nil), match.SelectedKeys...),
+		}
+		addStringDetail(item, "vct", match.VCT)
+		addStringDetail(item, "doc_type", match.DocType)
+		if len(match.Claims) > 0 {
+			item["claims"] = match.Claims
+		}
+		if w != nil {
+			if cred, ok := w.GetCredential(match.CredentialID); ok {
+				item["credential"] = CredentialSummary(cred)
+				addStringDetail(item, "raw_credential", cred.Raw)
+			}
+		}
+		if vpResult != nil {
+			addStringDetail(item, "presentation", vpResult.TokenMap[match.QueryID])
+		}
 		out = append(out, item)
 	}
 	return out

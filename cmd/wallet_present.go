@@ -404,7 +404,22 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	} else {
 		green := color.New(color.FgGreen)
 		green.Printf("  Submitted: %s\n", wallet.FormatDirectPostResult(result))
-		w.AddLog("presentation", fmt.Sprintf("Presented to %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), true)
+		authReq := &wallet.AuthorizationRequestParams{
+			ClientID:       parsed.ClientID,
+			ResponseType:   parsed.ResponseType,
+			ResponseMode:   parsed.ResponseMode,
+			Nonce:          parsed.Nonce,
+			State:          parsed.State,
+			RedirectURI:    parsed.RedirectURI,
+			ResponseURI:    responseURI,
+			ClientMetadata: parsed.ClientMetadata,
+			DCQLQuery:      parsed.DCQLQuery,
+			RequestObject:  parsed.RequestObject,
+			RequestPayload: wallet.RequestPayload(parsed.RequestObject, parsed.FullJSON),
+			Source:         "cli",
+		}
+		details := wallet.PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, result)
+		w.AddLogDetails("presentation", fmt.Sprintf("Presented to %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), true, details)
 	}
 	dim.Println("───────────────────────────────────────")
 

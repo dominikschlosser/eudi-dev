@@ -48,6 +48,7 @@ type AuthorizationRequestParams struct {
 	DCQLQuery        map[string]any
 	RequestObject    *oid4vc.RequestObjectJWT
 	RequestPayload   map[string]any
+	Source           string
 }
 
 type preparedPresentation struct {
@@ -59,7 +60,11 @@ type preparedPresentation struct {
 
 // handleAuthFlow is the core OID4VP flow handler.
 func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationRequestParams) {
-	s.addPresentationRequestLog(authReq, "authorize")
+	source := authReq.Source
+	if source == "" {
+		source = "authorize"
+	}
+	s.addPresentationRequestLog(authReq, source)
 
 	// Check one-shot error override
 	if override := s.wallet.ConsumeNextError(); override != nil {
@@ -420,7 +425,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 		"presentation",
 		fmt.Sprintf("Presented to %s: %s", authReq.ClientID, FormatDirectPostResult(result)),
 		true,
-		presentationSubmissionLogDetails(authReq, matches, prepared, result),
+		presentationSubmissionLogDetails(authReq, s.wallet, matches, prepared, result),
 	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -553,10 +558,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 }
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
-	if reqObj != nil && reqObj.Payload != nil {
-		return reqObj.Payload
-	}
-	return fallback
+	return RequestPayload(reqObj, fallback)
 }
 
 func credTypeLabel(m CredentialMatch) string {

@@ -129,7 +129,7 @@ oid4vc-dev wallet show --decoded --json <id> # JSON output
 
 Displays persisted wallet-side interactions, including OID4VP presentation requests and responses, Browser API responses, OID4VCI credential offers, and received credentials.
 
-By default, every entry is printed on one line so the output is easy to scan and pipe. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, sent VP tokens, selected credentials, response bodies, and received credential metadata. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
+By default, every entry is printed on one line so the output is easy to scan and pipe. Presentation lines include compact debugging markers such as source, client ID, response mode, nonce, request-object presence, DCQL presence, status code, and presented credential IDs. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, sent VP tokens, actual presented credentials, selected claims, response bodies, and received credential metadata. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
 
 ```bash
 oid4vc-dev wallet logs              # One line per persisted wallet interaction

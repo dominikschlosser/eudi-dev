@@ -489,6 +489,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
+		Source:           "api",
 	}
 
 	reqServer.handleAuthFlow(w, authReq)

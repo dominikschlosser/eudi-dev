@@ -248,7 +248,7 @@ func (s *Server) writeBrowserPresentationResult(w http.ResponseWriter, authReq *
 		s.log("  id_token:      created (SIOPv2)")
 	}
 
-	details := presentationSubmissionLogDetails(authReq, matches, prepared, &DirectPostResult{StatusCode: http.StatusOK})
+	details := presentationSubmissionLogDetails(authReq, s.wallet, matches, prepared, &DirectPostResult{StatusCode: http.StatusOK})
 	details["browser_api_result"] = result
 	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API presentation to %s", authReq.ClientID), true, details)
 	writeJSON(w, http.StatusOK, result)

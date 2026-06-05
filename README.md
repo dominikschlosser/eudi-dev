@@ -46,7 +46,7 @@ docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/oid4vc-dev
 The default CMD starts the wallet server with pre-loaded PID credentials in headless mode — ready for automated verifier testing out of the box.
 
 → [Full Docker & verifier testing guide](docs/docker.md)
-→ [OIDF conformance notes](docs/conformance.md)
+→ [OIDF conformance status](docs/conformance.md), [runbook](docs/conformance-run.md), and [results](docs/conformance-results.md)
 → [Examples](docs/examples.md)
 
 ## Usage

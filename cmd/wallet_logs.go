@@ -108,6 +108,9 @@ func printWalletLogEntry(w io.Writer, entry wallet.LogEntry, verbose bool) {
 	}
 	timestamp := entry.Time.Local().Format("2006-01-02 15:04:05")
 	detail := oneLine(entry.Detail)
+	if !verbose {
+		detail = appendCompactWalletLogDetails(detail, entry.Details)
+	}
 	fmt.Fprintf(w, "%s %s %s %s\n", timestamp, status, entry.Action, detail)
 	if !verbose || len(entry.Details) == 0 {
 		return
@@ -141,6 +144,131 @@ func walletLogValueString(value any, prefix string) string {
 			return fmt.Sprintf("%v", value)
 		}
 		return string(data)
+	}
+}
+
+func appendCompactWalletLogDetails(detail string, details map[string]any) string {
+	parts := compactWalletLogDetails(details)
+	if len(parts) == 0 {
+		return detail
+	}
+	return detail + " [" + strings.Join(parts, " ") + "]"
+}
+
+func compactWalletLogDetails(details map[string]any) []string {
+	if len(details) == 0 {
+		return nil
+	}
+	var parts []string
+	for _, key := range []string{
+		"source",
+		"client_id",
+		"response_type",
+		"response_mode",
+		"nonce",
+		"state",
+		"request_uri_method",
+		"request_origin",
+		"submission_uri",
+		"status_code",
+	} {
+		if value := compactScalar(details[key]); value != "" {
+			parts = append(parts, key+"="+value)
+		}
+	}
+	for _, key := range []string{"request_object", "dcql_query", "client_metadata", "vp_token", "id_token", "browser_api_result"} {
+		if details[key] != nil {
+			parts = append(parts, key+"=yes")
+		}
+	}
+	if value := compactCredentialList(details["sent_credentials"]); value != "" {
+		parts = append(parts, "sent_credentials="+value)
+	}
+	if value := compactCredentialList(details["presented_credentials"]); value != "" {
+		parts = append(parts, "presented_credentials="+value)
+	}
+	return parts
+}
+
+func compactScalar(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return oneLine(typed)
+	case int:
+		return fmt.Sprintf("%d", typed)
+	case int64:
+		return fmt.Sprintf("%d", typed)
+	case float64:
+		if typed == float64(int64(typed)) {
+			return fmt.Sprintf("%d", int64(typed))
+		}
+		return fmt.Sprintf("%g", typed)
+	default:
+		return ""
+	}
+}
+
+func compactCredentialList(value any) string {
+	items, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]map[string]any); ok {
+			items = make([]any, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(items))
+	for _, raw := range items {
+		item, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := compactScalar(item["id"])
+		if id == "" {
+			id = compactScalar(item["credential_id"])
+		}
+		if id == "" {
+			id = compactScalar(item["query_id"])
+		}
+		format := compactScalar(item["format"])
+		disclosed := compactStringList(item["disclosed"])
+		part := id
+		if format != "" || disclosed != "" {
+			part += "("
+			if format != "" {
+				part += format
+			}
+			if disclosed != "" {
+				if format != "" {
+					part += ":"
+				}
+				part += disclosed
+			}
+			part += ")"
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ",")
+}
+
+func compactStringList(value any) string {
+	switch typed := value.(type) {
+	case []string:
+		return strings.Join(typed, ",")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := compactScalar(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, ",")
+	default:
+		return ""
 	}
 }
 
