@@ -4,10 +4,12 @@ This example combines OpenID4VCI issuance and OpenID4VP verification around one 
 
 Compared with the smaller examples in this directory, this scenario still needs a small dynamic bootstrap for runtime-generated trust material and the persistent signing key. The static realm import already contains the fixed app client, credential scope, custom first-broker flow, OID4VP identity provider, and the wallet-login session-note mapper. The UI itself is kept separate from the Go handlers in `app/templates/` and `app/static/`.
 
-The example supports two verifier-trust setups:
+The example supports two local verifier-trust setups and two wallet startup modes:
 
 - `--http`: Keycloak runs on `http://localhost:8080` and the OID4VP extension validates the credential through a generated trust list served by the demo app.
 - `--https`: Keycloak runs on `https://localhost:8443` and the OID4VP extension resolves the issuer signing key from the VC metadata / issuer metadata endpoints.
+- `--public`: sandbox mode for real wallet testing. Keycloak and the demo app are published through one ngrok HTTPS hostname, and sandbox verifier certificate/config files are loaded from `sandbox/sandbox-ngrok-combined.pem` and `sandbox/sandbox-verifier-info.json` by default.
+- `--local-wallet`: starts an `oid4vc-dev wallet serve --pid --docker` wallet locally and configures Keycloak to trust its PID trust-list endpoint.
 
 The issuance flow is the same in both modes. The only difference is how wallet-login trust is resolved.
 
@@ -148,6 +150,25 @@ HTTP / HTTPS setup:
 ./start.sh --https
 ```
 
+Local `oid4vc-dev` wallet mode:
+
+```bash
+./start.sh --local-wallet
+./start.sh --local-wallet --wallet-port 8087
+```
+
+Sandbox mode for real wallet testing:
+
+```bash
+mkdir -p sandbox
+# Put the sandbox verifier files here, or set SANDBOX_DIR to another directory:
+#   sandbox/sandbox-ngrok-combined.pem
+#   sandbox/sandbox-verifier-info.json
+./start.sh --public
+```
+
+`--public` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`; otherwise it tries to detect the hostname from the sandbox certificate SAN.
+
 Then open `http://127.0.0.1:8090/` and:
 
 1. log in as `alice` / `alice`
@@ -156,7 +177,7 @@ Then open `http://127.0.0.1:8090/` and:
 4. log out, sign in again, and choose the wallet option in Keycloak
 5. present the credential back to Keycloak
 
-`./start.sh` runs `oid4vc-dev wallet register` automatically. On macOS that installs the custom scheme handlers so `openid-credential-offer://` and `openid4vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
+`./start.sh` runs `oid4vc-dev wallet register` automatically in the normal local modes. `--local-wallet` instead starts the wallet server with `--register`, so the same custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `openid-credential-offer://` and `openid4vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
 
 If your system does not handle the custom scheme directly:
 
@@ -196,7 +217,10 @@ OID4VCI_CREDENTIAL_SCOPE=membership-credential
 OID4VP_TRUST_MODE=trustlist
 OID4VP_TRUST_LIST_URL=http://host.docker.internal:8090/keycloak-trustlist.jwt
 KEYCLOAK_TRUST_LIST_PATH=$(pwd)/keycloak-trustlist.jwt
-OID4VC_WALLET_PORT=8085
+OID4VC_WALLET_PORT=8087
+SANDBOX_DIR=$(pwd)/sandbox
+OID4VP_SANDBOX_PEM_PATH=$(pwd)/sandbox/sandbox-ngrok-combined.pem
+OID4VP_SANDBOX_VERIFIER_INFO_PATH=$(pwd)/sandbox/sandbox-verifier-info.json
 ```
 
 ## Cleanup
