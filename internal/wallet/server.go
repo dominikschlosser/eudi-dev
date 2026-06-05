@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/format"
@@ -48,6 +49,8 @@ type Server struct {
 	issuerPort       int
 	issuerKeyExpiry  time.Time
 	parseOpts        oid4vc.ParseOptions
+	store            *WalletStore
+	storeSyncMu      sync.Mutex
 }
 
 type presentationRequestOptions struct {
@@ -60,17 +63,15 @@ type presentationRequestOptions struct {
 // NewServer creates a new wallet HTTP server.
 // onSave is called after credential-changing operations (import, delete, issuance).
 func NewServer(w *Wallet, port int, onSave func()) *Server {
-	w.SetLogSink(func(LogEntry) {
-		if onSave != nil {
-			onSave()
-		}
-	})
 	s := &Server{
 		wallet:          w,
 		port:            port,
 		onSave:          onSave,
 		issuerKeyExpiry: time.Now().Add(24 * time.Hour),
 	}
+	w.SetLogSink(func(LogEntry) {
+		s.triggerSave()
+	})
 	if p := parseIssuerPort(w.IssuerURL); p > 0 {
 		s.issuerPort = p
 	} else if port > 0 {
@@ -90,53 +91,53 @@ func NewServer(w *Wallet, port int, onSave func()) *Server {
 
 func (s *Server) setupRoutes() {
 	// OID4VP Authorization Endpoint
-	s.mux.HandleFunc("GET /authorize", s.handleAuthorize)
-	s.mux.HandleFunc("POST /authorize", s.handleAuthorize)
+	s.mux.HandleFunc("GET /authorize", s.withFreshStore(s.handleAuthorize))
+	s.mux.HandleFunc("POST /authorize", s.withFreshStore(s.handleAuthorize))
 
 	// API: feed authorization request URIs
-	s.mux.HandleFunc("POST /api/presentations", s.handlePresentationAPI)
-	s.mux.HandleFunc("POST /api/dc-api", s.handleBrowserPresentationAPI)
+	s.mux.HandleFunc("POST /api/presentations", s.withFreshStore(s.handlePresentationAPI))
+	s.mux.HandleFunc("POST /api/dc-api", s.withFreshStore(s.handleBrowserPresentationAPI))
 
 	// API: credential offers
-	s.mux.HandleFunc("POST /api/offers", s.handleOfferAPI)
-	s.mux.HandleFunc("GET /callback", s.handleAuthorizationCodeCallback)
+	s.mux.HandleFunc("POST /api/offers", s.withFreshStore(s.handleOfferAPI))
+	s.mux.HandleFunc("GET /callback", s.withFreshStore(s.handleAuthorizationCodeCallback))
 
 	// API: credential management
-	s.mux.HandleFunc("GET /api/credentials", s.handleListCredentials)
-	s.mux.HandleFunc("POST /api/credentials", s.handleImportCredential)
-	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.handleDeleteCredential)
+	s.mux.HandleFunc("GET /api/credentials", s.withFreshStore(s.handleListCredentials))
+	s.mux.HandleFunc("POST /api/credentials", s.withFreshStore(s.handleImportCredential))
+	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.withFreshStore(s.handleDeleteCredential))
 
 	// API: consent requests
-	s.mux.HandleFunc("GET /api/requests", s.handleListRequests)
-	s.mux.HandleFunc("GET /api/requests/stream", s.handleRequestStream)
-	s.mux.HandleFunc("POST /api/requests/{id}/approve", s.handleApproveRequest)
-	s.mux.HandleFunc("POST /api/requests/{id}/deny", s.handleDenyRequest)
+	s.mux.HandleFunc("GET /api/requests", s.withFreshStore(s.handleListRequests))
+	s.mux.HandleFunc("GET /api/requests/stream", s.withFreshStore(s.handleRequestStream))
+	s.mux.HandleFunc("POST /api/requests/{id}/approve", s.withFreshStore(s.handleApproveRequest))
+	s.mux.HandleFunc("POST /api/requests/{id}/deny", s.withFreshStore(s.handleDenyRequest))
 
 	// API: trust list
-	s.mux.HandleFunc("GET /api/trustlist", s.handleTrustList)
-	s.mux.HandleFunc("GET /api/trustlists", s.handleTrustListIndex)
-	s.mux.HandleFunc("GET /api/trustlists/{id}", s.handleTrustListByID)
-	s.mux.HandleFunc("GET /api/registrar/wrp", s.handleRegistrarWRPList)
-	s.mux.HandleFunc("GET /api/registrar/wrp/{identifier}", s.handleRegistrarWRPByIdentifier)
+	s.mux.HandleFunc("GET /api/trustlist", s.withFreshStore(s.handleTrustList))
+	s.mux.HandleFunc("GET /api/trustlists", s.withFreshStore(s.handleTrustListIndex))
+	s.mux.HandleFunc("GET /api/trustlists/{id}", s.withFreshStore(s.handleTrustListByID))
+	s.mux.HandleFunc("GET /api/registrar/wrp", s.withFreshStore(s.handleRegistrarWRPList))
+	s.mux.HandleFunc("GET /api/registrar/wrp/{identifier}", s.withFreshStore(s.handleRegistrarWRPByIdentifier))
 
 	// API: status list
-	s.mux.HandleFunc("GET /api/statuslist", s.handleStatusList)
-	s.mux.HandleFunc("POST /api/credentials/{id}/status", s.handleSetCredentialStatus)
+	s.mux.HandleFunc("GET /api/statuslist", s.withFreshStore(s.handleStatusList))
+	s.mux.HandleFunc("POST /api/credentials/{id}/status", s.withFreshStore(s.handleSetCredentialStatus))
 
 	// SD-JWT VC issuer metadata
-	s.mux.HandleFunc("GET /.well-known/jwt-vc-issuer", s.handleJWTVCIssuerMetadata)
-	s.mux.HandleFunc("GET /.well-known/openid-credential-issuer", s.handleOpenIDCredentialIssuerMetadata)
+	s.mux.HandleFunc("GET /.well-known/jwt-vc-issuer", s.withFreshStore(s.handleJWTVCIssuerMetadata))
+	s.mux.HandleFunc("GET /.well-known/openid-credential-issuer", s.withFreshStore(s.handleOpenIDCredentialIssuerMetadata))
 
 	// API: testing overrides
-	s.mux.HandleFunc("POST /api/next-error", s.handleSetNextError)
-	s.mux.HandleFunc("DELETE /api/next-error", s.handleClearNextError)
-	s.mux.HandleFunc("PUT /api/config/preferred-format", s.handleSetPreferredFormat)
+	s.mux.HandleFunc("POST /api/next-error", s.withFreshStore(s.handleSetNextError))
+	s.mux.HandleFunc("DELETE /api/next-error", s.withFreshStore(s.handleClearNextError))
+	s.mux.HandleFunc("PUT /api/config/preferred-format", s.withFreshStore(s.handleSetPreferredFormat))
 
 	// API: log
-	s.mux.HandleFunc("GET /api/log", s.handleLog)
+	s.mux.HandleFunc("GET /api/log", s.withFreshStore(s.handleLog))
 
 	// API: last error (polled on page load)
-	s.mux.HandleFunc("GET /api/error", s.handleLastError)
+	s.mux.HandleFunc("GET /api/error", s.withFreshStore(s.handleLastError))
 
 	// Static files
 	sub, _ := fs.Sub(staticFiles, "static")
@@ -201,6 +202,15 @@ func (s *Server) SetIssuerTLSCertificate(cert tls.Certificate) {
 	s.issuerTLSCert = &cert
 }
 
+// SetStore makes the server reload the wallet store at request boundaries.
+// This keeps a long-running interactive server in sync with credentials and
+// logs written by other CLI invocations using the same wallet directory.
+func (s *Server) SetStore(store *WalletStore) {
+	s.storeSyncMu.Lock()
+	defer s.storeSyncMu.Unlock()
+	s.store = store
+}
+
 func (s *Server) log(format string, args ...any) {
 	if s.logFunc != nil {
 		s.logFunc(format, args...)
@@ -211,6 +221,52 @@ func (s *Server) triggerUIRequest() {
 	if s.onUIRequest != nil {
 		s.onUIRequest()
 	}
+}
+
+func (s *Server) withFreshStore(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := s.reloadFromStore(); err != nil {
+			s.log("  ERROR: reloading wallet store: %v", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "reloading wallet store: " + err.Error()})
+			return
+		}
+		handler(w, r)
+	}
+}
+
+func (s *Server) reloadFromStore() error {
+	s.storeSyncMu.Lock()
+	defer s.storeSyncMu.Unlock()
+
+	if s.store == nil {
+		return nil
+	}
+
+	reloaded, err := s.store.LoadOrCreate()
+	if err != nil {
+		return err
+	}
+	s.applyPersistedWalletState(reloaded)
+	return nil
+}
+
+func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
+	if reloaded == nil {
+		return
+	}
+
+	s.wallet.mu.Lock()
+	defer s.wallet.mu.Unlock()
+
+	s.wallet.HolderKey = reloaded.HolderKey
+	s.wallet.IssuerKey = reloaded.IssuerKey
+	s.wallet.CAKey = reloaded.CAKey
+	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
+	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
+	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
+	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
+	s.wallet.StatusListCounter = reloaded.StatusListCounter
+	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)
 }
 
 func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.Request) {

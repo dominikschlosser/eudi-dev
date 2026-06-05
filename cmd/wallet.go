@@ -331,10 +331,31 @@ func walletRegisterCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			opts.ServeArgs = append(walletRegisterInheritedServeArgs(cmd), opts.ServeArgs...)
 			return wallet.RegisterURLSchemes(opts)
 		},
 	}
 	return cmd
+}
+
+func walletRegisterInheritedServeArgs(cmd *cobra.Command) []string {
+	args := []string{}
+	visitChangedPersistentFlags(cmd, func(flag *pflag.Flag) {
+		if flag.Name == "wallet-dir" || flag.Name == "mode" {
+			args = append(args, "--"+flag.Name, flag.Value.String())
+		}
+	})
+	return args
+}
+
+func visitChangedPersistentFlags(cmd *cobra.Command, visit func(*pflag.Flag)) {
+	parents := []*cobra.Command{}
+	for parent := cmd.Parent(); parent != nil; parent = parent.Parent() {
+		parents = append(parents, parent)
+	}
+	for i := len(parents) - 1; i >= 0; i-- {
+		parents[i].PersistentFlags().Visit(visit)
+	}
 }
 
 func walletRegisterOptions(args []string) (wallet.RegisterOptions, error) {

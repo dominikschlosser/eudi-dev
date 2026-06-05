@@ -45,8 +45,8 @@ For OID4VP requests, the wallet evaluates the DCQL query, shows a consent UI
 (unless --auto-accept), and submits a VP token to the verifier.
 
 For OID4VCI offers, the wallet fetches the credential from the issuer and
-stores it locally. The --port, --auto-accept, and --session-transcript flags
-only apply to OID4VP flows.`,
+stores it locally. A running wallet server reloads the same wallet store at
+request boundaries, so later presentation requests see the new credential.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return dispatchURI(args[0], dispatchOID4Opts{

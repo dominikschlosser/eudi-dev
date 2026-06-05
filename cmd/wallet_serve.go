@@ -249,6 +249,7 @@ so the wallet automatically receives incoming protocol requests.`,
 					fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
 				}
 			})
+			srv.SetStore(store)
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
 			}
@@ -301,7 +302,7 @@ so the wallet automatically receives incoming protocol requests.`,
 func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 	args := []string{}
 	var err error
-	cmd.Flags().Visit(func(flag *pflag.Flag) {
+	appendFlag := func(flags *pflag.FlagSet, flag *pflag.Flag) {
 		if err != nil {
 			return
 		}
@@ -312,7 +313,7 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 		case "bool":
 			args = append(args, "--"+flag.Name)
 		case "stringSlice", "stringArray":
-			values, getErr := cmd.Flags().GetStringSlice(flag.Name)
+			values, getErr := flags.GetStringSlice(flag.Name)
 			if getErr != nil {
 				err = getErr
 				return
@@ -323,6 +324,16 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 		default:
 			args = append(args, "--"+flag.Name, flag.Value.String())
 		}
+	}
+
+	visitChangedPersistentFlags(cmd, func(flag *pflag.Flag) {
+		if flag.Name != "wallet-dir" && flag.Name != "mode" {
+			return
+		}
+		args = append(args, "--"+flag.Name, flag.Value.String())
+	})
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		appendFlag(cmd.Flags(), flag)
 	})
 	if err != nil {
 		return nil, err

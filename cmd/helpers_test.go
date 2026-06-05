@@ -343,8 +343,33 @@ func TestWalletRegisterOptions_Defaults(t *testing.T) {
 	}
 }
 
+func TestWalletRegisterInheritedServeArgs(t *testing.T) {
+	parent := &cobra.Command{Use: "wallet"}
+	parent.PersistentFlags().String("wallet-dir", "", "")
+	parent.PersistentFlags().String("mode", "debug", "")
+	cmd := &cobra.Command{Use: "register"}
+	parent.AddCommand(cmd)
+	if err := parent.PersistentFlags().Set("wallet-dir", "/tmp/isolated-wallet"); err != nil {
+		t.Fatalf("set wallet-dir: %v", err)
+	}
+	if err := parent.PersistentFlags().Set("mode", "strict"); err != nil {
+		t.Fatalf("set mode: %v", err)
+	}
+
+	got := walletRegisterInheritedServeArgs(cmd)
+	if !argPairPresent(got, "--wallet-dir", "/tmp/isolated-wallet") {
+		t.Fatalf("walletRegisterInheritedServeArgs() missing wallet-dir: %#v", got)
+	}
+	if !argPairPresent(got, "--mode", "strict") {
+		t.Fatalf("walletRegisterInheritedServeArgs() missing mode: %#v", got)
+	}
+}
+
 func TestSerializeWalletServeArgs(t *testing.T) {
+	parent := &cobra.Command{Use: "wallet"}
+	parent.PersistentFlags().String("wallet-dir", "", "")
 	cmd := &cobra.Command{Use: "serve"}
+	parent.AddCommand(cmd)
 	flags := cmd.Flags()
 	flags.Int("port", config.DefaultWalletPort, "")
 	flags.Bool("auto-accept", false, "")
@@ -370,6 +395,9 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	if err := flags.Set("register", "true"); err != nil {
 		t.Fatalf("set register: %v", err)
 	}
+	if err := parent.PersistentFlags().Set("wallet-dir", "/tmp/isolated-wallet"); err != nil {
+		t.Fatalf("set wallet-dir: %v", err)
+	}
 
 	got, err := serializeWalletServeArgs(cmd)
 	if err != nil {
@@ -377,6 +405,7 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	}
 
 	want := []string{
+		"--wallet-dir", "/tmp/isolated-wallet",
 		"--auto-accept",
 		"--base-url", "http://localhost:9123",
 		"--credential", "first.json",
@@ -402,4 +431,13 @@ func TestSerializeWalletServeArgs_BoolFalseOmitted(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("serializeWalletServeArgs() = %#v, want empty", got)
 	}
+}
+
+func argPairPresent(args []string, flag string, value string) bool {
+	for i := 0; i < len(args)-1; i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
 }

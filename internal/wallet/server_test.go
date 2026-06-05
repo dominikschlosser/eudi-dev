@@ -265,6 +265,55 @@ func TestImportCredentialAPI(t *testing.T) {
 	}
 }
 
+func TestServerReloadsSharedStoreBeforeRequest(t *testing.T) {
+	store := NewWalletStore(t.TempDir())
+	serverWallet, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate server wallet: %v", err)
+	}
+	srv := NewServer(serverWallet, 0, nil)
+	srv.SetStore(store)
+	serverWallet.BaseURL = "http://server.example"
+	serverWallet.IssuerURL = "https://server.example"
+
+	otherWallet, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate other wallet: %v", err)
+	}
+	otherWallet.BaseURL = "http://stored.example"
+	otherWallet.IssuerURL = "https://stored.example"
+	sdjwt := generateSDJWTForTest(t, srv)
+	imported, err := otherWallet.ImportCredential(sdjwt)
+	if err != nil {
+		t.Fatalf("import credential in other wallet: %v", err)
+	}
+	if err := store.Save(otherWallet); err != nil {
+		t.Fatalf("save other wallet: %v", err)
+	}
+
+	rec := serverRequest(t, srv, http.MethodGet, "/api/credentials", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	items := decodeJSONArray(t, rec)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 credential after store reload, got %d", len(items))
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected object credential summary, got %T", items[0])
+	}
+	if item["id"] != imported.ID {
+		t.Fatalf("expected credential id %s, got %v", imported.ID, item["id"])
+	}
+	if serverWallet.BaseURL != "http://server.example" {
+		t.Fatalf("expected runtime base URL to be preserved, got %s", serverWallet.BaseURL)
+	}
+	if serverWallet.IssuerURL != "https://server.example" {
+		t.Fatalf("expected runtime issuer URL to be preserved, got %s", serverWallet.IssuerURL)
+	}
+}
+
 func TestImportCredentialAPI_Empty(t *testing.T) {
 	srv := newTestServer(t, false)
 	w := serverRequest(t, srv, "POST", "/api/credentials", "")
