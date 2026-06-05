@@ -21,8 +21,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -368,6 +370,49 @@ func registeredWalletListenerBaseURL() string {
 		}
 	}
 	return ""
+}
+
+func registeredWalletListenerPort() int {
+	raw := registeredWalletListenerBaseURL()
+	if raw == "" {
+		return 0
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return 0
+	}
+	return port
+}
+
+func defaultWalletCommandPort() int {
+	if port := registeredWalletListenerPort(); port > 0 {
+		return port
+	}
+	return config.DefaultWalletPort
+}
+
+func walletPortFromBaseURL(raw string) int {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		return 0
+	}
+	return port
+}
+
+func isLocalWalletIssuerURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "https" && (u.Hostname() == "localhost" || u.Hostname() == "host.docker.internal")
 }
 
 func isRunningWalletServer(baseURL string) bool {

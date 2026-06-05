@@ -29,6 +29,7 @@ import (
 
 func TestWalletGeneratePID_SetsIssuerURLForSDJWT(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	wDir := filepath.Join(tmpDir, "wallet")
 	if err := os.MkdirAll(wDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -76,6 +77,63 @@ func TestWalletGeneratePID_SetsIssuerURLForSDJWT(t *testing.T) {
 	}
 	if len(w.StatusEntries) != 2 {
 		t.Fatalf("expected generated PID credentials to register 2 status entries, got %d", len(w.StatusEntries))
+	}
+}
+
+func TestWalletGeneratePID_UsesRegisteredWalletPort(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	handlerDir := filepath.Join(tmpDir, ".oid4vc-dev")
+	if err := os.MkdirAll(handlerDir, 0755); err != nil {
+		t.Fatalf("mkdir handler dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(handlerDir, "url-handler.sh"), []byte(`LISTENER="http://localhost:8091"`), 0755); err != nil {
+		t.Fatalf("write handler: %v", err)
+	}
+
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir wallet dir: %v", err)
+	}
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	walletDir = wDir
+
+	rootCmd.SetArgs([]string{"wallet", "generate-pid"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet generate-pid: %v", err)
+	}
+
+	store := wallet.NewWalletStore(wDir)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("load wallet: %v", err)
+	}
+
+	creds := w.GetCredentials()
+	if len(creds) == 0 {
+		t.Fatal("expected generated credentials")
+	}
+
+	token, err := sdjwt.Parse(creds[0].Raw)
+	if err != nil {
+		t.Fatalf("parse generated SD-JWT: %v", err)
+	}
+
+	if token.Payload["iss"] != "https://localhost:8092" {
+		t.Fatalf("expected iss https://localhost:8092, got %v", token.Payload["iss"])
+	}
+	status, ok := token.Payload["status"].(map[string]any)
+	if !ok {
+		t.Fatal("expected generated SD-JWT to contain status claim")
+	}
+	statusList, ok := status["status_list"].(map[string]any)
+	if !ok {
+		t.Fatal("expected generated SD-JWT to contain status_list reference")
+	}
+	if got := statusList["uri"]; got != "https://localhost:8092/api/statuslist" {
+		t.Fatalf("expected status list uri https://localhost:8092/api/statuslist, got %v", got)
 	}
 }
 

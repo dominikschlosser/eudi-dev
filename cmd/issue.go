@@ -24,7 +24,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
 	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
@@ -327,8 +326,8 @@ func loadWalletForIssue(cmd *cobra.Command) (*wallet.Wallet, *wallet.WalletStore
 
 	if cmd.Flags().Changed("iss") {
 		w.IssuerURL = strings.TrimRight(strings.TrimSpace(issueIssuer), "/")
-	} else if strings.TrimSpace(w.IssuerURL) == "" {
-		w.IssuerURL = wallet.LocalIssuerURL(config.DefaultWalletPort+1, false)
+	} else if strings.TrimSpace(w.IssuerURL) == "" || (registeredWalletListenerPort() > 0 && isLocalWalletIssuerURL(w.IssuerURL)) {
+		w.IssuerURL = wallet.LocalIssuerURL(defaultWalletCommandPort()+1, false)
 	}
 
 	return w, store, nil

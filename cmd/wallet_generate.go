@@ -19,7 +19,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
 )
@@ -52,26 +51,31 @@ func walletGeneratePIDCmd() *cobra.Command {
 				w.IssuerKey = issuerKey
 			}
 
+			walletPort := defaultWalletCommandPort()
+			effectiveBaseURL := baseURL
 			if statusList {
-				if baseURL == "" {
+				if effectiveBaseURL == "" {
 					if docker {
-						baseURL = fmt.Sprintf("http://host.docker.internal:%d", config.DefaultWalletPort)
+						effectiveBaseURL = fmt.Sprintf("http://host.docker.internal:%d", walletPort)
 					} else {
-						baseURL = fmt.Sprintf("http://localhost:%d", config.DefaultWalletPort)
+						effectiveBaseURL = fmt.Sprintf("http://localhost:%d", walletPort)
 					}
 				}
-				w.BaseURL = baseURL
+				w.BaseURL = effectiveBaseURL
 			}
-			if baseURL != "" {
-				issuerURL, err := wallet.IssuerURLFromBaseURL(baseURL, config.DefaultWalletPort+1)
+			if port := walletPortFromBaseURL(effectiveBaseURL); port > 0 {
+				walletPort = port
+			}
+			if effectiveBaseURL != "" {
+				issuerURL, err := deriveWalletIssuerURL(walletPort, effectiveBaseURL, docker)
 				if err != nil {
 					return err
 				}
 				w.IssuerURL = issuerURL
 			} else if docker {
-				w.IssuerURL = wallet.LocalIssuerURL(config.DefaultWalletPort+1, true)
+				w.IssuerURL = wallet.LocalIssuerURL(walletPort+1, true)
 			} else if w.IssuerURL == "" {
-				w.IssuerURL = wallet.LocalIssuerURL(config.DefaultWalletPort+1, false)
+				w.IssuerURL = wallet.LocalIssuerURL(walletPort+1, false)
 			}
 
 			overrides, err := parseClaimsOverrides(claimsFlag)

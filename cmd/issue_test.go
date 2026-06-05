@@ -365,6 +365,7 @@ func TestIssueSDJWT_WithCustomClaims(t *testing.T) {
 
 func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
 	wDir := filepath.Join(tmpDir, "wallet")
 	if err := os.MkdirAll(wDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)

@@ -214,6 +214,32 @@ PORT="8091"
 	if got, want := registeredWalletListenerBaseURL(), "http://localhost:8091"; got != want {
 		t.Fatalf("registeredWalletListenerBaseURL() = %q, want %q", got, want)
 	}
+	if got, want := registeredWalletListenerPort(), 8091; got != want {
+		t.Fatalf("registeredWalletListenerPort() = %d, want %d", got, want)
+	}
+	if got, want := defaultWalletCommandPort(), 8091; got != want {
+		t.Fatalf("defaultWalletCommandPort() = %d, want %d", got, want)
+	}
+}
+
+func TestWalletPortFromBaseURL(t *testing.T) {
+	if got, want := walletPortFromBaseURL("http://host.docker.internal:8091/wallet"), 8091; got != want {
+		t.Fatalf("walletPortFromBaseURL() = %d, want %d", got, want)
+	}
+	if got := walletPortFromBaseURL("https://wallet-test.ngrok.dev"); got != 0 {
+		t.Fatalf("walletPortFromBaseURL(no port) = %d, want 0", got)
+	}
+}
+
+func TestIsLocalWalletIssuerURL(t *testing.T) {
+	for _, raw := range []string{"https://localhost:8092", "https://host.docker.internal:8092"} {
+		if !isLocalWalletIssuerURL(raw) {
+			t.Fatalf("isLocalWalletIssuerURL(%q) = false, want true", raw)
+		}
+	}
+	if isLocalWalletIssuerURL("https://wallet-test.ngrok.dev") {
+		t.Fatal("public issuer URL should not be considered local")
+	}
 }
 
 func TestRunningWalletServerBaseURLsPrefersRegisteredWhenPortNotExplicit(t *testing.T) {
