@@ -77,12 +77,31 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
-		host := req.Host
+		forwardedHost := req.Header.Get("X-Forwarded-Host")
+		if forwardedHost == "" {
+			forwardedHost = req.Host
+		}
+		forwardedProto := req.Header.Get("X-Forwarded-Proto")
+		if forwardedProto == "" {
+			if req.TLS != nil {
+				forwardedProto = "https"
+			} else {
+				forwardedProto = "http"
+			}
+		}
+		forwardedPort := req.Header.Get("X-Forwarded-Port")
+		if forwardedPort == "" {
+			if forwardedProto == "https" {
+				forwardedPort = "443"
+			} else {
+				forwardedPort = "80"
+			}
+		}
 		originalDirector(req)
-		req.Host = host
-		req.Header.Set("X-Forwarded-Host", host)
-		req.Header.Set("X-Forwarded-Proto", "https")
-		req.Header.Set("X-Forwarded-Port", "443")
+		req.Host = forwardedHost
+		req.Header.Set("X-Forwarded-Host", forwardedHost)
+		req.Header.Set("X-Forwarded-Proto", forwardedProto)
+		req.Header.Set("X-Forwarded-Port", forwardedPort)
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		http.Error(w, "upstream unavailable: "+err.Error(), http.StatusBadGateway)

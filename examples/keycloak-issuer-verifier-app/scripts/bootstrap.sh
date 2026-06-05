@@ -25,7 +25,7 @@ ALLOWED_ISSUER="${ALLOWED_ISSUER:-${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}}
 OID4VP_TRUST_LIST_URL="${OID4VP_TRUST_LIST_URL:-http://host.docker.internal:8090/keycloak-trustlist.jwt}"
 OID4VP_TRUST_LIST_LOTE_TYPE="${OID4VP_TRUST_LIST_LOTE_TYPE:-http://uri.etsi.org/19602/LoTEType/local}"
 KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH:-${SCENARIO_DIR}/keycloak-trustlist.jwt}"
-OID4VP_TRUST_MODE="${OID4VP_TRUST_MODE:-trustlist}"
+OID4VP_TRUST_MODE="${OID4VP_TRUST_MODE:-metadata}"
 OID4VP_PUBLIC_WALLET="${OID4VP_PUBLIC_WALLET:-false}"
 OID4VP_SANDBOX_PEM_PATH="${OID4VP_SANDBOX_PEM_PATH:-}"
 OID4VP_SANDBOX_VERIFIER_INFO_PATH="${OID4VP_SANDBOX_VERIFIER_INFO_PATH:-}"
@@ -209,23 +209,28 @@ set_user_password() {
 
 update_identity_provider() {
   local instance_json
-  local sandbox_pem_path="/dev/null"
+  local sandbox_pem_path
   local sandbox_verifier_info_path="/dev/null"
   local public_wallet_flag="false"
 
+  sandbox_pem_path="$(
+    optional_file "${OID4VP_SANDBOX_PEM_PATH}" \
+      || example_find_sandbox_pem "${REPO_ROOT}" "${SCENARIO_DIR}" \
+      || true
+  )"
+  require_file "${sandbox_pem_path}"
+
+  sandbox_verifier_info_path="$(
+    optional_file "${OID4VP_SANDBOX_VERIFIER_INFO_PATH}" \
+      || example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCENARIO_DIR}" \
+      || true
+  )"
+  if [[ -z "${sandbox_verifier_info_path}" ]]; then
+    sandbox_verifier_info_path="/dev/null"
+  fi
+
   if [[ "${OID4VP_PUBLIC_WALLET}" == "true" ]]; then
     public_wallet_flag="true"
-    sandbox_pem_path="$(
-      optional_file "${OID4VP_SANDBOX_PEM_PATH}" \
-        || example_find_sandbox_pem "${REPO_ROOT}" "${SCENARIO_DIR}" \
-        || true
-    )"
-    sandbox_verifier_info_path="$(
-      optional_file "${OID4VP_SANDBOX_VERIFIER_INFO_PATH}" \
-        || example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCENARIO_DIR}" \
-        || true
-    )"
-    require_file "${sandbox_pem_path}"
     require_file "${sandbox_verifier_info_path}"
   fi
 
@@ -245,9 +250,9 @@ update_identity_provider() {
           | .config.allowedIssuers = $allowed_issuer
           | .config.sameDeviceEnabled = "true"
           | .config.crossDeviceEnabled = (if $public_wallet_flag == "true" then "true" else "false" end)
-          | .config.enforceHaip = (if $public_wallet_flag == "true" then "true" else "false" end)
-          | .config.responseMode = (if $public_wallet_flag == "true" then "direct_post.jwt" else "direct_post" end)
-          | .config.clientIdScheme = (if $public_wallet_flag == "true" then "x509_hash" else "plain" end)
+          | .config.enforceHaip = "true"
+          | .config.responseMode = "direct_post.jwt"
+          | .config.clientIdScheme = "x509_hash"
           | .config.trustedAuthoritiesMode = "none"
           | .config.dcqlQuery = $dcql_query
           | if $trust_mode == "trustlist" then
@@ -256,15 +261,15 @@ update_identity_provider() {
             else
               .config |= del(.trustListUrl, .trustListLoTEType)
             end
-          | if $public_wallet_flag == "true" and ($sandbox_pem | length) > 0 then
+          | if ($sandbox_pem | length) > 0 then
               .config.x509CertificatePem = $sandbox_pem
             else
-              .config |= del(.x509CertificatePem, .verifierInfo)
+              .
             end
-          | if $public_wallet_flag == "true" and ($verifier_info | length) > 0 then
+          | if ($verifier_info | length) > 0 then
               .config.verifierInfo = $verifier_info
             else
-              .
+              .config |= del(.verifierInfo)
             end
         '
   )"

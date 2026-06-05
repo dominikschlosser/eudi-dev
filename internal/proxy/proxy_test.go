@@ -81,6 +81,41 @@ func TestNewServerStore(t *testing.T) {
 	}
 }
 
+func TestServerSetsForwardedPublicHost(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Forwarded-Host"); got != "demo.ngrok.app" {
+			t.Errorf("X-Forwarded-Host = %q, want demo.ngrok.app", got)
+		}
+		if got := r.Header.Get("X-Forwarded-Proto"); got != "https" {
+			t.Errorf("X-Forwarded-Proto = %q, want https", got)
+		}
+		if got := r.Header.Get("X-Forwarded-Port"); got != "443" {
+			t.Errorf("X-Forwarded-Port = %q, want 443", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	targetURL, _ := url.Parse(backend.URL)
+	var captured []*TrafficEntry
+	srv := NewServer(Config{
+		TargetURL:  targetURL,
+		ProxyPort:  9090,
+		AllTraffic: true,
+	}, &testWriter{entries: &captured})
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:9090/realms/demo", nil)
+	req.Host = "demo.ngrok.app"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	resp := httptest.NewRecorder()
+	srv.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNoContent)
+	}
+}
+
 func TestServerEndToEnd(t *testing.T) {
 	// Create a target backend
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +260,7 @@ func TestShouldEmitEntrySuppressesUnknownWithoutAllTraffic(t *testing.T) {
 	}
 }
 
-func TestServerStripsDebugJWEKeyHeader(t *testing.T) {
+func TestServerStripsAndCapturesDebugJWEKeyHeader(t *testing.T) {
 	var receivedHeaders http.Header
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedHeaders = r.Header.Clone()
@@ -251,17 +286,56 @@ func TestServerStripsDebugJWEKeyHeader(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Header should be stripped before reaching backend
-	if receivedHeaders.Get("X-Debug-JWE-CEK") != "" {
-		t.Error("X-Debug-JWE-CEK header was not stripped before forwarding to backend")
+	if got := receivedHeaders.Get("X-Debug-JWE-CEK"); got != "" {
+		t.Errorf("X-Debug-JWE-CEK = %q, want stripped", got)
 	}
 
-	// But proxy should have captured it
 	if len(captured) != 1 {
 		t.Fatalf("expected 1 captured entry, got %d", len(captured))
 	}
 	if captured[0].DebugJWEKey != "test-cek-value" {
 		t.Errorf("expected DebugJWEKey=test-cek-value, got %q", captured[0].DebugJWEKey)
+	}
+}
+
+func TestServerCapturesMultilineBodyWithoutForwardingInternalHeaders(t *testing.T) {
+	body := "{\n  \"name\": \"wallet-app-demo\"\n}"
+	var receivedHeaders http.Header
+	var receivedBody string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedHeaders = r.Header.Clone()
+		raw, _ := io.ReadAll(r.Body)
+		receivedBody = string(raw)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer backend.Close()
+
+	targetURL, _ := url.Parse(backend.URL)
+	var captured []*TrafficEntry
+	srv := NewServer(Config{TargetURL: targetURL, AllTraffic: true}, &testWriter{entries: &captured})
+	proxy := httptest.NewServer(srv)
+	defer proxy.Close()
+
+	resp, err := http.Post(proxy.URL+"/admin/realms/demo/components", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
+	}
+	if receivedBody != body {
+		t.Fatalf("backend body = %q, want %q", receivedBody, body)
+	}
+	if got := receivedHeaders.Get("X-Proxy-ReqBody"); got != "" {
+		t.Fatalf("backend received internal X-Proxy-ReqBody header %q", got)
+	}
+	if len(captured) != 1 {
+		t.Fatalf("expected 1 captured entry, got %d", len(captured))
+	}
+	if captured[0].RequestBody != body {
+		t.Fatalf("captured body = %q, want %q", captured[0].RequestBody, body)
 	}
 }
 

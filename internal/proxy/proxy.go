@@ -17,6 +17,7 @@ package proxy
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -25,6 +26,15 @@ import (
 	"net/url"
 	"strings"
 	"time"
+)
+
+type proxyContextKey string
+
+const (
+	proxyStartContextKey       proxyContextKey = "proxy-start"
+	proxyRequestBodyContextKey proxyContextKey = "proxy-request-body"
+	proxyOriginalURLContextKey proxyContextKey = "proxy-original-url"
+	proxyDebugJWEKeyContextKey proxyContextKey = "proxy-debug-jwe-key"
 )
 
 // Config holds the configuration for the debugging reverse proxy.
@@ -62,9 +72,28 @@ func NewServer(cfg Config, writer EntryWriter) *Server {
 
 	s.proxy = &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
+			forwardedHost := req.Header.Get("X-Forwarded-Host")
+			if forwardedHost == "" {
+				forwardedHost = req.Host
+			}
+			forwardedProto := req.Header.Get("X-Forwarded-Proto")
+			if forwardedProto == "" {
+				if req.TLS != nil {
+					forwardedProto = "https"
+				} else {
+					forwardedProto = "http"
+				}
+			}
+			forwardedPort := req.Header.Get("X-Forwarded-Port")
+			if forwardedPort == "" {
+				forwardedPort = forwardedPortForProto(forwardedProto)
+			}
 			req.URL.Scheme = cfg.TargetURL.Scheme
 			req.URL.Host = cfg.TargetURL.Host
 			req.Host = cfg.TargetURL.Host
+			req.Header.Set("X-Forwarded-Host", forwardedHost)
+			req.Header.Set("X-Forwarded-Proto", forwardedProto)
+			req.Header.Set("X-Forwarded-Port", forwardedPort)
 		},
 		ModifyResponse: s.modifyResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -105,17 +134,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Capture and strip debug JWE key header before forwarding
+	// Capture and strip debug JWE key header before forwarding.
 	debugJWEKey := r.Header.Get("X-Debug-JWE-CEK")
 	r.Header.Del("X-Debug-JWE-CEK")
 
-	// Store request info in context via header (cleaned up in modifyResponse)
-	r.Header.Set("X-Proxy-Start", fmt.Sprintf("%d", start.UnixNano()))
-	r.Header.Set("X-Proxy-ReqBody", reqBody)
-	r.Header.Set("X-Proxy-OrigURL", origURL)
-	if debugJWEKey != "" {
-		r.Header.Set("X-Proxy-JWEKey", debugJWEKey)
-	}
+	ctx := r.Context()
+	ctx = context.WithValue(ctx, proxyStartContextKey, start)
+	ctx = context.WithValue(ctx, proxyRequestBodyContextKey, reqBody)
+	ctx = context.WithValue(ctx, proxyOriginalURLContextKey, origURL)
+	ctx = context.WithValue(ctx, proxyDebugJWEKeyContextKey, debugJWEKey)
+	r = r.WithContext(ctx)
 
 	s.proxy.ServeHTTP(w, r)
 }
@@ -142,22 +170,21 @@ func originalURL(r *http.Request) string {
 	return scheme + "://" + host + r.RequestURI
 }
 
+func forwardedPortForProto(proto string) string {
+	if strings.EqualFold(proto, "https") {
+		return "443"
+	}
+	return "80"
+}
+
 func (s *Server) modifyResponse(resp *http.Response) error {
 	start := time.Now()
-	if ts := resp.Request.Header.Get("X-Proxy-Start"); ts != "" {
-		var ns int64
-		_, _ = fmt.Sscanf(ts, "%d", &ns)
-		start = time.Unix(0, ns)
+	if value, ok := resp.Request.Context().Value(proxyStartContextKey).(time.Time); ok {
+		start = value
 	}
-	reqBody := resp.Request.Header.Get("X-Proxy-ReqBody")
-	origURL := resp.Request.Header.Get("X-Proxy-OrigURL")
-	debugJWEKey := resp.Request.Header.Get("X-Proxy-JWEKey")
-
-	// Clean up internal headers
-	resp.Request.Header.Del("X-Proxy-Start")
-	resp.Request.Header.Del("X-Proxy-ReqBody")
-	resp.Request.Header.Del("X-Proxy-OrigURL")
-	resp.Request.Header.Del("X-Proxy-JWEKey")
+	reqBody, _ := resp.Request.Context().Value(proxyRequestBodyContextKey).(string)
+	origURL, _ := resp.Request.Context().Value(proxyOriginalURLContextKey).(string)
+	debugJWEKey, _ := resp.Request.Context().Value(proxyDebugJWEKeyContextKey).(string)
 
 	// Read response body
 	var respBody string
