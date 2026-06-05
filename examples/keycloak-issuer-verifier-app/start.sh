@@ -10,14 +10,16 @@ PROXY_PID=""
 WALLET_PID=""
 compose_args=(-f docker-compose.yml)
 transport="http"
-trust_mode="trustlist"
+trust_mode="metadata"
 cleanup_enabled="false"
-public_mode="false"
-local_wallet_mode="false"
+ngrok_mode="${OID4VP_NGROK:-auto}"
 wallet_port="${OID4VC_WALLET_PORT:-8087}"
 keycloak_ngrok_domain="${KEYCLOAK_NGROK_DOMAIN:-${NGROK_DOMAIN:-}}"
 public_proxy_port="${PUBLIC_PROXY_PORT:-18090}"
 ngrok_override=""
+sandbox_pem_path=""
+sandbox_verifier_info_path=""
+sandbox_material_available="false"
 
 ensure_oid4vc_dev() {
   if command -v oid4vc-dev >/dev/null 2>&1; then
@@ -42,16 +44,16 @@ ensure_oid4vc_dev() {
 
 usage() {
   cat <<'EOF'
-Usage: ./start.sh [--http|--https] [--setup-only|--smoke] [--public|--local-wallet] [--wallet-port <port>] [--keycloak-domain <name>]
+Usage: ./start.sh [--http|--https] [--setup-only|--smoke] [--ngrok|--no-ngrok] [--wallet-port <port>] [--keycloak-domain <name>]
 
-  default      Same as --http: start Keycloak on http://localhost:8080, bootstrap the realm, and start the demo app
-  --http       Use http://localhost:8080 and a custom trust list for verifier trust
-  --https      Use https://localhost:8443 and issuer metadata for verifier trust
+  default      Start Keycloak, the demo app, the local wallet, and the local proxy. Use ngrok automatically when sandbox verifier files are available.
+  --http       Use local Keycloak on http://localhost:8080 when ngrok is disabled
+  --https      Use local Keycloak on https://localhost:8443 when ngrok is disabled
   --smoke      Run the full headless smoke flow after setup
   --setup-only Download/build dependencies, start Keycloak, and bootstrap the realm only
-  --public     Sandbox mode: publish both Keycloak and the demo app through one ngrok HTTPS hostname
-  --local-wallet  Start an oid4vc-dev PID wallet locally and configure Keycloak for it
-  --wallet-port  oid4vc-dev wallet port in --local-wallet mode (default: 8087)
+  --ngrok      Publish Keycloak and the demo app through one ngrok HTTPS hostname
+  --no-ngrok   Keep Keycloak and the demo app local
+  --wallet-port  oid4vc-dev wallet port (default: 8087)
   --keycloak-domain  Fixed ngrok hostname (otherwise detect from sandbox cert SAN when available)
 EOF
 }
@@ -122,13 +124,85 @@ require_sandbox_file() {
   fi
 }
 
-start_local_wallet() {
-  if [[ "${local_wallet_mode}" != "true" ]]; then
-    return 0
+find_worktree_sandbox_file() {
+  local filename="$1"
+  local worktree_path
+  local candidate
+
+  while IFS= read -r worktree_path; do
+    candidate="${worktree_path%/}/sandbox/${filename}"
+    if [[ -f "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done < <(git -C "${REPO_ROOT}" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+
+  return 1
+}
+
+resolve_sandbox_material() {
+  sandbox_pem_path="${OID4VP_SANDBOX_PEM_PATH:-$(example_find_sandbox_pem "${REPO_ROOT}" "${SCRIPT_DIR}" || true)}"
+  sandbox_verifier_info_path="${OID4VP_SANDBOX_VERIFIER_INFO_PATH:-$(example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCRIPT_DIR}" || true)}"
+  if [[ -z "${sandbox_pem_path}" ]]; then
+    sandbox_pem_path="$(find_worktree_sandbox_file "sandbox-ngrok-combined.pem" || true)"
+  fi
+  if [[ -z "${sandbox_verifier_info_path}" ]]; then
+    sandbox_verifier_info_path="$(find_worktree_sandbox_file "sandbox-verifier-info.json" || true)"
   fi
 
+  if [[ -n "${sandbox_pem_path}" && -f "${sandbox_pem_path}" && -n "${sandbox_verifier_info_path}" && -f "${sandbox_verifier_info_path}" ]]; then
+    sandbox_material_available="true"
+  else
+    sandbox_material_available="false"
+  fi
+}
+
+resolve_ngrok_mode() {
+  case "${ngrok_mode}" in
+    auto)
+      if [[ "${sandbox_material_available}" == "true" ]]; then
+        ngrok_mode="true"
+      else
+        ngrok_mode="false"
+      fi
+      ;;
+    true|false)
+      ;;
+    *)
+      echo "Invalid OID4VP_NGROK value: ${ngrok_mode}. Use auto, true, or false." >&2
+      exit 1
+      ;;
+  esac
+
+  if [[ "${ngrok_mode}" == "true" ]]; then
+    require_sandbox_file "Sandbox PEM" "${sandbox_pem_path}"
+    require_sandbox_file "Sandbox verifier info" "${sandbox_verifier_info_path}"
+  fi
+  echo "ngrok mode: ${ngrok_mode} (sandbox verifier files: ${sandbox_material_available})"
+  if [[ "${sandbox_material_available}" == "true" ]]; then
+    echo "Sandbox PEM: ${sandbox_pem_path}"
+    echo "Sandbox verifier info: ${sandbox_verifier_info_path}"
+  fi
+}
+
+start_public_proxy() {
+  public_proxy_port="$(example_resolve_free_port "${public_proxy_port}" "public proxy")"
+  (
+    cd "${REPO_ROOT}"
+    exec go run ./examples/lib/single-host-proxy \
+      --listen "127.0.0.1:${public_proxy_port}" \
+      --app "http://127.0.0.1:8090" \
+      --keycloak "http://127.0.0.1:8080"
+  ) &
+  PROXY_PID=$!
+  trap cleanup EXIT INT TERM
+  wait_for_proxy
+  echo "Local proxy: http://127.0.0.1:${public_proxy_port}/"
+}
+
+start_local_wallet() {
   echo "Starting oid4vc-dev wallet on port ${wallet_port}..."
-  oid4vc-dev wallet serve --pid --docker --port "${wallet_port}" --base-url "" --register &
+  oid4vc-dev wallet serve --docker --port "${wallet_port}" --base-url "" --register &
   WALLET_PID=$!
   trap cleanup EXIT INT TERM
   sleep 1
@@ -145,8 +219,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --setup-only) mode="setup-only" ;;
     --smoke) mode="smoke" ;;
-    --public) public_mode="true" ;;
-    --local-wallet) local_wallet_mode="true" ;;
+    --ngrok) ngrok_mode="true" ;;
+    --no-ngrok) ngrok_mode="false" ;;
     --wallet-port)
       wallet_port="$2"
       shift
@@ -161,11 +235,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --http)
       transport="http"
-      trust_mode="trustlist"
       ;;
     --https)
       transport="https"
-      trust_mode="metadata"
       ;;
     -h|--help)
       usage
@@ -179,24 +251,24 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-if [[ "${public_mode}" == "true" && "${local_wallet_mode}" == "true" ]]; then
-  echo "--public and --local-wallet are mutually exclusive." >&2
-  exit 1
-fi
-
 cd "${SCRIPT_DIR}"
 
 ensure_oid4vc_dev
 ./scripts/download-extension.sh
 ./scripts/build-link-provider.sh
 
-if [[ "${public_mode}" == "true" ]]; then
-  public_proxy_port="$(example_resolve_free_port "${public_proxy_port}" "public proxy")"
+resolve_sandbox_material
+resolve_ngrok_mode
+start_public_proxy
+
+export WALLET_UI_URL="http://localhost:${wallet_port}/"
+export OID4VC_WALLET_PORT="${wallet_port}"
+
+if [[ "${ngrok_mode}" == "true" ]]; then
+  trust_mode="trustlist"
   export OID4VP_PUBLIC_WALLET="true"
-  export OID4VP_SANDBOX_PEM_PATH="${OID4VP_SANDBOX_PEM_PATH:-$(example_find_sandbox_pem "${REPO_ROOT}" "${SCRIPT_DIR}" || true)}"
-  export OID4VP_SANDBOX_VERIFIER_INFO_PATH="${OID4VP_SANDBOX_VERIFIER_INFO_PATH:-$(example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCRIPT_DIR}" || true)}"
-  require_sandbox_file "Sandbox PEM" "${OID4VP_SANDBOX_PEM_PATH}"
-  require_sandbox_file "Sandbox verifier info" "${OID4VP_SANDBOX_VERIFIER_INFO_PATH}"
+  export OID4VP_SANDBOX_PEM_PATH="${sandbox_pem_path}"
+  export OID4VP_SANDBOX_VERIFIER_INFO_PATH="${sandbox_verifier_info_path}"
   if [[ -z "${keycloak_ngrok_domain}" ]]; then
     keycloak_ngrok_domain="$(example_env_keycloak_ngrok_domain || true)"
   fi
@@ -205,15 +277,6 @@ if [[ "${public_mode}" == "true" ]]; then
     echo "Using ngrok hostname from sandbox certificate SAN: ${detected_domain}"
     keycloak_ngrok_domain="${detected_domain}"
   fi
-  (
-    cd "${REPO_ROOT}"
-    exec go run ./examples/lib/single-host-proxy \
-      --listen "127.0.0.1:${public_proxy_port}" \
-      --app "http://127.0.0.1:8090" \
-      --keycloak "http://127.0.0.1:8080"
-  ) &
-  PROXY_PID=$!
-  wait_for_proxy
   public_base_url="$(example_start_ngrok_tunnel "keycloak-issuer-verifier-app-public" "${public_proxy_port}" "${keycloak_ngrok_domain}")"
   export KEYCLOAK_BASE_URL="${public_base_url}"
   export APP_BASE_URL="${public_base_url}"
@@ -228,10 +291,6 @@ if [[ "${public_mode}" == "true" ]]; then
   echo "Public URL: ${public_base_url}"
 else
   export OID4VP_PUBLIC_WALLET="false"
-  if [[ "${local_wallet_mode}" == "true" ]]; then
-    export OID4VP_TRUST_LIST_URL="${OID4VP_TRUST_LIST_URL:-http://host.docker.internal:${wallet_port}/api/trustlists/pid}"
-    export WALLET_UI_URL="http://localhost:${wallet_port}/"
-  fi
   case "${transport}" in
     http)
       export KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:8080}"
@@ -252,10 +311,6 @@ export KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH:-${SCRIPT_DIR}/keycl
 start_local_wallet
 docker compose "${compose_args[@]}" up -d --force-recreate
 ./scripts/bootstrap.sh
-
-if [[ "${mode}" != "smoke" && "${local_wallet_mode}" != "true" ]]; then
-  oid4vc-dev wallet register
-fi
 
 case "${mode}" in
   app)

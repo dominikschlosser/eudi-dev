@@ -4,23 +4,33 @@ This example combines OpenID4VCI issuance and OpenID4VP verification around one 
 
 Compared with the smaller examples in this directory, this scenario still needs a small dynamic bootstrap for runtime-generated trust material and the persistent signing key. The static realm import already contains the fixed app client, credential scope, custom first-broker flow, OID4VP identity provider, and the wallet-login session-note mapper. The UI itself is kept separate from the Go handlers in `app/templates/` and `app/static/`.
 
-The example supports two local verifier-trust setups and two wallet startup modes:
+The example always starts:
 
-- `--http`: Keycloak runs on `http://localhost:8080` and the OID4VP extension validates the credential through a generated trust list served by the demo app.
-- `--https`: Keycloak runs on `https://localhost:8443` and the OID4VP extension resolves the issuer signing key from the VC metadata / issuer metadata endpoints.
-- `--public`: sandbox mode for real wallet testing. Keycloak and the demo app are published through one ngrok HTTPS hostname, and sandbox verifier certificate/config files are loaded from `sandbox/sandbox-ngrok-combined.pem` and `sandbox/sandbox-verifier-info.json` by default.
-- `--local-wallet`: starts an `oid4vc-dev wallet serve --pid --docker` wallet locally and configures Keycloak to trust its PID trust-list endpoint.
+- Keycloak
+- the demo app
+- a local `oid4vc-dev wallet serve --docker` wallet
+- a local single-host proxy that can expose both Keycloak and the app through one hostname
 
-The issuance flow is the same in both modes. The only difference is how wallet-login trust is resolved.
+The only exposure switch is ngrok:
+
+- default: use ngrok automatically when sandbox verifier files are available
+- `--ngrok`: publish Keycloak and the app through one ngrok HTTPS hostname
+- `--no-ngrok`: keep Keycloak and the app local
+- `--http` / `--https`: choose the local Keycloak transport when ngrok is disabled
+
+The same setup works with the started local wallet and with external wallets. When ngrok is enabled, issuance and verification use the public ngrok URL.
 
 ## How It Works
 
-The static realm import provides the stable parts of the example. `bootstrap.sh` fills in the runtime parts: the persistent RS256 signing key, the generated trust list in HTTP mode, and the HTTP-only admin setting for the local demo.
+The static realm import provides the stable parts of the example. `bootstrap.sh` fills in the runtime parts: the persistent RS256 signing key, the verifier request settings, and the HTTP-only admin setting for the local demo.
 
-### Trust Modes
+### Trust And Verifier Modes
 
-- HTTP mode uses `http://host.docker.internal:8090/keycloak-trustlist.jwt` and `trustListLoTEType=http://uri.etsi.org/19602/LoTEType/local`.
-- HTTPS mode uses `allowedIssuers=https://localhost:8443/realms/wallet-app-demo` and fetches issuer metadata / JWKS over HTTPS.
+- The presented credential is the custom membership credential issued by this Keycloak realm.
+- Local/no-ngrok mode verifies that credential through issuer metadata / JWKS.
+- Ngrok mode is the external-wallet path. It configures `x509_hash`, `direct_post.jwt`, HAIP enforcement, and a public Keycloak signing-certificate trust list at `<public-url>/keycloak-trustlist.jwt`.
+- The local wallet is still started in ngrok mode, so the same public issuer/verifier setup can be exercised with either the local wallet or an external wallet.
+- Sandbox verifier files are discovered from `sandbox/sandbox-ngrok-combined.pem` and `sandbox/sandbox-verifier-info.json` by default, from another git worktree's root `sandbox/` directory, or from `SANDBOX_DIR`, `EXAMPLES_SANDBOX_PEM`, and `EXAMPLES_SANDBOX_VERIFIER_INFO`.
 
 ## High-Level Flow
 
@@ -107,7 +117,7 @@ sequenceDiagram
 
 ## Files
 
-- `start.sh`: runs the full setup; default is HTTP plus the custom trust list, `--https` switches to issuer metadata
+- `start.sh`: runs the full setup; starts the wallet and proxy every time, and uses `--ngrok` / `--no-ngrok` for public exposure
 - `docker-compose.yml`: starts the HTTP Keycloak setup and imports the base realm from `realm/`
 - `docker-compose.https.yml`: overrides the base compose file for HTTPS mode
 - `realm/wallet-app-demo-realm.json`: source-of-truth base realm with the static user, app client, and credential scope
@@ -115,7 +125,7 @@ sequenceDiagram
 - `scripts/build-link-provider.sh`: builds the custom Keycloak first-broker authenticator
 - `scripts/generate-keycloak-cert.sh`: generates the local HTTPS certificate for Keycloak in `--https` mode
 - `scripts/generate-keycloak-signing-cert.sh`: creates and reuses the persistent Keycloak RS256 signing keypair used in both HTTP and HTTPS mode
-- `scripts/generate-keycloak-trustlist.go`: generates `keycloak-trustlist.jwt` from the persistent Keycloak signing certificate in `--http` mode
+- `scripts/generate-keycloak-trustlist.go`: optional helper for explicit trust-list experiments
 - `scripts/bootstrap.sh`: configures issuance, verification, user profile, and first-broker flow
 - `scripts/start-app.sh`: starts the Go sample app
 - `scripts/smoke.py`: runs the complete password-login, issuance, redemption, and wallet-login flow
@@ -143,33 +153,32 @@ cd examples/keycloak-issuer-verifier-app
 
 If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/oid4vc-dev@latest`.
 
-HTTP / HTTPS setup:
+Local setup:
 
 ```bash
-./start.sh --http
-./start.sh --https
+./start.sh --no-ngrok
+./start.sh --no-ngrok --https
 ```
 
-Local `oid4vc-dev` wallet mode:
-
-```bash
-./start.sh --local-wallet
-./start.sh --local-wallet --wallet-port 8087
-```
-
-Sandbox mode for real wallet testing:
+Ngrok setup:
 
 ```bash
 mkdir -p sandbox
 # Put the sandbox verifier files here, or set SANDBOX_DIR to another directory:
 #   sandbox/sandbox-ngrok-combined.pem
 #   sandbox/sandbox-verifier-info.json
-./start.sh --public
+./start.sh --ngrok
 ```
 
-`--public` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`; otherwise it tries to detect the hostname from the sandbox certificate SAN.
+When both sandbox verifier files are present, `./start.sh` defaults to ngrok mode. Use `--no-ngrok` to force local-only startup. Passing `--ngrok` explicitly requires those sandbox verifier files.
 
-Then open `http://127.0.0.1:8090/` and:
+```bash
+./start.sh --wallet-port 8087
+```
+
+`--ngrok` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`; otherwise it tries to detect the hostname from the sandbox certificate SAN.
+
+Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in local mode, and:
 
 1. log in as `alice` / `alice`
 2. issue the membership credential
@@ -177,7 +186,7 @@ Then open `http://127.0.0.1:8090/` and:
 4. log out, sign in again, and choose the wallet option in Keycloak
 5. present the credential back to Keycloak
 
-`./start.sh` runs `oid4vc-dev wallet register` automatically in the normal local modes. `--local-wallet` instead starts the wallet server with `--register`, so the same custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `openid-credential-offer://` and `openid4vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
+`./start.sh` starts the local wallet server with `--register`, so custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `openid-credential-offer://` and `openid4vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
 
 If your system does not handle the custom scheme directly:
 
@@ -193,15 +202,15 @@ oid4vc-dev wallet register
 Headless verification:
 
 ```bash
-./start.sh --http --smoke
-./start.sh --https --smoke
+./start.sh --no-ngrok --smoke
+./start.sh --no-ngrok --https --smoke
 ```
 
 Setup only:
 
 ```bash
-./start.sh --http --setup-only
-./start.sh --https --setup-only
+./start.sh --no-ngrok --setup-only
+./start.sh --ngrok --setup-only
 ```
 
 ## Useful Overrides
@@ -214,10 +223,11 @@ APP_CLIENT_ID=wallet-app
 APP_REDIRECT_URI=http://127.0.0.1:8090/callback
 APP_BASE_URL=http://127.0.0.1:8090
 OID4VCI_CREDENTIAL_SCOPE=membership-credential
-OID4VP_TRUST_MODE=trustlist
-OID4VP_TRUST_LIST_URL=http://host.docker.internal:8090/keycloak-trustlist.jwt
+OID4VP_TRUST_MODE=metadata
+# ngrok mode sets OID4VP_TRUST_MODE=trustlist and OID4VP_TRUST_LIST_URL automatically
 KEYCLOAK_TRUST_LIST_PATH=$(pwd)/keycloak-trustlist.jwt
 OID4VC_WALLET_PORT=8087
+OID4VP_NGROK=auto
 SANDBOX_DIR=$(pwd)/sandbox
 OID4VP_SANDBOX_PEM_PATH=$(pwd)/sandbox/sandbox-ngrok-combined.pem
 OID4VP_SANDBOX_VERIFIER_INFO_PATH=$(pwd)/sandbox/sandbox-verifier-info.json
