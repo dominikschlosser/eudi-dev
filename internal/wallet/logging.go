@@ -26,10 +26,30 @@ func (s *Server) addPresentationRequestLog(authReq *AuthorizationRequestParams, 
 		clientID = "unknown verifier"
 	}
 	details := presentationRequestLogDetails(authReq)
+	details["event"] = "presentation_request"
+	details["direction"] = "inbound"
 	if source != "" {
 		details["source"] = source
 	}
 	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Received presentation request from %s", clientID), true, details)
+}
+
+func (w *Wallet) addProtocolLog(action, event, detail string, success bool, details map[string]any) {
+	w.AddLogDetails(action, detail, success, protocolLogDetails(event, details))
+}
+
+func protocolLogDetails(event string, details map[string]any) map[string]any {
+	if details == nil {
+		details = map[string]any{}
+	} else {
+		clone := make(map[string]any, len(details)+1)
+		for key, value := range details {
+			clone[key] = value
+		}
+		details = clone
+	}
+	details["event"] = event
+	return details
 }
 
 func presentationRequestLogDetails(authReq *AuthorizationRequestParams) map[string]any {
@@ -102,6 +122,51 @@ func presentationSubmissionLogDetails(authReq *AuthorizationRequestParams, w *Wa
 	if prepared != nil {
 		addStringDetail(details, "submission_uri", prepared.ResponseURI)
 	}
+	return details
+}
+
+func presentationResponseLogDetails(authReq *AuthorizationRequestParams, w *Wallet, matches []CredentialMatch, prepared *preparedPresentation) map[string]any {
+	details := presentationSubmissionLogDetails(authReq, w, matches, prepared, nil)
+	details["direction"] = "outbound"
+	if authReq.Source != "" {
+		details["source"] = authReq.Source
+	}
+	return details
+}
+
+func verifierResponseLogDetails(authReq *AuthorizationRequestParams, prepared *preparedPresentation, result *DirectPostResult) map[string]any {
+	details := map[string]any{
+		"direction": "inbound",
+	}
+	addStringDetail(details, "client_id", authReq.ClientID)
+	addStringDetail(details, "response_mode", authReq.ResponseMode)
+	addStringDetail(details, "state", authReq.State)
+	if prepared != nil {
+		addStringDetail(details, "submission_uri", prepared.ResponseURI)
+	}
+	if authReq.Source != "" {
+		details["source"] = authReq.Source
+	}
+	if result != nil {
+		details["status_code"] = result.StatusCode
+		addStringDetail(details, "redirect_uri", result.RedirectURI)
+		addStringDetail(details, "response_body", result.Body)
+	}
+	return details
+}
+
+func credentialImportLogDetails(cred *StoredCredential, raw string) map[string]any {
+	if cred == nil {
+		return map[string]any{}
+	}
+	details := map[string]any{
+		"credential": CredentialSummary(*cred),
+	}
+	addStringDetail(details, "credential_id", cred.ID)
+	addStringDetail(details, "format", cred.Format)
+	addStringDetail(details, "vct", cred.VCT)
+	addStringDetail(details, "doc_type", cred.DocType)
+	addStringDetail(details, "raw_credential", raw)
 	return details
 }
 

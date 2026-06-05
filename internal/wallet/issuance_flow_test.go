@@ -465,6 +465,22 @@ func TestProcessCredentialOffer_HappyPath(t *testing.T) {
 	if creds[0].ID != result.CredentialID {
 		t.Errorf("credential ID mismatch")
 	}
+
+	logs := w.GetLog()
+	for _, event := range []string{
+		"credential_offer",
+		"issuer_metadata_request",
+		"issuer_metadata_response",
+		"oauth_metadata_request",
+		"oauth_metadata_response",
+		"token_request",
+		"token_response",
+		"credential_request",
+		"credential_response",
+		"credential_imported",
+	} {
+		assertWalletLogEvent(t, logs, event)
+	}
 }
 
 func TestProcessCredentialOffer_NonceFallback(t *testing.T) {

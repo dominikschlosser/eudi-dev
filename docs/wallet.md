@@ -127,9 +127,9 @@ oid4vc-dev wallet show --decoded --json <id> # JSON output
 
 ## `wallet logs`
 
-Displays persisted wallet-side interactions, including OID4VP presentation requests and responses, Browser API responses, OID4VCI credential offers, and received credentials.
+Displays persisted wallet-side protocol interactions, including OID4VP request-object fetches, parsed presentation requests, wallet presentation responses, verifier responses, Browser API responses, OID4VCI credential offers, metadata fetches, token exchanges, credential requests, deferred/notification calls, and imported credentials.
 
-By default, every entry is printed on one line so the output is easy to scan and pipe. Presentation lines include compact debugging markers such as source, client ID, response mode, nonce, request-object presence, DCQL presence, status code, and presented credential IDs. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, sent VP tokens, actual presented credentials, selected claims, response bodies, and received credential metadata. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
+By default, every entry is printed on one line so the output is easy to scan and pipe. Compact lines include protocol markers such as `event`, `direction`, source, endpoint, method, URL, client ID, issuer, response mode, nonce, status code, and payload-presence flags. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, token and credential request payloads, sent VP tokens, actual presented credentials, selected claims, verifier response bodies, received credential responses, and imported credential material. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
 
 ```bash
 oid4vc-dev wallet logs              # One line per persisted wallet interaction

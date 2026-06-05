@@ -81,14 +81,59 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		return nil, fmt.Errorf("unexpected result type")
 	}
 
+	w.addProtocolLog("issuance", "credential_offer", fmt.Sprintf("Received credential offer from %s", offer.CredentialIssuer), true, map[string]any{
+		"direction":                    "inbound",
+		"offer_uri":                    offerURI,
+		"issuer":                       offer.CredentialIssuer,
+		"credential_configuration_ids": offer.CredentialConfigurationIDs,
+		"grants":                       offer.Grants,
+	})
+
 	// Fetch issuer metadata
+	metadataURL, _ := wellKnownURL(offer.CredentialIssuer, "openid-credential-issuer")
+	w.addProtocolLog("issuance", "issuer_metadata_request", fmt.Sprintf("Fetch issuer metadata from %s", offer.CredentialIssuer), true, map[string]any{
+		"direction": "outbound",
+		"method":    "GET",
+		"url":       metadataURL,
+		"issuer":    offer.CredentialIssuer,
+	})
 	metadata, err := fetchIssuerMetadata(offer.CredentialIssuer)
 	if err != nil {
+		w.addProtocolLog("issuance", "issuer_metadata_response", fmt.Sprintf("Issuer metadata response from %s", offer.CredentialIssuer), false, map[string]any{
+			"direction": "inbound",
+			"url":       metadataURL,
+			"issuer":    offer.CredentialIssuer,
+			"error":     err.Error(),
+		})
 		return nil, fmt.Errorf("fetching issuer metadata: %w", err)
 	}
+	w.addProtocolLog("issuance", "issuer_metadata_response", fmt.Sprintf("Issuer metadata response from %s", offer.CredentialIssuer), true, map[string]any{
+		"direction": "inbound",
+		"url":       metadataURL,
+		"issuer":    offer.CredentialIssuer,
+		"metadata":  metadata,
+	})
 
 	authServer := getAuthorizationServer(metadata, offer.CredentialIssuer)
+	oauthURL, _ := wellKnownURL(authServer, "oauth-authorization-server")
+	w.addProtocolLog("issuance", "oauth_metadata_request", fmt.Sprintf("Fetch OAuth metadata from %s", authServer), true, map[string]any{
+		"direction": "outbound",
+		"method":    "GET",
+		"url":       oauthURL,
+		"issuer":    authServer,
+	})
 	oauthMeta, oauthErr := fetchOAuthMetadata(authServer)
+	oauthResponseDetails := map[string]any{
+		"direction": "inbound",
+		"url":       oauthURL,
+		"issuer":    authServer,
+	}
+	if oauthErr != nil {
+		oauthResponseDetails["error"] = oauthErr.Error()
+	} else {
+		oauthResponseDetails["metadata"] = oauthMeta
+	}
+	w.addProtocolLog("issuance", "oauth_metadata_response", fmt.Sprintf("OAuth metadata response from %s", authServer), oauthErr == nil, oauthResponseDetails)
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
 	if offer.Grants.PreAuthorizedCode == "" {
@@ -108,10 +153,31 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	txCode := w.TxCode
 	w.TxCode = "" // clear after use
 	w.mu.Unlock()
+	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, map[string]any{
+		"direction":           "outbound",
+		"method":              "POST",
+		"url":                 tokenEndpoint,
+		"endpoint":            "token",
+		"grant_type":          "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
+		"tx_code":             txCode,
+	})
 	tokenResp, err := exchangePreAuthorizedToken(tokenEndpoint, offer, txCode)
 	if err != nil {
+		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
+			"direction": "inbound",
+			"url":       tokenEndpoint,
+			"endpoint":  "token",
+			"error":     err.Error(),
+		})
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
+	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), true, map[string]any{
+		"direction": "inbound",
+		"url":       tokenEndpoint,
+		"endpoint":  "token",
+		"response":  tokenResp,
+	})
 
 	accessToken, _ := tokenResp["access_token"].(string)
 	cNonce, _ := tokenResp["c_nonce"].(string)
@@ -160,6 +226,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if cNonce == "" {
 		// Try credential request without proof to get c_nonce from error response
 		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
+		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
 		nonceResp, nonceErr := requestCredential(
 			metadata,
 			credentialEndpoint,
@@ -170,6 +237,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			responseEncryption,
 			w.HolderKey,
 		)
+		w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), nonceErr == nil, credentialResponseLogDetails(credentialEndpoint, nonceResp, nonceErr))
 		if nonceErr != nil {
 			// Check if the error response contained a c_nonce
 			if n, ok := nonceResp["c_nonce"].(string); ok && n != "" {
@@ -193,6 +261,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			if err != nil {
 				return nil, fmt.Errorf("importing received credential: %w", err)
 			}
+			importDetails := credentialImportLogDetails(imported, credential)
+			importDetails["issuer"] = offer.CredentialIssuer
+			w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
 			if credFormat == "" {
 				credFormat = imported.Format
 			}
@@ -207,6 +278,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		}
 	}
 
+	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredential(
 		metadata,
 		credentialEndpoint,
@@ -217,6 +289,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		responseEncryption,
 		w.HolderKey,
 	)
+	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), err == nil, credentialResponseLogDetails(credentialEndpoint, credResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -235,6 +308,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
 	}
+	importDetails := credentialImportLogDetails(imported, credential)
+	importDetails["issuer"] = offer.CredentialIssuer
+	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
 
 	if credFormat == "" {
 		credFormat = imported.Format
@@ -843,6 +919,49 @@ func fetchNonce(metadata map[string]any, issuer string) string {
 		return n
 	}
 	return ""
+}
+
+func credentialRequestLogDetails(endpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
+	reqBody := map[string]any{
+		"proofs": map[string]any{
+			"jwt": []string{proofJWT},
+		},
+	}
+	if credentialIdentifier != "" {
+		reqBody["credential_identifier"] = credentialIdentifier
+	} else if credentialConfigurationID != "" {
+		reqBody["credential_configuration_id"] = credentialConfigurationID
+	}
+	if credentialResponseEncryption != nil {
+		reqBody["credential_response_encryption"] = credentialResponseEncryption
+	}
+	details := map[string]any{
+		"direction": "outbound",
+		"method":    "POST",
+		"url":       endpoint,
+		"endpoint":  "credential",
+		"request":   reqBody,
+	}
+	addStringDetail(details, "access_token", accessToken)
+	addStringDetail(details, "proof_jwt", proofJWT)
+	addStringDetail(details, "credential_identifier", credentialIdentifier)
+	addStringDetail(details, "credential_configuration_id", credentialConfigurationID)
+	return details
+}
+
+func credentialResponseLogDetails(endpoint string, response map[string]any, err error) map[string]any {
+	details := map[string]any{
+		"direction": "inbound",
+		"url":       endpoint,
+		"endpoint":  "credential",
+	}
+	if response != nil {
+		details["response"] = response
+	}
+	if err != nil {
+		details["error"] = err.Error()
+	}
+	return details
 }
 
 // requestCredential sends a credential request to the issuer.

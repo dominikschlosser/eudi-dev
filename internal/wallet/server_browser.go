@@ -78,6 +78,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	reqServer.log("  Protocol:      %s", protocol)
 	reqServer.log("  Client ID:     %s", authReq.ClientID)
 	reqServer.log("  Response Mode: %s", authReq.ResponseMode)
+	authReq.Source = "browser_api"
 	if authReq.Nonce != "" {
 		reqServer.log("  Nonce:         %s", authReq.Nonce)
 	}
@@ -96,9 +97,11 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			return
 		}
 		errorDetails := presentationRequestLogDetails(authReq)
+		errorDetails["direction"] = "outbound"
+		errorDetails["source"] = "browser_api"
 		errorDetails["error"] = override.Error
 		addStringDetail(errorDetails, "error_description", override.ErrorDescription)
-		reqServer.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
+		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
@@ -203,9 +206,11 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 				return
 			}
 			denialDetails := presentationRequestLogDetails(authReq)
+			denialDetails["direction"] = "outbound"
+			denialDetails["source"] = "browser_api"
 			denialDetails["error"] = "access_denied"
 			denialDetails["browser_api_result"] = browserResult
-			reqServer.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
+			reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true, denialDetails)
 			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
 			writeJSON(w, http.StatusOK, browserResult)
 			return
@@ -248,9 +253,10 @@ func (s *Server) writeBrowserPresentationResult(w http.ResponseWriter, authReq *
 		s.log("  id_token:      created (SIOPv2)")
 	}
 
-	details := presentationSubmissionLogDetails(authReq, s.wallet, matches, prepared, &DirectPostResult{StatusCode: http.StatusOK})
+	details := presentationResponseLogDetails(authReq, s.wallet, matches, prepared)
+	details["status_code"] = http.StatusOK
 	details["browser_api_result"] = result
-	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Returned Browser API presentation to %s", authReq.ClientID), true, details)
+	s.wallet.addProtocolLog("presentation", "presentation_response", fmt.Sprintf("Returned Browser API presentation to %s", authReq.ClientID), true, details)
 	writeJSON(w, http.StatusOK, result)
 	return SubmissionResult{StatusCode: http.StatusOK}
 }

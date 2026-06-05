@@ -109,7 +109,9 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return headers, nil
 	}
 
+	w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
 	parResp, err := postFormWithDPoP(parEndpoint, parForm, w.HolderKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("PAR request: %w", err)
 	}
@@ -118,7 +120,29 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("PAR response missing request_uri")
 	}
 
+	w.addProtocolLog("issuance", "authorization_request", fmt.Sprintf("Start authorization request at %s", authorizationEndpoint), true, map[string]any{
+		"direction":    "outbound",
+		"method":       "GET",
+		"url":          authorizationEndpoint,
+		"endpoint":     "authorization",
+		"client_id":    clientID,
+		"request_uri":  requestURI,
+		"redirect_uri": redirectURI,
+		"state":        state,
+	})
 	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, redirectURI, state, oauthIssuer(oauthMeta, ""), w.ValidationMode)
+	authorizationResponseDetails := map[string]any{
+		"direction": "inbound",
+		"endpoint":  "authorization",
+		"state":     state,
+	}
+	if callbackValues != nil {
+		authorizationResponseDetails["callback_values"] = callbackValues
+	}
+	if err != nil {
+		authorizationResponseDetails["error"] = err.Error()
+	}
+	w.addProtocolLog("issuance", "authorization_response", fmt.Sprintf("Authorization response for %s", authorizationEndpoint), err == nil, authorizationResponseDetails)
 	if err != nil {
 		return nil, fmt.Errorf("authorization request: %w", err)
 	}
@@ -143,7 +167,9 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		tokenForm.Set("client_assertion", assertion)
 	}
 
+	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, formRequestLogDetails(tokenEndpoint, "token", tokenForm))
 	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, w.HolderKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
@@ -171,7 +197,23 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	responseEncryption := buildCredentialResponseEncryptionRequest(metadata, w.HolderKey)
 
 	if cNonce == "" {
+		if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
+			w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", nonceEndpoint), true, map[string]any{
+				"direction": "outbound",
+				"method":    "POST",
+				"url":       nonceEndpoint,
+				"endpoint":  "nonce",
+			})
+		}
 		cNonce = fetchNonceWithDPoP(metadata, accessToken, w.HolderKey, &nonces.resource)
+		if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
+			w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", nonceEndpoint), cNonce != "", map[string]any{
+				"direction": "inbound",
+				"url":       nonceEndpoint,
+				"endpoint":  "nonce",
+				"c_nonce":   cNonce,
+			})
+		}
 		if cNonce != "" {
 			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce)
 			if err != nil {
@@ -184,6 +226,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		}
 	}
 
+	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
 		metadata,
 		credentialEndpoint,
@@ -195,6 +238,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		w.HolderKey,
 		&nonces.resource,
 	)
+	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), err == nil, credentialResponseLogDetails(credentialEndpoint, credResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -204,7 +248,15 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		if deferredEndpoint == "" {
 			return nil, fmt.Errorf("deferred credential response missing deferred_credential_endpoint metadata")
 		}
+		w.addProtocolLog("issuance", "deferred_credential_request", fmt.Sprintf("Request deferred credential from %s", deferredEndpoint), true, map[string]any{
+			"direction":      "outbound",
+			"method":         "POST",
+			"url":            deferredEndpoint,
+			"endpoint":       "deferred_credential",
+			"transaction_id": txID,
+		})
 		credResp, err = requestDeferredCredentialWithDPoP(deferredEndpoint, accessToken, txID, w.HolderKey, &nonces.resource)
+		w.addProtocolLog("issuance", "deferred_credential_response", fmt.Sprintf("Deferred credential response from %s", deferredEndpoint), err == nil, responseMapLogDetails(deferredEndpoint, "deferred_credential", credResp, err))
 		if err != nil {
 			return nil, fmt.Errorf("requesting deferred credential: %w", err)
 		}
@@ -219,12 +271,34 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
 	}
+	importDetails := credentialImportLogDetails(imported, credential)
+	importDetails["issuer"] = offer.CredentialIssuer
+	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
 
 	if notificationID, _ := credResp["notification_id"].(string); notificationID != "" {
 		if notificationEndpoint, _ := metadata["notification_endpoint"].(string); notificationEndpoint != "" {
+			w.addProtocolLog("issuance", "notification_request", fmt.Sprintf("Send credential notification to %s", notificationEndpoint), true, map[string]any{
+				"direction":          "outbound",
+				"method":             "POST",
+				"url":                notificationEndpoint,
+				"endpoint":           "notification",
+				"notification_id":    notificationID,
+				"notification_event": "credential_accepted",
+			})
 			if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, notificationID, w.HolderKey, &nonces.resource); err != nil {
+				w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), false, map[string]any{
+					"direction": "inbound",
+					"url":       notificationEndpoint,
+					"endpoint":  "notification",
+					"error":     err.Error(),
+				})
 				return nil, fmt.Errorf("sending notification: %w", err)
 			}
+			w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), true, map[string]any{
+				"direction": "inbound",
+				"url":       notificationEndpoint,
+				"endpoint":  "notification",
+			})
 		}
 	}
 
@@ -490,6 +564,31 @@ func stripURLFragment(raw string) string {
 	}
 	parsed.Fragment = ""
 	return parsed.String()
+}
+
+func formRequestLogDetails(endpoint, endpointName string, form url.Values) map[string]any {
+	return map[string]any{
+		"direction": "outbound",
+		"method":    "POST",
+		"url":       endpoint,
+		"endpoint":  endpointName,
+		"request":   form,
+	}
+}
+
+func responseMapLogDetails(endpoint, endpointName string, response map[string]any, err error) map[string]any {
+	details := map[string]any{
+		"direction": "inbound",
+		"url":       endpoint,
+		"endpoint":  endpointName,
+	}
+	if response != nil {
+		details["response"] = response
+	}
+	if err != nil {
+		details["error"] = err.Error()
+	}
+	return details
 }
 
 func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, accessToken string, nonce *string, extraHeaders func() (map[string]string, error)) (map[string]any, error) {

@@ -123,6 +123,12 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	if responseURI == "" {
 		responseURI = parsed.RedirectURI
 	}
+	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
+	requestDetails := wallet.PresentationSubmissionLogDetails(authReq, w, nil, nil, "", nil)
+	requestDetails["event"] = "presentation_request"
+	requestDetails["direction"] = "inbound"
+	requestDetails["source"] = "cli"
+	w.AddLogDetails("presentation", fmt.Sprintf("Received presentation request from %s", parsed.ClientID), true, requestDetails)
 
 	dim := color.New(color.Faint)
 
@@ -380,6 +386,14 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		}
 	}
 
+	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
+	responseDetails := wallet.PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, nil)
+	responseDetails["event"] = "presentation_response"
+	responseDetails["direction"] = "outbound"
+	responseDetails["source"] = "cli"
+	responseDetails["submission_uri"] = responseURI
+	w.AddLogDetails("presentation", fmt.Sprintf("Sending presentation response to %s", parsed.ClientID), true, responseDetails)
+
 	result, err := w.SubmitPresentation(vpResult, idToken, parsed.State, responseURI, params)
 	if err != nil {
 		w.AddLog("presentation", fmt.Sprintf("Submission failed: %v", err), false)
@@ -404,23 +418,24 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	} else {
 		green := color.New(color.FgGreen)
 		green.Printf("  Submitted: %s\n", wallet.FormatDirectPostResult(result))
-		authReq := &wallet.AuthorizationRequestParams{
-			ClientID:       parsed.ClientID,
-			ResponseType:   parsed.ResponseType,
-			ResponseMode:   parsed.ResponseMode,
-			Nonce:          parsed.Nonce,
-			State:          parsed.State,
-			RedirectURI:    parsed.RedirectURI,
-			ResponseURI:    responseURI,
-			ClientMetadata: parsed.ClientMetadata,
-			DCQLQuery:      parsed.DCQLQuery,
-			RequestObject:  parsed.RequestObject,
-			RequestPayload: wallet.RequestPayload(parsed.RequestObject, parsed.FullJSON),
-			Source:         "cli",
-		}
-		details := wallet.PresentationSubmissionLogDetails(authReq, w, matches, vpResult, idToken, result)
-		w.AddLogDetails("presentation", fmt.Sprintf("Presented to %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), true, details)
 	}
+	resultDetails := map[string]any{
+		"event":          "verifier_response",
+		"direction":      "inbound",
+		"source":         "cli",
+		"client_id":      parsed.ClientID,
+		"response_mode":  parsed.ResponseMode,
+		"state":          parsed.State,
+		"submission_uri": responseURI,
+		"status_code":    result.StatusCode,
+	}
+	if result.RedirectURI != "" {
+		resultDetails["redirect_uri"] = result.RedirectURI
+	}
+	if result.Body != "" {
+		resultDetails["response_body"] = result.Body
+	}
+	w.AddLogDetails("presentation", fmt.Sprintf("Verifier result from %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), result.StatusCode < 400, resultDetails)
 	dim.Println("───────────────────────────────────────")
 
 	if submissionCh != nil {
@@ -437,6 +452,23 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	}
 
 	return nil
+}
+
+func authorizationRequestParamsFromParsed(parsed *oid4vc.AuthorizationRequest, responseURI, source string) *wallet.AuthorizationRequestParams {
+	return &wallet.AuthorizationRequestParams{
+		ClientID:       parsed.ClientID,
+		ResponseType:   parsed.ResponseType,
+		ResponseMode:   parsed.ResponseMode,
+		Nonce:          parsed.Nonce,
+		State:          parsed.State,
+		RedirectURI:    parsed.RedirectURI,
+		ResponseURI:    responseURI,
+		ClientMetadata: parsed.ClientMetadata,
+		DCQLQuery:      parsed.DCQLQuery,
+		RequestObject:  parsed.RequestObject,
+		RequestPayload: wallet.RequestPayload(parsed.RequestObject, parsed.FullJSON),
+		Source:         source,
+	}
 }
 
 // processCredentialOffer fetches and stores a credential from an OID4VCI offer URI.

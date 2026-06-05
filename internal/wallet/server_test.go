@@ -984,6 +984,23 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 	if response["redirect_uri"] != "https://verifier.example/done" {
 		t.Errorf("expected redirect_uri, got %v", response["redirect_uri"])
 	}
+
+	assertWalletLogEvent(t, srv.wallet.GetLog(), "presentation_request")
+	assertWalletLogEvent(t, srv.wallet.GetLog(), "presentation_response")
+	assertWalletLogEvent(t, srv.wallet.GetLog(), "verifier_response")
+}
+
+func assertWalletLogEvent(t *testing.T, entries []LogEntry, event string) {
+	t.Helper()
+	for _, entry := range entries {
+		if entry.Details == nil {
+			continue
+		}
+		if entry.Details["event"] == event {
+			return
+		}
+	}
+	t.Fatalf("missing wallet log event %q in %#v", event, entries)
 }
 
 func TestPresentationFlow_AutoAccept_NoMatch(t *testing.T) {

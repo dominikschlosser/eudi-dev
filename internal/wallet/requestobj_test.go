@@ -134,6 +134,9 @@ func TestMakeFetchRequestURI_GET(t *testing.T) {
 	if result != jwt {
 		t.Errorf("expected JWT, got %s", result)
 	}
+	logs := w.GetLog()
+	assertWalletLogEvent(t, logs, "request_object_fetch_request")
+	assertWalletLogEvent(t, logs, "request_object_fetch_response")
 }
 
 func TestMakeFetchRequestURI_POST(t *testing.T) {
@@ -193,6 +196,9 @@ func TestMakeFetchRequestURI_POST(t *testing.T) {
 	if !isJWT(result) {
 		t.Error("expected JWT result")
 	}
+	walletLogs := wallet.GetLog()
+	assertWalletLogEvent(t, walletLogs, "request_object_fetch_request")
+	assertWalletLogEvent(t, walletLogs, "request_object_fetch_response")
 }
 
 func TestMakeFetchRequestURI_POST_WalletNonceMismatch(t *testing.T) {

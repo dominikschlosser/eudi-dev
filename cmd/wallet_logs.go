@@ -161,8 +161,14 @@ func compactWalletLogDetails(details map[string]any) []string {
 	}
 	var parts []string
 	for _, key := range []string{
+		"event",
+		"direction",
 		"source",
+		"method",
+		"endpoint",
+		"url",
 		"client_id",
+		"issuer",
 		"response_type",
 		"response_mode",
 		"nonce",
@@ -171,12 +177,17 @@ func compactWalletLogDetails(details map[string]any) []string {
 		"request_origin",
 		"submission_uri",
 		"status_code",
+		"grant_type",
+		"credential_configuration_id",
+		"credential_identifier",
+		"credential_id",
+		"format",
 	} {
 		if value := compactScalar(details[key]); value != "" {
 			parts = append(parts, key+"="+value)
 		}
 	}
-	for _, key := range []string{"request_object", "dcql_query", "client_metadata", "vp_token", "id_token", "browser_api_result"} {
+	for _, key := range []string{"request", "response", "request_object", "response_body", "dcql_query", "client_metadata", "vp_token", "id_token", "browser_api_result", "wallet_metadata", "raw_credential", "proof_jwt", "access_token"} {
 		if details[key] != nil {
 			parts = append(parts, key+"=yes")
 		}

@@ -64,6 +64,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	if source == "" {
 		source = "authorize"
 	}
+	authReq.Source = source
 	s.addPresentationRequestLog(authReq, source)
 
 	// Check one-shot error override
@@ -338,6 +339,16 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 		RequestObject:  authReq.RequestObject,
 	}
 
+	errorDetails := presentationRequestLogDetails(authReq)
+	addStringDetail(errorDetails, "submission_uri", responseURI)
+	errorDetails["direction"] = "outbound"
+	errorDetails["error"] = errorCode
+	addStringDetail(errorDetails, "error_description", errorDescription)
+	if authReq.Source != "" {
+		errorDetails["source"] = authReq.Source
+	}
+	s.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Sending authorization error to %s", authReq.ClientID), true, errorDetails)
+
 	result, err := s.wallet.SubmitAuthorizationError(errorCode, errorDescription, authReq.State, responseURI, params)
 	if err != nil {
 		s.log("  ERROR: Error submission failed: %v", err)
@@ -351,14 +362,7 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 		s.log("  Redirect:      %s", result.RedirectURI)
 	}
 
-	errorDetails := presentationRequestLogDetails(authReq)
-	addStringDetail(errorDetails, "submission_uri", responseURI)
-	errorDetails["status_code"] = result.StatusCode
-	addStringDetail(errorDetails, "redirect_uri", result.RedirectURI)
-	addStringDetail(errorDetails, "response_body", result.Body)
-	errorDetails["error"] = errorCode
-	addStringDetail(errorDetails, "error_description", errorDescription)
-	s.wallet.AddLogDetails("presentation", fmt.Sprintf("Sent authorization error to %s: %s", authReq.ClientID, FormatDirectPostResult(result)), true, errorDetails)
+	s.wallet.addProtocolLog("presentation", "verifier_response", fmt.Sprintf("Verifier result from %s: %s", authReq.ClientID, FormatDirectPostResult(result)), result.StatusCode < 400, verifierResponseLogDetails(authReq, &preparedPresentation{ResponseURI: responseURI}, result))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":            status,
@@ -405,6 +409,8 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 		s.log("  id_token:      created (SIOPv2)")
 	}
 
+	s.wallet.addProtocolLog("presentation", "presentation_response", fmt.Sprintf("Sending presentation response to %s", authReq.ClientID), true, presentationResponseLogDetails(authReq, s.wallet, matches, prepared))
+
 	result, err := s.wallet.SubmitPresentation(prepared.VPResult, prepared.IDToken, authReq.State, responseURI, prepared.Params)
 	if err != nil {
 		s.log("  ERROR: Submission failed: %v", err)
@@ -421,12 +427,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 		s.log("  ERROR:         %s", result.Body)
 	}
 
-	s.wallet.AddLogDetails(
-		"presentation",
-		fmt.Sprintf("Presented to %s: %s", authReq.ClientID, FormatDirectPostResult(result)),
-		true,
-		presentationSubmissionLogDetails(authReq, s.wallet, matches, prepared, result),
-	)
+	s.wallet.addProtocolLog("presentation", "verifier_response", fmt.Sprintf("Verifier result from %s: %s", authReq.ClientID, FormatDirectPostResult(result)), result.StatusCode < 400, verifierResponseLogDetails(authReq, prepared, result))
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "submitted",

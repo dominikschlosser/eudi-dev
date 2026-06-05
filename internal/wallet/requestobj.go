@@ -93,8 +93,34 @@ func MakeFetchRequestURI(w *Wallet, logFn func(string, ...any)) func(url string,
 		if method == "post" {
 			return fetchRequestURIPOST(w, requestURI, logFn)
 		}
-		return format.FetchURL(requestURI)
+		return fetchRequestURIGET(w, requestURI)
 	}
+}
+
+func fetchRequestURIGET(w *Wallet, requestURI string) (string, error) {
+	logRequestObjectFetchRequest(w, "GET", requestURI, nil)
+	resp, err := format.HTTPClientForURL(requestURI).Get(requestURI)
+	if err != nil {
+		logRequestObjectFetchResponse(w, "GET", requestURI, nil, err)
+		return "", fmt.Errorf("fetching %s: %w", requestURI, err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	details := map[string]any{
+		"content_type": resp.Header.Get("Content-Type"),
+	}
+	if readErr == nil {
+		addStringDetail(details, "response_body", strings.TrimSpace(string(body)))
+	}
+	logRequestObjectFetchResponse(w, "GET", requestURI, responseLogResult(resp.StatusCode, details), readErr)
+	if readErr != nil {
+		return "", fmt.Errorf("reading response from %s: %w", requestURI, readErr)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetching %s: HTTP %d", requestURI, resp.StatusCode)
+	}
+	return strings.TrimSpace(string(body)), nil
 }
 
 // fetchRequestURIPOST implements the request_uri_method=post flow per OID4VP 1.0 §5.10.
@@ -124,6 +150,11 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	form.Set("wallet_metadata", string(walletMetaJSON))
 	form.Set("wallet_nonce", walletNonce)
 
+	logRequestObjectFetchRequest(w, "POST", requestURI, map[string]any{
+		"wallet_metadata": walletMeta,
+		"wallet_nonce":    walletNonce,
+	})
+
 	req, err := http.NewRequest("POST", requestURI, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("creating POST request: %w", err)
@@ -133,9 +164,23 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 
 	resp, err := format.HTTPClientForURL(requestURI).Do(req)
 	if err != nil {
+		logRequestObjectFetchResponse(w, "POST", requestURI, nil, err)
 		return "", fmt.Errorf("POSTing to request_uri: %w", err)
 	}
 	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logRequestObjectFetchResponse(w, "POST", requestURI, responseLogResult(resp.StatusCode, map[string]any{
+			"content_type": resp.Header.Get("Content-Type"),
+		}), err)
+		return "", fmt.Errorf("reading request_uri response: %w", err)
+	}
+	result := strings.TrimSpace(string(body))
+	logRequestObjectFetchResponse(w, "POST", requestURI, responseLogResult(resp.StatusCode, map[string]any{
+		"content_type":  resp.Header.Get("Content-Type"),
+		"response_body": result,
+	}), nil)
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("POST to request_uri returned HTTP %d", resp.StatusCode)
@@ -144,12 +189,6 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 		return "", err
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("reading request_uri response: %w", err)
-	}
-
-	result := strings.TrimSpace(string(body))
 	if !isJWT(result) && !isJWE(result) {
 		return "", fmt.Errorf("request_uri response must be a compact JWT or JWE")
 	}
@@ -196,6 +235,49 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	}
 
 	return result, nil
+}
+
+func logRequestObjectFetchRequest(w *Wallet, method, requestURI string, details map[string]any) {
+	if w == nil {
+		return
+	}
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["direction"] = "outbound"
+	details["method"] = method
+	details["url"] = requestURI
+	w.addProtocolLog("presentation", "request_object_fetch_request", fmt.Sprintf("Fetch request object %s %s", method, requestURI), true, details)
+}
+
+func logRequestObjectFetchResponse(w *Wallet, method, requestURI string, result map[string]any, err error) {
+	if w == nil {
+		return
+	}
+	details := map[string]any{
+		"direction": "inbound",
+		"method":    method,
+		"url":       requestURI,
+	}
+	for key, value := range result {
+		details[key] = value
+	}
+	if err != nil {
+		details["error"] = err.Error()
+	}
+	success := err == nil
+	if statusCode, ok := details["status_code"].(int); ok && (statusCode < 200 || statusCode >= 300) {
+		success = false
+	}
+	w.addProtocolLog("presentation", "request_object_fetch_response", fmt.Sprintf("Request object fetch response %s %s", method, requestURI), success, details)
+}
+
+func responseLogResult(statusCode int, details map[string]any) map[string]any {
+	if details == nil {
+		details = map[string]any{}
+	}
+	details["status_code"] = statusCode
+	return details
 }
 
 func validateRequestURIResponse(contentType string) error {
