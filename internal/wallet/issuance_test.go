@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -165,6 +166,72 @@ func TestBuildCredentialResponseEncryptionRequest(t *testing.T) {
 	}
 	if jwk["use"] != "enc" {
 		t.Fatalf("expected use=enc, got %v", jwk["use"])
+	}
+}
+
+func TestPrepareCredentialRequestBody_EncryptsWhenIssuerAdvertisesRequestEncryption(t *testing.T) {
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pubJWK := mock.PublicKeyJWKMap(&issuerKey.PublicKey)
+	encJWK := map[string]any{
+		"kty": pubJWK["kty"],
+		"crv": pubJWK["crv"],
+		"x":   pubJWK["x"],
+		"y":   pubJWK["y"],
+		"kid": "issuer-enc-key",
+		"use": "enc",
+		"alg": "ECDH-ES",
+	}
+	metadata := map[string]any{
+		"credential_request_encryption": map[string]any{
+			"jwks": map[string]any{
+				"keys": []any{encJWK},
+			},
+			"enc_values_supported": []any{"A256GCM", "A128GCM"},
+			"encryption_required":  false,
+		},
+	}
+	reqBody := map[string]any{
+		"credential_configuration_id": "test-config",
+		"proofs": map[string]any{
+			"jwt": []string{"proof-jwt"},
+		},
+	}
+
+	body, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
+	if err != nil {
+		t.Fatalf("prepareCredentialRequestBody: %v", err)
+	}
+	if contentType != "application/jwt" {
+		t.Fatalf("contentType = %q, want application/jwt", contentType)
+	}
+	parts := strings.Split(string(body), ".")
+	if len(parts) != 5 {
+		t.Fatalf("expected compact JWE with 5 parts, got %d", len(parts))
+	}
+	headerJSON, err := format.DecodeBase64URL(parts[0])
+	if err != nil {
+		t.Fatalf("decode JWE header: %v", err)
+	}
+	var header map[string]any
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		t.Fatalf("parse JWE header: %v", err)
+	}
+	if header["alg"] != "ECDH-ES" || header["enc"] != "A256GCM" || header["kid"] != "issuer-enc-key" || header["cty"] != "json" {
+		t.Fatalf("unexpected JWE header: %v", header)
+	}
+	decrypted, err := DecryptCompactJWE(string(body), issuerKey)
+	if err != nil {
+		t.Fatalf("DecryptCompactJWE: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(decrypted), &got); err != nil {
+		t.Fatalf("parse decrypted payload: %v", err)
+	}
+	if got["credential_configuration_id"] != "test-config" {
+		t.Fatalf("decrypted credential_configuration_id = %v", got["credential_configuration_id"])
 	}
 }
 

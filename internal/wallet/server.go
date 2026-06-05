@@ -398,6 +398,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		ClientMetadata:   parsed.ClientMetadata,
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
+		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 	})
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
@@ -426,6 +427,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		ClientMetadata:   parsed.ClientMetadata,
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
+		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 	}
 
 	reqServer.handleAuthFlow(w, authReq)

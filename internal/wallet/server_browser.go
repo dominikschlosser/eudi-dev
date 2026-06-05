@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
 )
 
 // handleBrowserPresentationAPI executes an OpenID4VP Browser API request and
@@ -32,45 +34,76 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	reqServer := s
+	if r.Header.Get("X-OID4VC-Dev-HAIP") == "true" || r.Header.Get("X-OID4VC-Dev-Mode") != "" {
+		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
+			RequireHAIP:    r.Header.Get("X-OID4VC-Dev-HAIP") == "true",
+			ValidationMode: r.Header.Get("X-OID4VC-Dev-Mode"),
+		})
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		reqServer = &Server{
+			wallet:           reqWallet,
+			port:             s.port,
+			mux:              s.mux,
+			onSave:           s.onSave,
+			onConsentRequest: s.onConsentRequest,
+			onUIRequest:      s.onUIRequest,
+			logFunc:          s.logFunc,
+			httpSrv:          s.httpSrv,
+			issuerSrv:        s.issuerSrv,
+			issuerTLSCert:    s.issuerTLSCert,
+			issuerPort:       s.issuerPort,
+			issuerKeyExpiry:  s.issuerKeyExpiry,
+		}
+		reqServer.parseOpts = oid4vc.ParseOptions{
+			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
+				reqServer.log(format, args...)
+			}),
+		}
+	}
+
 	requestOrigin := strings.TrimSpace(r.Header.Get("Origin"))
-	protocol, authReq, err := ParseBrowserAPIRequest(body, s.parseOpts, requestOrigin)
+	protocol, authReq, err := ParseBrowserAPIRequest(body, reqServer.parseOpts, requestOrigin)
 	if err != nil {
-		s.log("  ERROR: %v", err)
-		s.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse browser request: %v", err), false)
+		reqServer.log("  ERROR: %v", err)
+		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse browser request: %v", err), false)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 
-	s.log("Received Browser API authorization request")
-	s.log("  Protocol:      %s", protocol)
-	s.log("  Client ID:     %s", authReq.ClientID)
-	s.log("  Response Mode: %s", authReq.ResponseMode)
+	reqServer.log("Received Browser API authorization request")
+	reqServer.log("  Protocol:      %s", protocol)
+	reqServer.log("  Client ID:     %s", authReq.ClientID)
+	reqServer.log("  Response Mode: %s", authReq.ResponseMode)
 	if authReq.Nonce != "" {
-		s.log("  Nonce:         %s", authReq.Nonce)
+		reqServer.log("  Nonce:         %s", authReq.Nonce)
 	}
 	if requestOrigin != "" {
-		s.log("  Origin:        %s", requestOrigin)
+		reqServer.log("  Origin:        %s", requestOrigin)
 	}
 
-	if override := s.wallet.ConsumeNextError(); override != nil {
-		s.log("  Next-error override consumed: %s", override.Error)
-		result, buildErr := s.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
+	if override := reqServer.wallet.ConsumeNextError(); override != nil {
+		reqServer.log("  Next-error override consumed: %s", override.Error)
+		result, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
 		if buildErr != nil {
-			s.log("  ERROR: Browser error response failed: %v", buildErr)
-			s.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
+			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 			return
 		}
-		s.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true)
+		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
 
-	findings, err := ValidateAuthorizationRequest(s.wallet.ValidationMode, authReq)
+	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, authReq)
 	if err != nil {
-		s.log("  ERROR: %v", err)
-		s.wallet.AddLog("presentation", err.Error(), false)
-		s.wallet.NotifyError(WalletError{
+		reqServer.log("  ERROR: %v", err)
+		reqServer.wallet.AddLog("presentation", err.Error(), false)
+		reqServer.wallet.NotifyError(WalletError{
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
@@ -81,16 +114,16 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 	for _, finding := range findings {
-		s.log("  WARNING: %s", finding)
-		s.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
+		reqServer.log("  WARNING: %s", finding)
+		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
 	}
 
-	if s.wallet.RequireHAIP {
+	if reqServer.wallet.RequireHAIP {
 		if violations := ValidateHAIPCompliance(authReq, authReq.RequestObject); len(violations) > 0 {
 			for _, v := range violations {
-				s.log("  HAIP VIOLATION: %s", v)
+				reqServer.log("  HAIP VIOLATION: %s", v)
 			}
-			s.wallet.AddLog("presentation", fmt.Sprintf("HAIP violations: %v", violations), false)
+			reqServer.wallet.AddLog("presentation", fmt.Sprintf("HAIP violations: %v", violations), false)
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"error":             "invalid_request",
 				"error_description": "HAIP 1.0 compliance check failed: " + strings.Join(violations, "; "),
@@ -101,7 +134,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 	if authReq.DCQLQuery != nil {
 		if dcqlJSON, err := json.Marshal(authReq.DCQLQuery); err == nil {
-			s.log("  DCQL Query:    %s", string(dcqlJSON))
+			reqServer.log("  DCQL Query:    %s", string(dcqlJSON))
 		}
 	}
 
@@ -109,17 +142,17 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 	var matches []CredentialMatch
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches = s.wallet.EvaluateDCQL(authReq.DCQLQuery)
+		matches = reqServer.wallet.EvaluateDCQL(authReq.DCQLQuery)
 	}
 
-	s.log("  Matched:       %d credential(s)", len(matches))
+	reqServer.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
+		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
 	}
 
 	if requiresVP && len(matches) == 0 {
-		s.log("  Result:        no matching credentials")
-		s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
+		reqServer.log("  Result:        no matching credentials")
+		reqServer.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "no_match",
 			"error":  "no matching credentials found",
@@ -127,12 +160,12 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if s.wallet.AutoAccept {
-		s.writeBrowserPresentationResult(w, authReq, protocol, matches)
+	if reqServer.wallet.AutoAccept {
+		reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
 		return
 	}
 
-	s.log("  Mode:          interactive — waiting for consent...")
+	reqServer.log("  Mode:          interactive — waiting for consent...")
 	consentReq := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "presentation",
@@ -147,25 +180,25 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		DCQLQuery:    authReq.DCQLQuery,
 	}
 
-	s.wallet.CreateConsentRequest(consentReq)
-	s.triggerUIRequest()
-	if s.onConsentRequest != nil {
-		s.onConsentRequest(consentReq)
+	reqServer.wallet.CreateConsentRequest(consentReq)
+	reqServer.triggerUIRequest()
+	if reqServer.onConsentRequest != nil {
+		reqServer.onConsentRequest(consentReq)
 	}
 
 	select {
 	case result := <-consentReq.ResultCh:
 		if !result.Approved {
-			s.log("  Consent:       denied")
-			browserResult, buildErr := s.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
+			reqServer.log("  Consent:       denied")
+			browserResult, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
 			if buildErr != nil {
-				s.log("  ERROR: Browser error response failed: %v", buildErr)
-				s.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+				reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
+				reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
 				consentReq.SubmissionCh <- SubmissionResult{Error: buildErr.Error()}
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
 				return
 			}
-			s.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true)
+			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Returned Browser API denial to %s", authReq.ClientID), true)
 			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK, Error: "access_denied"}
 			writeJSON(w, http.StatusOK, browserResult)
 			return
@@ -175,18 +208,18 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			for i, m := range matches {
 				if selectedKeys, ok := result.SelectedClaims[m.CredentialID]; ok {
 					matches[i].SelectedKeys = selectedKeys
-					cred, _ := s.wallet.GetCredential(m.CredentialID)
+					cred, _ := reqServer.wallet.GetCredential(m.CredentialID)
 					matches[i].Claims = filterClaims(cred, selectedKeys)
-					s.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
+					reqServer.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
 				}
 			}
 		}
 
-		submission := s.writeBrowserPresentationResult(w, authReq, protocol, matches)
+		submission := reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
 		consentReq.SubmissionCh <- submission
 	case <-time.After(5 * time.Minute):
 		consentReq.Status = "denied"
-		s.wallet.AddLog("presentation", "Consent timeout", false)
+		reqServer.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
 	}

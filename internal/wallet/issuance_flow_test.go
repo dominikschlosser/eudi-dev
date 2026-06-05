@@ -811,6 +811,225 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 	}
 }
 
+func TestValidateAuthorizationCodeResponse_StrictChecksStateAndIssuer(t *testing.T) {
+	tests := []struct {
+		name           string
+		values         url.Values
+		expectedState  string
+		expectedIssuer string
+		wantErr        string
+	}{
+		{
+			name: "valid",
+			values: url.Values{
+				"code":  {"issued-code"},
+				"state": {"expected-state"},
+				"iss":   {"https://issuer.example"},
+			},
+			expectedState:  "expected-state",
+			expectedIssuer: "https://issuer.example",
+		},
+		{
+			name: "missing state",
+			values: url.Values{
+				"code": {"issued-code"},
+				"iss":  {"https://issuer.example"},
+			},
+			expectedState:  "expected-state",
+			expectedIssuer: "https://issuer.example",
+			wantErr:        "missing state",
+		},
+		{
+			name: "issuer mismatch",
+			values: url.Values{
+				"code":  {"issued-code"},
+				"state": {"expected-state"},
+				"iss":   {"https://other.example"},
+			},
+			expectedState:  "expected-state",
+			expectedIssuer: "https://issuer.example",
+			wantErr:        "issuer",
+		},
+		{
+			name: "missing issuer",
+			values: url.Values{
+				"code":  {"issued-code"},
+				"state": {"expected-state"},
+			},
+			expectedState:  "expected-state",
+			expectedIssuer: "https://issuer.example",
+			wantErr:        "missing issuer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateAuthorizationCodeResponse(ValidationModeStrict, tt.values, tt.expectedState, tt.expectedIssuer)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("validateAuthorizationCodeResponse() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateAuthorizationCodeResponse() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestProcessCredentialOffer_StrictRejectsAuthorizationServerIssuerMismatchBeforePAR(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+
+	var (
+		serverURL string
+		parCalls  int
+	)
+	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":     serverURL,
+				"authorization_servers": []string{serverURL},
+				"credential_endpoint":   serverURL + "/credential",
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{
+						"format": "dc+sd-jwt",
+						"scope":  "test-scope",
+					},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"issuer":                                serverURL + "/wrong",
+				"authorization_endpoint":                serverURL + "/authorize",
+				"pushed_authorization_request_endpoint": serverURL + "/par",
+				"token_endpoint":                        serverURL + "/token",
+				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":     []string{"ES256"},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/par":
+			parCalls++
+			rw.WriteHeader(http.StatusBadRequest)
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer issuer.Close()
+	serverURL = issuer.URL
+
+	oldClient := httpClient
+	httpClient = issuer.Client()
+	defer func() { httpClient = oldClient }()
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"authorization_code": map[string]any{
+				"issuer_state": "issuer-state-1",
+			},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+
+	_, err := w.ProcessCredentialOffer(offerURI)
+	if err == nil || !strings.Contains(err.Error(), "authorization server issuer") {
+		t.Fatalf("ProcessCredentialOffer() error = %v, want authorization server issuer error", err)
+	}
+	if parCalls != 0 {
+		t.Fatalf("PAR calls = %d, want 0", parCalls)
+	}
+}
+
+func TestProcessCredentialOffer_StrictRejectsMissingAuthorizationResponseIssuerBeforeToken(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+
+	var (
+		serverURL  string
+		parState   string
+		tokenCalls int
+	)
+	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":     serverURL,
+				"authorization_servers": []string{serverURL},
+				"credential_endpoint":   serverURL + "/credential",
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{
+						"format": "dc+sd-jwt",
+						"scope":  "test-scope",
+					},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"issuer":                                serverURL,
+				"authorization_endpoint":                serverURL + "/authorize",
+				"pushed_authorization_request_endpoint": serverURL + "/par",
+				"token_endpoint":                        serverURL + "/token",
+				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":     []string{"ES256"},
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/par":
+			body, _ := io.ReadAll(r.Body)
+			form, _ := url.ParseQuery(string(body))
+			parState = form.Get("state")
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"request_uri": serverURL + "/request-uri/example",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
+			redirect := w.VCIRedirectURI + "?code=issued-code&state=" + url.QueryEscape(parState)
+			http.Redirect(rw, r, redirect, http.StatusFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			tokenCalls++
+			rw.WriteHeader(http.StatusBadRequest)
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer issuer.Close()
+	serverURL = issuer.URL
+
+	oldClient := httpClient
+	httpClient = issuer.Client()
+	defer func() { httpClient = oldClient }()
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"authorization_code": map[string]any{
+				"issuer_state": "issuer-state-1",
+			},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+
+	_, err := w.ProcessCredentialOffer(offerURI)
+	if err == nil || !strings.Contains(err.Error(), "missing issuer") {
+		t.Fatalf("ProcessCredentialOffer() error = %v, want missing issuer error", err)
+	}
+	if tokenCalls != 0 {
+		t.Fatalf("token calls = %d, want 0", tokenCalls)
+	}
+}
+
 func TestProcessCredentialOffer_TxCodeSentInTokenRequest(t *testing.T) {
 	w := generateTestWallet(t)
 

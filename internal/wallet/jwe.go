@@ -32,14 +32,22 @@ import (
 	"github.com/dominikschlosser/oid4vc-dev/internal/format"
 )
 
-// EncryptJWE encrypts payload as a compact JWE using ECDH-ES with AES-GCM or AES-CBC-HS.
+func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, apu, apv []byte) (string, []byte, error) {
+	return encryptJWE(payload, recipientKey, kid, alg, enc, "", apu, apv)
+}
+
+func EncryptJWEWithContentType(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, cty string, apu, apv []byte) (string, []byte, error) {
+	return encryptJWE(payload, recipientKey, kid, alg, enc, cty, apu, apv)
+}
+
+// encryptJWE encrypts payload as a compact JWE using ECDH-ES with AES-GCM or AES-CBC-HS.
 // recipientKey is the verifier's public EC key, kid identifies it,
 // alg is the JWE key agreement algorithm from the JWK (e.g. "ECDH-ES"),
 // enc is the content encryption algorithm (e.g. "A128GCM", "A256GCM", "A128CBC-HS256"),
-// apu is the Agreement PartyUInfo (set to mdoc_generated_nonce for ISO mode, nil otherwise),
-// and apv is the Agreement PartyVInfo (set to the authorization request nonce for ISO mode).
-// Returns the JWE compact serialization and the derived content encryption key (CEK).
-func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, apu, apv []byte) (string, []byte, error) {
+// cty is the optional JWE content type, apu is the Agreement PartyUInfo, and apv is the
+// Agreement PartyVInfo. Returns the JWE compact serialization and the derived content
+// encryption key (CEK).
+func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, cty string, apu, apv []byte) (string, []byte, error) {
 	keyBitLen, err := encKeyBitLen(enc)
 	if err != nil {
 		return "", nil, err
@@ -85,6 +93,9 @@ func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 	}
 	if apv != nil {
 		header["apv"] = format.EncodeBase64URL(apv)
+	}
+	if cty != "" {
+		header["cty"] = cty
 	}
 
 	headerJSON, err := json.Marshal(header)

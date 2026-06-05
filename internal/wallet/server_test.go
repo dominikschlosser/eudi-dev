@@ -705,6 +705,47 @@ func TestBrowserPresentationAPI_DCAPISignedJWT(t *testing.T) {
 	}
 }
 
+func TestBrowserPresentationAPI_RequestScopedHAIPRejectsWrongExpectedOrigins(t *testing.T) {
+	srv := newTestServer(t, true)
+
+	payload := map[string]any{
+		"digital": map[string]any{
+			"requests": []any{
+				map[string]any{
+					"protocol": BrowserAPIProtocolOpenID4VPUnsigned,
+					"data": map[string]any{
+						"client_id":        "web-origin:https://wallet.example",
+						"response_type":    "vp_token",
+						"response_mode":    "dc_api.jwt",
+						"nonce":            "browser-nonce",
+						"expected_origins": []any{"https://other.example"},
+						"dcql_query":       pidDCQLQuery(),
+					},
+				},
+			},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshaling payload: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://wallet.example")
+	req.Header.Set("X-OID4VC-Dev-Mode", "strict")
+	req.Header.Set("X-OID4VC-Dev-HAIP", "true")
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "expected_origins") {
+		t.Fatalf("expected expected_origins error, got %s", rec.Body.String())
+	}
+}
+
 func TestBrowserPresentationAPI_DCAPIMultiSignedPrefersValidSignature(t *testing.T) {
 	srv := newTestServer(t, true)
 
@@ -2511,6 +2552,46 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 	// Verify the verifier received the VP token
 	if receivedVPToken == "" {
 		t.Fatal("verifier did not receive VP token")
+	}
+}
+
+func TestFetchRequestURIPOST_AcceptsLocalSelfSignedTLS(t *testing.T) {
+	w := generateTestWallet(t)
+
+	var receivedMethod string
+	requestURIServer := httptest.NewTLSServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		walletNonce := r.Form.Get("wallet_nonce")
+		if r.Form.Get("wallet_metadata") == "" {
+			t.Fatal("expected wallet_metadata")
+		}
+		if walletNonce == "" {
+			t.Fatal("expected wallet_nonce")
+		}
+
+		jwt := makeTestJWT(map[string]any{"alg": "ES256"}, map[string]any{
+			"client_id":     "https://verifier.example",
+			"response_type": "vp_token",
+			"nonce":         "test-nonce",
+			"wallet_nonce":  walletNonce,
+		})
+		rw.Header().Set("Content-Type", "application/oauth-authz-req+jwt")
+		rw.Write([]byte(jwt))
+	}))
+	defer requestURIServer.Close()
+
+	result, err := fetchRequestURIPOST(w, requestURIServer.URL, nil)
+	if err != nil {
+		t.Fatalf("fetchRequestURIPOST: %v", err)
+	}
+	if receivedMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", receivedMethod)
+	}
+	if !isJWT(result) {
+		t.Fatalf("expected compact JWT response, got %q", result)
 	}
 }
 

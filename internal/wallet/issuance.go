@@ -35,6 +35,7 @@ import (
 
 var preferredCredentialResponseEncryptionAlgs = []string{"ECDH-ES"}
 var preferredCredentialResponseEncryptionEncs = []string{"A128GCM", "A256GCM", "A128CBC-HS256"}
+var preferredCredentialRequestEncryptionEncs = []string{"A256GCM", "A128GCM", "A128CBC-HS256"}
 
 // HTTPClient is the interface used for HTTP requests during issuance flows.
 type HTTPClient interface {
@@ -87,10 +88,18 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	}
 
 	authServer := getAuthorizationServer(metadata, offer.CredentialIssuer)
-	oauthMeta, _ := fetchOAuthMetadata(authServer)
+	oauthMeta, oauthErr := fetchOAuthMetadata(authServer)
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
 	if offer.Grants.PreAuthorizedCode == "" {
+		if w.ValidationMode == ValidationModeStrict {
+			if oauthErr != nil {
+				return nil, fmt.Errorf("fetching authorization server metadata: %w", oauthErr)
+			}
+			if err := validateAuthorizationServerIssuer(authServer, oauthMeta); err != nil {
+				return nil, err
+			}
+		}
 		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint)
 	}
 
@@ -152,6 +161,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		// Try credential request without proof to get c_nonce from error response
 		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
 		nonceResp, nonceErr := requestCredential(
+			metadata,
 			credentialEndpoint,
 			accessToken,
 			proofJWT,
@@ -198,6 +208,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	}
 
 	credResp, err := requestCredential(
+		metadata,
 		credentialEndpoint,
 		accessToken,
 		proofJWT,
@@ -413,6 +424,26 @@ func getAuthorizationServer(metadata map[string]any, issuer string) string {
 	return authServer
 }
 
+func validateAuthorizationServerIssuer(authServer string, oauthMeta map[string]any) error {
+	expected := normalizeIssuerURL(authServer)
+	issuer, _ := oauthMeta["issuer"].(string)
+	actual := normalizeIssuerURL(issuer)
+	if expected == "" {
+		return fmt.Errorf("authorization server issuer cannot be validated without authorization server URL")
+	}
+	if actual == "" {
+		return fmt.Errorf("authorization server metadata missing issuer")
+	}
+	if actual != expected {
+		return fmt.Errorf("authorization server issuer %q did not match authorization server %q", issuer, authServer)
+	}
+	return nil
+}
+
+func normalizeIssuerURL(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
+}
+
 func getTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer string) string {
 	// OID4VCI: token_endpoint may be directly in credential issuer metadata
 	if ep, ok := metadata["token_endpoint"].(string); ok {
@@ -610,18 +641,127 @@ func publicCredentialResponseEncryptionJWK(key *ecdsa.PublicKey, alg string) map
 }
 
 func firstSupportedString(raw any, preferred []string) string {
-	values, ok := raw.([]any)
-	if !ok {
+	values := supportedStringValues(raw)
+	if len(values) == 0 {
 		return ""
 	}
 	for _, want := range preferred {
-		for _, candidate := range values {
-			if got, _ := candidate.(string); got == want {
+		for _, got := range values {
+			if got == want {
 				return got
 			}
 		}
 	}
 	return ""
+}
+
+func supportedStringValues(raw any) []string {
+	switch values := raw.(type) {
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, candidate := range values {
+			if got, _ := candidate.(string); got != "" {
+				out = append(out, got)
+			}
+		}
+		return out
+	case []string:
+		return values
+	default:
+		return nil
+	}
+}
+
+type credentialRequestEncryptionParams struct {
+	key *ecdsa.PublicKey
+	kid string
+	alg string
+	enc string
+}
+
+func prepareCredentialRequestBody(metadata map[string]any, reqBody map[string]any) ([]byte, string, error) {
+	bodyJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshaling request: %w", err)
+	}
+	encryption, err := selectCredentialRequestEncryption(metadata)
+	if err != nil {
+		return nil, "", err
+	}
+	if encryption == nil {
+		return bodyJSON, "application/json", nil
+	}
+	jwe, _, err := EncryptJWEWithContentType(bodyJSON, encryption.key, encryption.kid, encryption.alg, encryption.enc, "json", nil, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("encrypting credential request: %w", err)
+	}
+	return []byte(jwe), "application/jwt", nil
+}
+
+func selectCredentialRequestEncryption(metadata map[string]any) (*credentialRequestEncryptionParams, error) {
+	raw, ok := metadata["credential_request_encryption"].(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	enc := firstSupportedString(raw["enc_values_supported"], preferredCredentialRequestEncryptionEncs)
+	if enc == "" {
+		if credentialRequestEncryptionRequired(raw) {
+			return nil, fmt.Errorf("credential request encryption is required but no supported enc value was advertised")
+		}
+		return nil, nil
+	}
+	jwks, ok := raw["jwks"].(map[string]any)
+	if !ok {
+		if credentialRequestEncryptionRequired(raw) {
+			return nil, fmt.Errorf("credential request encryption is required but jwks is missing")
+		}
+		return nil, nil
+	}
+	keys, ok := jwks["keys"].([]any)
+	if !ok || len(keys) == 0 {
+		if credentialRequestEncryptionRequired(raw) {
+			return nil, fmt.Errorf("credential request encryption is required but jwks.keys is missing")
+		}
+		return nil, nil
+	}
+	for _, keyRaw := range keys {
+		jwk, ok := keyRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if use, _ := jwk["use"].(string); use != "" && use != "enc" {
+			continue
+		}
+		alg, _ := jwk["alg"].(string)
+		if alg != "ECDH-ES" {
+			continue
+		}
+		kid, _ := jwk["kid"].(string)
+		if kid == "" {
+			continue
+		}
+		x, _ := jwk["x"].(string)
+		y, _ := jwk["y"].(string)
+		key, err := ecdsaPublicKeyFromJWK(x, y)
+		if err != nil {
+			continue
+		}
+		return &credentialRequestEncryptionParams{
+			key: key,
+			kid: kid,
+			alg: alg,
+			enc: enc,
+		}, nil
+	}
+	if credentialRequestEncryptionRequired(raw) {
+		return nil, fmt.Errorf("credential request encryption is required but no usable ECDH-ES encryption key was advertised")
+	}
+	return nil, nil
+}
+
+func credentialRequestEncryptionRequired(raw map[string]any) bool {
+	required, _ := raw["encryption_required"].(bool)
+	return required
 }
 
 // extractCredential extracts the credential string from a credential response.
@@ -707,6 +847,7 @@ func fetchNonce(metadata map[string]any, issuer string) string {
 
 // requestCredential sends a credential request to the issuer.
 func requestCredential(
+	metadata map[string]any,
 	credentialEndpoint,
 	accessToken,
 	proofJWT string,
@@ -730,16 +871,16 @@ func requestCredential(
 		reqBody["credential_response_encryption"] = credentialResponseEncryption
 	}
 
-	bodyJSON, err := json.Marshal(reqBody)
+	reqBodyBytes, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
+		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", credentialEndpoint, strings.NewReader(string(bodyJSON)))
+	req, err := http.NewRequest("POST", credentialEndpoint, strings.NewReader(string(reqBodyBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := doIssuanceRequest(req)

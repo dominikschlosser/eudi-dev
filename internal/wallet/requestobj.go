@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/format"
 )
@@ -125,7 +124,6 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	form.Set("wallet_metadata", string(walletMetaJSON))
 	form.Set("wallet_nonce", walletNonce)
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequest("POST", requestURI, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("creating POST request: %w", err)
@@ -133,7 +131,7 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/oauth-authz-req+jwt")
 
-	resp, err := client.Do(req)
+	resp, err := format.HTTPClientForURL(requestURI).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("POSTing to request_uri: %w", err)
 	}

@@ -148,6 +148,7 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		ClientMetadata:   parsed.ClientMetadata,
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
+		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 	}, nil
 }
 
@@ -194,6 +195,7 @@ func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, o
 			ClientMetadata:   parsed.ClientMetadata,
 			DCQLQuery:        parsed.DCQLQuery,
 			RequestObject:    parsed.RequestObject,
+			RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 		}
 		if firstCandidate == nil {
 			firstCandidate = candidate

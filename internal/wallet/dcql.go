@@ -62,7 +62,7 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 				continue
 			}
 
-			selection := selectClaims(cred, cqMap)
+			selection := w.selectClaims(cred, cqMap)
 			if len(selection.missingRequired) > 0 {
 				if w.ValidationMode == ValidationModeDebug && len(selection.selectedKeys) > 0 {
 					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) missing required claims %v in debug mode; continuing with selected claims %v",
@@ -172,15 +172,10 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 }
 
 // selectClaims determines which claims to disclose based on the query.
-func selectClaims(cred StoredCredential, cqMap map[string]any) claimSelection {
+func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claimSelection {
 	claimsQuery, ok := cqMap["claims"].([]any)
 	if !ok || len(claimsQuery) == 0 {
-		// No specific claims requested, include all
-		all := make([]string, 0, len(cred.Claims))
-		for k := range cred.Claims {
-			all = append(all, k)
-		}
-		return claimSelection{selectedKeys: all, match: true}
+		return claimSelection{match: true}
 	}
 
 	// Check claim_sets first (preference ordering)

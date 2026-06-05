@@ -118,7 +118,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("PAR response missing request_uri")
 	}
 
-	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, redirectURI, state)
+	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, redirectURI, state, oauthIssuer(oauthMeta, ""), w.ValidationMode)
 	if err != nil {
 		return nil, fmt.Errorf("authorization request: %w", err)
 	}
@@ -185,6 +185,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 
 	credResp, err := requestCredentialWithDPoP(
+		metadata,
 		credentialEndpoint,
 		accessToken,
 		proofJWT,
@@ -508,7 +509,7 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	return out, nil
 }
 
-func requestCredentialWithDPoP(endpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
 			"jwt": []string{proofJWT},
@@ -522,11 +523,11 @@ func requestCredentialWithDPoP(endpoint, accessToken, proofJWT, credentialIdenti
 	if credentialResponseEncryption != nil {
 		reqBody["credential_response_encryption"] = credentialResponseEncryption
 	}
-	body, err := json.Marshal(reqBody)
+	body, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling credential request: %w", err)
+		return nil, err
 	}
-	respBody, _, err := doDPoPRequest("POST", endpoint, "application/json", body, "DPoP", accessToken, key, nonce, nil)
+	respBody, _, err := doDPoPRequest("POST", endpoint, contentType, body, "DPoP", accessToken, key, nonce, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -686,7 +687,7 @@ func derefString(v *string) string {
 	return *v
 }
 
-func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redirectURI, expectedState string) (url.Values, error) {
+func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
 	location, body, err := callAuthorizationEndpoint(endpoint, clientID, requestURI)
 	if err != nil {
 		return nil, err
@@ -694,10 +695,10 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 	if location != "" {
 		valuesOut, err := parseRedirectQuery(location)
 		if err == nil {
-			if state := valuesOut.Get("state"); state != "" && expectedState != "" && state != expectedState {
-				return nil, fmt.Errorf("authorization response state %q did not match %q", state, expectedState)
-			}
 			if valuesOut.Get("code") != "" || valuesOut.Get("error") != "" {
+				if err := validateAuthorizationCodeResponse(mode, valuesOut, expectedState, expectedIssuer); err != nil {
+					return nil, err
+				}
 				return valuesOut, nil
 			}
 		}
@@ -723,13 +724,47 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 
 	select {
 	case values := <-callbackCh:
-		if state := values.Get("state"); state != "" && expectedState != "" && state != expectedState {
-			return nil, fmt.Errorf("authorization callback state %q did not match %q", state, expectedState)
+		if err := validateAuthorizationCodeResponse(mode, values, expectedState, expectedIssuer); err != nil {
+			return nil, err
 		}
 		return values, nil
 	case <-time.After(5 * time.Minute):
 		return nil, fmt.Errorf("timed out waiting for authorization callback at %s", redirectURI)
 	}
+}
+
+func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, expectedState, expectedIssuer string) error {
+	if values == nil {
+		return fmt.Errorf("authorization response is empty")
+	}
+	expectedState = strings.TrimSpace(expectedState)
+	if expectedState != "" {
+		state := values.Get("state")
+		if mode == ValidationModeStrict && state == "" {
+			return fmt.Errorf("authorization response missing state")
+		}
+		if state != "" && state != expectedState {
+			return fmt.Errorf("authorization response state %q did not match %q", state, expectedState)
+		}
+	}
+
+	if mode != ValidationModeStrict {
+		return nil
+	}
+
+	expectedIssuer = normalizeIssuerURL(expectedIssuer)
+	if expectedIssuer == "" {
+		return nil
+	}
+	issuer := values.Get("iss")
+	actualIssuer := normalizeIssuerURL(issuer)
+	if actualIssuer == "" {
+		return fmt.Errorf("authorization response missing issuer")
+	}
+	if actualIssuer != expectedIssuer {
+		return fmt.Errorf("authorization response issuer %q did not match %q", issuer, expectedIssuer)
+	}
+	return nil
 }
 
 func callAuthorizationEndpoint(endpoint, clientID, requestURI string) (string, string, error) {

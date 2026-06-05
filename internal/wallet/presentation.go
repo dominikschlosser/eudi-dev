@@ -62,11 +62,12 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 
 	switch cred.Format {
 	case "dc+sd-jwt":
-		token, err := w.createSDJWTPresentation(cred, match.SelectedKeys, params.Nonce, params.ClientID)
+		audience := sdJWTAudience(params)
+		token, err := w.createSDJWTPresentation(cred, match.SelectedKeys, params.Nonce, audience)
 		if err != nil {
 			return VPTokenResult{}, err
 		}
-		log.Printf("[VP] SD-JWT presentation created: %d disclosures selected, aud=%s", len(match.SelectedKeys), params.ClientID)
+		log.Printf("[VP] SD-JWT presentation created: %d disclosures selected, aud=%s", len(match.SelectedKeys), audience)
 		return VPTokenResult{Token: token}, nil
 	case "jwt_vc_json":
 		log.Printf("[VP] Plain JWT presentation (no selective disclosure)")
@@ -81,6 +82,13 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 	default:
 		return VPTokenResult{}, fmt.Errorf("unsupported credential format: %s", cred.Format)
 	}
+}
+
+func sdJWTAudience(params PresentationParams) string {
+	if (params.ResponseMode == "dc_api" || params.ResponseMode == "dc_api.jwt") && params.RequestOrigin != "" {
+		return "origin:" + params.RequestOrigin
+	}
+	return params.ClientID
 }
 
 // createSDJWTPresentation creates an SD-JWT presentation with selective disclosure and KB-JWT.
@@ -135,7 +143,10 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 	}
 
 	// Build the SD-JWT without KB-JWT: issuer_jwt~disc1~disc2~...~
-	withoutKB := issuerJWT + "~" + strings.Join(selectedDisclosures, "~") + "~"
+	withoutKB := issuerJWT + "~"
+	if len(selectedDisclosures) > 0 {
+		withoutKB += strings.Join(selectedDisclosures, "~") + "~"
+	}
 
 	// Compute sd_hash = base64url(SHA-256(sd-jwt-without-kb))
 	sdHash := sha256.Sum256([]byte(withoutKB))

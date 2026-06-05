@@ -75,6 +75,20 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			modifyParams: func(p *AuthorizationRequestParams) {
 				p.ClientID = "web-origin:https://wallet.example"
 				p.ResponseMode = "dc_api.jwt"
+				p.RequestOrigin = "https://wallet.example"
+			},
+			useNilReqObj:   true,
+			wantViolations: 0,
+		},
+		{
+			name: "web-origin unsigned browser flow with matching expected origins",
+			modifyParams: func(p *AuthorizationRequestParams) {
+				p.ClientID = "web-origin:https://wallet.example"
+				p.ResponseMode = "dc_api.jwt"
+				p.RequestOrigin = "https://wallet.example"
+				p.RequestPayload = map[string]any{
+					"expected_origins": []any{"https://wallet.example"},
+				}
 			},
 			useNilReqObj:   true,
 			wantViolations: 0,
@@ -84,6 +98,20 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			modifyReqObj:   func(r *oid4vc.RequestObjectJWT) { r.Header["alg"] = "RS256" },
 			wantViolations: 1,
 			wantContain:    "ES256",
+		},
+		{
+			name: "wrong expected origins",
+			modifyParams: func(p *AuthorizationRequestParams) {
+				p.ClientID = "web-origin:https://wallet.example"
+				p.ResponseMode = "dc_api.jwt"
+				p.RequestOrigin = "https://wallet.example"
+				p.RequestPayload = map[string]any{
+					"expected_origins": []any{"https://other.example"},
+				}
+			},
+			useNilReqObj:   true,
+			wantViolations: 1,
+			wantContain:    "expected_origins",
 		},
 		{
 			name: "multiple violations",

@@ -291,6 +291,90 @@ func TestCreateVPToken_SDJWT(t *testing.T) {
 	}
 }
 
+func TestCreateVPToken_SDJWTNoDisclosuresParses(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	var sdCred StoredCredential
+	for _, c := range w.GetCredentials() {
+		if c.Format == "dc+sd-jwt" {
+			sdCred = c
+			break
+		}
+	}
+	if sdCred.ID == "" {
+		t.Fatal("no SD-JWT credential found")
+	}
+
+	result, err := w.CreateVPToken(CredentialMatch{
+		QueryID:      "pid",
+		CredentialID: sdCred.ID,
+		Format:       "dc+sd-jwt",
+		SelectedKeys: nil,
+	}, PresentationParams{
+		Nonce:       "test-nonce",
+		ClientID:    "https://verifier.example",
+		ResponseURI: "https://verifier.example/response",
+	})
+	if err != nil {
+		t.Fatalf("CreateVPToken error: %v", err)
+	}
+	if strings.Contains(result.Token, "~~") {
+		t.Fatalf("expected no empty disclosure segment in SD-JWT presentation: %s", result.Token)
+	}
+
+	parsed, err := sdjwt.Parse(result.Token)
+	if err != nil {
+		t.Fatalf("parsing VP token: %v", err)
+	}
+	if parsed.KeyBindingJWT == nil {
+		t.Fatal("expected key binding JWT in VP token")
+	}
+	if len(parsed.Disclosures) != 0 {
+		t.Fatalf("expected no disclosures, got %d", len(parsed.Disclosures))
+	}
+}
+
+func TestCreateVPToken_SDJWTBrowserAPIUsesOriginAudience(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	var sdCred StoredCredential
+	for _, c := range w.GetCredentials() {
+		if c.Format == "dc+sd-jwt" {
+			sdCred = c
+			break
+		}
+	}
+	if sdCred.ID == "" {
+		t.Fatal("no SD-JWT credential found")
+	}
+
+	result, err := w.CreateVPToken(CredentialMatch{
+		QueryID:      "pid",
+		CredentialID: sdCred.ID,
+		Format:       "dc+sd-jwt",
+		SelectedKeys: []string{"given_name"},
+	}, PresentationParams{
+		Nonce:         "test-nonce",
+		ClientID:      "x509_hash:test-client",
+		RequestOrigin: "https://rp.example",
+		ResponseMode:  "dc_api.jwt",
+	})
+	if err != nil {
+		t.Fatalf("CreateVPToken error: %v", err)
+	}
+
+	parsed, err := sdjwt.Parse(result.Token)
+	if err != nil {
+		t.Fatalf("parsing VP token: %v", err)
+	}
+	if parsed.KeyBindingJWT == nil {
+		t.Fatal("expected key binding JWT in VP token")
+	}
+	if aud, ok := parsed.KeyBindingJWT.Payload["aud"].(string); !ok || aud != "origin:https://rp.example" {
+		t.Fatalf("expected aud origin:https://rp.example, got %v", parsed.KeyBindingJWT.Payload["aud"])
+	}
+}
+
 func TestCreateVPToken_SDJWT_SelectiveDisclosure(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 

@@ -157,8 +157,9 @@ func TestEvaluateDCQL_NoMatchWrongFormat(t *testing.T) {
 	}
 }
 
-func TestEvaluateDCQL_NoClaims_ReturnsAll(t *testing.T) {
+func TestEvaluateDCQL_NoClaims_DebugSelectsNoSDJWTClaims(t *testing.T) {
 	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeDebug
 
 	query := map[string]any{
 		"credentials": []any{
@@ -176,10 +177,95 @@ func TestEvaluateDCQL_NoClaims_ReturnsAll(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
+	if len(matches[0].SelectedKeys) != 0 {
+		t.Fatalf("expected no selected claims in debug mode, got %v", matches[0].SelectedKeys)
+	}
+	if len(matches[0].Claims) != 0 {
+		t.Fatalf("expected no disclosed claims in debug mode, got %v", matches[0].Claims)
+	}
+}
 
-	// Should include all claims since none were specifically requested
-	if len(matches[0].SelectedKeys) == 0 {
-		t.Error("expected all claims to be selected when no claims specified")
+func TestEvaluateDCQL_NoClaims_DebugSelectsNoMDocElements(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeDebug
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_mdoc",
+				"format": "mso_mdoc",
+				"meta": map[string]any{
+					"doctype_value": "eu.europa.ec.eudi.pid.1",
+				},
+			},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].SelectedKeys) != 0 {
+		t.Fatalf("expected no selected mDoc elements in debug mode, got %v", matches[0].SelectedKeys)
+	}
+	if len(matches[0].Claims) != 0 {
+		t.Fatalf("expected no disclosed mDoc elements in debug mode, got %v", matches[0].Claims)
+	}
+}
+
+func TestEvaluateDCQL_NoClaims_StrictSelectsNoSDJWTClaims(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeStrict
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid",
+				"format": "dc+sd-jwt",
+				"meta": map[string]any{
+					"vct_values": []any{mock.DefaultPIDVCT},
+				},
+			},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].SelectedKeys) != 0 {
+		t.Fatalf("expected no selected claims in strict mode, got %v", matches[0].SelectedKeys)
+	}
+	if len(matches[0].Claims) != 0 {
+		t.Fatalf("expected no disclosed claims in strict mode, got %v", matches[0].Claims)
+	}
+}
+
+func TestEvaluateDCQL_NoClaims_StrictSelectsNoMDocElements(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.ValidationMode = ValidationModeStrict
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_mdoc",
+				"format": "mso_mdoc",
+				"meta": map[string]any{
+					"doctype_value": "eu.europa.ec.eudi.pid.1",
+				},
+			},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].SelectedKeys) != 0 {
+		t.Fatalf("expected no selected mDoc elements in strict mode, got %v", matches[0].SelectedKeys)
+	}
+	if len(matches[0].Claims) != 0 {
+		t.Fatalf("expected no disclosed mDoc elements in strict mode, got %v", matches[0].Claims)
 	}
 }
 

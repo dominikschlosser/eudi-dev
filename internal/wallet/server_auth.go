@@ -47,6 +47,7 @@ type AuthorizationRequestParams struct {
 	ClientMetadata   map[string]any
 	DCQLQuery        map[string]any
 	RequestObject    *oid4vc.RequestObjectJWT
+	RequestPayload   map[string]any
 }
 
 type preparedPresentation struct {
@@ -507,6 +508,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		params.ClientMetadata = parsed.ClientMetadata
 		params.DCQLQuery = parsed.DCQLQuery
 		params.RequestObject = parsed.RequestObject
+		params.RequestPayload = requestPayload(parsed.RequestObject, nil)
 	}
 
 	// If request (JWT) is present, parse it
@@ -526,6 +528,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		params.ClientMetadata = parsed.ClientMetadata
 		params.DCQLQuery = parsed.DCQLQuery
 		params.RequestObject = parsed.RequestObject
+		params.RequestPayload = requestPayload(parsed.RequestObject, nil)
 	}
 
 	if params.ClientID == "" {
@@ -533,6 +536,13 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 	}
 
 	return params, nil
+}
+
+func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
+	if reqObj != nil && reqObj.Payload != nil {
+		return reqObj.Payload
+	}
+	return fallback
 }
 
 func credTypeLabel(m CredentialMatch) string {

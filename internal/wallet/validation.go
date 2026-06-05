@@ -33,6 +33,9 @@ func ValidateAuthorizationRequest(mode ValidationMode, params *AuthorizationRequ
 	if params != nil && params.RequestObject != nil {
 		reqPayload = params.RequestObject.Payload
 	}
+	if reqPayload == nil && params != nil {
+		reqPayload = params.RequestPayload
+	}
 	var outerClientMetadata map[string]any
 	if params != nil {
 		outerClientMetadata = params.ClientMetadata
@@ -54,16 +57,16 @@ func ValidateAuthorizationRequest(mode ValidationMode, params *AuthorizationRequ
 		requestOrigin = params.RequestOrigin
 		reqObj = params.RequestObject
 	}
-	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, requestOrigin)
+	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
 }
 
 // ValidatePresentationRequest evaluates client_id, request-object metadata, and signature checks.
 // In debug mode findings are returned as warnings; in strict mode any finding is fatal.
 func ValidatePresentationRequest(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string) ([]string, error) {
-	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, "")
+	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, "", nil, nil)
 }
 
-func validatePresentationRequestCore(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string) ([]string, error) {
+func validatePresentationRequestCore(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
 	var findings []string
 
 	if finding := VerifyClientID(clientID, reqObj, responseURI, requestOrigin); finding != "" {
@@ -75,12 +78,66 @@ func validatePresentationRequestCore(mode ValidationMode, clientID string, reqOb
 	if finding := VerifyRequestObjectSignature(reqObj); finding != "" {
 		findings = append(findings, finding)
 	}
+	findings = append(findings, strictAuthorizationFindings(mode, params, payload)...)
 
 	if mode == ValidationModeStrict && len(findings) > 0 {
 		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, "; "))
 	}
 
 	return findings, nil
+}
+
+func strictAuthorizationFindings(mode ValidationMode, params *AuthorizationRequestParams, payload map[string]any) []string {
+	if mode != ValidationModeStrict || params == nil {
+		return nil
+	}
+
+	var findings []string
+	if !hasKnownClientIDPrefix(params.ClientID) {
+		findings = append(findings, fmt.Sprintf("client_id uses unsupported prefix or no prefix: %q", params.ClientID))
+	}
+	if requestRequiresNonce(params.ResponseType) && params.Nonce == "" {
+		findings = append(findings, "nonce is required in strict mode")
+	}
+	if responseModeUsesDirectPost(params.ResponseMode) && params.RedirectURI != "" {
+		findings = append(findings, fmt.Sprintf("redirect_uri must not be used with response_mode %q", params.ResponseMode))
+	}
+	if payloadHasKey(payload, "transaction_data") {
+		findings = append(findings, "transaction_data is not supported by this wallet")
+	}
+	return findings
+}
+
+func requestRequiresNonce(responseType string) bool {
+	return responseType == "" || ResponseTypeRequiresVP(responseType) || ResponseTypeContains(responseType, "id_token")
+}
+
+func responseModeUsesDirectPost(responseMode string) bool {
+	return responseMode == "direct_post" || responseMode == "direct_post.jwt"
+}
+
+func hasKnownClientIDPrefix(clientID string) bool {
+	for _, prefix := range []string{
+		"x509_san_dns:",
+		"x509_hash:",
+		"web-origin:",
+		"redirect_uri:",
+		"verifier_attestation:",
+		"decentralized_identifier:",
+	} {
+		if strings.HasPrefix(clientID, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func payloadHasKey(payload map[string]any, key string) bool {
+	if payload == nil {
+		return false
+	}
+	_, ok := payload[key]
+	return ok
 }
 
 func validateAuthorizationRequestSyntax(params *AuthorizationRequestParams) error {

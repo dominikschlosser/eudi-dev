@@ -20,12 +20,16 @@ from pathlib import Path
 
 
 MODULE_ID_RE = re.compile(r"Created test module, new id:\s*([A-Za-z0-9]+)")
+RUNNING_MODULE_RE = re.compile(r"Running test module:\s*([^\[]+)(.*)$")
+VARIANT_RE = re.compile(r"\[([^=\]]+)=([^\]]*)\]")
 PLAN_URL_RE = re.compile(r"(https://[^\s]+plan-detail\.html\?plan=[A-Za-z0-9]+)")
+RUNNING_PLAN_CONFIG_RE = re.compile(r"Running plan '.+?' with configuration file '(.+?)'")
 IMPLICIT_SUBMIT_RE = re.compile(r"xhr\.open\('POST',\s*([\"'])(.+?)\1", re.DOTALL)
 JSON_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9._-]+\.json)\}")
 TERMINAL_STATES = {"FINISHED", "INTERRUPTED"}
 POLL_INTERVAL = 1.0
 REQUEST_TIMEOUT = 20
+DEFAULT_MODULE_IDLE_TIMEOUT = 180
 SCREENSHOT_DATA_URL = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WnRk9sAAAAASUVORK5CYII="
@@ -66,16 +70,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vci-redirect-uri", required=True, help="OID4VCI authorization-code redirect_uri to configure in the suite")
     parser.add_argument("--results-dir", required=True, help="Directory for exported official runner results")
     parser.add_argument("--runner-log", required=True, help="Path for mirrored official runner stdout")
+    parser.add_argument(
+        "--rerun",
+        help="Pass through to the official OIDF runner, e.g. 2 or 2:6 or 1:6,2:6",
+        default=None,
+    )
     return parser.parse_args()
 
 
-def api_request(base_url: str, token: str, method: str, path: str, body: bytes | None = None, content_type: str | None = None):
+def api_request(
+    base_url: str,
+    token: str | None,
+    method: str,
+    path: str,
+    body: bytes | None = None,
+    content_type: str | None = None,
+):
     url = base_url.rstrip("/") + "/" + path.lstrip("/")
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     if content_type:
         headers["Content-Type"] = content_type
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()) as resp:
         data = resp.read()
         response_content_type = resp.headers.get("Content-Type", "")
         if "application/json" in response_content_type:
@@ -87,6 +105,30 @@ def request_json(url: str, context: ssl.SSLContext | None = None):
     req = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=context) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def conformance_api_context() -> ssl.SSLContext | None:
+    if os.environ.get("CONFORMANCE_DEV_MODE") or os.environ.get("DISABLE_SSL_VERIFY"):
+        return ssl._create_unverified_context()
+    return None
+
+
+def parse_running_module_line(line: str) -> dict:
+    match = RUNNING_MODULE_RE.search(line)
+    if not match:
+        return {}
+    return {
+        "test_name": match.group(1).strip(),
+        "variant": {key: value for key, value in VARIANT_RE.findall(match.group(2))},
+    }
+
+
+def merge_variants(*variants: dict | None) -> dict:
+    merged = {}
+    for variant in variants:
+        if isinstance(variant, dict):
+            merged.update(variant)
+    return merged
 
 
 def wallet_request(wallet_url: str, method: str, path: str, payload: dict | None = None, extra_headers: dict[str, str] | None = None):
@@ -104,17 +146,18 @@ def wallet_request(wallet_url: str, method: str, path: str, payload: dict | None
 
 
 def should_retry_wallet_submission(status_code: int, body: str) -> bool:
-    if status_code not in {400, 502, 503, 504}:
+    if status_code not in {502, 503, 504}:
         return False
     lowered = body.lower()
-    return "fetching request_uri" in lowered or "request_uri" in lowered
+    return "temporarily unavailable" in lowered or "timeout" in lowered or "timed out" in lowered
 
 
 def verify_suite_support(suite_dir: Path) -> None:
     required = [
         suite_dir / "scripts" / "test-configs-rp-against-op" / "vp-wallet-test-config-dcql-sdjwt.json",
         suite_dir / "scripts" / "test-configs-rp-against-op" / "vp-wallet-test-config-dcql-mdoc.json",
-        suite_dir / "scripts" / "test-configs-rp-against-op" / "vci-wallet-test-config.json",
+        suite_dir / "scripts" / "test-configs-rp-against-op" / "vci-wallet-test-config-plain.json",
+        suite_dir / "scripts" / "test-configs-rp-against-op" / "vci-wallet-test-config-haip.json",
         suite_dir / "src" / "main" / "java" / "net" / "openid" / "conformance" / "vp1finalwallet" / "VP1FinalWalletTestPlan.java",
         suite_dir / "src" / "main" / "java" / "net" / "openid" / "conformance" / "vci10wallet" / "VCIWalletTestPlan.java",
         suite_dir / "src" / "main" / "java" / "net" / "openid" / "conformance" / "vp1finalwallet" / "VP1FinalWalletTestPlanHaip.java",
@@ -187,7 +230,7 @@ def final_scenarios() -> list[PlanScenario]:
         PlanScenario(
             slug="vci-final-sdjwt",
             kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config.json",
+            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
             plan_name="oid4vci-1_0-wallet-test-plan",
             variant={
                 "client_auth_type": "client_attestation",
@@ -207,7 +250,7 @@ def final_scenarios() -> list[PlanScenario]:
         PlanScenario(
             slug="vci-final-mdoc",
             kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config.json",
+            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
             plan_name="oid4vci-1_0-wallet-test-plan",
             variant={
                 "client_auth_type": "client_attestation",
@@ -278,7 +321,7 @@ def final_scenarios() -> list[PlanScenario]:
             PlanScenario(
                 slug="vci-haip-sdjwt",
                 kind="vci",
-                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config.json",
+                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
                 plan_name="oid4vci-1_0-wallet-haip-test-plan",
                 variant={
                     "vci_authorization_code_flow_variant": "issuer_initiated",
@@ -291,7 +334,7 @@ def final_scenarios() -> list[PlanScenario]:
             PlanScenario(
                 slug="vci-haip-mdoc",
                 kind="vci",
-                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config.json",
+                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
                 plan_name="oid4vci-1_0-wallet-haip-test-plan",
                 variant={
                     "vci_authorization_code_flow_variant": "issuer_initiated",
@@ -518,11 +561,17 @@ def create_vci_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanS
     config.setdefault("server", {})
     config.setdefault("credential", {})
     config.setdefault("vci", {})
+    config.setdefault("client_attestation", {})
     config["vci"]["credential_offer_endpoint"] = credential_offer_endpoint
     if scenario.credential_kind == "mdoc":
         config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest"
     else:
         config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.1"
+    config["client_attestation"]["issuer"] = args.wallet_issuer_url
+    config["client_attestation"]["trust_anchor"] = materials.ca_pem
+    config["client_attestation"]["attester_jwks"] = {"keys": [materials.issuer_jwk]}
+    config["client_attestation"]["key_attestation_jwks"] = {"keys": [materials.issuer_jwk]}
+    config["client_attestation"]["key_attestation_trust_anchor_pem"] = materials.ca_pem
     config["vci"]["client_attestation_issuer"] = args.wallet_issuer_url
     config["vci"]["client_attestation_trust_anchor"] = materials.ca_pem
     config["vci"]["client_attester_keys_jwks"] = {"keys": [materials.issuer_jwk]}
@@ -551,8 +600,15 @@ def scenario_plan_arg(scenario: PlanScenario) -> str:
     return f"{scenario.plan_name}{variant_suffix}"
 
 
-def official_runner_args(runner_path: Path, results_dir: Path, config_jobs: list[tuple[PlanScenario, Path]]) -> list[str]:
+def official_runner_args(
+    runner_path: Path,
+    results_dir: Path,
+    config_jobs: list[tuple[PlanScenario, Path]],
+    rerun: str | None = None,
+) -> list[str]:
     args = [sys.executable, str(runner_path), "--export-dir", str(results_dir), "--no-parallel"]
+    if rerun:
+        args.extend(["--rerun", rerun])
     for scenario, config_path in config_jobs:
         args.extend([scenario_plan_arg(scenario), str(config_path)])
     return args
@@ -566,7 +622,7 @@ def reader_thread(stream, line_queue: queue.Queue[str]) -> None:
         stream.close()
 
 
-def upload_placeholder(base_url: str, token: str, module_id: str, placeholder: str) -> None:
+def upload_placeholder(base_url: str, token: str | None, module_id: str, placeholder: str) -> None:
     api_request(
         base_url,
         token,
@@ -582,7 +638,7 @@ def follow_redirect(redirect_uri: str) -> None:
     parsed = urllib.parse.urlsplit(redirect_uri)
     request_uri = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
     req = urllib.request.Request(request_uri, method="GET")
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()) as resp:
         body = resp.read().decode("utf-8", errors="replace")
 
     if not parsed.fragment:
@@ -599,7 +655,7 @@ def follow_redirect(redirect_uri: str) -> None:
         method="POST",
         headers={"Content-Type": "text/plain"},
     )
-    with urllib.request.urlopen(submit_req, timeout=REQUEST_TIMEOUT):
+    with urllib.request.urlopen(submit_req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()):
         pass
 
 
@@ -615,11 +671,14 @@ def wallet_api_path_for_request(request_url: str) -> str:
     return "/api/presentations"
 
 
-def submit_wallet_request(wallet_url: str, request_url: str) -> WalletSubmissionResult:
+def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
+    payload = {"uri": request_url, "mode": "strict"}
+    if api_path == "/api/presentations" and requires_haip:
+        payload["haip"] = True
     for attempt in range(1, 6):
         try:
-            result = wallet_request(wallet_url, "POST", api_path, {"uri": request_url})
+            result = wallet_request(wallet_url, "POST", api_path, payload)
             break
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
@@ -653,8 +712,100 @@ def submit_wallet_request(wallet_url: str, request_url: str) -> WalletSubmission
     return WalletSubmissionResult(completed=True, retryable=False)
 
 
-def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str) -> WalletSubmissionResult:
-    extra_headers = {}
+def module_test_name(info: dict, state: dict) -> str | None:
+    test_name = info.get("testName")
+    if isinstance(test_name, str) and test_name:
+        return test_name
+    test_name = state.get("test_name")
+    if isinstance(test_name, str) and test_name:
+        return test_name
+    return None
+
+
+def module_variant(info: dict, state: dict) -> dict:
+    return merge_variants(state.get("variant"), info.get("variant"))
+
+
+def fapi_vci_credential_configuration_id(variant: dict) -> str | None:
+    credential_format = variant.get("credential_format")
+    if credential_format == "sd_jwt_vc":
+        return "eu.europa.ec.eudi.pid.1"
+    if credential_format == "mdoc":
+        return "eu.europa.ec.eudi.pid.mdoc.1"
+    return None
+
+
+def module_credential_offer_endpoint(info: dict, state: dict) -> str | None:
+    config = info.get("config")
+    if isinstance(config, dict):
+        vci = config.get("vci")
+        if isinstance(vci, dict):
+            endpoint = vci.get("credential_offer_endpoint")
+            if isinstance(endpoint, str) and endpoint:
+                return endpoint
+    endpoint = state.get("credential_offer_endpoint")
+    if isinstance(endpoint, str) and endpoint:
+        return endpoint
+    base_url = info.get("baseUrl")
+    if not isinstance(base_url, str) or not base_url:
+        base_url = state.get("base_url")
+    if isinstance(base_url, str) and base_url:
+        return base_url.rstrip("/") + "/credential_offer"
+    return None
+
+
+def synthetic_fapi_vci_offer_url(info: dict, state: dict) -> str | None:
+    test_name = module_test_name(info, state)
+    if not isinstance(test_name, str) or not test_name.startswith("fapi2-security-profile-final-client-test-"):
+        return None
+    variant = module_variant(info, state)
+    if variant.get("fapi_profile") not in {"vci", "vci_haip"}:
+        return None
+    credential_offer_endpoint = module_credential_offer_endpoint(info, state)
+    if not credential_offer_endpoint:
+        return None
+    credential_configuration_id = fapi_vci_credential_configuration_id(variant)
+    if not credential_configuration_id:
+        return None
+    credential_issuer = credential_offer_endpoint.removesuffix("/credential_offer").rstrip("/") + "/"
+    offer = {
+        "credential_issuer": credential_issuer,
+        "credential_configuration_ids": [credential_configuration_id],
+        "grants": {
+            "authorization_code": {},
+        },
+    }
+    encoded_offer = urllib.parse.quote(json.dumps(offer, separators=(",", ":")), safe="")
+    return f"{credential_offer_endpoint}?credential_offer={encoded_offer}"
+
+
+def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) -> None:
+    offer_url = synthetic_fapi_vci_offer_url(info, state)
+    test_name = module_test_name(info, state)
+    if (
+        not offer_url
+        and isinstance(test_name, str)
+        and test_name.startswith("fapi2-security-profile-final-client-test-")
+        and not state.get("logged_synthetic_fapi_skip")
+    ):
+        state["logged_synthetic_fapi_skip"] = True
+        variant = module_variant(info, state)
+        print(
+            "[monitor] FAPI VCI module is waiting, but no synthetic offer could be built "
+            f"(baseUrl={info.get('baseUrl') or state.get('base_url')!r}, variant={variant!r})",
+            flush=True,
+        )
+    if not offer_url or state.get("submitted_synthetic_fapi_offer"):
+        return
+    result = submit_wallet_request(wallet_url, offer_url, requires_haip=False)
+    if result.completed or not result.retryable:
+        state["submitted_synthetic_fapi_offer"] = True
+
+
+def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
+    extra_headers = {"X-OID4VC-Dev-Mode": "strict"}
+    if requires_haip:
+        extra_headers["X-OID4VC-Dev-HAIP"] = "true"
     origin = browser_request_origin(browser_request)
     if not origin:
         origin = origin_from_submit_url(submit_url)
@@ -696,7 +847,7 @@ def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_ur
                 method="POST",
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()) as resp:
                 resp.read()
             print(f"[monitor] submitted Browser API exception to suite: {submit_url}", flush=True)
             return WalletSubmissionResult(completed=True, retryable=False)
@@ -707,15 +858,23 @@ def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_ur
         method="POST",
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()) as resp:
         resp.read()
     print(f"[monitor] submitted Browser API result to suite: {submit_url}", flush=True)
     return WalletSubmissionResult(completed=True, retryable=False)
 
 
-def handle_module(base_url: str, token: str, wallet_url: str, module_id: str, state: dict) -> None:
+def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: str, state: dict) -> None:
     info = api_request(base_url, token, "GET", f"api/info/{module_id}")
     logs = api_request(base_url, token, "GET", f"api/log/{module_id}")
+
+    for entry in logs:
+        entry_base_url = entry.get("baseUrl")
+        if isinstance(entry_base_url, str) and entry_base_url:
+            state["base_url"] = entry_base_url
+            break
+
+    submit_synthetic_fapi_vci_offer(wallet_url, info, state)
 
     browser_entries = []
     browser = info.get("browser")
@@ -745,14 +904,14 @@ def handle_module(base_url: str, token: str, wallet_url: str, module_id: str, st
         submit_url = entry.get("submitUrl")
         browser_request = entry.get("request")
         if submit_url and browser_request and submit_url not in state["submitted_browser_api_requests"]:
-            result = submit_browser_api_request(wallet_url, browser_request, submit_url)
+            result = submit_browser_api_request(wallet_url, browser_request, submit_url, state.get("requires_haip", False))
             if result.completed or not result.retryable:
                 state["submitted_browser_api_requests"].add(submit_url)
 
     for entry in logs:
         request_url = entry.get("redirect_to") or entry.get("credential_offer_redirect_url")
         if request_url and request_url not in state["submitted_urls"]:
-            result = submit_wallet_request(wallet_url, request_url)
+            result = submit_wallet_request(wallet_url, request_url, state.get("requires_haip", False))
             if result.completed or not result.retryable:
                 state["submitted_urls"].add(request_url)
 
@@ -774,19 +933,20 @@ def main() -> int:
     runner_path = suite_dir / "scripts" / "run-test-plan.py"
 
     base_url = os.environ["CONFORMANCE_SERVER"]
-    token = os.environ["CONFORMANCE_TOKEN"]
+    token = os.environ.get("CONFORMANCE_TOKEN")
 
     verify_suite_support(suite_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
     materials = fetch_wallet_materials(args.wallet_url, args.wallet_issuer_url, Path(args.wallet_ca_cert))
     scenarios = final_scenarios()
     config_jobs = [(scenario, create_config(args, suite_dir, results_dir, scenario, materials)) for scenario in scenarios]
+    config_variants = {config_path.name: scenario.variant for scenario, config_path in config_jobs}
 
     print("[runner] detected OIDF Final wallet plans in the extracted suite", flush=True)
     for scenario, config_path in config_jobs:
         print(f"[runner] scheduled {scenario_plan_arg(scenario)} using {config_path.name}", flush=True)
 
-    cmd = official_runner_args(runner_path, results_dir, config_jobs)
+    cmd = official_runner_args(runner_path, results_dir, config_jobs, args.rerun)
     proc = subprocess.Popen(
         cmd,
         cwd=suite_dir / "scripts",
@@ -803,16 +963,33 @@ def main() -> int:
 
     module_state: dict[str, dict] = {}
     plan_urls: list[str] = []
+    pending_module_requires_haip = False
+    pending_module_context: dict = {}
+    current_plan_variant: dict = {}
+    idle_timeout = int(os.environ.get("OIDF_MODULE_IDLE_TIMEOUT", str(DEFAULT_MODULE_IDLE_TIMEOUT)))
+    last_runner_output = time.monotonic()
 
     with runner_log.open("w") as log_file:
         while True:
             try:
                 while True:
                     line = line_queue.get_nowait()
+                    last_runner_output = time.monotonic()
                     sys.stdout.write(line)
                     sys.stdout.flush()
                     log_file.write(line)
                     log_file.flush()
+                    if line.startswith("20") and "Running test module:" in line:
+                        pending_module_requires_haip = "haip" in line.lower()
+                        pending_module_context = parse_running_module_line(line)
+                        pending_module_context["variant"] = merge_variants(
+                            current_plan_variant,
+                            pending_module_context.get("variant"),
+                        )
+                    plan_config_match = RUNNING_PLAN_CONFIG_RE.search(line)
+                    if plan_config_match:
+                        config_name = Path(plan_config_match.group(1)).name
+                        current_plan_variant = config_variants.get(config_name, {})
                     match = MODULE_ID_RE.search(line)
                     if match:
                         module_id = match.group(1)
@@ -823,8 +1000,15 @@ def main() -> int:
                                 "submitted_browser_api_requests": set(),
                                 "uploaded_placeholders": set(),
                                 "terminal": False,
+                                "requires_haip": pending_module_requires_haip,
+                                "submitted_synthetic_fapi_offer": False,
+                                "logged_synthetic_fapi_skip": False,
+                                "test_name": pending_module_context.get("test_name"),
+                                "variant": pending_module_context.get("variant", {}),
                             },
                         )
+                        pending_module_requires_haip = False
+                        pending_module_context = {}
                     plan_match = PLAN_URL_RE.search(line)
                     if plan_match:
                         plan_url = plan_match.group(1)
@@ -843,6 +1027,22 @@ def main() -> int:
 
             if proc.poll() is not None and line_queue.empty() and not thread.is_alive():
                 break
+
+            if proc.poll() is None and idle_timeout > 0 and time.monotonic() - last_runner_output > idle_timeout:
+                active_modules = [module_id for module_id, state in module_state.items() if not state["terminal"]]
+                active = ", ".join(active_modules) if active_modules else "unknown"
+                print(
+                    f"[monitor] no run-test-plan output for {idle_timeout}s; "
+                    f"terminating stuck conformance run. Active modules: {active}",
+                    flush=True,
+                )
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                return 124
 
             time.sleep(POLL_INTERVAL)
 

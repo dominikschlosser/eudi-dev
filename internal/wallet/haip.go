@@ -33,6 +33,16 @@ import (
 //   - Request Object alg MUST be ES256 when a Request Object is present
 func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
 	var violations []string
+	if params == nil {
+		return []string{"HAIP: authorization request is missing"}
+	}
+	var payload map[string]any
+	if reqObj != nil {
+		payload = reqObj.Payload
+	}
+	if payload == nil && params != nil {
+		payload = params.RequestPayload
+	}
 
 	// Encrypted response modes are required.
 	if params.ResponseMode != "direct_post.jwt" && params.ResponseMode != "dc_api.jwt" {
@@ -68,5 +78,38 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 		}
 	}
 
+	if params.ResponseMode == "dc_api.jwt" && params.RequestOrigin != "" {
+		unsignedWebOrigin := reqObj == nil && strings.HasPrefix(params.ClientID, "web-origin:")
+		if (!unsignedWebOrigin || expectedOriginsProvided(payload)) &&
+			!originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
+			violations = append(violations, fmt.Sprintf(
+				"HAIP: expected_origins MUST include caller origin %q", params.RequestOrigin))
+		}
+	}
+
 	return violations
+}
+
+func expectedOriginsProvided(payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	_, ok := payload["expected_origins"]
+	return ok
+}
+
+func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool {
+	if payload == nil {
+		return false
+	}
+	values := jsonutil.GetArray(payload, "expected_origins")
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		if text, ok := value.(string); ok && text == origin {
+			return true
+		}
+	}
+	return false
 }
