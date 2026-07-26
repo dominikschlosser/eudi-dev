@@ -16,6 +16,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -276,5 +278,130 @@ func TestWalletCACert_PrintsSingleCertificateToStdout(t *testing.T) {
 	}
 	if out != string(want) {
 		t.Fatal("expected stdout to contain only the shared wallet CA certificate")
+	}
+}
+
+func resetCertFormatFlags(t *testing.T, subcommand string) {
+	t.Helper()
+	t.Cleanup(func() {
+		cmd, _, err := rootCmd.Find([]string{"wallet", subcommand})
+		if err != nil {
+			return
+		}
+		_ = cmd.Flags().Set("jwks", "false")
+		_ = cmd.Flags().Set("pem", "false")
+	})
+}
+
+func TestWalletCACert_ExportsJWKS(t *testing.T) {
+	tmpDir := t.TempDir()
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	resetCertFormatFlags(t, "ca-cert")
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	walletDir = wDir
+
+	rootCmd.SetArgs([]string{"wallet", "ca-cert", "--out=", "--jwks"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet ca-cert --jwks: %v", err)
+	}
+
+	var jwks struct {
+		Keys []map[string]any `json:"keys"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &jwks); err != nil {
+		t.Fatalf("parsing JWKS output: %v\n%s", err, buf.String())
+	}
+	if len(jwks.Keys) != 1 {
+		t.Fatalf("expected 1 key in JWKS, got %d", len(jwks.Keys))
+	}
+	jwk := jwks.Keys[0]
+	if jwk["kty"] != "EC" || jwk["crv"] != "P-256" || jwk["alg"] != "ES256" {
+		t.Fatalf("unexpected JWK: %v", jwk)
+	}
+	if _, hasD := jwk["d"]; hasD {
+		t.Fatal("JWKS output must not contain private key material")
+	}
+
+	store := wallet.NewWalletStore(wDir)
+	certPEM, err := store.LoadOrCreateSharedCACertificatePEM()
+	if err != nil {
+		t.Fatalf("LoadOrCreateSharedCACertificatePEM: %v", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	x5c, ok := jwk["x5c"].([]any)
+	if !ok || len(x5c) != 1 {
+		t.Fatalf("expected x5c with 1 entry, got %v", jwk["x5c"])
+	}
+	if x5c[0] != base64.StdEncoding.EncodeToString(block.Bytes) {
+		t.Fatal("x5c entry does not match the shared wallet CA certificate")
+	}
+}
+
+func TestWalletTLSCert_ExportsJWKS(t *testing.T) {
+	tmpDir := t.TempDir()
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	resetCertFormatFlags(t, "tls-cert")
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+	walletDir = wDir
+
+	rootCmd.SetArgs([]string{"wallet", "tls-cert", "--out=", "--jwks"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet tls-cert --jwks: %v", err)
+	}
+
+	var jwks struct {
+		Keys []map[string]any `json:"keys"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &jwks); err != nil {
+		t.Fatalf("parsing JWKS output: %v\n%s", err, buf.String())
+	}
+	if len(jwks.Keys) != 1 {
+		t.Fatalf("expected 1 key in JWKS, got %d", len(jwks.Keys))
+	}
+	jwk := jwks.Keys[0]
+	if jwk["kty"] != "EC" {
+		t.Fatalf("unexpected JWK: %v", jwk)
+	}
+
+	store := wallet.NewWalletStore(wDir)
+	certPEM, err := store.LoadOrCreateIssuerTLSLeafCertificatePEM("localhost")
+	if err != nil {
+		t.Fatalf("LoadOrCreateIssuerTLSLeafCertificatePEM: %v", err)
+	}
+	block, _ := pem.Decode(certPEM)
+	x5c, ok := jwk["x5c"].([]any)
+	if !ok || len(x5c) != 1 {
+		t.Fatalf("expected x5c with 1 entry, got %v", jwk["x5c"])
+	}
+	if x5c[0] != base64.StdEncoding.EncodeToString(block.Bytes) {
+		t.Fatal("x5c entry does not match the wallet TLS leaf certificate")
+	}
+}
+
+func TestWalletCACert_PEMAndJWKSAreMutuallyExclusive(t *testing.T) {
+	tmpDir := t.TempDir()
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	resetCertFormatFlags(t, "ca-cert")
+
+	rootCmd.SetOut(new(bytes.Buffer))
+	rootCmd.SetErr(new(bytes.Buffer))
+	walletDir = wDir
+
+	rootCmd.SetArgs([]string{"wallet", "ca-cert", "--out=", "--pem", "--jwks"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("expected error when both --pem and --jwks are set")
 	}
 }

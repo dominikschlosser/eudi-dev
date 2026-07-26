@@ -341,14 +341,19 @@ oid4vc-dev wallet trust-list --url --docker           # http://host.docker.inter
 
 Loads or creates the shared wallet CA certificate and prints exactly one PEM certificate. All wallets under the same wallet base directory use this CA for trust lists, status-list `x5c` chains, issuer-metadata `x5c` chains, and HTTPS wallet endpoints.
 
+Use `--jwks` to export the certificate as a JWKS document instead of PEM: the certificate's public key as a JWK with `kid`, `alg`, `use`, the certificate chain in `x5c`, and the leaf hash in `x5t#S256`. This is the format expected by JWKS-based trust configuration.
+
 ```bash
 oid4vc-dev wallet ca-cert
 oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
+oid4vc-dev wallet ca-cert --jwks
 ```
 
-| Flag    | Default | Description |
-|---------|---------|-------------|
-| `--out` | —       | Write the shared wallet CA certificate PEM to a file instead of stdout |
+| Flag     | Default | Description |
+|----------|---------|-------------|
+| `--out`  | —       | Write the shared wallet CA certificate to a file instead of stdout |
+| `--pem`  | `true`  | Output as PEM (the default) |
+| `--jwks` | `false` | Output as JWKS (public key with `x5c` chain) |
 
 ## `wallet tls-cert`
 
@@ -359,16 +364,19 @@ oid4vc-dev wallet tls-cert
 oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
 oid4vc-dev wallet tls-cert --docker --out wallet-tls-cert.pem
 oid4vc-dev wallet tls-cert --base-url http://wallet:8085 --out wallet-tls-cert.pem
+oid4vc-dev wallet tls-cert --jwks
 ```
 
 Use the same `--port`, `--docker`, and `--base-url` flags as `wallet serve` so the exported certificate matches the HTTPS wallet host that the running wallet presents.
 
 | Flag         | Default | Description |
 |--------------|---------|-------------|
-| `--out`      | —       | Write the certificate PEM to a file instead of stdout |
+| `--out`      | —       | Write the certificate to a file instead of stdout |
 | `--port`     | `8085`  | Wallet server port (certificate will match HTTPS wallet endpoints on `port+1`) |
 | `--docker`   | `false` | Use `host.docker.internal` instead of `localhost` when deriving the HTTPS wallet host |
 | `--base-url` | —       | Base URL used to derive the HTTPS wallet host |
+| `--pem`      | `true`  | Output as PEM (the default) |
+| `--jwks`     | `false` | Output as JWKS (public key with `x5c` chain) |
 
 ## `wallet register` / `wallet unregister`
 

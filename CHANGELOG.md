@@ -5,11 +5,111 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0] - 2026-07-26
+
+### Added
+
+- `wallet ca-cert --jwks` and `wallet tls-cert --jwks` export the certificate as a JWKS document (public key with `x5c` chain) instead of PEM, e.g. for pasting into Keycloak trust configuration
 
 ### Removed
 
 - removed the dedicated HAIP Keycloak example now that the combined issuer+verifier app covers the HAIP verifier flow
+
+## [1.10.11] - 2026-06-05
+
+### Fixed
+
+- Proxy log output simplified
+
+## [1.10.10] - 2026-06-05
+
+### Fixed
+
+- Do not truncate URLs in the proxy for debugging
+- Exclude non-applicable conformance variants, update docs
+
+## [1.10.9] - 2026-06-05
+
+### Fixed
+
+- Some edge cases with multiple wallet instances
+
+## [1.10.8] - 2026-06-05
+
+### Fixed
+
+- Various bugfixes
+
+## [1.10.7] - 2026-06-05
+
+### Fixed
+
+- Local scan
+
+## [1.10.6] - 2026-06-05
+
+### Fixed
+
+- Scan bug
+
+## [1.10.5] - 2026-06-05
+
+### Fixed
+
+- Proxy behavior
+
+## [1.10.4] - 2026-06-05
+
+### Fixed
+
+- Wallet log contents
+
+## [1.10.3] - 2026-06-05
+
+### Fixed
+
+- Wallet logs more fine-grained
+
+## [1.10.2] - 2026-06-05
+
+### Fixed
+
+- Wallet logs expanded/fixed
+
+## [1.10.1] - 2026-06-05
+
+### Fixed
+
+- Wallet store reuse between instances
+
+## [1.10.0] - 2026-06-05
+
+### Added
+
+- `wallet logs` command
+
+### Fixed
+
+- Demo QR code size
+
+## [1.9.5] - 2026-06-05
+
+### Fixed
+
+- Conformance tests / debug mode behavior
+- Add local wallet mode to the Keycloak demo
+
+## [1.9.4] - 2026-04-18
+
+### Fixed
+
+- Do not truncate tokens in the proxy
+
+## [1.9.3] - 2026-04-18
+
+### Fixed
+
+- Show POST headers / body in the proxy
 
 ## [1.9.2] - 2026-04-18
 

@@ -476,20 +476,44 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 	return cmd
 }
 
+// renderCertificateExport converts certificate PEM bytes into the requested
+// export format: PEM passes through (the default), JWKS builds a document with
+// the leaf public key and the chain as x5c.
+func renderCertificateExport(certPEM []byte, asPEM, asJWKS bool) ([]byte, error) {
+	if asPEM && asJWKS {
+		return nil, fmt.Errorf("--pem and --jwks are mutually exclusive")
+	}
+	if asJWKS {
+		return keys.CertificatePEMToJWKS(certPEM)
+	}
+	return certPEM, nil
+}
+
 func walletCACertCmd() *cobra.Command {
-	var outPath string
+	var (
+		outPath string
+		asPEM   bool
+		asJWKS  bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "ca-cert",
 		Short: "Print or export the shared wallet CA certificate",
 		Long: `Loads or creates the shared wallet CA certificate and prints it as PEM.
 All wallets under the same wallet base directory use this CA for trust lists,
-status list x5c chains, issuer-metadata x5c chains, and HTTPS wallet endpoints.`,
+status list x5c chains, issuer-metadata x5c chains, and HTTPS wallet endpoints.
+
+Use --jwks to export the certificate as a JWKS document (public key with x5c
+chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store := loadStore()
 			certPEM, err := store.LoadOrCreateSharedCACertificatePEM()
 			if err != nil {
 				return fmt.Errorf("loading wallet CA certificate: %w", err)
+			}
+			certPEM, err = renderCertificateExport(certPEM, asPEM, asJWKS)
+			if err != nil {
+				return fmt.Errorf("exporting wallet CA certificate: %w", err)
 			}
 			if outPath != "" {
 				if err := os.WriteFile(outPath, certPEM, 0644); err != nil {
@@ -507,7 +531,9 @@ status list x5c chains, issuer-metadata x5c chains, and HTTPS wallet endpoints.`
 		},
 	}
 
-	cmd.Flags().StringVar(&outPath, "out", "", "Write the shared wallet CA certificate PEM to a file instead of stdout")
+	cmd.Flags().StringVar(&outPath, "out", "", "Write the shared wallet CA certificate to a file instead of stdout")
+	cmd.Flags().BoolVar(&asPEM, "pem", false, "Output as PEM (the default)")
+	cmd.Flags().BoolVar(&asJWKS, "jwks", false, "Output as JWKS (public key with x5c chain)")
 	return cmd
 }
 
@@ -517,6 +543,8 @@ func walletTLSCertCmd() *cobra.Command {
 		baseURL string
 		docker  bool
 		outPath string
+		asPEM   bool
+		asJWKS  bool
 	)
 
 	cmd := &cobra.Command{
@@ -524,7 +552,10 @@ func walletTLSCertCmd() *cobra.Command {
 		Short: "Print or export the wallet TLS leaf certificate used by HTTPS wallet endpoints",
 		Long: `Loads or creates the HTTPS leaf certificate used by the wallet's HTTPS endpoints.
 Use this to inspect or export the exact server certificate presented by the wallet.
-Use 'wallet ca-cert' when you want one trust root for all spawned wallets.`,
+Use 'wallet ca-cert' when you want one trust root for all spawned wallets.
+
+Use --jwks to export the certificate as a JWKS document (public key with x5c
+chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store := loadStore()
 			issuerURL, err := deriveWalletIssuerURL(port, baseURL, docker)
@@ -534,6 +565,10 @@ Use 'wallet ca-cert' when you want one trust root for all spawned wallets.`,
 			certPEM, err := store.LoadOrCreateIssuerTLSLeafCertificatePEMForURL(issuerURL)
 			if err != nil {
 				return fmt.Errorf("loading wallet TLS certificate: %w", err)
+			}
+			certPEM, err = renderCertificateExport(certPEM, asPEM, asJWKS)
+			if err != nil {
+				return fmt.Errorf("exporting wallet TLS certificate: %w", err)
 			}
 
 			if outPath != "" {
@@ -556,7 +591,9 @@ Use 'wallet ca-cert' when you want one trust root for all spawned wallets.`,
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (certificate will match HTTPS wallet endpoints on port+1)")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL used to derive the HTTPS wallet host")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost when deriving the HTTPS wallet host")
-	cmd.Flags().StringVar(&outPath, "out", "", "Write the wallet TLS certificate PEM to a file instead of stdout")
+	cmd.Flags().StringVar(&outPath, "out", "", "Write the wallet TLS certificate to a file instead of stdout")
+	cmd.Flags().BoolVar(&asPEM, "pem", false, "Output as PEM (the default)")
+	cmd.Flags().BoolVar(&asJWKS, "jwks", false, "Output as JWKS (public key with x5c chain)")
 	return cmd
 }
 
