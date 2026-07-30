@@ -126,6 +126,17 @@ header h1 {
 }
 
 /* Credential Cards */
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.section-title-row .section-title {
+  margin-bottom: 0;
+}
+
 .section-title {
   font-size: 12px;
   color: var(--text-dim);
@@ -166,6 +177,11 @@ header h1 {
 .credential-info {
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+}
+
+.credential-info:hover .credential-type {
+  color: var(--accent);
 }
 
 .credential-type {
@@ -193,6 +209,8 @@ header h1 {
 
 .credential-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: 6px;
 }
 
 /* Actions Bar */

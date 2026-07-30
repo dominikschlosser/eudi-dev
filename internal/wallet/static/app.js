@@ -67,14 +67,20 @@
       const moreTag = moreCount > 0 ? '<span class="claim-tag">+' + moreCount + ' more</span>' : '';
 
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
-        '<div class="credential-info">' +
+        '<div class="credential-info" title="Open in decoder">' +
           '<div class="credential-type">' + escHtml(typeLabel) + '</div>' +
           '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
+          '<button class="btn btn-sm" data-show="' + cred.id + '">Show</button>' +
           '<button class="btn btn-danger btn-sm" data-delete="' + cred.id + '">Delete</button>' +
         '</div>';
 
+      const openDecoder = () => {
+        window.open('/decoder/?credential=' + encodeURIComponent(cred.raw || ''), '_blank');
+      };
+      card.querySelector('[data-show]').addEventListener('click', openDecoder);
+      card.querySelector('.credential-info').addEventListener('click', openDecoder);
       card.querySelector('[data-delete]').addEventListener('click', () => deleteCredential(cred.id));
       credContainer.appendChild(card);
     });
@@ -168,6 +174,15 @@
       console.error('Failed to load log:', e);
     }
   }
+
+  document.getElementById('clear-log-btn').addEventListener('click', async () => {
+    try {
+      await fetch('/api/log', { method: 'DELETE' });
+      await loadLog();
+    } catch (e) {
+      console.error('Failed to clear log:', e);
+    }
+  });
 
   function renderLog(log) {
     logContainer.querySelectorAll('.log-entry').forEach(el => el.remove());

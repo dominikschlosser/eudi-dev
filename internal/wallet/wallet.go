@@ -499,6 +499,13 @@ func cloneLogDetails(details map[string]any) map[string]any {
 	return out
 }
 
+// ClearLog removes all activity log entries.
+func (w *Wallet) ClearLog() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.Log = nil
+}
+
 // GetLog returns a snapshot of log entries.
 func (w *Wallet) GetLog() []LogEntry {
 	w.mu.RLock()
@@ -527,6 +534,7 @@ func CredentialSummary(c StoredCredential) map[string]any {
 		"id":     c.ID,
 		"format": c.Format,
 		"claims": c.Claims,
+		"raw":    c.Raw,
 	}
 	if c.VCT != "" {
 		summary["vct"] = c.VCT

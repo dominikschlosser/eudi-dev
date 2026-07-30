@@ -27,6 +27,7 @@ import (
 	"github.com/dominikschlosser/oid4vc-dev/internal/config"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/oid4vc-dev/internal/web"
 )
 
 func walletServeCmd() *cobra.Command {
@@ -250,6 +251,9 @@ so the wallet automatically receives incoming protocol requests.`,
 				}
 			})
 			srv.SetStore(store)
+			// Embed the credential decoder UI so stored credentials can be
+			// inspected from the wallet UI.
+			srv.Mount("/decoder", web.NewMux(""))
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
 			}

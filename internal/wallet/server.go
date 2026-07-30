@@ -162,6 +162,7 @@ func (s *Server) setupRoutes() {
 
 	// API: log
 	s.mux.HandleFunc("GET /api/log", s.withFreshStore(s.handleLog))
+	s.mux.HandleFunc("DELETE /api/log", s.withFreshStore(s.handleClearLog))
 
 	// API: last error (polled on page load)
 	s.mux.HandleFunc("GET /api/error", s.withFreshStore(s.handleLastError))
@@ -778,6 +779,13 @@ func credentialOfferIssuerDisplay(offerURI string) string {
 }
 
 // handleListCredentials returns all stored credentials.
+// Mount registers an additional handler under the given path prefix (no
+// trailing slash), e.g. the embedded credential decoder UI. The prefix is
+// stripped before the request reaches the handler. Call before ListenAndServe.
+func (s *Server) Mount(prefix string, h http.Handler) {
+	s.mux.Handle(prefix+"/", http.StripPrefix(prefix, h))
+}
+
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"build_id": processBuildID(),
@@ -944,6 +952,13 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 // handleLog returns the activity log.
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.wallet.GetLog())
+}
+
+// handleClearLog removes all activity log entries.
+func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
+	s.wallet.ClearLog()
+	s.triggerSave()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleLastError returns the last error, if any.
