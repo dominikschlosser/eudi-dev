@@ -74,9 +74,34 @@ listener_ready() {
   curl -sf "$LISTENER/api/credentials" >/dev/null 2>&1
 }
 
+# Restart the running server if it was built from an older binary than the one
+# on disk. The server reports the SHA-256 of its own executable (hashed at
+# startup) via /api/version; a mismatch means it outlived a rebuild.
+stop_stale_listener() {
+  LOCAL_ID=$(shasum -a 256 "$BINARY" 2>/dev/null | cut -d' ' -f1)
+  [[ -z "$LOCAL_ID" ]] && return 0
+  VERSION_JSON=$(curl -sf "$LISTENER/api/version" 2>/dev/null)
+  SERVER_ID=$(printf '%s' "$VERSION_JSON" | sed -n 's/.*"build_id":"\([0-9a-f]*\)".*/\1/p')
+  [[ "$SERVER_ID" == "$LOCAL_ID" ]] && return 0
+  echo "wallet server is running an outdated build, restarting" >>"$SERVER_LOG"
+  SERVER_PID=$(printf '%s' "$VERSION_JSON" | sed -n 's/.*"pid":\([0-9]*\).*/\1/p')
+  if [[ -n "$SERVER_PID" ]]; then
+    kill "$SERVER_PID" 2>/dev/null
+  else
+    lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null
+  fi
+  for _ in $(seq 1 20); do
+    listener_ready || break
+    sleep 0.25
+  done
+}
+
 ensure_listener() {
   if listener_ready; then
-    return 0
+    stop_stale_listener
+    if listener_ready; then
+      return 0
+    fi
   fi
   ARGS=(wallet serve)
   if [[ ${#SERVE_ARGS[@]} -gt 0 ]]; then

@@ -15,8 +15,10 @@
 package wallet
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -60,9 +63,30 @@ type presentationRequestOptions struct {
 	ValidationMode    string
 }
 
+// processBuildID identifies the code this process is running: the SHA-256 of
+// the executable, hashed once at startup. Comparing it against the binary on
+// disk detects a server that outlived a rebuild.
+var processBuildID = sync.OnceValue(func() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
+})
+
 // NewServer creates a new wallet HTTP server.
 // onSave is called after credential-changing operations (import, delete, issuance).
 func NewServer(w *Wallet, port int, onSave func()) *Server {
+	processBuildID()
 	s := &Server{
 		wallet:          w,
 		port:            port,
@@ -101,6 +125,9 @@ func (s *Server) setupRoutes() {
 	// API: credential offers
 	s.mux.HandleFunc("POST /api/offers", s.withFreshStore(s.handleOfferAPI))
 	s.mux.HandleFunc("GET /callback", s.withFreshStore(s.handleAuthorizationCodeCallback))
+
+	// API: build identity, used by the URL handler script to detect stale servers
+	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 
 	// API: credential management
 	s.mux.HandleFunc("GET /api/credentials", s.withFreshStore(s.handleListCredentials))
@@ -751,6 +778,13 @@ func credentialOfferIssuerDisplay(offerURI string) string {
 }
 
 // handleListCredentials returns all stored credentials.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"build_id": processBuildID(),
+		"pid":      os.Getpid(),
+	})
+}
+
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	data, err := s.wallet.CredentialsJSON()
 	if err != nil {

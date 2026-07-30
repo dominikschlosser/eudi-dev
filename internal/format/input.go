@@ -148,6 +148,10 @@ func FetchURL(url string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if msg := strings.TrimSpace(string(body)); msg != "" {
+			return "", fmt.Errorf("fetching %s: HTTP %d: %s", url, resp.StatusCode, msg)
+		}
 		return "", fmt.Errorf("fetching %s: HTTP %d", url, resp.StatusCode)
 	}
 
