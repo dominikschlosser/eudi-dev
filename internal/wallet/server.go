@@ -778,7 +778,6 @@ func credentialOfferIssuerDisplay(offerURI string) string {
 	return "credential issuer"
 }
 
-// handleListCredentials returns all stored credentials.
 // Mount registers an additional handler under the given path prefix (no
 // trailing slash), e.g. the embedded credential decoder UI. The prefix is
 // stripped before the request reaches the handler. Call before ListenAndServe.
