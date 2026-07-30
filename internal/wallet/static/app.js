@@ -194,15 +194,52 @@
 
     log.slice().reverse().forEach(entry => {
       const el = document.createElement('div');
-      el.className = 'log-entry';
+      const hasDetails = entry.details && Object.keys(entry.details).length > 0;
+      el.className = 'log-entry' + (hasDetails ? ' has-details' : '');
       const time = new Date(entry.time).toLocaleTimeString();
-      el.innerHTML = '<span class="log-time">' + time + '</span>' +
+      let html = '<div class="log-header">' +
+        '<span class="log-chevron">' + (hasDetails ? '▸' : '') + '</span>' +
+        '<span class="log-time">' + time + '</span>' +
         '<span class="log-action ' + entry.action + '">' + escHtml(entry.action) + '</span>' +
         '<span class="log-detail">' + escHtml(entry.detail) + '</span>' +
         '<span class="log-status ' + (entry.success ? 'success' : 'failure') + '">' +
-          (entry.success ? 'OK' : 'FAIL') + '</span>';
+          (entry.success ? 'OK' : 'FAIL') + '</span>' +
+        '</div>';
+      if (hasDetails) {
+        html += '<div class="log-details">' + renderLogDetails(entry.details) + '</div>';
+      }
+      el.innerHTML = html;
+      if (hasDetails) {
+        el.querySelector('.log-header').addEventListener('click', () => el.classList.toggle('expanded'));
+      }
       logContainer.appendChild(el);
     });
+  }
+
+  const logKeyOrder = ['event', 'direction', 'source', 'method', 'url', 'status_code',
+    'client_id', 'response_type', 'response_mode', 'response_uri', 'redirect_uri',
+    'submission_uri', 'state', 'nonce'];
+
+  function renderLogDetails(details) {
+    const isObj = v => typeof v === 'object' && v !== null;
+    const keys = Object.keys(details).sort((a, b) => {
+      if (isObj(details[a]) !== isObj(details[b])) return isObj(details[a]) ? 1 : -1;
+      const ia = logKeyOrder.indexOf(a), ib = logKeyOrder.indexOf(b);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? logKeyOrder.length : ia) - (ib === -1 ? logKeyOrder.length : ib);
+      return a.localeCompare(b);
+    });
+    let html = '<div class="log-fields">';
+    for (const key of keys) {
+      const val = details[key];
+      html += '<span class="log-key">' + escHtml(key) + '</span>';
+      if (isObj(val)) {
+        html += '<span class="log-value"><pre>' + escHtml(JSON.stringify(val, null, 2)) + '</pre></span>';
+      } else {
+        html += '<span class="log-value">' + escHtml(String(val)) + '</span>';
+      }
+    }
+    html += '</div>';
+    return html;
   }
 
   // Load any existing pending consent requests

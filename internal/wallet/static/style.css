@@ -352,13 +352,76 @@ header h1 {
 
 .log-entry {
   font-size: 11px;
-  padding: 6px 10px;
   border-radius: 4px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.log-header {
   display: flex;
   gap: 10px;
   align-items: center;
+  padding: 6px 10px;
+}
+
+.log-entry.has-details .log-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.log-entry.has-details .log-header:hover {
+  background: var(--bg-hover);
+}
+
+.log-chevron {
+  color: var(--text-dim);
+  width: 10px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.log-entry.expanded .log-chevron {
+  transform: rotate(90deg);
+}
+
+.log-details {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.log-entry.expanded .log-details {
+  display: block;
+}
+
+.log-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+}
+
+.log-key {
+  color: var(--yellow);
+  font-weight: 600;
+}
+
+.log-value {
+  color: var(--text);
+  word-break: break-all;
+  min-width: 0;
+}
+
+.log-value pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .log-time {
