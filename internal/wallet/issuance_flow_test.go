@@ -388,7 +388,7 @@ func TestCreateCredentialProofHeader_KeyAttestation(t *testing.T) {
 		},
 	}
 
-	header, err := createCredentialProofHeader(w, metadata, "pid", "nonce-123")
+	header, err := createCredentialProofHeader(w, metadata, "pid", "nonce-123", nil)
 	if err != nil {
 		t.Fatalf("createCredentialProofHeader: %v", err)
 	}

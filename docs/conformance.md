@@ -9,14 +9,14 @@ The conformance documentation is split by purpose:
 
 ## Current State
 
-The wallet conformance harness targets a locally running OpenID Foundation conformance-suite server by default. The current documented baseline is `release-v5.1.44`, released on 2026-06-04. The wrapper verifies that the local suite server tag matches the runner/templates tag when the server exposes `/api/server`.
+The wallet conformance harness targets a locally running OpenID Foundation conformance-suite server by default. The current documented baseline is `release-v5.2.1`, released on 2026-07-20. The wrapper verifies that the local suite server tag matches the runner/templates tag when the server exposes `/api/server`.
 
 Current local status:
 
-- VCI Final SD-JWT and mDoc wallet plans pass in strict mode.
-- VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules.
-- VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode. Negative modules that finish as `REVIEW` are tracked as pass-equivalent for the local harness when the runner reports zero condition failures.
-- The wrapper passes explicit VP module lists for each generated variant so release-v5.1.44 suite-side not-applicable or broken modules are visible as documented exclusions instead of red result boxes.
+- VCI Final SD-JWT and mDoc wallet plans pass in strict mode, including the release-v5.2.1 batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key).
+- VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
+- VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the release-v5.2.1 unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` are tracked as pass-equivalent for the local harness when the runner reports zero condition failures.
+- The wrapper passes explicit VP module lists for each generated variant so release-v5.2.1 suite-side not-applicable or broken modules are visible as documented exclusions instead of red result boxes.
 
 See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite-side exclusions.
 

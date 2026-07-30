@@ -48,7 +48,11 @@ func findEncryptionJWK(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[strin
 	return firstJWK(clientMetadata["jwks"])
 }
 
-// firstJWK extracts the first key from a JWKS value ({"keys": [...]}).
+// firstJWK extracts the first usable encryption key from a JWKS value
+// ({"keys": [...]}). Keys the wallet cannot use — unsupported kty, unsupported
+// curve, or a signing-only use — are ignored per RFC 7517 §5, so verifiers can
+// advertise e.g. post-quantum keys ahead of wallet support without breaking
+// encryption to the usable key.
 func firstJWK(jwksVal any) map[string]any {
 	jwks, ok := jwksVal.(map[string]any)
 	if !ok {
@@ -58,11 +62,33 @@ func firstJWK(jwksVal any) map[string]any {
 	if !ok || len(keysSlice) == 0 {
 		return nil
 	}
-	jwk, ok := keysSlice[0].(map[string]any)
-	if !ok {
-		return nil
+	for _, entry := range keysSlice {
+		jwk, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if usableEncryptionJWK(jwk) {
+			return jwk
+		}
 	}
-	return jwk
+	return nil
+}
+
+// usableEncryptionJWK reports whether the wallet can encrypt to the given JWK:
+// an EC key on P-256 with both coordinates present, not marked signing-only.
+func usableEncryptionJWK(jwk map[string]any) bool {
+	if kty, _ := jwk["kty"].(string); kty != "EC" {
+		return false
+	}
+	if crv, ok := jwk["crv"].(string); ok && crv != "P-256" {
+		return false
+	}
+	if use, ok := jwk["use"].(string); ok && use != "enc" {
+		return false
+	}
+	x, _ := jwk["x"].(string)
+	y, _ := jwk["y"].(string)
+	return x != "" && y != ""
 }
 
 // computeJWKThumbprint computes the RFC 7638 JWK Thumbprint using SHA-256.

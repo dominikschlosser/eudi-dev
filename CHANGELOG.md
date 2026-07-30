@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Wallet batch credential issuance (OID4VCI `batch_credential_issuance`): when an issuer advertises a `batch_size` of 2 or more, the wallet sends multiple proofs with distinct, freshly generated keys, matches the returned credentials to their binding keys regardless of response order, and imports the holder-key-bound credential
+
+### Fixed
+
+- The wallet strips the issuer's terminating `/` when building the `/.well-known/oauth-authorization-server` metadata URL per RFC 8414 §3.1, while continuing to preserve the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2
+- The wallet ignores verifier `client_metadata.jwks` encryption keys it cannot use (unsupported `kty`/curve or signing-only keys) per RFC 7517 §5 and encrypts to the first usable key, so verifiers can advertise e.g. post-quantum keys ahead of wallet support
+- Conformance harness updated to conformance-suite release-v5.2.1: runs the new batch-issuance and unusable-encryption-key wallet modules, and documents the release-v5.2.1 suite-side `invalid-client-id-prefix` module regression as an exclusion
+
 ## [1.11.0] - 2026-07-26
 
 ### Added

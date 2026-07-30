@@ -610,10 +610,12 @@ VP_FINAL_MODULE_MISSING_NONCE = "oid4vp-1final-wallet-negative-test-missing-nonc
 VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS = "oid4vp-1final-wallet-negative-test-wrong-expected-origins"
 VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX = "oid4vp-1final-wallet-negative-test-invalid-client-id-prefix"
 VP_FINAL_MODULE_UNKNOWN_TRANSACTION_DATA = "oid4vp-1final-wallet-negative-test-unknown-transaction-data-type"
+VP_FINAL_MODULE_IGNORES_UNUSABLE_ENCRYPTION_KEY = "oid4vp-1final-wallet-ignores-unusable-encryption-key"
 
 VP_FINAL_MODULES = (
     VP_FINAL_MODULE_HAPPY_FLOW,
     VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW,
+    VP_FINAL_MODULE_IGNORES_UNUSABLE_ENCRYPTION_KEY,
     VP_FINAL_MODULE_REQUEST_URI_METHOD_POST,
     VP_FINAL_MODULE_FEWER_CLAIMS,
     VP_FINAL_MODULE_OPTIONAL_CREDENTIAL_SET,
@@ -640,19 +642,27 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     request_method = variant.get("request_method", "")
     client_id_prefix = variant.get("client_id_prefix", "")
 
+    # release-v5.2.1 suite regression: VP1FinalWalletInvalidClientIdPrefix
+    # overrides performRedirect() to call createPlaceholder() after
+    # super.performRedirect() has already set the module status to WAITING.
+    # Conditions cannot run while WAITING, so the suite kills the module with
+    # "This is a bug in the test module" before the wallet is ever invoked,
+    # and the interrupted module's alias steal breaks the next module too.
+    # Re-enable once fixed upstream (broken for all external-wallet runs).
+    modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
+
     if scenario.requires_haip:
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
-        if response_mode == "dc_api.jwt":
-            # release-v5.1.44 generates the unsigned web-origin negative module
-            # without a client_id, so the suite throws NullPointerException before
-            # invoking the wallet. Signed HAIP invalid-prefix coverage remains in
-            # the direct_post.jwt HAIP plan.
-            modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
         return tuple(modules)
 
+    if response_mode in {"direct_post", "dc_api"}:
+        # @VariantNotApplicable: the unencrypted modes never advertise an
+        # encryption key, so there is no unusable-key scenario to test.
+        modules.remove(VP_FINAL_MODULE_IGNORES_UNUSABLE_ENCRYPTION_KEY)
     if response_mode == "direct_post":
         # The release-v5.1.44 alternate direct_post module unconditionally
         # replaces encrypted-response setup that is absent for plain direct_post.
+        # Still present in release-v5.2.1.
         modules.remove(VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW)
     if client_id_prefix != "redirect_uri":
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)

@@ -189,12 +189,17 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		log.Printf("[VCI] Token response:\n%s", tokenJSON)
 	}
 
-	// Create proof of possession JWT
-	proofJWT, err := createProofJWT(w.HolderKey, offer.CredentialIssuer, cNonce, nil)
+	// Create proof of possession JWTs (multiple when the issuer advertises
+	// batch credential issuance)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("preparing proof keys: %w", err)
+	}
+	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}
-	log.Printf("[VCI] Proof JWT: %s", proofJWT)
+	log.Printf("[VCI] Proof JWT: %s", proofJWTs[0])
 
 	// Request credential
 	credFormat := ""
@@ -215,7 +220,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if cNonce == "" {
 		cNonce = fetchNonce(metadata, offer.CredentialIssuer)
 		if cNonce != "" {
-			proofJWT, err = createProofJWT(w.HolderKey, offer.CredentialIssuer, cNonce, nil)
+			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
 			if err != nil {
 				return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
 			}
@@ -226,12 +231,12 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if cNonce == "" {
 		// Try credential request without proof to get c_nonce from error response
 		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
-		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
+		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 		nonceResp, nonceErr := requestCredential(
 			metadata,
 			credentialEndpoint,
 			accessToken,
-			proofJWT,
+			proofJWTs,
 			credentialIdentifier,
 			credentialConfigurationID,
 			responseEncryption,
@@ -243,8 +248,8 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			if n, ok := nonceResp["c_nonce"].(string); ok && n != "" {
 				cNonce = n
 				log.Printf("[VCI] Got c_nonce from error response: %s", cNonce)
-				// Recreate proof with the real nonce
-				proofJWT, err = createProofJWT(w.HolderKey, offer.CredentialIssuer, cNonce, nil)
+				// Recreate proofs with the real nonce
+				proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
 				if err != nil {
 					return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
 				}
@@ -253,9 +258,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			}
 		} else {
 			// First request succeeded without nonce — use the response directly
-			credential := extractCredential(nonceResp)
-			if credential == "" {
-				return nil, fmt.Errorf("no credential in response")
+			credential, err := selectHolderBoundCredential(nonceResp, proofKeys)
+			if err != nil {
+				return nil, err
 			}
 			imported, err := w.ImportCredential(credential)
 			if err != nil {
@@ -278,12 +283,12 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		}
 	}
 
-	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
+	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredential(
 		metadata,
 		credentialEndpoint,
 		accessToken,
-		proofJWT,
+		proofJWTs,
 		credentialIdentifier,
 		credentialConfigurationID,
 		responseEncryption,
@@ -298,9 +303,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		log.Printf("[VCI] Credential response:\n%s", credJSON)
 	}
 
-	credential := extractCredential(credResp)
-	if credential == "" {
-		return nil, fmt.Errorf("no credential in response")
+	credential, err := selectHolderBoundCredential(credResp, proofKeys)
+	if err != nil {
+		return nil, err
 	}
 
 	// Import the received credential
@@ -390,6 +395,13 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 		return "", fmt.Errorf("issuer URL must be absolute")
 	}
 	path := parsed.EscapedPath()
+	if wellKnownType == "oauth-authorization-server" {
+		// RFC 8414 §3.1: remove a terminating "/" from the issuer path before
+		// inserting the well-known segment. OID4VCI 1.0 §12.2.2 preserves the
+		// Credential Issuer Identifier path verbatim, so only the OAuth AS
+		// metadata URL strips it.
+		path = strings.TrimSuffix(path, "/")
+	}
 	return fmt.Sprintf("%s://%s/.well-known/%s%s", parsed.Scheme, parsed.Host, wellKnownType, path), nil
 }
 
@@ -926,10 +938,10 @@ func fetchNonce(metadata map[string]any, issuer string) string {
 	return ""
 }
 
-func credentialRequestLogDetails(endpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
+func credentialRequestLogDetails(endpoint, accessToken string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
-			"jwt": []string{proofJWT},
+			"jwt": proofJWTs,
 		},
 	}
 	if credentialIdentifier != "" {
@@ -948,7 +960,9 @@ func credentialRequestLogDetails(endpoint, accessToken, proofJWT, credentialIden
 		"request":   reqBody,
 	}
 	addStringDetail(details, "access_token", accessToken)
-	addStringDetail(details, "proof_jwt", proofJWT)
+	if len(proofJWTs) > 0 {
+		addStringDetail(details, "proof_jwt", proofJWTs[0])
+	}
 	addStringDetail(details, "credential_identifier", credentialIdentifier)
 	addStringDetail(details, "credential_configuration_id", credentialConfigurationID)
 	return details
@@ -973,8 +987,8 @@ func credentialResponseLogDetails(endpoint string, response map[string]any, err 
 func requestCredential(
 	metadata map[string]any,
 	credentialEndpoint,
-	accessToken,
-	proofJWT string,
+	accessToken string,
+	proofJWTs []string,
 	credentialIdentifier string,
 	credentialConfigurationID string,
 	credentialResponseEncryption map[string]any,
@@ -982,7 +996,7 @@ func requestCredential(
 ) (map[string]any, error) {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
-			"jwt": []string{proofJWT},
+			"jwt": proofJWTs,
 		},
 	}
 

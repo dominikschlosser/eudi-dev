@@ -4,39 +4,34 @@ These are the current local wallet conformance results for `oid4vc-dev`. Use [Ru
 
 ## Baseline
 
-- date: 2026-06-05
+- date: 2026-07-30
 - wallet mode: strict
 - suite server: local `https://localhost:8443/`
-- suite baseline: `release-v5.1.44`, version `5.1.44`, revision `f326f6a`
-- full run directory: `/tmp/oidf-wallet-conformance-20260605-rerun-all-buildvcsfalse`
-- full runner log: `/tmp/oidf-wallet-conformance-20260605-rerun-all-buildvcsfalse/runner.log`
-- full exported result archives: `/tmp/oidf-wallet-conformance-20260605-rerun-all-buildvcsfalse/results/`
-- targeted VP fix run directory: `/tmp/oidf-wallet-conformance-20260605-fix-vp-targeted-brain`
-- targeted VP fix runner log: `/tmp/oidf-wallet-conformance-20260605-fix-vp-targeted-brain/runner.log`
-- targeted VP fix exported result archives: `/tmp/oidf-wallet-conformance-20260605-fix-vp-targeted-brain/results/`
-- plan-detail screenshots: [`docs/conformance-results/2026-06-05/`](./conformance-results/2026-06-05/)
+- suite baseline: `release-v5.2.1`, version `5.2.1`, revision `932b46f`
+- full run directory: `/tmp/oidf-wallet-conformance-local-strict`
+- full runner log: `/tmp/oidf-wallet-conformance-local-strict/runner.log`
+- full exported result archives: `/tmp/oidf-wallet-conformance-local-strict/results/`
+- plan-detail screenshots: [`docs/conformance-results/2026-07-30/`](./conformance-results/2026-07-30/)
 
 Command used:
 
 ```bash
-GOFLAGS=-buildvcs=false \
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.1.44 \
-OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-20260605-rerun-all-buildvcsfalse \
+OIDF_SUITE_TAG=release-v5.2.1 \
+OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The original full command exposed release-v5.1.44 suite-side VP module issues. The wrapper now passes explicit VP module lists for each generated variant so the local matrix runs the executable modules for that variant. The affected VP plans were rerun with:
+The full matrix passed in a single run: all 12 plans finished with 0 condition failures and 0 warnings (106 modules `PASSED`, 38 negative modules `REVIEW` with zero condition failures).
 
-```bash
-GOFLAGS=-buildvcs=false \
-OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.1.44 \
-OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-20260605-fix-vp-targeted-brain \
-  scripts/oidf-wallet-conformance.sh --rerun '1,2,3,4,9,10'
-```
+## New release-v5.2.1 Coverage
 
-That targeted rerun completed successfully. VCI coverage remains green from the full run.
+Release-v5.2.1 added two wallet test modules; both are implemented by the wallet and pass:
+
+- `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet sends 2 proofs with distinct, freshly generated keys (key attestation covers all proof keys for HAIP), and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). Passes in VCI Final SD-JWT and mDoc, and in VCI HAIP immediate, deferred, and encrypted variants for both formats.
+- `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 7, 8, 9, 10).
+
+Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet now strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, while continuing to preserve the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
 
 ## Result Classification
 
@@ -48,35 +43,36 @@ That targeted rerun completed successfully. VCI coverage remains green from the 
 
 | # | Plan | Variant | Current result | Screenshot |
 |---|---|---|---|---|
-| 1 | VP Final | SD-JWT, `direct_post`, signed `x509_hash` | 461 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-01-vp-final-sdjwt-direct-post.png) |
-| 2 | VP Final | SD-JWT, `direct_post.jwt`, signed `x509_hash` | 580 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-02-vp-final-sdjwt-direct-post-jwt.png) |
-| 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 461 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-06-05/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
-| 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 488 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-04-vp-final-mdoc-direct-post-jwt.png) |
-| 5 | VCI Final | SD-JWT | 775 success / 0 failure. | [PNG](./conformance-results/2026-06-05/plan-05-vci-final-sdjwt.png) |
-| 6 | VCI Final | mDoc | 803 success / 0 failure. | [PNG](./conformance-results/2026-06-05/plan-06-vci-final-mdoc.png) |
-| 7 | VP HAIP | SD-JWT, `direct_post.jwt` | 616 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
-| 8 | VP HAIP | mDoc, `direct_post.jwt` | 512 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
-| 9 | VP HAIP | SD-JWT, `dc_api.jwt` | 466 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
-| 10 | VP HAIP | mDoc, `dc_api.jwt` | 328 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-06-05/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
-| 11 | VCI HAIP | SD-JWT | 3181 success / 0 failure. | [PNG](./conformance-results/2026-06-05/plan-11-vci-haip-sdjwt.png) |
-| 12 | VCI HAIP | mDoc | 3262 success / 0 failure. | [PNG](./conformance-results/2026-06-05/plan-12-vci-haip-mdoc.png) |
+| 1 | VP Final | SD-JWT, `direct_post`, signed `x509_hash` | 435 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-07-30/plan-01-vp-final-sdjwt-direct-post.png) |
+| 2 | VP Final | SD-JWT, `direct_post.jwt`, signed `x509_hash` | 620 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-02-vp-final-sdjwt-direct-post-jwt.png) |
+| 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 435 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
+| 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 520 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png) |
+| 5 | VCI Final | SD-JWT | 976 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
+| 6 | VCI Final | mDoc | 1011 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
+| 7 | VP HAIP | SD-JWT, `direct_post.jwt` | 658 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
+| 8 | VP HAIP | mDoc, `direct_post.jwt` | 544 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
+| 9 | VP HAIP | SD-JWT, `dc_api.jwt` | 526 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
+| 10 | VP HAIP | mDoc, `dc_api.jwt` | 367 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
+| 11 | VCI HAIP | SD-JWT | 3797 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
+| 12 | VCI HAIP | mDoc | 3905 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
 
 ## Passing VCI Coverage
 
-- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass.
-- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules.
+- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass, including the new batch credential issuance module.
+- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
 - Strict mode rejects issuer mismatch in authorization server metadata, invalid authorization-response `iss`, removed authorization-response `iss`, invalid `state`, and missing `state`.
 
 ## VP Module Selection
 
-The current wrapper passes explicit module lists for VP plans instead of relying on release-v5.1.44 `VariantNotApplicable` filtering. This keeps the local result pages focused on executable coverage for each generated variant.
+The current wrapper passes explicit module lists for VP plans instead of relying on release-v5.2.1 `VariantNotApplicable` filtering. This keeps the local result pages focused on executable coverage for each generated variant.
 
-Known release-v5.1.44 suite-side exclusions:
+Known release-v5.2.1 suite-side exclusions:
 
-- VP Final `direct_post` omits `alternate-happy-flow` because that module unconditionally replaces encrypted-response setup that is absent for plain `direct_post`.
+- All VP variants omit `invalid-client-id-prefix`. Release-v5.2.1's `VP1FinalWalletInvalidClientIdPrefix.performRedirect()` calls `createPlaceholder()` after the base class has already set the module status to `WAITING`; conditions cannot run while `WAITING`, so the suite kills the module with "This is a bug in the test module" before the wallet is ever invoked, and the interrupted module's alias steal also breaks the next module in the plan. This is an upstream regression from commit `7e78b5988` ("expose failure-photo upload up front"). Invalid-prefix rejection was covered at the release-v5.1.44 baseline; re-enable the module when the upstream fix lands.
+- VP Final `direct_post` omits `alternate-happy-flow` because that module unconditionally replaces encrypted-response setup that is absent for plain `direct_post` (unchanged from release-v5.1.44).
 - VP Final x509 variants omit `response-uri-not-client-id`; the suite marks that module not applicable for `x509_hash`, and the applicable `redirect_uri` variant passes as `REVIEW`.
 - VP Final non-multisigned variants omit `multisigned-one-invalid-signature`.
-- VP HAIP `dc_api.jwt` omits `invalid-client-id-prefix`; the unsigned `web-origin` variant throws a suite `NullPointerException` before invoking the wallet. Invalid-prefix rejection remains covered by VP Final and VP HAIP `direct_post.jwt`.
+- VP unencrypted variants (`direct_post`, `dc_api`) omit `ignores-unusable-encryption-key` per the module's `@VariantNotApplicable`; the unencrypted modes never advertise an encryption key.
 
 Current `no-claims-in-dcql-query` status:
 
@@ -92,84 +88,84 @@ These screenshots are the local OIDF `plan-detail.html` pages from the current d
 <details>
 <summary>Plan 1: VP Final SD-JWT direct_post</summary>
 
-![Plan 1 VP Final SD-JWT direct_post](./conformance-results/2026-06-05/plan-01-vp-final-sdjwt-direct-post.png)
+![Plan 1 VP Final SD-JWT direct_post](./conformance-results/2026-07-30/plan-01-vp-final-sdjwt-direct-post.png)
 
 </details>
 
 <details>
 <summary>Plan 2: VP Final SD-JWT direct_post.jwt</summary>
 
-![Plan 2 VP Final SD-JWT direct_post.jwt](./conformance-results/2026-06-05/plan-02-vp-final-sdjwt-direct-post-jwt.png)
+![Plan 2 VP Final SD-JWT direct_post.jwt](./conformance-results/2026-07-30/plan-02-vp-final-sdjwt-direct-post-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 3: VP Final SD-JWT unsigned direct_post</summary>
 
-![Plan 3 VP Final SD-JWT unsigned direct_post](./conformance-results/2026-06-05/plan-03-vp-final-sdjwt-unsigned-direct-post.png)
+![Plan 3 VP Final SD-JWT unsigned direct_post](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png)
 
 </details>
 
 <details>
 <summary>Plan 4: VP Final mDoc direct_post.jwt</summary>
 
-![Plan 4 VP Final mDoc direct_post.jwt](./conformance-results/2026-06-05/plan-04-vp-final-mdoc-direct-post-jwt.png)
+![Plan 4 VP Final mDoc direct_post.jwt](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 5: VCI Final SD-JWT</summary>
 
-![Plan 5 VCI Final SD-JWT](./conformance-results/2026-06-05/plan-05-vci-final-sdjwt.png)
+![Plan 5 VCI Final SD-JWT](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png)
 
 </details>
 
 <details>
 <summary>Plan 6: VCI Final mDoc</summary>
 
-![Plan 6 VCI Final mDoc](./conformance-results/2026-06-05/plan-06-vci-final-mdoc.png)
+![Plan 6 VCI Final mDoc](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png)
 
 </details>
 
 <details>
 <summary>Plan 7: VP HAIP SD-JWT direct_post.jwt</summary>
 
-![Plan 7 VP HAIP SD-JWT direct_post.jwt](./conformance-results/2026-06-05/plan-07-vp-haip-sdjwt-direct-post-jwt.png)
+![Plan 7 VP HAIP SD-JWT direct_post.jwt](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 8: VP HAIP mDoc direct_post.jwt</summary>
 
-![Plan 8 VP HAIP mDoc direct_post.jwt](./conformance-results/2026-06-05/plan-08-vp-haip-mdoc-direct-post-jwt.png)
+![Plan 8 VP HAIP mDoc direct_post.jwt](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 9: VP HAIP SD-JWT dc_api.jwt</summary>
 
-![Plan 9 VP HAIP SD-JWT dc_api.jwt](./conformance-results/2026-06-05/plan-09-vp-haip-sdjwt-dc-api-jwt.png)
+![Plan 9 VP HAIP SD-JWT dc_api.jwt](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 10: VP HAIP mDoc dc_api.jwt</summary>
 
-![Plan 10 VP HAIP mDoc dc_api.jwt](./conformance-results/2026-06-05/plan-10-vp-haip-mdoc-dc-api-jwt.png)
+![Plan 10 VP HAIP mDoc dc_api.jwt](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png)
 
 </details>
 
 <details>
 <summary>Plan 11: VCI HAIP SD-JWT</summary>
 
-![Plan 11 VCI HAIP SD-JWT](./conformance-results/2026-06-05/plan-11-vci-haip-sdjwt.png)
+![Plan 11 VCI HAIP SD-JWT](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png)
 
 </details>
 
 <details>
 <summary>Plan 12: VCI HAIP mDoc</summary>
 
-![Plan 12 VCI HAIP mDoc](./conformance-results/2026-06-05/plan-12-vci-haip-mdoc.png)
+![Plan 12 VCI HAIP mDoc](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png)
 
 </details>
 
@@ -179,7 +175,7 @@ Use this query to summarize important runner lines from a run:
 
 ```bash
 rg -n \
-  "Results for \\[[0-9]+\\]|Overall totals|\\*\\* SOME TEST|\\*\\* Exiting|INTERRUPTED|result .*FAILED|result .*REVIEW|no-claims-in-dcql-query|invalid-client-id-prefix" \
+  "Results for \\[[0-9]+\\]|Overall totals|\\*\\* SOME TEST|\\*\\* Exiting|INTERRUPTED|result .*FAILED|result .*REVIEW|no-claims-in-dcql-query|batch-credential-issuance|ignores-unusable-encryption-key" \
   "$OIDF_RUN_DIR/runner.log"
 ```
 

@@ -180,11 +180,15 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("token response missing access_token")
 	}
 
-	proofHeader, err := createCredentialProofHeader(w, metadata, configID, cNonce)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("preparing proof keys: %w", err)
+	}
+	proofHeader, err := createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("building credential proof header: %w", err)
 	}
-	proofJWT, err := createProofJWT(w.HolderKey, offer.CredentialIssuer, cNonce, proofHeader)
+	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
 	if err != nil {
 		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}
@@ -215,23 +219,23 @@ func (w *Wallet) processAuthorizationCodeOffer(
 			})
 		}
 		if cNonce != "" {
-			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce)
+			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
 			if err != nil {
 				return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
 			}
-			proofJWT, err = createProofJWT(w.HolderKey, offer.CredentialIssuer, cNonce, proofHeader)
+			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
 			if err != nil {
 				return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
 			}
 		}
 	}
 
-	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID, responseEncryption))
+	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
 		metadata,
 		credentialEndpoint,
 		accessToken,
-		proofJWT,
+		proofJWTs,
 		credentialIdentifier,
 		credentialConfigurationID,
 		responseEncryption,
@@ -262,9 +266,9 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		}
 	}
 
-	credential := extractCredential(credResp)
-	if credential == "" {
-		return nil, fmt.Errorf("no credential in response")
+	credential, err := selectHolderBoundCredential(credResp, proofKeys)
+	if err != nil {
+		return nil, err
 	}
 
 	imported, err := w.ImportCredential(credential)
@@ -449,14 +453,20 @@ func fetchAttestationChallenge(oauthMeta map[string]any) (string, error) {
 	return challenge, nil
 }
 
-func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, cNonce string) (map[string]any, error) {
+func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, cNonce string, proofKeys []*ecdsa.PrivateKey) (map[string]any, error) {
 	if !credentialRequiresKeyAttestation(metadata, configID) {
 		return nil, nil
 	}
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
 	}
-	attestedKey := mock.SigningJWKMap(&w.HolderKey.PublicKey)
+	if len(proofKeys) == 0 {
+		proofKeys = []*ecdsa.PrivateKey{w.HolderKey}
+	}
+	attestedKeys := make([]any, 0, len(proofKeys))
+	for _, key := range proofKeys {
+		attestedKeys = append(attestedKeys, mock.SigningJWKMap(&key.PublicKey))
+	}
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "key-attestation+jwt",
@@ -469,7 +479,7 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 		"iat":           time.Now().Unix(),
 		"nbf":           time.Now().Unix(),
 		"exp":           time.Now().Add(5 * time.Minute).Unix(),
-		"attested_keys": []any{attestedKey},
+		"attested_keys": attestedKeys,
 	}
 	if cNonce != "" {
 		payload["nonce"] = cNonce
@@ -609,10 +619,10 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	return out, nil
 }
 
-func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, proofJWT, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
-			"jwt": []string{proofJWT},
+			"jwt": proofJWTs,
 		},
 	}
 	if credentialIdentifier != "" {

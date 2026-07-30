@@ -121,7 +121,7 @@ error: local OIDF conformance-suite is not reachable at ${CONFORMANCE_SERVER%/}
 Start the latest local suite first, for example:
   cd ../conformance-suite
   git fetch --tags
-  git checkout release-v5.1.44
+  git checkout release-v5.2.1
   mvn clean package
   docker compose -f docker-compose-dev-mac.yml up --detach
 

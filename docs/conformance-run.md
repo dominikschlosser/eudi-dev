@@ -13,7 +13,7 @@ You need:
 - Maven
 - a local OpenID Foundation conformance-suite checkout
 
-The current documented suite baseline is `release-v5.1.44`, released on 2026-06-04. Use a newer release only when intentionally updating the conformance baseline and [results](./conformance-results.md).
+The current documented suite baseline is `release-v5.2.1`, released on 2026-07-20. Use a newer release only when intentionally updating the conformance baseline and [results](./conformance-results.md).
 
 ## Start the Local Suite
 
@@ -22,7 +22,7 @@ Build the suite from the baseline checkout:
 ```bash
 cd ../conformance-suite
 git fetch --tags
-git checkout release-v5.1.44
+git checkout release-v5.2.1
 mvn clean package
 ```
 
@@ -64,7 +64,7 @@ curl -k https://localhost:8443/api/server
 For the current baseline, the server returns:
 
 ```json
-{"tag":"release-v5.1.44","version":"5.1.44","revision":"f326f6a"}
+{"tag":"release-v5.2.1","version":"5.2.1","revision":"932b46f"}
 ```
 
 ## Run the Wallet Matrix
@@ -86,12 +86,12 @@ To force the wrapper to use the same checkout as the running local server:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.1.44 \
+OIDF_SUITE_TAG=release-v5.2.1 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The command exits nonzero while the current VP gaps remain. Treat VCI pass status and VP remaining failures according to the matrix in [Current conformance results](./conformance-results.md), not only by the process exit code.
+At the current baseline the full matrix passes and the command exits zero. If a run reports failures, compare against the matrix and documented suite-side exclusions in [Current conformance results](./conformance-results.md) before treating the wallet as regressed.
 
 ## Rerun Selected Plans or Modules
 
@@ -99,7 +99,7 @@ Pass the official `run-test-plan.py` selector through the wrapper:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.1.44 \
+OIDF_SUITE_TAG=release-v5.2.1 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-rerun \
   scripts/oidf-wallet-conformance.sh --rerun '1:6,2:6'
 ```
