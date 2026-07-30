@@ -361,6 +361,8 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating metadata request: %w", err)
 	}
+	// Some issuers (e.g. Procivis One) reject requests without an Accept header.
+	req.Header.Set("Accept", "application/json, application/openidvci-issuer-metadata+jwt")
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
@@ -549,6 +551,7 @@ func fetchOAuthMetadata(authServer string) (map[string]any, error) {
 		if err != nil {
 			continue
 		}
+		req.Header.Set("Accept", "application/json")
 		resp, err := doIssuanceRequest(req)
 		if err != nil {
 			if resp != nil {
@@ -608,6 +611,7 @@ func exchangePreAuthorizedToken(tokenEndpoint string, offer *oid4vc.CredentialOf
 		return nil, fmt.Errorf("creating token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
@@ -897,6 +901,7 @@ func fetchNonce(metadata map[string]any, issuer string) string {
 		return ""
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
@@ -1001,6 +1006,7 @@ func requestCredential(
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json, application/jwt")
 
 	resp, err := doIssuanceRequest(req)
 	if err != nil {

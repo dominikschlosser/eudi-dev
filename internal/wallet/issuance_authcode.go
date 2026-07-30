@@ -428,6 +428,7 @@ func fetchAttestationChallenge(oauthMeta map[string]any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("creating challenge request: %w", err)
 	}
+	req.Header.Set("Accept", "application/json")
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
 		return "", fmt.Errorf("challenge request: %w", err)
@@ -716,6 +717,7 @@ func doDPoPRequest(method, target, contentType string, body []byte, authScheme, 
 		if contentType != "" {
 			req.Header.Set("Content-Type", contentType)
 		}
+		req.Header.Set("Accept", "application/json, application/jwt")
 		if token != "" && authScheme != "" {
 			req.Header.Set("Authorization", authScheme+" "+token)
 		}

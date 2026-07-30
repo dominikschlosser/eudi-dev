@@ -135,7 +135,13 @@ func ReadInputRaw(input string) (string, error) {
 
 // FetchURL fetches content from a URL and returns it as a trimmed string.
 func FetchURL(url string) (string, error) {
-	resp, err := HTTPClientForURL(url).Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s: %w", url, err)
+	}
+	// Go sends no Accept header by default; some servers reject that.
+	req.Header.Set("Accept", "*/*")
+	resp, err := HTTPClientForURL(url).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching %s: %w", url, err)
 	}

@@ -131,7 +131,13 @@ func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts 
 }
 
 func fetchIssuerMetadataDocument(metadataURL string) (map[string]any, error) {
-	resp, err := format.HTTPClientForURL(metadataURL).Get(metadataURL)
+	req, err := http.NewRequest("GET", metadataURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Some issuers (e.g. Procivis One) reject requests without an Accept header.
+	req.Header.Set("Accept", "application/json")
+	resp, err := format.HTTPClientForURL(metadataURL).Do(req)
 	if err != nil {
 		return nil, err
 	}
