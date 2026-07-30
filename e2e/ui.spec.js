@@ -73,7 +73,7 @@ const OUTER_JWT_WITH_EMBEDDED = makeJWT(
 test.describe("Page load", () => {
   test("shows OID4VC Dev title and empty state", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("h1")).toHaveText("OID4VC Dev");
+    await expect(page.locator("h1")).toHaveText("OID4VC Dev Decoder");
     await expect(page.locator(".placeholder")).toHaveText(
       "Paste a credential to see decoded output"
     );
@@ -478,17 +478,16 @@ test.describe("Theme toggle", () => {
     const html = page.locator("html");
     const btn = page.locator("#theme-btn");
 
-    // Get initial theme
-    const initialTheme = await html.getAttribute("data-theme");
-    const targetTheme = initialTheme === "dark" ? "light" : "dark";
+    // Default is dark: no data-theme attribute set
+    await expect(html).not.toHaveAttribute("data-theme", "light");
 
-    // Click toggle
+    // Click toggle -> light theme
     await btn.click();
-    await expect(html).toHaveAttribute("data-theme", targetTheme);
+    await expect(html).toHaveAttribute("data-theme", "light");
 
-    // Click again to revert
+    // Click again -> back to dark (attribute cleared)
     await btn.click();
-    await expect(html).toHaveAttribute("data-theme", initialTheme);
+    await expect(html).not.toHaveAttribute("data-theme", "light");
   });
 });
 

@@ -13,6 +13,9 @@ test.describe.configure({ mode: "serial" });
 test.setTimeout(60_000);
 
 test.beforeAll(async () => {
+  // Cold Go builds in CI can exceed the default 30s hook timeout
+  test.setTimeout(120_000);
+
   // Build the binary
   execSync("go build -o /tmp/oid4vc-dev-wallet-e2e ..", {
     cwd: __dirname,
