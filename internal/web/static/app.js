@@ -28,24 +28,13 @@
   // Well-known timestamp fields in JWT/SD-JWT payloads
   const TIMESTAMP_FIELDS = new Set(["exp", "iat", "nbf", "auth_time", "updated_at"]);
 
-  // Theme
-  function getPreferredTheme() {
-    const stored = localStorage.getItem("oid4vc-dev-theme");
-    if (stored) return stored;
-    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  }
-
-  function setTheme(theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("oid4vc-dev-theme", theme);
-    themeBtn.textContent = theme === "dark" ? "Light" : "Dark";
-  }
-
-  setTheme(getPreferredTheme());
-
+  // Theme toggle
+  const savedTheme = localStorage.getItem("oid4vc-dev-theme");
+  if (savedTheme === "light") document.documentElement.setAttribute("data-theme", "light");
   themeBtn.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    setTheme(current === "dark" ? "light" : "dark");
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    document.documentElement.setAttribute("data-theme", isLight ? "" : "light");
+    localStorage.setItem("oid4vc-dev-theme", isLight ? "" : "light");
   });
 
   // Clear

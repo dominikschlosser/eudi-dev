@@ -83,8 +83,8 @@ header {
 }
 
 h1 {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--accent);
 }
 
@@ -95,23 +95,23 @@ h1 {
 
 .header-right {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
 }
 
 .btn {
-  background: var(--bg-hover);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 12px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text);
   cursor: pointer;
-  transition: background 0.15s;
 }
 
 .btn:hover {
-  background: var(--border);
+  background: var(--bg-hover);
 }
 
 main {
