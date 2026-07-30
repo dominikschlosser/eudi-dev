@@ -7,15 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-07-30
+
 ### Added
 
 - Wallet batch credential issuance (OID4VCI `batch_credential_issuance`): when an issuer advertises a `batch_size` of 2 or more, the wallet sends multiple proofs with distinct, freshly generated keys, matches the returned credentials to their binding keys regardless of response order, and imports the holder-key-bound credential
+
+### Changed
+
+- Wallet and decoder web UIs unified to a shared look and layout
+- Wallet activity log verbosity increased with more detailed per-step entries
 
 ### Fixed
 
 - The wallet strips the issuer's terminating `/` when building the `/.well-known/oauth-authorization-server` metadata URL per RFC 8414 §3.1, while continuing to preserve the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2
 - The wallet ignores verifier `client_metadata.jwks` encryption keys it cannot use (unsupported `kty`/curve or signing-only keys) per RFC 7517 §5 and encrypts to the first usable key, so verifiers can advertise e.g. post-quantum keys ahead of wallet support
 - Conformance harness updated to conformance-suite release-v5.2.1: runs the new batch-issuance and unusable-encryption-key wallet modules, and documents the release-v5.2.1 suite-side `invalid-client-id-prefix` module regression as an exclusion
+
+## [1.12.1] - 2026-07-30
+
+### Fixed
+
+- Wallet UI shows stored credentials and allows clearing the activity log
+
+## [1.12.0] - 2026-07-30
+
+### Added
+
+- The macOS URL-handler script detects stale `wallet serve` processes and auto-restarts them
+
+## [1.11.1] - 2026-07-30
+
+### Fixed
+
+- Send `Accept` header on the credential request
 
 ## [1.11.0] - 2026-07-26
 
@@ -842,6 +867,43 @@ OID4VP, OID4VCI, SD-JWT, mDoc, and related SSI/eIDAS 2.0 protocols.
 
 - add Apache 2.0 license
 
+[1.12.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.2
+[1.12.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.1
+[1.12.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.0
+[1.11.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.11.1
+[1.11.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.11.0
+[1.10.11]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.11
+[1.10.10]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.10
+[1.10.9]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.9
+[1.10.8]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.8
+[1.10.7]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.7
+[1.10.6]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.6
+[1.10.5]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.5
+[1.10.4]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.4
+[1.10.3]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.3
+[1.10.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.2
+[1.10.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.1
+[1.10.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.10.0
+[1.9.5]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.5
+[1.9.4]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.4
+[1.9.3]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.3
+[1.9.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.2
+[1.9.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.1
+[1.9.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.9.0
+[1.8.10]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.10
+[1.8.9]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.9
+[1.8.8]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.8
+[1.8.7]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.7
+[1.8.6]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.6
+[1.8.5]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.5
+[1.8.4]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.4
+[1.8.3]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.3
+[1.8.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.2
+[1.8.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.1
+[1.8.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.8.0
+[1.7.4]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.7.4
+[1.7.3]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.7.3
+[1.7.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.7.2
 [1.7.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.7.1
 [1.7.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.7.0
 [1.6.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.6.0
