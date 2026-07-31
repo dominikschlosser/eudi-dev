@@ -139,6 +139,7 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `CONFORMANCE_SERVER`: local conformance-suite base URL; defaults to `https://localhost:8443/`
 - `CONFORMANCE_SERVER_LOCAL`: local callback/helper base URL; defaults to `CONFORMANCE_SERVER`
 - `CONFORMANCE_SERVER_MTLS`: local mTLS base URL; defaults to `https://localhost:8444/`
+- `OIDF_WALLET_MODE`: wallet validation mode for the run, `strict` (default) or `debug`; debug mode fails the negative modules listed in [Current conformance results](./conformance-results.md)
 - `PORT`: wallet port; defaults to a free local port
 - `OIDF_RUN_DIR`: keep all runner artifacts in a chosen directory instead of a temp dir
 - `OIDF_SUITE_DIR`: use an existing conformance-suite checkout for runner/templates instead of downloading the latest release archive

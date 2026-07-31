@@ -137,6 +137,8 @@ WALLET_URL=${OIDF_WALLET_URL:-"http://127.0.0.1:${PORT}"}
 WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"https://localhost:$((PORT + 1))"}
 WALLET_CA_CERT=${OIDF_WALLET_CA_CERT:-"$RUN_DIR/wallet-ca-cert.pem"}
 CONFORMANCE_MODE=${CONFORMANCE_MODE:-local}
+OIDF_WALLET_MODE=${OIDF_WALLET_MODE:-strict}
+export OIDF_WALLET_MODE
 OIDF_VCI_CLIENT_ID=${OIDF_VCI_CLIENT_ID:-52480754053}
 OIDF_VCI_ALIAS=${OIDF_VCI_ALIAS:-"oid4vc-dev-vci-${PORT}"}
 
@@ -205,7 +207,7 @@ echo "Starting wallet on $WALLET_URL"
 (
   cd "$ROOT_DIR"
   exec "$LOCAL_OID4VC_DEV" wallet serve \
-    --mode strict \
+    --mode "$OIDF_WALLET_MODE" \
     --auto-accept \
     --pid \
     --preferred-format dc+sd-jwt \

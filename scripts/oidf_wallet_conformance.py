@@ -27,6 +27,7 @@ RUNNING_PLAN_CONFIG_RE = re.compile(r"Running plan '.+?' with configuration file
 IMPLICIT_SUBMIT_RE = re.compile(r"xhr\.open\('POST',\s*([\"'])(.+?)\1", re.DOTALL)
 JSON_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9._-]+\.json)\}")
 TERMINAL_STATES = {"FINISHED", "INTERRUPTED"}
+WALLET_MODE = os.environ.get("OIDF_WALLET_MODE", "strict")
 POLL_INTERVAL = 1.0
 REQUEST_TIMEOUT = 20
 DEFAULT_MODULE_IDLE_TIMEOUT = 180
@@ -764,7 +765,7 @@ def wallet_api_path_for_request(request_url: str) -> str:
 
 def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
-    payload = {"uri": request_url, "mode": "strict"}
+    payload = {"uri": request_url, "mode": WALLET_MODE}
     if api_path == "/api/presentations" and requires_haip:
         payload["haip"] = True
     for attempt in range(1, 6):
@@ -894,7 +895,7 @@ def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) ->
 
 
 def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
-    extra_headers = {"X-OID4VC-Dev-Mode": "strict"}
+    extra_headers = {"X-OID4VC-Dev-Mode": WALLET_MODE}
     if requires_haip:
         extra_headers["X-OID4VC-Dev-HAIP"] = "true"
     origin = browser_request_origin(browser_request)
