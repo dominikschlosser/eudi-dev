@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.12.3] - 2026-08-01
 
 ### Added
 
@@ -877,6 +877,7 @@ OID4VP, OID4VCI, SD-JWT, mDoc, and related SSI/eIDAS 2.0 protocols.
 
 - add Apache 2.0 license
 
+[1.12.3]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.3
 [1.12.2]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.2
 [1.12.1]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.1
 [1.12.0]: https://github.com/dominikschlosser/oid4vc-dev/releases/tag/v1.12.0
