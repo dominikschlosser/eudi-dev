@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Wallet credential offer endpoint (`GET /credential-offer`): accepts `credential_offer` / `credential_offer_uri` (and optional `tx_code`) query parameters, making offers deliverable to the wallet's own URL instead of the `openid-credential-offer://` custom scheme — together with the existing `/authorize` endpoint, both wallet flows are now fully invocable by plain web URL in hosted environments, automated tests, and on platforms without URL scheme registration
+- Browser invocations of `/authorize` and `/credential-offer` (GET with an HTML Accept header) now complete like a same-device wallet: after a presentation the browser is redirected to the verifier's `redirect_uri`, after an offer import to the wallet UI — so a verifier configured with the wallet's URL (e.g. `keycloak-extension-oid4vp` `walletScheme`) runs a standard OIDC round trip end to end; API callers keep receiving JSON. Without `--auto-accept` the navigation redirects to the wallet UI immediately with the consent request pending — the flow finishes in the background once it is approved there (presentations continue to the verifier's `redirect_uri` via the approve response) instead of the browser tab blocking until consent
+- Example `keycloak-web-wallet`: Keycloak 26.7.0 issuer, `keycloak-extension-oid4vp` verifier, the wallet, and a demo UI in one Docker compose project sharing one network namespace, so every URL is plain `localhost` for both the host browser and the containers — issuance delivers offers to the wallet's `/credential-offer` URL, and verification is an ordinary OIDC login whose Keycloak login page links straight to the wallet's `/authorize` URL (requires `keycloak-extension-oid4vp` > 0.6.4 for wallet web URLs in `walletScheme`)
+
+### Fixed
+
+- The wallet's credential request advertises `Accept: application/jwt` only when credential response encryption is negotiated; sending it unconditionally made Keycloak 26.6's credential endpoint fail with an internal error (it returns signed issuer metadata when it sees `application/jwt` in the Accept header)
+
 ## [1.12.2] - 2026-07-30
 
 ### Added

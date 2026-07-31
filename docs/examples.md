@@ -49,6 +49,20 @@ It includes:
 - local issuer metadata / JWKS trust, plus public ngrok mode with a generated Keycloak signing-certificate trust list
 - a headless smoke test for the combined flow
 
+### Keycloak + Web Wallet (Web URLs Instead of Custom Schemes)
+
+Folder: [`examples/keycloak-web-wallet`](../examples/keycloak-web-wallet/README.md)
+
+Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `oid4vc-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login — the setup to copy for hosted environments, automated tests, and non-macOS platforms.
+
+It includes:
+
+- one compose project where all services share one network namespace, so every URL is plain `localhost` for both the host browser and the containers
+- a demo UI (port 9090) with clickable localhost wallet links for issuance and a normal OIDC "Login with wallet" flow for verification
+- static issuer and verifier realms reused from the two smaller examples, plus an admin-API step that points the verifier's `walletScheme` / `trustListUrl` at the wallet
+- headless demos driving `GET /credential-offer` and `GET /authorize`
+- automatic wallet-CA export into Keycloak's truststore for the status-list revocation check
+
 ## Notes
 
 - The examples are intentionally self-contained and version-pinned.

@@ -2,6 +2,9 @@
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
 const http = require("http");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const WALLET_PORT = 18924;
 const WALLET_URL = `http://localhost:${WALLET_PORT}`;
@@ -21,11 +24,26 @@ test.beforeAll(async () => {
     cwd: __dirname,
   });
 
-  // Start wallet with --pid and --auto-accept for some tests, interactive for others
+  // Start wallet with --pid and --auto-accept for some tests, interactive for others.
+  // A fresh --wallet-dir keeps the test isolated from any local wallet state
+  // (a persisted issuer URL would make the server bind that issuer port too).
   const { spawn } = require("child_process");
+  const walletDir = fs.mkdtempSync(path.join(os.tmpdir(), "oid4vc-dev-wallet-e2e-"));
   walletProcess = spawn(
     "/tmp/oid4vc-dev-wallet-e2e",
-    ["wallet", "serve", "--pid", "--port", String(WALLET_PORT)],
+    [
+      "wallet",
+      "serve",
+      "--pid",
+      "--port",
+      String(WALLET_PORT),
+      "--wallet-dir",
+      walletDir,
+      // Explicit issuer URL: the default (port+1 = 18925) collides with
+      // docker.spec.js's host port mapping.
+      "--base-url",
+      "https://localhost:18926",
+    ],
     { stdio: "pipe" }
   );
 
@@ -230,6 +248,26 @@ test.describe("Presentation Flow API", () => {
     });
     expect(res.status).toBe(400);
     expect(res.body.error).toBeDefined();
+  });
+});
+
+test.describe("Credential Offer Endpoint", () => {
+  test("GET /credential-offer without parameters returns error", async ({
+    request,
+  }) => {
+    const res = await request.get(`${WALLET_URL}/credential-offer`);
+    expect(res.status()).toBe(400);
+  });
+
+  test("GET /credential-offer with malformed offer returns error", async ({
+    request,
+  }) => {
+    const res = await request.get(
+      `${WALLET_URL}/credential-offer?credential_offer=${encodeURIComponent(
+        "not-a-credential-offer"
+      )}`
+    );
+    expect(res.status()).toBe(400);
   });
 });
 

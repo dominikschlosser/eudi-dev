@@ -1,0 +1,57 @@
+{
+  "realm": "wallet-demo",
+  "enabled": true,
+  "sslRequired": "NONE",
+  "clients": [
+    {
+      "clientId": "wallet-mock",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      }
+    }
+  ],
+  "identityProviders": [
+    {
+      "alias": "oid4vp",
+      "displayName": "Sign in with Wallet",
+      "providerId": "oid4vp",
+      "enabled": true,
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "clientId": "not-used",
+        "clientSecret": "not-used",
+        "sameDeviceEnabled": "true",
+        "crossDeviceEnabled": "false",
+        "walletScheme": "openid4vp://",
+        "responseMode": "direct_post",
+        "enforceHaip": "false",
+        "clientIdScheme": "plain",
+        "x509CertificatePem": "",
+        "x509SigningKeyJwk": "",
+        "trustListUrl": "http://localhost:9085/api/trustlist",
+        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
+        "trustedAuthoritiesMode": "none",
+        "userMappingClaim": "family_name",
+        "userMappingClaimMdoc": "family_name",
+        "dcqlQuery": "{\"credentials\":[{\"id\":\"pid_sd_jwt\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"urn:eudi:pid:de:1\"]},\"claims\":[{\"path\":[\"family_name\"]},{\"path\":[\"given_name\"]},{\"path\":[\"birthdate\"]}]}]}"
+      }
+    }
+  ]
+}

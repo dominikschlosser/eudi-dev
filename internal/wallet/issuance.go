@@ -1020,7 +1020,14 @@ func requestCredential(
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "application/json, application/jwt")
+	// Advertise application/jwt only for encrypted responses: Keycloak 26.6's
+	// credential endpoint returns signed issuer *metadata* (a JWT string) when
+	// it sees application/jwt in Accept and then fails on it internally.
+	if credentialResponseEncryption != nil {
+		req.Header.Set("Accept", "application/json, application/jwt")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
 
 	resp, err := doIssuanceRequest(req)
 	if err != nil {

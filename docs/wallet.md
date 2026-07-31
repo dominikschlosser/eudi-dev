@@ -152,6 +152,7 @@ Starts a persistent wallet HTTP server with a web UI for managing credentials an
 The server exposes:
 - Web UI for credential management and consent
 - OID4VP authorization endpoint (`/authorize`)
+- OID4VCI credential offer endpoint (`/credential-offer`) — accepts `credential_offer` / `credential_offer_uri` query parameters, so offer links can target the wallet URL instead of a custom scheme (see [Invoking the wallet by URL](#invoking-the-wallet-by-url))
 - Legacy ETSI trust list endpoint (`/api/trustlist`) — use this URL as `--trust-list` when validating PID credentials issued by the wallet
 - Trust-list index endpoint (`/api/trustlists`) with one JWT endpoint per coherent trust-list profile
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
@@ -400,6 +401,38 @@ oid4vc-dev wallet unregister             # Remove URL handlers
 |-----------------|---------|----------------------------------------------------------------|
 | `--port`        | `8085`  | Listener port for handler script to try before falling back to CLI |
 | `--auto-accept` | `false` | Handle incoming URLs silently without opening the wallet UI    |
+
+## Invoking the wallet by URL
+
+Custom URL schemes require OS-level handler registration (macOS only). Both wallet flows can be invoked at the wallet's own URL instead — use the wallet URL wherever a verifier or issuer would otherwise emit a custom-scheme link. This works in hosted environments, automated tests, containers, and on platforms without scheme registration.
+
+The URLs take exactly the same query parameters as their custom-scheme counterparts:
+
+| Custom scheme | Wallet URL |
+|---------------|------------|
+| `openid4vp://?<params>` or `openid4vp://authorize?<params>` | `http://localhost:8085/authorize?<params>` |
+| `openid-credential-offer://?<params>` | `http://localhost:8085/credential-offer?<params>` |
+
+To convert a link, replace everything before the `?` with the wallet endpoint URL and keep the query string unchanged.
+
+Note on the paths: in a custom-scheme URI the part between `://` and `?` carries no meaning — the scheme alone addresses the wallet, so `openid4vp://?...` and `openid4vp://authorize?...` are the same request (the conventional `authorize` merely fills the empty host slot, and the wallet ignores it). A web URL, in contrast, only addresses the wallet's HTTP server, which also serves the UI and APIs — so a path has to identify the flow. `/authorize` follows the OAuth convention, since in OID4VP the wallet acts as the OAuth authorization server and the verifier's request is an ordinary authorization request; `/credential-offer` names the OID4VCI credential offer endpoint. (OID4VP and OID4VCI don't mandate specific paths — wallets advertise their endpoint URLs in metadata.)
+
+```bash
+# Presentation request: standard OID4VP authorization request parameters
+curl 'http://localhost:8085/authorize?client_id=...&request_uri=...'
+
+# Credential offer by reference
+curl 'http://localhost:8085/credential-offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer%2F123'
+
+# Credential offer by value (url-encoded offer JSON), with a transaction code
+curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=1234'
+```
+
+`/credential-offer` accepts `credential_offer` or `credential_offer_uri`, plus an optional `tx_code` for the pre-authorized code flow.
+
+Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accept` header — i.e. a clicked link) behave like a same-device wallet: after a presentation is submitted, the browser is redirected to the verifier's `redirect_uri` (or to the wallet UI when the verifier returns none), and after an offer is imported, to the wallet UI. Everything else — `curl`, test harnesses, the JSON APIs — receives the same JSON payloads as `POST /api/presentations` and `POST /api/offers`. This means a verifier or issuer configured with the wallet's URLs completes a standard browser round trip with no custom schemes involved (for example, `keycloak-extension-oid4vp` with `walletScheme` set to the wallet's `/authorize` URL).
+
+In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`); an API call blocks until the request is approved or denied — in the UI or via `POST /api/requests/{id}/approve`.
 
 ## HAIP 1.0 Enforcement
 

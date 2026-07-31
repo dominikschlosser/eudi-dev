@@ -1,0 +1,92 @@
+# All services share Keycloak's network namespace, so `localhost:<port>` means
+# the same thing in the host browser and inside every container. That keeps
+# every URL — Keycloak pages, wallet links, request_uri, redirects — on plain
+# localhost with no hostname mapping. The services' listen ports therefore
+# match the published ports; start.sh picks free KEYCLOAK_PORT / WALLET_PORT /
+# APP_PORT values when the defaults are taken (override them to pin ports).
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command:
+      - start-dev
+      - --import-realm
+      # Keycloak 26.7 split the create-credential-offer REST endpoint into its
+      # own feature flag (oid4vc-vci-rest-credential-offer).
+      - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer:v1
+      - --http-port=${KEYCLOAK_PORT:-9080}
+      - --proxy-headers=xforwarded
+      # The wallet CA (exported by start.sh) lets Keycloak fetch the wallet's
+      # HTTPS status-list endpoint during credential revocation checks.
+      - --truststore-paths=/opt/keycloak/conf/oid4vc-wallet-ca.pem
+      - --tls-hostname-verifier=ANY
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info,de.arbeitsagentur:trace
+    ports:
+      - "${KEYCLOAK_PORT:-9080}:${KEYCLOAK_PORT:-9080}"
+      - "${WALLET_PORT:-9085}:${WALLET_PORT:-9085}"
+      - "${APP_PORT:-9090}:${APP_PORT:-9090}"
+    volumes:
+      - ./providers:/opt/keycloak/providers:ro
+      - ./wallet-ca-cert.pem:/opt/keycloak/conf/oid4vc-wallet-ca.pem:ro
+      - ./realm:/opt/keycloak/data/import:ro
+
+  wallet:
+    build: ../..
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    command:
+      - wallet
+      - serve
+      - --pid
+      - --port
+      - "${WALLET_PORT:-9085}"
+      - --base-url
+      - http://localhost:${WALLET_PORT:-9085}
+    volumes:
+      # Mounted at the home directory (owned by the image's app user) so the
+      # wallet state survives between the CA export and `wallet serve`.
+      - wallet-data:/home/app
+
+  # One-off helper for exporting the wallet CA before Keycloak starts
+  # (the wallet service itself joins Keycloak's network namespace, so it
+  # cannot run before Keycloak exists).
+  wallet-init:
+    profiles: ["setup"]
+    build: ../..
+    network_mode: "none"
+    volumes:
+      - wallet-data:/home/app
+
+  app:
+    build: ./demo
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    command: ["/app/app.py"]
+    environment:
+      KEYCLOAK_BASE_URL: http://localhost:${KEYCLOAK_PORT:-9080}
+      WALLET_BASE_URL: http://localhost:${WALLET_PORT:-9085}
+      APP_LISTEN_PORT: ${APP_PORT:-9090}
+      APP_BASE_URL: http://localhost:${APP_PORT:-9090}
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./app:/app:ro
+
+  demo:
+    profiles: ["demo"]
+    build: ./demo
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    environment:
+      KEYCLOAK_BASE_URL: http://localhost:${KEYCLOAK_PORT:-9080}
+      WALLET_BASE_URL: http://localhost:${WALLET_PORT:-9085}
+    volumes:
+      - ./scripts:/scripts:ro
+
+volumes:
+  wallet-data:

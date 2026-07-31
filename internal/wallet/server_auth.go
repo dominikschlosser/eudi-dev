@@ -33,6 +33,22 @@ func newConsentID() string {
 	return uuid.New().String()
 }
 
+// isBrowserNavigation reports whether the request looks like a top-level
+// browser navigation rather than an API call.
+func isBrowserNavigation(r *http.Request) bool {
+	return r.Method == http.MethodGet && strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// redirectBrowser sends the browser to the verifier's redirect_uri, or to the
+// wallet UI when the verifier did not provide one.
+func redirectBrowser(w http.ResponseWriter, redirectURI string) {
+	if redirectURI == "" {
+		redirectURI = "/"
+	}
+	w.Header().Set("Location", redirectURI)
+	w.WriteHeader(http.StatusSeeOther)
+}
+
 // AuthorizationRequestParams holds the extracted fields from an authorization request.
 type AuthorizationRequestParams struct {
 	ClientID         string
@@ -49,6 +65,10 @@ type AuthorizationRequestParams struct {
 	RequestObject    *oid4vc.RequestObjectJWT
 	RequestPayload   map[string]any
 	Source           string
+	// BrowserRedirect is set when the request came from a browser navigation
+	// (GET with an HTML Accept header): after submission the browser is
+	// redirected to the verifier's redirect_uri instead of receiving JSON.
+	BrowserRedirect bool
 }
 
 type preparedPresentation struct {
@@ -180,7 +200,23 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		s.onConsentRequest(consentReq)
 	}
 
-	// Wait for user consent (with timeout)
+	if authReq.BrowserRedirect {
+		// A browser navigation must not hang while the consent is pending:
+		// send the browser to the wallet UI (which shows the request) and
+		// finish the flow in the background once consent arrives. The UI
+		// navigates onward via the approve response's redirect_uri.
+		go s.awaitPresentationConsent(noopResponseWriter{}, authReq, matches, consentReq)
+		redirectBrowser(w, "")
+		return
+	}
+	s.awaitPresentationConsent(w, authReq, matches, consentReq)
+}
+
+// awaitPresentationConsent waits for the user's decision on a presentation
+// consent request and submits the presentation (or an error response) to the
+// verifier. The submission result is also delivered on the consent request's
+// submission channel for the approve API.
+func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *AuthorizationRequestParams, matches []CredentialMatch, consentReq *ConsentRequest) {
 	select {
 	case result := <-consentReq.ResultCh:
 		if !result.Approved {
@@ -214,6 +250,15 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
 	}
 }
+
+// noopResponseWriter discards the response of a consent flow that has been
+// detached from its originating HTTP request (browser navigations are
+// redirected to the wallet UI instead of blocking until consent).
+type noopResponseWriter struct{}
+
+func (noopResponseWriter) Header() http.Header         { return http.Header{} }
+func (noopResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (noopResponseWriter) WriteHeader(int)             {}
 
 // autoAcceptPresentation handles auto-accept mode.
 func (s *Server) autoAcceptPresentation(w http.ResponseWriter, authReq *AuthorizationRequestParams, matches []CredentialMatch) {
@@ -364,12 +409,16 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 
 	s.wallet.addProtocolLog("presentation", "verifier_response", fmt.Sprintf("Verifier result from %s: %s", authReq.ClientID, FormatDirectPostResult(result)), result.StatusCode < 400, verifierResponseLogDetails(authReq, &preparedPresentation{ResponseURI: responseURI}, result))
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":            status,
-		"error":             errorCode,
-		"error_description": errorDescription,
-		"response":          result,
-	})
+	if authReq.BrowserRedirect {
+		redirectBrowser(w, result.RedirectURI)
+	} else {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":            status,
+			"error":             errorCode,
+			"error_description": errorDescription,
+			"response":          result,
+		})
+	}
 
 	return SubmissionResult{
 		RedirectURI: result.RedirectURI,
@@ -429,16 +478,20 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 
 	s.wallet.addProtocolLog("presentation", "verifier_response", fmt.Sprintf("Verifier result from %s: %s", authReq.ClientID, FormatDirectPostResult(result)), result.StatusCode < 400, verifierResponseLogDetails(authReq, prepared, result))
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":   "submitted",
-		"response": result,
-		"vp_token_keys": func() []string {
-			if prepared.VPResult == nil {
-				return nil
-			}
-			return prepared.VPResult.QueryIDs()
-		}(),
-	})
+	if authReq.BrowserRedirect {
+		redirectBrowser(w, result.RedirectURI)
+	} else {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":   "submitted",
+			"response": result,
+			"vp_token_keys": func() []string {
+				if prepared.VPResult == nil {
+					return nil
+				}
+				return prepared.VPResult.QueryIDs()
+			}(),
+		})
+	}
 
 	return SubmissionResult{
 		RedirectURI: result.RedirectURI,

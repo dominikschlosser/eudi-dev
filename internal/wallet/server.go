@@ -118,6 +118,11 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("GET /authorize", s.withFreshStore(s.handleAuthorize))
 	s.mux.HandleFunc("POST /authorize", s.withFreshStore(s.handleAuthorize))
 
+	// OID4VCI Credential Offer Endpoint: the web-URL counterpart of the
+	// openid-credential-offer:// custom scheme, so issuers can target the
+	// wallet's own URL where scheme registration is unavailable
+	s.mux.HandleFunc("GET /credential-offer", s.withFreshStore(s.handleCredentialOfferEndpoint))
+
 	// API: feed authorization request URIs
 	s.mux.HandleFunc("POST /api/presentations", s.withFreshStore(s.handlePresentationAPI))
 	s.mux.HandleFunc("POST /api/dc-api", s.withFreshStore(s.handleBrowserPresentationAPI))
@@ -390,6 +395,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authReq.BrowserRedirect = isBrowserNavigation(r)
 	s.handleAuthFlow(w, authReq)
 }
 
@@ -603,21 +609,28 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.processOfferURI(w, body.URI, body.TxCode, false)
+}
+
+// processOfferURI runs the credential offer flow for an offer delivered as a
+// URI. With browserRedirect set, a successful import redirects the browser to
+// the wallet UI instead of returning JSON.
+func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, browserRedirect bool) {
 	s.log("Received credential offer")
-	uriDisplay := format.Truncate(body.URI, 120)
+	uriDisplay := format.Truncate(uri, 120)
 	s.log("  URI: %s", uriDisplay)
-	offerDetails := map[string]any{"offer_uri": body.URI}
-	addStringDetail(offerDetails, "tx_code", body.TxCode)
+	offerDetails := map[string]any{"offer_uri": uri}
+	addStringDetail(offerDetails, "tx_code", txCode)
 	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
-	if body.TxCode != "" {
+	if txCode != "" {
 		s.wallet.mu.Lock()
-		s.wallet.TxCode = body.TxCode
+		s.wallet.TxCode = txCode
 		s.wallet.mu.Unlock()
 	}
 
 	if !s.wallet.AutoAccept {
-		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(body.URI)
+		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri)
 		if err != nil {
 			s.log("  ERROR: %v", err)
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
@@ -637,61 +650,88 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 			s.onConsentRequest(consentReq)
 		}
 
-		select {
-		case consent := <-consentReq.ResultCh:
-			if !consent.Approved {
-				s.log("  Consent:       denied")
-				s.wallet.AddLog("issuance", fmt.Sprintf("Denied credential offer from %s", issuerDisplay), false)
-				consentReq.SubmissionCh <- SubmissionResult{Error: "user denied issuance", StatusCode: http.StatusForbidden}
-				writeJSON(w, http.StatusOK, map[string]any{
-					"status":      "denied",
-					"error":       "user denied issuance",
-					"status_code": http.StatusForbidden,
-				})
-				return
-			}
-
-			s.log("  Consent:       approved")
-			result, err := s.wallet.ProcessCredentialOffer(consentReq.OfferURI)
-			if err != nil {
-				s.log("  ERROR: %v", err)
-				s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
-				s.wallet.NotifyError(WalletError{
-					Message: "Credential issuance failed",
-					Detail:  err.Error(),
-				})
-				consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-				return
-			}
-
-			s.log("  Received:      %s credential from %s", result.Format, result.Issuer)
-			if result.VerificationDetail != "" {
-				s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
-			}
-			s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
-				"offer_uri":            consentReq.OfferURI,
-				"credential_id":        result.CredentialID,
-				"format":               result.Format,
-				"issuer":               result.Issuer,
-				"verification_status":  result.VerificationStatus,
-				"verification_detail":  result.VerificationDetail,
-				"credential_requested": consentReq.OfferConfigs,
-			})
-			s.triggerSave()
-			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK}
-			writeJSON(w, http.StatusOK, result)
-			return
-		case <-time.After(5 * time.Minute):
-			consentReq.Status = "denied"
-			s.wallet.AddLog("issuance", "Consent timeout", false)
-			consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout", StatusCode: http.StatusRequestTimeout}
-			writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
+		if browserRedirect {
+			// A browser navigation must not hang while the consent is
+			// pending: send the browser to the wallet UI (which shows the
+			// request) and import the credential in the background once
+			// consent arrives.
+			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false)
+			redirectBrowser(w, "")
 			return
 		}
+		s.awaitOfferConsent(w, consentReq, issuerDisplay, false)
+		return
 	}
 
-	result, err := s.wallet.ProcessCredentialOffer(body.URI)
+	s.processOfferDirectly(w, uri, browserRedirect)
+}
+
+// awaitOfferConsent waits for the user's decision on an issuance consent
+// request and processes the credential offer on approval. The outcome is also
+// delivered on the consent request's submission channel for the approve API.
+func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentRequest, issuerDisplay string, browserRedirect bool) {
+	select {
+	case consent := <-consentReq.ResultCh:
+		if !consent.Approved {
+			s.log("  Consent:       denied")
+			s.wallet.AddLog("issuance", fmt.Sprintf("Denied credential offer from %s", issuerDisplay), false)
+			consentReq.SubmissionCh <- SubmissionResult{Error: "user denied issuance", StatusCode: http.StatusForbidden}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status":      "denied",
+				"error":       "user denied issuance",
+				"status_code": http.StatusForbidden,
+			})
+			return
+		}
+
+		s.log("  Consent:       approved")
+		result, err := s.wallet.ProcessCredentialOffer(consentReq.OfferURI)
+		if err != nil {
+			s.log("  ERROR: %v", err)
+			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
+			s.wallet.NotifyError(WalletError{
+				Message: "Credential issuance failed",
+				Detail:  err.Error(),
+			})
+			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		s.log("  Received:      %s credential from %s", result.Format, result.Issuer)
+		if result.VerificationDetail != "" {
+			s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
+		}
+		s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
+			"offer_uri":            consentReq.OfferURI,
+			"credential_id":        result.CredentialID,
+			"format":               result.Format,
+			"issuer":               result.Issuer,
+			"verification_status":  result.VerificationStatus,
+			"verification_detail":  result.VerificationDetail,
+			"credential_requested": consentReq.OfferConfigs,
+		})
+		s.triggerSave()
+		consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK}
+		if browserRedirect {
+			redirectBrowser(w, "")
+		} else {
+			writeJSON(w, http.StatusOK, result)
+		}
+		return
+	case <-time.After(5 * time.Minute):
+		consentReq.Status = "denied"
+		s.wallet.AddLog("issuance", "Consent timeout", false)
+		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout", StatusCode: http.StatusRequestTimeout}
+		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
+		return
+	}
+}
+
+// processOfferDirectly runs the credential offer flow without a consent step
+// (auto-accept mode).
+func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browserRedirect bool) {
+	result, err := s.wallet.ProcessCredentialOffer(uri)
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
@@ -711,7 +751,7 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
 	}
 	s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
-		"offer_uri":           body.URI,
+		"offer_uri":           uri,
 		"credential_id":       result.CredentialID,
 		"format":              result.Format,
 		"issuer":              result.Issuer,
@@ -719,7 +759,11 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		"verification_detail": result.VerificationDetail,
 	})
 	s.triggerSave()
-	writeJSON(w, http.StatusOK, result)
+	if browserRedirect {
+		redirectBrowser(w, "")
+	} else {
+		writeJSON(w, http.StatusOK, result)
+	}
 }
 
 func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) {
