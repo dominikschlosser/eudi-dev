@@ -66,14 +66,15 @@
       const moreCount = Object.keys(cred.claims || {}).length - claimKeys.length;
       const moreTag = moreCount > 0 ? '<span class="claim-tag">+' + moreCount + ' more</span>' : '';
 
+      card.id = 'credential-' + cred.id;
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
         '<div class="credential-info" title="Open in decoder">' +
           '<div class="credential-type">' + escHtml(typeLabel) + '</div>' +
           '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
-          '<button class="btn btn-sm" data-show="' + cred.id + '">Show</button>' +
-          '<button class="btn btn-danger btn-sm" data-delete="' + cred.id + '">Delete</button>' +
+          '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
+          '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>' +
         '</div>';
 
       const openDecoder = () => {
@@ -161,6 +162,217 @@
       await loadCredentials();
     } catch (e) {
       alert('Import failed: ' + e.message);
+    }
+  });
+
+  // Issue credential
+  const issueBtn = document.getElementById('issue-btn');
+  const issueOverlay = document.getElementById('issue-overlay');
+  const issueForm = document.getElementById('issue-form');
+  const issueError = document.getElementById('issue-error');
+  const issueSubmit = document.getElementById('issue-submit');
+  const issueFormat = document.getElementById('issue-format');
+  const issueClaimRows = document.getElementById('issue-claim-rows');
+  const issueClaimsTextarea = document.getElementById('issue-claims');
+  let issueDefaults = null;
+  let claimRowCounter = 0;
+
+  function addClaimRow(ns, key, value) {
+    const idx = claimRowCounter++;
+    const row = document.createElement('div');
+    row.className = 'claim-row';
+    row.id = 'issue-claim-row-' + idx;
+    row.innerHTML =
+      '<input type="text" class="form-input claim-ns" id="issue-claim-ns-' + idx + '" placeholder="namespace (default: doc type)">' +
+      '<input type="text" class="form-input" id="issue-claim-key-' + idx + '" placeholder="claim name">' +
+      '<input type="text" class="form-input" id="issue-claim-value-' + idx + '" placeholder="value (text or JSON)">' +
+      '<button type="button" class="btn btn-sm" id="issue-claim-remove-' + idx + '" title="Remove claim">&times;</button>';
+    row.querySelector('input[id^="issue-claim-ns-"]').value = ns || '';
+    row.querySelector('input[id^="issue-claim-key-"]').value = key || '';
+    row.querySelector('input[id^="issue-claim-value-"]').value = value || '';
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    issueClaimRows.appendChild(row);
+  }
+
+  // Builder claims use "namespace:element" keys for mdoc rows that set a
+  // namespace, matching the server-side claim key convention.
+  function builderClaims() {
+    const claims = {};
+    issueClaimRows.querySelectorAll('.claim-row').forEach(row => {
+      let key = row.querySelector('input[id^="issue-claim-key-"]').value.trim();
+      if (!key) return;
+      const ns = row.querySelector('input[id^="issue-claim-ns-"]').value.trim();
+      if (ns && issueFormat.value === 'mdoc') key = ns + ':' + key;
+      const rawVal = row.querySelector('input[id^="issue-claim-value-"]').value;
+      let val = rawVal;
+      try { val = JSON.parse(rawVal); } catch (e) { /* keep as string */ }
+      claims[key] = val;
+    });
+    return claims;
+  }
+
+  function fillClaimRows(claims) {
+    issueClaimRows.textContent = '';
+    claimRowCounter = 0;
+    Object.keys(claims || {}).forEach(key => {
+      const val = claims[key];
+      let ns = '';
+      let name = key;
+      if (issueFormat.value === 'mdoc') {
+        const sep = key.indexOf(':');
+        if (sep > 0) {
+          ns = key.slice(0, sep);
+          name = key.slice(sep + 1);
+        }
+      }
+      addClaimRow(ns, name, typeof val === 'string' ? val : JSON.stringify(val));
+    });
+    if (claimRowCounter === 0) addClaimRow('', '', '');
+  }
+
+  function updateIssueFormatFields() {
+    const fmt = issueFormat.value;
+    issueForm.querySelectorAll('[data-formats]').forEach(el => {
+      el.hidden = el.dataset.formats.split(' ').indexOf(fmt) === -1;
+    });
+    issueClaimRows.classList.toggle('show-ns', fmt === 'mdoc');
+  }
+
+  // Pre-fill VCT, doc type, expiry, and the claim set with the format's PID
+  // defaults so what gets issued is visible before submitting.
+  function fillIssueDefaults() {
+    if (!issueDefaults) return;
+    const d = issueDefaults[issueFormat.value] || {};
+    document.getElementById('issue-vct').value = d.vct || '';
+    document.getElementById('issue-doctype').value = d.doctype || '';
+    document.getElementById('issue-exp').value = d.exp || '';
+    fillClaimRows(d.claims);
+    issueClaimsTextarea.value = JSON.stringify(d.claims || {}, null, 2);
+  }
+
+  // Keeps both claim editors in sync: entering JSON mode serializes the
+  // builder rows, entering builder mode re-parses the JSON into rows.
+  function updateClaimsMode() {
+    const jsonRadio = document.getElementById('issue-claims-mode-json');
+    const jsonMode = jsonRadio.checked;
+    if (jsonMode) {
+      issueClaimsTextarea.value = JSON.stringify(builderClaims(), null, 2);
+    } else {
+      const text = issueClaimsTextarea.value.trim();
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            throw new Error('expected a JSON object');
+          }
+          fillClaimRows(parsed);
+          issueError.textContent = '';
+        } catch (e) {
+          issueError.textContent = 'Claims must be valid JSON: ' + e.message;
+          jsonRadio.checked = true;
+          return;
+        }
+      }
+    }
+    issueClaimRows.hidden = jsonMode;
+    document.getElementById('issue-add-claim').hidden = jsonMode;
+    issueClaimsTextarea.hidden = !jsonMode;
+  }
+
+  // Clears everything except the selected format. Also used when the format
+  // changes, because values do not translate between formats.
+  function resetIssueFields() {
+    document.getElementById('issue-vct').value = '';
+    document.getElementById('issue-doctype').value = '';
+    document.getElementById('issue-exp').value = '';
+    document.getElementById('issue-nbf').value = '';
+    document.getElementById('issue-claims-mode-builder').checked = true;
+    issueClaimsTextarea.value = '';
+    issueError.textContent = '';
+    updateIssueFormatFields();
+    fillClaimRows({});
+    updateClaimsMode();
+  }
+
+  issueBtn.addEventListener('click', () => {
+    issueForm.reset();
+    resetIssueFields();
+    issueOverlay.classList.add('active');
+  });
+
+  issueFormat.addEventListener('change', resetIssueFields);
+
+  document.getElementById('issue-fill-pid').addEventListener('click', async () => {
+    if (!issueDefaults) {
+      try {
+        const resp = await fetch('/api/issue/defaults');
+        issueDefaults = await resp.json();
+      } catch (e) {
+        issueError.textContent = 'Failed to load PID defaults: ' + e.message;
+        return;
+      }
+    }
+    fillIssueDefaults();
+  });
+
+  document.getElementById('issue-add-claim').addEventListener('click', () => addClaimRow('', ''));
+
+  document.getElementById('issue-claims-mode-builder').addEventListener('change', updateClaimsMode);
+  document.getElementById('issue-claims-mode-json').addEventListener('change', updateClaimsMode);
+
+  document.getElementById('issue-cancel').addEventListener('click', () => {
+    issueOverlay.classList.remove('active');
+  });
+
+  issueForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    issueError.textContent = '';
+
+    const body = { format: issueFormat.value };
+    if (document.getElementById('issue-claims-mode-json').checked) {
+      const claimsText = issueClaimsTextarea.value.trim();
+      if (claimsText) {
+        try {
+          body.claims = JSON.parse(claimsText);
+        } catch (e) {
+          issueError.textContent = 'Claims must be valid JSON: ' + e.message;
+          return;
+        }
+      }
+    } else {
+      const claims = builderClaims();
+      if (Object.keys(claims).length > 0) body.claims = claims;
+    }
+    const vct = document.getElementById('issue-vct').value.trim();
+    if (vct) body.vct = vct;
+    const doctype = document.getElementById('issue-doctype').value.trim();
+    if (doctype) body.doctype = doctype;
+    const exp = document.getElementById('issue-exp').value.trim();
+    if (exp) body.exp = exp;
+    const nbf = document.getElementById('issue-nbf').value.trim();
+    if (nbf) body.nbf = nbf;
+
+    issueSubmit.disabled = true;
+    issueSubmit.textContent = 'Issuing...';
+    try {
+      const resp = await fetch('/api/issue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        issueError.textContent = result.error || ('HTTP ' + resp.status);
+        return;
+      }
+      issueOverlay.classList.remove('active');
+      await loadCredentials();
+      await loadLog();
+    } catch (e) {
+      issueError.textContent = 'Request failed: ' + e.message;
+    } finally {
+      issueSubmit.disabled = false;
+      issueSubmit.textContent = 'Issue';
     }
   });
 

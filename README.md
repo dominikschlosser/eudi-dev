@@ -88,7 +88,7 @@ oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
 
 > **Security:** The wallet server exposes unauthenticated HTTP endpoints for credential management and presentation flows. It is designed exclusively for **local development and testing** — never expose it to untrusted networks.
 
-`wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `wallet generate-pid` gives you a ready-to-use PID wallet, `issue ... --wallet` adds new credentials into the same wallet context, and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them.
+`wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `wallet generate-pid` gives you a ready-to-use PID wallet, `issue ... --wallet` adds new credentials into the same wallet context, and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
 
 For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet

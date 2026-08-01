@@ -28,6 +28,8 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `register`     | Register OS URL scheme handlers on macOS; no-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS; no-op elsewhere         |
 
+All wallet management operations (list, show, import, remove, issue, generate-pid, cert export) are also available over HTTP on a running `wallet serve` instance. This lets you drive hosted or containerized wallets remotely. See [HTTP API](#http-api).
+
 ## Quick start
 
 ```bash
@@ -150,12 +152,17 @@ oid4vc-dev wallet logs --json       # JSON array of log entries
 Starts a persistent wallet HTTP server with a web UI for managing credentials and handling OID4VP/OID4VCI flows. Loads credentials from disk and saves state on credential changes. Includes request logging with timestamps and a browser-based consent UI for incoming requests.
 
 The server exposes:
-- Web UI for credential management and consent
+- Web UI for credential management and consent (list, show, import, remove, and issue credentials, with an EUDI PID preset and CA and TLS certificate downloads)
 - OID4VP authorization endpoint (`/authorize`)
 - OID4VCI credential offer endpoint (`/credential-offer`) — accepts `credential_offer` / `credential_offer_uri` query parameters, so offer links can target the wallet URL instead of a custom scheme (see [Invoking the wallet by URL](#invoking-the-wallet-by-url))
 - Legacy ETSI trust list endpoint (`/api/trustlist`) — use this URL as `--trust-list` when validating PID credentials issued by the wallet
 - Trust-list index endpoint (`/api/trustlists`) with one JWT endpoint per coherent trust-list profile
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
+- A management API mirroring the wallet CLI (list, show, import, and remove credentials, issue credentials, generate PIDs, export certificates). It has no authentication (see [HTTP API](#http-api))
+
+Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. The preset button fills all fields with the EUDI PID defaults so they can be reviewed and edited before issuing:
+
+![Issue credential dialog](./wallet-issue-ui.png)
 
 By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
 
@@ -350,6 +357,8 @@ oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
 oid4vc-dev wallet ca-cert --jwks
 ```
 
+On a running wallet server the same export is available as `GET /api/certificates/ca` (`?format=jwks` for JWKS). See [Certificate export](#certificate-export).
+
 | Flag     | Default | Description |
 |----------|---------|-------------|
 | `--out`  | —       | Write the shared wallet CA certificate to a file instead of stdout |
@@ -369,6 +378,8 @@ oid4vc-dev wallet tls-cert --jwks
 ```
 
 Use the same `--port`, `--docker`, and `--base-url` flags as `wallet serve` so the exported certificate matches the HTTPS wallet host that the running wallet presents.
+
+On a running wallet server the same export is available as `GET /api/certificates/tls` (`?format=jwks` for JWKS). It always matches the running server's HTTPS wallet host. See [Certificate export](#certificate-export).
 
 | Flag         | Default | Description |
 |--------------|---------|-------------|
@@ -453,9 +464,98 @@ oid4vc-dev wallet serve --haip --auto-accept --pid
 oid4vc-dev wallet accept --haip 'openid4vp://authorize?...'
 ```
 
-## Testing API
+## HTTP API
 
-The wallet server exposes API endpoints for automated testing scenarios. These let you control wallet behavior programmatically — useful for E2E test suites that need to simulate errors or select specific credential formats.
+Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance. That covers listing, showing, importing, and removing credentials, issuing new credentials, generating PIDs, and exporting certificates. Use it to manage a non-local wallet or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also controls wallet behavior for tests (simulated errors, preferred credential format).
+
+> **Security: no authentication.** The wallet's HTTP API has **no authentication or authorization whatsoever**. Anyone who can reach the wallet's port has full control over the wallet and its credentials. This is intentional (it is a testing wallet for local development and isolated test networks). Never expose it to untrusted networks and never store real credentials in it.
+
+### Credential management
+
+The credential endpoints mirror `wallet list`, `wallet show`, `wallet import`, and `wallet remove`:
+
+| Method   | Path                    | Body                  | Description                                        | CLI equivalent        |
+|----------|-------------------------|-----------------------|----------------------------------------------------|-----------------------|
+| `GET`    | `/api/credentials`      | —                     | List stored credentials                            | `wallet list --json`  |
+| `GET`    | `/api/credentials/{id}` | —                     | Show one credential (id, format, claims, raw)      | `wallet show <id>`    |
+| `POST`   | `/api/credentials`      | raw credential string | Import a credential (see [Credential import](#credential-import)) | `wallet import`       |
+| `DELETE` | `/api/credentials/{id}` | —                     | Remove a credential by ID (`204` on success)       | `wallet remove <id>`  |
+| `DELETE` | `/api/credentials`      | —                     | Remove all credentials (returns `{"deleted": n}`)  | `wallet remove --all` |
+
+```bash
+# List credentials, pick one, inspect it, then delete it
+curl http://localhost:8085/api/credentials
+curl http://localhost:8085/api/credentials/<id>
+curl -X DELETE http://localhost:8085/api/credentials/<id>
+
+# Wipe the wallet
+curl -X DELETE http://localhost:8085/api/credentials
+```
+
+### Issuing credentials
+
+`POST /api/issue` issues a credential with the wallet's issuer key and certificate chain and imports it into the wallet. It is the HTTP equivalent of `issue sdjwt|jwt|mdoc --wallet`. All fields except `format` are optional:
+
+| Field             | Type    | Description                                                                                  |
+|-------------------|---------|----------------------------------------------------------------------------------------------|
+| `format`          | string  | **Required.** `sdjwt`, `jwt`, or `mdoc`                                                      |
+| `claims`          | object  | Credential claims (default is a small test claim set, or the PID claim set with `pid`)       |
+| `pid`             | bool    | Use the full EUDI PID Rulebook claims (like `--pid`)                                         |
+| `omit`            | array   | Top-level claim names to drop from the claim set (like `--omit`)                             |
+| `vct`             | string  | SD-JWT/JWT VC type (default is the default PID VCT)                                          |
+| `doctype`         | string  | mdoc doc type (default `eu.europa.ec.eudi.pid.1`)                                            |
+| `namespace`       | string  | Default namespace for mdoc claims (default is `doctype`). A claim key of the form `namespace:element` places that element in its own namespace instead |
+| `exp`             | string  | Expiration duration such as `720h` or `24h` (default `720h`)                                 |
+| `nbf`             | string  | Not-before as RFC3339 (`2025-01-15T00:00:00Z`) or relative duration (`-1h`)                  |
+| `status_list_uri` | string  | Status list URI to embed. Default is the wallet's own status list when configured. `""` disables it |
+| `status_list_idx` | int     | Status list index (default is the next free index on the wallet's status list)               |
+| `trust_profile`   | string  | Trust-list profile for registration metadata: `auto` (default), `pid`, or `local`            |
+| `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
+
+The response is `201` with the stored credential (`id`, `format`, `claims`, `raw`, and `status_list_idx` when the credential was registered on the wallet's status list).
+
+```bash
+# Issue an SD-JWT PID into the wallet
+curl -X POST http://localhost:8085/api/issue \
+  -H 'Content-Type: application/json' \
+  -d '{"format": "sdjwt", "pid": true}'
+
+# Issue an mDoc with custom claims that expires in 24 hours
+curl -X POST http://localhost:8085/api/issue \
+  -H 'Content-Type: application/json' \
+  -d '{"format": "mdoc", "claims": {"given_name": "Erika"}, "exp": "24h"}'
+
+# Issue an already-expired credential for negative tests
+curl -X POST http://localhost:8085/api/issue \
+  -H 'Content-Type: application/json' \
+  -d '{"format": "sdjwt", "nbf": "-48h", "exp": "24h"}'
+```
+
+`POST /api/generate-pid` regenerates the default EUDI PID credentials (SD-JWT + mDoc) and replaces existing PIDs. It is the HTTP equivalent of `wallet generate-pid`. The body is optional. `claims` merges overrides into the default PID claims and `vct` sets the SD-JWT VCT. Returns `201` with the full credential list.
+
+```bash
+curl -X POST http://localhost:8085/api/generate-pid \
+  -H 'Content-Type: application/json' \
+  -d '{"claims": {"given_name": "MAX", "family_name": "POWER"}}'
+```
+
+### Certificate export
+
+The certificate endpoints mirror `wallet ca-cert` and `wallet tls-cert` (e.g. for provisioning verifier trust stores in automated tests). Both return PEM by default. With `?format=jwks` they return a JWKS document (public key with `x5c` chain) instead.
+
+| Method | Path                            | Description                                              | CLI equivalent   |
+|--------|---------------------------------|----------------------------------------------------------|------------------|
+| `GET`  | `/api/certificates/ca`          | Shared wallet CA certificate (PEM)                       | `wallet ca-cert` |
+| `GET`  | `/api/certificates/ca?format=jwks`  | Shared wallet CA certificate as JWKS                 | `wallet ca-cert --jwks` |
+| `GET`  | `/api/certificates/tls`         | HTTPS leaf certificate for the wallet's issuer URL (PEM) | `wallet tls-cert` |
+| `GET`  | `/api/certificates/tls?format=jwks` | HTTPS leaf certificate as JWKS                       | `wallet tls-cert --jwks` |
+
+```bash
+curl http://localhost:8085/api/certificates/ca > wallet-ca-cert.pem
+curl 'http://localhost:8085/api/certificates/tls?format=jwks'
+```
+
+The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL). Unlike `wallet tls-cert` there are no `--port`, `--base-url`, or `--docker` flags to keep in sync.
 
 ### One-shot error override
 

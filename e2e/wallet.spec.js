@@ -291,3 +291,231 @@ test.describe("Static Files", () => {
     expect(body).toContain("/api/credentials");
   });
 });
+
+test.describe("Credential Issuing via UI", () => {
+  test("issue modal opens empty with a PID preset as a choice", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+
+    await page.locator("#issue-btn").click();
+    await expect(page.locator("#issue-overlay")).toHaveClass(/active/);
+
+    // Opens empty: no pre-filled values, one empty claim row
+    await expect(page.locator("#issue-vct")).toHaveValue("");
+    await expect(page.locator("#issue-exp")).toHaveValue("");
+    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(1);
+    await expect(page.locator("#issue-claim-key-0")).toHaveValue("");
+
+    // mDoc-only fields are hidden for SD-JWT
+    await expect(page.locator("#issue-doctype")).toBeHidden();
+    await expect(page.locator("#issue-claim-ns-0")).toBeHidden();
+
+    // The PID preset fills everything on demand
+    await page.locator("#issue-fill-pid").click();
+    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
+    await expect(page.locator("#issue-exp")).toHaveValue("720h");
+    const rowCount = await page.locator("#issue-claim-rows .claim-row").count();
+    expect(rowCount).toBeGreaterThan(10);
+
+    await page.locator("#issue-cancel").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("fields switch with the selected format and reset on change", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-vct").fill("urn:example:leftover");
+
+    await page.locator("#issue-format").selectOption("mdoc");
+    await expect(page.locator("#issue-vct")).toBeHidden();
+    await expect(page.locator("#issue-doctype")).toBeVisible();
+    // mDoc claim rows get a per-attribute namespace input
+    await expect(page.locator("#issue-claim-ns-0")).toBeVisible();
+
+    await page.locator("#issue-fill-pid").click();
+    await expect(page.locator("#issue-doctype")).toHaveValue(
+      "eu.europa.ec.eudi.pid.1"
+    );
+
+    // Switching the format resets all other fields
+    await page.locator("#issue-format").selectOption("sdjwt");
+    await expect(page.locator("#issue-vct")).toBeVisible();
+    await expect(page.locator("#issue-vct")).toHaveValue("");
+    await expect(page.locator("#issue-doctype")).toBeHidden();
+    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(1);
+    await expect(page.locator("#issue-claim-key-0")).toHaveValue("");
+
+    await page.locator("#issue-cancel").click();
+  });
+
+  test("issues an mDoc with a per-attribute namespace", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-format").selectOption("mdoc");
+    await page.locator("#issue-doctype").fill("org.example.e2e.doctype");
+
+    await page.locator("#issue-claim-key-0").fill("given_name");
+    await page.locator("#issue-claim-value-0").fill("Erika");
+    await page.locator("#issue-add-claim").click();
+    const lastRow = page.locator("#issue-claim-rows .claim-row").last();
+    await lastRow
+      .locator('input[id^="issue-claim-ns-"]')
+      .fill("org.example.custom");
+    await lastRow.locator('input[id^="issue-claim-key-"]').fill("loyalty_tier");
+    await lastRow.locator('input[id^="issue-claim-value-"]').fill("gold");
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find(
+      (c) => c.doctype === "org.example.e2e.doctype"
+    );
+    expect(issued).toBeDefined();
+    expect(issued.claims["org.example.e2e.doctype:given_name"]).toBe("Erika");
+    expect(issued.claims["org.example.custom:loyalty_tier"]).toBe("gold");
+
+    // Clean up so later count assertions stay stable
+    await page.goto(WALLET_URL);
+    await page.locator(`#delete-${issued.id}`).click();
+    await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
+  });
+
+  test("issues an SD-JWT credential from the PID preset with an added claim", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    await expect(page.locator(".credential-card")).toHaveCount(2, {
+      timeout: 5000,
+    });
+
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-fill-pid").click();
+    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
+    await page.locator("#issue-vct").fill("urn:example:e2e-test");
+
+    await page.locator("#issue-add-claim").click();
+    const lastRow = page.locator("#issue-claim-rows .claim-row").last();
+    await lastRow.locator('input[id^="issue-claim-key-"]').fill("e2e_marker");
+    await lastRow.locator('input[id^="issue-claim-value-"]').fill("yes");
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+    await expect(page.locator(".credential-card")).toHaveCount(3);
+    await expect(
+      page.locator(".credential-type", { hasText: "urn:example:e2e-test" })
+    ).toBeVisible();
+
+    // The issued credential contains the pre-filled PID claims plus the added one
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find((c) => c.vct === "urn:example:e2e-test");
+    expect(issued).toBeDefined();
+    expect(issued.claims.e2e_marker).toBe("yes");
+    expect(issued.claims.given_name).toBeDefined();
+  });
+
+  test("JSON mode shows the builder claims as editable JSON", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-fill-pid").click();
+
+    await page.locator("#issue-claims-mode-json").check();
+    await expect(page.locator("#issue-claims")).toBeVisible();
+    await expect(page.locator("#issue-claim-rows")).toBeHidden();
+    await expect(page.locator("#issue-add-claim")).toBeHidden();
+    const json = await page.locator("#issue-claims").inputValue();
+    expect(JSON.parse(json).given_name).toBeDefined();
+
+    // JSON edits are reflected in the builder when switching back
+    await page
+      .locator("#issue-claims")
+      .fill('{"given_name": "Changed", "answer": 42}');
+    await page.locator("#issue-claims-mode-builder").check();
+    await expect(page.locator("#issue-claim-rows")).toBeVisible();
+    await expect(page.locator("#issue-claims")).toBeHidden();
+    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(2);
+    await expect(page.locator("#issue-claim-key-0")).toHaveValue("given_name");
+    await expect(page.locator("#issue-claim-value-0")).toHaveValue("Changed");
+    await expect(page.locator("#issue-claim-value-1")).toHaveValue("42");
+
+    // Invalid JSON blocks the switch and keeps JSON mode active
+    await page.locator("#issue-claims-mode-json").check();
+    await page.locator("#issue-claims").fill("{not json");
+    // click() instead of check(): the UI reverts the radio on invalid JSON
+    await page.locator("#issue-claims-mode-builder").click();
+    await expect(page.locator("#issue-error")).toContainText(
+      "Claims must be valid JSON"
+    );
+    await expect(page.locator("#issue-claims")).toBeVisible();
+    await expect(page.locator("#issue-claims-mode-json")).toBeChecked();
+
+    await page.locator("#issue-cancel").click();
+  });
+
+  test("shows a validation error for invalid claims JSON", async ({ page }) => {
+    await page.goto(WALLET_URL);
+
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-claims-mode-json").check();
+    await page.locator("#issue-claims").fill("{not json");
+    await page.locator("#issue-submit").click();
+
+    await expect(page.locator("#issue-error")).toContainText(
+      "Claims must be valid JSON"
+    );
+    await expect(page.locator("#issue-overlay")).toHaveClass(/active/);
+    await page.locator("#issue-cancel").click();
+  });
+
+  test("shows a server error for an invalid exp duration", async ({ page }) => {
+    await page.goto(WALLET_URL);
+
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-exp").fill("tomorrow");
+    await page.locator("#issue-submit").click();
+
+    await expect(page.locator("#issue-error")).toContainText("exp");
+    await page.locator("#issue-cancel").click();
+  });
+
+  test("deletes the issued credential via its card button", async ({ page }) => {
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find((c) => c.vct === "urn:example:e2e-test");
+    expect(issued).toBeDefined();
+
+    await page.goto(WALLET_URL);
+    await expect(page.locator(`#credential-${issued.id}`)).toBeVisible();
+    await page.locator(`#delete-${issued.id}`).click();
+    await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
+    await expect(page.locator(".credential-card")).toHaveCount(2);
+  });
+
+  test("certificate export links are present and working", async ({
+    page,
+    request,
+  }) => {
+    await page.goto(WALLET_URL);
+    for (const id of [
+      "ca-cert-pem-link",
+      "ca-cert-jwks-link",
+      "tls-cert-pem-link",
+      "tls-cert-jwks-link",
+    ]) {
+      await expect(page.locator(`#${id}`)).toBeVisible();
+      const href = await page.locator(`#${id}`).getAttribute("href");
+      const res = await request.get(`${WALLET_URL}${href}`);
+      expect(res.status()).toBe(200);
+      const body = await res.text();
+      if (href.includes("jwks")) {
+        expect(body).toContain('"keys"');
+      } else {
+        expect(body).toContain("BEGIN CERTIFICATE");
+      }
+    }
+  });
+});

@@ -23,6 +23,14 @@
         <input type="text" id="offer-input" placeholder="Paste OID4VCI offer URI or OID4VP request URI...">
         <button class="btn btn-primary" id="process-btn">Process</button>
         <button class="btn" id="import-btn">Import Credential</button>
+        <button class="btn" id="issue-btn">Issue Credential</button>
+      </div>
+      <div class="cert-links" id="cert-links">
+        <span class="cert-links-label">Certificates:</span>
+        <a id="ca-cert-pem-link" href="/api/certificates/ca">CA (PEM)</a>
+        <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">CA (JWKS)</a>
+        <a id="tls-cert-pem-link" href="/api/certificates/tls">TLS (PEM)</a>
+        <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">TLS (JWKS)</a>
       </div>
     </div>
 
@@ -61,6 +69,55 @@
         <button class="btn" id="import-cancel">Cancel</button>
         <button class="btn btn-primary" id="import-submit">Import</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Issue Modal -->
+  <div class="consent-overlay" id="issue-overlay">
+    <div class="consent-dialog">
+      <div class="consent-title">Issue Credential</div>
+      <p class="dialog-hint">Issues a credential with the wallet's issuer key and imports it. All fields except the format are optional. Use the preset button to fill everything with the EUDI PID defaults first.</p>
+      <form id="issue-form">
+        <div class="form-grid">
+          <label class="form-label" for="issue-format">Format</label>
+          <select id="issue-format" class="form-input">
+            <option value="sdjwt" selected>SD-JWT</option>
+            <option value="jwt">JWT VC</option>
+            <option value="mdoc">mDoc</option>
+          </select>
+
+          <label class="form-label">Preset</label>
+          <button type="button" class="btn btn-sm" id="issue-fill-pid">Fill with EUDI PID defaults</button>
+
+          <label class="form-label" for="issue-vct" data-formats="sdjwt jwt">VCT</label>
+          <input type="text" id="issue-vct" class="form-input" data-formats="sdjwt jwt" placeholder="default: urn:eudi:pid:de:1">
+
+          <label class="form-label" for="issue-doctype" data-formats="mdoc">Doc type</label>
+          <input type="text" id="issue-doctype" class="form-input" data-formats="mdoc" placeholder="default: eu.europa.ec.eudi.pid.1">
+
+          <label class="form-label form-label-top">Claims</label>
+          <div class="claims-editor">
+            <div class="claims-mode">
+              <label class="form-checkbox"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-builder" value="builder" checked> Builder</label>
+              <label class="form-checkbox"><input type="radio" name="issue-claims-mode" id="issue-claims-mode-json" value="json"> JSON</label>
+            </div>
+            <div id="issue-claim-rows"></div>
+            <button type="button" class="btn btn-sm" id="issue-add-claim">+ Add claim</button>
+            <textarea id="issue-claims" class="form-input form-textarea" placeholder='JSON object, e.g. {"given_name": "Erika"} (default: test claims)' hidden></textarea>
+          </div>
+
+          <label class="form-label" for="issue-exp">Expires in</label>
+          <input type="text" id="issue-exp" class="form-input" placeholder="Duration, e.g. 720h or 24h (default: 720h)">
+
+          <label class="form-label" for="issue-nbf">Not before</label>
+          <input type="text" id="issue-nbf" class="form-input" placeholder="RFC3339 or relative duration, e.g. -1h">
+        </div>
+        <div class="form-error" id="issue-error"></div>
+        <div class="consent-buttons">
+          <button type="button" class="btn" id="issue-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="issue-submit">Issue</button>
+        </div>
+      </form>
     </div>
   </div>
 

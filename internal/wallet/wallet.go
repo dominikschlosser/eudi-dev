@@ -398,6 +398,15 @@ func (w *Wallet) removeByType(format, vct, docType string) {
 	w.Credentials = filtered
 }
 
+// ClearCredentials removes all stored credentials and returns how many were removed.
+func (w *Wallet) ClearCredentials() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	count := len(w.Credentials)
+	w.Credentials = nil
+	return count
+}
+
 // RemoveCredential removes a credential by ID.
 func (w *Wallet) RemoveCredential(id string) bool {
 	w.mu.Lock()

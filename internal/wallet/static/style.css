@@ -37,6 +37,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: var(--font-mono);
   background: var(--bg);
@@ -235,6 +239,144 @@ header h1 {
 
 .actions-bar input[type="text"]::placeholder {
   color: var(--text-dim);
+}
+
+.cert-links {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.cert-links-label {
+  color: var(--text-dim);
+}
+
+.cert-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.cert-links a:hover {
+  text-decoration: underline;
+}
+
+/* Dialog Forms */
+.dialog-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.form-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.form-input {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+.form-input::placeholder {
+  color: var(--text-dim);
+}
+
+.form-textarea {
+  height: 72px;
+  resize: vertical;
+  align-self: start;
+}
+
+.form-checkbox {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-checkbox input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.form-label-top {
+  align-self: start;
+  margin-top: 6px;
+}
+
+.claims-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: start;
+  min-width: 0;
+}
+
+.claims-mode {
+  display: flex;
+  gap: 14px;
+}
+
+#issue-claim-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.claim-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.claim-row input[id^="issue-claim-key-"] {
+  flex: 1;
+}
+
+.claim-row input[id^="issue-claim-value-"] {
+  flex: 2;
+}
+
+.claim-row .claim-ns {
+  display: none;
+  flex: 1;
+}
+
+#issue-claim-rows.show-ns .claim-ns {
+  display: block;
+}
+
+#issue-add-claim {
+  align-self: flex-start;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 11px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.form-error:empty {
+  display: none;
 }
 
 /* Consent Dialog */

@@ -31,16 +31,20 @@ import (
 
 // MDOCConfig holds options for generating a mock mDOC credential.
 type MDOCConfig struct {
-	DocType       string
-	Namespace     string
-	Claims        map[string]any
-	Key           *ecdsa.PrivateKey
-	HolderKey     *ecdsa.PublicKey    // optional: adds deviceKeyInfo to MSO
-	ExpiresIn     time.Duration       // validity duration; defaults to 30 days if zero
-	ValidFrom     *time.Time          // optional: override validFrom (defaults to now)
-	StatusListURI string              // optional: status list URI for revocation
-	StatusListIdx int                 // optional: index in the status list
-	CertChain     []*x509.Certificate // optional: x5chain certificate chain [leaf, CA]
+	DocType   string
+	Namespace string
+	Claims    map[string]any
+	// NamespaceClaims optionally maps namespaces to their claims. When set,
+	// Namespace and Claims are ignored and each namespace is emitted
+	// separately in the MSO and IssuerSigned structures.
+	NamespaceClaims map[string]map[string]any
+	Key             *ecdsa.PrivateKey
+	HolderKey       *ecdsa.PublicKey    // optional: adds deviceKeyInfo to MSO
+	ExpiresIn       time.Duration       // validity duration; defaults to 30 days if zero
+	ValidFrom       *time.Time          // optional: override validFrom (defaults to now)
+	StatusListURI   string              // optional: status list URI for revocation
+	StatusListIdx   int                 // optional: index in the status list
+	CertChain       []*x509.Certificate // optional: x5chain certificate chain [leaf, CA]
 }
 
 // GenerateMDOC creates a mock mDOC (IssuerSigned) credential.
@@ -56,46 +60,58 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 	}
 	validUntil := now.Add(expiresIn)
 
-	// Build IssuerSignedItems and compute value digests
-	var tag24Items []cbor.RawMessage
-	valueDigests := make(map[uint64][]byte)
+	namespaceClaims := cfg.NamespaceClaims
+	if namespaceClaims == nil {
+		namespaceClaims = map[string]map[string]any{cfg.Namespace: cfg.Claims}
+	}
+
+	// Build IssuerSignedItems and compute value digests per namespace.
+	// Digest IDs stay unique across all namespaces.
+	tag24ItemsByNS := make(map[string]any, len(namespaceClaims))
+	valueDigestsByNS := make(map[string]any, len(namespaceClaims))
 
 	var digestID uint64
-	for name, value := range cfg.Claims {
-		random := make([]byte, 16)
-		if _, err := rand.Read(random); err != nil {
-			return "", fmt.Errorf("generating random: %w", err)
-		}
+	for ns, claims := range namespaceClaims {
+		var tag24Items []cbor.RawMessage
+		valueDigests := make(map[uint64][]byte)
+		for name, value := range claims {
+			random := make([]byte, 16)
+			if _, err := rand.Read(random); err != nil {
+				return "", fmt.Errorf("generating random: %w", err)
+			}
 
-		// Build IssuerSignedItem as CBOR map
-		item := map[string]any{
-			"digestID":          digestID,
-			"random":            random,
-			"elementIdentifier": name,
-			"elementValue":      value,
-		}
+			// Build IssuerSignedItem as CBOR map
+			item := map[string]any{
+				"digestID":          digestID,
+				"random":            random,
+				"elementIdentifier": name,
+				"elementValue":      value,
+			}
 
-		itemBytes, err := cbor.Marshal(item)
-		if err != nil {
-			return "", fmt.Errorf("encoding IssuerSignedItem: %w", err)
-		}
+			itemBytes, err := cbor.Marshal(item)
+			if err != nil {
+				return "", fmt.Errorf("encoding IssuerSignedItem: %w", err)
+			}
 
-		// Wrap in Tag 24 (embedded CBOR)
-		tag24 := cbor.Tag{
-			Number:  24,
-			Content: itemBytes,
-		}
-		tag24Bytes, err := cbor.Marshal(tag24)
-		if err != nil {
-			return "", fmt.Errorf("encoding Tag-24: %w", err)
-		}
+			// Wrap in Tag 24 (embedded CBOR)
+			tag24 := cbor.Tag{
+				Number:  24,
+				Content: itemBytes,
+			}
+			tag24Bytes, err := cbor.Marshal(tag24)
+			if err != nil {
+				return "", fmt.Errorf("encoding Tag-24: %w", err)
+			}
 
-		tag24Items = append(tag24Items, tag24Bytes)
+			tag24Items = append(tag24Items, tag24Bytes)
 
-		// Compute digest of Tag-24 wrapped item
-		digest := sha256.Sum256(tag24Bytes)
-		valueDigests[digestID] = digest[:]
-		digestID++
+			// Compute digest of Tag-24 wrapped item
+			digest := sha256.Sum256(tag24Bytes)
+			valueDigests[digestID] = digest[:]
+			digestID++
+		}
+		tag24ItemsByNS[ns] = tag24Items
+		valueDigestsByNS[ns] = valueDigests
 	}
 
 	// Build MSO (Mobile Security Object)
@@ -103,9 +119,7 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		"version":         "1.0",
 		"digestAlgorithm": "SHA-256",
 		"docType":         cfg.DocType,
-		"valueDigests": map[string]any{
-			cfg.Namespace: valueDigests,
-		},
+		"valueDigests":    valueDigestsByNS,
 		"validityInfo": map[string]any{
 			"signed":     cbor.Tag{Number: 0, Content: now.Format(time.RFC3339)},
 			"validFrom":  cbor.Tag{Number: 0, Content: validFrom.Format(time.RFC3339)},
@@ -199,9 +213,7 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 
 	// Build IssuerSigned structure
 	issuerSigned := map[string]any{
-		"nameSpaces": map[string]any{
-			cfg.Namespace: tag24Items,
-		},
+		"nameSpaces": tag24ItemsByNS,
 		"issuerAuth": cbor.RawMessage(issuerAuthBytes),
 	}
 

@@ -1,0 +1,239 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package wallet
+
+// Management API handlers mirroring the wallet CLI commands (show, remove,
+// issue, generate-pid, ca-cert, tls-cert) so a hosted wallet instance can be
+// driven entirely over HTTP. Like the rest of the wallet server, these
+// endpoints have no authentication: the wallet is a testing tool and must not
+// be exposed to untrusted networks.
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
+	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+)
+
+// handleGetCredential returns a single stored credential by ID.
+func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	cred, ok := s.wallet.GetCredential(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, CredentialSummary(cred))
+}
+
+// handleDeleteAllCredentials removes all stored credentials.
+func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Request) {
+	count := s.wallet.ClearCredentials()
+	s.triggerSave()
+	writeJSON(w, http.StatusOK, map[string]int{"deleted": count})
+}
+
+type issueAPIRequest struct {
+	Format        string                `json:"format"`
+	Claims        map[string]any        `json:"claims"`
+	PID           bool                  `json:"pid"`
+	Omit          []string              `json:"omit"`
+	VCT           string                `json:"vct"`
+	DocType       string                `json:"doctype"`
+	Namespace     string                `json:"namespace"`
+	Exp           string                `json:"exp"`
+	NBF           string                `json:"nbf"`
+	StatusListURI *string               `json:"status_list_uri"`
+	StatusListIdx *int                  `json:"status_list_idx"`
+	TrustProfile  string                `json:"trust_profile"`
+	Trust         IssuedAttestationSpec `json:"trust"`
+}
+
+// handleIssueCredential issues a credential with the wallet's issuer key and
+// imports it, mirroring `issue <format> --wallet`.
+func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
+	var req issueAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})
+		return
+	}
+
+	opts := IssueOptions{
+		Format:        req.Format,
+		Claims:        req.Claims,
+		PID:           req.PID,
+		Omit:          req.Omit,
+		VCT:           req.VCT,
+		DocType:       req.DocType,
+		Namespace:     req.Namespace,
+		StatusListURI: req.StatusListURI,
+		StatusListIdx: req.StatusListIdx,
+		TrustProfile:  req.TrustProfile,
+		Trust:         req.Trust,
+	}
+	if req.Exp != "" {
+		expDuration, err := time.ParseDuration(req.Exp)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid exp duration: " + err.Error()})
+			return
+		}
+		opts.ExpiresIn = expDuration
+	}
+	if req.NBF != "" {
+		nbf, err := parseTimeOrDuration(req.NBF)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		opts.NotBefore = nbf
+	}
+
+	result, err := s.wallet.IssueCredential(opts)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.triggerSave()
+
+	summary := CredentialSummary(*result.Credential)
+	if result.StatusRegistered {
+		summary["status_list_idx"] = result.StatusIdx
+	}
+	writeJSON(w, http.StatusCreated, summary)
+}
+
+// handleIssueDefaults returns the per-format PID defaults used to pre-fill
+// the wallet UI's issue dialog. Serving them keeps the UI in sync with the
+// claim sets the server actually uses.
+func (s *Server) handleIssueDefaults(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sdjwt": map[string]any{"vct": mock.DefaultPIDVCT, "exp": "720h", "claims": mock.SDJWTPIDClaims},
+		"jwt":   map[string]any{"vct": mock.DefaultPIDVCT, "exp": "720h", "claims": mock.SDJWTPIDClaims},
+		"mdoc":  map[string]any{"doctype": DefaultMDOCDocType, "namespace": DefaultMDOCDocType, "exp": "720h", "claims": mock.MDOCPIDClaims},
+	})
+}
+
+type generatePIDRequest struct {
+	Claims map[string]any `json:"claims"`
+	VCT    string         `json:"vct"`
+}
+
+// handleGeneratePID regenerates the default EUDI PID credentials (SD-JWT +
+// mDoc), mirroring `wallet generate-pid`.
+func (s *Server) handleGeneratePID(w http.ResponseWriter, r *http.Request) {
+	var req generatePIDRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})
+		return
+	}
+
+	if err := s.wallet.GenerateDefaultCredentials(req.Claims, req.VCT); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.triggerSave()
+
+	data, err := s.wallet.CredentialsJSON()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	w.Write(data)
+}
+
+// handleCACertificate exports the shared wallet CA certificate, mirroring
+// `wallet ca-cert`.
+func (s *Server) handleCACertificate(w http.ResponseWriter, r *http.Request) {
+	store := s.currentStore()
+	if store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wallet store is not configured"})
+		return
+	}
+	certPEM, err := store.LoadOrCreateSharedCACertificatePEM()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading wallet CA certificate: " + err.Error()})
+		return
+	}
+	writeCertificateExport(w, r, certPEM)
+}
+
+// handleTLSCertificate exports the wallet's HTTPS leaf certificate, mirroring
+// `wallet tls-cert`.
+func (s *Server) handleTLSCertificate(w http.ResponseWriter, r *http.Request) {
+	store := s.currentStore()
+	if store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wallet store is not configured"})
+		return
+	}
+	issuerURL := strings.TrimSpace(s.wallet.IssuerURL)
+	if issuerURL == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wallet issuer URL is not configured"})
+		return
+	}
+	certPEM, err := store.LoadOrCreateIssuerTLSLeafCertificatePEMForURL(issuerURL)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading wallet TLS certificate: " + err.Error()})
+		return
+	}
+	writeCertificateExport(w, r, certPEM)
+}
+
+// writeCertificateExport writes certificate PEM bytes in the requested format:
+// PEM by default, or a JWKS document via ?format=jwks.
+func writeCertificateExport(w http.ResponseWriter, r *http.Request, certPEM []byte) {
+	switch r.URL.Query().Get("format") {
+	case "", "pem":
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		w.Write(certPEM)
+	case "jwks":
+		jwks, err := keys.CertificatePEMToJWKS(certPEM)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "building JWKS: " + err.Error()})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jwks)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported format: expected pem or jwks"})
+	}
+}
+
+func (s *Server) currentStore() *WalletStore {
+	s.storeSyncMu.Lock()
+	defer s.storeSyncMu.Unlock()
+	return s.store
+}
+
+// parseTimeOrDuration parses a value as an RFC3339 timestamp or a relative
+// duration (e.g. "-1h").
+func parseTimeOrDuration(val string) (*time.Time, error) {
+	if d, err := time.ParseDuration(val); err == nil {
+		t := time.Now().Add(d)
+		return &t, nil
+	}
+	t, err := time.Parse(time.RFC3339, val)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nbf value %q: expected RFC3339 (e.g. 2025-01-15T00:00:00Z) or duration (e.g. -1h)", val)
+	}
+	return &t, nil
+}

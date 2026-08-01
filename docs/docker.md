@@ -226,11 +226,15 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 |----------|--------|---------|
 | `/api/next-error` | POST/DELETE | Set or clear one-shot error override |
 | `/api/config/preferred-format` | PUT | Set credential format preference |
-| `/api/credentials` | POST | Import a credential |
+| `/api/credentials` | GET/POST/DELETE | List, import, or remove all credentials |
+| `/api/credentials/<id>` | GET/DELETE | Show or remove a single credential |
 | `/api/credentials/<id>/status` | POST | Set revocation status |
+| `/api/issue` | POST | Issue a credential into the wallet |
+| `/api/generate-pid` | POST | Regenerate default PID credentials |
+| `/api/certificates/ca`, `/api/certificates/tls` | GET | Export wallet CA / TLS certificate |
 | `/api/statuslist` | GET | Status list JWT |
 
-> See [wallet docs](wallet.md#testing-api) for full details and an end-to-end example.
+> See [wallet docs](wallet.md#http-api) for full details and an end-to-end example. The API has no authentication (the wallet is a testing tool). Keep it inside isolated test networks.
 
 ## Supported response modes
 

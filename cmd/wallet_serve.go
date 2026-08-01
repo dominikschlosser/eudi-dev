@@ -57,7 +57,7 @@ func walletServeCmd() *cobra.Command {
 		Long: `Start a persistent wallet server with a web UI for managing credentials and handling OID4VP/OID4VCI flows.
 
 Capabilities:
-  - Web UI for credential management and consent
+  - Web UI for credential management, issuing, and consent
   - OID4VP authorization endpoint (/authorize)
   - Legacy PID-first trust list endpoint (/api/trustlist)
   - Trust-list index endpoint (/api/trustlists)

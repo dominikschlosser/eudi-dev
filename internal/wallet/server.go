@@ -137,7 +137,18 @@ func (s *Server) setupRoutes() {
 	// API: credential management
 	s.mux.HandleFunc("GET /api/credentials", s.withFreshStore(s.handleListCredentials))
 	s.mux.HandleFunc("POST /api/credentials", s.withFreshStore(s.handleImportCredential))
+	s.mux.HandleFunc("DELETE /api/credentials", s.withFreshStore(s.handleDeleteAllCredentials))
+	s.mux.HandleFunc("GET /api/credentials/{id}", s.withFreshStore(s.handleGetCredential))
 	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.withFreshStore(s.handleDeleteCredential))
+
+	// API: credential issuance mirroring `issue ... --wallet` and `wallet generate-pid`
+	s.mux.HandleFunc("POST /api/issue", s.withFreshStore(s.handleIssueCredential))
+	s.mux.HandleFunc("GET /api/issue/defaults", s.handleIssueDefaults)
+	s.mux.HandleFunc("POST /api/generate-pid", s.withFreshStore(s.handleGeneratePID))
+
+	// API: certificate export mirroring `wallet ca-cert` and `wallet tls-cert`
+	s.mux.HandleFunc("GET /api/certificates/ca", s.handleCACertificate)
+	s.mux.HandleFunc("GET /api/certificates/tls", s.handleTLSCertificate)
 
 	// API: consent requests
 	s.mux.HandleFunc("GET /api/requests", s.withFreshStore(s.handleListRequests))

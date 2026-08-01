@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-08-01
+
+### Added
+
+- Wallet UI: credentials can now be issued from the web UI. The Issue Credential dialog shows format specific fields (VCT for SD-JWT and JWT VC, doc type and a per-attribute namespace column for mDoc), a claim builder kept in two-way sync with an alternative raw JSON mode, expiry, and not-before. Switching the format resets the other fields. A preset button fills all fields with the EUDI PID defaults so they can be reviewed and edited before issuing. A Certificates row links to the CA and TLS certificate exports (PEM or JWKS). Every control has a stable element id so the UI is easy to automate with browser testing frameworks
+- mDoc issuance supports multiple namespaces: claim keys of the form `namespace:element` place single attributes in their own namespace (CLI `--claims`, `POST /api/issue`, and the wallet UI claim builder)
+- Wallet management HTTP API: every wallet CLI operation is now also available on a running `wallet serve` instance. This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP. New endpoints: `GET /api/credentials/{id}` (show), `DELETE /api/credentials` (remove all), `POST /api/issue` (issue a credential with the wallet's issuer key and import it, mirroring `issue sdjwt|jwt|mdoc --wallet` including claims and PID presets, expiry, not-before, status-list references, and trust metadata), `POST /api/generate-pid` (regenerate the default PID pair), and `GET /api/certificates/ca` and `GET /api/certificates/tls` (export the wallet CA or HTTPS leaf certificate as PEM or JWKS). Listing, import, and delete-by-ID already existed. The API intentionally has no authentication (the wallet is a testing tool) and the docs now state this explicitly
+
 ## [1.12.3] - 2026-08-01
 
 ### Added

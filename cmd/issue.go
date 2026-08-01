@@ -333,218 +333,70 @@ func loadWalletForIssue(cmd *cobra.Command) (*wallet.Wallet, *wallet.WalletStore
 	return w, store, nil
 }
 
-func resolveWalletIssueStatus(cmd *cobra.Command, w *wallet.Wallet) (string, int, bool, error) {
-	statusURIChanged := cmd.Flags().Changed("status-list-uri")
-	statusIdxChanged := cmd.Flags().Changed("status-list-idx")
-
-	if statusURIChanged {
-		statusURI := strings.TrimSpace(issueStatusListURI)
-		if statusURI == "" {
-			return "", 0, false, nil
-		}
-		statusIdx := issueStatusListIdx
-		register := statusURI == w.StatusListURL()
-		return statusURI, statusIdx, register, nil
-	}
-
-	if statusIdxChanged {
-		statusURI := strings.TrimSpace(w.StatusListURL())
-		if statusURI == "" {
-			return "", 0, false, fmt.Errorf("wallet status list is not configured")
-		}
-		return statusURI, issueStatusListIdx, true, nil
-	}
-
-	statusURI := strings.TrimSpace(w.StatusListURL())
-	if statusURI == "" {
-		return "", 0, false, nil
-	}
-	return statusURI, w.NextStatusIndex(), true, nil
+func runIssueSDJWTToWallet(cmd *cobra.Command) error {
+	return runIssueToWallet(cmd, "sdjwt")
 }
 
-func importIssuedCredentialToWallet(w *wallet.Wallet, store *wallet.WalletStore, raw string, statusIdx int, registerStatus bool) error {
-	imported, err := w.ImportCredential(raw)
+func runIssueJWTToWallet(cmd *cobra.Command) error {
+	return runIssueToWallet(cmd, "jwt")
+}
+
+func runIssueMDOCToWallet(cmd *cobra.Command) error {
+	return runIssueToWallet(cmd, "mdoc")
+}
+
+func runIssueToWallet(cmd *cobra.Command, format string) error {
+	w, store, err := loadWalletForIssue(cmd)
 	if err != nil {
-		return fmt.Errorf("importing to wallet: %w", err)
+		return err
 	}
-	if registerStatus {
-		w.RegisterStatusEntry(imported.ID, statusIdx)
-	}
-	spec, err := buildIssueAttestationSpec(imported)
+	claims, err := resolveIssueClaimsForFormat(format)
 	if err != nil {
-		return fmt.Errorf("building issued-attestation metadata: %w", err)
+		return err
 	}
-	if err := w.RegisterIssuedAttestation(spec); err != nil {
-		return fmt.Errorf("registering issued-attestation metadata: %w", err)
+	expDuration, err := time.ParseDuration(issueExpires)
+	if err != nil {
+		return fmt.Errorf("invalid --exp duration: %w", err)
 	}
+	nbf, err := parseNBF(issueNBF)
+	if err != nil {
+		return err
+	}
+
+	opts := wallet.IssueOptions{
+		Format:       format,
+		Claims:       claims,
+		VCT:          issueVCT,
+		DocType:      issueDocType,
+		Namespace:    issueNamespace,
+		ExpiresIn:    expDuration,
+		NotBefore:    nbf,
+		TrustProfile: issueTrustProfile,
+		Trust:        issueTrustSpecFromFlags(),
+	}
+	if cmd.Flags().Changed("status-list-uri") {
+		opts.StatusListURI = &issueStatusListURI
+	}
+	if cmd.Flags().Changed("status-list-idx") {
+		opts.StatusListIdx = &issueStatusListIdx
+	}
+
+	result, err := w.IssueCredential(opts)
+	if err != nil {
+		return err
+	}
+	fmt.Println(result.Raw)
 
 	if err := store.Save(w); err != nil {
 		return fmt.Errorf("saving wallet: %w", err)
 	}
 
-	label := imported.VCT
+	label := result.Credential.VCT
 	if label == "" {
-		label = imported.DocType
+		label = result.Credential.DocType
 	}
-	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", imported.Format, label)
+	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", result.Credential.Format, label)
 	return nil
-}
-
-func runIssueSDJWTToWallet(cmd *cobra.Command) error {
-	w, store, err := loadWalletForIssue(cmd)
-	if err != nil {
-		return err
-	}
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
-	if err != nil {
-		return err
-	}
-	expDuration, err := time.ParseDuration(issueExpires)
-	if err != nil {
-		return fmt.Errorf("invalid --exp duration: %w", err)
-	}
-	nbf, err := parseNBF(issueNBF)
-	if err != nil {
-		return err
-	}
-	statusURI, statusIdx, registerStatus, err := resolveWalletIssueStatus(cmd, w)
-	if err != nil {
-		return err
-	}
-	spec, err := buildIssueAttestationSpecForType("dc+sd-jwt", issueVCT, "")
-	if err != nil {
-		return err
-	}
-	certChain, err := w.SigningCertChainForIssuedAttestation(spec)
-	if err != nil {
-		return err
-	}
-
-	var holderPub *ecdsa.PublicKey
-	if w.HolderKey != nil {
-		holderPub = &w.HolderKey.PublicKey
-	}
-	cfg := mock.SDJWTConfig{
-		Issuer:        strings.TrimRight(w.IssuerURL, "/"),
-		VCT:           issueVCT,
-		ExpiresIn:     expDuration,
-		NotBefore:     nbf,
-		Claims:        claims,
-		Key:           w.IssuerKey,
-		HolderKey:     holderPub,
-		StatusListURI: statusURI,
-		StatusListIdx: statusIdx,
-		CertChain:     certChain,
-	}
-	result, err := mock.GenerateSDJWT(cfg)
-	if err != nil {
-		return fmt.Errorf("generating SD-JWT: %w", err)
-	}
-	fmt.Println(result)
-	return importIssuedCredentialToWallet(w, store, result, statusIdx, registerStatus)
-}
-
-func runIssueJWTToWallet(cmd *cobra.Command) error {
-	w, store, err := loadWalletForIssue(cmd)
-	if err != nil {
-		return err
-	}
-	claims, err := resolveIssueClaimsForFormat("jwt")
-	if err != nil {
-		return err
-	}
-	expDuration, err := time.ParseDuration(issueExpires)
-	if err != nil {
-		return fmt.Errorf("invalid --exp duration: %w", err)
-	}
-	nbf, err := parseNBF(issueNBF)
-	if err != nil {
-		return err
-	}
-	statusURI, statusIdx, registerStatus, err := resolveWalletIssueStatus(cmd, w)
-	if err != nil {
-		return err
-	}
-	spec, err := buildIssueAttestationSpecForType("jwt_vc_json", issueVCT, "")
-	if err != nil {
-		return err
-	}
-	certChain, err := w.SigningCertChainForIssuedAttestation(spec)
-	if err != nil {
-		return err
-	}
-
-	cfg := mock.JWTConfig{
-		Issuer:        strings.TrimRight(w.IssuerURL, "/"),
-		VCT:           issueVCT,
-		ExpiresIn:     expDuration,
-		NotBefore:     nbf,
-		Claims:        claims,
-		Key:           w.IssuerKey,
-		StatusListURI: statusURI,
-		StatusListIdx: statusIdx,
-		CertChain:     certChain,
-	}
-	result, err := mock.GenerateJWT(cfg)
-	if err != nil {
-		return fmt.Errorf("generating JWT: %w", err)
-	}
-	fmt.Println(result)
-	return importIssuedCredentialToWallet(w, store, result, statusIdx, registerStatus)
-}
-
-func runIssueMDOCToWallet(cmd *cobra.Command) error {
-	w, store, err := loadWalletForIssue(cmd)
-	if err != nil {
-		return err
-	}
-	claims, err := resolveIssueClaimsForFormat("mdoc")
-	if err != nil {
-		return err
-	}
-	expDuration, err := time.ParseDuration(issueExpires)
-	if err != nil {
-		return fmt.Errorf("invalid --exp duration: %w", err)
-	}
-	nbf, err := parseNBF(issueNBF)
-	if err != nil {
-		return err
-	}
-	statusURI, statusIdx, registerStatus, err := resolveWalletIssueStatus(cmd, w)
-	if err != nil {
-		return err
-	}
-	spec, err := buildIssueAttestationSpecForType("mso_mdoc", "", issueDocType)
-	if err != nil {
-		return err
-	}
-	certChain, err := w.SigningCertChainForIssuedAttestation(spec)
-	if err != nil {
-		return err
-	}
-
-	var holderPub *ecdsa.PublicKey
-	if w.HolderKey != nil {
-		holderPub = &w.HolderKey.PublicKey
-	}
-	cfg := mock.MDOCConfig{
-		DocType:       issueDocType,
-		Namespace:     issueNamespace,
-		Claims:        claims,
-		Key:           w.IssuerKey,
-		HolderKey:     holderPub,
-		ExpiresIn:     expDuration,
-		ValidFrom:     nbf,
-		StatusListURI: statusURI,
-		StatusListIdx: statusIdx,
-		CertChain:     certChain,
-	}
-	result, err := mock.GenerateMDOC(cfg)
-	if err != nil {
-		return fmt.Errorf("generating mDOC: %w", err)
-	}
-	fmt.Println(result)
-	return importIssuedCredentialToWallet(w, store, result, statusIdx, registerStatus)
 }
 
 func resolveIssueClaimsForFormat(format string) (map[string]any, error) {
@@ -593,11 +445,8 @@ func addIssueTrustMetadataFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&issueRevocationServiceName, "revocation-service-name", "", "Trust-list revocation service name to persist with the issued credential")
 }
 
-func buildIssueAttestationSpecForType(format, vct, docType string) (wallet.IssuedAttestationSpec, error) {
-	spec := wallet.IssuedAttestationSpec{
-		Format:                      format,
-		VCT:                         vct,
-		DocType:                     docType,
+func issueTrustSpecFromFlags() wallet.IssuedAttestationSpec {
+	return wallet.IssuedAttestationSpec{
 		Entitlements:                append([]string(nil), issueEntitlements...),
 		TrustListType:               issueTrustListType,
 		StatusDeterminationApproach: issueStatusDetermination,
@@ -609,6 +458,13 @@ func buildIssueAttestationSpecForType(format, vct, docType string) (wallet.Issue
 		IssuanceServiceName:         issueIssuanceServiceName,
 		RevocationServiceName:       issueRevocationServiceName,
 	}
+}
+
+func buildIssueAttestationSpecForType(format, vct, docType string) (wallet.IssuedAttestationSpec, error) {
+	spec := issueTrustSpecFromFlags()
+	spec.Format = format
+	spec.VCT = vct
+	spec.DocType = docType
 	return wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
 }
 

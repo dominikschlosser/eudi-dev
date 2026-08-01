@@ -288,8 +288,7 @@ func walletRemoveCmd() *cobra.Command {
 			}
 
 			if all {
-				count := len(w.GetCredentials())
-				w.Credentials = nil
+				count := w.ClearCredentials()
 				if err := store.Save(w); err != nil {
 					return fmt.Errorf("saving wallet: %w", err)
 				}
