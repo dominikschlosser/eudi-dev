@@ -90,3 +90,38 @@ jobs:
             ghcr.io/dominikschlosser/eudi-dev:${{ steps.version.outputs.tag }}
             ghcr.io/dominikschlosser/oid4vc-dev:latest
             ghcr.io/dominikschlosser/oid4vc-dev:${{ steps.version.outputs.tag }}
+
+  homebrew:
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Update Homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not configured, skipping Homebrew tap update"
+            exit 0
+          fi
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+          TARBALL_URL="https://github.com/dominikschlosser/eudi-dev/archive/refs/tags/${TAG}.tar.gz"
+          curl -sL -o source.tar.gz "$TARBALL_URL"
+          SHA256=$(sha256sum source.tar.gz | cut -d' ' -f1)
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/dominikschlosser/homebrew-tap.git" tap
+          git clone --depth 1 --branch "$TAG" https://github.com/dominikschlosser/eudi-dev.git src
+          mkdir -p tap/Formula
+          sed -e "s/__VERSION__/${VERSION}/" -e "s/__SHA256__/${SHA256}/" \
+            src/packaging/homebrew/eudi-dev.rb.tmpl > tap/Formula/eudi-dev.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/eudi-dev.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged"
+            exit 0
+          fi
+          git commit -m "eudi-dev ${VERSION}"
+          git push

@@ -303,12 +303,24 @@ func TestWalletStore_PathHelpers(t *testing.T) {
 }
 
 func TestDefaultWalletDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("EUDI_DEV_HOME", "")
+	t.Setenv("OID4VC_DEV_HOME", "")
+
+	// Fresh system: the new state directory is used.
 	dir := DefaultWalletDir()
-	if dir == "" {
-		t.Error("expected non-empty dir")
+	if !strings.Contains(dir, ".eudi-dev") || !strings.HasSuffix(dir, "wallet") {
+		t.Errorf("expected .eudi-dev wallet dir, got %s", dir)
 	}
+
+	// A legacy state directory keeps being used after the rename.
+	if err := os.MkdirAll(filepath.Join(home, ".oid4vc-dev"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dir = DefaultWalletDir()
 	if !strings.Contains(dir, ".oid4vc-dev") {
-		t.Errorf("expected .oid4vc-dev in path, got %s", dir)
+		t.Errorf("expected legacy .oid4vc-dev fallback, got %s", dir)
 	}
 }
 

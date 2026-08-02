@@ -22,6 +22,14 @@ A developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and pre
 
 ## Install
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew install dominikschlosser/tap/eudi-dev
+```
+
+Installs the `eudi` command with shell completion (plus `oid4vc-dev` as a legacy alias).
+
 ### From GitHub Releases
 
 Download the latest binary for your platform from [Releases](https://github.com/dominikschlosser/eudi-dev/releases).
