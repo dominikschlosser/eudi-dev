@@ -60,10 +60,11 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 	return remote.NewClient(url), nil
 }
 
-func walletUseCmd() *cobra.Command {
+func instancesUseCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "use [url|local]",
-		Short: "Switch wallet management to a remote instance (or back to local)",
+		Use:               "use [url|local]",
+		ValidArgsFunction: completeUseTargets,
+		Short:             "Switch wallet management to a remote instance (or back to local)",
 		Long: "Selects which wallet the management commands operate on. With a URL the CLI manages that " +
 			"running oid4vc-dev wallet server over its REST API. With \"local\" it manages the local wallet store again. " +
 			"Without arguments it prints the current target.",
@@ -123,54 +124,77 @@ func healthSummary(url string) (string, bool) {
 }
 
 func walletInstancesCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "instances",
-		Short: "List running oid4vc-dev wallet instances on this system",
-		Long: "Scans the instance registry and the local process list for running wallet servers and checks " +
-			"that they respond. Use `wallet use <url>` to manage one of them and `wallet kill <target>` to stop one.",
+		Short: "Manage running oid4vc-dev wallet instances on this system",
+		Long: "Finds, stops, and selects running wallet servers. Without a subcommand it lists them " +
+			"(same as `wallet instances list`).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			instances := remote.Discover(time.Second)
-			active := remote.Active()
+			return runInstancesList()
+		},
+	}
+	cmd.AddCommand(instancesListCmd())
+	cmd.AddCommand(instancesUseCmd())
+	cmd.AddCommand(instancesKillCmd())
+	return cmd
+}
 
-			if jsonOutput {
-				data, err := json.MarshalIndent(instances, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Println(string(data))
-				return nil
-			}
-
-			if len(instances) == 0 {
-				fmt.Println("No running wallet instances found.")
-				return nil
-			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "URL\tPID\tWALLET DIR\tSOURCE\tACTIVE")
-			for _, inst := range instances {
-				activeMark := ""
-				if active != "" && active == strings.TrimRight(inst.URL, "/") {
-					activeMark = "*"
-				}
-				dir := inst.WalletDir
-				if dir == "" {
-					dir = "-"
-				}
-				fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", inst.URL, inst.PID, dir, inst.Source, activeMark)
-			}
-			return tw.Flush()
+func instancesListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List running wallet instances",
+		Long: "Scans the instance registry and the local process list for running wallet servers and checks " +
+			"that they respond. Use `wallet instances use <url>` to manage one of them and " +
+			"`wallet instances kill <target>` to stop one.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runInstancesList()
 		},
 	}
 }
 
-func walletKillCmd() *cobra.Command {
+func runInstancesList() error {
+	instances := remote.Discover(time.Second)
+	active := remote.Active()
+
+	if jsonOutput {
+		data, err := json.MarshalIndent(instances, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	if len(instances) == 0 {
+		fmt.Println("No running wallet instances found.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "URL\tPID\tWALLET DIR\tSOURCE\tACTIVE")
+	for _, inst := range instances {
+		activeMark := ""
+		if active != "" && active == strings.TrimRight(inst.URL, "/") {
+			activeMark = "*"
+		}
+		dir := inst.WalletDir
+		if dir == "" {
+			dir = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", inst.URL, inst.PID, dir, inst.Source, activeMark)
+	}
+	return tw.Flush()
+}
+
+func instancesKillCmd() *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
-		Use:   "kill [pid|port|url]",
-		Short: "Stop a running oid4vc-dev wallet instance",
-		Long: "Stops a running wallet server found by `wallet instances`. The target is a pid, a port, or a URL. " +
+		Use:               "kill [pid|port|url]",
+		ValidArgsFunction: completeInstanceTargets,
+		Short:             "Stop a running oid4vc-dev wallet instance",
+		Long: "Stops a running wallet server found by `wallet instances list`. The target is a pid, a port, or a URL. " +
 			"The instance is asked to exit via its shutdown endpoint. When it does not respond, a local process " +
 			"gets a SIGTERM instead.",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -208,7 +232,7 @@ func walletKillCmd() *cobra.Command {
 				}
 				fmt.Printf("Stopped %s (pid %d)\n", inst.URL, inst.PID)
 				if active != "" && active == strings.TrimRight(inst.URL, "/") {
-					fmt.Fprintln(os.Stderr, "Note: this was the active remote wallet. Run `wallet use local` or pick another instance.")
+					fmt.Fprintln(os.Stderr, "Note: this was the active remote wallet. Run `wallet instances use local` or pick another instance.")
 				}
 			}
 			return nil
@@ -238,7 +262,7 @@ func matchInstance(instances []remote.DiscoveredInstance, target string) (remote
 			return inst, nil
 		}
 	}
-	return remote.DiscoveredInstance{}, fmt.Errorf("no running wallet instance matches %q (run `wallet instances`)", target)
+	return remote.DiscoveredInstance{}, fmt.Errorf("no running wallet instance matches %q (run `wallet instances list`)", target)
 }
 
 // stopInstance asks the instance to shut down via its API and falls back to

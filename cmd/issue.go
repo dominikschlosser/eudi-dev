@@ -144,6 +144,15 @@ func init() {
 	issueMDOCCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueMDOCCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueMDOCCmd)
+
+	// Shell completion for knowable values
+	for _, c := range []*cobra.Command{issueSDJWTCmd, issueJWTCmd, issueMDOCCmd} {
+		_ = c.RegisterFlagCompletionFunc("template", completeTemplateNames)
+		_ = c.RegisterFlagCompletionFunc("trust-profile", staticCompletion("auto", "pid", "local"))
+	}
+	_ = issueCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
+	_ = issueCmd.MarkPersistentFlagDirname("wallet-dir")
+	_ = issueCmd.MarkPersistentFlagDirname("templates-dir")
 }
 
 func runIssueSDJWT(cmd *cobra.Command, args []string) error {

@@ -83,9 +83,10 @@ var templatesListCmd = &cobra.Command{
 }
 
 var templatesShowCmd = &cobra.Command{
-	Use:   "show <name>",
-	Short: "Print a credential template as JSON (shareable, importable with `templates import`)",
-	Args:  cobra.ExactArgs(1),
+	Use:               "show <name>",
+	Short:             "Print a credential template as JSON (shareable, importable with `templates import`)",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeTemplateNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if c, err := remoteClientIfConfigured(); err != nil {
 			return err
@@ -106,8 +107,9 @@ var templatesShowCmd = &cobra.Command{
 }
 
 var templatesSaveCmd = &cobra.Command{
-	Use:   "save <name>",
-	Short: "Create or update a user credential template",
+	Use:               "save <name>",
+	Short:             "Create or update a user credential template",
+	ValidArgsFunction: completeTemplateNames,
 	Long: "Create or update a user credential template from flags. Use --from to copy an existing template " +
 		"as the starting point (e.g. to customize a pre-defined one); other flags override the copied values.",
 	Args: cobra.ExactArgs(1),
@@ -243,9 +245,10 @@ var templatesImportCmd = &cobra.Command{
 }
 
 var templatesDeleteCmd = &cobra.Command{
-	Use:   "delete <name>",
-	Short: "Delete a user credential template",
-	Args:  cobra.ExactArgs(1),
+	Use:               "delete <name>",
+	Short:             "Delete a user credential template",
+	Args:              cobra.ExactArgs(1),
+	ValidArgsFunction: completeTemplateNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if c, err := remoteClientIfConfigured(); err != nil {
 			return err
@@ -282,6 +285,13 @@ func init() {
 	templatesSaveCmd.Flags().StringVar(&templateDescription, "description", "", "Template description")
 
 	templatesImportCmd.Flags().StringVar(&templateImportName, "name", "", "Save the imported template under this name")
+
+	// Shell completion for knowable values
+	_ = templatesSaveCmd.RegisterFlagCompletionFunc("from", completeTemplateNames)
+	_ = templatesSaveCmd.RegisterFlagCompletionFunc("format", staticCompletion("sdjwt", "jwt", "mdoc"))
+	_ = templatesCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
+	_ = templatesCmd.MarkPersistentFlagDirname("wallet-dir")
+	_ = templatesCmd.MarkPersistentFlagDirname("templates-dir")
 }
 
 // resolveTemplatesDir returns the credential template directory: the

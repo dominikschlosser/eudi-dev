@@ -66,10 +66,8 @@ func init() {
 	walletCmd.AddCommand(walletTrustListCmd())
 	walletCmd.AddCommand(walletCACertCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
-	walletCmd.AddCommand(walletUseCmd())
 	walletCmd.AddCommand(walletInfoCmd())
 	walletCmd.AddCommand(walletInstancesCmd())
-	walletCmd.AddCommand(walletKillCmd())
 
 	// Deprecated aliases (hidden from help)
 	presentAlias := &cobra.Command{
@@ -99,6 +97,12 @@ func init() {
 		},
 	}
 	walletCmd.AddCommand(listenAlias)
+
+	// Shell completion for knowable values
+	_ = walletCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
+	_ = walletCmd.RegisterFlagCompletionFunc("mode", staticCompletion("debug", "strict"))
+	_ = walletCmd.MarkPersistentFlagDirname("wallet-dir")
+	_ = walletCmd.MarkPersistentFlagDirname("templates-dir")
 
 	rootCmd.AddCommand(walletCmd)
 }
@@ -197,9 +201,10 @@ func walletListCmd() *cobra.Command {
 func walletShowCmd() *cobra.Command {
 	var decoded bool
 	cmd := &cobra.Command{
-		Use:   "show <id>",
-		Short: "Show a stored credential",
-		Args:  cobra.ExactArgs(1),
+		Use:               "show <id>",
+		Short:             "Show a stored credential",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeCredentialIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if c, err := remoteClientIfConfigured(); err != nil {
 				return err
@@ -294,8 +299,9 @@ func walletRemoveCmd() *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
-		Use:   "remove <id>",
-		Short: "Remove credential by ID",
+		Use:               "remove <id>",
+		Short:             "Remove credential by ID",
+		ValidArgsFunction: completeCredentialIDs,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if all {
 				if len(args) != 0 {

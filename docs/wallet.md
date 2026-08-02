@@ -25,9 +25,7 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `trust-list`   | Print the trust list JWT (or just the URL with `--url`)         |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
-| `use`          | Switch management to a remote wallet instance (or back to local) |
-| `instances`    | List running wallet instances on this system                    |
-| `kill`         | Stop a running wallet instance (by pid, port, or URL)           |
+| `instances`    | Manage running wallet instances: `list`, `use <url|local>`, `kill <pid|port|url>` |
 | `info`         | Show the configuration of the managed wallet (local or remote)  |
 | `register`     | Register OS URL scheme handlers on macOS; no-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS; no-op elsewhere         |
@@ -96,7 +94,7 @@ All wallet state is stored in `~/.oid4vc-dev/wallet/` by default:
 ~/.oid4vc-dev/
 ├── wallet-ca-cert.pem  # Shared CA certificate used across wallet instances
 ├── wallet-ca-key.pem   # Shared CA private key
-├── remote.json         # Active remote wallet target set by wallet use
+├── remote.json         # Active remote wallet target set by wallet instances use
 ├── instances/          # Registry of running wallet servers (one file per pid)
 └── wallet/
     ├── wallet.json       # Credentials + metadata
@@ -807,10 +805,10 @@ The CLI can manage a remote oid4vc-dev wallet instead of the local store. In rem
 
 ```bash
 # Switch management to a running instance (persisted until switched back)
-oid4vc-dev wallet use http://localhost:8085
+oid4vc-dev wallet instances use http://localhost:8085
 oid4vc-dev wallet list                     # lists the remote wallet's credentials
 oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt   # issues on the remote wallet
-oid4vc-dev wallet use local                # back to the local store
+oid4vc-dev wallet instances use local      # back to the local store
 
 # One-off remote target without switching
 oid4vc-dev wallet list --remote http://localhost:8085
@@ -819,20 +817,22 @@ oid4vc-dev wallet list --remote http://localhost:8085
 oid4vc-dev wallet info
 ```
 
-Remote commands print `Managing remote wallet <url>` to stderr so it is always visible which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet use <url>` verifies the target is reachable before persisting it (in `~/.oid4vc-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
+Remote commands print `Managing remote wallet <url>` to stderr so it is always visible which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.oid4vc-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
 
 ### Instances
 
 The CLI can scan the local system for running wallet instances, stop them, and switch management to them:
 
 ```bash
-oid4vc-dev wallet instances                # list running instances (URL, pid, wallet dir)
-oid4vc-dev wallet use http://localhost:18924
-oid4vc-dev wallet kill 18924               # stop by port, pid, or URL
-oid4vc-dev wallet kill --all               # stop every running instance
+oid4vc-dev wallet instances list           # list running instances (URL, pid, wallet dir)
+oid4vc-dev wallet instances use http://localhost:18924
+oid4vc-dev wallet instances kill 18924     # stop by port, pid, or URL
+oid4vc-dev wallet instances kill --all     # stop every running instance
 ```
 
-Every `wallet serve` registers itself in `~/.oid4vc-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+`wallet instances` without a subcommand is a shortcut for `wallet instances list`.
+
+Every `wallet serve` registers itself in `~/.oid4vc-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
 
 ### Introspection
 

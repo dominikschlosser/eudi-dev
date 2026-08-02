@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1]
+
+### Added
+
+- Shell completion for bash, zsh, fish, and powershell, including dynamic completion of known values: template names (local or active remote), credential IDs (with their type as description), running wallet instances for `wallet instances use|kill` and `--remote`, plus static value flags (`--format`, `--trust-profile`, `--mode`). `completion install [bash|zsh|fish]` wires it into the shell init (source line in `.bashrc` or `.zshrc`, completion file for fish) and detects the shell from `$SHELL`
+
+### Changed
+
+- The instance lifecycle commands moved under one command group: `wallet instances list` (also reachable as plain `wallet instances`), `wallet instances use <url|local>`, and `wallet instances kill <pid|port|url>`. The previous top level `wallet use` and `wallet kill` commands are gone. This keeps credential commands (`wallet list`) clearly separated from instance commands
+
 ## [1.14.0]
 
 ### Added

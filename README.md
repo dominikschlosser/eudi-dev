@@ -57,6 +57,12 @@ oid4vc-dev [--json] [--no-color] [-v] <command> [flags] [input]
 
 Input can be a **file path**, **URL**, **raw credential string**, or piped via **stdin**.
 
+Shell completion covers all subcommands, flags, and known values (template names, credential IDs, running wallet instances). Install it into your shell init with one command (bash, zsh, and fish, detected from `$SHELL` when no argument is given):
+
+```bash
+oid4vc-dev completion install
+```
+
 ### Commands
 
 | Command    | Purpose                                                    |
@@ -68,6 +74,7 @@ Input can be a **file path**, **URL**, **raw credential string**, or piped via *
 | `decode`   | Auto-detect & inspect credentials, OpenID4VCI/VP, and trust lists; may auto-verify issuer metadata when resolvable |
 | `validate` | Verify signatures, check expiry, and check revocation status |
 | `dcql`     | Generate a DCQL query from a credential's claims            |
+| `completion` | Generate or install shell completion (`completion install`) |
 | `version`  | Print version                                               |
 
 ---
@@ -93,8 +100,7 @@ oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
 For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet
 - `issue ... --wallet` (with `--template` or `--pid`) to preload credentials
-- `wallet use <url>` to manage a remote wallet instance over its REST API (`wallet use local` to switch back)
-- `wallet instances` and `wallet kill` to find and stop running wallet servers on this system
+- `wallet instances` to find running wallet servers, `wallet instances use <url>` to manage one remotely over its REST API, and `wallet instances kill` to stop one
 - `wallet trust-list` to get the verifier trust-list URL or JWT
 - `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material

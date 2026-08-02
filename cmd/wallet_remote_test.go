@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
@@ -67,7 +69,7 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 	url, _ := startRemoteTestWallet(t)
 
 	// wallet use verifies reachability and persists the target
-	rootCmd.SetArgs([]string{"wallet", "use", url})
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet use: %v", err)
 	}
@@ -107,7 +109,7 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 	}
 
 	// switch back to local
-	rootCmd.SetArgs([]string{"wallet", "use", "local"})
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", "local"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet use local: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestRemoteTemplatesViaCLI(t *testing.T) {
 
 func TestWalletUseRejectsUnreachable(t *testing.T) {
 	resetRemoteTestState(t)
-	rootCmd.SetArgs([]string{"wallet", "use", "http://localhost:1"})
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", "http://localhost:1"})
 	if err := rootCmd.Execute(); err == nil {
 		t.Fatal("expected error for unreachable wallet")
 	}
@@ -170,7 +172,7 @@ func TestWalletKillViaShutdownEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rootCmd.SetArgs([]string{"wallet", "kill", url})
+	rootCmd.SetArgs([]string{"wallet", "instances", "kill", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet kill: %v", err)
 	}
@@ -285,5 +287,87 @@ func TestRemoteTemplatesListShowUseRemoteStore(t *testing.T) {
 	rootCmd.SetArgs([]string{"templates", "list", "--remote", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("remote list: %v", err)
+	}
+}
+
+func TestCompletionFunctions(t *testing.T) {
+	resetRemoteTestState(t)
+
+	// Template completion lists pre-defined templates locally.
+	names, directive := completeTemplateNames(nil, nil, "")
+	if directive != cobra.ShellCompDirectiveNoFileComp {
+		t.Errorf("unexpected directive: %v", directive)
+	}
+	joined := strings.Join(names, "\n")
+	if !strings.Contains(joined, "german-pid-sdjwt") || !strings.Contains(joined, "german-pid-mdoc") {
+		t.Errorf("expected pre-defined templates in completion, got %v", names)
+	}
+
+	// Credential completion never creates a wallet as a side effect.
+	ids, _ := completeCredentialIDs(nil, nil, "")
+	if len(ids) != 0 {
+		t.Errorf("expected no completions without a wallet, got %v", ids)
+	}
+	if _, err := os.Stat(filepath.Join(walletDir, "wallet.json")); !os.IsNotExist(err) {
+		t.Error("completion must not create a wallet store")
+	}
+
+	// With a remote configured, completions come from the remote wallet.
+	url, _ := startRemoteTestWallet(t)
+	remoteFlag = url
+	client := remote.NewClient(url)
+	if _, err := client.PutTemplate("completion-card", map[string]any{"format": "sdjwt", "claims": map[string]any{"a": 1}}); err != nil {
+		t.Fatal(err)
+	}
+	names, _ = completeTemplateNames(nil, nil, "")
+	if !strings.Contains(strings.Join(names, "\n"), "completion-card") {
+		t.Errorf("expected remote template in completion, got %v", names)
+	}
+
+	// Instance completion offers running instances plus local for use.
+	if err := remote.RegisterInstance(remote.Instance{PID: 424242, Port: portFromURL(t, url), URL: url, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	targets, _ := completeUseTargets(nil, nil, "")
+	joined = strings.Join(targets, "\n")
+	if !strings.Contains(joined, "local") || !strings.Contains(joined, url) {
+		t.Errorf("expected local and instance url in completion, got %v", targets)
+	}
+}
+
+func TestCompletionInstall(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// zsh: appends the source line once, second run is a no-op
+	rootCmd.SetArgs([]string{"completion", "install", "zsh"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("completion install zsh: %v", err)
+	}
+	rootCmd.SetArgs([]string{"completion", "install", "zsh"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("second install: %v", err)
+	}
+	rc, err := os.ReadFile(filepath.Join(home, ".zshrc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(rc), "completion zsh"); count != 1 {
+		t.Errorf("expected exactly one source line, got %d:\n%s", count, rc)
+	}
+
+	// fish: writes the completion file
+	rootCmd.SetArgs([]string{"completion", "install", "fish"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("completion install fish: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "fish", "completions", "oid4vc-dev.fish")); err != nil {
+		t.Errorf("fish completion file missing: %v", err)
+	}
+
+	// unsupported shell errors
+	rootCmd.SetArgs([]string{"completion", "install", "tcsh"})
+	if err := rootCmd.Execute(); err == nil {
+		t.Error("expected error for unsupported shell")
 	}
 }

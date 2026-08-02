@@ -96,7 +96,7 @@ oid4vc-dev templates show employee-card > share-me.json
 oid4vc-dev templates delete employee-card
 ```
 
-All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. They also work against a remote wallet server: with `--remote <url>` (or after `wallet use <url>`) list, show, save, import, and delete operate on the remote instance's template store through its REST API. See [remote control](wallet.md#remote-control).
+All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. They also work against a remote wallet server: with `--remote <url>` (or after `wallet instances use <url>`) list, show, save, import, and delete operate on the remote instance's template store through its REST API. See [remote control](wallet.md#remote-control).
 
 ### `templates save`
 
