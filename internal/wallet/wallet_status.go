@@ -14,6 +14,11 @@
 
 package wallet
 
+import (
+	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
+	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
+)
+
 // SetCredentialStatus sets the status value for a credential.
 func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bool) {
 	w.mu.Lock()
@@ -85,4 +90,59 @@ func (w *Wallet) registerStatusEntry(credID string, idx int) {
 // RegisterStatusEntry records a wallet-managed status list entry for a credential.
 func (w *Wallet) RegisterStatusEntry(credID string, idx int) {
 	w.registerStatusEntry(credID, idx)
+}
+
+// StatusEntryFor returns the wallet's own status list entry for a credential.
+func (w *Wallet) StatusEntryFor(credID string) (StatusEntry, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	entry, ok := w.StatusEntries[credID]
+	return entry, ok
+}
+
+// CredentialStatusRef extracts the status list reference embedded in a
+// credential: the status claim for SD-JWT and JWT VC, the MSO status for
+// mdoc.
+func CredentialStatusRef(c StoredCredential) *statuslist.StatusRef {
+	switch c.Format {
+	case "mso_mdoc":
+		doc, err := mdoc.Parse(c.Raw)
+		if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.Status == nil {
+			return nil
+		}
+		return statuslist.ExtractStatusRef(map[string]any{"status": doc.IssuerAuth.MSO.Status})
+	default:
+		return statuslist.ExtractStatusRef(c.Claims)
+	}
+}
+
+// CredentialStatusInfo returns the status metadata included in credential
+// summaries: the embedded status list reference plus, when the wallet manages
+// the entry on its own status list, the current status value. It returns nil
+// for credentials without any status list reference or entry.
+func (w *Wallet) CredentialStatusInfo(c StoredCredential) map[string]any {
+	ref := CredentialStatusRef(c)
+	entry, managed := w.StatusEntryFor(c.ID)
+	if ref == nil && !managed {
+		return nil
+	}
+	info := map[string]any{"managed": managed}
+	if ref != nil {
+		info["uri"] = ref.URI
+		info["idx"] = ref.Idx
+	}
+	if managed {
+		info["status"] = entry.Status
+	}
+	return info
+}
+
+// CredentialSummaryWithStatus is CredentialSummary plus the wallet-aware
+// status metadata.
+func (w *Wallet) CredentialSummaryWithStatus(c StoredCredential) map[string]any {
+	summary := CredentialSummary(c)
+	if info := w.CredentialStatusInfo(c); info != nil {
+		summary["status"] = info
+	}
+	return summary
 }

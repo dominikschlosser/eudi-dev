@@ -66,13 +66,38 @@
       const moreCount = Object.keys(cred.claims || {}).length - claimKeys.length;
       const moreTag = moreCount > 0 ? '<span class="claim-tag">+' + moreCount + ' more</span>' : '';
 
+      // Stable identity and selection hooks for UI automation
       card.id = 'credential-' + cred.id;
+      card.dataset.credentialId = cred.id;
+      card.dataset.format = formatLabel === 'SD-JWT' ? 'sdjwt' : formatLabel === 'JWT VC' ? 'jwt' : 'mdoc';
+      if (cred.vct) card.dataset.vct = cred.vct;
+      if (cred.doctype) card.dataset.doctype = cred.doctype;
+
+      // Status badge: managed entries show live status, foreign status lists
+      // get a badge plus an explicit check action.
+      const st = cred.status;
+      let statusBadge = '';
+      let revokeBtn = '';
+      if (st && st.managed) {
+        const revoked = st.status === 1;
+        card.dataset.status = revoked ? 'revoked' : 'active';
+        statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked' : 'status-active') + '" id="status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
+        revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (revoked ? 'Activate' : 'Revoke') + '</button>';
+      } else if (st && st.uri) {
+        card.dataset.status = 'external';
+        statusBadge = '<span class="status-badge status-external" id="status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External status</span>';
+        revokeBtn = '<button class="btn btn-sm" id="status-check-' + cred.id + '" data-check-status="' + cred.id + '">Check status</button>';
+      } else {
+        card.dataset.status = 'none';
+      }
+
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
         '<div class="credential-info" title="Open in decoder">' +
-          '<div class="credential-type">' + escHtml(typeLabel) + '</div>' +
+          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + '</div>' +
           '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
+          revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
           '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>' +
         '</div>';
@@ -83,8 +108,63 @@
       card.querySelector('[data-show]').addEventListener('click', openDecoder);
       card.querySelector('.credential-info').addEventListener('click', openDecoder);
       card.querySelector('[data-delete]').addEventListener('click', () => deleteCredential(cred.id));
+      const revoke = card.querySelector('[data-revoke]');
+      if (revoke) {
+        revoke.addEventListener('click', () => setCredentialStatus(cred.id, st.status === 1 ? 0 : 1));
+      }
+      const check = card.querySelector('[data-check-status]');
+      if (check) {
+        check.addEventListener('click', () => checkCredentialStatus(cred.id));
+      }
       credContainer.appendChild(card);
     });
+  }
+
+  // Revoke (status 1) or re-activate (status 0) a credential on the wallet's
+  // own status list.
+  async function setCredentialStatus(id, status) {
+    try {
+      const resp = await fetch('/api/credentials/' + id + '/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: status })
+      });
+      if (!resp.ok) {
+        const result = await resp.json().catch(() => ({}));
+        alert('Setting status failed: ' + (result.error || 'HTTP ' + resp.status));
+        return;
+      }
+      await loadCredentials();
+    } catch (e) {
+      alert('Setting status failed: ' + e.message);
+    }
+  }
+
+  // Resolve the live status of a credential on an external status list.
+  async function checkCredentialStatus(id) {
+    const badge = document.getElementById('status-' + id);
+    if (badge) badge.textContent = 'Checking...';
+    try {
+      const resp = await fetch('/api/credentials/' + id + '/status');
+      const result = await resp.json();
+      if (!badge) return;
+      if (!resp.ok) {
+        badge.textContent = 'Check failed';
+        badge.title = result.error || ('HTTP ' + resp.status);
+        return;
+      }
+      const revoked = result.status === 1;
+      badge.textContent = revoked ? 'Revoked' : 'Active';
+      badge.classList.remove('status-external');
+      badge.classList.add(revoked ? 'status-revoked' : 'status-active');
+      const card = document.getElementById('credential-' + id);
+      if (card) card.dataset.status = revoked ? 'revoked' : 'active';
+    } catch (e) {
+      if (badge) {
+        badge.textContent = 'Check failed';
+        badge.title = e.message;
+      }
+    }
   }
 
   async function deleteCredential(id) {
@@ -188,7 +268,7 @@
       '<input type="text" class="form-input claim-ns" id="issue-claim-ns-' + idx + '" placeholder="namespace (default: doc type)">' +
       '<input type="text" class="form-input" id="issue-claim-key-' + idx + '" placeholder="claim name">' +
       '<input type="text" class="form-input" id="issue-claim-value-' + idx + '" placeholder="value (text or JSON)">' +
-      '<label class="claim-sd" title="Selectively disclosable: uncheck to embed the claim plainly in the payload"><input type="checkbox" id="issue-claim-sd-' + idx + '" checked> SD</label>' +
+      '<label class="claim-sd" title="Selectively disclosable (uncheck to embed the claim plainly in the payload)"><input type="checkbox" id="issue-claim-sd-' + idx + '" checked> SD</label>' +
       '<button type="button" class="btn btn-sm" id="issue-claim-remove-' + idx + '" title="Remove claim">&times;</button>';
     row.querySelector('input[id^="issue-claim-ns-"]').value = ns || '';
     row.querySelector('input[id^="issue-claim-key-"]').value = key || '';
@@ -371,6 +451,11 @@
     document.getElementById('issue-exp').value = '';
     document.getElementById('issue-nbf').value = '';
     document.getElementById('issue-save-template').value = '';
+    document.getElementById('issue-status-list').value = 'auto';
+    document.getElementById('issue-status-list-uri').value = '';
+    document.getElementById('issue-status-list-uri').hidden = true;
+    document.getElementById('issue-status-list-idx').value = '';
+    document.getElementById('issue-status-list-idx').hidden = true;
     issueTemplateSelect.value = '';
     issueAlwaysDisclosed.value = '';
     document.getElementById('issue-claims-mode-builder').checked = true;
@@ -381,11 +466,30 @@
     updateClaimsMode();
   }
 
+  // The wallet only has an own status list when a base or issuer URL is
+  // configured. Reflect the real state in the option instead of guessing.
+  async function updateStatusListOption() {
+    const autoOption = document.getElementById('issue-status-list-auto');
+    try {
+      const resp = await fetch('/api/config');
+      const config = await resp.json();
+      const configured = Boolean(config.status_list_url);
+      autoOption.disabled = !configured;
+      autoOption.textContent = configured ? 'Wallet status list' : 'Wallet status list (not configured)';
+      if (!configured && document.getElementById('issue-status-list').value === 'auto') {
+        document.getElementById('issue-status-list').value = 'none';
+      }
+    } catch (e) {
+      /* keep the default option state */
+    }
+  }
+
   issueBtn.addEventListener('click', () => {
     issueForm.reset();
     resetIssueFields();
     issueOverlay.classList.add('active');
     fillIssueTemplateSelect();
+    updateStatusListOption();
   });
 
   issueFormat.addEventListener('change', resetIssueFields);
@@ -395,6 +499,12 @@
   });
 
   issueAlwaysDisclosed.addEventListener('change', syncRowsFromAlwaysDisclosed);
+
+  document.getElementById('issue-status-list').addEventListener('change', () => {
+    const custom = document.getElementById('issue-status-list').value === 'custom';
+    document.getElementById('issue-status-list-uri').hidden = !custom;
+    document.getElementById('issue-status-list-idx').hidden = !custom;
+  });
 
   document.getElementById('issue-add-claim').addEventListener('click', () => addClaimRow('', ''));
 
@@ -433,6 +543,14 @@
     if (exp) body.exp = exp;
     const nbf = document.getElementById('issue-nbf').value.trim();
     if (nbf) body.nbf = nbf;
+    const statusListMode = document.getElementById('issue-status-list').value;
+    if (statusListMode === 'none') {
+      body.status_list_uri = '';
+    } else if (statusListMode === 'custom') {
+      body.status_list_uri = document.getElementById('issue-status-list-uri').value.trim();
+      const idx = document.getElementById('issue-status-list-idx').value.trim();
+      if (idx) body.status_list_idx = parseInt(idx, 10);
+    }
     if (issueFormat.value === 'sdjwt') {
       const always = alwaysDisclosedList();
       if (always.length > 0) body.always_disclosed = always;
@@ -493,6 +611,9 @@
     templates.forEach(tpl => {
       const row = document.createElement('div');
       row.className = 'template-row';
+      row.id = 'template-row-' + tpl.name;
+      row.dataset.templateName = tpl.name;
+      row.dataset.predefined = tpl.predefined ? 'true' : 'false';
 
       const label = document.createElement('span');
       label.className = 'template-row-name';
@@ -507,6 +628,7 @@
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'btn btn-sm';
+      editBtn.id = 'template-edit-' + tpl.name;
       editBtn.textContent = 'Edit';
       editBtn.addEventListener('click', () => {
         templateName.value = tpl.name;
@@ -519,6 +641,7 @@
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm';
+        deleteBtn.id = 'template-delete-' + tpl.name;
         deleteBtn.textContent = 'Delete';
         deleteBtn.addEventListener('click', async () => {
           templateError.textContent = '';
@@ -802,7 +925,7 @@
         const formatLabel = mc.format === 'dc+sd-jwt' ? 'SD-JWT' : mc.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
         const typeLabel = mc.vct || mc.doctype || mc.format;
 
-        html += '<div class="consent-credential">' +
+        html += '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
           '<div class="consent-credential-header">' +
             '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
             '<span style="font-size:12px;font-weight:600;">' + escHtml(typeLabel) + '</span>' +

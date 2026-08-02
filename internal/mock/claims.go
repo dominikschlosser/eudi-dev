@@ -98,7 +98,6 @@ var MDOCPIDClaims = map[string]any{
 	"issuing_country":                "DE",
 	"document_number":                "TEST-PID-123456",
 	"issuing_jurisdiction":           "DE-BE",
-	"trust_anchor":                   "https://preprod.pid-provider.bundesdruckerei.de",
 }
 
 // PIDClaims is an alias for SDJWTPIDClaims for backward compatibility.

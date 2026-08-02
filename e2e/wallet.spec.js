@@ -628,6 +628,70 @@ test.describe("Credential Issuing via UI", () => {
     });
   });
 
+  test("shows status badges and revokes and re-activates a credential", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    await expect(page.locator(".credential-card")).toHaveCount(2);
+
+    // The wallet manages its own status list (--base-url), so PID cards show
+    // a live status badge and a revoke action.
+    const card = page.locator('.credential-card[data-format="sdjwt"]').first();
+    const id = await card.getAttribute("data-credential-id");
+    await expect(card).toHaveAttribute("data-status", "active");
+    await expect(page.locator(`#status-${id}`)).toHaveText("Active");
+    await expect(page.locator(`#revoke-${id}`)).toHaveText("Revoke");
+
+    await page.locator(`#revoke-${id}`).click();
+    await expect(page.locator(`#status-${id}`)).toHaveText("Revoked");
+    await expect(page.locator(`#credential-${id}`)).toHaveAttribute(
+      "data-status",
+      "revoked"
+    );
+    await expect(page.locator(`#revoke-${id}`)).toHaveText("Activate");
+
+    // The status API agrees
+    const status = await jsonGet(
+      `${WALLET_URL}/api/credentials/${id}/status`
+    );
+    expect(status.body.status).toBe(1);
+    expect(status.body.managed).toBe(true);
+
+    // Re-activate to leave the wallet in a clean state
+    await page.locator(`#revoke-${id}`).click();
+    await expect(page.locator(`#status-${id}`)).toHaveText("Active");
+    const restored = await jsonGet(
+      `${WALLET_URL}/api/credentials/${id}/status`
+    );
+    expect(restored.body.status).toBe(0);
+  });
+
+  test("issues a credential without a status list via the dialog", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+
+    await page.locator("#issue-vct").fill("urn:example:e2e-nostatus");
+    await page.locator("#issue-claim-key-0").fill("given_name");
+    await page.locator("#issue-claim-value-0").fill("Erika");
+    await page.locator("#issue-status-list").selectOption("none");
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const card = page.locator(
+      '.credential-card[data-vct="urn:example:e2e-nostatus"]'
+    );
+    await expect(card).toHaveAttribute("data-status", "none");
+    const id = await card.getAttribute("data-credential-id");
+    await expect(page.locator(`#revoke-${id}`)).toHaveCount(0);
+
+    // Clean up
+    await page.locator(`#delete-${id}`).click();
+    await expect(page.locator(`#credential-${id}`)).toHaveCount(0);
+  });
+
   test("certificate export links are present and working", async ({
     page,
     request,

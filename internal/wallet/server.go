@@ -170,6 +170,7 @@ func (s *Server) setupRoutes() {
 
 	// API: status list
 	s.mux.HandleFunc("GET /api/statuslist", s.withFreshStore(s.handleStatusList))
+	s.mux.HandleFunc("GET /api/credentials/{id}/status", s.withFreshStore(s.handleGetCredentialStatus))
 	s.mux.HandleFunc("POST /api/credentials/{id}/status", s.withFreshStore(s.handleSetCredentialStatus))
 
 	// SD-JWT VC issuer metadata
@@ -180,6 +181,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/next-error", s.withFreshStore(s.handleSetNextError))
 	s.mux.HandleFunc("DELETE /api/next-error", s.withFreshStore(s.handleClearNextError))
 	s.mux.HandleFunc("PUT /api/config/preferred-format", s.withFreshStore(s.handleSetPreferredFormat))
+	s.mux.HandleFunc("GET /api/config", s.withFreshStore(s.handleGetConfig))
 
 	// API: log
 	s.mux.HandleFunc("GET /api/log", s.withFreshStore(s.handleLog))
@@ -1194,6 +1196,16 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/statuslist+jwt")
 	w.Write([]byte(jwt))
+}
+
+// handleGetConfig returns wallet configuration relevant to API and UI
+// clients, currently the wallet's own status list URL (empty when no base or
+// issuer URL is configured).
+func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status_list_url":  s.wallet.StatusListURL(),
+		"preferred_format": s.wallet.PreferredFormat,
+	})
 }
 
 // handleSetCredentialStatus sets the revocation status for a credential.

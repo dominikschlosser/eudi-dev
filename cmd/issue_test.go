@@ -715,7 +715,6 @@ func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
 		"issuance_date", "expiry_date",
 		"issuing_authority",
 		"issuing_country", "document_number", "issuing_jurisdiction",
-		"trust_anchor",
 	}
 	for _, name := range required {
 		if _, ok := mock.MDOCPIDClaims[name]; !ok {
@@ -723,8 +722,12 @@ func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
 		}
 	}
 
-	if len(mock.MDOCPIDClaims) != 28 {
-		t.Errorf("expected 28 mDoc PID claims, got %d", len(mock.MDOCPIDClaims))
+	if _, ok := mock.MDOCPIDClaims["trust_anchor"]; ok {
+		t.Error("trust_anchor should not be present in mDoc PID claims (issuer-sample artifact, meaningless for self-issued test credentials)")
+	}
+
+	if len(mock.MDOCPIDClaims) != 27 {
+		t.Errorf("expected 27 mDoc PID claims, got %d", len(mock.MDOCPIDClaims))
 	}
 
 	birthPlace, ok := mock.MDOCPIDClaims["birth_place"].(map[string]any)

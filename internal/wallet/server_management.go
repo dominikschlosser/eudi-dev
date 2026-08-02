@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
+	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
 )
 
 // handleGetCredential returns a single stored credential by ID.
@@ -40,7 +41,51 @@ func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, CredentialSummary(cred))
+	writeJSON(w, http.StatusOK, s.wallet.CredentialSummaryWithStatus(cred))
+}
+
+// handleGetCredentialStatus resolves the live status of a credential: from
+// the wallet's own status list when the entry is managed here, otherwise by
+// fetching the external status list referenced by the credential.
+func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	cred, ok := s.wallet.GetCredential(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
+		return
+	}
+
+	ref := CredentialStatusRef(cred)
+	if entry, managed := s.wallet.StatusEntryFor(cred.ID); managed {
+		info := map[string]any{"managed": true, "status": entry.Status, "source": "wallet"}
+		if ref != nil {
+			info["uri"] = ref.URI
+			info["idx"] = ref.Idx
+		}
+		writeJSON(w, http.StatusOK, info)
+		return
+	}
+	if ref == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential has no status list reference"})
+		return
+	}
+
+	result, err := statuslist.Check(ref)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": "checking external status list: " + err.Error(),
+			"uri":   ref.URI,
+			"idx":   ref.Idx,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"managed": false,
+		"status":  result.Status,
+		"source":  "remote",
+		"uri":     ref.URI,
+		"idx":     ref.Idx,
+	})
 }
 
 // handleDeleteAllCredentials removes all stored credentials.
@@ -118,7 +163,7 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	s.triggerSave()
 
-	summary := CredentialSummary(*result.Credential)
+	summary := s.wallet.CredentialSummaryWithStatus(*result.Credential)
 	if result.StatusRegistered {
 		summary["status_list_idx"] = result.StatusIdx
 	}

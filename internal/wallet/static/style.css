@@ -377,6 +377,37 @@ header h1 {
   display: flex;
 }
 
+.status-list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.status-active {
+  background: rgba(158, 206, 106, 0.2);
+  color: var(--green);
+}
+
+.status-revoked {
+  background: rgba(247, 118, 142, 0.2);
+  color: var(--red);
+}
+
+.status-external {
+  background: rgba(125, 125, 125, 0.15);
+  color: var(--text-dim);
+}
+
 .templates-list {
   display: flex;
   flex-direction: column;

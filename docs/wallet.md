@@ -164,7 +164,11 @@ The server exposes:
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
 - A management API mirroring the wallet CLI (list, show, import, and remove credentials, issue credentials, generate PIDs, export certificates). It has no authentication (see [HTTP API](#http-api))
 
-Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. Selecting a credential template (for example the pre-defined `german-pid-sdjwt`) fills all fields so they can be reviewed and edited before issuing:
+Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. Selecting a credential template (for example the pre-defined `german-pid-sdjwt`) fills all fields so they can be reviewed and edited before issuing. A status list selector controls the embedded status reference (the wallet's own list when configured, none, or a custom URI and index).
+
+Credential cards show the revocation status when a credential carries a status list reference. Credentials on the wallet's own status list show a live Active or Revoked badge plus a Revoke or Activate button. Credentials pointing at an external status list show a Check status action that fetches the list and resolves the current value.
+
+The whole UI is built for browser automation. Every interactive control has a stable element id, and credential cards expose selection hooks as data attributes (`data-credential-id`, `data-format`, `data-vct`, `data-doctype`, `data-status`), so a test can select a card with `.credential-card[data-vct="urn:eudi:pid:de:1"]` and drive its buttons (`show-<id>`, `delete-<id>`, `revoke-<id>`, `status-check-<id>`). Template manager rows (`template-row-<name>`, `template-edit-<name>`, `template-delete-<name>`) and the consent dialog (`consent-approve`, `consent-deny`, `consent-credential-<id>`, claim checkboxes with `data-cred` and `data-claim`) follow the same pattern.
 
 ![Issue credential dialog](./wallet-issue-ui.png)
 
@@ -642,6 +646,7 @@ curl -X PUT http://localhost:8085/api/config/preferred-format \
 
 | Method | Path                           | Body                    | Description                    |
 |--------|--------------------------------|-------------------------|--------------------------------|
+| `GET`  | `/api/config`                  | —                       | Wallet configuration (`status_list_url`, `preferred_format`) |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "dc+sd-jwt"}`  | Prefer SD-JWT when multiple match |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "mso_mdoc"}`   | Prefer mDoc when multiple match   |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "jwt_vc_json"}` | Prefer JWT VC when multiple match |
@@ -695,7 +700,7 @@ oid4vc-dev wallet serve --pid --docker
 oid4vc-dev wallet serve --pid --base-url http://my-host:8085
 ```
 
-The status of individual credentials can be changed at runtime:
+The status of individual credentials can be changed at runtime (the wallet UI exposes the same operations as Revoke and Activate buttons on the credential cards):
 
 ```bash
 # Revoke a credential (status=1)
@@ -707,7 +712,13 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 curl -X POST http://localhost:8085/api/credentials/<id>/status \
   -H 'Content-Type: application/json' \
   -d '{"status": 0}'
+
+# Resolve the current status (from the wallet's own list, or by fetching an
+# external status list referenced by the credential)
+curl http://localhost:8085/api/credentials/<id>/status
 ```
+
+Credential listings (`GET /api/credentials` and `GET /api/credentials/{id}`) include a `status` object for credentials that carry a status list reference: `uri` and `idx` from the credential, `managed` (true when the entry lives on this wallet's own status list), and the current `status` value for managed entries.
 
 The status list JWT is served at `GET /api/statuslist` on both the HTTP wallet port and the HTTPS wallet port.
 

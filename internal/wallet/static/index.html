@@ -77,7 +77,7 @@
   <div class="consent-overlay" id="issue-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Issue Credential</div>
-      <p class="dialog-hint">Issues a credential with the wallet's issuer key and imports it. All fields except the format are optional. Pick a template (for example german-pid-sdjwt) to pre-fill everything, then edit as needed.</p>
+      <p class="dialog-hint">Issues a credential with the wallet's issuer key and imports it. All fields except the format are optional. Pick a template (for example german-pid-sdjwt) to fill everything. All values stay editable.</p>
       <form id="issue-form">
         <div class="form-grid">
           <label class="form-label" for="issue-format">Format</label>
@@ -112,6 +112,17 @@
           <label class="form-label" for="issue-always-disclosed" hidden>Always visible</label>
           <input type="text" id="issue-always-disclosed" class="form-input" hidden placeholder="Claims issued without selective disclosure, e.g. issuing_country, address.country">
 
+          <label class="form-label" for="issue-status-list">Status list</label>
+          <div class="status-list-editor">
+            <select id="issue-status-list" class="form-input">
+              <option value="auto" id="issue-status-list-auto" selected>Wallet status list</option>
+              <option value="none">No status list</option>
+              <option value="custom">Custom URI</option>
+            </select>
+            <input type="text" id="issue-status-list-uri" class="form-input" placeholder="Status list URI" hidden>
+            <input type="number" id="issue-status-list-idx" class="form-input" placeholder="Index (default 0)" hidden>
+          </div>
+
           <label class="form-label" for="issue-exp">Expires in</label>
           <input type="text" id="issue-exp" class="form-input" placeholder="Duration, e.g. 720h or 24h (default: 720h)">
 
@@ -134,7 +145,7 @@
   <div class="consent-overlay" id="templates-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Credential Templates</div>
-      <p class="dialog-hint">Templates are reusable claim sets for issuing credentials. Pre-defined templates are built in; saving one under the same name overrides it. Paste a template JSON below to import a shared template.</p>
+      <p class="dialog-hint">Templates are reusable claim sets for issuing credentials. Pre-defined templates are built in. Saving a template under the same name overrides it. Paste template JSON below to import a shared template.</p>
       <div id="templates-list" class="templates-list"></div>
       <form id="template-form">
         <div class="form-grid">

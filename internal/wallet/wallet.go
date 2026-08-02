@@ -332,10 +332,11 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 		AlwaysDisclosed: sdTpl.AlwaysDisclosed,
 	}
 
-	// Assign status list indices if enabled
+	// Assign status list indices when the wallet has a status list URL
+	// (derived from the issuer URL or base URL).
+	statusListURL := w.StatusListURL()
 	var sdStatusIdx, mdocStatusIdx int
-	if w.BaseURL != "" {
-		statusListURL := w.StatusListURL()
+	if statusListURL != "" {
 		sdStatusIdx = w.nextStatusIndex()
 		sdConfig.StatusListURI = statusListURL
 		sdConfig.StatusListIdx = sdStatusIdx
@@ -351,7 +352,7 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 
 	// Register status entry for SD-JWT credential
-	if w.BaseURL != "" {
+	if statusListURL != "" {
 		w.registerStatusEntry(sdCred.ID, sdStatusIdx)
 	}
 
@@ -365,8 +366,7 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 		CertChain: pidChain,
 	}
 
-	if w.BaseURL != "" {
-		statusListURL := w.StatusListURL()
+	if statusListURL != "" {
 		mdocStatusIdx = w.nextStatusIndex()
 		mdocConfig.StatusListURI = statusListURL
 		mdocConfig.StatusListIdx = mdocStatusIdx
@@ -388,7 +388,7 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 
 	// Register status entry for mDoc credential
-	if w.BaseURL != "" {
+	if statusListURL != "" {
 		w.registerStatusEntry(mdocCred.ID, mdocStatusIdx)
 	}
 
@@ -595,7 +595,7 @@ func (w *Wallet) CredentialsJSON() ([]byte, error) {
 	creds := w.GetCredentials()
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
-		summaries[i] = CredentialSummary(c)
+		summaries[i] = w.CredentialSummaryWithStatus(c)
 	}
 	return json.Marshal(summaries)
 }
