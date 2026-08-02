@@ -52,6 +52,11 @@ var templatesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available credential templates",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if c, err := remoteClientIfConfigured(); err != nil {
+			return err
+		} else if c != nil {
+			return remoteTemplatesList(c)
+		}
 		templates, err := credtemplate.List(resolveTemplatesDir())
 		if err != nil {
 			return err
@@ -82,6 +87,11 @@ var templatesShowCmd = &cobra.Command{
 	Short: "Print a credential template as JSON (shareable, importable with `templates import`)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if c, err := remoteClientIfConfigured(); err != nil {
+			return err
+		} else if c != nil {
+			return remoteTemplatesShow(c, args[0])
+		}
 		tpl, err := credtemplate.Load(args[0], resolveTemplatesDir())
 		if err != nil {
 			return err

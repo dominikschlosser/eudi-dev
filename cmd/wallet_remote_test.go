@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
@@ -251,5 +252,38 @@ func TestRemoteShowImportLogsInfoViaCLI(t *testing.T) {
 	rootCmd.SetArgs([]string{"wallet", "info", "--remote", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("remote info: %v", err)
+	}
+}
+
+func TestRemoteTemplatesListShowUseRemoteStore(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+
+	// One template exists only on the remote wallet, another only locally.
+	client := remote.NewClient(url)
+	if _, err := client.PutTemplate("remote-only", map[string]any{"format": "sdjwt", "claims": map[string]any{"a": 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := credtemplate.Save(credtemplate.DirForWallet(walletDir), credtemplate.Template{
+		Name: "local-only", Format: "sdjwt", Claims: map[string]any{"b": 2},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// show resolves against the remote store: the remote-only template is
+	// found, the local-only one is not.
+	rootCmd.SetArgs([]string{"templates", "show", "remote-only", "--remote", url})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("remote show must find the remote template: %v", err)
+	}
+	rootCmd.SetArgs([]string{"templates", "show", "local-only", "--remote", url})
+	if err := rootCmd.Execute(); err == nil {
+		t.Fatal("remote show must not fall back to the local store")
+	}
+
+	// list runs against the remote store
+	rootCmd.SetArgs([]string{"templates", "list", "--remote", url})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("remote list: %v", err)
 	}
 }
