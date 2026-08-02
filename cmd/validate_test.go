@@ -28,12 +28,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/output"
-	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/output"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
 
 // generateCACert creates a self-signed CA certificate and key.

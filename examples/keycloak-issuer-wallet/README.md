@@ -7,7 +7,7 @@ This example runs a local OpenID4VCI issuance flow from Keycloak into `oid4vc-de
 1. `docker compose up --force-recreate` starts Keycloak `26.6.0`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
 2. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the issuer endpoints.
 3. `./scripts/create-offer.sh` logs in as `alice`, calls Keycloak's `create-credential-offer` endpoint, resolves the generated offer once, and emits an inline `openid-credential-offer://?credential_offer=...` URI.
-4. `oid4vc-dev wallet accept` resolves the offer URI, fetches issuer metadata and authorization details from Keycloak, creates proof-of-possession material, and stores the returned SD-JWT VC in the local wallet directory.
+4. `eudi wallet accept` resolves the offer URI, fetches issuer metadata and authorization details from Keycloak, creates proof-of-possession material, and stores the returned SD-JWT VC in the local wallet directory.
 
 ## Flow Diagram
 
@@ -15,7 +15,7 @@ This example runs a local OpenID4VCI issuance flow from Keycloak into `oid4vc-de
 sequenceDiagram
     participant U as User
     participant KC as Keycloak 26.6.0
-    participant W as oid4vc-dev wallet
+    participant W as eudi wallet
 
     U->>KC: import static realm, user, client, credential scope
     U->>KC: password grant as alice
@@ -26,7 +26,7 @@ sequenceDiagram
     W->>KC: fetch issuer metadata
     W->>KC: redeem pre-authorized offer and submit proof
     KC-->>W: dc+sd-jwt credential
-    W-->>U: credential stored in ~/.oid4vc-dev/wallet
+    W-->>U: credential stored in ~/.eudi-dev/wallet
 ```
 
 ## Files
@@ -43,10 +43,10 @@ sequenceDiagram
 ```bash
 cd examples/keycloak-issuer-wallet
 ./start.sh
-oid4vc-dev wallet list
+eudi wallet list
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/oid4vc-dev@latest`.
+If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Setup only:
 
@@ -58,7 +58,7 @@ Manual flow:
 
 ```bash
 OFFER_URI=$(./scripts/create-offer.sh)
-oid4vc-dev wallet accept "$OFFER_URI"
+eudi wallet accept "$OFFER_URI"
 ```
 
 ## Parameters
@@ -91,7 +91,7 @@ oid4vc-dev wallet accept "$OFFER_URI"
 
 | Parameter | Value |
 |---|---|
-| Wallet directory | `~/.oid4vc-dev/wallet` |
+| Wallet directory | `~/.eudi-dev/wallet` |
 | Input | `openid-credential-offer://?credential_offer=...` |
 
 ### Why Inline `credential_offer`
@@ -123,5 +123,5 @@ OID4VCI_USER_PASSWORD=alice
 
 ```bash
 docker compose down -v
-oid4vc-dev wallet remove --all
+eudi wallet remove --all
 ```

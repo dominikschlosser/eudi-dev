@@ -21,21 +21,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // configBaseDir resolves the base directory holding the remote target and
-// the instance registry. OID4VC_DEV_HOME overrides it (used by tests and for
-// isolated setups).
-var configBaseDir = func() string {
-	if custom := os.Getenv("OID4VC_DEV_HOME"); custom != "" {
-		return custom
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".oid4vc-dev"
-	}
-	return filepath.Join(home, ".oid4vc-dev")
-}
+// the instance registry (overridable in tests).
+var configBaseDir = config.BaseDir
 
 type activeConfig struct {
 	URL string `json:"url"`

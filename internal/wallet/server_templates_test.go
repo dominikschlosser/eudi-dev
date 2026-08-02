@@ -19,7 +19,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 func TestTemplatesListIncludesPredefined(t *testing.T) {

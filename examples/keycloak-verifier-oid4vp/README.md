@@ -8,7 +8,7 @@ This example runs a local same-device OpenID4VP login against Keycloak using `oi
 2. `./scripts/generate-wallet.sh` prepares the standard `oid4vc-dev` wallet with PID credentials and a trust list endpoint reachable from Docker as `http://host.docker.internal:8085`.
 3. `docker compose up --force-recreate` starts Keycloak `26.6.0`, mounts `realm/wallet-demo-realm.json`, imports the realm on startup, and loads the OID4VP provider jar.
 4. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the public endpoints.
-5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, hands it to `oid4vc-dev wallet accept --auto-accept` for the automated headless path, follows the broker flow, and exchanges the returned code for tokens.
+5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, hands it to `eudi wallet accept --auto-accept` for the automated headless path, follows the broker flow, and exchanges the returned code for tokens.
 
 ## Flow Diagram
 
@@ -17,7 +17,7 @@ sequenceDiagram
     participant U as User
     participant KC as Keycloak 26.6.0
     participant EXT as keycloak-extension-oid4vp 0.6.1
-    participant W as oid4vc-dev wallet
+    participant W as eudi wallet
 
     U->>W: generate-pid --docker --base-url http://host.docker.internal:8085
     U->>KC: import static realm, client, OID4VP IdP
@@ -51,7 +51,7 @@ cd examples/keycloak-verifier-oid4vp
 ./start.sh
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/oid4vc-dev@latest`.
+If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Browser-driven flow:
 
@@ -59,10 +59,10 @@ Browser-driven flow:
 ./start.sh --browser
 ```
 
-`./start.sh --browser` runs `oid4vc-dev wallet register` automatically. On macOS that installs the custom scheme handlers. On Linux and Windows it is a no-op, so when Keycloak shows the wallet page, copy the `openid4vp://...` link target and run:
+`./start.sh --browser` runs `eudi wallet register` automatically. On macOS that installs the custom scheme handlers. On Linux and Windows it is a no-op, so when Keycloak shows the wallet page, copy the `openid4vp://...` link target and run:
 
 ```bash
-oid4vc-dev wallet accept '<openid4vp://...>'
+eudi wallet accept '<openid4vp://...>'
 ```
 
 Setup only:
@@ -113,7 +113,7 @@ Setup only:
 
 | Parameter | Value |
 |---|---|
-| Wallet store | `~/.oid4vc-dev/wallet` |
+| Wallet store | `~/.eudi-dev/wallet` |
 | Wallet base URL during wallet generation | `http://host.docker.internal:8085` |
 | Wallet port during presentation | `8085` |
 | Trust list endpoint on host | `http://localhost:8085/api/trustlist` |
@@ -135,6 +135,6 @@ OID4VC_WALLET_PORT=8085
 
 ```bash
 docker compose down -v
-oid4vc-dev wallet remove --all
+eudi wallet remove --all
 rm -f wallet-ca-cert.pem wallet-ca-key.pem
 ```

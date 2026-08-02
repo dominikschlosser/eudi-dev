@@ -30,8 +30,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 func testCertDER(dnsNames []string) (string, []byte) {

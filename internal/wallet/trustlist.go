@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 type trustListOptions struct {
@@ -64,14 +64,14 @@ type TrustListIndexEntry struct {
 // signed with the provided signing key.
 func GenerateTrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certificate) (string, error) {
 	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
-		OperatorName: "OID4VC Dev Wallet",
+		OperatorName: "EUDI Dev Wallet",
 		Profile: trustListProfile{
 			LoTEType:              localTrustListType,
 			IssuanceServiceType:   localIssuanceServiceType,
 			RevocationServiceType: localRevocationServiceType,
 			IssuanceServiceName:   "Issuance Service",
 			RevocationServiceName: "Revocation Service",
-			EntityName:            "OID4VC Dev Wallet Issuer",
+			EntityName:            "EUDI Dev Wallet Issuer",
 		},
 	})
 }
@@ -95,7 +95,7 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 		path = "/api/trustlist"
 	}
 	return generateTrustListJWTWithOptions(w.CAKey, w.CertChain[len(w.CertChain)-1], trustListOptions{
-		OperatorName:  "OID4VC Dev Wallet",
+		OperatorName:  "EUDI Dev Wallet",
 		Issuer:        strings.TrimRight(strings.TrimSpace(issuer), "/"),
 		TrustListPath: path,
 		Profile:       group.Profile,
@@ -273,7 +273,7 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 	certB64 := base64.StdEncoding.EncodeToString(caCert.Raw)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	if strings.TrimSpace(opts.OperatorName) == "" {
-		opts.OperatorName = "OID4VC Dev Wallet"
+		opts.OperatorName = "EUDI Dev Wallet"
 	}
 	if opts.Profile.LoTEType == "" {
 		opts.Profile = trustListProfile{
@@ -282,7 +282,7 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 			RevocationServiceType: localRevocationServiceType,
 			IssuanceServiceName:   "Issuance Service",
 			RevocationServiceName: "Revocation Service",
-			EntityName:            "OID4VC Dev Wallet Issuer",
+			EntityName:            "EUDI Dev Wallet Issuer",
 		}
 	}
 

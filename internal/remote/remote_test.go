@@ -146,3 +146,48 @@ func TestDiscoverRegistryAndPrune(t *testing.T) {
 		t.Error("unregister did not remove the instance file")
 	}
 }
+
+func TestDiscoverDedupesStaleRegistryFilesOnSamePort(t *testing.T) {
+	withTempConfigDir(t)
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"build_id": "b", "pid": 5555}`))
+	}))
+	defer live.Close()
+	liveURL, _ := url.Parse(live.URL)
+	port, _ := strconv.Atoi(liveURL.Port())
+
+	// A stale file from a dead server that used the same port, plus the
+	// current server's file. Both pass the health check because the current
+	// server answers on the port.
+	if err := RegisterInstance(Instance{PID: 1111, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RegisterInstance(Instance{PID: 5555, Port: port, URL: live.URL, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	found := Discover(500 * time.Millisecond)
+	count := 0
+	for _, di := range found {
+		if di.Port == port {
+			count++
+			if di.PID != 5555 {
+				t.Errorf("expected live pid 5555, got %d", di.PID)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one instance for the port, got %d (%v)", count, found)
+	}
+	if _, err := os.Stat(instanceFile(1111)); !os.IsNotExist(err) {
+		t.Error("stale registry file for the dead pid not pruned")
+	}
+	if _, err := os.Stat(instanceFile(5555)); err != nil {
+		t.Error("live instance file must remain")
+	}
+}

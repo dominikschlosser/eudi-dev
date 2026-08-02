@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 func TestGetResponseURI_PreferResponseURI(t *testing.T) {

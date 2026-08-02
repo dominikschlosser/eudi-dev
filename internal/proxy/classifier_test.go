@@ -26,10 +26,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
-	"github.com/dominikschlosser/oid4vc-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
 // --- classifyEntry tests ---

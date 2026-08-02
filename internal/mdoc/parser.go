@@ -21,7 +21,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // Parse decodes an mDOC credential from hex or base64url encoded input.

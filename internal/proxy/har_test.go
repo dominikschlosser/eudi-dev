@@ -148,7 +148,7 @@ func TestGenerateHARCreator(t *testing.T) {
 	har := GenerateHAR(nil)
 	log := har["log"].(map[string]any)
 	creator := log["creator"].(map[string]any)
-	if creator["name"] != "oid4vc-dev" {
-		t.Errorf("expected creator name oid4vc-dev, got %v", creator["name"])
+	if creator["name"] != "eudi-dev" {
+		t.Errorf("expected creator name eudi-dev, got %v", creator["name"])
 	}
 }

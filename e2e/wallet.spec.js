@@ -127,7 +127,7 @@ async function jsonGet(url) {
 test.describe("Wallet Dashboard", () => {
   test("shows wallet title and credential count", async ({ page }) => {
     await page.goto(WALLET_URL);
-    await expect(page.locator("h1")).toHaveText("OID4VC Dev Wallet");
+    await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
     await expect(page.locator("#cred-count")).toContainText("2 credentials");
   });
 

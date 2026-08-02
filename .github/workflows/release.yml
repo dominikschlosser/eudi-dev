@@ -24,7 +24,7 @@ jobs:
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          LDFLAGS="-s -w -X github.com/dominikschlosser/oid4vc-dev/cmd.Version=${VERSION}"
+          LDFLAGS="-s -w -X github.com/dominikschlosser/eudi-dev/cmd.Version=${VERSION}"
 
           targets=(
             "linux/amd64"
@@ -38,7 +38,7 @@ jobs:
           for target in "${targets[@]}"; do
             GOOS="${target%/*}"
             GOARCH="${target#*/}"
-            output="oid4vc-dev-${VERSION}-${GOOS}-${GOARCH}"
+            output="eudi-${VERSION}-${GOOS}-${GOARCH}"
             if [ "$GOOS" = "windows" ]; then
               output="${output}.exe"
             fi
@@ -86,5 +86,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ steps.version.outputs.tag }}
           tags: |
+            ghcr.io/dominikschlosser/eudi-dev:latest
+            ghcr.io/dominikschlosser/eudi-dev:${{ steps.version.outputs.tag }}
             ghcr.io/dominikschlosser/oid4vc-dev:latest
             ghcr.io/dominikschlosser/oid4vc-dev:${{ steps.version.outputs.tag }}

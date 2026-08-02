@@ -22,8 +22,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 func newIssuerMetadataServer(t *testing.T, issuer string, jwks []map[string]any) *httptest.Server {

@@ -26,7 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // WalletStore handles file-based persistence for the wallet.
@@ -48,13 +49,10 @@ type walletJSON struct {
 	Port               int                     `json:"port,omitempty"`
 }
 
-// DefaultWalletDir returns the default wallet storage directory.
+// DefaultWalletDir returns the default wallet storage directory inside the
+// tool's state directory (~/.eudi-dev, with a legacy ~/.oid4vc-dev fallback).
 func DefaultWalletDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".oid4vc-dev/wallet"
-	}
-	return filepath.Join(home, ".oid4vc-dev", "wallet")
+	return filepath.Join(config.BaseDir(), "wallet")
 }
 
 // NewWalletStore creates a new WalletStore for the given directory.

@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 func TestResolveCredentialIdentifier_FromAuthDetails(t *testing.T) {

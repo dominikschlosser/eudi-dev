@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // mockIssuerOpts configures the mock issuer for tests.

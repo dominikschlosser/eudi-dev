@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 func generateTestSDJWT(t *testing.T, cfg mock.SDJWTConfig) *Token {

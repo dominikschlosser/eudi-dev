@@ -95,7 +95,7 @@ func TestPrintEntryIncludesDecodeHints(t *testing.T) {
 
 	output := captureOutput(t, func() { PrintEntry(entry, 0) })
 
-	if !strings.Contains(output, "oid4vc-dev decode") {
+	if !strings.Contains(output, "eudi decode") {
 		t.Error("expected decode hint in output")
 	}
 	if !strings.Contains(output, "decode:") {
@@ -106,10 +106,10 @@ func TestPrintEntryIncludesDecodeHints(t *testing.T) {
 func TestPrintDecodeHintWithLabel(t *testing.T) {
 	output := captureOutput(t, func() { printDecodeHint("cred-value", "id_token", 0) })
 
-	if !strings.Contains(output, "oid4vc-dev decode") {
+	if !strings.Contains(output, "eudi decode") {
 		t.Errorf("expected decode command, got %q", output)
 	}
-	if !strings.Contains(output, "id_token: oid4vc-dev decode") {
+	if !strings.Contains(output, "id_token: eudi decode") {
 		t.Errorf("expected label in output, got %q", output)
 	}
 }
@@ -117,7 +117,7 @@ func TestPrintDecodeHintWithLabel(t *testing.T) {
 func TestPrintDecodeHintWithoutLabel(t *testing.T) {
 	output := captureOutput(t, func() { printDecodeHint("cred-value", "", 0) })
 
-	if !strings.Contains(output, "oid4vc-dev decode") {
+	if !strings.Contains(output, "eudi decode") {
 		t.Errorf("expected decode command, got %q", output)
 	}
 	if strings.Contains(output, "(") {

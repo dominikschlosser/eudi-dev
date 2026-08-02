@@ -24,10 +24,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // startRemoteTestWallet starts a real wallet server on a random port and
@@ -361,7 +361,7 @@ func TestCompletionInstall(t *testing.T) {
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("completion install fish: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".config", "fish", "completions", "oid4vc-dev.fish")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, ".config", "fish", "completions", rootCmd.Name()+".fish")); err != nil {
 		t.Errorf("fish completion file missing: %v", err)
 	}
 

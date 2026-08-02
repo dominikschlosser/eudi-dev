@@ -25,11 +25,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func TestCheckSDJWTIntegrity_AllMatch(t *testing.T) {

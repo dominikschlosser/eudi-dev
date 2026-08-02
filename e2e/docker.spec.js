@@ -83,7 +83,7 @@ test.describe("Docker Image", () => {
   test("wallet serves UI at /", async ({ page }) => {
     const response = await page.goto(WALLET_URL);
     expect(response.status()).toBe(200);
-    await expect(page.locator("h1")).toHaveText("OID4VC Dev Wallet");
+    await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
   });
 
   test("wallet has PID credentials pre-loaded", async () => {

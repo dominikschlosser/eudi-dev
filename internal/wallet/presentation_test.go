@@ -24,10 +24,10 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 // testEncJWK creates a JWK map suitable for encryption tests, with the required "alg" field.

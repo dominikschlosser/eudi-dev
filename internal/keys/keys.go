@@ -27,7 +27,7 @@ import (
 	"math/big"
 	"os"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // LoadPublicKey loads a public key from a PEM file or JWK JSON file.

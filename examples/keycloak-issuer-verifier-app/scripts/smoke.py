@@ -104,7 +104,7 @@ def reset_wallet():
     )
     if result.returncode != 0:
         output = strip_ansi((result.stdout or "") + ("\n" + result.stderr if result.stderr else ""))
-        fail(f"oid4vc-dev wallet remove --all failed:\n{output}".rstrip())
+        fail(f"eudi wallet remove --all failed:\n{output}".rstrip())
 
 
 def fetch(cookie_jar, url, method="GET", data=None, headers=None):
@@ -216,7 +216,7 @@ def run_wallet_accept(url, auto_accept=False):
     )
     output = strip_ansi((result.stdout or "") + ("\n" + result.stderr if result.stderr else ""))
     if result.returncode != 0:
-        fail(f"oid4vc-dev wallet accept failed:\n{output}".rstrip())
+        fail(f"eudi wallet accept failed:\n{output}".rstrip())
     return output.strip()
 
 

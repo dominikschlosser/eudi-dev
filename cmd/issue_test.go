@@ -21,13 +21,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/validate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // --- omitClaims unit tests ---

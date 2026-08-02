@@ -5,8 +5,8 @@ The primary use case for the Docker image is **automated integration testing of 
 ## Quick start
 
 ```bash
-docker pull ghcr.io/dominikschlosser/oid4vc-dev:latest
-docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/oid4vc-dev
+docker pull ghcr.io/dominikschlosser/eudi-dev:latest
+docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 ```
 
 The default CMD starts the wallet server with pre-loaded PID credentials in headless mode — ready for automated verifier testing out of the box.
@@ -14,8 +14,8 @@ The default CMD starts the wallet server with pre-loaded PID credentials in head
 You can override the command to use any CLI feature:
 
 ```bash
-echo "eyJhbGci..." | docker run -i ghcr.io/dominikschlosser/oid4vc-dev decode
-docker run -i ghcr.io/dominikschlosser/oid4vc-dev validate --trust-list https://example.com/trustlist.jwt < credential.txt
+echo "eyJhbGci..." | docker run -i ghcr.io/dominikschlosser/eudi-dev decode
+docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://example.com/trustlist.jwt < credential.txt
 ```
 
 ## How it works
@@ -62,7 +62,7 @@ When you access the wallet through Docker port mappings or Testcontainers, prefe
 ```yaml
 services:
   wallet:
-    image: ghcr.io/dominikschlosser/oid4vc-dev:latest
+    image: ghcr.io/dominikschlosser/eudi-dev:latest
     ports:
       - "8085:8085"
       - "8086:8086"
@@ -82,7 +82,7 @@ services:
 ## Testcontainers (Java)
 
 ```java
-GenericContainer<?> wallet = new GenericContainer<>("ghcr.io/dominikschlosser/oid4vc-dev:latest")
+GenericContainer<?> wallet = new GenericContainer<>("ghcr.io/dominikschlosser/eudi-dev:latest")
     .withExposedPorts(8085)
     .waitingFor(Wait.forHttp("/api/trustlist").forStatusCode(200));
 wallet.start();
@@ -112,7 +112,7 @@ String trustListUrl = walletUrl + "/api/trustlist";
 ctx := context.Background()
 wallet, _ := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
     ContainerRequest: testcontainers.ContainerRequest{
-        Image:        "ghcr.io/dominikschlosser/oid4vc-dev:latest",
+        Image:        "ghcr.io/dominikschlosser/eudi-dev:latest",
         ExposedPorts: []string{"8085/tcp"},
         WaitingFor:   wait.ForHTTP("/api/trustlist").WithPort("8085"),
     },
@@ -131,17 +131,17 @@ The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) 
 
 ```bash
 # my-templates/german-pid-sdjwt.json overrides the pre-defined PID template
-docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/oid4vc-dev \
+docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eudi-dev \
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
 
 Alternatively generate customized PIDs into a mounted wallet directory first (`wallet generate-pid` is deprecated, use the template based issuance):
 
 ```bash
-docker run --rm -v wallet-data:/root/.oid4vc-dev/wallet ghcr.io/dominikschlosser/oid4vc-dev \
+docker run --rm -v wallet-data:/root/.eudi-dev/wallet ghcr.io/dominikschlosser/eudi-dev \
   issue sdjwt --wallet --template german-pid-sdjwt --claims '{"given_name":"MAX","family_name":"POWER"}'
 
-docker run -p 8085:8085 -v wallet-data:/root/.oid4vc-dev/wallet ghcr.io/dominikschlosser/oid4vc-dev \
+docker run -p 8085:8085 -v wallet-data:/root/.eudi-dev/wallet ghcr.io/dominikschlosser/eudi-dev \
   wallet serve --auto-accept --port 8085
 ```
 
@@ -192,27 +192,27 @@ The wallet also derives its HTTPS issuer URL from the same host-selection mechan
 For automated verifier tests that need to trust that HTTPS endpoint explicitly, export the persisted certificate with:
 
 ```bash
-oid4vc-dev wallet tls-cert --docker --out wallet-tls-cert.pem
+eudi wallet tls-cert --docker --out wallet-tls-cert.pem
 ```
 
 If the verifier should trust all spawned wallets from one root instead of pinning one leaf certificate, export the shared wallet CA instead:
 
 ```bash
-oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
+eudi wallet ca-cert --out wallet-ca-cert.pem
 ```
 
 **Important:** The status list URI and issuer host are baked into generated credentials at generation time. When the verifier runs inside Docker and the wallet runs on the host (or vice versa), use `--docker` (or `--base-url` for a custom URL) so the status list URL, signed issuer metadata, and registrar endpoints are reachable from both sides:
 
 ```bash
 # Wallet on host, verifier in Docker
-oid4vc-dev wallet serve --pid --auto-accept --docker
+eudi wallet serve --pid --auto-accept --docker
 ```
 
 ```yaml
 # Docker Compose: both in containers — use the service name
 services:
   wallet:
-    image: ghcr.io/dominikschlosser/oid4vc-dev:latest
+    image: ghcr.io/dominikschlosser/eudi-dev:latest
     command: ["wallet", "serve", "--auto-accept", "--pid", "--port", "8085",
               "--base-url", "http://wallet:8085"]
     ports:

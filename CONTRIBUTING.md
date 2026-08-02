@@ -8,7 +8,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/dominikschlosser/oid4vc-dev.git
+git clone https://github.com/dominikschlosser/eudi-dev.git
 cd oid4vc-dev
 go build ./...
 go test ./...

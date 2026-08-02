@@ -26,12 +26,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/output"
-	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/output"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func remoteString(m map[string]any, key string) string {

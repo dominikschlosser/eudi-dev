@@ -33,9 +33,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 )
 
 // Server is the wallet HTTP server.

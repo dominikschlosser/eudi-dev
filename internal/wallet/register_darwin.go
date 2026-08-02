@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 const appBundleName = "OID4VC-Dev-Wallet.app"
@@ -38,7 +40,8 @@ func appBundlePath() string {
 
 func handlerScriptPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".oid4vc-dev", "url-handler.sh")
+	_ = home
+	return filepath.Join(config.BaseDir(), "url-handler.sh")
 }
 
 // RegisterURLSchemes creates a macOS .app bundle via osacompile and registers URL scheme handlers.

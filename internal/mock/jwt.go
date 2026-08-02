@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // JWTConfig holds options for generating a mock JWT VC credential.

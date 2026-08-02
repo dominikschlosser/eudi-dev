@@ -26,12 +26,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 // SessionTranscriptMode controls how the mDoc session transcript is constructed.

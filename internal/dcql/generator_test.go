@@ -17,8 +17,8 @@ package dcql
 import (
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 func TestFromSDJWT(t *testing.T) {

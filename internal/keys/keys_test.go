@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 func TestParsePublicKey_PEM_EC(t *testing.T) {

@@ -3,9 +3,9 @@
 Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server — every request and response is captured, classified by protocol step, decoded, and displayed both in the terminal and a live web dashboard.
 
 ```bash
-oid4vc-dev proxy --target http://localhost:8080
-oid4vc-dev proxy --target http://localhost:8080 --port 9090 --dashboard 9091
-oid4vc-dev proxy --target http://localhost:8080 --no-dashboard
+eudi proxy --target http://localhost:8080
+eudi proxy --target http://localhost:8080 --port 9090 --dashboard 9091
+eudi proxy --target http://localhost:8080 --no-dashboard
 ```
 
 ```
@@ -17,8 +17,8 @@ Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
 Optionally launch the target service as a subprocess — the proxy scans its stdout for encryption keys and credentials:
 
 ```bash
-oid4vc-dev proxy --target http://localhost:3000 -- mvn spring-boot:run
-oid4vc-dev proxy --target http://localhost:3000 -- npm start
+eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
+eudi proxy --target http://localhost:3000 -- npm start
 ```
 
 ## Traffic classification
@@ -40,7 +40,7 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 ## Features
 
 - **Smart decoding** — payloads are decoded inline (SD-JWT, JWT, mDOC, DCQL queries, JWE headers)
-- **Credential decode hints** — detected credentials are printed as `oid4vc-dev decode` commands for quick inspection
+- **Credential decode hints** — detected credentials are printed as `eudi decode` commands for quick inspection
 - **JARM/JWE decryption** — when the built-in wallet sends a `direct_post.jwt` response through the proxy, the encrypted payload is automatically decrypted (see [JWE Decryption](#jwe-decryption) below)
 - **Flow correlation** — related protocol steps are grouped by shared `state`/`nonce` values
 - **Web dashboard** at `http://localhost:9091` with live SSE updates, expandable cards, "View in Decoder" links, HAR export, and cURL copy
@@ -76,20 +76,20 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
     ┌ response_type: JWE (decrypted via debug key)
     ┌ encryption_alg: ECDH-ES
     ┌ response_payload: {"vp_token":{...},"state":"abc123"}
-  → oid4vc-dev decode 'eyJhbGci...'  (vp_token)
+  → eudi decode 'eyJhbGci...'  (vp_token)
 ```
 
 ## JWE decryption
 
-When the built-in wallet (`oid4vc-dev wallet`) sends an encrypted JARM response (`direct_post.jwt`) through the proxy, the proxy automatically decrypts the payload and shows the contained `vp_token` and `state`.
+When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`direct_post.jwt`) through the proxy, the proxy automatically decrypts the payload and shows the contained `vp_token` and `state`.
 
 This works via a debug header: the wallet includes the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding the request to the verifier, so the verifier never sees it.
 
 No configuration is needed — simply route the wallet through the proxy:
 
 ```
-oid4vc-dev wallet                          # wallet sends to response_uri
-oid4vc-dev proxy --target http://verifier  # proxy intercepts, decrypts, forwards
+eudi wallet                          # wallet sends to response_uri
+eudi proxy --target http://verifier  # proxy intercepts, decrypts, forwards
 ```
 
 ### Automatic key detection from service stdout
@@ -97,7 +97,7 @@ oid4vc-dev proxy --target http://verifier  # proxy intercepts, decrypts, forward
 When using a **third-party wallet** (not the built-in one), the debug header won't be present. If you launch the verifier service as a subprocess (with `--`), the proxy scans its stdout for CEK values and uses them to decrypt JWE responses automatically:
 
 ```bash
-oid4vc-dev proxy --target http://localhost:3000 -- mvn spring-boot:run
+eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
 ```
 
 The proxy detects lines matching patterns like:
@@ -111,7 +111,7 @@ This is best-effort — if no key is found, the proxy falls back to showing only
 When running as a subprocess, the proxy also scans the service's stdout for JWT/SD-JWT credentials. Detected credentials are added to the activity log with decode links:
 
 ```
-  → oid4vc-dev decode 'eyJhbGci...'  (vp_token)
+  → eudi decode 'eyJhbGci...'  (vp_token)
   → http://localhost:9091/decode?credential=eyJhbGci...
 ```
 
@@ -122,8 +122,8 @@ When running as a subprocess, the proxy also scans the service's stdout for JWT/
   - `[VP] SD-JWT presentation created: ...`
 - Launch the target service with `--` to auto-detect keys/credentials from its stdout:
   ```bash
-  oid4vc-dev proxy --target http://localhost:3000 -- mvn spring-boot:run
+  eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
   ```
   Service output appears with a `[service]` prefix; detected credentials get decode links.
 - Use `--all-traffic` to see non-OID4VP/VCI requests (health checks, favicon, etc.)
-- Pipe to `jq` with `--json` for structured analysis: `oid4vc-dev proxy --target ... --json | jq '.credentials'`
+- Pipe to `jq` with `--json` for structured analysis: `eudi proxy --target ... --json | jq '.credentials'`

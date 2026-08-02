@@ -4,26 +4,26 @@ Auto-detect and inspect credentials (SD-JWT, JWT VC, mDOC), OpenID4VCI/VP reques
 
 ```bash
 # Credentials
-oid4vc-dev decode credential.txt
-oid4vc-dev decode "eyJhbGci..."
-oid4vc-dev decode --json credential.txt
-oid4vc-dev decode -v credential.txt
-cat credential.txt | oid4vc-dev decode
+eudi decode credential.txt
+eudi decode "eyJhbGci..."
+eudi decode --json credential.txt
+eudi decode -v credential.txt
+cat credential.txt | eudi decode
 
 # OpenID4VCI credential offers
-oid4vc-dev decode 'openid-credential-offer://?credential_offer_uri=...'
-oid4vc-dev decode 'https://issuer.example/offer?credential_offer=...'
+eudi decode 'openid-credential-offer://?credential_offer_uri=...'
+eudi decode 'https://issuer.example/offer?credential_offer=...'
 
 # OpenID4VP authorization requests
-oid4vc-dev decode 'openid4vp://authorize?...'
-oid4vc-dev decode 'haip-vp://authorize?...'
-oid4vc-dev decode 'eudi-openid4vp://authorize?...'
-oid4vc-dev decode request.jwt
-cat offer.json | oid4vc-dev decode
+eudi decode 'openid4vp://authorize?...'
+eudi decode 'haip-vp://authorize?...'
+eudi decode 'eudi-openid4vp://authorize?...'
+eudi decode request.jwt
+cat offer.json | eudi decode
 
 # ETSI trust lists
-oid4vc-dev decode trust-list.jwt
-oid4vc-dev decode -f trustlist https://example.com/trust-list.jwt
+eudi decode trust-list.jwt
+eudi decode -f trustlist https://example.com/trust-list.jwt
 ```
 
 ## Auto-detection order
@@ -40,11 +40,11 @@ oid4vc-dev decode -f trustlist https://example.com/trust-list.jwt
 Use `--format` / `-f` to skip auto-detection when it gets it wrong (e.g. a credential JWT whose payload happens to contain `credential_issuer`):
 
 ```bash
-oid4vc-dev decode -f jwt "eyJhbGci..."
-oid4vc-dev decode -f sdjwt credential.txt
-oid4vc-dev decode -f mdoc credential.hex
-oid4vc-dev decode -f vci 'openid-credential-offer://...'
-oid4vc-dev decode -f vp request.jwt
+eudi decode -f jwt "eyJhbGci..."
+eudi decode -f sdjwt credential.txt
+eudi decode -f mdoc credential.hex
+eudi decode -f vci 'openid-credential-offer://...'
+eudi decode -f vp request.jwt
 ```
 
 Accepted values: `sdjwt` (or `sd-jwt`), `jwt`, `mdoc` (or `mso_mdoc`), `vci` (or `oid4vci`), `vp` (or `oid4vp`), `trustlist` (or `trust`).
@@ -54,13 +54,13 @@ Accepted values: `sdjwt` (or `sd-jwt`), `jwt`, `mdoc` (or `mso_mdoc`), `vci` (or
 Scan a QR code directly from an image file or a screen capture:
 
 ```bash
-oid4vc-dev decode --qr screenshot.png
-oid4vc-dev decode --screen
+eudi decode --qr screenshot.png
+eudi decode --screen
 ```
 
 `--screen` uses the native macOS `screencapture` tool in interactive selection mode — a crosshair appears to let you select the region containing the QR code. On other platforms, take a screenshot and use `--qr screenshot.png` instead.
 
-> **Note:** Screen capture permission on macOS is granted to the **terminal app** (Terminal.app, iTerm2, etc.), not to `oid4vc-dev` itself. If permission is missing, System Settings will be opened automatically to the Screen Recording pane — enable access for your terminal app there, then re-run the command.
+> **Note:** Screen capture permission on macOS is granted to the **terminal app** (Terminal.app, iTerm2, etc.), not to the `eudi` binary itself. If permission is missing, System Settings will be opened automatically to the Screen Recording pane — enable access for your terminal app there, then re-run the command.
 
 ## Flags
 

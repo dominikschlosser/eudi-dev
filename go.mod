@@ -1,4 +1,4 @@
-module github.com/dominikschlosser/oid4vc-dev
+module github.com/dominikschlosser/eudi-dev
 
 go 1.26.0
 

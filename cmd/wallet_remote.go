@@ -26,7 +26,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
 )
 
 // remoteFlag is the one-off remote override (--remote <url>, or --remote
@@ -66,7 +66,7 @@ func instancesUseCmd() *cobra.Command {
 		ValidArgsFunction: completeUseTargets,
 		Short:             "Switch wallet management to a remote instance (or back to local)",
 		Long: "Selects which wallet the management commands operate on. With a URL the CLI manages that " +
-			"running oid4vc-dev wallet server over its REST API. With \"local\" it manages the local wallet store again. " +
+			"running eudi-dev wallet server over its REST API. With \"local\" it manages the local wallet store again. " +
 			"Without arguments it prints the current target.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -98,7 +98,7 @@ func instancesUseCmd() *cobra.Command {
 			}
 			version, ok := healthSummary(normalized)
 			if !ok {
-				return fmt.Errorf("no oid4vc-dev wallet reachable at %s (is it running?)", normalized)
+				return fmt.Errorf("no eudi-dev wallet reachable at %s (is it running?)", normalized)
 			}
 			if _, err := remote.SetActive(normalized); err != nil {
 				return err
@@ -126,7 +126,7 @@ func healthSummary(url string) (string, bool) {
 func walletInstancesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "instances",
-		Short: "Manage running oid4vc-dev wallet instances on this system",
+		Short: "Manage running eudi-dev wallet instances on this system",
 		Long: "Finds, stops, and selects running wallet servers. Without a subcommand it lists them " +
 			"(same as `wallet instances list`).",
 		Args: cobra.NoArgs,
@@ -193,7 +193,7 @@ func instancesKillCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "kill [pid|port|url]",
 		ValidArgsFunction: completeInstanceTargets,
-		Short:             "Stop a running oid4vc-dev wallet instance",
+		Short:             "Stop a running eudi-dev wallet instance",
 		Long: "Stops a running wallet server found by `wallet instances list`. The target is a pid, a port, or a URL. " +
 			"The instance is asked to exit via its shutdown endpoint. When it does not respond, a local process " +
 			"gets a SIGTERM instead.",

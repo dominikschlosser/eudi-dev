@@ -22,8 +22,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // resetTemplateTestState resets the package-level flag variables and the

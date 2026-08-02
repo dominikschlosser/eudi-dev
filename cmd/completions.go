@@ -29,8 +29,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
 )
 
 // completionClient returns a client for the active remote wallet with a

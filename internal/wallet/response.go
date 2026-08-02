@@ -24,7 +24,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // SubmitDirectPostObject submits an authorization response object via direct_post.

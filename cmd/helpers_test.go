@@ -25,9 +25,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func TestTypeLabel(t *testing.T) {

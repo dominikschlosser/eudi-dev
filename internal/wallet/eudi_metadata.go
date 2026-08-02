@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 const (
@@ -207,7 +207,7 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 		}
 	}
 	if spec.EntityName == "" {
-		spec.EntityName = "OID4VC Dev Wallet Issuer"
+		spec.EntityName = "EUDI Dev Wallet Issuer"
 	}
 	if spec.IssuanceServiceName == "" {
 		spec.IssuanceServiceName = "Issuance Service"
@@ -275,7 +275,7 @@ func applyPIDTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestationS
 		spec.SchemeTerritory = "EU"
 	}
 	if spec.EntityName == "" {
-		spec.EntityName = "OID4VC Dev Wallet PID Provider"
+		spec.EntityName = "EUDI Dev Wallet PID Provider"
 	}
 	if spec.IssuanceServiceType == "" {
 		spec.IssuanceServiceType = pidIssuanceServiceType
@@ -297,7 +297,7 @@ func applyLocalTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestatio
 		spec.TrustListType = localTrustListType
 	}
 	if spec.EntityName == "" {
-		spec.EntityName = "OID4VC Dev Wallet Issuer"
+		spec.EntityName = "EUDI Dev Wallet Issuer"
 	}
 	if spec.IssuanceServiceType == "" {
 		spec.IssuanceServiceType = localIssuanceServiceType
@@ -344,19 +344,19 @@ func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
 	profile := providerRegistrationProfile{Entitlements: dedupeStrings(entitlementSet)}
 	if len(profile.Entitlements) == 0 {
 		profile.Entitlements = []string{serviceProviderEntitlement}
-		profile.TradeName = "OID4VC Dev Wallet Service Provider"
+		profile.TradeName = "EUDI Dev Wallet Service Provider"
 		profile.Description = "Local EUDI wallet service-provider dataset for testing"
 		return profile
 	}
 	switch {
 	case hasPID && hasIssuer && len(profile.Entitlements) > 1:
-		profile.TradeName = "OID4VC Dev Wallet Multi-Attestation Provider"
+		profile.TradeName = "EUDI Dev Wallet Multi-Attestation Provider"
 		profile.Description = "Local EUDI issuer dataset for mixed PID and non-PID attestation testing"
 	case hasPID:
-		profile.TradeName = "OID4VC Dev Wallet PID Provider"
+		profile.TradeName = "EUDI Dev Wallet PID Provider"
 		profile.Description = "Local EUDI PID provider dataset for issuer-authorization testing"
 	default:
-		profile.TradeName = "OID4VC Dev Wallet Non-PID Attestation Provider"
+		profile.TradeName = "EUDI Dev Wallet Non-PID Attestation Provider"
 		profile.Description = "Local EUDI non-PID attestation provider dataset for issuer-authorization testing"
 	}
 	return profile
@@ -401,7 +401,7 @@ func inferWalletTrustListProfile(w *Wallet) trustListProfile {
 		RevocationServiceType: localRevocationServiceType,
 		IssuanceServiceName:   "Issuance Service",
 		RevocationServiceName: "Revocation Service",
-		EntityName:            "OID4VC Dev Wallet Issuer",
+		EntityName:            "EUDI Dev Wallet Issuer",
 	}
 }
 

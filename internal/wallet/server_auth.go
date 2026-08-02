@@ -26,7 +26,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 func newConsentID() string {

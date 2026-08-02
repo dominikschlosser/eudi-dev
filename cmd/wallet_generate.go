@@ -19,8 +19,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func walletGeneratePIDCmd() *cobra.Command {
@@ -129,8 +129,8 @@ func walletGeneratePIDCmd() *cobra.Command {
 // prints the equivalent template-based issue commands, carrying over the
 // claim and VCT flags the user passed.
 func printGeneratePIDDeprecation(cmd *cobra.Command, claimsFlag, vctFlag string) {
-	sdEquiv := "oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt"
-	mdocEquiv := "oid4vc-dev issue mdoc --wallet --template german-pid-mdoc"
+	sdEquiv := binaryName() + " issue sdjwt --wallet --template german-pid-sdjwt"
+	mdocEquiv := binaryName() + " issue mdoc --wallet --template german-pid-mdoc"
 	if claimsFlag != "" {
 		sdEquiv += " --claims '" + claimsFlag + "'"
 		mdocEquiv += " --claims '" + claimsFlag + "'"

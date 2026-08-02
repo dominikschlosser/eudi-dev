@@ -1,10 +1,14 @@
-# oid4vc-dev
+# eudi-dev
 
-[![CI](https://github.com/dominikschlosser/oid4vc-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikschlosser/oid4vc-dev/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/dominikschlosser/oid4vc-dev/graph/badge.svg)](https://codecov.io/gh/dominikschlosser/oid4vc-dev)
-[![Release](https://img.shields.io/github/v/release/dominikschlosser/oid4vc-dev)](https://github.com/dominikschlosser/oid4vc-dev/releases/latest)
+[![CI](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/dominikschlosser/eudi-dev/graph/badge.svg)](https://codecov.io/gh/dominikschlosser/eudi-dev)
+[![Release](https://img.shields.io/github/v/release/dominikschlosser/eudi-dev)](https://github.com/dominikschlosser/eudi-dev/releases/latest)
 
-A developer toolkit for OpenID4VC — decode, issue, and present verifiable credentials, run a testing wallet, or proxy live wallet traffic for debugging.
+A developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and present verifiable credentials, run a testing wallet, or proxy live wallet traffic for debugging. The CLI command is `eudi`.
+
+> **Disclaimer:** This is an independent open source project. It is **not** an official repository of the European Commission or the European Union, has no affiliation with them, and is not endorsed by them. "EUDI" is used descriptively (a developer tool for the European Digital Identity ecosystem). For official EUDI Wallet resources see the [eu-digital-identity-wallet](https://github.com/eu-digital-identity-wallet) organization.
+
+> **Renamed from oid4vc-dev:** The old name keeps working for the time being. A binary named `oid4vc-dev` behaves identically (help and completion adapt to the invoked name), the legacy `~/.oid4vc-dev` state directory and `OID4VC_DEV_HOME` variable are still honored, and the `ghcr.io/dominikschlosser/oid4vc-dev` image keeps receiving releases.
 
 ## Highlights
 
@@ -20,27 +24,27 @@ A developer toolkit for OpenID4VC — decode, issue, and present verifiable cred
 
 ### From GitHub Releases
 
-Download the latest binary for your platform from [Releases](https://github.com/dominikschlosser/oid4vc-dev/releases).
+Download the latest binary for your platform from [Releases](https://github.com/dominikschlosser/eudi-dev/releases).
 
 ### From source
 
 ```bash
-go install github.com/dominikschlosser/oid4vc-dev@latest
+go install github.com/dominikschlosser/eudi-dev@latest
 ```
 
 ### Build locally
 
 ```bash
-git clone https://github.com/dominikschlosser/oid4vc-dev.git
-cd oid4vc-dev
-go build -o oid4vc-dev .
+git clone https://github.com/dominikschlosser/eudi-dev.git
+cd eudi-dev
+go build -o eudi .
 ```
 
 ### Docker
 
 ```bash
-docker pull ghcr.io/dominikschlosser/oid4vc-dev:latest
-docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/oid4vc-dev
+docker pull ghcr.io/dominikschlosser/eudi-dev:latest
+docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 ```
 
 The default CMD starts the wallet server with pre-loaded PID credentials in headless mode — ready for automated verifier testing out of the box.
@@ -52,7 +56,7 @@ The default CMD starts the wallet server with pre-loaded PID credentials in head
 ## Usage
 
 ```
-oid4vc-dev [--json] [--no-color] [-v] <command> [flags] [input]
+eudi [--json] [--no-color] [-v] <command> [flags] [input]
 ```
 
 Input can be a **file path**, **URL**, **raw credential string**, or piped via **stdin**.
@@ -60,7 +64,7 @@ Input can be a **file path**, **URL**, **raw credential string**, or piped via *
 Shell completion covers all subcommands, flags, and known values (template names, credential IDs, running wallet instances). Install it into your shell init with one command (bash, zsh, and fish, detected from `$SHELL` when no argument is given):
 
 ```bash
-oid4vc-dev completion install
+eudi completion install
 ```
 
 ### Commands
@@ -84,13 +88,13 @@ oid4vc-dev completion install
 A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration.
 
 ```bash
-oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt   # Issue a PID into the wallet
-oid4vc-dev wallet serve                 # Start web UI + OID4VP endpoints
-oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
-oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
-oid4vc-dev wallet accept 'openid4vp://authorize?...'
-oid4vc-dev wallet scan --screen         # QR scan → auto-dispatch
-oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
+eudi issue sdjwt --wallet --template german-pid-sdjwt   # Issue a PID into the wallet
+eudi wallet serve                 # Start web UI + OID4VP endpoints
+eudi wallet ca-cert --out wallet-ca-cert.pem
+eudi wallet tls-cert --out wallet-tls-cert.pem
+eudi wallet accept 'openid4vp://authorize?...'
+eudi wallet scan --screen         # QR scan → auto-dispatch
+eudi wallet logs -f               # Follow persisted wallet interactions
 ```
 
 > **Security:** The wallet server exposes unauthenticated HTTP endpoints for credential management and presentation flows. It is designed exclusively for **local development and testing** — never expose it to untrusted networks.
@@ -120,12 +124,12 @@ When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you 
 Generate test SD-JWT, JWT, or mDOC credentials for development and testing.
 
 ```bash
-oid4vc-dev issue sdjwt --pid
-oid4vc-dev issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
-oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
-oid4vc-dev issue jwt --claims '{"name":"Test","age":30}'
-oid4vc-dev issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
-oid4vc-dev issue sdjwt | oid4vc-dev decode
+eudi issue sdjwt --pid
+eudi issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
+eudi issue sdjwt --pid --always-disclosed issuing_country,address.country
+eudi issue jwt --claims '{"name":"Test","age":30}'
+eudi issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
+eudi issue sdjwt | eudi decode
 ```
 
 Reusable claim sets live in credential templates (`templates list|show|save|import|delete`). Templates carry the credential type, default claims, and the claims to issue without selective disclosure. They work in the CLI, the HTTP API, and the wallet UI.
@@ -140,7 +144,7 @@ Reusable claim sets live in credential templates (`templates list|show|save|impo
 Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer with a live web dashboard.
 
 ```bash
-oid4vc-dev proxy --target http://localhost:8080
+eudi proxy --target http://localhost:8080
 ```
 
 ```
@@ -158,9 +162,9 @@ Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
 Start a local web UI for decoding and validating credentials in the browser.
 
 ```bash
-oid4vc-dev serve
-oid4vc-dev serve --port 3000
-oid4vc-dev serve credential.txt
+eudi serve
+eudi serve --port 3000
+eudi serve credential.txt
 ```
 
 Opens a split-pane interface at `http://localhost:8080` (default) with auto-decode on paste, format detection, collapsible sections, signature verification, and dark/light theme. Pass a credential as an argument to pre-fill the input on load.
@@ -176,9 +180,9 @@ Opens a split-pane interface at `http://localhost:8080` (default) with auto-deco
 Auto-detect and decode credentials (SD-JWT, JWT VC, mDOC), OpenID4VCI/VP requests, and ETSI trust lists.
 
 ```bash
-oid4vc-dev decode credential.txt
-oid4vc-dev decode 'openid4vp://authorize?...'
-oid4vc-dev decode --screen                    # QR scan from screen
+eudi decode credential.txt
+eudi decode 'openid4vp://authorize?...'
+eudi decode --screen                    # QR scan from screen
 ```
 
 → [Full documentation](docs/decode.md) — auto-detection order, format override, QR scanning, flags
@@ -190,9 +194,9 @@ oid4vc-dev decode --screen                    # QR scan from screen
 Verify signatures, check expiry, and check revocation status.
 
 ```bash
-oid4vc-dev validate --key issuer-key.pem credential.txt
-oid4vc-dev validate --trust-list trust-list.jwt credential.txt
-oid4vc-dev validate credential.txt
+eudi validate --key issuer-key.pem credential.txt
+eudi validate --trust-list trust-list.jwt credential.txt
+eudi validate credential.txt
 ```
 
 → [Full documentation](docs/validate.md) — flags, trust list explanation
@@ -204,7 +208,7 @@ oid4vc-dev validate credential.txt
 Generate a DCQL (Digital Credentials Query Language) query from a credential's claims. Always outputs JSON.
 
 ```bash
-oid4vc-dev dcql credential.txt
+eudi dcql credential.txt
 ```
 
 The wallet evaluates `credential_sets` constraints when processing DCQL queries, selecting the best matching option from each set.

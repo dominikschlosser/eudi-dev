@@ -19,7 +19,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 // ParseAuthorizationRequest parses an OID4VP authorization request from a URI or query params.

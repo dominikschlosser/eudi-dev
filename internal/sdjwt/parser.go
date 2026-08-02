@@ -22,7 +22,7 @@ import (
 	"hash"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // Parse splits and decodes an SD-JWT token.

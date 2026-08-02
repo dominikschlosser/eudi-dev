@@ -23,8 +23,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 )
 
 // batchProofKeyCount is the number of proofs the wallet sends when the issuer

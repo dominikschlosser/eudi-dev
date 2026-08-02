@@ -28,7 +28,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // ExtractStatusRef extracts the status list reference from SD-JWT claims or mDOC MSO status.

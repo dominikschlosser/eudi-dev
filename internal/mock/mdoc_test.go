@@ -21,7 +21,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 )
 
 func TestGenerateMDOC_DefaultClaims(t *testing.T) {

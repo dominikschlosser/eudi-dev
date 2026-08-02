@@ -23,14 +23,14 @@ import (
 
 // Version is set at build time via -ldflags:
 //
-//	go build -ldflags="-X github.com/dominikschlosser/oid4vc-dev/cmd.Version=1.0.0"
+//	go build -ldflags="-X github.com/dominikschlosser/eudi-dev/cmd.Version=1.0.0"
 var Version = "dev"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("oid4vc-dev %s\n", Version)
+		fmt.Printf("%s %s (eudi-dev)\n", binaryName(), Version)
 	},
 }
 

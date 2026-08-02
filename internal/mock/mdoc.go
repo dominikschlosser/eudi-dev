@@ -26,7 +26,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // MDOCConfig holds options for generating a mock mDOC credential.

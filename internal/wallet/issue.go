@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // DefaultIssueExpiry is the credential lifetime used when no expiry is given.

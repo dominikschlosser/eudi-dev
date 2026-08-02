@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/jsonutil"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 // ValidateHAIPCompliance checks an authorization request against HAIP 1.0 requirements.

@@ -216,7 +216,7 @@ def run_wallet_accept(wallet_url):
     )
     output = strip_ansi((result.stdout or "") + ("\n" + result.stderr if result.stderr else ""))
     if result.returncode != 0:
-        fail(f"oid4vc-dev wallet accept failed:\n{output}".rstrip())
+        fail(f"eudi wallet accept failed:\n{output}".rstrip())
     redirect_uri = extract_redirect_uri(output)
     if not redirect_uri:
         fail(f"Could not extract Keycloak redirect URI from wallet output:\n{output}".rstrip())

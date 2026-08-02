@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
 )
 
 // VerifyResult contains the result of signature and validity verification.

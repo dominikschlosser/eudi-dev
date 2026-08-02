@@ -17,7 +17,7 @@
 // of claims that are embedded plainly instead of being selectively
 // disclosable. Pre-defined templates compiled into the binary cover the German EUDI PID;
 // user templates are JSON files in the wallet directory's templates/
-// subdirectory (~/.oid4vc-dev/wallet/templates/ by default). A user template
+// subdirectory (the wallet directory's templates/ subdirectory by default). A user template
 // with the same name as a pre-defined one replaces it.
 package credtemplate
 
@@ -29,7 +29,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // Template describes a reusable credential template. All fields except Claims
@@ -68,16 +69,11 @@ type Template struct {
 var templateExtensions = []string{".json", ".template"}
 
 // DirForWallet returns the template directory inside the given wallet
-// directory. An empty walletDir selects the default wallet directory
-// (~/.oid4vc-dev/wallet).
+// directory. An empty walletDir selects the default wallet directory inside
+// the tool's state directory.
 func DirForWallet(walletDir string) string {
 	if walletDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			walletDir = filepath.Join(".oid4vc-dev", "wallet")
-		} else {
-			walletDir = filepath.Join(home, ".oid4vc-dev", "wallet")
-		}
+		walletDir = filepath.Join(config.BaseDir(), "wallet")
 	}
 	return filepath.Join(walletDir, "templates")
 }
@@ -201,7 +197,7 @@ func Load(nameOrPath, dir string) (*Template, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("template %q not found (looked in %s and pre-defined templates; run `oid4vc-dev templates list`)", nameOrPath, dir)
+	return nil, fmt.Errorf("template %q not found (looked in %s and pre-defined templates; run `templates list`)", nameOrPath, dir)
 }
 
 // Save writes a user template to dir (the default directory when dir is

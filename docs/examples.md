@@ -2,15 +2,15 @@
 
 Runnable integration scenarios live under [`examples/`](../examples/README.md).
 
-These examples are meant to show complete local setups around `oid4vc-dev`, including any Docker compose files, bootstrap scripts, wallet preparation steps, exact versions, flow diagrams, and the concrete parameter values each scenario uses.
+These examples are meant to show complete local setups around `eudi-dev`, including any Docker compose files, bootstrap scripts, wallet preparation steps, exact versions, flow diagrams, and the concrete parameter values each scenario uses.
 
 ## Scenarios
 
-### Keycloak Issuer + oid4vc-dev Wallet
+### Keycloak Issuer + eudi-dev Wallet
 
 Folder: [`examples/keycloak-issuer-wallet`](../examples/keycloak-issuer-wallet/README.md)
 
-Use this when you want to run Keycloak `26.6.0` as an OpenID4VCI issuer and redeem the resulting offer with an `oid4vc-dev` wallet.
+Use this when you want to run Keycloak `26.6.0` as an OpenID4VCI issuer and redeem the resulting offer with an `eudi-dev` wallet.
 
 It includes:
 
@@ -23,7 +23,7 @@ It includes:
 
 Folder: [`examples/keycloak-verifier-oid4vp`](../examples/keycloak-verifier-oid4vp/README.md)
 
-Use this when you want to run Keycloak `26.6.0` as an OpenID4VP verifier with `keycloak-extension-oid4vp` and use `oid4vc-dev` as the wallet.
+Use this when you want to run Keycloak `26.6.0` as an OpenID4VP verifier with `keycloak-extension-oid4vp` and use `eudi-dev` as the wallet.
 
 It includes:
 
@@ -31,7 +31,7 @@ It includes:
 - wallet generation helpers
 - verifier bootstrap scripts
 - a headless same-device login test
-- a browser-driven command-line flow that works with a registered `oid4vc-dev` wallet
+- a browser-driven command-line flow that works with a registered `eudi-dev` wallet
 
 ### Keycloak Issuer + Verifier Demo App
 
@@ -53,7 +53,7 @@ It includes:
 
 Folder: [`examples/keycloak-web-wallet`](../examples/keycloak-web-wallet/README.md)
 
-Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `oid4vc-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login — the setup to copy for hosted environments, automated tests, and non-macOS platforms.
+Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login — the setup to copy for hosted environments, automated tests, and non-macOS platforms.
 
 It includes:
 

@@ -23,10 +23,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
 )
 
 // CanResolveJWTIssuerMetadata reports whether the token has enough information

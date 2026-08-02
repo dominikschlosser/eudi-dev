@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
-	"github.com/dominikschlosser/oid4vc-dev/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 )
 
 // handleGetCredential returns a single stored credential by ID.

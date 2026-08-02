@@ -17,6 +17,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -28,8 +30,19 @@ var (
 	verbose    bool
 )
 
+// binaryName resolves the command name from the invoked binary so the
+// legacy oid4vc-dev name keeps working everywhere (help texts, completion
+// registration) while eudi is the primary name.
+func binaryName() string {
+	base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	if strings.HasPrefix(base, "oid4vc-dev") {
+		return "oid4vc-dev"
+	}
+	return "eudi"
+}
+
 var rootCmd = &cobra.Command{
-	Use:   "oid4vc-dev",
+	Use:   binaryName(),
 	Short: "Decode, validate, and test verifiable credentials (SD-JWT, mDOC)",
 	Long:  "A local-first CLI tool for decoding, validating, and testing verifiable credentials. Supports SD-JWT, mDOC/mso_mdoc, OID4VP/OID4VCI flows, ETSI trust lists, and includes a testing wallet.",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {

@@ -29,7 +29,7 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, apu, apv []byte) (string, []byte, error) {

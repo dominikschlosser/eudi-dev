@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // Parse parses an ETSI TS 119 602 trust list JWT.

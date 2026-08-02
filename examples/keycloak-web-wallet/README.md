@@ -75,7 +75,7 @@ sequenceDiagram
     participant B as Browser
     participant APP as Demo UI (:9090)
     participant KC as Keycloak (:9080, issuer + verifier)
-    participant W as oid4vc-dev wallet (:9085)
+    participant W as eudi wallet (:9085)
 
     Note over B,W: Issuance
     B->>APP: Create credential offer

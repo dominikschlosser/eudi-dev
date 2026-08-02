@@ -16,8 +16,8 @@ OFFER_URI="$("${SCRIPT_DIR}/create-offer.sh")"
 echo "Redeeming offer:"
 echo "  ${OFFER_URI}"
 
-oid4vc-dev wallet accept "${OFFER_URI}"
+eudi wallet accept "${OFFER_URI}"
 
 echo
 echo "Stored credentials:"
-oid4vc-dev wallet list
+eudi wallet list

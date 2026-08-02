@@ -31,10 +31,10 @@ import (
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // dispatchOID4Opts holds options for dispatching an OID4VP/VCI URI.
@@ -354,7 +354,8 @@ func registeredWalletListenerBaseURL() string {
 	if err != nil {
 		return ""
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".oid4vc-dev", "url-handler.sh"))
+	_ = home
+	raw, err := os.ReadFile(filepath.Join(config.BaseDir(), "url-handler.sh"))
 	if err != nil {
 		return ""
 	}

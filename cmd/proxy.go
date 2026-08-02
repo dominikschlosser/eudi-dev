@@ -30,8 +30,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/proxy"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/proxy"
 )
 
 var (
@@ -55,9 +55,9 @@ credentials (best-effort), enabling automatic JWE decryption and credential
 decode links even when using third-party wallets.
 
 Examples:
-  oid4vc-dev proxy --target http://localhost:8080
-  oid4vc-dev proxy --target http://localhost:3000 -- mvn spring-boot:run
-  oid4vc-dev proxy --target http://localhost:3000 -- npm start`,
+  eudi proxy --target http://localhost:8080
+  eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
+  eudi proxy --target http://localhost:3000 -- npm start`,
 	RunE:               runProxy,
 	DisableFlagParsing: false,
 	TraverseChildren:   true,
@@ -125,7 +125,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	cyan := color.New(color.FgCyan, color.Bold)
 	dim := color.New(color.Faint)
 
-	cyan.Printf("OID4VC Dev Proxy %s\n", Version)
+	cyan.Printf("EUDI Dev Proxy %s\n", Version)
 	dim.Println("───────────────────────────────────────")
 	fmt.Printf("  Target:    %s\n", proxyTarget)
 	fmt.Printf("  Proxy:     http://localhost:%d\n", proxyPort)

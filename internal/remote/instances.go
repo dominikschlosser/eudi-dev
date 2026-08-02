@@ -28,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // Instance describes a running wallet server. Every `wallet serve` writes an
@@ -142,13 +142,23 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
 			continue
 		}
+		livePID := inst.PID
+		if pid, ok := version["pid"].(float64); ok {
+			livePID = int(pid)
+		}
+		if livePID != inst.PID {
+			// A different process answers on this port now: this file
+			// belongs to a dead instance and only looked alive because a
+			// new server took over the port.
+			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
+		}
+		if seenPorts[inst.Port] {
+			continue
+		}
 		di := DiscoveredInstance{Instance: inst, Source: "registry"}
+		di.PID = livePID
 		if build, ok := version["build_id"].(string); ok {
 			di.BuildID = build
-		}
-		if pid, ok := version["pid"].(float64); ok && int(pid) != inst.PID {
-			// A different process answers on this port now.
-			di.PID = int(pid)
 		}
 		found = append(found, di)
 		seenPorts[inst.Port] = true
@@ -205,7 +215,10 @@ func scanProcesses() []scannedProcess {
 	self := os.Getpid()
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || !strings.Contains(line, "wallet serve") || !strings.Contains(line, "oid4vc") {
+		if line == "" || !strings.Contains(line, "wallet serve") {
+			continue
+		}
+		if !strings.Contains(line, "oid4vc") && !strings.Contains(line, "eudi") {
 			continue
 		}
 		fields := strings.SplitN(line, " ", 2)

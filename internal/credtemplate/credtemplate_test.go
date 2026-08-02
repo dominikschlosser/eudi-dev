@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 func TestPredefinedTemplates(t *testing.T) {

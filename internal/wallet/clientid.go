@@ -26,9 +26,9 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/jsonutil"
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 // VerifyRequestObjectSignature verifies the Request Object JWS using the leaf x5c certificate.

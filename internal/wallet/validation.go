@@ -19,7 +19,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 // ValidateAuthorizationRequest evaluates request syntax, verifier metadata, and

@@ -109,8 +109,8 @@ sequenceDiagram
 
 | Field / setting | Used how |
 |-----------------|----------|
-| `oid4vc-dev wallet serve --vci-client-id ...` | Required. The wallet will reject the authorization-code flow without a configured client ID. |
-| `oid4vc-dev wallet serve --vci-redirect-uri ...` | Required. The wallet will reject the authorization-code flow without a configured redirect URI. |
+| `eudi wallet serve --vci-client-id ...` | Required. The wallet will reject the authorization-code flow without a configured client ID. |
+| `eudi wallet serve --vci-redirect-uri ...` | Required. The wallet will reject the authorization-code flow without a configured redirect URI. |
 | OAuth metadata `pushed_authorization_request_endpoint` | Required. `oid4vc-dev` always uses PAR for this flow. |
 | OAuth metadata `authorization_endpoint` | Required for the interactive authorization redirect. |
 | OAuth metadata DPoP support | Required. The current auth-code implementation expects DPoP-capable issuer metadata. |

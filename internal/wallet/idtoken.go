@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // CreateSelfIssuedIDToken creates a SIOPv2 self-issued ID token JWT signed by the wallet's holder key.

@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func TestDecryptJWEWithCEK(t *testing.T) {

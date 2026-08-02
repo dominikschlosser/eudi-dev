@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0]
+
+### Changed
+
+- The project is renamed from oid4vc-dev to **eudi-dev** and the CLI command is now **`eudi`**. The Go module moved to `github.com/dominikschlosser/eudi-dev`, releases ship `eudi` binaries, the Docker image is `ghcr.io/dominikschlosser/eudi-dev`, and the state directory is `~/.eudi-dev` (`EUDI_DEV_HOME` overrides it). The wallet and decoder UIs are titled EUDI Dev Wallet and EUDI Dev Decoder
+- The old name keeps working for the time being: a binary named `oid4vc-dev` behaves identically (help and shell completion adapt to the invoked name, and the Docker image contains it as a second name), an existing `~/.oid4vc-dev` state directory keeps being used when `~/.eudi-dev` does not exist, `OID4VC_DEV_HOME` is still honored, instance discovery finds wallets running under either name, and `ghcr.io/dominikschlosser/oid4vc-dev` keeps receiving releases. Note that `go install` of new versions requires the new module path
+
 ## [1.14.1]
 
 ### Added

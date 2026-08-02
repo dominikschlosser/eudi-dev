@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // setupWalletWithCredential creates a temp wallet dir, generates a credential,

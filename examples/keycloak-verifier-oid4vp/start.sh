@@ -28,7 +28,7 @@ ensure_oid4vc_dev() {
   mkdir -p "${gobin}"
 
   echo "oid4vc-dev not found. Installing latest with Go..."
-  GOBIN="${gobin}" go install github.com/dominikschlosser/oid4vc-dev@latest
+  GOBIN="${gobin}" go install github.com/dominikschlosser/eudi-dev@latest
   export PATH="${gobin}:${PATH}"
 }
 
@@ -114,7 +114,7 @@ case "${mode}" in
   browser)
     cleanup_enabled="true"
     trap cleanup EXIT INT TERM
-    oid4vc-dev wallet register
+    eudi wallet register
     ./scripts/test-oidc-flow.sh
     ;;
   setup-only)

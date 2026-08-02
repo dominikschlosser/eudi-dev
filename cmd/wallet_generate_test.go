@@ -24,9 +24,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func TestWalletGeneratePID_SetsIssuerURLForSDJWT(t *testing.T) {

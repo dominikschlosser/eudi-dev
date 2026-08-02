@@ -13,14 +13,14 @@ The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /
 
 ## Template files and storage
 
-Pre-defined templates are compiled into the binary and need no files on disk. User templates are JSON files in the wallet directory's `templates/` subdirectory (`~/.oid4vc-dev/wallet/templates/` by default, or `<dir>/templates/` with `--wallet-dir <dir>`). Both `.json` and `.template` extensions are recognized. A `name` field inside the document names the template. Without one, the file name without extension is used.
+Pre-defined templates are compiled into the binary and need no files on disk. User templates are JSON files in the wallet directory's `templates/` subdirectory (`~/.eudi-dev/wallet/templates/` by default, or `<dir>/templates/` with `--wallet-dir <dir>`). Both `.json` and `.template` extensions are recognized. A `name` field inside the document names the template. Without one, the file name without extension is used.
 
 The `--templates-dir` flag points the wallet, the issue commands, and the `templates` commands at any directory instead. This makes setup easy: keep a folder of template JSON files in your project (or mount one into a container) and start the wallet with it.
 
 ```bash
-oid4vc-dev wallet serve --templates-dir ./my-templates
-oid4vc-dev issue sdjwt --template employee-card --templates-dir ./my-templates
-oid4vc-dev templates list --templates-dir ./my-templates
+eudi wallet serve --templates-dir ./my-templates
+eudi issue sdjwt --template employee-card --templates-dir ./my-templates
+eudi templates list --templates-dir ./my-templates
 ```
 
 ```json
@@ -68,32 +68,32 @@ This only applies to SD-JWT. JWT VCs carry all claims plainly anyway, so the lis
 
 ```bash
 # List and inspect templates
-oid4vc-dev templates list
-oid4vc-dev templates show german-pid-sdjwt
+eudi templates list
+eudi templates show german-pid-sdjwt
 
 # Issue from a template, optionally overriding individual claims
-oid4vc-dev issue sdjwt --template german-pid-sdjwt
-oid4vc-dev issue sdjwt --template german-pid-sdjwt --claims '{"given_name": "MAX"}'
+eudi issue sdjwt --template german-pid-sdjwt
+eudi issue sdjwt --template german-pid-sdjwt --claims '{"given_name": "MAX"}'
 
 # Make claims non disclosable at issuance time
-oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
+eudi issue sdjwt --pid --always-disclosed issuing_country,address.country
 
 # Save the current issuance as a template while issuing
-oid4vc-dev issue sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --save-template employee-card
+eudi issue sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --save-template employee-card
 
 # Create or update a template directly
-oid4vc-dev templates save employee-card --format sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --always-disclosed employee_id
+eudi templates save employee-card --format sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --always-disclosed employee_id
 
 # Customize a pre-defined template (the copy overrides it when saved under the same name)
-oid4vc-dev templates save german-pid-sdjwt --from german-pid-sdjwt --vct urn:custom:pid
+eudi templates save german-pid-sdjwt --from german-pid-sdjwt --vct urn:custom:pid
 
 # Import a shared template (file, JSON string, or - for stdin)
-oid4vc-dev templates import shared-template.json
-oid4vc-dev templates import '{"format":"sdjwt","claims":{"a":1}}' --name my-cred
-oid4vc-dev templates show employee-card > share-me.json
+eudi templates import shared-template.json
+eudi templates import '{"format":"sdjwt","claims":{"a":1}}' --name my-cred
+eudi templates show employee-card > share-me.json
 
 # Delete a user template (deleting an override restores the pre-defined version)
-oid4vc-dev templates delete employee-card
+eudi templates delete employee-card
 ```
 
 All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. They also work against a remote wallet server: with `--remote <url>` (or after `wallet instances use <url>`) list, show, save, import, and delete operate on the remote instance's template store through its REST API. See [remote control](wallet.md#remote-control).

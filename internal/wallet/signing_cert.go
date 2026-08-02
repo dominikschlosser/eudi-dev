@@ -21,7 +21,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // SigningCertChainForIssuedAttestation returns the signing certificate chain for one
@@ -69,7 +69,7 @@ func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 func signingLeafCommonName(profile trustListProfile) string {
 	label := strings.TrimSpace(profile.EntityName)
 	if label == "" {
-		label = "OID4VC Dev Wallet Issuer"
+		label = "EUDI Dev Wallet Issuer"
 	}
 	id := trustListGroupID(profile)
 	if id == "" {

@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // Decode detects the credential format and returns a JSON-serializable map.

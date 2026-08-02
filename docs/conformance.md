@@ -1,6 +1,6 @@
 # OIDF Conformance
 
-This repository runs the current OpenID Foundation wallet plans for OID4VP 1.0 Final, OID4VCI 1.0 Final, and HAIP 1.0 Final variants against the local `oid4vc-dev` testing wallet.
+This repository runs the current OpenID Foundation wallet plans for OID4VP 1.0 Final, OID4VCI 1.0 Final, and HAIP 1.0 Final variants against the local `eudi-dev` testing wallet.
 
 The conformance documentation is split by purpose:
 
@@ -59,7 +59,7 @@ Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallba
 - downloads the latest upstream conformance-suite release tarball from GitLab, unless `OIDF_SUITE_DIR` or `OIDF_SUITE_URL` is set
 - checks the local suite `/api/server` tag when available and fails early if the running server does not match the runner/templates release
 - creates a Python virtualenv for the official runner
-- starts `oid4vc-dev wallet serve` in strict mode with default PID credentials
+- starts `eudi wallet serve` in strict mode with default PID credentials
 - configures the wallet's normal OID4VCI authorization-code client settings
 - runs the official `run-test-plan.py` against the conformance-suite server
 - forwards `--rerun` to the official runner for targeted plan/module reruns

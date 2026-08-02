@@ -96,7 +96,7 @@ func completionInstallCmd() *cobra.Command {
 			case "fish":
 				return installFishCompletion()
 			default:
-				return fmt.Errorf("unsupported or undetected shell %q: pass bash, zsh, or fish (powershell users add `oid4vc-dev completion powershell | Out-String | Invoke-Expression` to their profile)", shell)
+				return fmt.Errorf("unsupported or undetected shell %q: pass bash, zsh, or fish (powershell users add `eudi completion powershell | Out-String | Invoke-Expression` to their profile)", shell)
 			}
 		},
 	}
@@ -128,7 +128,7 @@ func installRCLine(rcName, shell string) error {
 		return err
 	}
 	defer f.Close()
-	if _, err := fmt.Fprintf(f, "\n# oid4vc-dev shell completion\n%s\n", line); err != nil {
+	if _, err := fmt.Fprintf(f, "\n# eudi-dev shell completion\n%s\n", line); err != nil {
 		return err
 	}
 	fmt.Printf("Installed completion in %s\n", rcPath)

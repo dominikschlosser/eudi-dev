@@ -24,10 +24,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
-	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 var (
@@ -89,7 +89,7 @@ var issueMDOCCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(issueCmd)
-	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.oid4vc-dev/wallet/)")
+	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.eudi-dev/wallet/, legacy ~/.oid4vc-dev/wallet/ keeps working)")
 	issueCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	issueCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "With --wallet: issue on a remote wallet server at this URL (\"local\" forces the local store)")
 	issueCmd.AddCommand(issueSDJWTCmd)

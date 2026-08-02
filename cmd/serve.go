@@ -19,9 +19,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
 var port int
@@ -49,6 +49,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		credential = raw
 	}
 
-	fmt.Printf("Starting OID4VC Dev Web UI at http://localhost:%d\n", port)
+	fmt.Printf("Starting EUDI Dev Web UI at http://localhost:%d\n", port)
 	return web.ListenAndServe(port, credential)
 }

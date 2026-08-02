@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"hash"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 // CheckResult represents the outcome of a single validation check.

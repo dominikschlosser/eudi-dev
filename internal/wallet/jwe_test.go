@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 func TestEncryptJWE_CompactFormat(t *testing.T) {

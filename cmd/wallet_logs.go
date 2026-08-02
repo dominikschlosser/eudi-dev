@@ -28,7 +28,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 type walletLogPrintOptions struct {

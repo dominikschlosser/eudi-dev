@@ -43,7 +43,7 @@ ensure_oid4vc_dev() {
   mkdir -p "${gobin}"
 
   echo "oid4vc-dev not found. Installing latest with Go..."
-  GOBIN="${gobin}" go install github.com/dominikschlosser/oid4vc-dev@latest
+  GOBIN="${gobin}" go install github.com/dominikschlosser/eudi-dev@latest
   export PATH="${gobin}:${PATH}"
 }
 
@@ -51,14 +51,14 @@ usage() {
   cat <<'EOF'
 Usage: ./start.sh [--http|--https] [--setup-only|--smoke] [--ngrok|--no-ngrok] [--wallet-port <port>] [--keycloak-domain <name>]
 
-  default      Start Keycloak, the demo app, the local wallet, oid4vc-dev proxy, and the route proxy. Use ngrok automatically when sandbox verifier files are available.
+  default      Start Keycloak, the demo app, the local wallet, eudi proxy, and the route proxy. Use ngrok automatically when sandbox verifier files are available.
   --http       Use local Keycloak on http://localhost:8080 when ngrok is disabled
   --https      Use local Keycloak on https://localhost:8443 when ngrok is disabled
   --smoke      Run the full headless smoke flow after setup
   --setup-only Recreate Keycloak from the realm import, bootstrap it, and leave it running
   --ngrok      Publish Keycloak and the demo app through one ngrok HTTPS hostname
   --no-ngrok   Keep Keycloak and the demo app local
-  --wallet-port  oid4vc-dev wallet port (default: 8087)
+  --wallet-port  eudi wallet port (default: 8087)
   --keycloak-domain  Fixed ngrok hostname (otherwise detect from sandbox cert SAN when available)
 EOF
 }
@@ -117,7 +117,7 @@ wait_for_proxy() {
       exit 1
     fi
     if [[ -n "${DEBUG_PROXY_PID}" ]] && ! kill -0 "${DEBUG_PROXY_PID}" 2>/dev/null; then
-      echo "oid4vc-dev proxy exited before becoming ready." >&2
+      echo "eudi proxy exited before becoming ready." >&2
       exit 1
     fi
     status="$(curl -s -o /dev/null -w '%{http_code}' "${proxy_url}" || true)"
@@ -246,29 +246,29 @@ start_public_proxy() {
   trap cleanup EXIT INT TERM
   wait_for_proxy "http://127.0.0.1:${route_proxy_port}/" "single-host route proxy"
   (
-    exec oid4vc-dev proxy \
+    exec eudi proxy \
       --target "http://127.0.0.1:${route_proxy_port}" \
       --port "${public_proxy_port}" \
       --dashboard "${dashboard_port}"
   ) &
   DEBUG_PROXY_PID=$!
-  wait_for_proxy "http://127.0.0.1:${public_proxy_port}/" "oid4vc-dev proxy"
+  wait_for_proxy "http://127.0.0.1:${public_proxy_port}/" "eudi proxy"
   echo "Single-host route proxy: http://127.0.0.1:${route_proxy_port}/"
-  echo "oid4vc-dev proxy: http://127.0.0.1:${public_proxy_port}/"
-  echo "oid4vc-dev proxy dashboard: http://127.0.0.1:${dashboard_port}/"
+  echo "eudi proxy: http://127.0.0.1:${public_proxy_port}/"
+  echo "eudi proxy dashboard: http://127.0.0.1:${dashboard_port}/"
 }
 
 start_local_wallet() {
   wallet_port="$(resolve_wallet_port_pair "${wallet_port}")"
   export OID4VC_WALLET_PORT="${wallet_port}"
   export WALLET_UI_URL="http://localhost:${wallet_port}/"
-  echo "Starting oid4vc-dev wallet on port ${wallet_port}..."
-  oid4vc-dev wallet serve --docker --port "${wallet_port}" --base-url "" --register &
+  echo "Starting eudi wallet on port ${wallet_port}..."
+  eudi wallet serve --docker --port "${wallet_port}" --base-url "" --register &
   WALLET_PID=$!
   trap cleanup EXIT INT TERM
   sleep 1
   if ! kill -0 "${WALLET_PID}" 2>/dev/null; then
-    echo "oid4vc-dev wallet exited before startup completed." >&2
+    echo "eudi wallet exited before startup completed." >&2
     wait "${WALLET_PID}" 2>/dev/null || true
     exit 1
   fi
@@ -445,7 +445,7 @@ case "${mode}" in
   smoke)
     cleanup_enabled="true"
     trap cleanup EXIT
-    oid4vc-dev wallet remove --all >/dev/null
+    eudi wallet remove --all >/dev/null
     ./scripts/start-app.sh &
     APP_PID=$!
     wait_for_app

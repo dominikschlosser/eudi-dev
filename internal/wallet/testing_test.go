@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // --- Next Error Override Tests ---

@@ -21,7 +21,7 @@ import (
 
 	"github.com/veraison/go-cose"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 func generateTestMDoc(t *testing.T, cfg mock.MDOCConfig) *Document {

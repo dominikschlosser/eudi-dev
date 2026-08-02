@@ -5,34 +5,34 @@ Generate test SD-JWT, JWT, or mDOC credentials for development and testing. Prod
 Use `--wallet-dir` on `issue` when `--wallet` should target a non-default wallet store.
 
 ```bash
-oid4vc-dev issue sdjwt
-oid4vc-dev issue sdjwt --pid
-oid4vc-dev issue sdjwt --pid --omit place_of_birth,sex,personal_administrative_number
-oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
-oid4vc-dev issue sdjwt --template employee-card
-oid4vc-dev issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
-oid4vc-dev issue sdjwt --claims '{"name":"Test","age":30}' --save-template my-test-cred
-oid4vc-dev issue sdjwt --claims '{"name":"Test","age":30}'
-oid4vc-dev issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2025-06-01T00:00:00Z
-oid4vc-dev issue sdjwt --key signing-key.pem
-oid4vc-dev issue sdjwt --wallet                # Issue and import into wallet
-oid4vc-dev issue sdjwt --wallet --trust-profile pid
-oid4vc-dev issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trust-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
-oid4vc-dev issue jwt                           # Plain JWT VC (no selective disclosure)
-oid4vc-dev issue jwt --pid
-oid4vc-dev issue jwt --claims '{"name":"Test","age":30}'
-oid4vc-dev issue mdoc
-oid4vc-dev issue mdoc --pid
-oid4vc-dev issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
-oid4vc-dev issue mdoc --pid --wallet           # Issue mDoc and import into wallet
+eudi issue sdjwt
+eudi issue sdjwt --pid
+eudi issue sdjwt --pid --omit place_of_birth,sex,personal_administrative_number
+eudi issue sdjwt --pid --always-disclosed issuing_country,address.country
+eudi issue sdjwt --template employee-card
+eudi issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
+eudi issue sdjwt --claims '{"name":"Test","age":30}' --save-template my-test-cred
+eudi issue sdjwt --claims '{"name":"Test","age":30}'
+eudi issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2025-06-01T00:00:00Z
+eudi issue sdjwt --key signing-key.pem
+eudi issue sdjwt --wallet                # Issue and import into wallet
+eudi issue sdjwt --wallet --trust-profile pid
+eudi issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trust-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
+eudi issue jwt                           # Plain JWT VC (no selective disclosure)
+eudi issue jwt --pid
+eudi issue jwt --claims '{"name":"Test","age":30}'
+eudi issue mdoc
+eudi issue mdoc --pid
+eudi issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
+eudi issue mdoc --pid --wallet           # Issue mDoc and import into wallet
 ```
 
 Round-trip with decode:
 
 ```bash
-oid4vc-dev issue sdjwt | oid4vc-dev decode
-oid4vc-dev issue jwt   | oid4vc-dev decode
-oid4vc-dev issue mdoc  | oid4vc-dev decode
+eudi issue sdjwt | eudi decode
+eudi issue jwt   | eudi decode
+eudi issue mdoc  | eudi decode
 ```
 
 ## Flags
@@ -41,7 +41,7 @@ oid4vc-dev issue mdoc  | oid4vc-dev decode
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--wallet-dir` | `~/.oid4vc-dev/wallet/` | Wallet storage directory used by `--wallet` |
+| `--wallet-dir` | `~/.eudi-dev/wallet/` | Wallet storage directory used by `--wallet` |
 | `--templates-dir` | `<wallet-dir>/templates/` | Credential template directory used by `--template` and `--save-template` |
 
 ### `issue sdjwt`

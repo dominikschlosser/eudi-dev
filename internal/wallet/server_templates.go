@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
 )
 
 // handleListTemplates returns all credential templates (pre-defined and user),

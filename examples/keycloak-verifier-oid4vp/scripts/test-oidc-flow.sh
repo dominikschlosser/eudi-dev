@@ -16,7 +16,7 @@ Usage: scripts/test-oidc-flow.sh [options]
 Runs an interactive OAuth/OIDC authorization-code flow against the Keycloak OID4VP verifier
 and prints the decoded id_token payload. On macOS, the wallet can be opened through the
 registered openid4vp:// handler. On other platforms, copy the openid4vp:// link from the
-Keycloak page and run 'oid4vc-dev wallet accept <uri>' manually.
+Keycloak page and run 'eudi wallet accept <uri>' manually.
 
 Options:
   --base-url <url>        Keycloak base URL (default: http://127.0.0.1:8080)

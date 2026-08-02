@@ -12,7 +12,7 @@ Each example should be self-contained in its own subfolder and include:
 
 The examples in this directory prefer fixed ports, fixed demo identities, and static Keycloak realm files where that keeps the flow easier to understand. Dynamic bootstrap scripts are kept for cases that genuinely need runtime-generated keys, trust lists, or provider wiring.
 
-The example scripts are written for Bash. On Windows, run them from Git Bash or WSL; the wallet flows themselves avoid macOS-only assumptions and fall back to `oid4vc-dev wallet accept '<uri>'` when custom URL handlers are unavailable.
+The example scripts are written for Bash. On Windows, run them from Git Bash or WSL; the wallet flows themselves avoid macOS-only assumptions and fall back to `eudi wallet accept '<uri>'` when custom URL handlers are unavailable.
 
 ## Scenarios
 

@@ -1,6 +1,6 @@
 # Running OIDF Wallet Conformance
 
-Use this runbook to execute the current OIDF Final and HAIP wallet plans against the local `oid4vc-dev` testing wallet. The current status and result matrix live in [Current conformance results](./conformance-results.md).
+Use this runbook to execute the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. The current status and result matrix live in [Current conformance results](./conformance-results.md).
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ git checkout release-v5.2.1
 mvn clean package
 ```
 
-The `oid4vc-dev` wrapper defaults to plain `localhost` URLs. The upstream dev compose files advertise `localhost.emobix.co.uk`, so add this local override for wallet conformance runs:
+The `eudi-dev` wrapper defaults to plain `localhost` URLs. The upstream dev compose files advertise `localhost.emobix.co.uk`, so add this local override for wallet conformance runs:
 
 ```bash
 cat >/tmp/conformance-suite-localhost.override.yml <<'YAML'

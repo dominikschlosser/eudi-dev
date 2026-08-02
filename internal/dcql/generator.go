@@ -18,8 +18,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
 // FromSDJWT generates a DCQL query from an SD-JWT credential.

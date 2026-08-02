@@ -17,7 +17,7 @@ package main
 import (
 	"os"
 
-	"github.com/dominikschlosser/oid4vc-dev/cmd"
+	"github.com/dominikschlosser/eudi-dev/cmd"
 )
 
 func main() {

@@ -28,7 +28,7 @@ ensure_oid4vc_dev() {
   mkdir -p "${gobin}"
 
   echo "oid4vc-dev not found. Installing latest with Go..."
-  GOBIN="${gobin}" go install github.com/dominikschlosser/oid4vc-dev@latest
+  GOBIN="${gobin}" go install github.com/dominikschlosser/eudi-dev@latest
   export PATH="${gobin}:${PATH}"
 }
 
@@ -102,7 +102,7 @@ docker compose "${compose_args[@]}" up -d --force-recreate
 if [[ "${mode}" == "full" ]]; then
   cleanup_enabled="true"
   trap cleanup EXIT INT TERM
-  oid4vc-dev wallet remove --all >/dev/null
+  eudi wallet remove --all >/dev/null
   ./scripts/redeem-offer.sh
 else
   echo

@@ -28,7 +28,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // BuildWalletMetadata builds the wallet_metadata JSON object per OID4VP 1.0 §10.

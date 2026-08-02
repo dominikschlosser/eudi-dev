@@ -388,5 +388,5 @@ func printDecodeHint(credential, label string, dashboardPort int) {
 	} else {
 		dimColor.Print("link: ")
 	}
-	dimColor.Println("oid4vc-dev decode")
+	dimColor.Println("eudi decode")
 }

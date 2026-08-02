@@ -21,11 +21,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
 
 // EvaluateDCQL matches stored credentials against a DCQL query (OID4VP 1.0 Section 6).

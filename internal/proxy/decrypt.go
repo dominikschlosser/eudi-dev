@@ -25,7 +25,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // DecryptJWEWithCEK decrypts a JWE compact serialization using the provided

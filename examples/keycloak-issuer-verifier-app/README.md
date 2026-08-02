@@ -8,8 +8,8 @@ The example always starts:
 
 - Keycloak
 - the demo app
-- a local `oid4vc-dev wallet serve --docker` wallet
-- a local `oid4vc-dev proxy` in front of a single-host route proxy that exposes both Keycloak and the app through one hostname
+- a local `eudi wallet serve --docker` wallet
+- a local `eudi proxy` in front of a single-host route proxy that exposes both Keycloak and the app through one hostname
 
 The only exposure switch is ngrok:
 
@@ -18,7 +18,7 @@ The only exposure switch is ngrok:
 - `--no-ngrok`: keep Keycloak and the app local
 - `--http` / `--https`: choose the local Keycloak transport when ngrok is disabled
 
-The start script derives the runtime URLs itself. When ngrok is enabled, issuance, login, and wallet presentation offers use the public ngrok URL and traffic passes through the `oid4vc-dev proxy` dashboard.
+The start script derives the runtime URLs itself. When ngrok is enabled, issuance, login, and wallet presentation offers use the public ngrok URL and traffic passes through the `eudi proxy` dashboard.
 
 ## How It Works
 
@@ -42,7 +42,7 @@ sequenceDiagram
     participant KC as Keycloak
     participant EXT as keycloak-extension-oid4vp
     participant BROKER as Custom Broker Authenticator
-    participant W as oid4vc-dev wallet
+    participant W as eudi wallet
 
     U->>APP: Sign in with password
     APP->>KC: standard login
@@ -152,7 +152,7 @@ cd examples/keycloak-issuer-verifier-app
 ./start.sh
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/oid4vc-dev@latest`.
+If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Local setup:
 
@@ -191,13 +191,13 @@ Each `./start.sh` run recreates the Keycloak container state and imports `realm/
 
 If your system does not handle the custom scheme directly:
 
-- issuance: use the offer page in the demo app and run the printed `oid4vc-dev wallet accept '<haip-vci://...>'` command
-- verification: when Keycloak shows the wallet login page, copy the `haip-vp://...` link target and run `oid4vc-dev wallet accept '<haip-vp://...>'`
+- issuance: use the offer page in the demo app and run the printed `eudi wallet accept '<haip-vci://...>'` command
+- verification: when Keycloak shows the wallet login page, copy the `haip-vp://...` link target and run `eudi wallet accept '<haip-vp://...>'`
 
 Manual registration is still available if you want to run it yourself:
 
 ```bash
-oid4vc-dev wallet register
+eudi wallet register
 ```
 
 Headless verification:
@@ -237,7 +237,7 @@ OID4VP_SANDBOX_VERIFIER_INFO_PATH=$(pwd)/sandbox/sandbox-verifier-info.json
 
 ```bash
 docker compose down -v
-oid4vc-dev wallet remove --all
+eudi wallet remove --all
 rm -f keycloak-trustlist.jwt
 rm -f keycloak-ca-cert.pem keycloak-ca-key.pem keycloak-cert.pem keycloak-key.pem
 ```

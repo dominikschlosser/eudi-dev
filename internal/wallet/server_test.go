@@ -28,11 +28,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
-	"github.com/dominikschlosser/oid4vc-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
 
 func newTestServer(t *testing.T, autoAccept bool) *Server {
@@ -440,8 +440,8 @@ func TestStaticFiles_Index(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "OID4VC Dev Wallet") {
-		t.Error("expected index.html to contain 'OID4VC Dev Wallet'")
+	if !strings.Contains(body, "EUDI Dev Wallet") {
+		t.Error("expected index.html to contain 'EUDI Dev Wallet'")
 	}
 	if !strings.Contains(body, "app.js") {
 		t.Error("expected index.html to reference app.js")
@@ -1710,8 +1710,8 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 	if tl.SchemeInfo == nil {
 		t.Fatal("expected SchemeInfo to be parsed")
 	}
-	if tl.SchemeInfo.SchemeOperatorName != "OID4VC Dev Wallet" {
-		t.Errorf("expected operator name 'OID4VC Dev Wallet', got %q", tl.SchemeInfo.SchemeOperatorName)
+	if tl.SchemeInfo.SchemeOperatorName != "EUDI Dev Wallet" {
+		t.Errorf("expected operator name 'EUDI Dev Wallet', got %q", tl.SchemeInfo.SchemeOperatorName)
 	}
 	if tl.SchemeInfo.LoTEType != pidTrustListType {
 		t.Errorf("unexpected LoTEType: %s", tl.SchemeInfo.LoTEType)
@@ -1723,8 +1723,8 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 	if len(tl.Entities) != 1 {
 		t.Fatalf("expected 1 entity, got %d", len(tl.Entities))
 	}
-	if tl.Entities[0].Name != "OID4VC Dev Wallet PID Provider" {
-		t.Errorf("expected entity name 'OID4VC Dev Wallet PID Provider', got %q", tl.Entities[0].Name)
+	if tl.Entities[0].Name != "EUDI Dev Wallet PID Provider" {
+		t.Errorf("expected entity name 'EUDI Dev Wallet PID Provider', got %q", tl.Entities[0].Name)
 	}
 	if len(tl.Entities[0].Services) != 2 {
 		t.Fatalf("expected 2 services (issuance + revocation), got %d", len(tl.Entities[0].Services))

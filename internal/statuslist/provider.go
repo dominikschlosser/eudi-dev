@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // StatusListConfig holds parameters for generating a status list JWT.

@@ -24,11 +24,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/config"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
-	"github.com/dominikschlosser/oid4vc-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
 func walletServeCmd() *cobra.Command {
@@ -183,7 +183,7 @@ so the wallet automatically receives incoming protocol requests.`,
 			}
 			httpsURL := w.IssuerURL
 
-			cyan.Printf("OID4VC Dev Wallet %s\n", Version)
+			cyan.Printf("EUDI Dev Wallet %s\n", Version)
 			dim.Println("───────────────────────────────────────")
 			fmt.Printf("  Server:      http://localhost:%d\n", port)
 			if publicHTTPURL != fmt.Sprintf("http://localhost:%d", port) {
@@ -235,7 +235,7 @@ so the wallet automatically receives incoming protocol requests.`,
 				} else if wallet.SupportsURLSchemeRegistration() {
 					fmt.Printf("  Register:    URL scheme handlers registered\n")
 				} else {
-					yellow.Printf("  Register:    not supported on this platform; use 'oid4vc-dev wallet accept <uri>' for copied links\n")
+					yellow.Printf("  Register:    not supported on this platform; use 'wallet accept <uri>' for copied links\n")
 				}
 			}
 

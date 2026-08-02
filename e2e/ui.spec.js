@@ -73,7 +73,7 @@ const OUTER_JWT_WITH_EMBEDDED = makeJWT(
 test.describe("Page load", () => {
   test("shows OID4VC Dev title and empty state", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("h1")).toHaveText("OID4VC Dev Decoder");
+    await expect(page.locator("h1")).toHaveText("EUDI Dev Decoder");
     await expect(page.locator(".placeholder")).toHaveText(
       "Paste a credential to see decoded output"
     );

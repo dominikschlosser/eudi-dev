@@ -17,9 +17,9 @@ package web
 import (
 	"strings"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
-	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
-	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 func verifyWithLocalWalletIssuerKey(token *sdjwt.Token) (*sdjwt.VerifyResult, string) {

@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // SDJWTConfig holds options for generating a mock SD-JWT credential.

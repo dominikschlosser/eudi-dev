@@ -1,6 +1,6 @@
 # Wallet
 
-A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration. Credentials and keys are stored in `~/.oid4vc-dev/wallet/` (configurable via `--wallet-dir`) and persist across invocations.
+A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration. Credentials and keys are stored in `~/.eudi-dev/wallet/` (configurable via `--wallet-dir`) and persist across invocations.
 
 The wallet has two validation modes:
 - `debug` (default) keeps processing requests when possible and logs spec findings for debugging; during DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
@@ -36,62 +36,62 @@ All wallet management operations (list, show, import, remove, issue, generate-pi
 
 ```bash
 # Issue PID credentials from the pre-defined templates and list them
-oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt
-oid4vc-dev issue mdoc --wallet --template german-pid-mdoc
-oid4vc-dev wallet list
+eudi issue sdjwt --wallet --template german-pid-sdjwt
+eudi issue mdoc --wallet --template german-pid-mdoc
+eudi wallet list
 
 # Deprecated equivalent (issues both PIDs at once, will be removed later)
-oid4vc-dev wallet generate-pid
+eudi wallet generate-pid
 
 # Show a credential (raw)
-oid4vc-dev wallet show <id>
+eudi wallet show <id>
 
 # Show a credential (human-readable decoded)
-oid4vc-dev wallet show --decoded <id>
+eudi wallet show --decoded <id>
 
 # Start the wallet web UI with stored credentials
-oid4vc-dev wallet serve
+eudi wallet serve
 
 # Start the wallet and register URL scheme handlers
-oid4vc-dev wallet serve --register
+eudi wallet serve --register
 
 # Export the shared wallet CA for verifier trust stores
-oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
+eudi wallet ca-cert --out wallet-ca-cert.pem
 
 # Export the HTTPS wallet certificate for verifier trust stores
-oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
+eudi wallet tls-cert --out wallet-tls-cert.pem
 
 # Process an OID4VP request from the CLI
-oid4vc-dev wallet accept 'openid4vp://authorize?client_id=...'
+eudi wallet accept 'openid4vp://authorize?client_id=...'
 
 # Accept a credential offer (auto-detected from URI)
-oid4vc-dev wallet accept 'openid-credential-offer://...'
+eudi wallet accept 'openid-credential-offer://...'
 
 # Scan a QR code from screen and auto-detect the flow
-oid4vc-dev wallet scan --screen
+eudi wallet scan --screen
 
 # Show wallet-side interactions
-oid4vc-dev wallet logs
-oid4vc-dev wallet logs -f
+eudi wallet logs
+eudi wallet logs -f
 
 # Import a credential from a file
-oid4vc-dev wallet import credential.txt
+eudi wallet import credential.txt
 
 # Register URL scheme handlers so openid4vp:// links open the wallet on macOS
-oid4vc-dev wallet register
+eudi wallet register
 
 # Keep URL handling silent/background-only on macOS
-oid4vc-dev wallet register --auto-accept
+eudi wallet register --auto-accept
 ```
 
-On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `oid4vc-dev wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
+On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `eudi wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
 
 ## Storage
 
-All wallet state is stored in `~/.oid4vc-dev/wallet/` by default:
+All wallet state is stored in `~/.eudi-dev/wallet/` by default:
 
 ```
-~/.oid4vc-dev/
+~/.eudi-dev/
 ├── wallet-ca-cert.pem  # Shared CA certificate used across wallet instances
 ├── wallet-ca-key.pem   # Shared CA private key
 ├── remote.json         # Active remote wallet target set by wallet instances use
@@ -126,9 +126,9 @@ Generated credentials expire in **30 days** by default. Use `--exp` to override 
 Displays a stored credential by its ID (as shown in `wallet list`). By default, outputs the raw credential string. Use `--decoded` for human-readable decoded output (supports `--json` and `-v` global flags).
 
 ```bash
-oid4vc-dev wallet show <id>                  # Raw credential string
-oid4vc-dev wallet show --decoded <id>        # Human-readable output
-oid4vc-dev wallet show --decoded --json <id> # JSON output
+eudi wallet show <id>                  # Raw credential string
+eudi wallet show --decoded <id>        # Human-readable output
+eudi wallet show --decoded --json <id> # JSON output
 ```
 
 | Flag        | Default | Description                                          |
@@ -142,11 +142,11 @@ Displays persisted wallet-side protocol interactions, including OID4VP request-o
 By default, every entry is printed on one line so the output is easy to scan and pipe. Compact lines include protocol markers such as `event`, `direction`, source, endpoint, method, URL, client ID, issuer, response mode, nonce, status code, and payload-presence flags. Use the global `-v` / `--verbose` flag to expand structured details such as request objects, DCQL queries, wallet metadata, token and credential request payloads, sent VP tokens, actual presented credentials, selected claims, verifier response bodies, received credential responses, and imported credential material. Use `-f` / `--follow` to attach to the wallet log and print new entries as they are persisted, similar to `kubectl logs -f`.
 
 ```bash
-oid4vc-dev wallet logs              # One line per persisted wallet interaction
-oid4vc-dev wallet logs -v           # Expand request/response details
-oid4vc-dev wallet logs -f           # Print existing logs, then follow new entries
-oid4vc-dev wallet logs clean        # Remove old persisted wallet logs
-oid4vc-dev wallet logs --json       # JSON array of log entries
+eudi wallet logs              # One line per persisted wallet interaction
+eudi wallet logs -v           # Expand request/response details
+eudi wallet logs -f           # Print existing logs, then follow new entries
+eudi wallet logs clean        # Remove old persisted wallet logs
+eudi wallet logs --json       # JSON array of log entries
 ```
 
 | Flag       | Default | Description                                      |
@@ -253,11 +253,11 @@ When the wallet needs a local default profile, it uses:
 Use `--register` to also register OS URL scheme handlers so that `openid4vp://`, `haip-vp://`, `openid-credential-offer://`, and `haip-vci://` links automatically open the wallet on macOS. On Linux and Windows, `--register` is accepted but does not install OS handlers.
 
 ```bash
-oid4vc-dev wallet serve
-oid4vc-dev wallet serve --port 9000 --auto-accept
-oid4vc-dev wallet serve --pid --credential extra.txt
-oid4vc-dev wallet serve --register           # also register URL scheme handlers using the current interactive/auto-accept mode
-oid4vc-dev wallet serve --register --port 9000
+eudi wallet serve
+eudi wallet serve --port 9000 --auto-accept
+eudi wallet serve --pid --credential extra.txt
+eudi wallet serve --register           # also register URL scheme handlers using the current interactive/auto-accept mode
+eudi wallet serve --register --port 9000
 ```
 
 | Flag                    | Default  | Description                                      |
@@ -295,9 +295,9 @@ In interactive mode (default), OID4VP requests start a temporary consent UI serv
 When DCQL is present, `debug` mode is intentionally forgiving for troubleshooting verifier queries: if a credential matches the requested format and metadata and at least one requested claim, the wallet logs a warning and still keeps that credential as a match even when other required claim paths are missing. `strict` mode treats the same query as non-matching.
 
 ```bash
-oid4vc-dev wallet accept 'openid4vp://authorize?...' --auto-accept
-oid4vc-dev wallet accept 'openid-credential-offer://...'
-oid4vc-dev wallet accept 'openid-credential-offer://...' --tx-code 123456
+eudi wallet accept 'openid4vp://authorize?...' --auto-accept
+eudi wallet accept 'openid-credential-offer://...'
+eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 ```
 
 | Flag                    | Default  | Description                                      |
@@ -320,9 +320,9 @@ Scans a QR code from an image file or screen capture and auto-detects the conten
 - SD-JWT / mDoc raw credential → delegates to `import`
 
 ```bash
-oid4vc-dev wallet scan qr-image.png
-oid4vc-dev wallet scan --screen              # macOS interactive screen capture
-oid4vc-dev wallet scan --screen --auto-accept # auto-approve if it's a presentation
+eudi wallet scan qr-image.png
+eudi wallet scan --screen              # macOS interactive screen capture
+eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 ```
 
 `wallet scan` honors the persistent `wallet --mode` flag when it dispatches OID4VP/VCI flows.
@@ -338,14 +338,14 @@ Use `--id`, `--vct`, or `--doctype` when you want a specific trust-list profile 
 The output can be piped to a file or used directly with `--trust-list` in the `validate` command. Use `--url` to print only the URL for a running wallet server instead.
 
 ```bash
-oid4vc-dev wallet trust-list                          # Print the trust list JWT
-oid4vc-dev wallet trust-list > trustlist.jwt          # Save to file
-oid4vc-dev wallet trust-list --url                    # http://localhost:8085/api/trustlist
-oid4vc-dev wallet trust-list --id pid --url           # http://localhost:8085/api/trustlists/pid
-oid4vc-dev wallet trust-list --id local --url         # http://localhost:8085/api/trustlists/local
-oid4vc-dev wallet trust-list --doctype org.iso.23220.photoid.1 --url
-oid4vc-dev wallet trust-list --url --port 9000        # http://localhost:9000/api/trustlist
-oid4vc-dev wallet trust-list --url --docker           # http://host.docker.internal:8085/api/trustlist
+eudi wallet trust-list                          # Print the trust list JWT
+eudi wallet trust-list > trustlist.jwt          # Save to file
+eudi wallet trust-list --url                    # http://localhost:8085/api/trustlist
+eudi wallet trust-list --id pid --url           # http://localhost:8085/api/trustlists/pid
+eudi wallet trust-list --id local --url         # http://localhost:8085/api/trustlists/local
+eudi wallet trust-list --doctype org.iso.23220.photoid.1 --url
+eudi wallet trust-list --url --port 9000        # http://localhost:9000/api/trustlist
+eudi wallet trust-list --url --docker           # http://host.docker.internal:8085/api/trustlist
 ```
 
 | Flag       | Default | Description                                        |
@@ -364,9 +364,9 @@ Loads or creates the shared wallet CA certificate and prints exactly one PEM cer
 Use `--jwks` to export the certificate as a JWKS document instead of PEM: the certificate's public key as a JWK with `kid`, `alg`, `use`, the certificate chain in `x5c`, and the leaf hash in `x5t#S256`. This is the format expected by JWKS-based trust configuration.
 
 ```bash
-oid4vc-dev wallet ca-cert
-oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
-oid4vc-dev wallet ca-cert --jwks
+eudi wallet ca-cert
+eudi wallet ca-cert --out wallet-ca-cert.pem
+eudi wallet ca-cert --jwks
 ```
 
 On a running wallet server the same export is available as `GET /api/certificates/ca` (`?format=jwks` for JWKS). See [Certificate export](#certificate-export).
@@ -382,11 +382,11 @@ On a running wallet server the same export is available as `GET /api/certificate
 Loads or creates the HTTPS leaf certificate used by the wallet's HTTPS endpoints and prints exactly one PEM certificate. Use `--out` to write the certificate to a file for verifier trust stores in automated tests. Use `wallet ca-cert` when you want the shared trust root instead of the leaf.
 
 ```bash
-oid4vc-dev wallet tls-cert
-oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
-oid4vc-dev wallet tls-cert --docker --out wallet-tls-cert.pem
-oid4vc-dev wallet tls-cert --base-url http://wallet:8085 --out wallet-tls-cert.pem
-oid4vc-dev wallet tls-cert --jwks
+eudi wallet tls-cert
+eudi wallet tls-cert --out wallet-tls-cert.pem
+eudi wallet tls-cert --docker --out wallet-tls-cert.pem
+eudi wallet tls-cert --base-url http://wallet:8085 --out wallet-tls-cert.pem
+eudi wallet tls-cert --jwks
 ```
 
 Use the same `--port`, `--docker`, and `--base-url` flags as `wallet serve` so the exported certificate matches the HTTPS wallet host that the running wallet presents.
@@ -414,10 +414,10 @@ Use `--auto-accept` to keep URL handling silent: the handler first tries to POST
 - **Other platforms**: `register` / `unregister` are accepted as no-ops so scripts stay portable; use `wallet accept <uri>` instead
 
 ```bash
-oid4vc-dev wallet register               # Register URL handlers and open the wallet UI by default
-oid4vc-dev wallet register --auto-accept # Keep URL handling silent / background-only
-oid4vc-dev wallet register --port 9000   # Use custom listener port
-oid4vc-dev wallet unregister             # Remove URL handlers
+eudi wallet register               # Register URL handlers and open the wallet UI by default
+eudi wallet register --auto-accept # Keep URL handling silent / background-only
+eudi wallet register --port 9000   # Use custom listener port
+eudi wallet unregister             # Remove URL handlers
 ```
 
 | Flag            | Default | Description                                                    |
@@ -472,8 +472,8 @@ Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](
 Non-compliant requests receive an HTTP 400 error with details about which checks failed.
 
 ```bash
-oid4vc-dev wallet serve --haip --auto-accept --pid
-oid4vc-dev wallet accept --haip 'openid4vp://authorize?...'
+eudi wallet serve --haip --auto-accept --pid
+eudi wallet accept --haip 'openid4vp://authorize?...'
 ```
 
 ## HTTP API
@@ -659,7 +659,7 @@ curl -X PUT http://localhost:8085/api/config/preferred-format \
 The preference can also be set at startup via `--preferred-format`:
 
 ```bash
-oid4vc-dev wallet serve --auto-accept --pid --preferred-format dc+sd-jwt
+eudi wallet serve --auto-accept --pid --preferred-format dc+sd-jwt
 ```
 
 ### Credential import
@@ -695,13 +695,13 @@ Those endpoints use certificate chains rooted in the shared wallet CA.
 
 ```bash
 # Verifier on the same host
-oid4vc-dev wallet serve --pid
+eudi wallet serve --pid
 
 # Verifier in Docker (shortcut for --base-url http://host.docker.internal:<port>)
-oid4vc-dev wallet serve --pid --docker
+eudi wallet serve --pid --docker
 
 # Custom base URL
-oid4vc-dev wallet serve --pid --base-url http://my-host:8085
+eudi wallet serve --pid --base-url http://my-host:8085
 ```
 
 The status of individual credentials can be changed at runtime (the wallet UI exposes the same operations as Revoke and Activate buttons on the credential cards):
@@ -737,7 +737,7 @@ OID4VP 1.0 Section 5.10 defines an optional mechanism where the wallet POSTs its
 Enable with `--require-encrypted-request`:
 
 ```bash
-oid4vc-dev wallet serve --auto-accept --pid --require-encrypted-request
+eudi wallet serve --auto-accept --pid --require-encrypted-request
 ```
 
 When enabled, the wallet:
@@ -759,7 +759,7 @@ Without `--require-encrypted-request`, the wallet still supports `request_uri_me
 
 ```bash
 # 1. Start wallet in headless mode with both PID formats
-oid4vc-dev wallet serve --auto-accept --pid --preferred-format dc+sd-jwt &
+eudi wallet serve --auto-accept --pid --preferred-format dc+sd-jwt &
 
 # 2. Import an additional credential
 curl -X POST http://localhost:8085/api/credentials -d @credential.txt
@@ -795,44 +795,44 @@ curl -X POST http://localhost:8085/api/presentations \
 All wallet subcommands accept `--wallet-dir` to override the storage directory and `--templates-dir` to override the credential template directory (see [templates](templates.md)):
 
 ```bash
-oid4vc-dev wallet list --wallet-dir /tmp/test-wallet
-oid4vc-dev wallet serve --templates-dir ./my-templates
+eudi wallet list --wallet-dir /tmp/test-wallet
+eudi wallet serve --templates-dir ./my-templates
 ```
 
 ## Remote control
 
-The CLI can manage a remote oid4vc-dev wallet instead of the local store. In remote mode the management commands talk to the running wallet server's REST API. This works for `wallet list`, `show`, `import`, `remove`, `generate-pid`, `logs`, `accept`, `ca-cert`, `tls-cert`, `info`, for `issue ... --wallet`, and for all `templates` commands. Commands that need the local machine (`serve`, `scan`, `register`) stay local.
+The CLI can manage a remote eudi wallet instead of the local store. In remote mode the management commands talk to the running wallet server's REST API. This works for `wallet list`, `show`, `import`, `remove`, `generate-pid`, `logs`, `accept`, `ca-cert`, `tls-cert`, `info`, for `issue ... --wallet`, and for all `templates` commands. Commands that need the local machine (`serve`, `scan`, `register`) stay local.
 
 ```bash
 # Switch management to a running instance (persisted until switched back)
-oid4vc-dev wallet instances use http://localhost:8085
-oid4vc-dev wallet list                     # lists the remote wallet's credentials
-oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt   # issues on the remote wallet
-oid4vc-dev wallet instances use local      # back to the local store
+eudi wallet instances use http://localhost:8085
+eudi wallet list                     # lists the remote wallet's credentials
+eudi issue sdjwt --wallet --template german-pid-sdjwt   # issues on the remote wallet
+eudi wallet instances use local      # back to the local store
 
 # One-off remote target without switching
-oid4vc-dev wallet list --remote http://localhost:8085
+eudi wallet list --remote http://localhost:8085
 
 # Inspect the managed wallet (remote: the /api/config introspection document)
-oid4vc-dev wallet info
+eudi wallet info
 ```
 
-Remote commands print `Managing remote wallet <url>` to stderr so it is always visible which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.oid4vc-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
+Remote commands print `Managing remote wallet <url>` to stderr so it is always visible which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
 
 ### Instances
 
 The CLI can scan the local system for running wallet instances, stop them, and switch management to them:
 
 ```bash
-oid4vc-dev wallet instances list           # list running instances (URL, pid, wallet dir)
-oid4vc-dev wallet instances use http://localhost:18924
-oid4vc-dev wallet instances kill 18924     # stop by port, pid, or URL
-oid4vc-dev wallet instances kill --all     # stop every running instance
+eudi wallet instances list           # list running instances (URL, pid, wallet dir)
+eudi wallet instances use http://localhost:18924
+eudi wallet instances kill 18924     # stop by port, pid, or URL
+eudi wallet instances kill --all     # stop every running instance
 ```
 
 `wallet instances` without a subcommand is a shortcut for `wallet instances list`.
 
-Every `wallet serve` registers itself in `~/.oid4vc-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
 
 ### Introspection
 

@@ -6,12 +6,12 @@ If neither `--key` nor `--trust-list` is provided, signature verification is ski
 
 ```bash
 # Full validation with signature verification
-oid4vc-dev validate --key issuer-key.pem credential.txt
-oid4vc-dev validate --trust-list trust-list.jwt credential.txt
-oid4vc-dev validate --key key.pem --allow-expired credential.txt
+eudi validate --key issuer-key.pem credential.txt
+eudi validate --trust-list trust-list.jwt credential.txt
+eudi validate --key key.pem --allow-expired credential.txt
 
 # Expiry + revocation check without signature verification
-oid4vc-dev validate credential.txt
+eudi validate credential.txt
 ```
 
 ## Flags
@@ -39,12 +39,12 @@ Wallet-generated SD-JWT credentials follow the same model: the SD-JWT header car
 This trust-list validation step is intentionally limited to certificate trust and service listing. Current EUDI authorization checks such as provider class and exact attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar or registration data, not from custom trust-list fields.
 The trust-list parser and decoder accept current ETSI-style field names, including `ListIssueDateTime`. When a wallet exposes multiple trust-list profiles, use the legacy `/api/trustlist` endpoint for PID compatibility or resolve a specific profile from `/api/trustlists`. For containerized callers, prefer the index entry's relative `path` over its optional advertised URL.
 
-If your verifier test environment needs to trust the wallet's local HTTPS endpoints explicitly, export the shared wallet CA with `oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. Use `wallet tls-cert` only when you need the exact per-wallet HTTPS leaf certificate as a single PEM.
+If your verifier test environment needs to trust the wallet's local HTTPS endpoints explicitly, export the shared wallet CA with `eudi wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. Use `wallet tls-cert` only when you need the exact per-wallet HTTPS leaf certificate as a single PEM.
 
 ```bash
 # Validate a wallet-issued credential against the wallet's trust list
-oid4vc-dev validate --trust-list http://localhost:8085/api/trustlist credential.txt
+eudi validate --trust-list http://localhost:8085/api/trustlist credential.txt
 
 # Validate against the German PID provider trust list
-oid4vc-dev validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-trust-lists/pid-provider.jwt credential.txt
+eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-trust-lists/pid-provider.jwt credential.txt
 ```

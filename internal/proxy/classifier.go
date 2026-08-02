@@ -21,8 +21,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/format"
-	"github.com/dominikschlosser/oid4vc-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
 // Classify determines the OID4VP/VCI traffic class from the request/response.

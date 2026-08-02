@@ -711,7 +711,7 @@ func (s *server) handleIssue(w http.ResponseWriter, r *http.Request) {
 		OfferURI:      offerURI,
 		OfferPayload:  credentialOfferPayload(offerURI),
 		QRCodeDataURL: qrDataURL,
-		AcceptCommand: "oid4vc-dev wallet accept '" + offerURI + "'",
+		AcceptCommand: "eudi wallet accept '" + offerURI + "'",
 		HasOffer:      true,
 	})
 }

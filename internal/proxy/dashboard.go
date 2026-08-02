@@ -21,7 +21,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
 // Dashboard serves the web dashboard for live traffic inspection.
@@ -77,7 +77,7 @@ func (d *Dashboard) handleHAR(w http.ResponseWriter, r *http.Request) {
 	entries := d.store.Entries()
 	har := GenerateHAR(entries)
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"oid4vc-dev.har\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"eudi-dev.har\"")
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	enc.Encode(har)

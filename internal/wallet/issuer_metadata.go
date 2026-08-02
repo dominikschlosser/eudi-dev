@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // LocalIssuerURL returns the local HTTPS issuer base URL for the given port.
