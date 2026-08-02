@@ -1,0 +1,139 @@
+# Credential Templates
+
+Credential templates are named, reusable claim sets for issuing test credentials. A template carries the credential type (VCT or doc type), a default claim set, an optional expiry, and an optional list of claims that are issued without selective disclosure. Templates work in the CLI, the HTTP API, and the wallet UI.
+
+Two pre-defined templates ship with the binary:
+
+| Name | Format | Contents |
+|------|--------|----------|
+| `german-pid-sdjwt` | sdjwt | German EUDI PID (PID Rulebook claims, `urn:eudi:pid:de:1`) |
+| `german-pid-mdoc` | mdoc | German EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
+
+The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. So yes, a local instance can change what the pre-defined PID templates issue (delete the override to restore the original). Note that `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
+
+## Template files and storage
+
+Pre-defined templates are compiled into the binary and need no files on disk. User templates are JSON files in the wallet directory's `templates/` subdirectory (`~/.oid4vc-dev/wallet/templates/` by default, or `<dir>/templates/` with `--wallet-dir <dir>`). The file name without extension is the template name (both `.json` and `.template` extensions are recognized).
+
+The `--templates-dir` flag points the wallet, the issue commands, and the `templates` commands at any directory instead. This makes setup easy: keep a folder of template JSON files in your project (or mount one into a container) and start the wallet with it.
+
+```bash
+oid4vc-dev wallet serve --templates-dir ./my-templates
+oid4vc-dev issue sdjwt --template employee-card --templates-dir ./my-templates
+oid4vc-dev templates list --templates-dir ./my-templates
+```
+
+```json
+{
+  "description": "Employee badge for verifier testing",
+  "format": "sdjwt",
+  "vct": "urn:example:employee",
+  "exp": "720h",
+  "claims": {
+    "employee_id": "E-1",
+    "department": "IT",
+    "address": { "country": "DE", "locality": "KÖLN" }
+  },
+  "always_disclosed": ["department", "address.country"]
+}
+```
+
+All fields except `claims` are optional:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Template name (defaults to the file name) |
+| `description` | Free text shown in listings |
+| `format` | `sdjwt`, `jwt`, or `mdoc` (empty means any format) |
+| `vct` | Credential type for sdjwt/jwt |
+| `doctype`, `namespace` | Type identifiers for mdoc |
+| `exp` | Default expiry as a Go duration (for example `720h`) |
+| `claims` | The default claim set |
+| `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
+
+Because a template is a single JSON document, sharing one is just sharing the file (or the output of `templates show`).
+
+## Always disclosed claims
+
+By default every claim in an SD-JWT is selectively disclosable. Claims listed in `always_disclosed` are embedded plainly in the signed payload instead, so they are always visible to a verifier and cannot be withheld during presentation.
+
+Entries name top level claims (`issuing_country`) or nested subclaims with dotted paths (`address.country`). A top level entry embeds the whole claim value plainly. A dotted entry keeps the parent selectively disclosable but embeds that subclaim plainly inside the parent's disclosure. Entries that match no claim are ignored.
+
+This only applies to SD-JWT. JWT VCs carry all claims plainly anyway, so the list is ignored there. mDocs reject it (in ISO 18013-5 every element is selectively disclosable by design).
+
+## CLI
+
+```bash
+# List and inspect templates
+oid4vc-dev templates list
+oid4vc-dev templates show german-pid-sdjwt
+
+# Issue from a template, optionally overriding individual claims
+oid4vc-dev issue sdjwt --template german-pid-sdjwt
+oid4vc-dev issue sdjwt --template german-pid-sdjwt --claims '{"given_name": "MAX"}'
+
+# Make claims non disclosable at issuance time
+oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
+
+# Save the current issuance as a template while issuing
+oid4vc-dev issue sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --save-template employee-card
+
+# Create or update a template directly
+oid4vc-dev templates save employee-card --format sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --always-disclosed employee_id
+
+# Customize a pre-defined template (the copy overrides it when saved under the same name)
+oid4vc-dev templates save german-pid-sdjwt --from german-pid-sdjwt --vct urn:custom:pid
+
+# Import a shared template (file, JSON string, or - for stdin)
+oid4vc-dev templates import shared-template.json
+oid4vc-dev templates show employee-card > share-me.json
+
+# Delete a user template (deleting an override restores the pre-defined version)
+oid4vc-dev templates delete employee-card
+```
+
+All `templates` subcommands accept `--wallet-dir` to target a non default wallet store.
+
+### `templates save`
+
+| Flag | Description |
+|------|-------------|
+| `--from` | Copy this template (name or file) as the starting point |
+| `--format` | `sdjwt`, `jwt`, or `mdoc` (empty means any) |
+| `--vct` | Credential type (sdjwt/jwt) |
+| `--doc-type` | Document type (mdoc) |
+| `--namespace` | Default namespace (mdoc) |
+| `--exp` | Default expiry duration |
+| `--claims` | Claims as JSON string or `@filepath` |
+| `--always-disclosed` | Comma separated claim paths issued without selective disclosure |
+| `--description` | Free text description |
+
+## HTTP API
+
+The wallet server exposes the same template store:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/templates` | List all templates (pre-defined and user), including claims |
+| `GET /api/templates/{name}` | Get one template |
+| `PUT /api/templates/{name}` | Create or replace a user template (body is a full template document, which makes this the import endpoint) |
+| `DELETE /api/templates/{name}` | Delete a user template |
+
+`POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet.md#issuing-credentials).
+
+```bash
+# Import a template and issue from it
+curl -X PUT http://localhost:8085/api/templates/employee-card \
+  -H 'Content-Type: application/json' \
+  -d '{"format": "sdjwt", "vct": "urn:example:employee", "claims": {"employee_id": "E-1"}, "always_disclosed": ["employee_id"]}'
+
+curl -X POST http://localhost:8085/api/issue \
+  -H 'Content-Type: application/json' \
+  -d '{"template": "employee-card", "claims": {"employee_id": "E-42"}}'
+```
+
+## Wallet UI
+
+The issue dialog has a template dropdown that pre-fills the form (format, type, expiry, claims, and non disclosable claims). Everything stays editable and the edited form contents win over the template. In the claims builder each row has an SD checkbox (uncheck it to issue that claim without selective disclosure). In JSON mode the same list appears as the "Always visible" field instead, which also accepts dotted paths for nested claims. A name in "Save as template" stores the dialog contents as a template on successful issuance.
+
+The Templates button opens a manager for listing, editing, importing (paste the JSON), and deleting templates.

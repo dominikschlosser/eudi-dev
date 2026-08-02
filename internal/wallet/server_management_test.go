@@ -166,33 +166,6 @@ func TestIssueCredentialAPIInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestIssueDefaultsAPI(t *testing.T) {
-	srv := newTestServer(t, true)
-	resp := serverRequest(t, srv, http.MethodGet, "/api/issue/defaults", "")
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
-	}
-	result := decodeJSON(t, resp)
-	for _, format := range []string{"sdjwt", "jwt", "mdoc"} {
-		entry, ok := result[format].(map[string]any)
-		if !ok {
-			t.Fatalf("expected defaults for %s, got %v", format, result[format])
-		}
-		claims, ok := entry["claims"].(map[string]any)
-		if !ok || len(claims) == 0 {
-			t.Errorf("expected non-empty claims for %s", format)
-		}
-	}
-	sdjwt := result["sdjwt"].(map[string]any)
-	if sdjwt["vct"] == "" {
-		t.Error("expected vct in sdjwt defaults")
-	}
-	mdoc := result["mdoc"].(map[string]any)
-	if mdoc["doctype"] != DefaultMDOCDocType {
-		t.Errorf("expected doctype %q, got %v", DefaultMDOCDocType, mdoc["doctype"])
-	}
-}
-
 func TestGeneratePIDAPI(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.ClearCredentials()

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0]
+
+### Added
+
+- Credential templates: named, reusable claim sets with per-format defaults (VCT or doc type, namespace, expiry) usable across the CLI, the HTTP API, and the wallet UI. New `templates list|show|save|import|delete` commands manage them, `issue sdjwt|jwt|mdoc --template <name>` issues from one (with `--claims` overriding individual claims), `--save-template <name>` saves the issued parameters as a template, and templates are shareable as single JSON documents (`templates show` to export, `templates import` for a file, JSON string, or stdin). The wallet server exposes the same store via `GET/PUT/DELETE /api/templates[/{name}]` plus `template` and `save_as_template` fields on `POST /api/issue`, and the wallet UI adds a template dropdown in the issue dialog and a Templates manager for editing, importing (paste JSON), and deleting. User templates live in the wallet directory's `templates/` subdirectory (pre-defined templates are compiled in) and a user template saved under a pre-defined template's name overrides it. `--templates-dir` on the wallet, issue, and templates commands points them at any directory instead, so a project folder or container mount of template files works as a self-contained setup
+- The hardcoded EUDI PID claim sets moved into pre-defined credential templates (`german-pid-sdjwt`, `german-pid-mdoc`). `issue --pid`, `wallet generate-pid`, and `POST /api/generate-pid` all resolve through the template system now, so overriding those templates changes what every PID path issues
+
+### Removed
+
+- The issue dialog's "Fill with EUDI PID defaults" preset button and its `GET /api/issue/defaults` endpoint: the template dropdown with the pre-defined `german-pid-sdjwt` and `german-pid-mdoc` templates replaces both (`GET /api/templates` serves the same data)
+- SD-JWT claims can be issued without selective disclosure: `--always-disclosed` on `issue sdjwt` (or `always_disclosed` in templates and `POST /api/issue`) embeds the named claims plainly in the signed payload so they are always visible and cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`), which keep the parent selectively disclosable while pinning the subclaim inside its disclosure. The default is unchanged (every claim selectively disclosable). The wallet UI exposes this as a per-claim SD checkbox in the claim builder (JSON mode shows the same list as an "Always visible" field that also accepts dotted paths); mdoc rejects the option (every element is selectively disclosable in ISO 18013-5) and JWT VC ignores it
+
+### Deprecated
+
+- `wallet generate-pid` and `POST /api/generate-pid`: issue from the pre-defined PID templates instead (`issue sdjwt --wallet --template german-pid-sdjwt`, `issue mdoc --wallet --template german-pid-mdoc`, or `POST /api/issue` with `template`). Both still work but will be removed in a future release; the CLI prints the equivalent template commands and the API responds with a `Deprecation: true` header
+
+### Fixed
+
+- Flaky e2e runs in CI: docker.spec.js mapped its container to host port 18925, which the wallet spec's server binds as its HTTPS port (port+1), and spec files run in parallel workers; the docker spec now uses a free port. The issue-dialog tests also raced against the wallet UI's error overlay left behind by earlier negative API tests; the issuing tests now clear the last error and pending consent requests before each test
+
 ## [1.13.0] - 2026-08-01
 
 ### Added

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 )
 
@@ -36,11 +37,26 @@ const DefaultMDOCDocType = "eu.europa.ec.eudi.pid.1"
 type IssueOptions struct {
 	// Format is "sdjwt", "jwt", or "mdoc" (the stored format identifiers
 	// "dc+sd-jwt", "jwt_vc_json", and "mso_mdoc" are accepted as aliases).
+	// When empty, the template's format is used.
 	Format string
-	// Claims are the credential claims. When nil, PID selects the full EUDI
-	// PID Rulebook claim set, otherwise a small default claim set is used.
+	// Template is a credential template name or file path. Template claims
+	// become the base claim set, with Claims merged on top. Template VCT,
+	// doc type, namespace, and expiry apply when the matching option is
+	// unset. Templates are resolved against the wallet's template directory.
+	Template string
+	// Claims are the credential claims. When nil and no template is given,
+	// PID selects the full EUDI PID Rulebook claim set (the german-pid
+	// templates), otherwise a small default claim set is used.
 	Claims map[string]any
 	PID    bool
+	// AlwaysDisclosed lists claims (dotted paths for nested claims) that are
+	// embedded plainly in an SD-JWT payload instead of becoming selective
+	// disclosures. Combined with the template's always_disclosed list.
+	// Rejected for mdoc (every element is selectively disclosable there).
+	AlwaysDisclosed []string
+	// SaveTemplate saves the resolved issuance parameters as a user template
+	// with this name after successful issuance.
+	SaveTemplate string
 	// Omit removes top-level claims by name from the resolved claim set.
 	Omit []string
 	// VCT applies to sdjwt/jwt and defaults to mock.DefaultPIDVCT.
@@ -81,6 +97,9 @@ type IssueResult struct {
 	// StatusRegistered reports whether the credential was registered on the
 	// wallet's own status list.
 	StatusRegistered bool
+	// TemplatePath is the file the issuance parameters were saved to when
+	// SaveTemplate was set.
+	TemplatePath string
 }
 
 // IssueCredential issues a credential with the wallet's issuer key and
@@ -88,38 +107,74 @@ type IssueResult struct {
 // issued-attestation metadata. The caller is responsible for persisting the
 // wallet afterwards.
 func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
-	format, err := normalizeIssueFormat(opts.Format)
+	tpl, err := w.resolveIssueTemplate(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	claims := opts.Claims
-	if claims == nil {
-		switch {
-		case opts.PID && format == "mdoc":
-			claims = mock.MDOCPIDClaims
-		case opts.PID:
-			claims = mock.SDJWTPIDClaims
-		default:
-			claims = mock.DefaultClaims
+	formatInput := opts.Format
+	if strings.TrimSpace(formatInput) == "" && tpl != nil {
+		formatInput = tpl.Format
+	}
+	format, err := normalizeIssueFormat(formatInput)
+	if err != nil {
+		return nil, err
+	}
+	if tpl != nil && tpl.Format != "" {
+		tplFormat, err := credtemplate.NormalizeFormat(tpl.Format)
+		if err != nil {
+			return nil, err
 		}
+		if tplFormat != "" && tplFormat != format {
+			return nil, fmt.Errorf("template %q is for format %s, not %s", tpl.Name, tplFormat, format)
+		}
+	}
+
+	claims := opts.Claims
+	if tpl != nil {
+		claims = credtemplate.MergeClaims(tpl.Claims, opts.Claims)
+	} else if claims == nil {
+		claims = mock.DefaultClaims
 	}
 	claims = omitIssueClaims(claims, opts.Omit)
 
+	alwaysDisclosed := opts.AlwaysDisclosed
+	if tpl != nil {
+		alwaysDisclosed = mergeAlwaysDisclosed(tpl.AlwaysDisclosed, opts.AlwaysDisclosed)
+	}
+	if format == "mdoc" && len(alwaysDisclosed) > 0 {
+		return nil, fmt.Errorf("always-disclosed claims are not supported for mdoc: every mdoc element is selectively disclosable")
+	}
+
 	expiresIn := opts.ExpiresIn
+	if expiresIn == 0 && tpl != nil && tpl.Exp != "" {
+		expiresIn, err = time.ParseDuration(tpl.Exp)
+		if err != nil {
+			return nil, fmt.Errorf("template %q: invalid exp duration: %w", tpl.Name, err)
+		}
+	}
 	if expiresIn == 0 {
 		expiresIn = DefaultIssueExpiry
 	}
 
 	vct := strings.TrimSpace(opts.VCT)
+	if vct == "" && tpl != nil {
+		vct = strings.TrimSpace(tpl.VCT)
+	}
 	if vct == "" {
 		vct = mock.DefaultPIDVCT
 	}
 	docType := strings.TrimSpace(opts.DocType)
+	if docType == "" && tpl != nil {
+		docType = strings.TrimSpace(tpl.DocType)
+	}
 	if docType == "" {
 		docType = DefaultMDOCDocType
 	}
 	namespace := strings.TrimSpace(opts.Namespace)
+	if namespace == "" && tpl != nil {
+		namespace = strings.TrimSpace(tpl.Namespace)
+	}
 	if namespace == "" {
 		namespace = docType
 	}
@@ -161,16 +216,17 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	switch format {
 	case "sdjwt":
 		raw, err = mock.GenerateSDJWT(mock.SDJWTConfig{
-			Issuer:        issuer,
-			VCT:           vct,
-			ExpiresIn:     expiresIn,
-			NotBefore:     opts.NotBefore,
-			Claims:        claims,
-			Key:           w.IssuerKey,
-			HolderKey:     holderPub,
-			StatusListURI: statusURI,
-			StatusListIdx: statusIdx,
-			CertChain:     certChain,
+			Issuer:          issuer,
+			VCT:             vct,
+			ExpiresIn:       expiresIn,
+			NotBefore:       opts.NotBefore,
+			Claims:          claims,
+			Key:             w.IssuerKey,
+			HolderKey:       holderPub,
+			StatusListURI:   statusURI,
+			StatusListIdx:   statusIdx,
+			CertChain:       certChain,
+			AlwaysDisclosed: alwaysDisclosed,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("generating SD-JWT: %w", err)
@@ -218,12 +274,79 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)
 	}
 
-	return &IssueResult{
+	result := &IssueResult{
 		Raw:              raw,
 		Credential:       imported,
 		StatusIdx:        statusIdx,
 		StatusRegistered: registerStatus,
-	}, nil
+	}
+
+	if name := strings.TrimSpace(opts.SaveTemplate); name != "" {
+		saved := credtemplate.Template{
+			Name:            name,
+			Format:          format,
+			Exp:             formatIssueExpiry(expiresIn),
+			Claims:          claims,
+			AlwaysDisclosed: alwaysDisclosed,
+		}
+		switch format {
+		case "mdoc":
+			saved.DocType = docType
+			saved.Namespace = namespace
+		default:
+			saved.VCT = vct
+		}
+		path, err := credtemplate.Save(w.TemplatesDir, saved)
+		if err != nil {
+			return nil, fmt.Errorf("saving template: %w", err)
+		}
+		result.TemplatePath = path
+	}
+
+	return result, nil
+}
+
+// resolveIssueTemplate loads the template referenced by opts: an explicit
+// Template name or path, or the pre-defined german-pid template matching the
+// format when PID is set without explicit claims.
+func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (*credtemplate.Template, error) {
+	if name := strings.TrimSpace(opts.Template); name != "" {
+		return credtemplate.Load(name, w.TemplatesDir)
+	}
+	if opts.PID && opts.Claims == nil {
+		name := "german-pid-sdjwt"
+		if format, _ := normalizeIssueFormat(opts.Format); format == "mdoc" {
+			name = "german-pid-mdoc"
+		}
+		return credtemplate.Load(name, w.TemplatesDir)
+	}
+	return nil, nil
+}
+
+// mergeAlwaysDisclosed combines two always-disclosed lists without duplicates.
+func mergeAlwaysDisclosed(base, extra []string) []string {
+	seen := make(map[string]bool, len(base)+len(extra))
+	var out []string
+	for _, list := range [][]string{base, extra} {
+		for _, path := range list {
+			path = strings.TrimSpace(path)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// formatIssueExpiry renders a duration as a compact Go duration string
+// (e.g. "720h" instead of "720h0m0s").
+func formatIssueExpiry(d time.Duration) string {
+	if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int64(d/time.Hour))
+	}
+	return d.String()
 }
 
 func normalizeIssueFormat(format string) (string, error) {

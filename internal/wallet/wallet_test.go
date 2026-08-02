@@ -34,7 +34,10 @@ func generateTestWallet(t *testing.T) *Wallet {
 	if err != nil {
 		t.Fatalf("generating issuer key: %v", err)
 	}
-	return New(holderKey, issuerKey, false)
+	w := New(holderKey, issuerKey, false)
+	// Isolate tests from templates in the developer's real wallet directory.
+	w.TemplatesDir = t.TempDir()
+	return w
 }
 
 func generateTestWalletWithPID(t *testing.T) *Wallet {

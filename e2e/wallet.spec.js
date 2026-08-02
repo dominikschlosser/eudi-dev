@@ -293,7 +293,27 @@ test.describe("Static Files", () => {
 });
 
 test.describe("Credential Issuing via UI", () => {
-  test("issue modal opens empty with a PID preset as a choice", async ({
+  // Earlier API tests intentionally trigger wallet errors (invalid
+  // presentation URI, malformed offer). The wallet UI surfaces the last
+  // error and any pending consent request as an overlay on page load, which
+  // would intercept clicks on the issue button. Clear both before each test.
+  test.beforeEach(async () => {
+    await new Promise((resolve) => {
+      const req = http.request(
+        `${WALLET_URL}/api/error`,
+        { method: "DELETE" },
+        (res) => res.on("data", () => {}).on("end", resolve)
+      );
+      req.on("error", resolve);
+      req.end();
+    });
+    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
+    for (const r of Array.isArray(pending.body) ? pending.body : []) {
+      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
+    }
+  });
+
+  test("issue modal opens empty with the PID template as a choice", async ({
     page,
   }) => {
     await page.goto(WALLET_URL);
@@ -311,8 +331,8 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator("#issue-doctype")).toBeHidden();
     await expect(page.locator("#issue-claim-ns-0")).toBeHidden();
 
-    // The PID preset fills everything on demand
-    await page.locator("#issue-fill-pid").click();
+    // Selecting the pre-defined PID template fills everything on demand
+    await page.locator("#issue-template").selectOption("german-pid-sdjwt");
     await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
     await expect(page.locator("#issue-exp")).toHaveValue("720h");
     const rowCount = await page.locator("#issue-claim-rows .claim-row").count();
@@ -335,7 +355,7 @@ test.describe("Credential Issuing via UI", () => {
     // mDoc claim rows get a per-attribute namespace input
     await expect(page.locator("#issue-claim-ns-0")).toBeVisible();
 
-    await page.locator("#issue-fill-pid").click();
+    await page.locator("#issue-template").selectOption("german-pid-mdoc");
     await expect(page.locator("#issue-doctype")).toHaveValue(
       "eu.europa.ec.eudi.pid.1"
     );
@@ -384,7 +404,7 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
   });
 
-  test("issues an SD-JWT credential from the PID preset with an added claim", async ({
+  test("issues an SD-JWT credential from the PID template with an added claim", async ({
     page,
   }) => {
     await page.goto(WALLET_URL);
@@ -393,7 +413,7 @@ test.describe("Credential Issuing via UI", () => {
     });
 
     await page.locator("#issue-btn").click();
-    await page.locator("#issue-fill-pid").click();
+    await page.locator("#issue-template").selectOption("german-pid-sdjwt");
     await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
     await page.locator("#issue-vct").fill("urn:example:e2e-test");
 
@@ -422,7 +442,7 @@ test.describe("Credential Issuing via UI", () => {
   }) => {
     await page.goto(WALLET_URL);
     await page.locator("#issue-btn").click();
-    await page.locator("#issue-fill-pid").click();
+    await page.locator("#issue-template").selectOption("german-pid-sdjwt");
 
     await page.locator("#issue-claims-mode-json").check();
     await expect(page.locator("#issue-claims")).toBeVisible();
@@ -493,6 +513,119 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator(`#delete-${issued.id}`).click();
     await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
     await expect(page.locator(".credential-card")).toHaveCount(2);
+  });
+
+  test("manages templates and issues from one with a non-disclosable claim", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+
+    // Create a template through the manager (paste JSON = import)
+    await page.locator("#templates-btn").click();
+    await expect(page.locator("#templates-overlay")).toHaveClass(/active/);
+    await expect(
+      page.locator(".template-row-name", { hasText: "german-pid-sdjwt" })
+    ).toBeVisible();
+
+    await page.locator("#template-name").fill("e2e-employee");
+    await page.locator("#template-json").fill(
+      JSON.stringify({
+        format: "sdjwt",
+        vct: "urn:example:e2e-employee",
+        claims: { employee_id: "E-1", department: "IT" },
+        always_disclosed: ["department"],
+      })
+    );
+    await page.locator("#template-save").click();
+    await expect(
+      page.locator(".template-row-name", { hasText: "e2e-employee" })
+    ).toBeVisible();
+    await page.locator("#template-close").click();
+
+    // Issue from the template
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-template").selectOption("e2e-employee");
+    await expect(page.locator("#issue-vct")).toHaveValue(
+      "urn:example:e2e-employee"
+    );
+    await expect(page.locator("#issue-always-disclosed")).toHaveValue(
+      "department"
+    );
+    // The SD checkbox of the always-disclosed claim is unchecked (input
+    // values are set as JS properties, so query them via evaluate)
+    const sdStates = await page.evaluate(() => {
+      const states = {};
+      document
+        .querySelectorAll("#issue-claim-rows .claim-row")
+        .forEach((row) => {
+          const key = row.querySelector('input[id^="issue-claim-key-"]').value;
+          const sd = row.querySelector('input[id^="issue-claim-sd-"]').checked;
+          states[key] = sd;
+        });
+      return states;
+    });
+    expect(sdStates.department).toBe(false);
+    expect(sdStates.employee_id).toBe(true);
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find((c) => c.vct === "urn:example:e2e-employee");
+    expect(issued).toBeDefined();
+    expect(issued.claims.department).toBe("IT");
+    expect(issued.claims.employee_id).toBe("E-1");
+    // department is embedded plainly: it appears in the raw JWT payload
+    const payload = JSON.parse(
+      Buffer.from(issued.raw.split(".")[1], "base64url").toString()
+    );
+    expect(payload.department).toBe("IT");
+    expect(payload.employee_id).toBeUndefined();
+
+    // Clean up credential and template
+    await page.goto(WALLET_URL);
+    await page.locator(`#delete-${issued.id}`).click();
+    await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
+
+    await page.locator("#templates-btn").click();
+    const templateRow = page
+      .locator(".template-row")
+      .filter({ hasText: "e2e-employee" });
+    await templateRow.locator("button", { hasText: "Delete" }).click();
+    await expect(
+      page.locator(".template-row-name", { hasText: "e2e-employee" })
+    ).toHaveCount(0);
+    await page.locator("#template-close").click();
+  });
+
+  test("saves the issue dialog contents as a template", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+
+    await page.locator("#issue-vct").fill("urn:example:e2e-saved");
+    await page.locator("#issue-claim-key-0").fill("member_id");
+    await page.locator("#issue-claim-value-0").fill("M-1");
+    await page.locator("#issue-save-template").fill("e2e-saved-template");
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const tplRes = await jsonGet(
+      `${WALLET_URL}/api/templates/e2e-saved-template`
+    );
+    expect(tplRes.body.vct).toBe("urn:example:e2e-saved");
+    expect(tplRes.body.claims.member_id).toBe("M-1");
+
+    // Clean up: the issued credential and the saved template
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find((c) => c.vct === "urn:example:e2e-saved");
+    expect(issued).toBeDefined();
+    await page.goto(WALLET_URL);
+    await page.locator(`#delete-${issued.id}`).click();
+    await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
+    await fetch(`${WALLET_URL}/api/templates/e2e-saved-template`, {
+      method: "DELETE",
+    });
   });
 
   test("certificate export links are present and working", async ({

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/config"
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/sdjwt"
 	"github.com/dominikschlosser/oid4vc-dev/internal/trustlist"
@@ -104,7 +105,7 @@ func TestResolveIssueClaims_DefaultWhenEmpty(t *testing.T) {
 	issueClaims = ""
 	issueOmit = nil
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	claims, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -118,7 +119,11 @@ func TestResolveIssueClaims_PIDWhenFlagged_SDJWT(t *testing.T) {
 	issueClaims = ""
 	issueOmit = nil
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	tpl, err := credtemplate.Load("german-pid-sdjwt", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading PID template: %v", err)
+	}
+	claims, err := resolveIssueClaimsForFormat("sdjwt", tpl)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -132,7 +137,11 @@ func TestResolveIssueClaims_PIDWhenFlagged_MDOC(t *testing.T) {
 	issueClaims = ""
 	issueOmit = nil
 
-	claims, err := resolveIssueClaimsForFormat("mdoc")
+	tpl, err := credtemplate.Load("german-pid-mdoc", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading PID template: %v", err)
+	}
+	claims, err := resolveIssueClaimsForFormat("mdoc", tpl)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -146,7 +155,11 @@ func TestResolveIssueClaims_PIDWithOmit(t *testing.T) {
 	issueClaims = ""
 	issueOmit = []string{"place_of_birth", "sex"}
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	tpl, err := credtemplate.Load("german-pid-sdjwt", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading PID template: %v", err)
+	}
+	claims, err := resolveIssueClaimsForFormat("sdjwt", tpl)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -168,7 +181,7 @@ func TestResolveIssueClaims_JSONString(t *testing.T) {
 	issueClaims = `{"name":"Test","active":true}`
 	issueOmit = nil
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	claims, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -185,7 +198,7 @@ func TestResolveIssueClaims_JSONStringWithOmit(t *testing.T) {
 	issueClaims = `{"a":1,"b":2,"c":3}`
 	issueOmit = []string{"b"}
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	claims, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -208,7 +221,7 @@ func TestResolveIssueClaims_FileReference(t *testing.T) {
 	issueClaims = "@" + claimsFile
 	issueOmit = nil
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	claims, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err != nil {
 		t.Fatalf("resolveIssueClaimsForFormat: %v", err)
 	}
@@ -222,7 +235,7 @@ func TestResolveIssueClaims_InvalidJSON(t *testing.T) {
 	issueClaims = `{not json}`
 	issueOmit = nil
 
-	_, err := resolveIssueClaimsForFormat("sdjwt")
+	_, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -295,7 +308,7 @@ func TestResolveIssueClaims_MissingFile(t *testing.T) {
 	issueClaims = "@/nonexistent/path/claims.json"
 	issueOmit = nil
 
-	_, err := resolveIssueClaimsForFormat("sdjwt")
+	_, err := resolveIssueClaimsForFormat("sdjwt", nil)
 	if err == nil {
 		t.Error("expected error for missing file")
 	}

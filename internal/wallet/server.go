@@ -143,8 +143,13 @@ func (s *Server) setupRoutes() {
 
 	// API: credential issuance mirroring `issue ... --wallet` and `wallet generate-pid`
 	s.mux.HandleFunc("POST /api/issue", s.withFreshStore(s.handleIssueCredential))
-	s.mux.HandleFunc("GET /api/issue/defaults", s.handleIssueDefaults)
 	s.mux.HandleFunc("POST /api/generate-pid", s.withFreshStore(s.handleGeneratePID))
+
+	// Credential templates
+	s.mux.HandleFunc("GET /api/templates", s.handleListTemplates)
+	s.mux.HandleFunc("GET /api/templates/{name}", s.handleGetTemplate)
+	s.mux.HandleFunc("PUT /api/templates/{name}", s.handlePutTemplate)
+	s.mux.HandleFunc("DELETE /api/templates/{name}", s.handleDeleteTemplate)
 
 	// API: certificate export mirroring `wallet ca-cert` and `wallet tls-cert`
 	s.mux.HandleFunc("GET /api/certificates/ca", s.handleCACertificate)

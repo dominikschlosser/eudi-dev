@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mdoc"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
@@ -80,6 +81,7 @@ type Wallet struct {
 	IssuerURL               string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
 	VCIClientID             string                 `json:"-"`
 	VCIRedirectURI          string                 `json:"-"`
+	TemplatesDir            string                 `json:"-"` // credential template directory; empty selects the default
 	TxCode                  string                 `json:"-"` // one-shot tx_code for OID4VCI token request
 	Log                     []LogEntry
 	mu                      sync.RWMutex
@@ -265,13 +267,34 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 	return nil
 }
 
-// GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials.
+// GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials from
+// the german-pid-sdjwt and german-pid-mdoc credential templates (user
+// overrides of those templates in the wallet's template directory apply).
 // If PID credentials already exist, they are replaced. Optional claimOverrides
-// are merged on top of the default PID claims. vct specifies the SD-JWT VCT;
-// if empty, mock.DefaultPIDVCT is used.
+// are merged on top of the template claims. vct specifies the SD-JWT VCT; if
+// empty, the template's VCT (mock.DefaultPIDVCT by default) is used.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
+	sdTpl, err := credtemplate.Load("german-pid-sdjwt", w.TemplatesDir)
+	if err != nil {
+		return fmt.Errorf("loading german-pid-sdjwt template: %w", err)
+	}
+	mdocTpl, err := credtemplate.Load("german-pid-mdoc", w.TemplatesDir)
+	if err != nil {
+		return fmt.Errorf("loading german-pid-mdoc template: %w", err)
+	}
+	if vct == "" {
+		vct = sdTpl.VCT
+	}
 	if vct == "" {
 		vct = mock.DefaultPIDVCT
+	}
+	mdocDocType := mdocTpl.DocType
+	if mdocDocType == "" {
+		mdocDocType = "eu.europa.ec.eudi.pid.1"
+	}
+	mdocNamespace := mdocTpl.Namespace
+	if mdocNamespace == "" {
+		mdocNamespace = mdocDocType
 	}
 	log.Printf("[Wallet] Generating default PID credentials: vct=%s overrides=%d", vct, len(claimOverrides))
 	issuerKey := w.IssuerKey
@@ -280,25 +303,12 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 		issuer = "https://issuer.example"
 	}
 
-	sdClaims := make(map[string]any, len(mock.SDJWTPIDClaims))
-	for k, v := range mock.SDJWTPIDClaims {
-		sdClaims[k] = v
-	}
-	for k, v := range claimOverrides {
-		sdClaims[k] = v
-	}
-
-	mdocClaims := make(map[string]any, len(mock.MDOCPIDClaims))
-	for k, v := range mock.MDOCPIDClaims {
-		mdocClaims[k] = v
-	}
-	for k, v := range claimOverrides {
-		mdocClaims[k] = v
-	}
+	sdClaims := credtemplate.MergeClaims(sdTpl.Claims, claimOverrides)
+	mdocClaims := credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides)
 
 	// Remove existing PID credentials before generating new ones
 	w.removeByType("dc+sd-jwt", vct, "")
-	w.removeByType("mso_mdoc", "", "eu.europa.ec.eudi.pid.1")
+	w.removeByType("mso_mdoc", "", mdocDocType)
 
 	// Generate SD-JWT PID
 	var holderPubKey *ecdsa.PublicKey
@@ -312,13 +322,14 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 
 	sdConfig := mock.SDJWTConfig{
-		Issuer:    issuer,
-		VCT:       vct,
-		ExpiresIn: 30 * 24 * time.Hour,
-		Claims:    sdClaims,
-		Key:       issuerKey,
-		HolderKey: holderPubKey,
-		CertChain: pidChain,
+		Issuer:          issuer,
+		VCT:             vct,
+		ExpiresIn:       30 * 24 * time.Hour,
+		Claims:          sdClaims,
+		Key:             issuerKey,
+		HolderKey:       holderPubKey,
+		CertChain:       pidChain,
+		AlwaysDisclosed: sdTpl.AlwaysDisclosed,
 	}
 
 	// Assign status list indices if enabled
@@ -345,8 +356,8 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 
 	mdocConfig := mock.MDOCConfig{
-		DocType:   "eu.europa.ec.eudi.pid.1",
-		Namespace: "eu.europa.ec.eudi.pid.1",
+		DocType:   mdocDocType,
+		Namespace: mdocNamespace,
 		Claims:    mdocClaims,
 		Key:       issuerKey,
 		HolderKey: holderPubKey,
@@ -373,7 +384,7 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 
 	w.IssuedAttestations = []IssuedAttestationSpec{
 		pidSpec,
-		applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: "eu.europa.ec.eudi.pid.1"}),
+		applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType}),
 	}
 
 	// Register status entry for mDoc credential

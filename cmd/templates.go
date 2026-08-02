@@ -1,0 +1,265 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
+)
+
+var (
+	templateFormat          string
+	templateVCT             string
+	templateDocType         string
+	templateNamespace       string
+	templateExp             string
+	templateClaims          string
+	templateAlwaysDisclosed []string
+	templateDescription     string
+	templateFrom            string
+	templateImportName      string
+)
+
+var templatesCmd = &cobra.Command{
+	Use:   "templates",
+	Short: "Manage credential templates",
+	Long: "Manage credential templates: named, reusable claim sets with per-format defaults. " +
+		"Pre-defined templates (german-pid-sdjwt, german-pid-mdoc) are built in; user templates are JSON files " +
+		"in the wallet directory's templates/ subdirectory. Use them with `issue <format> --template <name>`.",
+}
+
+var templatesListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List available credential templates",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		templates, err := credtemplate.List(resolveTemplatesDir())
+		if err != nil {
+			return err
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(tw, "NAME\tFORMAT\tTYPE\tCLAIMS\tSOURCE")
+		for _, t := range templates {
+			credType := t.VCT
+			if credType == "" {
+				credType = t.DocType
+			}
+			source := "user"
+			if t.Predefined {
+				source = "pre-defined"
+			}
+			format := t.Format
+			if format == "" {
+				format = "any"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", t.Name, format, credType, len(t.Claims), source)
+		}
+		return tw.Flush()
+	},
+}
+
+var templatesShowCmd = &cobra.Command{
+	Use:   "show <name>",
+	Short: "Print a credential template as JSON (shareable, importable with `templates import`)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tpl, err := credtemplate.Load(args[0], resolveTemplatesDir())
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(tpl, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	},
+}
+
+var templatesSaveCmd = &cobra.Command{
+	Use:   "save <name>",
+	Short: "Create or update a user credential template",
+	Long: "Create or update a user credential template from flags. Use --from to copy an existing template " +
+		"as the starting point (e.g. to customize a pre-defined one); other flags override the copied values.",
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		dir := resolveTemplatesDir()
+
+		var tpl credtemplate.Template
+		if templateFrom != "" {
+			from, err := credtemplate.Load(templateFrom, dir)
+			if err != nil {
+				return err
+			}
+			tpl = *from
+		}
+		tpl.Name = args[0]
+
+		flags := cmd.Flags()
+		if flags.Changed("format") {
+			tpl.Format = templateFormat
+		}
+		if flags.Changed("vct") {
+			tpl.VCT = templateVCT
+		}
+		if flags.Changed("doc-type") {
+			tpl.DocType = templateDocType
+		}
+		if flags.Changed("namespace") {
+			tpl.Namespace = templateNamespace
+		}
+		if flags.Changed("exp") {
+			tpl.Exp = templateExp
+		}
+		if flags.Changed("description") {
+			tpl.Description = templateDescription
+		}
+		if flags.Changed("always-disclosed") {
+			tpl.AlwaysDisclosed = templateAlwaysDisclosed
+		}
+		if flags.Changed("claims") {
+			claims, err := parseTemplateClaims(templateClaims)
+			if err != nil {
+				return err
+			}
+			tpl.Claims = claims
+		}
+		if tpl.Claims == nil {
+			return fmt.Errorf("template has no claims: pass --claims or --from")
+		}
+
+		path, err := credtemplate.Save(dir, tpl)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", tpl.Name, path)
+		return nil
+	},
+}
+
+var templatesImportCmd = &cobra.Command{
+	Use:   "import <file|json|->",
+	Short: "Import a credential template from a JSON file, a JSON string, or stdin (-)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var data []byte
+		var err error
+		arg := args[0]
+		switch {
+		case arg == "-":
+			data, err = io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+		case strings.HasPrefix(strings.TrimSpace(arg), "{"):
+			data = []byte(arg)
+		default:
+			data, err = os.ReadFile(arg)
+			if err != nil {
+				return fmt.Errorf("reading template file: %w", err)
+			}
+		}
+
+		var tpl credtemplate.Template
+		if err := json.Unmarshal(data, &tpl); err != nil {
+			return fmt.Errorf("parsing template JSON: %w", err)
+		}
+		if templateImportName != "" {
+			tpl.Name = templateImportName
+		}
+		if strings.TrimSpace(tpl.Name) == "" && !strings.HasPrefix(strings.TrimSpace(arg), "{") && arg != "-" {
+			base := arg[strings.LastIndex(arg, "/")+1:]
+			tpl.Name = strings.TrimSuffix(strings.TrimSuffix(base, ".json"), ".template")
+		}
+
+		path, err := credtemplate.Save(resolveTemplatesDir(), tpl)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Imported template %q to %s\n", tpl.Name, path)
+		return nil
+	},
+}
+
+var templatesDeleteCmd = &cobra.Command{
+	Use:   "delete <name>",
+	Short: "Delete a user credential template",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := credtemplate.Delete(resolveTemplatesDir(), args[0]); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "Deleted template %q\n", args[0])
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(templatesCmd)
+	templatesCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory holding the templates/ subdirectory (default ~/.oid4vc-dev/wallet/)")
+	templatesCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
+	templatesCmd.AddCommand(templatesListCmd)
+	templatesCmd.AddCommand(templatesShowCmd)
+	templatesCmd.AddCommand(templatesSaveCmd)
+	templatesCmd.AddCommand(templatesImportCmd)
+	templatesCmd.AddCommand(templatesDeleteCmd)
+
+	templatesSaveCmd.Flags().StringVar(&templateFrom, "from", "", "Copy this template (name or file) as the starting point")
+	templatesSaveCmd.Flags().StringVar(&templateFormat, "format", "", "Credential format: sdjwt, jwt, or mdoc (empty: any)")
+	templatesSaveCmd.Flags().StringVar(&templateVCT, "vct", "", "Verifiable Credential Type (sdjwt/jwt)")
+	templatesSaveCmd.Flags().StringVar(&templateDocType, "doc-type", "", "Document type (mdoc)")
+	templatesSaveCmd.Flags().StringVar(&templateNamespace, "namespace", "", "Default namespace (mdoc)")
+	templatesSaveCmd.Flags().StringVar(&templateExp, "exp", "", "Default expiration duration (e.g. 720h)")
+	templatesSaveCmd.Flags().StringVar(&templateClaims, "claims", "", "Claims as JSON string or @filepath")
+	templatesSaveCmd.Flags().StringSliceVar(&templateAlwaysDisclosed, "always-disclosed", nil, "Claims to embed plainly instead of selectively disclosable (dotted paths for nested claims)")
+	templatesSaveCmd.Flags().StringVar(&templateDescription, "description", "", "Template description")
+
+	templatesImportCmd.Flags().StringVar(&templateImportName, "name", "", "Save the imported template under this name")
+}
+
+// resolveTemplatesDir returns the credential template directory: the
+// --templates-dir flag when set, otherwise the wallet directory's templates/
+// subdirectory.
+func resolveTemplatesDir() string {
+	if templatesDir != "" {
+		return templatesDir
+	}
+	return credtemplate.DirForWallet(walletDir)
+}
+
+func parseTemplateClaims(arg string) (map[string]any, error) {
+	var data []byte
+	if strings.HasPrefix(arg, "@") {
+		var err error
+		data, err = os.ReadFile(arg[1:])
+		if err != nil {
+			return nil, fmt.Errorf("reading claims file: %w", err)
+		}
+	} else {
+		data = []byte(arg)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(data, &claims); err != nil {
+		return nil, fmt.Errorf("parsing claims JSON: %w", err)
+	}
+	return claims, nil
+}

@@ -533,3 +533,125 @@ func TestGenerateSDJWT_WithCertChainOmitsSelfSignedTrustAnchor(t *testing.T) {
 		t.Fatalf("expected only leaf certificate in x5c, got %d entries", len(x5c))
 	}
 }
+
+func TestGenerateSDJWT_AlwaysDisclosedTopLevel(t *testing.T) {
+	key, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	cfg := SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       "urn:eudi:pid:1",
+		ExpiresIn: 24 * time.Hour,
+		Claims: map[string]any{
+			"given_name":    "ERIKA",
+			"family_name":   "MUSTERMANN",
+			"nationalities": []any{"DE"},
+		},
+		Key:             key,
+		AlwaysDisclosed: []string{"family_name", "nationalities", "no_such_claim"},
+	}
+
+	result, err := GenerateSDJWT(cfg)
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	token, err := sdjwt.Parse(result)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+
+	// family_name is plainly in the payload, not a disclosure
+	if got, _ := token.Payload["family_name"].(string); got != "MUSTERMANN" {
+		t.Errorf("expected plain family_name in payload, got %v", token.Payload["family_name"])
+	}
+	// nationalities is plainly in the payload with no array element disclosures
+	nats, ok := token.Payload["nationalities"].([]any)
+	if !ok || len(nats) != 1 || nats[0] != "DE" {
+		t.Errorf("expected plain nationalities [DE] in payload, got %v", token.Payload["nationalities"])
+	}
+	// given_name stays selectively disclosable
+	if _, ok := token.Payload["given_name"]; ok {
+		t.Error("given_name must not be plainly in the payload")
+	}
+	if len(token.Disclosures) != 1 {
+		t.Errorf("expected 1 disclosure (given_name), got %d", len(token.Disclosures))
+	}
+	// Resolved claims still contain everything
+	for _, name := range []string{"given_name", "family_name", "nationalities"} {
+		if _, ok := token.ResolvedClaims[name]; !ok {
+			t.Errorf("missing resolved claim %q", name)
+		}
+	}
+
+	verifyResult := sdjwt.Verify(token, &key.PublicKey)
+	if !verifyResult.SignatureValid {
+		t.Errorf("signature verification failed: %v", verifyResult.Errors)
+	}
+}
+
+func TestGenerateSDJWT_AlwaysDisclosedNestedPath(t *testing.T) {
+	key, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	cfg := SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       "urn:eudi:pid:1",
+		ExpiresIn: 24 * time.Hour,
+		Claims: map[string]any{
+			"address": map[string]any{
+				"country":  "DE",
+				"locality": "KÖLN",
+			},
+		},
+		Key:             key,
+		AlwaysDisclosed: []string{"address.country"},
+	}
+
+	result, err := GenerateSDJWT(cfg)
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	token, err := sdjwt.Parse(result)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+
+	// address itself stays a disclosure
+	if _, ok := token.Payload["address"]; ok {
+		t.Error("address must not be plainly in the payload")
+	}
+
+	// Inside the address disclosure value, country is plain and locality is a
+	// sub-disclosure: exactly address + locality disclosures exist.
+	if len(token.Disclosures) != 2 {
+		t.Fatalf("expected 2 disclosures (address, locality), got %d", len(token.Disclosures))
+	}
+	var addressValue map[string]any
+	for _, d := range token.Disclosures {
+		if d.Name == "address" {
+			addressValue, _ = d.Value.(map[string]any)
+		}
+	}
+	if addressValue == nil {
+		t.Fatal("address disclosure not found")
+	}
+	if got, _ := addressValue["country"].(string); got != "DE" {
+		t.Errorf("expected plain country inside address disclosure, got %v", addressValue["country"])
+	}
+	if _, ok := addressValue["locality"]; ok {
+		t.Error("locality must not be plain inside the address disclosure")
+	}
+
+	// Resolution still yields the full address object
+	addr, ok := token.ResolvedClaims["address"].(map[string]any)
+	if !ok {
+		t.Fatalf("resolved address missing: %v", token.ResolvedClaims)
+	}
+	if addr["country"] != "DE" || addr["locality"] != "KÖLN" {
+		t.Errorf("resolved address incomplete: %v", addr)
+	}
+}

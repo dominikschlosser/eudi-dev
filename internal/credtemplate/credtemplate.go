@@ -1,0 +1,324 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package credtemplate manages credential templates: named, reusable claim
+// sets with per-format defaults (VCT, doc type, namespace, expiry) and a list
+// of claims that are embedded plainly instead of being selectively
+// disclosable. Pre-defined templates compiled into the binary cover the German EUDI PID;
+// user templates are JSON files in the wallet directory's templates/
+// subdirectory (~/.oid4vc-dev/wallet/templates/ by default). A user template
+// with the same name as a pre-defined one replaces it.
+package credtemplate
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+)
+
+// Template describes a reusable credential template. All fields except Claims
+// are optional: an empty Format means the template works with any format, and
+// empty VCT/DocType/Namespace/Exp fall back to the issuance defaults.
+type Template struct {
+	// Name identifies the template. For file-based templates it defaults to
+	// the file name without extension.
+	Name string `json:"name,omitempty"`
+	// Description is free text shown in template listings.
+	Description string `json:"description,omitempty"`
+	// Format is "sdjwt", "jwt", or "mdoc" (aliases "dc+sd-jwt", "jwt_vc_json",
+	// and "mso_mdoc" are accepted). Empty means any format.
+	Format string `json:"format,omitempty"`
+	// VCT applies to sdjwt/jwt.
+	VCT string `json:"vct,omitempty"`
+	// DocType and Namespace apply to mdoc.
+	DocType   string `json:"doctype,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	// Exp is a Go duration string (e.g. "720h").
+	Exp string `json:"exp,omitempty"`
+	// Claims is the default claim set. Callers may override individual
+	// top-level claims at issuance time.
+	Claims map[string]any `json:"claims"`
+	// AlwaysDisclosed lists claims (dotted paths for nested claims, e.g.
+	// "address.country") that are embedded plainly in an SD-JWT payload
+	// instead of becoming selective disclosures.
+	AlwaysDisclosed []string `json:"always_disclosed,omitempty"`
+	// Predefined is true for pre-defined templates compiled into the binary. It is set by
+	// this package and ignored in template files.
+	Predefined bool `json:"predefined,omitempty"`
+}
+
+// templateExtensions are the file extensions recognized in the template
+// directory. Both hold the same JSON document format.
+var templateExtensions = []string{".json", ".template"}
+
+// DirForWallet returns the template directory inside the given wallet
+// directory. An empty walletDir selects the default wallet directory
+// (~/.oid4vc-dev/wallet).
+func DirForWallet(walletDir string) string {
+	if walletDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			walletDir = filepath.Join(".oid4vc-dev", "wallet")
+		} else {
+			walletDir = filepath.Join(home, ".oid4vc-dev", "wallet")
+		}
+	}
+	return filepath.Join(walletDir, "templates")
+}
+
+// DefaultDir returns the default user template directory.
+func DefaultDir() string {
+	return DirForWallet("")
+}
+
+// NormalizeFormat maps format aliases to "sdjwt", "jwt", or "mdoc". An empty
+// input stays empty (meaning any format).
+func NormalizeFormat(format string) (string, error) {
+	switch strings.TrimSpace(format) {
+	case "":
+		return "", nil
+	case "sdjwt", "sd-jwt", "dc+sd-jwt":
+		return "sdjwt", nil
+	case "jwt", "jwt_vc_json":
+		return "jwt", nil
+	case "mdoc", "mso_mdoc":
+		return "mdoc", nil
+	default:
+		return "", fmt.Errorf("unsupported template format %q: expected sdjwt, jwt, or mdoc", format)
+	}
+}
+
+// PredefinedTemplates returns the pre-defined templates compiled into the binary. Claims are deep
+// copies, so callers may modify them freely.
+func PredefinedTemplates() []Template {
+	return []Template{
+		{
+			Name:        "german-pid-sdjwt",
+			Description: "German EUDI PID (SD-JWT, PID Rulebook claims)",
+			Format:      "sdjwt",
+			VCT:         mock.DefaultPIDVCT,
+			Exp:         "720h",
+			Claims:      deepCopyClaims(mock.SDJWTPIDClaims),
+			Predefined:  true,
+		},
+		{
+			Name:        "german-pid-mdoc",
+			Description: "German EUDI PID (mDoc, ISO 18013-5 elements)",
+			Format:      "mdoc",
+			DocType:     "eu.europa.ec.eudi.pid.1",
+			Namespace:   "eu.europa.ec.eudi.pid.1",
+			Exp:         "720h",
+			Claims:      deepCopyClaims(mock.MDOCPIDClaims),
+			Predefined:  true,
+		},
+	}
+}
+
+// List returns all templates: pre-defined templates plus user templates from dir (the
+// default directory when dir is empty). A user template with the same name as
+// a built-in replaces it. The result is sorted by name.
+func List(dir string) ([]Template, error) {
+	if dir == "" {
+		dir = DefaultDir()
+	}
+
+	byName := make(map[string]Template)
+	for _, t := range PredefinedTemplates() {
+		byName[t.Name] = t
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("reading template directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !hasTemplateExtension(entry.Name()) {
+			continue
+		}
+		t, err := loadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		byName[t.Name] = *t
+	}
+
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	templates := make([]Template, 0, len(names))
+	for _, name := range names {
+		templates = append(templates, byName[name])
+	}
+	return templates, nil
+}
+
+// Load resolves a template by name or file path. Names are looked up in dir
+// (the default directory when dir is empty) first, then in the pre-defined templates.
+// Anything containing a path separator, or matching an existing file, is
+// loaded as a file path.
+func Load(nameOrPath, dir string) (*Template, error) {
+	if strings.TrimSpace(nameOrPath) == "" {
+		return nil, fmt.Errorf("template name is required")
+	}
+	if dir == "" {
+		dir = DefaultDir()
+	}
+
+	if strings.ContainsRune(nameOrPath, os.PathSeparator) || strings.ContainsRune(nameOrPath, '/') || hasTemplateExtension(nameOrPath) {
+		return loadFile(nameOrPath)
+	}
+
+	for _, ext := range templateExtensions {
+		path := filepath.Join(dir, nameOrPath+ext)
+		if _, err := os.Stat(path); err == nil {
+			return loadFile(path)
+		}
+	}
+
+	for _, t := range PredefinedTemplates() {
+		if t.Name == nameOrPath {
+			tpl := t
+			return &tpl, nil
+		}
+	}
+
+	return nil, fmt.Errorf("template %q not found (looked in %s and pre-defined templates; run `oid4vc-dev templates list`)", nameOrPath, dir)
+}
+
+// Save writes a user template to dir (the default directory when dir is
+// empty) as <name>.json and returns the file path.
+func Save(dir string, t Template) (string, error) {
+	name := strings.TrimSpace(t.Name)
+	if name == "" {
+		return "", fmt.Errorf("template name is required")
+	}
+	if name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		return "", fmt.Errorf("invalid template name %q", name)
+	}
+	if _, err := NormalizeFormat(t.Format); err != nil {
+		return "", err
+	}
+	if dir == "" {
+		dir = DefaultDir()
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("creating template directory: %w", err)
+	}
+
+	t.Name = name
+	t.Predefined = false
+	data, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("encoding template: %w", err)
+	}
+	path := filepath.Join(dir, name+".json")
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return "", fmt.Errorf("writing template: %w", err)
+	}
+	return path, nil
+}
+
+// Delete removes a user template from dir (the default directory when dir is
+// empty). Pre-defined templates cannot be deleted.
+func Delete(dir, name string) error {
+	if dir == "" {
+		dir = DefaultDir()
+	}
+	if name != filepath.Base(name) {
+		return fmt.Errorf("invalid template name %q", name)
+	}
+	for _, ext := range templateExtensions {
+		path := filepath.Join(dir, name+ext)
+		if _, err := os.Stat(path); err == nil {
+			return os.Remove(path)
+		}
+	}
+	for _, t := range PredefinedTemplates() {
+		if t.Name == name {
+			return fmt.Errorf("template %q is pre-defined and cannot be deleted", name)
+		}
+	}
+	return fmt.Errorf("template %q not found in %s", name, dir)
+}
+
+func hasTemplateExtension(name string) bool {
+	for _, ext := range templateExtensions {
+		if strings.HasSuffix(name, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func loadFile(path string) (*Template, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading template: %w", err)
+	}
+	var t Template
+	if err := json.Unmarshal(data, &t); err != nil {
+		return nil, fmt.Errorf("parsing template %s: %w", path, err)
+	}
+	if _, err := NormalizeFormat(t.Format); err != nil {
+		return nil, fmt.Errorf("template %s: %w", path, err)
+	}
+	if strings.TrimSpace(t.Name) == "" {
+		base := filepath.Base(path)
+		t.Name = strings.TrimSuffix(base, filepath.Ext(base))
+	}
+	t.Predefined = false
+	return &t, nil
+}
+
+func deepCopyClaims(claims map[string]any) map[string]any {
+	out := make(map[string]any, len(claims))
+	for k, v := range claims {
+		out[k] = deepCopyValue(v)
+	}
+	return out
+}
+
+func deepCopyValue(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		return deepCopyClaims(val)
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = deepCopyValue(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// MergeClaims returns the template claims with the given top-level overrides
+// applied. The template claims are deep-copied first, so neither input is
+// modified.
+func MergeClaims(base, overrides map[string]any) map[string]any {
+	merged := deepCopyClaims(base)
+	for k, v := range overrides {
+		merged[k] = v
+	}
+	return merged
+}

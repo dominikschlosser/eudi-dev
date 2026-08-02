@@ -24,6 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/oid4vc-dev/internal/credtemplate"
 	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
@@ -31,6 +32,9 @@ import (
 
 var (
 	issueClaims                string
+	issueTemplate              string
+	issueAlwaysDisclosed       []string
+	issueSaveTemplate          string
 	issueKeyPath               string
 	issueIssuer                string
 	issueVCT                   string
@@ -86,12 +90,16 @@ var issueMDOCCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(issueCmd)
 	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.oid4vc-dev/wallet/)")
+	issueCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	issueCmd.AddCommand(issueSDJWTCmd)
 	issueCmd.AddCommand(issueJWTCmd)
 	issueCmd.AddCommand(issueMDOCCmd)
 
 	// SD-JWT flags
 	issueSDJWTCmd.Flags().StringVar(&issueClaims, "claims", "", "Claims as JSON string or @filepath")
+	issueSDJWTCmd.Flags().StringVar(&issueTemplate, "template", "", "Credential template name or file (see `templates list`); --claims overrides individual claims")
+	issueSDJWTCmd.Flags().StringSliceVar(&issueAlwaysDisclosed, "always-disclosed", nil, "Claims to embed plainly instead of selectively disclosable (dotted paths for nested claims, e.g. address.country)")
+	issueSDJWTCmd.Flags().StringVar(&issueSaveTemplate, "save-template", "", "Save the issued claims and settings as a credential template with this name")
 	issueSDJWTCmd.Flags().StringVar(&issueKeyPath, "key", "", "Private key file (PEM or JWK); ephemeral P-256 if omitted")
 	issueSDJWTCmd.Flags().StringVar(&issueIssuer, "iss", "https://issuer.example", "Issuer URL")
 	issueSDJWTCmd.Flags().StringVar(&issueVCT, "vct", mock.DefaultPIDVCT, "Verifiable Credential Type")
@@ -106,6 +114,8 @@ func init() {
 
 	// JWT flags
 	issueJWTCmd.Flags().StringVar(&issueClaims, "claims", "", "Claims as JSON string or @filepath")
+	issueJWTCmd.Flags().StringVar(&issueTemplate, "template", "", "Credential template name or file (see `templates list`); --claims overrides individual claims")
+	issueJWTCmd.Flags().StringVar(&issueSaveTemplate, "save-template", "", "Save the issued claims and settings as a credential template with this name")
 	issueJWTCmd.Flags().StringVar(&issueKeyPath, "key", "", "Private key file (PEM or JWK); ephemeral P-256 if omitted")
 	issueJWTCmd.Flags().StringVar(&issueIssuer, "iss", "https://issuer.example", "Issuer URL")
 	issueJWTCmd.Flags().StringVar(&issueVCT, "vct", mock.DefaultPIDVCT, "Verifiable Credential Type")
@@ -120,6 +130,8 @@ func init() {
 
 	// mDOC flags
 	issueMDOCCmd.Flags().StringVar(&issueClaims, "claims", "", "Claims as JSON string or @filepath")
+	issueMDOCCmd.Flags().StringVar(&issueTemplate, "template", "", "Credential template name or file (see `templates list`); --claims overrides individual claims")
+	issueMDOCCmd.Flags().StringVar(&issueSaveTemplate, "save-template", "", "Save the issued claims and settings as a credential template with this name")
 	issueMDOCCmd.Flags().StringVar(&issueKeyPath, "key", "", "Private key file (PEM or JWK); ephemeral P-256 if omitted")
 	issueMDOCCmd.Flags().StringVar(&issueDocType, "doc-type", "eu.europa.ec.eudi.pid.1", "Document type")
 	issueMDOCCmd.Flags().StringVar(&issueNamespace, "namespace", "eu.europa.ec.eudi.pid.1", "Namespace")
@@ -143,7 +155,15 @@ func runIssueSDJWT(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	claims, err := resolveIssueClaimsForFormat("sdjwt")
+	tpl, err := resolveIssueTemplate(cmd, "sdjwt")
+	if err != nil {
+		return err
+	}
+	claims, err := resolveIssueClaimsForFormat("sdjwt", tpl)
+	if err != nil {
+		return err
+	}
+	alwaysDisclosed, err := resolveIssueAlwaysDisclosed("sdjwt", tpl)
 	if err != nil {
 		return err
 	}
@@ -159,14 +179,15 @@ func runIssueSDJWT(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := mock.SDJWTConfig{
-		Issuer:        issueIssuer,
-		VCT:           issueVCT,
-		ExpiresIn:     expDuration,
-		NotBefore:     nbf,
-		Claims:        claims,
-		Key:           key,
-		StatusListURI: issueStatusListURI,
-		StatusListIdx: issueStatusListIdx,
+		Issuer:          issueIssuer,
+		VCT:             issueVCT,
+		ExpiresIn:       expDuration,
+		NotBefore:       nbf,
+		Claims:          claims,
+		Key:             key,
+		StatusListURI:   issueStatusListURI,
+		StatusListIdx:   issueStatusListIdx,
+		AlwaysDisclosed: alwaysDisclosed,
 	}
 
 	result, err := mock.GenerateSDJWT(cfg)
@@ -176,6 +197,9 @@ func runIssueSDJWT(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(result)
 
+	if err := saveIssueTemplate("sdjwt", claims, alwaysDisclosed); err != nil {
+		return err
+	}
 	if issueToWallet {
 		return importToWallet(result)
 	}
@@ -192,7 +216,11 @@ func runIssueJWT(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	claims, err := resolveIssueClaimsForFormat("jwt")
+	tpl, err := resolveIssueTemplate(cmd, "jwt")
+	if err != nil {
+		return err
+	}
+	claims, err := resolveIssueClaimsForFormat("jwt", tpl)
 	if err != nil {
 		return err
 	}
@@ -225,6 +253,9 @@ func runIssueJWT(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(result)
 
+	if err := saveIssueTemplate("jwt", claims, nil); err != nil {
+		return err
+	}
 	if issueToWallet {
 		return importToWallet(result)
 	}
@@ -241,8 +272,15 @@ func runIssueMDOC(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	claims, err := resolveIssueClaimsForFormat("mdoc")
+	tpl, err := resolveIssueTemplate(cmd, "mdoc")
 	if err != nil {
+		return err
+	}
+	claims, err := resolveIssueClaimsForFormat("mdoc", tpl)
+	if err != nil {
+		return err
+	}
+	if _, err := resolveIssueAlwaysDisclosed("mdoc", tpl); err != nil {
 		return err
 	}
 
@@ -274,6 +312,9 @@ func runIssueMDOC(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(result)
 
+	if err := saveIssueTemplate("mdoc", claims, nil); err != nil {
+		return err
+	}
 	if issueToWallet {
 		return importToWallet(result)
 	}
@@ -308,6 +349,9 @@ func loadWalletForIssue(cmd *cobra.Command) (*wallet.Wallet, *wallet.WalletStore
 	w, err := store.LoadOrCreate()
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading wallet: %w", err)
+	}
+	if templatesDir != "" {
+		w.TemplatesDir = templatesDir
 	}
 
 	if issueKeyPath != "" {
@@ -350,7 +394,15 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 	if err != nil {
 		return err
 	}
-	claims, err := resolveIssueClaimsForFormat(format)
+	tpl, err := resolveIssueTemplate(cmd, format)
+	if err != nil {
+		return err
+	}
+	claims, err := resolveIssueClaimsForFormat(format, tpl)
+	if err != nil {
+		return err
+	}
+	alwaysDisclosed, err := resolveIssueAlwaysDisclosed(format, tpl)
 	if err != nil {
 		return err
 	}
@@ -364,15 +416,17 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 	}
 
 	opts := wallet.IssueOptions{
-		Format:       format,
-		Claims:       claims,
-		VCT:          issueVCT,
-		DocType:      issueDocType,
-		Namespace:    issueNamespace,
-		ExpiresIn:    expDuration,
-		NotBefore:    nbf,
-		TrustProfile: issueTrustProfile,
-		Trust:        issueTrustSpecFromFlags(),
+		Format:          format,
+		Claims:          claims,
+		AlwaysDisclosed: alwaysDisclosed,
+		SaveTemplate:    issueSaveTemplate,
+		VCT:             issueVCT,
+		DocType:         issueDocType,
+		Namespace:       issueNamespace,
+		ExpiresIn:       expDuration,
+		NotBefore:       nbf,
+		TrustProfile:    issueTrustProfile,
+		Trust:           issueTrustSpecFromFlags(),
 	}
 	if cmd.Flags().Changed("status-list-uri") {
 		opts.StatusListURI = &issueStatusListURI
@@ -386,6 +440,9 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 		return err
 	}
 	fmt.Println(result.Raw)
+	if result.TemplatePath != "" {
+		fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", issueSaveTemplate, result.TemplatePath)
+	}
 
 	if err := store.Save(w); err != nil {
 		return fmt.Errorf("saving wallet: %w", err)
@@ -399,36 +456,142 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 	return nil
 }
 
-func resolveIssueClaimsForFormat(format string) (map[string]any, error) {
-	if issuePID && issueClaims == "" {
-		switch format {
-		case "mdoc":
-			return omitClaims(mock.MDOCPIDClaims, issueOmit), nil
-		default:
-			return omitClaims(mock.SDJWTPIDClaims, issueOmit), nil
+// resolveIssueTemplate loads the credential template selected by --template,
+// or the pre-defined german-pid template when --pid is set without --claims. It
+// applies the template's VCT, doc type, namespace, and expiry to flags the
+// user did not set explicitly.
+func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Template, error) {
+	var name string
+	switch {
+	case issueTemplate != "":
+		name = issueTemplate
+	case issuePID && issueClaims == "":
+		if format == "mdoc" {
+			name = "german-pid-mdoc"
+		} else {
+			name = "german-pid-sdjwt"
 		}
+	default:
+		return nil, nil
 	}
 
-	if issueClaims == "" {
-		return omitClaims(mock.DefaultClaims, issueOmit), nil
+	tpl, err := credtemplate.Load(name, resolveTemplatesDir())
+	if err != nil {
+		return nil, err
 	}
-
-	var data []byte
-	if strings.HasPrefix(issueClaims, "@") {
-		var err error
-		data, err = os.ReadFile(issueClaims[1:])
+	if tpl.Format != "" {
+		tplFormat, err := credtemplate.NormalizeFormat(tpl.Format)
 		if err != nil {
-			return nil, fmt.Errorf("reading claims file: %w", err)
+			return nil, err
 		}
-	} else {
-		data = []byte(issueClaims)
+		if tplFormat != "" && tplFormat != format {
+			return nil, fmt.Errorf("template %q is for format %s, not %s", tpl.Name, tplFormat, format)
+		}
 	}
 
-	var claims map[string]any
-	if err := json.Unmarshal(data, &claims); err != nil {
-		return nil, fmt.Errorf("parsing claims JSON: %w", err)
+	flags := cmd.Flags()
+	if tpl.VCT != "" && flags.Lookup("vct") != nil && !flags.Changed("vct") {
+		issueVCT = tpl.VCT
 	}
-	return omitClaims(claims, issueOmit), nil
+	if tpl.DocType != "" && flags.Lookup("doc-type") != nil && !flags.Changed("doc-type") {
+		issueDocType = tpl.DocType
+	}
+	if tpl.Namespace != "" && flags.Lookup("namespace") != nil && !flags.Changed("namespace") {
+		issueNamespace = tpl.Namespace
+	}
+	if tpl.Exp != "" && !flags.Changed("exp") {
+		issueExpires = tpl.Exp
+	}
+	return tpl, nil
+}
+
+// resolveIssueAlwaysDisclosed combines the template's always-disclosed list
+// with --always-disclosed. Ignored for jwt (all claims are plain there) and
+// rejected for mdoc (every element is selectively disclosable).
+func resolveIssueAlwaysDisclosed(format string, tpl *credtemplate.Template) ([]string, error) {
+	var merged []string
+	seen := make(map[string]bool)
+	var lists [][]string
+	if tpl != nil {
+		lists = append(lists, tpl.AlwaysDisclosed)
+	}
+	lists = append(lists, issueAlwaysDisclosed)
+	for _, list := range lists {
+		for _, path := range list {
+			path = strings.TrimSpace(path)
+			if path == "" || seen[path] {
+				continue
+			}
+			seen[path] = true
+			merged = append(merged, path)
+		}
+	}
+	switch format {
+	case "mdoc":
+		if len(merged) > 0 {
+			return nil, fmt.Errorf("always-disclosed claims are not supported for mdoc: every mdoc element is selectively disclosable")
+		}
+		return nil, nil
+	case "jwt":
+		return nil, nil
+	default:
+		return merged, nil
+	}
+}
+
+// saveIssueTemplate persists the resolved issuance parameters as a user
+// template, mirroring the wallet's save-as-template behavior for the
+// standalone issue commands.
+func saveIssueTemplate(format string, claims map[string]any, alwaysDisclosed []string) error {
+	if issueSaveTemplate == "" {
+		return nil
+	}
+	tpl := credtemplate.Template{
+		Name:            issueSaveTemplate,
+		Format:          format,
+		Exp:             issueExpires,
+		Claims:          claims,
+		AlwaysDisclosed: alwaysDisclosed,
+	}
+	if format == "mdoc" {
+		tpl.DocType = issueDocType
+		tpl.Namespace = issueNamespace
+	} else {
+		tpl.VCT = issueVCT
+	}
+	path, err := credtemplate.Save(resolveTemplatesDir(), tpl)
+	if err != nil {
+		return fmt.Errorf("saving template: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", issueSaveTemplate, path)
+	return nil
+}
+
+func resolveIssueClaimsForFormat(format string, tpl *credtemplate.Template) (map[string]any, error) {
+	var overrides map[string]any
+	if issueClaims != "" {
+		var data []byte
+		if strings.HasPrefix(issueClaims, "@") {
+			var err error
+			data, err = os.ReadFile(issueClaims[1:])
+			if err != nil {
+				return nil, fmt.Errorf("reading claims file: %w", err)
+			}
+		} else {
+			data = []byte(issueClaims)
+		}
+		if err := json.Unmarshal(data, &overrides); err != nil {
+			return nil, fmt.Errorf("parsing claims JSON: %w", err)
+		}
+	}
+
+	if tpl != nil {
+		return omitClaims(credtemplate.MergeClaims(tpl.Claims, overrides), issueOmit), nil
+	}
+	if overrides != nil {
+		return omitClaims(overrides, issueOmit), nil
+	}
+	return omitClaims(mock.DefaultClaims, issueOmit), nil
 }
 
 func addIssueTrustMetadataFlags(cmd *cobra.Command) {

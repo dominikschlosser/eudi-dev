@@ -5,7 +5,10 @@ const http = require("http");
 
 const DOCKER_IMAGE = "oid4vc-dev-e2e";
 const CONTAINER_NAME = "oid4vc-dev-e2e-test";
-const HOST_PORT = 18925;
+// Must not collide with ports bound by the other (parallel) spec files:
+// 18923 (webServer), 18924 (wallet.spec), 18925 (wallet.spec HTTPS port+1),
+// 18926 (wallet.spec issuer base URL).
+const HOST_PORT = 18935;
 const WALLET_URL = `http://localhost:${HOST_PORT}`;
 
 test.describe.configure({ mode: "serial" });

@@ -156,6 +156,7 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 
 	w := New(holderKey, issuerKey, false)
 	w.runtime = s.runtime()
+	w.TemplatesDir = filepath.Join(s.Dir, "templates")
 	if err := w.SetCertificateAuthority(caKey, caCert); err != nil {
 		return nil, fmt.Errorf("configuring shared wallet CA: %w", err)
 	}

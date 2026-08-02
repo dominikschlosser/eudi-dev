@@ -363,6 +363,49 @@ header h1 {
   display: block;
 }
 
+.claim-row .claim-sd {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#issue-claim-rows.show-sd .claim-sd {
+  display: flex;
+}
+
+.templates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.template-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.template-row-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.template-row-meta {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 #issue-add-claim {
   align-self: flex-start;
 }

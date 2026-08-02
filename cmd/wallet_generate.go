@@ -35,9 +35,10 @@ func walletGeneratePIDCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "generate-pid",
-		Short: "Generate default EUDI PID credentials (SD-JWT + mDoc)",
-		Long:  "Generate EUDI PID credentials with default claims. If PID credentials already exist, they are replaced. Use --claims to override specific claim values.",
+		Short: "Generate default EUDI PID credentials (SD-JWT + mDoc) (deprecated)",
+		Long:  "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined german-pid-sdjwt and german-pid-mdoc credential templates instead. If PID credentials already exist, they are replaced. Use --claims to override specific claim values.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			printGeneratePIDDeprecation(cmd, claimsFlag, vctFlag)
 			w, store, err := loadWallet()
 			if err != nil {
 				return err
@@ -83,7 +84,13 @@ func walletGeneratePIDCmd() *cobra.Command {
 				return err
 			}
 
-			if err := w.GenerateDefaultCredentials(overrides, vctFlag); err != nil {
+			// Only pass an explicit --vct so the template's VCT (which a
+			// user override of german-pid-sdjwt may change) applies otherwise.
+			vct := ""
+			if cmd.Flags().Changed("vct") {
+				vct = vctFlag
+			}
+			if err := w.GenerateDefaultCredentials(overrides, vct); err != nil {
 				return fmt.Errorf("generating PID credentials: %w", err)
 			}
 
@@ -103,4 +110,23 @@ func walletGeneratePIDCmd() *cobra.Command {
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL for status list endpoint (default: http://localhost:8085)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for --base-url")
 	return cmd
+}
+
+// printGeneratePIDDeprecation warns that generate-pid is deprecated and
+// prints the equivalent template-based issue commands, carrying over the
+// claim and VCT flags the user passed.
+func printGeneratePIDDeprecation(cmd *cobra.Command, claimsFlag, vctFlag string) {
+	sdEquiv := "oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt"
+	mdocEquiv := "oid4vc-dev issue mdoc --wallet --template german-pid-mdoc"
+	if claimsFlag != "" {
+		sdEquiv += " --claims '" + claimsFlag + "'"
+		mdocEquiv += " --claims '" + claimsFlag + "'"
+	}
+	if cmd.Flags().Changed("vct") {
+		sdEquiv += " --vct " + vctFlag
+	}
+	fmt.Fprintln(cmd.ErrOrStderr(), "Warning: `wallet generate-pid` is deprecated and will be removed in a future release.")
+	fmt.Fprintln(cmd.ErrOrStderr(), "Issue from the pre-defined credential templates instead:")
+	fmt.Fprintln(cmd.ErrOrStderr(), "  "+sdEquiv)
+	fmt.Fprintln(cmd.ErrOrStderr(), "  "+mdocEquiv)
 }

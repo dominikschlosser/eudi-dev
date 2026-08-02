@@ -18,6 +18,7 @@ cmd/                        CLI commands (Cobra)
 
 internal/
 ├── config/                 Centralized defaults (ports, timeouts)
+├── credtemplate/           Credential templates (pre-defined PID templates, user template files)
 ├── dcql/                   DCQL query parsing, evaluation, generation
 ├── format/                 Format detection, base64url, credential type constants
 ├── jsonutil/               Type-safe accessors for map[string]any

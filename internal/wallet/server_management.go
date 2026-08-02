@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/keys"
-	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
 )
 
 // handleGetCredential returns a single stored credential by ID.
@@ -52,19 +51,22 @@ func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Reque
 }
 
 type issueAPIRequest struct {
-	Format        string                `json:"format"`
-	Claims        map[string]any        `json:"claims"`
-	PID           bool                  `json:"pid"`
-	Omit          []string              `json:"omit"`
-	VCT           string                `json:"vct"`
-	DocType       string                `json:"doctype"`
-	Namespace     string                `json:"namespace"`
-	Exp           string                `json:"exp"`
-	NBF           string                `json:"nbf"`
-	StatusListURI *string               `json:"status_list_uri"`
-	StatusListIdx *int                  `json:"status_list_idx"`
-	TrustProfile  string                `json:"trust_profile"`
-	Trust         IssuedAttestationSpec `json:"trust"`
+	Format          string                `json:"format"`
+	Template        string                `json:"template"`
+	Claims          map[string]any        `json:"claims"`
+	PID             bool                  `json:"pid"`
+	Omit            []string              `json:"omit"`
+	AlwaysDisclosed []string              `json:"always_disclosed"`
+	SaveAsTemplate  string                `json:"save_as_template"`
+	VCT             string                `json:"vct"`
+	DocType         string                `json:"doctype"`
+	Namespace       string                `json:"namespace"`
+	Exp             string                `json:"exp"`
+	NBF             string                `json:"nbf"`
+	StatusListURI   *string               `json:"status_list_uri"`
+	StatusListIdx   *int                  `json:"status_list_idx"`
+	TrustProfile    string                `json:"trust_profile"`
+	Trust           IssuedAttestationSpec `json:"trust"`
 }
 
 // handleIssueCredential issues a credential with the wallet's issuer key and
@@ -77,17 +79,20 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	opts := IssueOptions{
-		Format:        req.Format,
-		Claims:        req.Claims,
-		PID:           req.PID,
-		Omit:          req.Omit,
-		VCT:           req.VCT,
-		DocType:       req.DocType,
-		Namespace:     req.Namespace,
-		StatusListURI: req.StatusListURI,
-		StatusListIdx: req.StatusListIdx,
-		TrustProfile:  req.TrustProfile,
-		Trust:         req.Trust,
+		Format:          req.Format,
+		Template:        req.Template,
+		Claims:          req.Claims,
+		PID:             req.PID,
+		Omit:            req.Omit,
+		AlwaysDisclosed: req.AlwaysDisclosed,
+		SaveTemplate:    req.SaveAsTemplate,
+		VCT:             req.VCT,
+		DocType:         req.DocType,
+		Namespace:       req.Namespace,
+		StatusListURI:   req.StatusListURI,
+		StatusListIdx:   req.StatusListIdx,
+		TrustProfile:    req.TrustProfile,
+		Trust:           req.Trust,
 	}
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)
@@ -117,18 +122,10 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	if result.StatusRegistered {
 		summary["status_list_idx"] = result.StatusIdx
 	}
+	if result.TemplatePath != "" {
+		summary["template_path"] = result.TemplatePath
+	}
 	writeJSON(w, http.StatusCreated, summary)
-}
-
-// handleIssueDefaults returns the per-format PID defaults used to pre-fill
-// the wallet UI's issue dialog. Serving them keeps the UI in sync with the
-// claim sets the server actually uses.
-func (s *Server) handleIssueDefaults(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"sdjwt": map[string]any{"vct": mock.DefaultPIDVCT, "exp": "720h", "claims": mock.SDJWTPIDClaims},
-		"jwt":   map[string]any{"vct": mock.DefaultPIDVCT, "exp": "720h", "claims": mock.SDJWTPIDClaims},
-		"mdoc":  map[string]any{"doctype": DefaultMDOCDocType, "namespace": DefaultMDOCDocType, "exp": "720h", "claims": mock.MDOCPIDClaims},
-	})
 }
 
 type generatePIDRequest struct {
@@ -138,7 +135,12 @@ type generatePIDRequest struct {
 
 // handleGeneratePID regenerates the default EUDI PID credentials (SD-JWT +
 // mDoc), mirroring `wallet generate-pid`.
+//
+// Deprecated: use POST /api/issue with the pre-defined german-pid-sdjwt and
+// german-pid-mdoc templates instead. The endpoint will be removed together
+// with `wallet generate-pid` in a future release.
 func (s *Server) handleGeneratePID(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Deprecation", "true")
 	var req generatePIDRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})

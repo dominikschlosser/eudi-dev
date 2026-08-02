@@ -405,3 +405,30 @@ func TestWalletCACert_PEMAndJWKSAreMutuallyExclusive(t *testing.T) {
 		t.Fatal("expected error when both --pem and --jwks are set")
 	}
 }
+
+func TestWalletGeneratePID_PrintsDeprecationWarning(t *testing.T) {
+	wDir := t.TempDir()
+	prevDir := walletDir
+	walletDir = wDir
+	t.Cleanup(func() { walletDir = prevDir })
+
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetErr(errBuf)
+	t.Cleanup(func() { rootCmd.SetErr(nil) })
+
+	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--claims", `{"given_name":"MAX"}`})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("generate-pid: %v", err)
+	}
+
+	out := errBuf.String()
+	if !strings.Contains(out, "deprecated") {
+		t.Errorf("expected deprecation warning, got %q", out)
+	}
+	if !strings.Contains(out, "issue sdjwt --wallet --template german-pid-sdjwt --claims '{\"given_name\":\"MAX\"}'") {
+		t.Errorf("expected equivalent sdjwt command with claims, got %q", out)
+	}
+	if !strings.Contains(out, "issue mdoc --wallet --template german-pid-mdoc") {
+		t.Errorf("expected equivalent mdoc command, got %q", out)
+	}
+}

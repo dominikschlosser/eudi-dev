@@ -174,10 +174,12 @@
   const issueFormat = document.getElementById('issue-format');
   const issueClaimRows = document.getElementById('issue-claim-rows');
   const issueClaimsTextarea = document.getElementById('issue-claims');
-  let issueDefaults = null;
+  const issueTemplateSelect = document.getElementById('issue-template');
+  const issueAlwaysDisclosed = document.getElementById('issue-always-disclosed');
   let claimRowCounter = 0;
+  let templatesCache = null;
 
-  function addClaimRow(ns, key, value) {
+  function addClaimRow(ns, key, value, sd) {
     const idx = claimRowCounter++;
     const row = document.createElement('div');
     row.className = 'claim-row';
@@ -186,12 +188,41 @@
       '<input type="text" class="form-input claim-ns" id="issue-claim-ns-' + idx + '" placeholder="namespace (default: doc type)">' +
       '<input type="text" class="form-input" id="issue-claim-key-' + idx + '" placeholder="claim name">' +
       '<input type="text" class="form-input" id="issue-claim-value-' + idx + '" placeholder="value (text or JSON)">' +
+      '<label class="claim-sd" title="Selectively disclosable: uncheck to embed the claim plainly in the payload"><input type="checkbox" id="issue-claim-sd-' + idx + '" checked> SD</label>' +
       '<button type="button" class="btn btn-sm" id="issue-claim-remove-' + idx + '" title="Remove claim">&times;</button>';
     row.querySelector('input[id^="issue-claim-ns-"]').value = ns || '';
     row.querySelector('input[id^="issue-claim-key-"]').value = key || '';
     row.querySelector('input[id^="issue-claim-value-"]').value = value || '';
+    row.querySelector('input[id^="issue-claim-sd-"]').checked = sd !== false;
+    row.querySelector('input[id^="issue-claim-sd-"]').addEventListener('change', syncAlwaysDisclosedFromRows);
     row.querySelector('button').addEventListener('click', () => row.remove());
     issueClaimRows.appendChild(row);
+  }
+
+  function alwaysDisclosedList() {
+    return issueAlwaysDisclosed.value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  // The "Always visible" input is the source of truth for always-disclosed
+  // claims. The per-row SD checkboxes are a convenience view over its
+  // top-level entries; dotted paths (nested claims) only live in the input.
+  function syncAlwaysDisclosedFromRows() {
+    const nested = alwaysDisclosedList().filter(p => p.indexOf('.') !== -1);
+    const plain = [];
+    issueClaimRows.querySelectorAll('.claim-row').forEach(row => {
+      const key = row.querySelector('input[id^="issue-claim-key-"]').value.trim();
+      const sd = row.querySelector('input[id^="issue-claim-sd-"]').checked;
+      if (key && !sd) plain.push(key);
+    });
+    issueAlwaysDisclosed.value = plain.concat(nested).join(', ');
+  }
+
+  function syncRowsFromAlwaysDisclosed() {
+    const list = alwaysDisclosedList();
+    issueClaimRows.querySelectorAll('.claim-row').forEach(row => {
+      const key = row.querySelector('input[id^="issue-claim-key-"]').value.trim();
+      row.querySelector('input[id^="issue-claim-sd-"]').checked = list.indexOf(key) === -1;
+    });
   }
 
   // Builder claims use "namespace:element" keys for mdoc rows that set a
@@ -236,18 +267,68 @@
       el.hidden = el.dataset.formats.split(' ').indexOf(fmt) === -1;
     });
     issueClaimRows.classList.toggle('show-ns', fmt === 'mdoc');
+    issueClaimRows.classList.toggle('show-sd', fmt === 'sdjwt');
+    updateAlwaysDisclosedVisibility();
   }
 
-  // Pre-fill VCT, doc type, expiry, and the claim set with the format's PID
-  // defaults so what gets issued is visible before submitting.
-  function fillIssueDefaults() {
-    if (!issueDefaults) return;
-    const d = issueDefaults[issueFormat.value] || {};
-    document.getElementById('issue-vct').value = d.vct || '';
-    document.getElementById('issue-doctype').value = d.doctype || '';
-    document.getElementById('issue-exp').value = d.exp || '';
-    fillClaimRows(d.claims);
-    issueClaimsTextarea.value = JSON.stringify(d.claims || {}, null, 2);
+  // The per-row SD checkboxes and the "Always visible" input hold the same
+  // list, so only one is shown at a time: checkboxes in builder mode, the
+  // input (which also accepts dotted paths for nested claims) in JSON mode.
+  function updateAlwaysDisclosedVisibility() {
+    const show = issueFormat.value === 'sdjwt' &&
+      document.getElementById('issue-claims-mode-json').checked;
+    issueAlwaysDisclosed.hidden = !show;
+    issueForm.querySelector('label[for="issue-always-disclosed"]').hidden = !show;
+  }
+
+  async function loadTemplates(force) {
+    if (templatesCache && !force) return templatesCache;
+    const resp = await fetch('/api/templates');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    templatesCache = await resp.json();
+    return templatesCache;
+  }
+
+  async function fillIssueTemplateSelect() {
+    let templates = [];
+    try {
+      templates = await loadTemplates(true);
+    } catch (e) {
+      return; // the dropdown just stays empty
+    }
+    const current = issueTemplateSelect.value;
+    issueTemplateSelect.textContent = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = '(none)';
+    issueTemplateSelect.appendChild(none);
+    templates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      opt.textContent = t.name + (t.predefined ? ' (pre-defined)' : '');
+      issueTemplateSelect.appendChild(opt);
+    });
+    issueTemplateSelect.value = current || '';
+  }
+
+  // Applies a template to the issue form: format, type identifiers, expiry,
+  // claims, and always-disclosed claims. Everything stays editable; the form
+  // contents are submitted as explicit values, so edits (including removed
+  // claims) win over the template.
+  function applyIssueTemplate(name) {
+    const tpl = (templatesCache || []).find(t => t.name === name);
+    if (!tpl) return;
+    if (tpl.format) {
+      issueFormat.value = tpl.format;
+      updateIssueFormatFields();
+    }
+    if (tpl.vct) document.getElementById('issue-vct').value = tpl.vct;
+    if (tpl.doctype) document.getElementById('issue-doctype').value = tpl.doctype;
+    if (tpl.exp) document.getElementById('issue-exp').value = tpl.exp;
+    issueAlwaysDisclosed.value = (tpl.always_disclosed || []).join(', ');
+    fillClaimRows(tpl.claims || {});
+    syncRowsFromAlwaysDisclosed();
+    issueClaimsTextarea.value = JSON.stringify(tpl.claims || {}, null, 2);
   }
 
   // Keeps both claim editors in sync: entering JSON mode serializes the
@@ -256,6 +337,7 @@
     const jsonRadio = document.getElementById('issue-claims-mode-json');
     const jsonMode = jsonRadio.checked;
     if (jsonMode) {
+      syncAlwaysDisclosedFromRows();
       issueClaimsTextarea.value = JSON.stringify(builderClaims(), null, 2);
     } else {
       const text = issueClaimsTextarea.value.trim();
@@ -266,6 +348,7 @@
             throw new Error('expected a JSON object');
           }
           fillClaimRows(parsed);
+          syncRowsFromAlwaysDisclosed();
           issueError.textContent = '';
         } catch (e) {
           issueError.textContent = 'Claims must be valid JSON: ' + e.message;
@@ -277,6 +360,7 @@
     issueClaimRows.hidden = jsonMode;
     document.getElementById('issue-add-claim').hidden = jsonMode;
     issueClaimsTextarea.hidden = !jsonMode;
+    updateAlwaysDisclosedVisibility();
   }
 
   // Clears everything except the selected format. Also used when the format
@@ -286,6 +370,9 @@
     document.getElementById('issue-doctype').value = '';
     document.getElementById('issue-exp').value = '';
     document.getElementById('issue-nbf').value = '';
+    document.getElementById('issue-save-template').value = '';
+    issueTemplateSelect.value = '';
+    issueAlwaysDisclosed.value = '';
     document.getElementById('issue-claims-mode-builder').checked = true;
     issueClaimsTextarea.value = '';
     issueError.textContent = '';
@@ -298,22 +385,16 @@
     issueForm.reset();
     resetIssueFields();
     issueOverlay.classList.add('active');
+    fillIssueTemplateSelect();
   });
 
   issueFormat.addEventListener('change', resetIssueFields);
 
-  document.getElementById('issue-fill-pid').addEventListener('click', async () => {
-    if (!issueDefaults) {
-      try {
-        const resp = await fetch('/api/issue/defaults');
-        issueDefaults = await resp.json();
-      } catch (e) {
-        issueError.textContent = 'Failed to load PID defaults: ' + e.message;
-        return;
-      }
-    }
-    fillIssueDefaults();
+  issueTemplateSelect.addEventListener('change', () => {
+    if (issueTemplateSelect.value) applyIssueTemplate(issueTemplateSelect.value);
   });
+
+  issueAlwaysDisclosed.addEventListener('change', syncRowsFromAlwaysDisclosed);
 
   document.getElementById('issue-add-claim').addEventListener('click', () => addClaimRow('', ''));
 
@@ -340,6 +421,7 @@
         }
       }
     } else {
+      syncAlwaysDisclosedFromRows();
       const claims = builderClaims();
       if (Object.keys(claims).length > 0) body.claims = claims;
     }
@@ -351,6 +433,12 @@
     if (exp) body.exp = exp;
     const nbf = document.getElementById('issue-nbf').value.trim();
     if (nbf) body.nbf = nbf;
+    if (issueFormat.value === 'sdjwt') {
+      const always = alwaysDisclosedList();
+      if (always.length > 0) body.always_disclosed = always;
+    }
+    const saveTemplate = document.getElementById('issue-save-template').value.trim();
+    if (saveTemplate) body.save_as_template = saveTemplate;
 
     issueSubmit.disabled = true;
     issueSubmit.textContent = 'Issuing...';
@@ -366,6 +454,7 @@
         return;
       }
       issueOverlay.classList.remove('active');
+      if (body.save_as_template) templatesCache = null;
       await loadCredentials();
       await loadLog();
     } catch (e) {
@@ -373,6 +462,132 @@
     } finally {
       issueSubmit.disabled = false;
       issueSubmit.textContent = 'Issue';
+    }
+  });
+
+  // Templates manager
+  const templatesOverlay = document.getElementById('templates-overlay');
+  const templatesList = document.getElementById('templates-list');
+  const templateForm = document.getElementById('template-form');
+  const templateError = document.getElementById('template-error');
+  const templateName = document.getElementById('template-name');
+  const templateJSON = document.getElementById('template-json');
+
+  function templateEditorFields(tpl) {
+    // The name lives in its own input and predefined is server managed.
+    const doc = Object.assign({}, tpl);
+    delete doc.name;
+    delete doc.predefined;
+    return doc;
+  }
+
+  async function renderTemplatesList() {
+    let templates = [];
+    try {
+      templates = await loadTemplates(true);
+    } catch (e) {
+      templateError.textContent = 'Failed to load templates: ' + e.message;
+      return;
+    }
+    templatesList.textContent = '';
+    templates.forEach(tpl => {
+      const row = document.createElement('div');
+      row.className = 'template-row';
+
+      const label = document.createElement('span');
+      label.className = 'template-row-name';
+      label.textContent = tpl.name;
+      row.appendChild(label);
+
+      const meta = document.createElement('span');
+      meta.className = 'template-row-meta';
+      meta.textContent = (tpl.format || 'any') + (tpl.predefined ? ' · pre-defined' : '');
+      row.appendChild(meta);
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-sm';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => {
+        templateName.value = tpl.name;
+        templateJSON.value = JSON.stringify(templateEditorFields(tpl), null, 2);
+        templateError.textContent = '';
+      });
+      row.appendChild(editBtn);
+
+      if (!tpl.predefined) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'btn btn-sm';
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.addEventListener('click', async () => {
+          templateError.textContent = '';
+          try {
+            const resp = await fetch('/api/templates/' + encodeURIComponent(tpl.name), { method: 'DELETE' });
+            if (!resp.ok) {
+              const result = await resp.json();
+              templateError.textContent = result.error || ('HTTP ' + resp.status);
+              return;
+            }
+            await renderTemplatesList();
+          } catch (e) {
+            templateError.textContent = 'Request failed: ' + e.message;
+          }
+        });
+        row.appendChild(deleteBtn);
+      }
+
+      templatesList.appendChild(row);
+    });
+  }
+
+  document.getElementById('templates-btn').addEventListener('click', () => {
+    templateName.value = '';
+    templateJSON.value = '';
+    templateError.textContent = '';
+    templatesOverlay.classList.add('active');
+    renderTemplatesList();
+  });
+
+  document.getElementById('template-close').addEventListener('click', () => {
+    templatesOverlay.classList.remove('active');
+  });
+
+  templateForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    templateError.textContent = '';
+    let doc;
+    try {
+      doc = JSON.parse(templateJSON.value);
+      if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+        throw new Error('expected a JSON object');
+      }
+    } catch (e) {
+      templateError.textContent = 'Template must be valid JSON: ' + e.message;
+      return;
+    }
+    // A pasted template may carry its own name; the name input wins.
+    const name = templateName.value.trim() || (typeof doc.name === 'string' ? doc.name.trim() : '');
+    if (!name) {
+      templateError.textContent = 'Template name is required';
+      return;
+    }
+    try {
+      const resp = await fetch('/api/templates/' + encodeURIComponent(name), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(doc)
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        templateError.textContent = result.error || ('HTTP ' + resp.status);
+        return;
+      }
+      templateName.value = '';
+      templateJSON.value = '';
+      await renderTemplatesList();
+    } catch (e) {
+      templateError.textContent = 'Request failed: ' + e.message;
     }
   });
 

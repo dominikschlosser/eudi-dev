@@ -72,6 +72,9 @@ so the wallet automatically receives incoming protocol requests.`,
 			if err != nil {
 				return fmt.Errorf("loading wallet: %w", err)
 			}
+			if templatesDir != "" {
+				w.TemplatesDir = templatesDir
+			}
 			if err := applyValidationMode(w, walletValidationMode); err != nil {
 				return err
 			}

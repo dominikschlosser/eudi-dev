@@ -18,7 +18,7 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `show`         | Show a stored credential by ID (raw or decoded)                 |
 | `import`       | Import a credential from file, stdin, or raw string (SD-JWT, JWT VC, mDoc) |
 | `remove`       | Remove a credential by ID                                       |
-| `generate-pid` | Generate default EUDI PID credentials (SD-JWT + mDoc)           |
+| `generate-pid` | Deprecated. Generate default EUDI PID credentials (SD-JWT + mDoc) from the pre-defined PID templates. Use `issue ... --wallet --template german-pid-sdjwt|german-pid-mdoc` instead |
 | `accept`       | Accept an OID4VP presentation request or OID4VCI credential offer (auto-detects) |
 | `scan`         | Scan a QR code and auto-dispatch to accept/import               |
 | `logs`         | Show persisted wallet-side OID4VP/OID4VCI interaction logs      |
@@ -28,15 +28,18 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `register`     | Register OS URL scheme handlers on macOS; no-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS; no-op elsewhere         |
 
-All wallet management operations (list, show, import, remove, issue, generate-pid, cert export) are also available over HTTP on a running `wallet serve` instance. This lets you drive hosted or containerized wallets remotely. See [HTTP API](#http-api).
+All wallet management operations (list, show, import, remove, issue, generate-pid, credential templates, cert export) are also available over HTTP on a running `wallet serve` instance. This lets you drive hosted or containerized wallets remotely. See [HTTP API](#http-api).
 
 ## Quick start
 
 ```bash
-# Generate PID credentials and list them (re-running replaces existing PIDs)
-oid4vc-dev wallet generate-pid
-oid4vc-dev wallet generate-pid --claims '{"given_name":"MAX","family_name":"POWER"}'
+# Issue PID credentials from the pre-defined templates and list them
+oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt
+oid4vc-dev issue mdoc --wallet --template german-pid-mdoc
 oid4vc-dev wallet list
+
+# Deprecated equivalent (issues both PIDs at once, will be removed later)
+oid4vc-dev wallet generate-pid
 
 # Show a credential (raw)
 oid4vc-dev wallet show <id>
@@ -95,7 +98,8 @@ All wallet state is stored in `~/.oid4vc-dev/wallet/` by default:
     ├── issuer.pem        # Issuer EC private key (for self-issued credentials)
     ├── wallet-log-cleaned-at # Timestamp marker written by wallet logs clean
     ├── wallet-tls-cert.pem # HTTPS certificate for wallet endpoints on port+1
-    └── wallet-tls-key.pem  # HTTPS private key for wallet endpoints on port+1
+    ├── wallet-tls-key.pem  # HTTPS private key for wallet endpoints on port+1
+    └── templates/          # User credential templates (see docs/templates.md)
 ```
 
 Wallet interaction logs are stored in `wallet.json` under the top-level `log` field. `wallet logs clean` clears those entries and writes `wallet-log-cleaned-at` so an already-running wallet server cannot later save old in-memory log entries back to disk. If you use `--wallet-dir`, both files live in that custom wallet directory instead.
@@ -152,7 +156,7 @@ oid4vc-dev wallet logs --json       # JSON array of log entries
 Starts a persistent wallet HTTP server with a web UI for managing credentials and handling OID4VP/OID4VCI flows. Loads credentials from disk and saves state on credential changes. Includes request logging with timestamps and a browser-based consent UI for incoming requests.
 
 The server exposes:
-- Web UI for credential management and consent (list, show, import, remove, and issue credentials, with an EUDI PID preset and CA and TLS certificate downloads)
+- Web UI for credential management and consent (list, show, import, remove, and issue credentials, with credential templates and CA and TLS certificate downloads)
 - OID4VP authorization endpoint (`/authorize`)
 - OID4VCI credential offer endpoint (`/credential-offer`) — accepts `credential_offer` / `credential_offer_uri` query parameters, so offer links can target the wallet URL instead of a custom scheme (see [Invoking the wallet by URL](#invoking-the-wallet-by-url))
 - Legacy ETSI trust list endpoint (`/api/trustlist`) — use this URL as `--trust-list` when validating PID credentials issued by the wallet
@@ -160,7 +164,7 @@ The server exposes:
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
 - A management API mirroring the wallet CLI (list, show, import, and remove credentials, issue credentials, generate PIDs, export certificates). It has no authentication (see [HTTP API](#http-api))
 
-Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. The preset button fills all fields with the EUDI PID defaults so they can be reviewed and edited before issuing:
+Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. Selecting a credential template (for example the pre-defined `german-pid-sdjwt`) fills all fields so they can be reviewed and edited before issuing:
 
 ![Issue credential dialog](./wallet-issue-ui.png)
 
@@ -498,10 +502,13 @@ curl -X DELETE http://localhost:8085/api/credentials
 
 | Field             | Type    | Description                                                                                  |
 |-------------------|---------|----------------------------------------------------------------------------------------------|
-| `format`          | string  | **Required.** `sdjwt`, `jwt`, or `mdoc`                                                      |
+| `format`          | string  | `sdjwt`, `jwt`, or `mdoc`. Required unless a `template` with a format is given               |
+| `template`        | string  | Credential template name (see [templates](templates.md)). Template claims become the base claim set and `claims` overrides individual claims |
 | `claims`          | object  | Credential claims (default is a small test claim set, or the PID claim set with `pid`)       |
 | `pid`             | bool    | Use the full EUDI PID Rulebook claims (like `--pid`)                                         |
 | `omit`            | array   | Top-level claim names to drop from the claim set (like `--omit`)                             |
+| `always_disclosed`| array   | Claims issued plainly instead of selectively disclosable, with dotted paths for nested claims (sdjwt only, like `--always-disclosed`) |
+| `save_as_template`| string  | Save the resolved issuance parameters as a template with this name after issuing             |
 | `vct`             | string  | SD-JWT/JWT VC type (default is the default PID VCT)                                          |
 | `doctype`         | string  | mdoc doc type (default `eu.europa.ec.eudi.pid.1`)                                            |
 | `namespace`       | string  | Default namespace for mdoc claims (default is `doctype`). A claim key of the form `namespace:element` places that element in its own namespace instead |
@@ -531,12 +538,33 @@ curl -X POST http://localhost:8085/api/issue \
   -d '{"format": "sdjwt", "nbf": "-48h", "exp": "24h"}'
 ```
 
-`POST /api/generate-pid` regenerates the default EUDI PID credentials (SD-JWT + mDoc) and replaces existing PIDs. It is the HTTP equivalent of `wallet generate-pid`. The body is optional. `claims` merges overrides into the default PID claims and `vct` sets the SD-JWT VCT. Returns `201` with the full credential list.
+`POST /api/generate-pid` regenerates the default EUDI PID credentials (SD-JWT + mDoc) and replaces existing PIDs. It is the HTTP equivalent of `wallet generate-pid`. **Deprecated**: like the CLI command it will be removed in a future release. Use `POST /api/issue` with the pre-defined PID templates instead (`{"template": "german-pid-sdjwt"}`). The PID contents come from the pre-defined `german-pid-sdjwt` and `german-pid-mdoc` credential templates (user overrides of those templates apply). The body is optional. `claims` merges overrides into the template claims and `vct` sets the SD-JWT VCT. Returns `201` with the full credential list.
 
 ```bash
 curl -X POST http://localhost:8085/api/generate-pid \
   -H 'Content-Type: application/json' \
   -d '{"claims": {"given_name": "MAX", "family_name": "POWER"}}'
+```
+
+### Credential templates
+
+The template endpoints manage the same template store as the `templates` CLI commands (user templates live in the wallet directory's `templates/` subdirectory). See [templates](templates.md) for the document format.
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/templates` | List all templates (pre-defined and user), including claims |
+| `GET /api/templates/{name}` | Get one template |
+| `PUT /api/templates/{name}` | Create or replace a user template. The body is a full template document, so this doubles as the import endpoint for shared templates |
+| `DELETE /api/templates/{name}` | Delete a user template. Deleting an override of a pre-defined template restores the pre-defined version |
+
+```bash
+curl -X PUT http://localhost:8085/api/templates/employee-card \
+  -H 'Content-Type: application/json' \
+  -d '{"format": "sdjwt", "vct": "urn:example:employee", "claims": {"employee_id": "E-1"}, "always_disclosed": ["employee_id"]}'
+
+curl -X POST http://localhost:8085/api/issue \
+  -H 'Content-Type: application/json' \
+  -d '{"template": "employee-card", "claims": {"employee_id": "E-42"}}'
 ```
 
 ### Certificate export
@@ -745,10 +773,11 @@ curl -X POST http://localhost:8085/api/presentations \
   -d '{"uri": "openid4vp://authorize?..."}'
 ```
 
-## Shared flag
+## Shared flags
 
-All wallet subcommands accept `--wallet-dir` to override the storage directory:
+All wallet subcommands accept `--wallet-dir` to override the storage directory and `--templates-dir` to override the credential template directory (see [templates](templates.md)):
 
 ```bash
 oid4vc-dev wallet list --wallet-dir /tmp/test-wallet
+oid4vc-dev wallet serve --templates-dir ./my-templates
 ```

@@ -8,6 +8,10 @@ Use `--wallet-dir` on `issue` when `--wallet` should target a non-default wallet
 oid4vc-dev issue sdjwt
 oid4vc-dev issue sdjwt --pid
 oid4vc-dev issue sdjwt --pid --omit place_of_birth,sex,personal_administrative_number
+oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
+oid4vc-dev issue sdjwt --template employee-card
+oid4vc-dev issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
+oid4vc-dev issue sdjwt --claims '{"name":"Test","age":30}' --save-template my-test-cred
 oid4vc-dev issue sdjwt --claims '{"name":"Test","age":30}'
 oid4vc-dev issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2025-06-01T00:00:00Z
 oid4vc-dev issue sdjwt --key signing-key.pem
@@ -38,6 +42,7 @@ oid4vc-dev issue mdoc  | oid4vc-dev decode
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--wallet-dir` | `~/.oid4vc-dev/wallet/` | Wallet storage directory used by `--wallet` |
+| `--templates-dir` | `<wallet-dir>/templates/` | Credential template directory used by `--template` and `--save-template` |
 
 ### `issue sdjwt`
 
@@ -51,6 +56,9 @@ oid4vc-dev issue mdoc  | oid4vc-dev decode
 | `--nbf`    | —                         | Not-before time (RFC3339 or duration, e.g. `-1h`) |
 | `--pid`    | `false`                   | Use full EUDI PID Rulebook claims              |
 | `--omit`   | —                         | Comma-separated claim names to exclude         |
+| `--template` | —                       | Credential template name or file (see [templates](templates.md)) |
+| `--always-disclosed` | —               | Claims issued plainly instead of selectively disclosable (dotted paths for nested claims) |
+| `--save-template` | —                  | Save the issued claims and settings as a template with this name |
 | `--wallet` | `false`                   | Import the issued credential into the wallet   |
 | `--status-list-uri` | —              | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
@@ -67,6 +75,8 @@ oid4vc-dev issue mdoc  | oid4vc-dev decode
 | `--nbf`    | —                         | Not-before time (RFC3339 or duration, e.g. `-1h`) |
 | `--pid`    | `false`                   | Use full EUDI PID Rulebook claims              |
 | `--omit`   | —                         | Comma-separated claim names to exclude         |
+| `--template` | —                       | Credential template name or file (see [templates](templates.md)) |
+| `--save-template` | —                  | Save the issued claims and settings as a template with this name |
 | `--wallet` | `false`                   | Import the issued credential into the wallet   |
 | `--status-list-uri` | —              | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
@@ -85,11 +95,17 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 | `--nbf`       | —                              | Not-before time (RFC3339 or duration, e.g. `-1h`) |
 | `--pid`       | `false`                        | Use full EUDI PID Rulebook claims              |
 | `--omit`      | —                              | Comma-separated claim names to exclude         |
+| `--template`  | —                              | Credential template name or file (see [templates](templates.md)) |
+| `--save-template` | —                          | Save the issued claims and settings as a template with this name |
 | `--wallet`    | `false`                        | Import the issued credential into the wallet   |
 | `--status-list-uri` | —                       | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 
-When no `--claims` are provided, a minimal set of PID-like claims is used (given_name, family_name, birth_date). With `--pid`, the full EUDI PID Rulebook claim set is generated (27 claims including address, nationality, age attributes, document metadata, etc.).
+When no `--claims` are provided, a minimal set of PID-like claims is used (given_name, family_name, birth_date). With `--pid`, the full EUDI PID Rulebook claim set is generated (27 claims including address, nationality, age attributes, document metadata, etc.). The PID claim sets come from the pre-defined `german-pid-sdjwt` and `german-pid-mdoc` credential templates, so a user template saved under one of those names changes what `--pid` issues.
+
+With `--template`, the template supplies the claim set and any type, namespace, and expiry defaults for flags that were not set explicitly. `--claims` then overrides individual top level claims and `--omit` removes claims from the merged result. See [templates](templates.md) for the template file format and the `templates` management commands.
+
+By default every SD-JWT claim is selectively disclosable. `--always-disclosed` (or the template's `always_disclosed` list) embeds the named claims plainly in the signed payload instead, so they are always visible and cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). This is rejected for mdoc (every mdoc element is selectively disclosable by design) and ignored for jwt (all claims are plain there anyway).
 
 ## Wallet Registration Metadata
 

@@ -40,9 +40,18 @@ type SDJWTConfig struct {
 	StatusListURI string              // optional: status list URI for revocation
 	StatusListIdx int                 // optional: index in the status list
 	CertChain     []*x509.Certificate // optional: x5c certificate chain [leaf, CA]
+	// AlwaysDisclosed lists claims that are embedded plainly instead of
+	// becoming selective disclosures. Entries name top-level claims
+	// ("family_name") or nested subclaims via dotted paths
+	// ("address.country"). A top-level entry embeds the whole claim value
+	// plainly; a dotted entry embeds that subclaim plainly inside its
+	// parent's disclosure value. Entries that match no claim are ignored.
+	AlwaysDisclosed []string
 }
 
-// GenerateSDJWT creates a mock SD-JWT credential with all claims selectively disclosable.
+// GenerateSDJWT creates a mock SD-JWT credential. By default all claims are
+// selectively disclosable; claims listed in AlwaysDisclosed go plainly into
+// the payload instead.
 // Map values produce nested disclosures (subclaims with their own _sd array).
 // Slice values produce array element disclosures ({"...": digest} entries).
 func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
@@ -52,12 +61,25 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 
 	now := time.Now()
 
+	always := make(map[string]bool, len(cfg.AlwaysDisclosed))
+	for _, path := range cfg.AlwaysDisclosed {
+		if p := strings.TrimSpace(path); p != "" {
+			always[p] = true
+		}
+	}
+
 	// Generate disclosures and compute digests
 	var disclosures []string
 	var digests []string
+	plain := make(map[string]any)
 
 	for name, value := range cfg.Claims {
-		claimDisclosures, claimValue, err := makeDisclosure(name, value)
+		if always[name] {
+			plain[name] = value
+			continue
+		}
+
+		claimDisclosures, claimValue, err := makeDisclosure(name, value, name, always)
 		if err != nil {
 			return "", err
 		}
@@ -80,6 +102,9 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		"vct":     cfg.VCT,
 		"_sd_alg": "sha-256",
 		"_sd":     digests,
+	}
+	for name, value := range plain {
+		payload[name] = value
 	}
 
 	if cfg.NotBefore != nil {
@@ -164,21 +189,36 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 // For plain values, it returns no sub-disclosures and the value as-is.
 // For map values, it creates sub-disclosures and returns an object with _sd.
 // For slice values, it creates element disclosures and returns an array with {"...": digest}.
-func makeDisclosure(name string, value any) (subDisclosures []string, transformedValue any, err error) {
+// path is the dotted path of the claim; subclaims whose path is in always are
+// embedded plainly in the transformed value instead of becoming disclosures.
+func makeDisclosure(name string, value any, path string, always map[string]bool) (subDisclosures []string, transformedValue any, err error) {
 	switch v := value.(type) {
 	case map[string]any:
 		// Nested object: create disclosures for each subclaim
 		var subDigests []string
+		obj := make(map[string]any)
 		for subName, subValue := range v {
-			disc, digest, err := createDisclosure(subName, subValue)
+			subPath := path + "." + subName
+			if always[subPath] {
+				obj[subName] = subValue
+				continue
+			}
+			subSub, transformed, err := makeDisclosure(subName, subValue, subPath, always)
+			if err != nil {
+				return nil, nil, err
+			}
+			subDisclosures = append(subDisclosures, subSub...)
+			disc, digest, err := createDisclosure(subName, transformed)
 			if err != nil {
 				return nil, nil, err
 			}
 			subDisclosures = append(subDisclosures, disc)
 			subDigests = append(subDigests, digest)
 		}
-		transformedValue = map[string]any{"_sd": subDigests}
-		return subDisclosures, transformedValue, nil
+		if len(subDigests) > 0 {
+			obj["_sd"] = subDigests
+		}
+		return subDisclosures, obj, nil
 
 	case []any:
 		// Array: create element disclosures for each item

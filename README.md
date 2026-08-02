@@ -77,7 +77,7 @@ Input can be a **file path**, **URL**, **raw credential string**, or piped via *
 A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration.
 
 ```bash
-oid4vc-dev wallet generate-pid          # Generate PID credentials
+oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt   # Issue a PID into the wallet
 oid4vc-dev wallet serve                 # Start web UI + OID4VP endpoints
 oid4vc-dev wallet ca-cert --out wallet-ca-cert.pem
 oid4vc-dev wallet tls-cert --out wallet-tls-cert.pem
@@ -88,11 +88,11 @@ oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
 
 > **Security:** The wallet server exposes unauthenticated HTTP endpoints for credential management and presentation flows. It is designed exclusively for **local development and testing** — never expose it to untrusted networks.
 
-`wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `wallet generate-pid` gives you a ready-to-use PID wallet, `issue ... --wallet` adds new credentials into the same wallet context, and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
+`wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `issue ... --wallet --template german-pid-sdjwt` gives you a ready-to-use PID wallet and adds new credentials into the same wallet context (`wallet generate-pid` still works but is deprecated), and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
 
 For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet
-- `wallet generate-pid` to preload PID credentials
+- `issue ... --wallet` (with `--template` or `--pid`) to preload credentials
 - `wallet trust-list` to get the verifier trust-list URL or JWT
 - `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material
@@ -113,12 +113,17 @@ Generate test SD-JWT, JWT, or mDOC credentials for development and testing.
 
 ```bash
 oid4vc-dev issue sdjwt --pid
+oid4vc-dev issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
+oid4vc-dev issue sdjwt --pid --always-disclosed issuing_country,address.country
 oid4vc-dev issue jwt --claims '{"name":"Test","age":30}'
 oid4vc-dev issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
 oid4vc-dev issue sdjwt | oid4vc-dev decode
 ```
 
+Reusable claim sets live in credential templates (`templates list|show|save|import|delete`). Templates carry the credential type, default claims, and the claims to issue without selective disclosure. They work in the CLI, the HTTP API, and the wallet UI.
+
 → [Full documentation](docs/issue.md) — all flags, round-trip examples
+→ [Credential templates](docs/templates.md) — template files, management commands, always disclosed claims
 
 ---
 
