@@ -19,8 +19,22 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
+
+// localWalletTrustAnchors returns the local wallet's CA certificates as
+// trust list entries. Credentials issued by the local wallet then validate
+// with a full chain, without a network lookup or an explicit trust list.
+func localWalletTrustAnchors() []trustlist.CertInfo {
+	store := wallet.NewWalletStore("")
+	w, err := store.LoadOrCreate()
+	if err != nil || w == nil || len(w.CertChain) == 0 {
+		return nil
+	}
+	ca := w.CertChain[len(w.CertChain)-1]
+	return []trustlist.CertInfo{{Raw: ca.Raw, PublicKey: ca.PublicKey}}
+}
 
 func verifyWithLocalWalletIssuerKey(token *sdjwt.Token) (*sdjwt.VerifyResult, string) {
 	if token == nil {

@@ -2,7 +2,14 @@
 
 Validate a credential by checking signatures, expiry, and revocation status. Unlike `decode` (which only parses and displays), `validate` actively checks correctness.
 
-If neither `--key` nor `--trust-list` is provided, signature verification is skipped and only expiry and status checks are performed. This is useful for quick revocation checks without needing the issuer's key.
+Signature keys are resolved in this order:
+
+1. The credential's x5c (SD-JWT/JWT) or x5chain (mDOC) certificate chain, validated against `--trust-list` when given
+2. An explicitly provided `--key`
+3. The embedded leaf certificate alone, when no trust list is given. This works fully offline and the output notes that the chain was not validated (the signature is intact, trust is not established)
+4. Issuer metadata from `https://<iss>/.well-known/jwt-vc-issuer`, for credentials without an embedded certificate
+
+So a credential that carries its certificate chain validates without any network access, even when its issuer is not reachable. Credentials without keys or certificates fall back to expiry and status checks only.
 
 ```bash
 # Full validation with signature verification
@@ -35,6 +42,8 @@ When a trust list is provided and the credential contains an x5c (SD-JWT/JWT) or
 This matches the Bundesdruckerei PID provider setup where the trust list contains CA certificates like "PIDP Preprod CA" and credentials carry a leaf certificate signed by that CA.
 
 Wallet-generated SD-JWT credentials follow the same model: the SD-JWT header carries a deterministic `kid` plus the leaf signing certificate in `x5c`, while the wallet trust list exposes the CA trust anchor separately. The wallet also publishes HTTPS JWT VC issuer metadata at `/.well-known/jwt-vc-issuer` for ecosystems that resolve issuer keys via metadata/JWKS.
+
+The web decoder (`eudi serve` and the wallet's embedded decoder) additionally uses the local wallet's CA as an implicit trust anchor when no key or trust list is provided. Credentials issued by the local wallet then show a fully verified chain without any configuration.
 
 This trust-list validation step is intentionally limited to certificate trust and service listing. Current EUDI authorization checks such as provider class and exact attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar or registration data, not from custom trust-list fields.
 The trust-list parser and decoder accept current ETSI-style field names, including `ListIssueDateTime`. When a wallet exposes multiple trust-list profiles, use the legacy `/api/trustlist` endpoint for PID compatibility or resolve a specific profile from `/api/trustlists`. For containerized callers, prefer the index entry's relative `path` over its optional advertised URL.

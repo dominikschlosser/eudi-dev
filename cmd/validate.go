@@ -117,8 +117,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		output.PrintSDJWT(token, opts)
 
-		if bestResult, _, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
+		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
 			output.PrintVerifyResultSDJWT(bestResult, opts)
+			printLeafSourceNote(source, opts)
 
 			if !bestResult.SignatureValid {
 				return fmt.Errorf("signature verification failed")
@@ -161,8 +162,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		output.PrintJWT(token, opts)
 
-		if bestResult, _, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
+		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
 			output.PrintVerifyResultSDJWT(bestResult, opts)
+			printLeafSourceNote(source, opts)
 
 			if !bestResult.SignatureValid {
 				return fmt.Errorf("signature verification failed")
@@ -203,6 +205,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		output.PrintMDOC(doc, opts)
 
+		leafKey, _ := validate.ExtractMDOCX5ChainLeafKey(doc)
 		if len(pubKeys) > 0 {
 			x5cKey, _ := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)
 			bestResult := verifyWithBestKey(pubKeys, x5cKey, func(key crypto.PublicKey) (*mdoc.VerifyResult, bool) {
@@ -215,6 +218,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("signature verification failed")
 			}
 			if bestResult.Expired && !allowExpired {
+				return fmt.Errorf("credential expired")
+			}
+		} else if leafKey != nil {
+			// Offline check against the embedded x5chain leaf certificate.
+			result := mdoc.Verify(doc, leafKey)
+			output.PrintVerifyResultMDOC(result, opts)
+			printLeafSourceNote(validate.SourceX5CLeaf, opts)
+
+			if !result.SignatureValid {
+				return fmt.Errorf("signature verification failed")
+			}
+			if result.Expired && !allowExpired {
 				return fmt.Errorf("credential expired")
 			}
 		} else {
@@ -247,6 +262,14 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// printLeafSourceNote explains a leaf-only verification so a green result is
+// not mistaken for a trust statement.
+func printLeafSourceNote(source string, opts output.Options) {
+	if source == validate.SourceX5CLeaf && !opts.JSON {
+		fmt.Println("  Note: verified with the credential's embedded certificate (chain not validated). Pass --trust-list to also validate trust.")
+	}
 }
 
 // verifyWithBestKey tries verifying with x5cKey first (if available), then

@@ -59,8 +59,32 @@ func ValidateCertChain(certs []*x509.Certificate, tlCerts []trustlist.CertInfo) 
 // and validates that the certificate chain is anchored in the trust list.
 // Returns nil, nil if no x5c header is present.
 func ExtractAndValidateX5C(header map[string]any, tlCerts []trustlist.CertInfo) (crypto.PublicKey, error) {
+	if len(tlCerts) == 0 {
+		return nil, nil
+	}
+	certs, err := parseX5CCerts(header)
+	if err != nil || len(certs) == 0 {
+		return nil, err
+	}
+	return ValidateCertChain(certs, tlCerts)
+}
+
+// ExtractX5CLeafKey returns the public key of the first x5c certificate
+// without validating the chain. This allows offline signature checks when no
+// trust anchors are available (the result proves integrity, not trust).
+// Returns nil, nil if no x5c header is present.
+func ExtractX5CLeafKey(header map[string]any) (crypto.PublicKey, error) {
+	certs, err := parseX5CCerts(header)
+	if err != nil || len(certs) == 0 {
+		return nil, err
+	}
+	return certs[0].PublicKey, nil
+}
+
+// parseX5CCerts decodes the certificates of a JWT x5c header.
+func parseX5CCerts(header map[string]any) ([]*x509.Certificate, error) {
 	x5cRaw, ok := header["x5c"].([]any)
-	if !ok || len(x5cRaw) == 0 || len(tlCerts) == 0 {
+	if !ok || len(x5cRaw) == 0 {
 		return nil, nil
 	}
 
@@ -80,15 +104,39 @@ func ExtractAndValidateX5C(header map[string]any, tlCerts []trustlist.CertInfo) 
 		}
 		certs = append(certs, cert)
 	}
-
-	return ValidateCertChain(certs, tlCerts)
+	return certs, nil
 }
 
 // ExtractAndValidateMDOCX5Chain extracts the leaf certificate public key from a COSE
 // x5chain (label 33) in the unprotected header and validates the chain against the trust list.
 // Returns nil, nil if no x5chain is present.
 func ExtractAndValidateMDOCX5Chain(doc *mdoc.Document, tlCerts []trustlist.CertInfo) (crypto.PublicKey, error) {
-	if doc.IssuerAuth == nil || doc.IssuerAuth.UnprotectedHeader == nil || len(tlCerts) == 0 {
+	if len(tlCerts) == 0 {
+		return nil, nil
+	}
+	certs, err := parseMDOCX5ChainCerts(doc)
+	if err != nil || len(certs) == 0 {
+		return nil, err
+	}
+	return ValidateCertChain(certs, tlCerts)
+}
+
+// ExtractMDOCX5ChainLeafKey returns the public key of the first x5chain
+// certificate without validating the chain, for offline signature checks
+// when no trust anchors are available. Returns nil, nil if no x5chain is
+// present.
+func ExtractMDOCX5ChainLeafKey(doc *mdoc.Document) (crypto.PublicKey, error) {
+	certs, err := parseMDOCX5ChainCerts(doc)
+	if err != nil || len(certs) == 0 {
+		return nil, err
+	}
+	return certs[0].PublicKey, nil
+}
+
+// parseMDOCX5ChainCerts decodes the certificates of a COSE x5chain (label 33)
+// in the unprotected header.
+func parseMDOCX5ChainCerts(doc *mdoc.Document) ([]*x509.Certificate, error) {
+	if doc.IssuerAuth == nil || doc.IssuerAuth.UnprotectedHeader == nil {
 		return nil, nil
 	}
 
@@ -129,6 +177,5 @@ func ExtractAndValidateMDOCX5Chain(doc *mdoc.Document, tlCerts []trustlist.CertI
 		}
 		certs = append(certs, cert)
 	}
-
-	return ValidateCertChain(certs, tlCerts)
+	return certs, nil
 }

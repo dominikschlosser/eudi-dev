@@ -118,6 +118,84 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 	}
 }
 
+func TestAutoRouteThroughInstanceForSameWalletDir(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+
+	// The registry says this running server owns the local wallet dir. The
+	// registered pid must match the pid the server reports, otherwise
+	// discovery prunes the file as stale.
+	resolvedDir := wallet.NewWalletStore(walletDir).Dir
+	if err := remote.RegisterInstance(remote.Instance{
+		PID: os.Getpid(), Port: portFromURL(t, url), URL: url,
+		WalletDir: resolvedDir, StartedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Issuing without --remote routes through the running instance instead
+	// of writing the store directly (single-writer rule).
+	rootCmd.SetArgs([]string{"issue", "sdjwt", "--wallet", "--template", "german-pid-sdjwt"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("auto-routed issue: %v", err)
+	}
+	client := remote.NewClient(url)
+	creds, err := client.Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(creds) != 1 {
+		t.Fatalf("expected the credential on the running instance, got %d", len(creds))
+	}
+	if _, err := os.Stat(filepath.Join(walletDir, "wallet.json")); !os.IsNotExist(err) {
+		t.Error("auto-routed issue must not write the local store")
+	}
+
+	// --remote local opts out and writes the local store directly.
+	resetIssueFlagChanges(t)
+	rootCmd.SetArgs([]string{"issue", "sdjwt", "--wallet", "--template", "german-pid-sdjwt", "--remote", "local"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue with --remote local: %v", err)
+	}
+	store := wallet.NewWalletStore(walletDir)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.GetCredentials()) != 1 {
+		t.Fatalf("expected 1 local credential after --remote local, got %d", len(w.GetCredentials()))
+	}
+	creds, err = client.Credentials()
+	if err != nil || len(creds) != 1 {
+		t.Fatalf("instance credentials must be untouched by --remote local: %v %v", creds, err)
+	}
+
+	// An explicit --templates-dir also forces the local store.
+	resetIssueFlagChanges(t)
+	tplDir := t.TempDir()
+	rootCmd.SetArgs([]string{"issue", "sdjwt", "--wallet", "--template", "german-pid-sdjwt", "--templates-dir", tplDir})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue with --templates-dir: %v", err)
+	}
+	w, err = store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.GetCredentials()) != 2 {
+		t.Fatalf("expected 2 local credentials after --templates-dir issue, got %d", len(w.GetCredentials()))
+	}
+}
+
+// resetIssueFlagChanges clears cobra's Changed state between Execute calls
+// in a single test, mirroring fresh CLI invocations.
+func resetIssueFlagChanges(t *testing.T) {
+	t.Helper()
+	saved := walletDir
+	resetTemplateTestState(t)
+	walletDir = saved
+	remoteFlag = ""
+}
+
 func TestRemoteTemplatesViaCLI(t *testing.T) {
 	resetRemoteTestState(t)
 	url, _ := startRemoteTestWallet(t)

@@ -147,6 +147,41 @@ func TestDiscoverRegistryAndPrune(t *testing.T) {
 	}
 }
 
+func TestInstanceForWalletDir(t *testing.T) {
+	withTempConfigDir(t)
+	walletDir := t.TempDir()
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/version" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`{"build_id": "b", "pid": 7777}`))
+	}))
+	defer live.Close()
+	liveURL, _ := url.Parse(live.URL)
+	port, _ := strconv.Atoi(liveURL.Port())
+
+	if err := RegisterInstance(Instance{PID: 7777, Port: port, URL: live.URL, WalletDir: walletDir, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := InstanceForWalletDir(walletDir, 500*time.Millisecond)
+	if inst == nil {
+		t.Fatal("expected to find the instance for its wallet dir")
+	}
+	if inst.PID != 7777 || inst.URL != live.URL {
+		t.Errorf("unexpected instance: %+v", inst)
+	}
+
+	if got := InstanceForWalletDir(t.TempDir(), 500*time.Millisecond); got != nil {
+		t.Errorf("expected no instance for an unrelated dir, got %+v", got)
+	}
+	if got := InstanceForWalletDir("", 500*time.Millisecond); got != nil {
+		t.Errorf("expected no instance for an empty dir, got %+v", got)
+	}
+}
+
 func TestDiscoverDedupesStaleRegistryFilesOnSamePort(t *testing.T) {
 	withTempConfigDir(t)
 

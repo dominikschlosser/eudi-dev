@@ -45,19 +45,32 @@ func activeRemoteURL() (string, error) {
 	return remote.Active(), nil
 }
 
-// remoteClientIfConfigured returns a client for the active remote wallet, or
-// nil when the CLI manages the local store. It prints the target to stderr
-// so remote operations are never silent.
+// remoteClientIfConfigured returns a client for the wallet the CLI should
+// manage over HTTP, or nil when the CLI manages the local store directly.
+// The target is resolved in order: the --remote flag, the target persisted
+// by `wallet instances use`, then a running local instance that serves the
+// same wallet directory. The last rule keeps a single writer per wallet
+// directory (a running server and a CLI writing the same files diverge,
+// because the server holds its state in memory). `--remote local` or an
+// explicit --templates-dir forces direct local store access.
+// The target is printed to stderr so routed operations are never silent.
 func remoteClientIfConfigured() (*remote.Client, error) {
 	url, err := activeRemoteURL()
 	if err != nil {
 		return nil, err
 	}
-	if url == "" {
+	if url != "" {
+		fmt.Fprintf(os.Stderr, "Managing remote wallet %s\n", url)
+		return remote.NewClient(url), nil
+	}
+	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
 		return nil, nil
 	}
-	fmt.Fprintf(os.Stderr, "Managing remote wallet %s\n", url)
-	return remote.NewClient(url), nil
+	if inst := remote.InstanceForWalletDir(loadStore().Dir, 500*time.Millisecond); inst != nil {
+		fmt.Fprintf(os.Stderr, "Routing through the running wallet instance %s (pid %d, same wallet directory). Use --remote local for direct file access.\n", inst.URL, inst.PID)
+		return remote.NewClient(inst.URL), nil
+	}
+	return nil, nil
 }
 
 func instancesUseCmd() *cobra.Command {
@@ -287,6 +300,39 @@ func stopInstance(inst remote.DiscoveredInstance) error {
 	return nil
 }
 
+// warnServingConfigDivergence compares a running instance's introspection
+// document with the local wallet file when both describe the same wallet
+// directory. A running server keeps the serving config it read at startup,
+// so after the file changed the two disagree until the server restarts.
+func warnServingConfigDivergence(cfg map[string]any) {
+	instanceDir, _ := cfg["wallet_dir"].(string)
+	if instanceDir == "" {
+		return
+	}
+	store := loadStore()
+	if !remote.SamePath(instanceDir, store.Dir) {
+		return
+	}
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		return
+	}
+	instanceIssuer, _ := cfg["issuer_url"].(string)
+	instanceBase, _ := cfg["base_url"].(string)
+	var diffs []string
+	if strings.TrimSpace(w.IssuerURL) != strings.TrimSpace(instanceIssuer) {
+		diffs = append(diffs, fmt.Sprintf("issuer_url (instance %q, file %q)", instanceIssuer, w.IssuerURL))
+	}
+	if strings.TrimSpace(w.BaseURL) != strings.TrimSpace(instanceBase) {
+		diffs = append(diffs, fmt.Sprintf("base_url (instance %q, file %q)", instanceBase, w.BaseURL))
+	}
+	if len(diffs) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: the running instance and wallet.json disagree on %s. Restart `%s wallet serve` to apply the file.\n",
+		strings.Join(diffs, " and "), binaryName())
+}
+
 func walletInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info",
@@ -309,6 +355,7 @@ func walletInfoCmd() *cobra.Command {
 					return err
 				}
 				fmt.Println(string(data))
+				warnServingConfigDivergence(cfg)
 				return nil
 			}
 

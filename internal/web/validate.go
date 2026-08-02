@@ -222,6 +222,23 @@ func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 		}
 	}
 
+	// Without explicit keys, credentials issued by the local wallet validate
+	// against its CA with a full chain.
+	if len(pubKeys) == 0 && len(tlCerts) == 0 {
+		if anchors := localWalletTrustAnchors(); len(anchors) > 0 {
+			if caKey, err := validate.ExtractAndValidateX5C(token.Header, anchors); err == nil && caKey != nil {
+				result := sdjwt.Verify(token, caKey)
+				if result.SignatureValid {
+					return CheckResult{
+						Name:   "signature",
+						Status: "pass",
+						Detail: fmt.Sprintf("Valid (%s, via local wallet CA, chain verified)", result.Algorithm),
+					}
+				}
+			}
+		}
+	}
+
 	result, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts)
 	if err != nil {
 		if len(pubKeys) == 0 && len(tlCerts) == 0 {
@@ -301,6 +318,36 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 	}
 
 	if len(pubKeys) == 0 && len(tlCerts) == 0 {
+		// Credentials issued by the local wallet validate against its CA
+		// with a full chain.
+		if anchors := localWalletTrustAnchors(); len(anchors) > 0 {
+			if caKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, anchors); err == nil && caKey != nil {
+				result := mdoc.Verify(doc, caKey)
+				if result.SignatureValid {
+					return CheckResult{
+						Name:   "signature",
+						Status: "pass",
+						Detail: fmt.Sprintf("Valid (%s, via local wallet CA, chain verified)", result.Algorithm),
+					}
+				}
+			}
+		}
+		// Offline check against the embedded x5chain leaf certificate.
+		if leafKey, err := validate.ExtractMDOCX5ChainLeafKey(doc); err == nil && leafKey != nil {
+			result := mdoc.Verify(doc, leafKey)
+			if result.SignatureValid {
+				return CheckResult{
+					Name:   "signature",
+					Status: "pass",
+					Detail: fmt.Sprintf("Valid (%s, via %s)", result.Algorithm, validate.SourceX5CLeaf),
+				}
+			}
+			return CheckResult{
+				Name:   "signature",
+				Status: "fail",
+				Detail: "Signature invalid (embedded x5chain leaf key)",
+			}
+		}
 		return CheckResult{
 			Name:   "signature",
 			Status: "skipped",

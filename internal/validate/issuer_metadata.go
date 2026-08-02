@@ -91,8 +91,16 @@ func ResolveJWTIssuerMetadataKey(token *sdjwt.Token, tlCerts []trustlist.CertInf
 	return key, "issuer metadata", nil
 }
 
+// SourceX5CLeaf marks a signature verified against the credential's embedded
+// leaf certificate without chain validation. The signature is intact, but
+// nothing vouches for the issuer (pass a trust list for that).
+const SourceX5CLeaf = "x5c certificate, chain not validated"
+
 // VerifyJWTSignature verifies the token signature using, in order:
-// x5c + trust list, explicitly provided keys, then kid-based issuer metadata.
+// x5c + trust list, explicitly provided keys, the embedded x5c leaf
+// certificate (only when no trust list is given), then kid-based issuer
+// metadata. The leaf step keeps validation offline for credentials that
+// carry their issuer certificate.
 func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo) (*sdjwt.VerifyResult, string, error) {
 	if token == nil {
 		return nil, "", fmt.Errorf("token is nil")
@@ -110,6 +118,18 @@ func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts 
 			return result, "provided key", nil
 		}
 	}
+
+	// Without trust anchors, the embedded leaf certificate still proves the
+	// signature is intact. Prefer it over a network metadata lookup, which
+	// fails whenever the issuer is not currently reachable.
+	if len(tlCerts) == 0 {
+		if leafKey, err := ExtractX5CLeafKey(token.Header); err == nil && leafKey != nil {
+			if result := sdjwt.Verify(token, leafKey); result.SignatureValid {
+				return result, SourceX5CLeaf, nil
+			}
+		}
+	}
+
 	if best != nil {
 		if key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts); err == nil && key != nil {
 			result := sdjwt.Verify(token, key)

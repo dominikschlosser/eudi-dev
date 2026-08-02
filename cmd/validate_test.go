@@ -24,6 +24,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -433,4 +435,53 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 // encodeBase64Std is a test helper for standard base64 encoding.
 func encodeBase64Std(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+func TestValidateCommand_OfflineViaEmbeddedX5C(t *testing.T) {
+	caCert, caKey, _ := generateCACert(t)
+	leafCert, leafKey, _ := generateLeafCert(t, caCert, caKey)
+
+	// The issuer URL is unreachable: validation must succeed offline via the
+	// embedded certificate chain, without fetching issuer metadata.
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    "https://localhost:1",
+		VCT:       "urn:test:offline",
+		ExpiresIn: time.Hour,
+		Claims:    map[string]any{"given_name": "Erika"},
+		Key:       leafKey,
+		CertChain: []*x509.Certificate{leafCert, caCert},
+	})
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	credFile := filepath.Join(t.TempDir(), "cred.txt")
+	if err := os.WriteFile(credFile, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rootCmd.SetArgs([]string{"validate", credFile})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("offline validate must pass via the embedded x5c leaf: %v", err)
+	}
+
+	// mDOC: same offline expectation via the embedded x5chain.
+	mdocRaw, err := mock.GenerateMDOC(mock.MDOCConfig{
+		DocType:   "eu.example.test.1",
+		Namespace: "eu.example.test.1",
+		Claims:    map[string]any{"family_name": "Mustermann"},
+		Key:       leafKey,
+		ExpiresIn: time.Hour,
+		CertChain: []*x509.Certificate{leafCert, caCert},
+	})
+	if err != nil {
+		t.Fatalf("GenerateMDOC: %v", err)
+	}
+	mdocFile := filepath.Join(t.TempDir(), "cred.mdoc")
+	if err := os.WriteFile(mdocFile, []byte(mdocRaw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"validate", mdocFile})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("offline mdoc validate must pass via the embedded x5chain leaf: %v", err)
+	}
 }

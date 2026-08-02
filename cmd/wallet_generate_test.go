@@ -24,6 +24,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
+
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
@@ -136,6 +138,71 @@ func TestWalletGeneratePID_UsesRegisteredWalletPort(t *testing.T) {
 	}
 	if got := statusList["uri"]; got != "https://localhost:8092/api/statuslist" {
 		t.Fatalf("expected status list uri https://localhost:8092/api/statuslist, got %v", got)
+	}
+}
+
+func TestWalletGeneratePID_PreservesPersistedServingConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("OID4VC_DEV_HOME", tmpDir)
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	walletDir = wDir
+	t.Cleanup(func() {
+		walletDir = ""
+		if c, _, err := rootCmd.Find([]string{"wallet", "generate-pid"}); err == nil {
+			c.Flags().VisitAll(func(f *pflag.Flag) {
+				_ = f.Value.Set(f.DefValue)
+				f.Changed = false
+			})
+		}
+	})
+
+	store := wallet.NewWalletStore(wDir)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.BaseURL = "http://localhost:9085"
+	w.IssuerURL = "https://localhost:9086"
+	if err := store.Save(w); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without URL flags the persisted serving config stays untouched and the
+	// new credentials embed it.
+	rootCmd.SetArgs([]string{"wallet", "generate-pid"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet generate-pid: %v", err)
+	}
+	w, err = store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.BaseURL != "http://localhost:9085" || w.IssuerURL != "https://localhost:9086" {
+		t.Fatalf("serving config rewritten: base %q issuer %q", w.BaseURL, w.IssuerURL)
+	}
+	token, err := sdjwt.Parse(w.GetCredentials()[0].Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.Payload["iss"] != "https://localhost:9086" {
+		t.Fatalf("expected iss https://localhost:9086, got %v", token.Payload["iss"])
+	}
+
+	// An explicit --base-url still overrides both URLs.
+	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--base-url", "http://localhost:7085"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet generate-pid --base-url: %v", err)
+	}
+	w, err = store.LoadOrCreate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.BaseURL != "http://localhost:7085" || w.IssuerURL != "https://localhost:7086" {
+		t.Fatalf("explicit base url not applied: base %q issuer %q", w.BaseURL, w.IssuerURL)
 	}
 }
 

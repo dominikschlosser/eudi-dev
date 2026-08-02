@@ -416,6 +416,17 @@ func isLocalWalletIssuerURL(raw string) bool {
 	return u.Scheme == "https" && (u.Hostname() == "localhost" || u.Hostname() == "host.docker.internal")
 }
 
+// isLocalhostIssuerURL is the narrower check used when realigning the issuer
+// URL to a registered wallet listener. Docker host URLs are a deliberate
+// serving config and must not be rewritten to localhost.
+func isLocalhostIssuerURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "https" && u.Hostname() == "localhost"
+}
+
 func isRunningWalletServer(baseURL string) bool {
 	resp, err := http.Get(baseURL + "/api/log")
 	if err != nil {

@@ -22,7 +22,9 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -33,6 +35,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/output"
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -135,6 +138,19 @@ func applyValidationMode(w *wallet.Wallet, raw string) error {
 	}
 	w.ValidationMode = mode
 	return nil
+}
+
+// warnIssuedEndpointsOffline notes after a direct (unrouted) issuance that
+// the issuer and status list URLs embedded in the new credential only
+// resolve once a wallet server runs for this wallet directory.
+func warnIssuedEndpointsOffline(store *wallet.WalletStore, w *wallet.Wallet) {
+	if strings.TrimSpace(w.IssuerURL) == "" {
+		return
+	}
+	if remote.InstanceForWalletDir(store.Dir, 300*time.Millisecond) != nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Note: the embedded issuer and status list URLs point at %s. They resolve once `%s wallet serve` runs.\n", w.IssuerURL, binaryName())
 }
 
 func deriveWalletIssuerURL(port int, baseURL string, docker bool) (string, error) {

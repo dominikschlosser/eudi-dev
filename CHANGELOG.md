@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.3] - 2026-08-02
+
+### Fixed
+
+- One writer per wallet directory: when a running wallet server serves the same wallet directory, CLI commands now route through its REST API automatically (with a `Routing through the running wallet instance ...` notice on stderr) instead of writing the store files directly. Previously a CLI issuance next to a running server silently rewrote the persisted serving URLs and produced credentials pointing at endpoints the server does not serve. `--remote local` or an explicit `--templates-dir` still forces direct file access
+- Issuance no longer rewrites persisted serving config: `wallet generate-pid` and `issue ... --wallet` keep existing `base_url` and `issuer_url` values unless `--base-url` or `--docker` is passed explicitly, and only derive defaults for a fresh wallet. When no server is running they print a note that the embedded URLs resolve once `wallet serve` runs. A registered URL scheme listener no longer rewrites Docker issuer URLs to localhost
+- Offline validation via embedded certificates: `validate` and `decode` verify signatures against the credential's x5c (SD-JWT/JWT) or x5chain (mDOC) leaf certificate when no trust list is given, instead of failing on an unreachable `/.well-known/jwt-vc-issuer` endpoint. The output notes that the chain was not validated. With a trust list the chain validation behaves as before and is never downgraded to a leaf-only pass
+- The web decoder uses the local wallet's CA as an implicit trust anchor, so credentials issued by the local wallet show a fully verified chain without configuration
+- `wallet serve` warns at startup about serving config that cannot work: a persisted Docker hostname outside Docker, and stored credentials whose embedded issuer or status list URLs this server does not serve
+- `wallet info` warns when a running instance and the wallet file disagree on serving URLs (the instance keeps its startup config until restarted)
+- The wallet UI screenshots in the documentation show a realistic session with an imported credential plus full OID4VCI issuance and OID4VP presentation activity, instead of an empty activity log
+
 ## [1.15.2] - 2026-08-02
 
 ### Fixed

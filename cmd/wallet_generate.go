@@ -65,31 +65,48 @@ func walletGeneratePIDCmd() *cobra.Command {
 				w.IssuerKey = issuerKey
 			}
 
+			// Serving URLs belong to `wallet serve`. Issuance only derives
+			// them when nothing is persisted yet (out-of-the-box use) or when
+			// the user explicitly asks for different ones. Overwriting them
+			// here would bake URLs into the new credentials that a running or
+			// later server does not actually serve.
 			walletPort := defaultWalletCommandPort()
-			effectiveBaseURL := baseURL
+			explicitURLs := cmd.Flags().Changed("base-url") || cmd.Flags().Changed("docker")
+			effectiveBaseURL := ""
 			if statusList {
-				if effectiveBaseURL == "" {
-					if docker {
-						effectiveBaseURL = fmt.Sprintf("http://host.docker.internal:%d", walletPort)
-					} else {
-						effectiveBaseURL = fmt.Sprintf("http://localhost:%d", walletPort)
+				if explicitURLs {
+					if baseURL == "" {
+						if docker {
+							baseURL = fmt.Sprintf("http://host.docker.internal:%d", walletPort)
+						} else {
+							baseURL = fmt.Sprintf("http://localhost:%d", walletPort)
+						}
 					}
+					w.BaseURL = baseURL
+				} else if w.BaseURL == "" {
+					w.BaseURL = fmt.Sprintf("http://localhost:%d", walletPort)
 				}
-				w.BaseURL = effectiveBaseURL
+				effectiveBaseURL = w.BaseURL
 			}
 			if port := walletPortFromBaseURL(effectiveBaseURL); port > 0 {
 				walletPort = port
 			}
-			if effectiveBaseURL != "" {
+			if explicitURLs {
 				issuerURL, err := deriveWalletIssuerURL(walletPort, effectiveBaseURL, docker)
 				if err != nil {
 					return err
 				}
 				w.IssuerURL = issuerURL
-			} else if docker {
-				w.IssuerURL = wallet.LocalIssuerURL(walletPort+1, true)
 			} else if w.IssuerURL == "" {
-				w.IssuerURL = wallet.LocalIssuerURL(walletPort+1, false)
+				if effectiveBaseURL != "" {
+					issuerURL, err := deriveWalletIssuerURL(walletPort, effectiveBaseURL, false)
+					if err != nil {
+						return err
+					}
+					w.IssuerURL = issuerURL
+				} else {
+					w.IssuerURL = wallet.LocalIssuerURL(walletPort+1, false)
+				}
 			}
 
 			overrides, err := parseClaimsOverrides(claimsFlag)
@@ -112,6 +129,7 @@ func walletGeneratePIDCmd() *cobra.Command {
 			}
 
 			fmt.Println("Generated default EUDI PID credentials (SD-JWT + mDoc)")
+			warnIssuedEndpointsOffline(store, w)
 			return nil
 		},
 	}

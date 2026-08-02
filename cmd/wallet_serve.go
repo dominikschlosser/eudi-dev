@@ -16,6 +16,8 @@ package cmd
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -219,6 +221,9 @@ so the wallet automatically receives incoming protocol requests.`,
 			if w.RequireHAIP {
 				fmt.Printf("  HAIP:        enforced (x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
 			}
+			for _, warning := range servingConfigWarnings(w, port, docker) {
+				yellow.Printf("  Warning:     %s\n", warning)
+			}
 
 			// Register URL scheme handlers if requested
 			if register && !noRegister {
@@ -323,6 +328,87 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
 	return cmd
+}
+
+// servingConfigWarnings flags persisted serving config that cannot work in
+// the current environment and credentials whose embedded URLs this server
+// does not serve. Both situations come from serving config that changed
+// after the URLs were persisted or issued.
+func servingConfigWarnings(w *wallet.Wallet, port int, docker bool) []string {
+	var warnings []string
+
+	if !docker && !runningInDocker() {
+		for _, u := range []string{w.BaseURL, w.IssuerURL} {
+			if strings.Contains(u, "host.docker.internal") {
+				warnings = append(warnings,
+					fmt.Sprintf("%s uses a Docker hostname but this server does not run in Docker (start with --base-url or --docker to change it)", u))
+				break
+			}
+		}
+	}
+
+	served := map[string]bool{
+		fmt.Sprintf("localhost:%d", port):            true,
+		fmt.Sprintf("127.0.0.1:%d", port):            true,
+		fmt.Sprintf("host.docker.internal:%d", port): true,
+	}
+	for _, u := range []string{w.BaseURL, w.IssuerURL} {
+		if hp := urlHostPort(u); hp != "" {
+			served[hp] = true
+		}
+	}
+
+	var stale []string
+	for _, c := range w.GetCredentials() {
+		mismatch := false
+		if ref := wallet.CredentialStatusRef(c); ref != nil {
+			if hp := urlHostPort(ref.URI); hp != "" && isLocalTestHostPort(hp) && !served[hp] {
+				mismatch = true
+			}
+		}
+		if iss, ok := c.Claims["iss"].(string); ok {
+			if hp := urlHostPort(iss); hp != "" && isLocalTestHostPort(hp) && !served[hp] {
+				mismatch = true
+			}
+		}
+		if mismatch {
+			stale = append(stale, credLabel(c))
+		}
+	}
+	if len(stale) > 0 {
+		warnings = append(warnings,
+			fmt.Sprintf("%d credential(s) embed issuer or status list URLs this server does not serve (%s). Validation and status checks fail for them until they are issued again.", len(stale), strings.Join(stale, ", ")))
+	}
+	return warnings
+}
+
+// urlHostPort returns the host:port part of a URL, or "" when unparsable.
+func urlHostPort(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host
+}
+
+// isLocalTestHostPort reports whether the host is one this tool generates
+// URLs for. Foreign issuers keep their own URLs and are never flagged.
+func isLocalTestHostPort(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	switch host {
+	case "localhost", "127.0.0.1", "::1", "host.docker.internal":
+		return true
+	}
+	return false
+}
+
+// runningInDocker reports whether this process runs inside a container.
+func runningInDocker() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
 }
 
 func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {

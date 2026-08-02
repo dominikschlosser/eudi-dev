@@ -1,0 +1,103 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+)
+
+func newServingTestWallet(t *testing.T) *wallet.Wallet {
+	t.Helper()
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := wallet.New(holderKey, issuerKey, false)
+	w.TemplatesDir = t.TempDir()
+	w.BaseURL = "http://localhost:8085"
+	w.IssuerURL = "https://localhost:8086"
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating credentials: %v", err)
+	}
+	return w
+}
+
+func TestServingConfigWarnings(t *testing.T) {
+	w := newServingTestWallet(t)
+
+	// Credentials match the serving config: no warnings.
+	if warns := servingConfigWarnings(w, 8085, false); len(warns) != 0 {
+		t.Fatalf("expected no warnings, got %v", warns)
+	}
+
+	// The serving config moved to other ports: the credentials still embed
+	// the old URLs and get flagged.
+	w.BaseURL = "http://localhost:9085"
+	w.IssuerURL = "https://localhost:9086"
+	warns := servingConfigWarnings(w, 9085, false)
+	if len(warns) != 1 || !strings.Contains(warns[0], "credential") {
+		t.Fatalf("expected a stale-credential warning, got %v", warns)
+	}
+
+	// A Docker hostname outside Docker is flagged (in addition to the
+	// credential mismatch this creates).
+	w.IssuerURL = "https://host.docker.internal:9086"
+	warns = servingConfigWarnings(w, 9085, false)
+	joined := strings.Join(warns, "\n")
+	if !strings.Contains(joined, "Docker hostname") {
+		t.Fatalf("expected a Docker hostname warning, got %v", warns)
+	}
+	// With --docker the same config is intentional.
+	warns = servingConfigWarnings(w, 9085, true)
+	if strings.Contains(strings.Join(warns, "\n"), "Docker hostname") {
+		t.Fatalf("did not expect a Docker hostname warning with --docker, got %v", warns)
+	}
+}
+
+func TestServingConfigWarningsIgnoreForeignIssuers(t *testing.T) {
+	w := newServingTestWallet(t)
+
+	// A credential from a foreign issuer keeps its own URLs and is never
+	// flagged, even though they do not match the serving config.
+	foreignKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:        "https://issuer.example.com",
+		VCT:           "urn:example:foreign",
+		Claims:        map[string]any{"a": "1"},
+		Key:           foreignKey,
+		StatusListURI: "https://issuer.example.com/status/1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.ImportCredential(raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if warns := servingConfigWarnings(w, 8085, false); len(warns) != 0 {
+		t.Fatalf("expected no warnings for foreign issuer URLs, got %v", warns)
+	}
+}

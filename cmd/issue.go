@@ -380,7 +380,7 @@ func loadWalletForIssue(cmd *cobra.Command) (*wallet.Wallet, *wallet.WalletStore
 
 	if cmd.Flags().Changed("iss") {
 		w.IssuerURL = strings.TrimRight(strings.TrimSpace(issueIssuer), "/")
-	} else if strings.TrimSpace(w.IssuerURL) == "" || (registeredWalletListenerPort() > 0 && isLocalWalletIssuerURL(w.IssuerURL)) {
+	} else if strings.TrimSpace(w.IssuerURL) == "" || (registeredWalletListenerPort() > 0 && isLocalhostIssuerURL(w.IssuerURL)) {
 		w.IssuerURL = wallet.LocalIssuerURL(defaultWalletCommandPort()+1, false)
 	}
 
@@ -472,6 +472,7 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 		label = result.Credential.DocType
 	}
 	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", result.Credential.Format, label)
+	warnIssuedEndpointsOffline(store, w)
 	return nil
 }
 

@@ -194,6 +194,42 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 	return found
 }
 
+// InstanceForWalletDir returns the running wallet instance that serves the
+// given wallet directory, or nil when no live instance owns it. This backs
+// the single-writer rule: while a server owns a wallet directory, CLI
+// commands route through its API instead of writing the store directly.
+func InstanceForWalletDir(dir string, timeout time.Duration) *DiscoveredInstance {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return nil
+	}
+	want := normalizePath(dir)
+	for _, inst := range Discover(timeout) {
+		if inst.WalletDir != "" && normalizePath(inst.WalletDir) == want {
+			found := inst
+			return &found
+		}
+	}
+	return nil
+}
+
+// SamePath reports whether two paths refer to the same directory after
+// resolving relative segments and symlinks.
+func SamePath(a, b string) bool {
+	return normalizePath(a) == normalizePath(b)
+}
+
+// normalizePath resolves a path to a stable comparable form.
+func normalizePath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		p = abs
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		p = resolved
+	}
+	return filepath.Clean(p)
+}
+
 type scannedProcess struct {
 	PID  int
 	Port int
