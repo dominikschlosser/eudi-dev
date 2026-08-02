@@ -5,18 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.15.0]
+## [1.15.2] - 2026-08-02
+
+### Fixed
+
+- Homebrew tap publishing now runs automatically on tagged releases (the repository token is configured). The 1.15.1 formula was published manually, from this release on the workflow keeps the tap current
+
+## [1.15.1] - 2026-08-02
 
 ### Added
 
 - Homebrew installation: `brew install dominikschlosser/tap/eudi-dev` installs the `eudi` command with shell completion and the `oid4vc-dev` legacy alias. The release workflow updates the tap formula automatically on each tagged release
+
+### Fixed
+
+- CI test failures on clean environments: the default wallet directory test asserted the legacy `.oid4vc-dev` path, which only held on machines where the legacy state directory exists. The test now verifies both the fresh `.eudi-dev` default and the legacy fallback with a controlled home directory
+- Documentation screenshots refreshed for the renamed EUDI Dev Wallet and EUDI Dev Decoder UIs
+
+## [1.15.0] - 2026-08-02
 
 ### Changed
 
 - The project is renamed from oid4vc-dev to **eudi-dev** and the CLI command is now **`eudi`**. The Go module moved to `github.com/dominikschlosser/eudi-dev`, releases ship `eudi` binaries, the Docker image is `ghcr.io/dominikschlosser/eudi-dev`, and the state directory is `~/.eudi-dev` (`EUDI_DEV_HOME` overrides it). The wallet and decoder UIs are titled EUDI Dev Wallet and EUDI Dev Decoder
 - The old name keeps working for the time being: a binary named `oid4vc-dev` behaves identically (help and shell completion adapt to the invoked name, and the Docker image contains it as a second name), an existing `~/.oid4vc-dev` state directory keeps being used when `~/.eudi-dev` does not exist, `OID4VC_DEV_HOME` is still honored, instance discovery finds wallets running under either name, and `ghcr.io/dominikschlosser/oid4vc-dev` keeps receiving releases. Note that `go install` of new versions requires the new module path
 
-## [1.14.1]
+## [1.14.1] - 2026-08-02
 
 ### Added
 
@@ -26,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The instance lifecycle commands moved under one command group: `wallet instances list` (also reachable as plain `wallet instances`), `wallet instances use <url|local>`, and `wallet instances kill <pid|port|url>`. The previous top level `wallet use` and `wallet kill` commands are gone. This keeps credential commands (`wallet list`) clearly separated from instance commands
 
-## [1.14.0]
+## [1.14.0] - 2026-08-02
 
 ### Added
 
