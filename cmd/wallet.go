@@ -49,6 +49,7 @@ var walletCmd = &cobra.Command{
 
 func init() {
 	walletCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.oid4vc-dev/wallet/)")
+	walletCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "Manage a remote wallet server at this URL for this invocation (\"local\" forces the local store)")
 	walletCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	walletCmd.PersistentFlags().StringVar(&walletValidationMode, "mode", string(wallet.ValidationModeDebug), "Wallet validation mode: 'debug' (default) or 'strict'")
 	walletCmd.AddCommand(walletServeCmd())
@@ -65,6 +66,10 @@ func init() {
 	walletCmd.AddCommand(walletTrustListCmd())
 	walletCmd.AddCommand(walletCACertCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
+	walletCmd.AddCommand(walletUseCmd())
+	walletCmd.AddCommand(walletInfoCmd())
+	walletCmd.AddCommand(walletInstancesCmd())
+	walletCmd.AddCommand(walletKillCmd())
 
 	// Deprecated aliases (hidden from help)
 	presentAlias := &cobra.Command{
@@ -151,6 +156,11 @@ func walletListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List stored credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteWalletList(c)
+			}
 			w, _, err := loadWallet()
 			if err != nil {
 				return err
@@ -191,6 +201,11 @@ func walletShowCmd() *cobra.Command {
 		Short: "Show a stored credential",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteWalletShow(c, args[0], decoded)
+			}
 			w, _, err := loadWallet()
 			if err != nil {
 				return err
@@ -239,14 +254,18 @@ func walletImportCmd() *cobra.Command {
 		Short: "Import credential to store",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			w, store, err := loadWallet()
-			if err != nil {
-				return err
-			}
-
 			input := "-" // stdin by default
 			if len(args) > 0 {
 				input = args[0]
+			}
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteWalletImport(c, input)
+			}
+			w, store, err := loadWallet()
+			if err != nil {
+				return err
 			}
 
 			raw, err := format.ReadInputRaw(input)
@@ -287,6 +306,15 @@ func walletRemoveCmd() *cobra.Command {
 			return cobra.ExactArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				id := ""
+				if len(args) > 0 {
+					id = args[0]
+				}
+				return remoteWalletRemove(c, id, all)
+			}
 			w, store, err := loadWallet()
 			if err != nil {
 				return err
@@ -510,6 +538,11 @@ status list x5c chains, issuer-metadata x5c chains, and HTTPS wallet endpoints.
 Use --jwks to export the certificate as a JWKS document (public key with x5c
 chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteCertificate(c, "ca", asJWKS, outPath)
+			}
 			store := loadStore()
 			certPEM, err := store.LoadOrCreateSharedCACertificatePEM()
 			if err != nil {
@@ -561,6 +594,11 @@ Use 'wallet ca-cert' when you want one trust root for all spawned wallets.
 Use --jwks to export the certificate as a JWKS document (public key with x5c
 chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteCertificate(c, "tls", asJWKS, outPath)
+			}
 			store := loadStore()
 			issuerURL, err := deriveWalletIssuerURL(port, baseURL, docker)
 			if err != nil {

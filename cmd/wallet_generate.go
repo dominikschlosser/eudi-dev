@@ -39,6 +39,19 @@ func walletGeneratePIDCmd() *cobra.Command {
 		Long:  "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined german-pid-sdjwt and german-pid-mdoc credential templates instead. If PID credentials already exist, they are replaced. Use --claims to override specific claim values.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printGeneratePIDDeprecation(cmd, claimsFlag, vctFlag)
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				overrides, err := parseClaimsOverrides(claimsFlag)
+				if err != nil {
+					return err
+				}
+				vct := ""
+				if cmd.Flags().Changed("vct") {
+					vct = vctFlag
+				}
+				return remoteGeneratePID(c, overrides, vct)
+			}
 			w, store, err := loadWallet()
 			if err != nil {
 				return err

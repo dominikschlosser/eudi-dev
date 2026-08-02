@@ -9,11 +9,11 @@ Two pre-defined templates ship with the binary:
 | `german-pid-sdjwt` | sdjwt | German EUDI PID (PID Rulebook claims, `urn:eudi:pid:de:1`) |
 | `german-pid-mdoc` | mdoc | German EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
 
-The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. So yes, a local instance can change what the pre-defined PID templates issue (delete the override to restore the original). Note that `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
+The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). Note that `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
 
 ## Template files and storage
 
-Pre-defined templates are compiled into the binary and need no files on disk. User templates are JSON files in the wallet directory's `templates/` subdirectory (`~/.oid4vc-dev/wallet/templates/` by default, or `<dir>/templates/` with `--wallet-dir <dir>`). The file name without extension is the template name (both `.json` and `.template` extensions are recognized).
+Pre-defined templates are compiled into the binary and need no files on disk. User templates are JSON files in the wallet directory's `templates/` subdirectory (`~/.oid4vc-dev/wallet/templates/` by default, or `<dir>/templates/` with `--wallet-dir <dir>`). Both `.json` and `.template` extensions are recognized. A `name` field inside the document names the template. Without one, the file name without extension is used.
 
 The `--templates-dir` flag points the wallet, the issue commands, and the `templates` commands at any directory instead. This makes setup easy: keep a folder of template JSON files in your project (or mount one into a container) and start the wallet with it.
 
@@ -44,12 +44,15 @@ All fields except `claims` are optional:
 |-------|-------------|
 | `name` | Template name (defaults to the file name) |
 | `description` | Free text shown in listings |
-| `format` | `sdjwt`, `jwt`, or `mdoc` (empty means any format) |
+| `format` | `sdjwt`, `jwt`, or `mdoc` (empty means any format). The aliases `sd-jwt`, `dc+sd-jwt`, `jwt_vc_json`, and `mso_mdoc` are accepted |
 | `vct` | Credential type for sdjwt/jwt |
 | `doctype`, `namespace` | Type identifiers for mdoc |
 | `exp` | Default expiry as a Go duration (for example `720h`) |
 | `claims` | The default claim set |
 | `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
+| `predefined` | Set by the server on pre-defined templates in listings and exports. Ignored on import |
+
+A template reference (`--template`, `--from`) resolves in this order. A value containing a path separator or a `.json` or `.template` extension loads that file directly. Otherwise the name is looked up in the template directory (both extensions), then in the pre-defined templates.
 
 Because a template is a single JSON document, sharing one is just sharing the file (or the output of `templates show`).
 
@@ -86,13 +89,14 @@ oid4vc-dev templates save german-pid-sdjwt --from german-pid-sdjwt --vct urn:cus
 
 # Import a shared template (file, JSON string, or - for stdin)
 oid4vc-dev templates import shared-template.json
+oid4vc-dev templates import '{"format":"sdjwt","claims":{"a":1}}' --name my-cred
 oid4vc-dev templates show employee-card > share-me.json
 
 # Delete a user template (deleting an override restores the pre-defined version)
 oid4vc-dev templates delete employee-card
 ```
 
-All `templates` subcommands accept `--wallet-dir` to target a non default wallet store.
+All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. They also work against a remote wallet server: with `--remote <url>` (or after `wallet use <url>`) list, show, save, import, and delete operate on the remote instance's template store through its REST API. See [remote control](wallet.md#remote-control).
 
 ### `templates save`
 
@@ -117,7 +121,7 @@ The wallet server exposes the same template store:
 | `GET /api/templates` | List all templates (pre-defined and user), including claims |
 | `GET /api/templates/{name}` | Get one template |
 | `PUT /api/templates/{name}` | Create or replace a user template (body is a full template document, which makes this the import endpoint) |
-| `DELETE /api/templates/{name}` | Delete a user template |
+| `DELETE /api/templates/{name}` | Delete a user template (deleting an override of a pre-defined template restores the pre-defined version) |
 
 `POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet.md#issuing-credentials).
 

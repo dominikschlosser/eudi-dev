@@ -93,6 +93,8 @@ oid4vc-dev wallet logs -f               # Follow persisted wallet interactions
 For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet
 - `issue ... --wallet` (with `--template` or `--pid`) to preload credentials
+- `wallet use <url>` to manage a remote wallet instance over its REST API (`wallet use local` to switch back)
+- `wallet instances` and `wallet kill` to find and stop running wallet servers on this system
 - `wallet trust-list` to get the verifier trust-list URL or JWT
 - `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material

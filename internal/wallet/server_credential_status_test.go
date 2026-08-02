@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 )
 
 // newTestServerWithStatusList creates a test server whose wallet has a
@@ -173,5 +174,25 @@ func TestGeneratePIDStatusWithIssuerURLOnly(t *testing.T) {
 		if info["managed"] != true {
 			t.Errorf("%s credential status not managed: %v", cred.Format, info)
 		}
+	}
+}
+
+func TestShutdownEndpoint(t *testing.T) {
+	srv := newTestServer(t, true)
+	done := make(chan struct{})
+	srv.ShutdownFunc = func() { close(done) }
+
+	resp := serverRequest(t, srv, http.MethodPost, "/api/shutdown", "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.Code)
+	}
+	result := decodeJSON(t, resp)
+	if result["shutting_down"] != true {
+		t.Errorf("unexpected response: %v", result)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown func not called")
 	}
 }

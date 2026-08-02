@@ -26,6 +26,7 @@ import (
 
 	"github.com/dominikschlosser/oid4vc-dev/internal/config"
 	"github.com/dominikschlosser/oid4vc-dev/internal/mock"
+	"github.com/dominikschlosser/oid4vc-dev/internal/remote"
 	"github.com/dominikschlosser/oid4vc-dev/internal/wallet"
 	"github.com/dominikschlosser/oid4vc-dev/internal/web"
 )
@@ -280,6 +281,24 @@ so the wallet automatically receives incoming protocol requests.`,
 			if register && !noRegister {
 				fmt.Println("Listening for URL scheme dispatches...")
 				fmt.Println()
+			}
+
+			// Record this instance so `wallet instances` can discover it and
+			// `wallet kill` and POST /api/shutdown can stop it.
+			pid := os.Getpid()
+			if err := remote.RegisterInstance(remote.Instance{
+				PID:       pid,
+				Port:      port,
+				URL:       fmt.Sprintf("http://localhost:%d", port),
+				WalletDir: store.Dir,
+				StartedAt: time.Now(),
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: registering wallet instance: %v\n", err)
+			}
+			defer remote.UnregisterInstance(pid)
+			srv.ShutdownFunc = func() {
+				remote.UnregisterInstance(pid)
+				os.Exit(0)
 			}
 
 			return srv.ListenAndServe()

@@ -15,8 +15,11 @@
 package format
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,5 +138,26 @@ func TestReadFile_NotFound(t *testing.T) {
 	_, err := readFile("/nonexistent/path/file.txt")
 	if err == nil {
 		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestHTTPClientForURLHostDockerInternalFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	port := srv.URL[strings.LastIndex(srv.URL, ":")+1:]
+
+	// host.docker.internal does not resolve on most hosts. The client must
+	// fall back to localhost, which serves the same endpoint.
+	url := "http://host.docker.internal:" + port + "/"
+	client := HTTPClientForURL(url)
+	resp, err := client.Get(url)
+	if err != nil {
+		t.Fatalf("expected localhost fallback to succeed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 }

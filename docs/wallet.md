@@ -25,6 +25,10 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `trust-list`   | Print the trust list JWT (or just the URL with `--url`)         |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
+| `use`          | Switch management to a remote wallet instance (or back to local) |
+| `instances`    | List running wallet instances on this system                    |
+| `kill`         | Stop a running wallet instance (by pid, port, or URL)           |
+| `info`         | Show the configuration of the managed wallet (local or remote)  |
 | `register`     | Register OS URL scheme handlers on macOS; no-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS; no-op elsewhere         |
 
@@ -92,6 +96,8 @@ All wallet state is stored in `~/.oid4vc-dev/wallet/` by default:
 ~/.oid4vc-dev/
 ├── wallet-ca-cert.pem  # Shared CA certificate used across wallet instances
 ├── wallet-ca-key.pem   # Shared CA private key
+├── remote.json         # Active remote wallet target set by wallet use
+├── instances/          # Registry of running wallet servers (one file per pid)
 └── wallet/
     ├── wallet.json       # Credentials + metadata
     ├── holder.pem        # Holder EC private key (auto-generated on first use)
@@ -474,7 +480,7 @@ oid4vc-dev wallet accept --haip 'openid4vp://authorize?...'
 
 ## HTTP API
 
-Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance. That covers listing, showing, importing, and removing credentials, issuing new credentials, generating PIDs, and exporting certificates. Use it to manage a non-local wallet or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also controls wallet behavior for tests (simulated errors, preferred credential format).
+Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance. That covers listing, showing, importing, and removing credentials, issuing new credentials, generating PIDs, managing credential templates, setting revocation status, exporting certificates, instance introspection, and shutdown. Use it to manage a non-local wallet or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also controls wallet behavior for tests (simulated errors, preferred credential format). The CLI's [remote control](#remote-control) mode uses exactly this API.
 
 > **Security: no authentication.** The wallet's HTTP API has **no authentication or authorization whatsoever**. Anyone who can reach the wallet's port has full control over the wallet and its credentials. This is intentional (it is a testing wallet for local development and isolated test networks). Never expose it to untrusted networks and never store real credentials in it.
 
@@ -523,7 +529,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `trust_profile`   | string  | Trust-list profile for registration metadata: `auto` (default), `pid`, or `local`            |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
 
-The response is `201` with the stored credential (`id`, `format`, `claims`, `raw`, and `status_list_idx` when the credential was registered on the wallet's status list).
+The response is `201` with the stored credential (`id`, `format`, `claims`, `raw`, `status_list_idx` when the credential was registered on the wallet's status list, and `template_path` when `save_as_template` was used).
 
 ```bash
 # Issue an SD-JWT PID into the wallet
@@ -646,7 +652,7 @@ curl -X PUT http://localhost:8085/api/config/preferred-format \
 
 | Method | Path                           | Body                    | Description                    |
 |--------|--------------------------------|-------------------------|--------------------------------|
-| `GET`  | `/api/config`                  | —                       | Wallet configuration (`status_list_url`, `preferred_format`) |
+| `GET`  | `/api/config`                  | —                       | Full instance introspection document (see [Introspection](#introspection)) |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "dc+sd-jwt"}`  | Prefer SD-JWT when multiple match |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "mso_mdoc"}`   | Prefer mDoc when multiple match   |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "jwt_vc_json"}` | Prefer JWT VC when multiple match |
@@ -717,6 +723,8 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 # external status list referenced by the credential)
 curl http://localhost:8085/api/credentials/<id>/status
 ```
+
+The GET response contains `status`, `managed`, `uri`, `idx`, and `source` (`wallet` for the wallet's own list, `remote` for a fetched external list). It returns 404 for credentials without any status list reference and 502 when an external status list cannot be fetched.
 
 Credential listings (`GET /api/credentials` and `GET /api/credentials/{id}`) include a `status` object for credentials that carry a status list reference: `uri` and `idx` from the credential, `managed` (true when the entry lives on this wallet's own status list), and the current `status` value for managed entries.
 
@@ -792,3 +800,40 @@ All wallet subcommands accept `--wallet-dir` to override the storage directory a
 oid4vc-dev wallet list --wallet-dir /tmp/test-wallet
 oid4vc-dev wallet serve --templates-dir ./my-templates
 ```
+
+## Remote control
+
+The CLI can manage a remote oid4vc-dev wallet instead of the local store. In remote mode the management commands talk to the running wallet server's REST API. This works for `wallet list`, `show`, `import`, `remove`, `generate-pid`, `logs`, `accept`, `ca-cert`, `tls-cert`, `info`, for `issue ... --wallet`, and for all `templates` commands. Commands that need the local machine (`serve`, `scan`, `register`) stay local.
+
+```bash
+# Switch management to a running instance (persisted until switched back)
+oid4vc-dev wallet use http://localhost:8085
+oid4vc-dev wallet list                     # lists the remote wallet's credentials
+oid4vc-dev issue sdjwt --wallet --template german-pid-sdjwt   # issues on the remote wallet
+oid4vc-dev wallet use local                # back to the local store
+
+# One-off remote target without switching
+oid4vc-dev wallet list --remote http://localhost:8085
+
+# Inspect the managed wallet (remote: the /api/config introspection document)
+oid4vc-dev wallet info
+```
+
+Remote commands print `Managing remote wallet <url>` to stderr so it is always visible which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet use <url>` verifies the target is reachable before persisting it (in `~/.oid4vc-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
+
+### Instances
+
+The CLI can scan the local system for running wallet instances, stop them, and switch management to them:
+
+```bash
+oid4vc-dev wallet instances                # list running instances (URL, pid, wallet dir)
+oid4vc-dev wallet use http://localhost:18924
+oid4vc-dev wallet kill 18924               # stop by port, pid, or URL
+oid4vc-dev wallet kill --all               # stop every running instance
+```
+
+Every `wallet serve` registers itself in `~/.oid4vc-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+
+### Introspection
+
+`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `pid`, `port`, `build_id`, `wallet_dir`, `templates_dir`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_encrypted_request`, and `credential_count`. `POST /api/shutdown` stops the instance (the response is sent before the process exits).

@@ -91,6 +91,7 @@ func init() {
 	rootCmd.AddCommand(issueCmd)
 	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.oid4vc-dev/wallet/)")
 	issueCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
+	issueCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "With --wallet: issue on a remote wallet server at this URL (\"local\" forces the local store)")
 	issueCmd.AddCommand(issueSDJWTCmd)
 	issueCmd.AddCommand(issueJWTCmd)
 	issueCmd.AddCommand(issueMDOCCmd)
@@ -390,6 +391,15 @@ func runIssueMDOCToWallet(cmd *cobra.Command) error {
 }
 
 func runIssueToWallet(cmd *cobra.Command, format string) error {
+	if c, err := remoteClientIfConfigured(); err != nil {
+		return err
+	} else if c != nil {
+		req, err := remoteIssueRequest(cmd, format)
+		if err != nil {
+			return err
+		}
+		return remoteIssue(c, req)
+	}
 	w, store, err := loadWalletForIssue(cmd)
 	if err != nil {
 		return err
@@ -565,6 +575,71 @@ func saveIssueTemplate(format string, claims map[string]any, alwaysDisclosed []s
 	}
 	fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", issueSaveTemplate, path)
 	return nil
+}
+
+// remoteIssueRequest maps the issue flags onto the POST /api/issue request
+// body. Templates resolve on the remote wallet against its template
+// directory, so only the template name and the explicit overrides travel.
+func remoteIssueRequest(cmd *cobra.Command, format string) (map[string]any, error) {
+	req := map[string]any{"format": format}
+	if issueTemplate != "" {
+		req["template"] = issueTemplate
+	}
+	if issuePID {
+		req["pid"] = true
+	}
+	if issueClaims != "" {
+		var data []byte
+		if strings.HasPrefix(issueClaims, "@") {
+			var err error
+			data, err = os.ReadFile(issueClaims[1:])
+			if err != nil {
+				return nil, fmt.Errorf("reading claims file: %w", err)
+			}
+		} else {
+			data = []byte(issueClaims)
+		}
+		var claims map[string]any
+		if err := json.Unmarshal(data, &claims); err != nil {
+			return nil, fmt.Errorf("parsing claims JSON: %w", err)
+		}
+		req["claims"] = claims
+	}
+	if len(issueOmit) > 0 {
+		req["omit"] = issueOmit
+	}
+	if len(issueAlwaysDisclosed) > 0 {
+		req["always_disclosed"] = issueAlwaysDisclosed
+	}
+	if issueSaveTemplate != "" {
+		req["save_as_template"] = issueSaveTemplate
+	}
+	flags := cmd.Flags()
+	if flags.Changed("vct") {
+		req["vct"] = issueVCT
+	}
+	if flags.Lookup("doc-type") != nil && flags.Changed("doc-type") {
+		req["doctype"] = issueDocType
+	}
+	if flags.Lookup("namespace") != nil && flags.Changed("namespace") {
+		req["namespace"] = issueNamespace
+	}
+	if flags.Changed("exp") {
+		req["exp"] = issueExpires
+	}
+	if issueNBF != "" {
+		req["nbf"] = issueNBF
+	}
+	if flags.Changed("status-list-uri") {
+		req["status_list_uri"] = issueStatusListURI
+	}
+	if flags.Changed("status-list-idx") {
+		req["status_list_idx"] = issueStatusListIdx
+	}
+	if issueTrustProfile != "" && issueTrustProfile != "auto" {
+		req["trust_profile"] = issueTrustProfile
+	}
+	return req, nil
 }
 
 func resolveIssueClaimsForFormat(format string, tpl *credtemplate.Template) (map[string]any, error) {

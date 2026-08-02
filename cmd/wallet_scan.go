@@ -49,6 +49,11 @@ stores it locally. A running wallet server reloads the same wallet store at
 request boundaries, so later presentation requests see the new credential.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteAccept(c, args[0])
+			}
 			return dispatchURI(args[0], dispatchOID4Opts{
 				port:              port,
 				portExplicit:      cmd.Flags().Changed("port"),

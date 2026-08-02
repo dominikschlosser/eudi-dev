@@ -4,17 +4,23 @@
 
 ```
 cmd/                        CLI commands (Cobra)
+├── root.go                 Root command and global flags
 ├── wallet.go               Root wallet command, helpers, simple subcommands
 ├── wallet_serve.go         wallet serve (HTTP server + web UI)
 ├── wallet_present.go       OID4VP/VCI dispatch, consent flow, submission
 ├── wallet_scan.go          wallet accept, wallet scan (QR + URI dispatch)
-├── wallet_generate.go      wallet generate-pid
+├── wallet_generate.go      wallet generate-pid (deprecated)
+├── wallet_logs.go          wallet logs (print + follow persisted interactions)
+├── wallet_remote.go        wallet use, instances, kill, info (remote control)
+├── wallet_remote_ops.go    Remote implementations of the management commands
+├── templates.go            Credential template management commands
 ├── serve.go                Web UI server (decode + validate)
 ├── proxy.go                Reverse proxy with live dashboard
 ├── decode.go               Auto-detect & decode command
 ├── validate.go             Signature verification & revocation check
 ├── dcql.go                 DCQL query generation
-└── issue.go                Test credential generation
+├── issue.go                Test credential generation
+└── version.go              Version command
 
 internal/
 ├── config/                 Centralized defaults (ports, timeouts)
@@ -29,6 +35,7 @@ internal/
 ├── output/                 Terminal output formatting (color, JSON, tables)
 ├── proxy/                  HTTP reverse proxy, traffic classifier, dashboard
 ├── qr/                     QR code scanning (file + screen capture)
+├── remote/                 Remote wallet management (REST client, instance discovery)
 ├── sdjwt/                  SD-JWT parsing, disclosure resolution, verification
 ├── statuslist/             Token Status List (RFC 9596) encoding/decoding
 ├── trustlist/              ETSI TS 119 612 trust list parsing

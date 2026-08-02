@@ -102,15 +102,33 @@ var templatesSaveCmd = &cobra.Command{
 		"as the starting point (e.g. to customize a pre-defined one); other flags override the copied values.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := remoteClientIfConfigured()
+		if err != nil {
+			return err
+		}
 		dir := resolveTemplatesDir()
 
 		var tpl credtemplate.Template
 		if templateFrom != "" {
-			from, err := credtemplate.Load(templateFrom, dir)
-			if err != nil {
-				return err
+			if client != nil {
+				doc, err := client.Template(templateFrom)
+				if err != nil {
+					return err
+				}
+				data, err := json.Marshal(doc)
+				if err != nil {
+					return err
+				}
+				if err := json.Unmarshal(data, &tpl); err != nil {
+					return fmt.Errorf("decoding remote template: %w", err)
+				}
+			} else {
+				from, err := credtemplate.Load(templateFrom, dir)
+				if err != nil {
+					return err
+				}
+				tpl = *from
 			}
-			tpl = *from
 		}
 		tpl.Name = args[0]
 
@@ -145,6 +163,11 @@ var templatesSaveCmd = &cobra.Command{
 		}
 		if tpl.Claims == nil {
 			return fmt.Errorf("template has no claims: pass --claims or --from")
+		}
+
+		if client != nil {
+			tpl.Predefined = false
+			return remoteTemplatesPut(client, tpl.Name, tpl)
 		}
 
 		path, err := credtemplate.Save(dir, tpl)
@@ -191,6 +214,15 @@ var templatesImportCmd = &cobra.Command{
 			tpl.Name = strings.TrimSuffix(strings.TrimSuffix(base, ".json"), ".template")
 		}
 
+		if c, err := remoteClientIfConfigured(); err != nil {
+			return err
+		} else if c != nil {
+			if strings.TrimSpace(tpl.Name) == "" {
+				return fmt.Errorf("template name is required: pass --name")
+			}
+			return remoteTemplatesPut(c, tpl.Name, tpl)
+		}
+
 		path, err := credtemplate.Save(resolveTemplatesDir(), tpl)
 		if err != nil {
 			return err
@@ -205,6 +237,11 @@ var templatesDeleteCmd = &cobra.Command{
 	Short: "Delete a user credential template",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if c, err := remoteClientIfConfigured(); err != nil {
+			return err
+		} else if c != nil {
+			return remoteTemplatesDelete(c, args[0])
+		}
 		if err := credtemplate.Delete(resolveTemplatesDir(), args[0]); err != nil {
 			return err
 		}
@@ -217,6 +254,7 @@ func init() {
 	rootCmd.AddCommand(templatesCmd)
 	templatesCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory holding the templates/ subdirectory (default ~/.oid4vc-dev/wallet/)")
 	templatesCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
+	templatesCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "Manage templates on a remote wallet server at this URL (\"local\" forces the local store)")
 	templatesCmd.AddCommand(templatesListCmd)
 	templatesCmd.AddCommand(templatesShowCmd)
 	templatesCmd.AddCommand(templatesSaveCmd)

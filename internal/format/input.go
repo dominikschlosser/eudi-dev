@@ -15,9 +15,11 @@
 package format
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -43,6 +45,22 @@ func HTTPClientForURL(rawURL string) *http.Client {
 		if strings.EqualFold(u.Scheme, "https") {
 			//nolint:gosec // Local dev endpoints use self-signed certificates on localhost/host.docker.internal.
 			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		}
+		// host.docker.internal is the container-side name for this machine.
+		// On the host itself it usually does not resolve, so URLs baked into
+		// credentials by Docker setups (status lists, issuer metadata) would
+		// fail locally. Fall back to localhost, which is the same endpoint.
+		dialer := &net.Dialer{Timeout: 10 * time.Second}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, addr)
+			if err != nil {
+				if port, ok := strings.CutPrefix(addr, "host.docker.internal:"); ok {
+					if conn2, err2 := dialer.DialContext(ctx, network, "localhost:"+port); err2 == nil {
+						return conn2, nil
+					}
+				}
+			}
+			return conn, err
 		}
 	}
 

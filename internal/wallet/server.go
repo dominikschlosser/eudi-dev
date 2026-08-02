@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +55,10 @@ type Server struct {
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
+	// ShutdownFunc runs after POST /api/shutdown responded. The serve command
+	// sets it to deregister the instance and exit; when nil the process exits
+	// directly.
+	ShutdownFunc func()
 }
 
 type presentationRequestOptions struct {
@@ -182,6 +187,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("DELETE /api/next-error", s.withFreshStore(s.handleClearNextError))
 	s.mux.HandleFunc("PUT /api/config/preferred-format", s.withFreshStore(s.handleSetPreferredFormat))
 	s.mux.HandleFunc("GET /api/config", s.withFreshStore(s.handleGetConfig))
+	s.mux.HandleFunc("POST /api/shutdown", s.handleShutdown)
 
 	// API: log
 	s.mux.HandleFunc("GET /api/log", s.withFreshStore(s.handleLog))
@@ -1198,14 +1204,51 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(jwt))
 }
 
-// handleGetConfig returns wallet configuration relevant to API and UI
-// clients, currently the wallet's own status list URL (empty when no base or
-// issuer URL is configured).
+// handleGetConfig returns the wallet instance's full introspection document.
+// Remote controllers use it to learn everything about an instance: identity
+// (pid, port, build), storage locations, URLs, and runtime behavior.
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+	walletDir := ""
+	if store := s.currentStore(); store != nil {
+		walletDir = store.Dir
+	}
+	templatesDir := s.wallet.TemplatesDir
+	if templatesDir == "" && walletDir != "" {
+		templatesDir = filepath.Join(walletDir, "templates")
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status_list_url":  s.wallet.StatusListURL(),
-		"preferred_format": s.wallet.PreferredFormat,
+		"pid":                       os.Getpid(),
+		"port":                      s.port,
+		"build_id":                  processBuildID(),
+		"wallet_dir":                walletDir,
+		"templates_dir":             templatesDir,
+		"base_url":                  s.wallet.BaseURL,
+		"issuer_url":                s.wallet.IssuerURL,
+		"status_list_url":           s.wallet.StatusListURL(),
+		"preferred_format":          s.wallet.PreferredFormat,
+		"validation_mode":           string(s.wallet.ValidationMode),
+		"auto_accept":               s.wallet.AutoAccept,
+		"session_transcript":        string(s.wallet.SessionTranscript),
+		"require_haip":              s.wallet.RequireHAIP,
+		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
+		"credential_count":          len(s.wallet.GetCredentials()),
 	})
+}
+
+// handleShutdown asks the wallet server process to exit. Like the rest of
+// the management API it is unauthenticated (testing tool only). The response
+// is sent before the process exits.
+func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	s.log("  Shutdown requested via API")
+	writeJSON(w, http.StatusOK, map[string]any{"shutting_down": true, "pid": os.Getpid()})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if s.ShutdownFunc != nil {
+			s.ShutdownFunc()
+			return
+		}
+		os.Exit(0)
+	}()
 }
 
 // handleSetCredentialStatus sets the revocation status for a credential.

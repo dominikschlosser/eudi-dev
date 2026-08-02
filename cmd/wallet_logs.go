@@ -48,6 +48,11 @@ func walletLogsCmd() *cobra.Command {
 			if jsonOutput && follow {
 				return fmt.Errorf("--json cannot be combined with --follow")
 			}
+			if c, err := remoteClientIfConfigured(); err != nil {
+				return err
+			} else if c != nil {
+				return remoteWalletLogs(c, follow)
+			}
 			store := loadStore()
 			w, err := store.LoadOrCreate()
 			if err != nil {

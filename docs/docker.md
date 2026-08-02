@@ -36,10 +36,13 @@ docker run -i ghcr.io/dominikschlosser/oid4vc-dev validate --trust-list https://
 | `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs; exposes the signing key by `kid` and leaf `x5c` chain |
 | `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`; supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
-| `/api/credentials/<id>/status` | POST | Set revocation status for a credential |
+| `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
 | `/api/statuslist` | GET | Status list JWT on both HTTP and HTTPS (available when PID generation or `--status-list` is enabled) |
+| `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage [credential templates](templates.md) |
 | `/api/next-error` | POST/DELETE | Set or clear a one-shot error override |
 | `/api/config/preferred-format` | PUT | Set credential format preference (`dc+sd-jwt` / `mso_mdoc` / `jwt_vc_json` / empty) |
+| `/api/config` | GET | Instance introspection (pid, directories, URLs, behavior) |
+| `/api/shutdown` | POST | Stop the wallet server process |
 
 ## Typical verifier integration test flow
 
@@ -124,12 +127,19 @@ walletURL, _ := wallet.Endpoint(ctx, "http")
 
 ## Custom PID claims
 
-The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) containing standard attributes (`given_name`, `family_name`, `birth_date`, `age_over_18`, etc.). To customize the PID claims, generate them first and mount the wallet directory:
+The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) containing standard attributes (`given_name`, `family_name`, `birth_date`, `age_over_18`, etc.). To customize what gets issued, mount a folder of [credential templates](templates.md) and override the pre-defined PID templates (or add your own):
 
 ```bash
-# Generate custom PIDs into a local directory, then start the wallet with them
+# my-templates/german-pid-sdjwt.json overrides the pre-defined PID template
+docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/oid4vc-dev \
+  wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
+```
+
+Alternatively generate customized PIDs into a mounted wallet directory first (`wallet generate-pid` is deprecated, use the template based issuance):
+
+```bash
 docker run --rm -v wallet-data:/root/.oid4vc-dev/wallet ghcr.io/dominikschlosser/oid4vc-dev \
-  wallet generate-pid --claims '{"given_name":"MAX","family_name":"POWER"}'
+  issue sdjwt --wallet --template german-pid-sdjwt --claims '{"given_name":"MAX","family_name":"POWER"}'
 
 docker run -p 8085:8085 -v wallet-data:/root/.oid4vc-dev/wallet ghcr.io/dominikschlosser/oid4vc-dev \
   wallet serve --auto-accept --port 8085
@@ -228,11 +238,14 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 | `/api/config/preferred-format` | PUT | Set credential format preference |
 | `/api/credentials` | GET/POST/DELETE | List, import, or remove all credentials |
 | `/api/credentials/<id>` | GET/DELETE | Show or remove a single credential |
-| `/api/credentials/<id>/status` | POST | Set revocation status |
-| `/api/issue` | POST | Issue a credential into the wallet |
-| `/api/generate-pid` | POST | Regenerate default PID credentials |
+| `/api/credentials/<id>/status` | GET/POST | Resolve or set revocation status |
+| `/api/issue` | POST | Issue a credential into the wallet (supports templates and always disclosed claims) |
+| `/api/generate-pid` | POST | Regenerate default PID credentials (deprecated, use `/api/issue` with a template) |
+| `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage credential templates |
 | `/api/certificates/ca`, `/api/certificates/tls` | GET | Export wallet CA / TLS certificate |
 | `/api/statuslist` | GET | Status list JWT |
+| `/api/config` | GET | Instance introspection document |
+| `/api/shutdown` | POST | Stop the wallet server process |
 
 > See [wallet docs](wallet.md#http-api) for full details and an end-to-end example. The API has no authentication (the wallet is a testing tool). Keep it inside isolated test networks.
 
