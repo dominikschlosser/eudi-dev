@@ -99,6 +99,8 @@ type WalletRuntime struct {
 	subID             int64
 	errSubscribers    map[int64]chan WalletError
 	errSubID          int64
+	stateSubscribers  map[int64]chan struct{}
+	stateSubID        int64
 	lastError         *WalletError
 	authCodeCallbacks map[string]chan url.Values
 }
@@ -108,6 +110,7 @@ func newWalletRuntime() *WalletRuntime {
 		requests:          make(map[string]*ConsentRequest),
 		subscribers:       make(map[int64]chan *ConsentRequest),
 		errSubscribers:    make(map[int64]chan WalletError),
+		stateSubscribers:  make(map[int64]chan struct{}),
 		authCodeCallbacks: make(map[string]chan url.Values),
 	}
 }

@@ -74,6 +74,12 @@ header h1 {
   color: var(--accent);
 }
 
+.header-logo {
+  width: 22px;
+  height: 22px;
+  align-self: center;
+}
+
 .header-left {
   display: flex;
   align-items: baseline;

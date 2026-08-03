@@ -855,6 +855,15 @@
         console.error('SSE parse error:', e);
       }
     });
+    let stateRefresh = null;
+    es.addEventListener('state', () => {
+      // Coalesce bursts (an issuance saves several times) into one refresh.
+      clearTimeout(stateRefresh);
+      stateRefresh = setTimeout(() => {
+        loadCredentials();
+        loadLog();
+      }, 300);
+    });
     es.addEventListener('error', (event) => {
       try {
         const err = JSON.parse(event.data);

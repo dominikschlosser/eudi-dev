@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.2] - 2026-08-03
+
+### Added
+
+- An original project logo (an open wallet holding an ID credential, with a terminal prompt on the pocket, drawn from scratch in the project palette, no relation to EU emblems): shown in the README, in every UI header (wallet, decoder, demo issuer, demo verifier), and served as the favicon by all of them
+- All open wallet UI tabs now update live: the server broadcasts a state event on the SSE stream after every persisted change, and each UI refreshes credentials, status badges, and the activity log immediately (bursts are coalesced). Consent dialogs stay scoped to the browser that started the flow
+
 ## [1.18.1] - 2026-08-03
 
 ### Fixed

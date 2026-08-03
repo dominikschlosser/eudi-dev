@@ -334,3 +334,18 @@ func TestWalletStore_LoadOrCreateRuntimeIsolatedByStore(t *testing.T) {
 		t.Fatal("did not expect request from other store")
 	}
 }
+
+func TestStateSubscription(t *testing.T) {
+	w := generateTestWallet(t)
+	ch, unsub := w.SubscribeState()
+	defer unsub()
+	w.NotifyStateChanged()
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected a state change signal")
+	}
+	// Bursts coalesce into the one-slot channel without blocking.
+	w.NotifyStateChanged()
+	w.NotifyStateChanged()
+}

@@ -1017,6 +1017,8 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	defer reqUnsub()
 	errCh, errUnsub := s.wallet.SubscribeErrors()
 	defer errUnsub()
+	stateCh, stateUnsub := s.wallet.SubscribeState()
+	defer stateUnsub()
 
 	for {
 		select {
@@ -1033,6 +1035,9 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
+			flusher.Flush()
+		case <-stateCh:
+			fmt.Fprintf(w, "event: state\ndata: {}\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -1491,6 +1496,8 @@ func (s *Server) triggerSave() {
 	if s.onSave != nil {
 		s.onSave()
 	}
+	// Every save is a state change other open UIs should see immediately.
+	s.wallet.NotifyStateChanged()
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

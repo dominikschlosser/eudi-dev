@@ -83,6 +83,12 @@ header {
   flex-shrink: 0;
 }
 
+.header-logo {
+  width: 22px;
+  height: 22px;
+  align-self: center;
+}
+
 .header-left {
   display: flex;
   align-items: baseline;

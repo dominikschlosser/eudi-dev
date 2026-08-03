@@ -1,3 +1,5 @@
+<img src="docs/assets/logo-mark.svg" alt="eudi-dev logo" width="88" align="right">
+
 # eudi-dev
 
 [![CI](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml)

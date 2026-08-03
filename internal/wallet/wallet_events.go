@@ -185,3 +185,40 @@ func (w *Wallet) ConsumeNextError() *NextErrorOverride {
 	rt.nextError = nil
 	return e
 }
+
+// SubscribeState returns a channel that receives a signal whenever wallet
+// state changed (credentials, status entries, activity log), so open UIs can
+// refresh immediately. The signal carries no payload.
+func (w *Wallet) SubscribeState() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.stateSubID++
+	id := rt.stateSubID
+	rt.stateSubscribers[id] = ch
+	rt.mu.Unlock()
+
+	return ch, func() {
+		rt.mu.Lock()
+		delete(rt.stateSubscribers, id)
+		rt.mu.Unlock()
+	}
+}
+
+// NotifyStateChanged signals all state subscribers. Sends never block: the
+// one-slot channel coalesces bursts into a single refresh.
+func (w *Wallet) NotifyStateChanged() {
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	subs := make([]chan struct{}, 0, len(rt.stateSubscribers))
+	for _, ch := range rt.stateSubscribers {
+		subs = append(subs, ch)
+	}
+	rt.mu.Unlock()
+	for _, ch := range subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}

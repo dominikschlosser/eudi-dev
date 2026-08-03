@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>EUDI Test Demo Verifier</title>
   <style>
     :root {
@@ -49,8 +50,13 @@
 </head>
 <body>
   <div class="card">
-    <h1>EUDI Test Demo Verifier</h1>
-    <div class="subtitle">A minimal OpenID4VP verifier for demo purposes</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+      <img src="/logo.svg" alt="" width="27" height="30">
+      <div>
+        <h1>EUDI Test Demo Verifier</h1>
+        <div class="subtitle" style="margin-bottom:0">A minimal OpenID4VP verifier for demo purposes</div>
+      </div>
+    </div>
     <p>
       This verifier requests a presentation through a standard OpenID4VP
       authorization request (<code>dcql_query</code>, <code>direct_post</code>) and
