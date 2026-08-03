@@ -220,7 +220,25 @@ func (s *WalletStore) Save(w *Wallet) error {
 		return fmt.Errorf("marshaling wallet.json: %w", err)
 	}
 
-	return os.WriteFile(s.walletPath(), data, 0600)
+	// Write-then-rename so a concurrent writer or a crash never leaves a
+	// partially written (or interleaved) wallet.json behind.
+	tmp, err := os.CreateTemp(s.Dir, "wallet.json.tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating temporary wallet.json: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("setting wallet.json permissions: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing wallet.json: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("writing wallet.json: %w", err)
+	}
+	return os.Rename(tmp.Name(), s.walletPath())
 }
 
 // ClearLog removes all persisted wallet activity log entries.

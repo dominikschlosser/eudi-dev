@@ -117,6 +117,55 @@ func TestWalletStore_SaveAndLoad(t *testing.T) {
 	}
 }
 
+func TestWalletStore_Save_ConcurrentWritersLeaveValidFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewWalletStore(dir)
+
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	// A second wallet with a much larger payload, so interleaved
+	// non-atomic writes would leave trailing garbage after the
+	// shorter document.
+	big, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	for i := 0; i < 200; i++ {
+		big.Log = append(big.Log, LogEntry{Time: time.Now(), Action: "test", Detail: strings.Repeat("x", 200)})
+	}
+
+	done := make(chan error, 2)
+	for _, wallet := range []*Wallet{w, big} {
+		go func(w *Wallet) {
+			for i := 0; i < 50; i++ {
+				if err := store.Save(w); err != nil {
+					done <- err
+					return
+				}
+			}
+			done <- nil
+		}(wallet)
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent Save: %v", err)
+		}
+	}
+
+	if _, err := store.LoadOrCreate(); err != nil {
+		t.Fatalf("LoadOrCreate after concurrent saves: %v", err)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(dir, "wallet.json.tmp-*"))
+	if err != nil {
+		t.Fatalf("globbing temp files: %v", err)
+	}
+	if len(leftovers) > 0 {
+		t.Fatalf("expected no temp files after Save, found %v", leftovers)
+	}
+}
+
 func TestWalletStore_SaveAndLoad_PersistsIssuerURLs(t *testing.T) {
 	dir := t.TempDir()
 	store := NewWalletStore(dir)
