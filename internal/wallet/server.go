@@ -732,7 +732,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 			// request) and import the credential in the background once
 			// consent arrives.
 			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false)
-			redirectBrowser(w, "")
+			redirectBrowser(w, "/?request="+consentReq.ID)
 			return
 		}
 		s.awaitOfferConsent(w, consentReq, issuerDisplay, false)

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.1] - 2026-08-03
+
+### Fixed
+
+- Consent dialogs are scoped to the browser that started the flow. The browser redirect now carries the consent request id (`/?request=<id>`) and the UI auto-opens exactly that request. In demo mode, other visitors' requests no longer pop up in every open tab (they could previously be triggered and approved from any browser); outside demo mode the previous auto-open behavior remains for requests arriving via schemes or the API
+- The decoder no longer renders short digest values (`sd_hash` and other 32-byte digests) as clickable embedded mDOC links. Their random first byte often happened to look like a CBOR type marker, so the embedded-credential detection now requires at least 64 decoded bytes
+
 ## [1.18.0] - 2026-08-03
 
 ### Changed

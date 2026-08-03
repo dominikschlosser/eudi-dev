@@ -812,8 +812,18 @@
       const resp = await fetch('/api/requests');
       const requests = await resp.json();
       if (requests && requests.length > 0) {
-        showConsentDialog(requests[0]);
-        return;
+        // Prefer the request this browser was redirected here for. On a
+        // shared demo instance, never auto-open other visitors' requests.
+        const wanted = new URLSearchParams(window.location.search).get('request');
+        const own = requests.find((r) => r.id === wanted);
+        if (own) {
+          showConsentDialog(own);
+          return;
+        }
+        if (!demoMode) {
+          showConsentDialog(requests[0]);
+          return;
+        }
       }
     } catch (e) {
       console.error('Failed to load pending requests:', e);
@@ -837,6 +847,9 @@
     es.addEventListener('consent', (event) => {
       try {
         const req = JSON.parse(event.data);
+        // Shared demo: consent dialogs belong to the browser that started
+        // the flow (it arrives via redirect), not to every open tab.
+        if (demoMode) return;
         showConsentDialog(req);
       } catch (e) {
         console.error('SSE parse error:', e);
@@ -1156,9 +1169,9 @@
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     window.history.replaceState({}, document.title, window.location.pathname);
   }
-  loadAppConfig();
+  const loadAppConfigPromise = loadAppConfig();
   loadCredentials();
   loadLog();
-  loadPendingRequests();
+  loadAppConfigPromise.then(loadPendingRequests);
   connectSSE();
 })();

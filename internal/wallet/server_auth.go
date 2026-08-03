@@ -209,7 +209,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		// finish the flow in the background once consent arrives. The UI
 		// navigates onward via the approve response's redirect_uri.
 		go s.awaitPresentationConsent(noopResponseWriter{}, authReq, matches, consentReq)
-		redirectBrowser(w, "")
+		redirectBrowser(w, "/?request="+consentReq.ID)
 		return
 	}
 	s.awaitPresentationConsent(w, authReq, matches, consentReq)

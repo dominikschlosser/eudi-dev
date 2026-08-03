@@ -1105,14 +1105,20 @@
     }
   }
 
+  // Real mDOC structures are at least hundreds of bytes. The length floor
+  // keeps short base64url blobs (sd_hash and other 32-byte digests, whose
+  // random first byte often happens to look like a CBOR marker) from being
+  // rendered as clickable embedded credentials.
+  const MDOC_MIN_BYTES = 64;
+
   function looksLikeMDOC(text) {
     if (isHexString(text)) {
       const bytes = hexToBytes(text);
-      return bytes.length > 0 && isCBORStart(bytes[0]);
+      return bytes.length >= MDOC_MIN_BYTES && isCBORStart(bytes[0]);
     }
 
     const decoded = decodeBase64URL(text);
-    return !!decoded && decoded.length > 0 && isCBORStart(decoded[0]);
+    return !!decoded && decoded.length >= MDOC_MIN_BYTES && isCBORStart(decoded[0]);
   }
 
   function isHexString(text) {

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -80,7 +81,7 @@ func TestAuthorize_BrowserWithoutVerifierRedirectLandsOnWalletUI(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "/" {
+	if got := rec.Header().Get("Location"); got != "/" && !strings.HasPrefix(got, "/?request=") {
 		t.Fatalf("unexpected Location: %q", got)
 	}
 }
@@ -122,7 +123,7 @@ func TestAuthorize_InteractiveBrowserRedirectsToWalletUIThenSubmits(t *testing.T
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "/" {
+	if got := rec.Header().Get("Location"); got != "/" && !strings.HasPrefix(got, "/?request=") {
 		t.Fatalf("unexpected Location: %q", got)
 	}
 
@@ -161,7 +162,7 @@ func TestCredentialOfferEndpoint_InteractiveBrowserRedirectsToWalletUIThenImport
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "/" {
+	if got := rec.Header().Get("Location"); got != "/" && !strings.HasPrefix(got, "/?request=") {
 		t.Fatalf("unexpected Location: %q", got)
 	}
 	if after := len(srv.wallet.GetCredentials()); after != before {
@@ -201,7 +202,7 @@ func TestCredentialOfferEndpoint_BrowserRedirectsToWalletUI(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if got := rec.Header().Get("Location"); got != "/" {
+	if got := rec.Header().Get("Location"); got != "/" && !strings.HasPrefix(got, "/?request=") {
 		t.Fatalf("unexpected Location: %q", got)
 	}
 	if after := len(srv.wallet.GetCredentials()); after != before+1 {
