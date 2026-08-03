@@ -310,7 +310,7 @@ so the wallet automatically receives incoming protocol requests.`,
 			}
 			// Embed the credential decoder UI so stored credentials can be
 			// inspected from the wallet UI.
-			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{Version: Version, ImprintHTML: imprintHTML}))
+			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{Version: Version, ImprintHTML: imprintHTML, Demo: demo}))
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
 			}

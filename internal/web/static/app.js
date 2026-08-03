@@ -1229,6 +1229,9 @@
         link.href = basePath + "imprint";
         link.hidden = false;
       }
+      if (meta.demo) {
+        document.getElementById("demo-note").hidden = false;
+      }
     })
     .catch(() => {});
 })();

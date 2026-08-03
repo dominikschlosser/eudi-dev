@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Demo mode (`wallet serve --demo`) hides the Templates button in the wallet UI. The dialog was read only there anyway (template writes are rejected with 403), so it only added clutter for visitors
+- The embedded decoder page shows a disclaimer in demo mode that pasted input is sent to the server for decoding (decoding happens server side, so visitors should not paste credentials containing real personal data)
 
 ## [1.16.0] - 2026-08-03
 

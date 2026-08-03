@@ -29,6 +29,7 @@ type MuxOptions struct {
 	Credential  string // pre-filled credential served via GET /api/prefill
 	Version     string // release version reported by GET /api/meta
 	ImprintHTML []byte // pre-rendered legal notice served at GET /imprint
+	Demo        bool   // public demo deployment, the UI shows a data disclaimer
 }
 
 // ListenAndServe starts the HTTP server on the given port.
@@ -62,6 +63,7 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 		json.NewEncoder(w).Encode(map[string]any{
 			"version": opts.Version,
 			"imprint": len(opts.ImprintHTML) > 0,
+			"demo":    opts.Demo,
 		})
 	})
 	mux.HandleFunc("GET /imprint", func(w http.ResponseWriter, r *http.Request) {

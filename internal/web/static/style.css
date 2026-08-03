@@ -162,6 +162,14 @@ main {
   flex-shrink: 0;
 }
 
+#demo-note {
+  margin-left: auto;
+  color: var(--yellow);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .badge {
   font-size: 10px;
   font-weight: 700;
