@@ -17,7 +17,8 @@ services:
     # stats-password writes it). env_file, not environment: a bcrypt hash is
     # full of "$" and compose would try to interpolate those.
     env_file:
-      - stats.env
+      - path: stats.env
+        required: false
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

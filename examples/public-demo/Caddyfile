@@ -4,7 +4,9 @@ eudi-test.dev {
 	# (see deploy.sh stats-password). Remove this block to turn stats off.
 	handle_path /stats* {
 		basic_auth {
-			{$STATS_USER:admin} {$STATS_PASSWORD_HASH}
+			# Defaults to a hash of a random password nobody knows, so /stats
+			# is locked until stats.env supplies real credentials.
+			{$STATS_USER:admin} {$STATS_PASSWORD_HASH:$2a$14$V7D3pFZve2L.q3gUq4eClO5tFhhLhsqt/ArHoetKkFFshQT84QE5i}
 		}
 		root * /srv/stats
 		file_server {

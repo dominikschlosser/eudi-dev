@@ -47,7 +47,15 @@ compose() {
 copy_stack() {
   echo "Copying the stack to ${DEMO_HOST}:${DEMO_DIR}..."
   ssh "${DEMO_HOST}" "mkdir -p ${DEMO_DIR}"
-  scp -q Caddyfile docker-compose.yml imprint.html "${DEMO_HOST}:${DEMO_DIR}/"
+  scp -q Caddyfile docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
+  # The imprint carries the operator's real address, so it is never taken from
+  # the repository (which only holds a placeholder). Keep yours in
+  # imprint.local.html (gitignored); without it the host's copy is left alone.
+  if [[ -f imprint.local.html ]]; then
+    scp -q imprint.local.html "${DEMO_HOST}:${DEMO_DIR}/imprint.html"
+  else
+    echo "  no imprint.local.html, keeping the imprint already on the host"
+  fi
   # Basic auth credentials for the /stats report live in stats.env, next to
   # the compose file, and never in the repository.
   [[ -f stats.env ]] && scp -q stats.env "${DEMO_HOST}:${DEMO_DIR}/stats.env"
