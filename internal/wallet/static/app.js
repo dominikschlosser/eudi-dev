@@ -1045,8 +1045,8 @@
         const note = document.getElementById('demo-note');
         const secs = config.demo.reset_interval_seconds || 0;
         note.textContent = secs > 0
-          ? 'Public sandbox — resets every ' + formatInterval(secs)
-          : 'Public sandbox — shared state';
+          ? 'Public demo — resets every ' + formatInterval(secs)
+          : 'Public demo — shared state';
         note.hidden = false;
         document.getElementById('issue-save-template').hidden = true;
         document.querySelector('label[for="issue-save-template"]').hidden = true;

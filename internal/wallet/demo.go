@@ -22,7 +22,9 @@ import (
 )
 
 // DemoOptions configures the public-demo profile: a shared, anonymous
-// sandbox exposed on the internet. Visitors keep the full credential flows
+// demo environment exposed on the internet. ("Sandbox" is deliberately
+// avoided here, it names the official German EUDI test ecosystem.)
+// Visitors keep the full credential flows
 // (issue, present, decode, delete), while endpoints that control the process
 // or write to the host are disabled.
 type DemoOptions struct {

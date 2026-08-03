@@ -50,7 +50,7 @@ func TestDemoBlocksAdminEndpoints(t *testing.T) {
 	}
 }
 
-func TestDemoAllowsSandboxFlows(t *testing.T) {
+func TestDemoAllowsVisitorFlows(t *testing.T) {
 	srv := newDemoTestServer(t)
 
 	if w := serverRequest(t, srv, "GET", "/api/credentials", ""); w.Code != http.StatusOK {
@@ -63,7 +63,7 @@ func TestDemoAllowsSandboxFlows(t *testing.T) {
 		t.Fatalf("GET /api/templates = %d, want 200 (reads stay allowed)", w.Code)
 	}
 	if w := serverRequest(t, srv, "DELETE", "/api/credentials", ""); w.Code != http.StatusOK {
-		t.Fatalf("DELETE /api/credentials = %d, want 200 (sandbox deletes allowed)", w.Code)
+		t.Fatalf("DELETE /api/credentials = %d, want 200 (visitor deletes allowed)", w.Code)
 	}
 }
 

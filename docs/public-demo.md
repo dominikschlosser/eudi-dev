@@ -1,6 +1,6 @@
 # Hosting a Public Demo
 
-The wallet server can run as a shared public demo (for example on `https://eudi-test.dev`). Visitors get the full sandbox (issue, present, decode, delete) while the endpoints that control the process or write to the host stay disabled. A working setup lives in [`examples/public-demo/`](../examples/public-demo/).
+The wallet server can run as a shared public demo (for example on `https://eudi-test.dev`). Visitors get the full credential flows (issue, present, decode, delete) while the endpoints that control the process or write to the host stay disabled. A working setup lives in [`examples/public-demo/`](../examples/public-demo/).
 
 ## Demo mode
 
@@ -17,7 +17,7 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 
 ## What stays open (accepted risk)
 
-The demo is a shared sandbox by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess. The wallet also fetches visitor supplied public URLs (that is what a wallet does), so put rate limiting in front if abuse becomes a concern.
+The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess. The wallet also fetches visitor supplied public URLs (that is what a wallet does), so put rate limiting in front if abuse becomes a concern.
 
 ## Base URL and issuer URL
 

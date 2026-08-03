@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.4] - 2026-08-03
+
+### Changed
+
+- The demo footer note now says "Public demo" instead of "Public sandbox", and the docs follow. "Sandbox" is the name of the official German EUDI test ecosystem, so the public demo no longer uses the term for itself
+- Improved text contrast in both web UIs. Dimmed text (subtitles, pane headers, hints, placeholders) was well below WCAG AA in both themes (2.4 to 2.8 to 1) and is now at least 4.5 to 1, and the light theme accent color was darkened to pass as well
+
 ## [1.16.3] - 2026-08-03
 
 ### Changed
