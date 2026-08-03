@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.0] - 2026-08-03
+
+### Changed
+
+- Consent semantics are now per channel. `--auto-accept` still forces auto-accept everywhere. Without it, programmatic submissions (`POST /api/offers`, `POST /api/presentations`) auto-accept too, because the API call itself is the caller's consent, while interactive channels keep the consent dialog: the web invocation URLs (`GET /credential-offer`, `GET /authorize`), scheme dispatches (`openid4vp://`, `openid-credential-offer://` and synonyms, unless registered with `wallet register --auto-accept`), and browser DC-API flows. Both API endpoints accept `"interactive": true` to opt a submission back into the consent dialog (the macOS URL handler uses this)
+- The public demo no longer forces auto-accept: visitors clicking offer or authorize links now see the wallet's real consent dialog, while the demo stays a reliable auto-accepting counterparty for external issuers, verifiers, and CLI clients using the API
+
+## [1.17.1] - 2026-08-03
+
+### Fixed
+
+- Links inside dialogs (How to use, Get the CLI) and other unstyled containers in both web UIs fell back to the browser default dark blue, which is unreadable on the dark theme. Both stylesheets now set a base link color from the theme palette
+- Deleting a credential or changing its status in the wallet UI refreshes the activity log immediately (the new management entries only appeared after a page reload)
+- UI static assets are served with `Cache-Control: no-cache`. Embedded files carry no modtime, so responses had no cache validators at all and browsers could keep stale JavaScript across releases (for example a "Get the CLI" link from a new page with the old script, doing nothing). A hard reload fixes affected browsers once, the header prevents it from recurring
+
 ## [1.17.0] - 2026-08-03
 
 ### Added

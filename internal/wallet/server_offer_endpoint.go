@@ -39,5 +39,5 @@ func (s *Server) handleCredentialOfferEndpoint(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.processOfferURI(w, "openid-credential-offer://?"+offerParams.Encode(), query.Get("tx_code"), isBrowserNavigation(r))
+	s.processOfferURI(w, "openid-credential-offer://?"+offerParams.Encode(), query.Get("tx_code"), isBrowserNavigation(r), false)
 }

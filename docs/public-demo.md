@@ -10,7 +10,7 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 
 `--demo` changes the server in four ways:
 
-1. It implies `--auto-accept` and `--pid`. The server runs headless with a known credential baseline.
+1. It implies `--pid`, so the server runs headless with a known credential baseline. Consent stays interactive for browser flows (visitors clicking offer or authorize links approve in the wallet UI), while API submissions auto-accept, keeping the demo a reliable counterparty for external issuers, verifiers, and CLI clients.
 2. It disables the admin endpoints. `POST /api/shutdown`, `PUT/DELETE /api/templates/{name}`, `POST/DELETE /api/next-error` and `PUT /api/config/preferred-format` return 403. Saving templates through `POST /api/issue` is rejected too. `GET /api/config` stops reporting host paths and the process id.
 3. It blocks outbound requests to internal networks. Visitor supplied URLs (credential offers, `request_uri`, trust lists, status lists) are still fetched from the public internet, but connections to loopback, RFC 1918, link local (including cloud metadata endpoints), CGNAT and unique local addresses are refused at dial time. The check runs on resolved IP addresses, so DNS tricks do not bypass it.
 4. It resets the wallet periodically. `--demo-reset` (default `1h`, `0` disables) restores the clean baseline (fresh PID credentials, empty activity log). Keys, certificates and URLs survive resets, so trust list and status list URLs stay stable. The UI shows the reset interval in the footer.

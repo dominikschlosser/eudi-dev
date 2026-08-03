@@ -69,6 +69,9 @@ URI="$1"
 LISTENER="http://localhost:{{PORT}}"
 PORT="{{PORT}}"
 AUTO_ACCEPT="{{AUTO_ACCEPT}}"
+# Scheme dispatches are user interactions: without --auto-accept they keep
+# the consent dialog even though the handler submits through the API.
+if [[ "$AUTO_ACCEPT" == "true" ]]; then INTERACTIVE=false; else INTERACTIVE=true; fi
 SERVE_ARGS=({{SERVE_ARGS}})
 LOG_FILE="/tmp/oid4vc-dev-wallet.log"
 SERVER_LOG="/tmp/oid4vc-dev-wallet-server.log"
@@ -138,7 +141,7 @@ ensure_listener() {
 submit_offer() {
   curl -sf -X POST "$LISTENER/api/offers" \
     -H "Content-Type: application/json" \
-    -d "{\"uri\":\"$URI\"}" >/dev/null
+    -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }
 
 # A remote wallet triggers its browser hook inside its own environment (for
@@ -154,7 +157,7 @@ open_remote_ui() {
 submit_presentation() {
   curl -sf -X POST "$LISTENER/api/presentations" \
     -H "Content-Type: application/json" \
-    -d "{\"uri\":\"$URI\"}" >/dev/null
+    -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }
 
 accept_cli() {

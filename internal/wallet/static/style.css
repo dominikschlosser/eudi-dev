@@ -37,6 +37,13 @@
   box-sizing: border-box;
 }
 
+/* Base link color: without this, links inside dialogs and other unstyled
+   containers fall back to the browser default dark blue, which is unreadable
+   on the dark theme. Scoped rules below override where needed. */
+a {
+  color: var(--accent);
+}
+
 [hidden] {
   display: none !important;
 }

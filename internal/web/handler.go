@@ -75,11 +75,21 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 		w.Write(opts.ImprintHTML)
 	})
 
-	// Static files
+	// Static files. Embedded files carry no modtime, so http.FileServer
+	// sends no cache validators and browsers may keep stale assets across
+	// releases (HTML and JS from different versions). no-cache forces
+	// revalidation on every load.
 	sub, _ := fs.Sub(staticFiles, "static")
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	mux.Handle("/", noStaleCache(http.FileServer(http.FS(sub))))
 
 	return mux
+}
+
+func noStaleCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		h.ServeHTTP(w, r)
+	})
 }
 
 func handlePrefill(credential string) http.HandlerFunc {

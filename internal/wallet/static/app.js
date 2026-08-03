@@ -137,6 +137,7 @@
         return;
       }
       await loadCredentials();
+      await loadLog();
     } catch (e) {
       alert('Setting status failed: ' + e.message);
     }
@@ -173,6 +174,7 @@
     try {
       await fetch('/api/credentials/' + id, { method: 'DELETE' });
       await loadCredentials();
+      await loadLog();
     } catch (e) {
       console.error('Failed to delete credential:', e);
     }

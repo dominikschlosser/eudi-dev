@@ -112,10 +112,10 @@ so the wallet automatically receives incoming protocol requests.`,
 				return fmt.Errorf("--demo-reset requires --demo")
 			}
 			if demo {
-				// A public demo is headless and needs a known baseline: the
-				// browser-opening consent callback has no desktop to open on,
-				// and the periodic reset restores exactly the --pid state.
-				autoAccept = true
+				// A public demo needs a known baseline: the periodic reset
+				// restores exactly the --pid state. Consent stays interactive
+				// for browser flows (API submissions auto-accept anyway), so
+				// visitors see the real wallet UX.
 				pid = true
 				format.SetFetchPolicy(format.BlockPrivateAddresses)
 			}
@@ -343,8 +343,10 @@ so the wallet automatically receives incoming protocol requests.`,
 				fmt.Printf(format+"\n", args...)
 			})
 
-			// Open browser UI for incoming interactive presentation and issuance flows.
-			if !w.AutoAccept {
+			// Open browser UI for incoming interactive presentation and issuance
+			// flows. Not on a demo host: it is headless, and visitors get the
+			// consent UI through the browser redirect instead.
+			if !w.AutoAccept && !demo {
 				srv.SetOnUIRequest(func() {
 					url := fmt.Sprintf("http://localhost:%d/?focus=overview", port)
 					fmt.Printf("  Opening wallet UI: %s\n", url)

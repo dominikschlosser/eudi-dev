@@ -2453,7 +2453,7 @@ func TestOnUIRequest_CalledOnInteractiveOfferImport(t *testing.T) {
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
 	defer issuer.Close()
 
-	body, err := json.Marshal(map[string]any{"uri": offerURI})
+	body, err := json.Marshal(map[string]any{"uri": offerURI, "interactive": true})
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
 	}
@@ -2513,7 +2513,7 @@ func TestOnUIRequest_InteractiveOfferImportFetchesOfferOnlyAfterApproval(t *test
 	})
 	defer issuer.Close()
 
-	body, err := json.Marshal(map[string]any{"uri": offerURI})
+	body, err := json.Marshal(map[string]any{"uri": offerURI, "interactive": true})
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
 	}
@@ -2575,7 +2575,7 @@ func TestOnUIRequest_NotCalledOnAutoAcceptOfferImport(t *testing.T) {
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
 	defer issuer.Close()
 
-	body, err := json.Marshal(map[string]any{"uri": offerURI})
+	body, err := json.Marshal(map[string]any{"uri": offerURI, "interactive": true})
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
 	}

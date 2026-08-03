@@ -20,16 +20,16 @@ cd examples/keycloak-web-wallet-public
 
 Then open the demo UI at <http://localhost:9090>:
 
-- **Issuance** — creates a credential offer in Keycloak and shows a clickable `https://eudi-test.dev/credential-offer?...` link. Clicking it delivers the offer to the public wallet, which imports the membership credential immediately (the demo instance runs with auto-accept) and lands in the wallet UI.
-- **Verification** — "Login with wallet" is a plain OIDC login: the browser goes to Keycloak through the tunnel, whose login page links to `https://eudi-test.dev/authorize?...`. The public wallet presents the PID credential without a consent step and the browser returns through Keycloak to the app's `/callback` with the ID-token claims on screen.
+- **Issuance** — creates a credential offer in Keycloak and shows a clickable `https://eudi-test.dev/credential-offer?...` link. Clicking it delivers the offer to the public wallet, which shows the consent dialog in its UI. Approving imports the membership credential.
+- **Verification** — "Login with wallet" is a plain OIDC login: the browser goes to Keycloak through the tunnel, whose login page links to `https://eudi-test.dev/authorize?...`. The public wallet shows the consent request in its UI. Approving presents the PID credential, and the browser returns through Keycloak to the app's `/callback` with the ID-token claims on screen.
 
 Stop everything with `docker compose down` and `kill $(cat .ngrok.pid)`.
 
 ## Differences to the Local Example
 
 - **The wallet is shared.** Everything you issue lands in the one public demo wallet, is visible to every visitor of eudi-test.dev, can be deleted by anyone, and disappears with the daily reset. Do not enter personal data.
-- **No consent screens.** The public demo runs with auto-accept, so issuance and presentation complete without an approval step in the wallet UI.
-- **No headless demo scripts.** `demo-issuance.py` and `demo-verification.py` drive the wallet's consent API, which never has a pending request on an auto-accepting wallet. Use the demo UI in the browser instead.
+- **Shared consent.** The consent dialogs for your flows appear in the shared wallet UI, so any visitor with the wallet open can see and approve them. Approve your own requests promptly.
+- **No headless demo scripts.** `demo-issuance.py` and `demo-verification.py` assume exclusive control over the wallet's consent queue, which a shared public wallet cannot provide. Use the demo UI in the browser instead.
 - **No truststore or CA export.** The public wallet serves its trust list and status lists behind a publicly trusted certificate, so Keycloak's default truststore already covers it. The verifier trusts the wallet's credentials through `trustListUrl` (`https://eudi-test.dev/api/trustlist`), configured by the same script as in the local example.
 
 ## Configuration

@@ -270,7 +270,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | Flag                    | Default  | Description                                      |
 |-------------------------|----------|--------------------------------------------------|
 | `--port`                | `8085`   | Server port                                      |
-| `--auto-accept`         | `false`  | Auto-approve all presentations (headless mode)   |
+| `--auto-accept`         | `false`  | Auto-approve everything. Without it, only interactive channels (web invocation URLs, scheme dispatches, browser DC-API) show the consent dialog. API submissions (`POST /api/offers`, `/api/presentations`) auto-accept either way, the call is the caller's consent (opt back in per request with `"interactive": true`) |
 | `--credential`          | —        | Import credential from file (repeatable)         |
 | `--pid`                 | `false`  | Generate default EUDI PID credentials on start   |
 | `--key`                 | —        | Override holder key (PEM/JWK)                    |
@@ -287,7 +287,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--vci-redirect-uri`    | —        | Redirect URI to use for OID4VCI authorization-code flows |
 | `--haip`                | `false`  | Enforce HAIP 1.0 compliance checks on incoming requests |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
-| `--demo`                | `false`  | Public demo profile: implies `--auto-accept` and `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks (see [public demo hosting](public-demo.md)) |
+| `--demo`                | `false`  | Public demo profile: implies `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | Interval for restoring the clean demo baseline (requires `--demo`, `0` disables) |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
 | `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet instances kill` |

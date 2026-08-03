@@ -203,9 +203,19 @@ func (s *Server) setupRoutes() {
 	// Operator-supplied legal notice (404 until SetImprint is called)
 	s.mux.HandleFunc("GET /imprint", s.handleImprint)
 
-	// Static files
+	// Static files. Embedded files carry no modtime, so http.FileServer
+	// sends no cache validators and browsers may keep stale assets across
+	// releases (HTML and JS from different versions). no-cache forces
+	// revalidation on every load.
 	sub, _ := fs.Sub(staticFiles, "static")
-	s.mux.Handle("/", http.FileServer(http.FS(sub)))
+	s.mux.Handle("/", noStaleCache(http.FileServer(http.FS(sub))))
+}
+
+func noStaleCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // SetImprint serves the given pre-rendered imprint page at /imprint and
@@ -461,6 +471,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URI               string `json:"uri"`
 		AutoAccept        bool   `json:"auto_accept,omitempty"`
+		Interactive       bool   `json:"interactive,omitempty"`
 		SessionTranscript string `json:"session_transcript,omitempty"`
 		HAIP              bool   `json:"haip,omitempty"`
 		Mode              string `json:"mode,omitempty"`
@@ -583,6 +594,11 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 		Source:           "api",
 	}
+	if body.Interactive {
+		// A scheme dispatch or another submitter acting for a user
+		// interaction: keep the consent dialog despite the API channel.
+		authReq.Source = "interactive"
+	}
 
 	reqServer.handleAuthFlow(w, authReq)
 }
@@ -658,21 +674,24 @@ func cloneStatusEntries(src map[string]StatusEntry) map[string]StatusEntry {
 // handleOfferAPI processes a credential offer URI.
 func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		URI    string `json:"uri"`
-		TxCode string `json:"tx_code,omitempty"`
+		URI         string `json:"uri"`
+		TxCode      string `json:"tx_code,omitempty"`
+		Interactive bool   `json:"interactive,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
-	s.processOfferURI(w, body.URI, body.TxCode, false)
+	s.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
 }
 
 // processOfferURI runs the credential offer flow for an offer delivered as a
 // URI. With browserRedirect set, a successful import redirects the browser to
-// the wallet UI instead of returning JSON.
-func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, browserRedirect bool) {
+// the wallet UI instead of returning JSON. apiInitiated marks programmatic
+// submissions, which auto-accept even in interactive mode (the call is the
+// caller's consent).
+func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, browserRedirect, apiInitiated bool) {
 	s.log("Received credential offer")
 	uriDisplay := format.Truncate(uri, 120)
 	s.log("  URI: %s", uriDisplay)
@@ -686,7 +705,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 		s.wallet.mu.Unlock()
 	}
 
-	if !s.wallet.AutoAccept {
+	if !s.wallet.AutoAccept && !apiInitiated {
 		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri)
 		if err != nil {
 			s.log("  ERROR: %v", err)

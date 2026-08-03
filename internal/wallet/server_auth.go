@@ -170,8 +170,11 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 
-	// Auto-accept mode: skip consent
-	if s.wallet.AutoAccept {
+	// Auto-accept mode skips consent. API submissions auto-accept even in
+	// interactive mode: the programmatic call is the caller's consent.
+	// Interactive channels (web invocation URLs, scheme dispatches) keep
+	// the consent dialog.
+	if s.wallet.AutoAccept || authReq.Source == "api" {
 		s.log("  Mode:          auto-accept")
 		s.autoAcceptPresentation(w, authReq, matches)
 		return
