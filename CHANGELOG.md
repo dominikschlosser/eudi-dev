@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.5] - 2026-08-04
+
+### Changed
+
+- The wallet UI header no longer shows the credential count badge. The credential list right below it already answers the question
+
+### Added
+
+- Every UI footer (wallet, decoder, demo issuer, demo verifier) carries a short non-affiliation notice: unofficial, independent open source project, not affiliated with or endorsed by the European Commission or the European Union
+
+### Fixed
+
+- The wallet UI footer (version and imprint link) is reachable on phones. The wallet had no responsive rules at all, so `height: 100vh` with `overflow: hidden` pushed the footer below the visible area, which on mobile is shorter than `100vh` because the URL bar counts into it. The layout now uses `dvh` and scrolls as one document below 768px, matching the decoder
+- The favicon appears again in the wallet UI and on the demo issuer and verifier pages. All three link to `/favicon.svg`, which 404'd for one release (see 1.18.3), and browsers cache a missing icon per URL without refetching it. The icon now ships under a versioned URL so those pages pick it up. The decoder was unaffected, since it serves its own copy under `/decoder/`
+
 ## [1.18.4] - 2026-08-03
 
 ### Changed

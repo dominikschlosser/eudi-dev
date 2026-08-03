@@ -125,10 +125,9 @@ async function jsonGet(url) {
 }
 
 test.describe("Wallet Dashboard", () => {
-  test("shows wallet title and credential count", async ({ page }) => {
+  test("shows wallet title", async ({ page }) => {
     await page.goto(WALLET_URL);
     await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
-    await expect(page.locator("#cred-count")).toContainText("2 credentials");
   });
 
   test("shows PID credentials", async ({ page }) => {
@@ -722,5 +721,23 @@ test.describe("Credential Issuing via UI", () => {
         expect(body).toContain("BEGIN CERTIFICATE");
       }
     }
+  });
+});
+
+test.describe("Mobile layout", () => {
+  test("footer stays reachable on a small viewport", async ({ page }) => {
+    // Regression: the wallet had no responsive rules, so body height 100vh
+    // with overflow hidden put the footer (imprint link) below the visible
+    // area on phones, where the URL bar counts into 100vh.
+    await page.setViewportSize({ width: 390, height: 480 });
+    await page.goto(WALLET_URL);
+    await page.waitForSelector(".credential-card");
+
+    const reachable = await page.evaluate(() => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      const r = document.querySelector("footer").getBoundingClientRect();
+      return r.top < window.innerHeight && r.bottom > 0;
+    });
+    expect(reachable).toBe(true);
   });
 });

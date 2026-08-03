@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2">
   <title>EUDI Test Demo Issuer</title>
   <style>
     :root {
@@ -38,6 +38,8 @@
     a { color: var(--accent); }
     .links { margin-top: 20px; font-size: 11px; color: var(--text-dim); }
     .links a { margin-right: 12px; }
+    .disclaimer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+      font-size: 10px; line-height: 1.5; color: var(--text-dim); }
     .error { color: #f7768e; font-size: 12px; margin-top: 12px; }
   </style>
 </head>
@@ -72,6 +74,7 @@
       <a href="../verifier/">Demo Verifier</a>
       <a href="../decoder/">Decoder</a>
     </div>
+    <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
   <script>
     document.getElementById("create-btn").addEventListener("click", async () => {

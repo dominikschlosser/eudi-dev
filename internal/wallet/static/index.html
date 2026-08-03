@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2">
   <title>EUDI Dev Wallet</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -19,7 +19,6 @@
       </span>
     </div>
     <div class="header-right">
-      <span id="cred-count" class="badge badge-count">0 credentials</span>
       <button class="btn" id="theme-toggle">Theme</button>
     </div>
   </header>
@@ -80,9 +79,12 @@
   </div>
 
   <footer class="app-footer">
-    <span id="footer-version"></span>
-    <a href="/imprint" id="imprint-link" hidden>Imprint</a>
-    <span id="demo-note" hidden></span>
+    <div class="footer-row">
+      <span id="footer-version"></span>
+      <a href="/imprint" id="imprint-link" hidden>Imprint</a>
+      <span id="demo-note" hidden></span>
+    </div>
+    <div class="footer-disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </footer>
 
   <!-- How To Use Modal -->

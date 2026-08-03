@@ -629,6 +629,12 @@ textarea.colorized::placeholder {
   flex-shrink: 0;
 }
 
+.shortcut-hint .footer-disclaimer {
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 .shortcut-hint .footer-links {
   margin-top: 2px;
   display: flex;

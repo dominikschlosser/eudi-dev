@@ -18,7 +18,6 @@
   // Elements
   const credContainer = document.getElementById('credentials');
   const credEmpty = document.getElementById('cred-empty');
-  const credCount = document.getElementById('cred-count');
   const logContainer = document.getElementById('log');
   const logEmpty = document.getElementById('log-empty');
   const offerInput = document.getElementById('offer-input');
@@ -45,7 +44,6 @@
   }
 
   function renderCredentials() {
-    credCount.textContent = credentials.length + ' credential' + (credentials.length !== 1 ? 's' : '');
     if (credentials.length === 0) {
       credEmpty.style.display = '';
       credContainer.querySelectorAll('.credential-card').forEach(el => el.remove());

@@ -53,6 +53,10 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  /* Mobile browsers count the URL bar into 100vh, so the footer would sit
+     below the visible area with no way to scroll to it. dvh tracks the
+     actually visible height. */
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -108,19 +112,6 @@ header h1 {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.badge {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.badge-count {
-  background: rgba(122, 162, 247, 0.2);
-  color: var(--accent);
 }
 
 .btn {
@@ -313,9 +304,9 @@ header h1 {
 .app-footer {
   flex-shrink: 0;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 2px;
   padding: 6px 16px;
   font-size: 11px;
   color: var(--text-dim);
@@ -330,6 +321,20 @@ header h1 {
   color: var(--accent);
   text-decoration: underline;
 }
+.footer-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+}
+
+.footer-disclaimer {
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.85;
+  text-align: center;
+}
+
 #demo-note {
   color: var(--yellow);
 }
@@ -788,4 +793,28 @@ header h1 {
   padding: 40px;
   color: var(--text-dim);
   font-size: 13px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  body {
+    overflow: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .main {
+    overflow: visible;
+    flex: none;
+  }
+
+  header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  #demo-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
 }

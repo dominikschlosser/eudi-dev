@@ -8,7 +8,7 @@
 [![codecov](https://codecov.io/gh/dominikschlosser/eudi-dev/graph/badge.svg)](https://codecov.io/gh/dominikschlosser/eudi-dev)
 [![Release](https://img.shields.io/github/v/release/dominikschlosser/eudi-dev)](https://github.com/dominikschlosser/eudi-dev/releases/latest)
 
-A developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and present verifiable credentials, run a testing wallet, or proxy live wallet traffic for debugging. The CLI command is `eudi`.
+An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and present verifiable credentials, run a testing wallet, or proxy live wallet traffic for debugging. The CLI command is `eudi`.
 
 > **Try it online:** a shared public demo of the wallet and decoder runs at **<https://eudi-test.dev>**, no install needed. Issue, present, and decode test credentials right in the browser (state is shared between all visitors and resets daily, so do not enter personal data).
 
