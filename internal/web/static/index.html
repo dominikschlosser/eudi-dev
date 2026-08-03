@@ -13,7 +13,7 @@
       <span class="subtitle">Decode SD-JWT, JWT &amp; mDOC credentials</span>
       <span class="header-links">
         <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/dominikschlosser/eudi-dev#install" target="_blank" rel="noopener">Get the CLI</a>
+        <a href="#" id="get-cli-link">Get the CLI</a>
       </span>
     </div>
     <div class="header-right">
@@ -50,6 +50,28 @@
       <a href="#" id="imprint-link" hidden>Imprint</a>
     </div>
   </footer>
+  <!-- Get the CLI Modal -->
+  <div class="consent-overlay" id="cli-overlay">
+    <div class="consent-dialog">
+      <div class="consent-title">Get the CLI</div>
+      <p class="dialog-hint">This decoder is part of <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">eudi-dev</a>, a developer toolkit for the EUDI / OpenID4VC ecosystem. The <code>eudi</code> CLI decodes, issues, and presents credentials, runs a local wallet with this decoder built in, and proxies live wallet traffic.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">Homebrew</div>
+        <pre>brew install dominikschlosser/tap/eudi-dev</pre>
+        <div class="cli-install-label">Go</div>
+        <pre>go install github.com/dominikschlosser/eudi-dev@latest</pre>
+        <div class="cli-install-label">Docker</div>
+        <pre>docker pull ghcr.io/dominikschlosser/eudi-dev</pre>
+        <div class="cli-install-label">Binaries</div>
+        <p class="dialog-hint"><a href="https://github.com/dominikschlosser/eudi-dev/releases" target="_blank" rel="noopener">GitHub Releases</a></p>
+      </div>
+      <p class="dialog-hint">This is an independent open source project. It is not an official service of the European Commission or the European Union, has no affiliation with them, and is not endorsed by them.</p>
+      <div class="consent-buttons">
+        <button class="btn" id="cli-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

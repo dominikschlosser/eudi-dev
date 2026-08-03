@@ -12,6 +12,7 @@
       <h1>EUDI Dev Wallet</h1>
       <span class="header-links">
         <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
+        <a href="#" id="how-to-use-link">How to use</a>
         <a href="#" id="get-cli-link">Get the CLI</a>
       </span>
     </div>
@@ -69,6 +70,33 @@
     <a href="/imprint" id="imprint-link" hidden>Imprint</a>
     <span id="demo-note" hidden></span>
   </footer>
+
+  <!-- How To Use Modal -->
+  <div class="consent-overlay" id="howto-overlay">
+    <div class="consent-dialog">
+      <div class="consent-title">How to use this wallet</div>
+      <p class="dialog-hint">This is a fully spec-compliant wallet: issuers and verifiers interact with it through the standard OpenID4VC protocols, OpenID4VCI for issuance and OpenID4VP for presentation. Point real issuers and verifiers at it and the flows run end to end, including holder binding, SD-JWT VC and mdoc formats, status lists, and trust lists.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">Deliver a credential offer (OpenID4VCI)</div>
+        <pre><span class="howto-origin"></span>/credential-offer?credential_offer_uri=&hellip;</pre>
+        <div class="cli-install-label">Send an authorization request (OpenID4VP)</div>
+        <pre><span class="howto-origin"></span>/authorize?client_id=&hellip;&amp;request_uri=&hellip;</pre>
+        <div class="cli-install-label">Trust list (verifiers trusting this wallet's credentials)</div>
+        <pre><span class="howto-origin"></span>/api/trustlist</pre>
+      </div>
+      <p class="dialog-hint">These endpoints take exactly the same query parameters as their custom-scheme counterparts (<code>openid-credential-offer://</code>, <code>openid4vp://</code>). To convert a custom-scheme link, replace everything before the <code>?</code> with the endpoint URL and keep the query string.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">Custom-scheme links via CLI (any platform)</div>
+        <pre>eudi wallet accept 'openid4vp://authorize?client_id=&hellip;'</pre>
+        <div class="cli-install-label">System URL handler (macOS)</div>
+        <pre>eudi wallet register</pre>
+      </div>
+      <p class="dialog-hint"><code>wallet register</code> installs OS handlers for <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, and <code>haip-vci://</code>, so clicking such links opens this wallet. See the <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for the full protocol surface.</p>
+      <div class="consent-buttons">
+        <button class="btn" id="howto-close">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Get the CLI Modal -->
   <div class="consent-overlay" id="cli-overlay">

@@ -1275,6 +1275,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"require_haip":              s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"credential_count":          len(s.wallet.GetCredentials()),
+		// False when an external TLS terminator serves the issuer origin: the
+		// built-in HTTPS listener is disabled then, and the wallet's
+		// self-signed leaf certificate is never presented on the wire.
+		"tls_listener": s.issuerPort > 0,
 	}
 	if demo := s.demoConfig(); demo != nil {
 		config["demo"] = demo

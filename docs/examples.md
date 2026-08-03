@@ -63,6 +63,18 @@ It includes:
 - headless demos driving `GET /credential-offer` and `GET /authorize`
 - automatic wallet-CA export into Keycloak's truststore for the status-list revocation check
 
+### Keycloak + Public Demo Wallet
+
+Folder: [`examples/keycloak-web-wallet-public`](../examples/keycloak-web-wallet-public/README.md)
+
+Use this when you want the web wallet scenario against the shared public demo instance at `https://eudi-test.dev` (or any other `--demo` deployment) instead of a local wallet container. Keycloak and the demo UI run locally, the wallet is the public one.
+
+It includes:
+
+- a compose project that reuses the realms, extension jar, demo UI, and scripts of `keycloak-web-wallet` (no wallet service, no truststore mount)
+- an ngrok tunnel in front of the local Keycloak, needed because the public wallet fetches the request object and calls the token endpoint server side (bring your own public URL via `KEYCLOAK_PUBLIC_URL` instead if you have one)
+- the same admin-API step pointing the verifier's `walletScheme` / `trustListUrl` at the public wallet
+
 ## Notes
 
 - The examples are intentionally self-contained and version-pinned.

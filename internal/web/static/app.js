@@ -1217,6 +1217,16 @@
       .catch(() => {});
   }
 
+  // Get the CLI modal (same behavior as the wallet UI)
+  const cliOverlay = document.getElementById("cli-overlay");
+  document.getElementById("get-cli-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    cliOverlay.classList.add("active");
+  });
+  document.getElementById("cli-close").addEventListener("click", () => {
+    cliOverlay.classList.remove("active");
+  });
+
   // Footer: version + imprint link (basePath-relative so the /decoder mount works)
   fetch(basePath + "api/meta")
     .then((res) => res.json())

@@ -108,6 +108,21 @@ func TestNonDemoConfigKeepsPaths(t *testing.T) {
 	}
 }
 
+func TestConfigReportsTLSListener(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.SetIssuerListenPort(9999)
+	config := decodeJSON(t, serverRequest(t, srv, "GET", "/api/config", ""))
+	if config["tls_listener"] != true {
+		t.Errorf("tls_listener = %v, want true with the built-in HTTPS listener", config["tls_listener"])
+	}
+
+	srv.SetIssuerListenPort(-1)
+	config = decodeJSON(t, serverRequest(t, srv, "GET", "/api/config", ""))
+	if config["tls_listener"] != false {
+		t.Errorf("tls_listener = %v, want false when the issuer is served by the base URL", config["tls_listener"])
+	}
+}
+
 func TestDemoReset(t *testing.T) {
 	srv := newDemoTestServer(t)
 	store := NewWalletStore(t.TempDir())

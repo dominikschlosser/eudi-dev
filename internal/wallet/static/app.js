@@ -1040,6 +1040,13 @@
       if (config.imprint) {
         document.getElementById('imprint-link').hidden = false;
       }
+      if (config.tls_listener === false) {
+        // No built-in HTTPS listener (external TLS terminator serves the
+        // issuer origin): the self-signed TLS leaf is never presented, so
+        // offering it for download would only mislead.
+        document.getElementById('tls-cert-pem-link').hidden = true;
+        document.getElementById('tls-cert-jwks-link').hidden = true;
+      }
       if (config.demo && config.demo.enabled) {
         demoMode = true;
         const note = document.getElementById('demo-note');
@@ -1117,6 +1124,18 @@
   });
   document.getElementById('cli-close').addEventListener('click', () => {
     cliOverlay.classList.remove('active');
+  });
+
+  const howtoOverlay = document.getElementById('howto-overlay');
+  document.getElementById('how-to-use-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    document.querySelectorAll('.howto-origin').forEach((el) => {
+      el.textContent = window.location.origin;
+    });
+    howtoOverlay.classList.add('active');
+  });
+  document.getElementById('howto-close').addEventListener('click', () => {
+    howtoOverlay.classList.remove('active');
   });
 
   // Initialize

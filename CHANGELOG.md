@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.5] - 2026-08-03
+
+### Added
+
+- `examples/keycloak-web-wallet-public`: the `keycloak-web-wallet` scenario against the shared public demo wallet (`https://eudi-test.dev` by default, any `--demo` deployment via `WALLET_BASE_URL`). Local Keycloak is exposed through an ngrok tunnel (or a URL supplied via `KEYCLOAK_PUBLIC_URL`) because the public wallet fetches the request object and calls the token endpoint server side. Realms, extension jar, demo UI, and scripts are reused from the local example
+
+- The wallet UI header gained a "How to use" dialog. It states that the wallet is fully OID4VC compliant, lists the protocol endpoints with the wallet's own origin filled in (`/credential-offer`, `/authorize`, `/api/trustlist`), and shows how custom-scheme links map onto them (CLI `wallet accept` on any platform, `wallet register` system handlers on macOS)
+
+### Changed
+
+- The decoder's "Get the CLI" header link opens the same install dialog as the wallet UI (Homebrew, Go, Docker, binaries) instead of navigating to GitHub
+- The wallet UI hides the TLS certificate downloads when an external TLS terminator serves the issuer origin (as on the public demo). The built-in HTTPS listener is disabled in that mode, so the exported self-signed leaf is never presented on the wire and downloading it would only mislead. `/api/config` gains a `tls_listener` field, and the CA downloads stay (they are the credential trust anchor, independent of TLS termination)
+
 ## [1.16.4] - 2026-08-03
 
 ### Changed

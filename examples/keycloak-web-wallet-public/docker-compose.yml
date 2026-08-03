@@ -1,0 +1,69 @@
+# Same triangle as ../keycloak-web-wallet, but the wallet is the shared public
+# demo instance (https://eudi-test.dev by default) instead of a local
+# container. The public wallet fetches the verifier's request object and calls
+# the issuer's token endpoint server side, so Keycloak must be reachable from
+# the internet: start.sh puts an ngrok tunnel in front of it and passes the
+# public origin in KEYCLOAK_PUBLIC_URL. Realm imports, the extension jar, the
+# demo UI, and the helper scripts are reused from ../keycloak-web-wallet.
+#
+# No wallet service, no truststore mount: the public wallet serves its status
+# lists and trust list behind a publicly trusted certificate, so Keycloak's
+# default truststore already covers it.
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    command:
+      - start-dev
+      - --import-realm
+      # Keycloak 26.7 split the create-credential-offer REST endpoint into its
+      # own feature flag (oid4vc-vci-rest-credential-offer).
+      - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer:v1
+      - --http-port=${KEYCLOAK_PORT:-9080}
+      # ngrok terminates TLS and forwards X-Forwarded-* headers. With proxy
+      # headers enabled, Keycloak generates public https URLs for requests
+      # that arrive through the tunnel and localhost URLs for local requests.
+      - --proxy-headers=xforwarded
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+      KC_LOG_LEVEL: info,de.arbeitsagentur:trace
+    ports:
+      - "${KEYCLOAK_PORT:-9080}:${KEYCLOAK_PORT:-9080}"
+      - "${APP_PORT:-9090}:${APP_PORT:-9090}"
+    volumes:
+      - ../keycloak-web-wallet/providers:/opt/keycloak/providers:ro
+      - ../keycloak-web-wallet/realm:/opt/keycloak/data/import:ro
+
+  app:
+    build: ../keycloak-web-wallet/demo
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    command: ["/app/app.py"]
+    environment:
+      # The app creates credential offers and builds the login redirect, so it
+      # must talk to Keycloak through the public origin. Only then do the URLs
+      # inside the offer and the request object point at an origin the public
+      # wallet can reach.
+      KEYCLOAK_BASE_URL: ${KEYCLOAK_PUBLIC_URL:?empty, run start.sh (it starts the tunnel and sets the public URL)}
+      WALLET_BASE_URL: ${WALLET_BASE_URL:-https://eudi-test.dev}
+      APP_LISTEN_PORT: ${APP_PORT:-9090}
+      APP_BASE_URL: http://localhost:${APP_PORT:-9090}
+    volumes:
+      - ../keycloak-web-wallet/scripts:/scripts:ro
+      - ../keycloak-web-wallet/app:/app:ro
+
+  demo:
+    profiles: ["demo"]
+    build: ../keycloak-web-wallet/demo
+    network_mode: "service:keycloak"
+    depends_on:
+      - keycloak
+    environment:
+      # Admin calls (wallet link configuration) and readiness checks stay on
+      # localhost, they do not need the tunnel.
+      KEYCLOAK_BASE_URL: http://localhost:${KEYCLOAK_PORT:-9080}
+      WALLET_BASE_URL: ${WALLET_BASE_URL:-https://eudi-test.dev}
+    volumes:
+      - ../keycloak-web-wallet/scripts:/scripts:ro
