@@ -1149,6 +1149,16 @@
     }
   }
 
+  const trustOverlay = document.getElementById('trust-overlay');
+  document.getElementById('trust-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    loadTrustLists();
+    trustOverlay.classList.add('active');
+  });
+  document.getElementById('trust-close').addEventListener('click', () => {
+    trustOverlay.classList.remove('active');
+  });
+
   // Get-the-CLI modal
   const cliOverlay = document.getElementById('cli-overlay');
   document.getElementById('get-cli-link').addEventListener('click', (event) => {

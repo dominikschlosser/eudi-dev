@@ -89,12 +89,17 @@ header h1 {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  /* Wordmark reads as its own unit, then the links with their own rhythm. */
+  gap: 28px;
+}
+
+.header-left .header-logo + h1 {
+  margin-left: -18px;
 }
 
 .header-links {
   display: flex;
-  gap: 12px;
+  gap: 20px;
   font-size: 11px;
 }
 
@@ -269,16 +274,30 @@ header h1 {
   color: var(--text-dim);
 }
 
-.cert-links {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+/* Pointer to the built-in demo issuer and verifier, at the moment someone
+   wants to run a flow but has no offer or request URI at hand. */
+.actions-hint {
   margin-top: 6px;
   font-size: 11px;
+  color: var(--text-dim);
 }
 
-.cert-links-label {
-  color: var(--text-dim);
+.actions-hint a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.actions-hint a:hover {
+  text-decoration: underline;
+}
+
+.cert-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 4px 0;
+  font-size: 11px;
 }
 
 .cert-links a {

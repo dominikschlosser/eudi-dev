@@ -30,6 +30,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
@@ -191,6 +192,12 @@ func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientI
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
+	return presentCredential(t, holderKey, credential, clientID, nonce)
+}
+
+// presentCredential builds an SD-JWT+KB presentation of the given credential.
+func presentCredential(t *testing.T, holderKey *ecdsa.PrivateKey, credential, clientID, nonce string) string {
+	t.Helper()
 	// Present with all disclosures: credential already ends with ~.
 	prefix := credential
 	if !strings.HasSuffix(prefix, "~") {
@@ -270,5 +277,219 @@ func TestVerifierRejectsWrongNonce(t *testing.T) {
 	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 	if status["status"] != "failed" {
 		t.Fatalf("status = %v, want failed on nonce mismatch", status["status"])
+	}
+}
+
+// serveStatusList starts a status list endpoint where index 0 is valid and
+// index 1 is revoked, signed by the wallet's issuer key under its CA chain.
+func serveStatusList(t *testing.T, d *DemoRP, w *wallet.Wallet) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(nil)
+	chain, err := w.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/statuslist", func(rw http.ResponseWriter, r *http.Request) {
+		jwt, err := statuslist.GenerateStatusListJWT([]byte{0b00000010}, w.IssuerKey, statuslist.StatusListConfig{
+			URI:       srv.URL + "/statuslist",
+			Issuer:    srv.URL,
+			CertChain: chain,
+		})
+		if err != nil {
+			http.Error(rw, err.Error(), 500)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/statuslist+jwt")
+		_, _ = rw.Write([]byte(jwt))
+	})
+	srv.Config.Handler = mux
+	return srv
+}
+
+// signTicketWithStatus mints a ticket carrying a status list reference.
+func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, uri string, idx int) string {
+	t.Helper()
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:        d.issuerID(),
+		VCT:           TicketVCT,
+		ExpiresIn:     24 * time.Hour,
+		Claims:        ticketClaims(),
+		Key:           d.wallet.IssuerKey,
+		HolderKey:     &holderKey.PublicKey,
+		CertChain:     chain,
+		StatusListURI: uri,
+		StatusListIdx: idx,
+	})
+	if err != nil {
+		t.Fatalf("signing ticket: %v", err)
+	}
+	return raw
+}
+
+// TestVerifierRejectsRevokedCredential guards the gap that made the demo
+// verifier report all checks green for a credential the wallet had revoked:
+// it verified signatures but never resolved the status list.
+func TestVerifierRejectsRevokedCredential(t *testing.T) {
+	d, w, holderKey := newDemoRP(t)
+	statusSrv := serveStatusList(t, d, w)
+	defer statusSrv.Close()
+	h := d.VerifierHandler()
+
+	for _, tc := range []struct {
+		name       string
+		idx        int
+		wantStatus string
+	}{
+		{"valid entry", 0, "verified"},
+		{"revoked entry", 1, "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, reqDoc := doJSON(t, h, "POST", "/api/requests", `{"type":"ticket"}`, map[string]string{"Content-Type": "application/json"})
+			walletURL, _ := url.Parse(reqDoc["wallet_url"].(string))
+			params := walletURL.Query()
+			id := params.Get("state")
+
+			credential := signTicketWithStatus(t, d, holderKey, statusSrv.URL+"/statuslist", tc.idx)
+			presentation := presentCredential(t, holderKey, credential, params.Get("client_id"), params.Get("nonce"))
+			vpToken, _ := json.Marshal(map[string][]string{"ticket": {presentation}})
+			form := url.Values{"vp_token": {string(vpToken)}}
+			doJSON(t, h, "POST", "/response/"+id, form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+
+			_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+			if status["status"] != tc.wantStatus {
+				t.Fatalf("status = %v, want %v (checks: %v)", status["status"], tc.wantStatus, status["checks"])
+			}
+		})
+	}
+}
+
+// startVerification creates a request and returns its id and parameters.
+func startVerification(t *testing.T, h http.Handler, kind string) (string, url.Values) {
+	t.Helper()
+	_, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"`+kind+`"}`, map[string]string{"Content-Type": "application/json"})
+	walletURL, err := url.Parse(doc["wallet_url"].(string))
+	if err != nil {
+		t.Fatalf("parsing wallet_url: %v", err)
+	}
+	params := walletURL.Query()
+	return params.Get("state"), params
+}
+
+func postPresentation(t *testing.T, h http.Handler, id, queryID, presentation string) int {
+	t.Helper()
+	vpToken, err := json.Marshal(map[string][]string{queryID: {presentation}})
+	if err != nil {
+		t.Fatalf("building vp_token: %v", err)
+	}
+	code, _ := doJSON(t, h, "POST", "/response/"+id, url.Values{"vp_token": {string(vpToken)}}.Encode(),
+		map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	return code
+}
+
+// TestVerifierRejectsWrongCredentialType: the wallet decides what to send, so
+// the verifier has to enforce the type it asked for. A PID answering a ticket
+// request must not verify.
+func TestVerifierRejectsWrongCredentialType(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "ticket")
+
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	pid, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       PIDVCT, // not the requested ticket type
+		ExpiresIn: time.Hour,
+		Claims:    map[string]any{"given_name": "Erika", "family_name": "Mustermann"},
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing pid: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, pid, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "ticket", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "failed" {
+		t.Fatalf("status = %v, want failed for a mismatched vct (checks: %v)", status["status"], status["checks"])
+	}
+}
+
+// TestVerifierRejectsReplay: the nonce is fixed per request, so a captured
+// response would verify again unless the request is single use.
+func TestVerifierRejectsReplay(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "ticket")
+	presentation := presentTicket(t, d, holderKey, params.Get("client_id"), params.Get("nonce"))
+
+	if code := postPresentation(t, h, id, "ticket", presentation); code != http.StatusOK {
+		t.Fatalf("first response = %d, want 200", code)
+	}
+	if code := postPresentation(t, h, id, "ticket", presentation); code != http.StatusConflict {
+		t.Fatalf("replayed response = %d, want 409", code)
+	}
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("replay must not change the original result, got %v", status["status"])
+	}
+}
+
+// TestVerifierRejectsInjectedDisclosure models a malicious holder: they own
+// the key binding key, so they can append a disclosure and re-sign a matching
+// sd_hash. Only the "every disclosure is referenced" rule catches it.
+func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "ticket")
+
+	credential, err := d.signTicket(&holderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("signing ticket: %v", err)
+	}
+
+	// A well-formed disclosure the issuer never created.
+	forged, err := json.Marshal([]any{"injectedsalt", "tier", "vip-forged"})
+	if err != nil {
+		t.Fatalf("building disclosure: %v", err)
+	}
+	tampered := credential + base64.RawURLEncoding.EncodeToString(forged) + "~"
+
+	// Re-sign the key binding over the tampered presentation, so sd_hash,
+	// nonce and audience all still check out.
+	digest := sha256.Sum256([]byte(tampered))
+	kb := signES256(t, holderKey,
+		map[string]any{"alg": "ES256", "typ": "kb+jwt"},
+		map[string]any{
+			"iat":     time.Now().Unix(),
+			"aud":     params.Get("client_id"),
+			"nonce":   params.Get("nonce"),
+			"sd_hash": base64.RawURLEncoding.EncodeToString(digest[:]),
+		},
+	)
+	postPresentation(t, h, id, "ticket", tampered+kb)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "failed" {
+		t.Fatalf("status = %v, want failed for an injected disclosure (checks: %v)", status["status"], status["checks"])
+	}
+	checks := status["checks"].([]any)
+	last := checks[len(checks)-1].(map[string]any)
+	if last["ok"] != false || !strings.Contains(last["name"].(string), "referenced") {
+		t.Fatalf("expected the disclosure reference check to fail, got %v", last)
 	}
 }

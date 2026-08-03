@@ -13,9 +13,10 @@
       <img src="logo.svg" alt="" class="header-logo">
       <h1>EUDI Dev Wallet</h1>
       <span class="header-links">
-        <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
         <a href="#" id="how-to-use-link">How to use</a>
         <a href="#" id="get-cli-link">Get the CLI</a>
+        <a href="#" id="trust-link">Trust &amp; certificates</a>
+        <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
       </span>
     </div>
     <div class="header-right">
@@ -46,15 +47,9 @@
         <button class="btn" id="issue-btn">Issue Credential</button>
         <button class="btn" id="templates-btn">Templates</button>
       </div>
-      <div class="cert-links" id="trust-list-links">
-        <span class="cert-links-label">Trust lists:</span>
-      </div>
-      <div class="cert-links" id="cert-links">
-        <span class="cert-links-label">Certificates:</span>
-        <a id="ca-cert-pem-link" href="/api/certificates/ca">CA (PEM)</a>
-        <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">CA (JWKS)</a>
-        <a id="tls-cert-pem-link" href="/api/certificates/tls">TLS (PEM)</a>
-        <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">TLS (JWKS)</a>
+      <div class="actions-hint">
+        No offer at hand? <a href="/issuer/">Get one from the demo issuer</a>
+        &middot; <a href="/verifier/">Present to the demo verifier</a>
       </div>
     </div>
 
@@ -111,6 +106,28 @@
       <p class="dialog-hint">No issuer or verifier at hand? This deployment also hosts a <a href="/issuer/" target="_blank">demo issuer</a> and a <a href="/verifier/" target="_blank">demo verifier</a> that run these flows against the wallet out of the box.</p>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trust & Certificates Modal -->
+  <div class="consent-overlay" id="trust-overlay">
+    <div class="consent-dialog">
+      <div class="consent-title">Trust &amp; certificates</div>
+      <p class="dialog-hint">What a verifier needs to trust credentials issued by this wallet. Point its trust list configuration at the URL below, or import the CA certificate directly.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">Trust lists</div>
+        <div class="cert-links" id="trust-list-links"></div>
+        <div class="cli-install-label">Certificates</div>
+        <div class="cert-links" id="cert-links">
+          <a id="ca-cert-pem-link" href="/api/certificates/ca">CA (PEM)</a>
+          <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">CA (JWKS)</a>
+          <a id="tls-cert-pem-link" href="/api/certificates/tls">TLS (PEM)</a>
+          <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">TLS (JWKS)</a>
+        </div>
+      </div>
+      <div class="consent-buttons">
+        <button class="btn" id="trust-close">Close</button>
       </div>
     </div>
   </div>

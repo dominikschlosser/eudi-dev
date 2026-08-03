@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
@@ -36,9 +37,12 @@ const PIDVCT = "urn:eudi:pid:de:1"
 type requestState struct {
 	id       string
 	queryID  string
+	vct      string
+	want     []string // claim names the request asked for
 	nonce    string
 	clientID string
 	expires  time.Time
+	answered bool // a response was accepted, further ones are replays
 
 	status string // pending | verified | failed
 	err    string
@@ -88,6 +92,8 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	req := &requestState{
 		id:      randToken(),
 		queryID: body.Type,
+		vct:     vct,
+		want:    claims,
 		nonce:   randToken(),
 		status:  "pending",
 		expires: time.Now().Add(entryTTL),
@@ -175,9 +181,19 @@ func (d *DemoRP) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		delete(d.requests, id)
 		ok = false
 	}
+	replay := ok && req.answered
+	if ok && !replay {
+		req.answered = true
+	}
 	d.mu.Unlock()
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown or expired request"})
+		return
+	}
+	if replay {
+		// The nonce is fixed per request, so a captured response would
+		// otherwise verify again. One request, one answer.
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "this request was already answered"})
 		return
 	}
 
@@ -238,8 +254,25 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, checks, err
 	}
 
+	if err := check("vp_token holds exactly one presentation",
+		errIf(len(presentations) != 1, "expected 1 presentation, got %d", len(presentations))); err != nil {
+		return nil, checks, err
+	}
+
 	token, err := sdjwt.Parse(presentations[0])
 	if err = check("presentation parses as SD-JWT", err); err != nil {
+		return nil, checks, err
+	}
+
+	if err = check("every disclosure is referenced by the credential", checkDisclosuresReferenced(token)); err != nil {
+		return nil, checks, err
+	}
+
+	// Trusting the wallet to return the requested type would let any held
+	// credential satisfy the request.
+	gotVCT, _ := token.ResolvedClaims["vct"].(string)
+	if err = check("credential type matches the request",
+		errIf(gotVCT != req.vct, "vct is %q, requested %q", gotVCT, req.vct)); err != nil {
 		return nil, checks, err
 	}
 
@@ -261,6 +294,13 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid")); err != nil {
 		return nil, checks, err
 	}
+	if err = check("credential is within its validity period",
+		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
+		return nil, checks, err
+	}
+	if err = d.checkRevocation(token, check); err != nil {
+		return nil, checks, err
+	}
 
 	// Key binding JWT.
 	kb := token.KeyBindingJWT
@@ -278,6 +318,10 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	}
 	kbJWT, err := parseCompactJWT(kb.Raw)
 	if err = check("key binding JWT parses", err); err != nil {
+		return nil, checks, err
+	}
+	kbTyp, _ := kbJWT.header["typ"].(string)
+	if err = check("key binding JWT is typed kb+jwt", errIf(kbTyp != "kb+jwt", "typ is %q", kbTyp)); err != nil {
 		return nil, checks, err
 	}
 	if err = check("key binding signature verifies with cnf key", errIf(!verifyES256(holderKey, kbJWT.signingInput, kbJWT.signature), "key binding signature is invalid")); err != nil {
@@ -302,7 +346,105 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, checks, err
 	}
 
-	return disclosedClaims(token), checks, nil
+	disclosed := disclosedClaims(token)
+	var missing []string
+	for _, name := range req.want {
+		if _, ok := disclosed[name]; !ok {
+			missing = append(missing, name)
+		}
+	}
+	if err = check("requested claims were disclosed",
+		errIf(len(missing) > 0, "missing: %s", strings.Join(missing, ", "))); err != nil {
+		return nil, checks, err
+	}
+
+	return disclosed, checks, nil
+}
+
+// checkDisclosuresReferenced enforces the SD-JWT rule that every disclosure
+// in a presentation must be referenced by a digest in the issuer-signed
+// payload (directly, or from inside another disclosure's value). An
+// unreferenced or duplicated disclosure means the presentation was altered
+// after issuance, and the spec requires rejecting it rather than quietly
+// dropping the claim.
+func checkDisclosuresReferenced(token *sdjwt.Token) error {
+	referenced := make(map[string]bool)
+	collectDigests(token.Payload, referenced)
+	for _, d := range token.Disclosures {
+		// A nested disclosure's digest lives inside its parent's value.
+		collectDigests(d.Value, referenced)
+	}
+
+	seen := make(map[string]bool, len(token.Disclosures))
+	for _, d := range token.Disclosures {
+		if !referenced[d.Digest] {
+			name := d.Name
+			if name == "" {
+				name = "array element"
+			}
+			return fmt.Errorf("disclosure %q is not referenced by any digest in the credential", name)
+		}
+		if seen[d.Digest] {
+			return fmt.Errorf("disclosure %q appears more than once", d.Name)
+		}
+		seen[d.Digest] = true
+	}
+	return nil
+}
+
+// collectDigests gathers every digest a payload or disclosure value refers to:
+// entries of "_sd" arrays and array elements of the form {"...": digest}.
+func collectDigests(value any, out map[string]bool) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, val := range v {
+			switch key {
+			case "_sd":
+				if arr, ok := val.([]any); ok {
+					for _, entry := range arr {
+						if digest, ok := entry.(string); ok {
+							out[digest] = true
+						}
+					}
+				}
+			case "...":
+				if digest, ok := val.(string); ok {
+					out[digest] = true
+				}
+			default:
+				collectDigests(val, out)
+			}
+		}
+	case []any:
+		for _, item := range v {
+			collectDigests(item, out)
+		}
+	}
+}
+
+// checkRevocation resolves the credential's status list reference, if it has
+// one. A verifier that only validates signatures would happily accept a
+// revoked credential, which is exactly what the demo wallet's Revoke button
+// produces.
+func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) error) error {
+	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
+	if ref == nil {
+		return check("revocation status (credential references no status list)", nil)
+	}
+
+	// Anchor the status list JWT in the same CA as the credential, so a
+	// forged list cannot un-revoke a credential.
+	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
+		TrustListCerts: []statuslist.TrustCert{{Raw: caCert.Raw}},
+	})
+	if err != nil {
+		return check("credential is not revoked", fmt.Errorf("checking the status list: %w", err))
+	}
+	if result.SignatureValid != nil && !*result.SignatureValid {
+		return check("credential is not revoked", fmt.Errorf("the status list signature did not verify: %s", result.SignatureInfo))
+	}
+	return check("credential is not revoked", errIf(result.Status != 0, "the issuer's status list marks this credential as revoked"))
 }
 
 func errIf(cond bool, format string, args ...any) error {

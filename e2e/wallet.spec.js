@@ -691,21 +691,27 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator(`#credential-${id}`)).toHaveCount(0);
   });
 
-  test("certificate export links are present and working", async ({
+  test("trust and certificate links live in the header dialog", async ({
     page,
     request,
   }) => {
     await page.goto(WALLET_URL);
-    // This server runs with an https --base-url, so the built-in HTTPS
-    // listener is disabled and the UI hides the TLS leaf downloads (the
-    // self-signed leaf is never presented on the wire). The CA links stay,
-    // and the API endpoints keep working either way.
+
+    // They used to sit under the action bar; now they are one click away so
+    // the main view stays focused on running flows.
+    await expect(page.locator("#ca-cert-pem-link")).toBeHidden();
+    await page.locator("#trust-link").click();
+    await expect(page.locator("#trust-overlay")).toHaveClass(/active/);
+
     for (const id of ["ca-cert-pem-link", "ca-cert-jwks-link"]) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
+    // This server runs with an https --base-url, so the built-in HTTPS
+    // listener is disabled and the self-signed TLS leaf stays hidden.
     for (const id of ["tls-cert-pem-link", "tls-cert-jwks-link"]) {
       await expect(page.locator(`#${id}`)).toBeHidden();
     }
+
     for (const href of [
       "/api/certificates/ca",
       "/api/certificates/ca?format=jwks",
@@ -721,6 +727,9 @@ test.describe("Credential Issuing via UI", () => {
         expect(body).toContain("BEGIN CERTIFICATE");
       }
     }
+
+    await page.locator("#trust-close").click();
+    await expect(page.locator("#trust-overlay")).not.toHaveClass(/active/);
   });
 });
 

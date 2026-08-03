@@ -94,13 +94,17 @@ header {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 28px;
+}
+
+.header-left .header-logo + .header-titles {
+  margin-left: -18px;
 }
 
 .header-titles {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
 }
 
 h1 {
@@ -116,7 +120,7 @@ h1 {
 
 .header-links {
   display: flex;
-  gap: 12px;
+  gap: 20px;
   font-size: 11px;
 }
 

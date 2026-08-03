@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.6] - 2026-08-04
+
+### Changed
+
+- The wallet UI points at the built-in demo issuer and verifier from the action bar ("No offer at hand?"), where someone stands when they want to run a flow but have no offer or request URI. They were only reachable from the bottom of the How to use dialog
+- Header links are ordered by the sequence they are needed (How to use, Get the CLI, Trust & certificates, GitHub) with more space between them, and the decoder header follows the same order and spacing
+- Trust list URLs and certificate downloads moved from two permanent rows under the action bar into a "Trust & certificates" dialog. They matter to whoever wires up a verifier, not to everyone looking at the wallet
+
+### Fixed
+
+- The demo verifier accepted revoked credentials. It verified the issuer signature, key binding, `sd_hash`, nonce and audience, but never resolved the credential's status list, so a credential revoked in the wallet still showed every check green. It now fetches the referenced status list, validates its signature against the wallet CA (a forged list cannot un-revoke anything), and fails the presentation when the entry is set. Credentials without a status list reference say so explicitly
+- The demo verifier also reports whether the credential is within its validity period. `exp` and `nbf` were evaluated during signature verification but the result was never shown
+- The demo verifier enforces the credential type it asked for. The wallet picks what to send, so a PID could answer a request for the demo ticket and still verify
+- A demo verification request is now single use. The nonce is fixed per request, so a captured response could be replayed to the response endpoint and verify again. Later responses are rejected with 409 and cannot overwrite the first result
+- The demo verifier rejects presentations carrying a disclosure that no digest in the issuer-signed payload references, or the same disclosure twice. A tampered presentation was previously accepted as verified: the unreferenced claim was dropped when resolving claims, but SD-JWT requires rejecting the presentation outright, and a holder can re-sign the key binding over their own additions
+- The demo verifier checks that the claims it requested were actually disclosed, and that the key binding JWT carries `typ: kb+jwt`
+
 ## [1.18.5] - 2026-08-04
 
 - Optional usage statistics for a hosted demo, entirely in the deployment: Caddy writes an access log with the client address anonymized at write time, GoAccess renders it into a static HTML report, and Caddy serves that at `/stats` behind basic auth (`./deploy.sh stats-password`). `./deploy.sh stats` prints a summary in the terminal. Nothing is added to the pages: no scripts, no cookies, no third party
