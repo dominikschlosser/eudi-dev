@@ -93,6 +93,22 @@ h1 {
   color: var(--text-dim);
 }
 
+.header-links {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.header-links a {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.header-links a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -593,6 +609,23 @@ textarea.colorized::placeholder {
   font-size: 10px;
 }
 
+.shortcut-hint .footer-links {
+  margin-top: 2px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.shortcut-hint .footer-links a {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.shortcut-hint .footer-links a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 /* Share toast */
 .toast {
   position: fixed;
@@ -799,7 +832,9 @@ textarea.colorized::placeholder {
     gap: 2px;
   }
 
-  .shortcut-hint {
+  /* Keyboard hints are pointless on touch screens, but the version and
+     imprint links must stay reachable. */
+  .shortcut-hint .kbd-hints {
     display: none;
   }
 }

@@ -37,6 +37,8 @@
       const resp = await fetch('/api/credentials');
       credentials = await resp.json();
       renderCredentials();
+      // Issuance can add trust list groups, so keep the links in sync.
+      loadTrustLists();
     } catch (e) {
       console.error('Failed to load credentials:', e);
     }
@@ -394,17 +396,19 @@
   // Applies a template to the issue form: format, type identifiers, expiry,
   // claims, and always-disclosed claims. Everything stays editable; the form
   // contents are submitted as explicit values, so edits (including removed
-  // claims) win over the template.
+  // claims) win over the template. Every template-controlled field is set
+  // unconditionally (cleared when the template omits it) — otherwise
+  // switching templates before issuing would submit a merge of all
+  // previously selected templates.
   function applyIssueTemplate(name) {
     const tpl = (templatesCache || []).find(t => t.name === name);
     if (!tpl) return;
-    if (tpl.format) {
-      issueFormat.value = tpl.format;
-      updateIssueFormatFields();
-    }
-    if (tpl.vct) document.getElementById('issue-vct').value = tpl.vct;
-    if (tpl.doctype) document.getElementById('issue-doctype').value = tpl.doctype;
-    if (tpl.exp) document.getElementById('issue-exp').value = tpl.exp;
+    if (tpl.format) issueFormat.value = tpl.format;
+    updateIssueFormatFields();
+    document.getElementById('issue-vct').value = tpl.vct || '';
+    document.getElementById('issue-doctype').value = tpl.doctype || '';
+    document.getElementById('issue-exp').value = tpl.exp || '';
+    document.getElementById('issue-nbf').value = '';
     issueAlwaysDisclosed.value = (tpl.always_disclosed || []).join(', ');
     fillClaimRows(tpl.claims || {});
     syncRowsFromAlwaysDisclosed();
@@ -495,7 +499,15 @@
   issueFormat.addEventListener('change', resetIssueFields);
 
   issueTemplateSelect.addEventListener('change', () => {
-    if (issueTemplateSelect.value) applyIssueTemplate(issueTemplateSelect.value);
+    if (issueTemplateSelect.value) {
+      applyIssueTemplate(issueTemplateSelect.value);
+    } else {
+      // "(none)": back to a clean form instead of the last template's values.
+      const format = issueFormat.value;
+      issueForm.reset();
+      issueFormat.value = format;
+      resetIssueFields();
+    }
   });
 
   issueAlwaysDisclosed.addEventListener('change', syncRowsFromAlwaysDisclosed);
@@ -637,7 +649,7 @@
       });
       row.appendChild(editBtn);
 
-      if (!tpl.predefined) {
+      if (!tpl.predefined && !demoMode) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm';
@@ -1014,11 +1026,103 @@
     return div.innerHTML;
   }
 
+  // Footer: version, imprint link, demo note; demo mode also hides the
+  // template-write controls (the server rejects them with 403 anyway).
+  let demoMode = false;
+  async function loadAppConfig() {
+    try {
+      const resp = await fetch('/api/config');
+      const config = await resp.json();
+      if (config.version) {
+        document.getElementById('footer-version').textContent = 'eudi-dev ' + config.version;
+      }
+      if (config.imprint) {
+        document.getElementById('imprint-link').hidden = false;
+      }
+      if (config.demo && config.demo.enabled) {
+        demoMode = true;
+        const note = document.getElementById('demo-note');
+        const secs = config.demo.reset_interval_seconds || 0;
+        note.textContent = secs > 0
+          ? 'Public sandbox — resets every ' + formatInterval(secs)
+          : 'Public sandbox — shared state';
+        note.hidden = false;
+        document.getElementById('issue-save-template').hidden = true;
+        document.querySelector('label[for="issue-save-template"]').hidden = true;
+        document.getElementById('template-form').hidden = true;
+      }
+    } catch (e) {
+      /* footer extras are optional */
+    }
+  }
+
+  function formatInterval(secs) {
+    if (secs % 3600 === 0) {
+      const h = secs / 3600;
+      return h === 1 ? 'hour' : h + ' hours';
+    }
+    const m = Math.round(secs / 60);
+    return m + ' minutes';
+  }
+
+  // Trust list links: what a verifier needs to trust this wallet's
+  // self-issued credentials. Groups can change with issuance, so this is
+  // reloaded whenever credentials change.
+  async function loadTrustLists() {
+    const row = document.getElementById('trust-list-links');
+    try {
+      const resp = await fetch('/api/trustlists');
+      const doc = await resp.json();
+      const lists = (doc && doc.trust_lists) || [];
+      row.querySelectorAll('.trust-list-item').forEach(el => el.remove());
+      row.hidden = lists.length === 0;
+      lists.forEach(entry => {
+        const url = entry.advertised_url || entry.url ||
+          (entry.path ? window.location.origin + entry.path : '');
+        if (!url) return;
+        const item = document.createElement('span');
+        item.className = 'trust-list-item';
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = entry.id || 'trust list';
+        link.title = url;
+        item.appendChild(link);
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'copy-btn';
+        copy.textContent = '⧉';
+        copy.title = 'Copy trust list URL';
+        copy.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            copy.textContent = '✓';
+            setTimeout(() => { copy.textContent = '⧉'; }, 1200);
+          } catch (e) { /* clipboard unavailable */ }
+        });
+        item.appendChild(copy);
+        row.appendChild(item);
+      });
+    } catch (e) {
+      row.hidden = true;
+    }
+  }
+
+  // Get-the-CLI modal
+  const cliOverlay = document.getElementById('cli-overlay');
+  document.getElementById('get-cli-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    cliOverlay.classList.add('active');
+  });
+  document.getElementById('cli-close').addEventListener('click', () => {
+    cliOverlay.classList.remove('active');
+  });
+
   // Initialize
   if (new URLSearchParams(window.location.search).get('focus') === 'overview') {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     window.history.replaceState({}, document.title, window.location.pathname);
   }
+  loadAppConfig();
   loadCredentials();
   loadLog();
   loadPendingRequests();

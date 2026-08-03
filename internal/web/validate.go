@@ -524,7 +524,9 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 	}
 
 	if opts.TrustListURL != "" {
-		tlRaw, err := format.ReadInput(opts.TrustListURL)
+		// The URL comes from the HTTP request body; ReadRemoteInput never
+		// touches the server's filesystem.
+		tlRaw, err := format.ReadRemoteInput(opts.TrustListURL)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fetching trust list: %w", err)
 		}

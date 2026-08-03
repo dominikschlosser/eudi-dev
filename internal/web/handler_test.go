@@ -643,3 +643,39 @@ func TestPrefill_ContentType(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
 }
+
+func TestHandleMetaAndImprint(t *testing.T) {
+	// Without an imprint: meta says so, /imprint is a 404.
+	mux := NewMuxWithOptions(MuxOptions{Version: "v1.2.3"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/meta", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/meta = %d", rec.Code)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta["version"] != "v1.2.3" || meta["imprint"] != false {
+		t.Fatalf("meta = %v", meta)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/imprint", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET /imprint without content = %d, want 404", rec.Code)
+	}
+
+	// With an imprint, also mounted under a prefix like the wallet does.
+	page := []byte("<p>Operator: Example Org</p>")
+	mounted := http.StripPrefix("/decoder", NewMuxWithOptions(MuxOptions{ImprintHTML: page}))
+	rec = httptest.NewRecorder()
+	mounted.ServeHTTP(rec, httptest.NewRequest("GET", "/decoder/imprint", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Example Org") {
+		t.Fatalf("GET /decoder/imprint = %d body %q", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	mounted.ServeHTTP(rec, httptest.NewRequest("GET", "/decoder/api/meta", nil))
+	if !strings.Contains(rec.Body.String(), `"imprint":true`) {
+		t.Fatalf("prefixed meta = %s", rec.Body.String())
+	}
+}

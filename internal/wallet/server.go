@@ -55,6 +55,9 @@ type Server struct {
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
+	demo             *demoState
+	version          string
+	imprintHTML      []byte
 	// ShutdownFunc runs after POST /api/shutdown responded. The serve command
 	// sets it to deregister the instance and exit; when nil the process exits
 	// directly.
@@ -197,16 +200,34 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("GET /api/error", s.withFreshStore(s.handleLastError))
 	s.mux.HandleFunc("DELETE /api/error", s.withFreshStore(s.handleClearLastError))
 
+	// Operator-supplied legal notice (404 until SetImprint is called)
+	s.mux.HandleFunc("GET /imprint", s.handleImprint)
+
 	// Static files
 	sub, _ := fs.Sub(staticFiles, "static")
 	s.mux.Handle("/", http.FileServer(http.FS(sub)))
+}
+
+// SetImprint serves the given pre-rendered imprint page at /imprint and
+// makes /api/config advertise it so the UI shows the footer link.
+func (s *Server) SetImprint(page []byte) {
+	s.imprintHTML = page
+}
+
+func (s *Server) handleImprint(w http.ResponseWriter, r *http.Request) {
+	if len(s.imprintHTML) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(s.imprintHTML)
 }
 
 // ListenAndServe starts the wallet server.
 func (s *Server) ListenAndServe() error {
 	s.httpSrv = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.port),
-		Handler:      s.mux,
+		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -214,6 +235,7 @@ func (s *Server) ListenAndServe() error {
 	if err := s.startIssuerTLSServer(); err != nil {
 		return err
 	}
+	s.startDemoReset()
 	return s.httpSrv.ListenAndServe()
 }
 
@@ -225,7 +247,7 @@ func (s *Server) ListenAndServeBackground() (string, error) {
 	}
 	addr := fmt.Sprintf("http://localhost:%d", ln.Addr().(*net.TCPAddr).Port)
 	s.httpSrv = &http.Server{
-		Handler:      s.mux,
+		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -236,6 +258,7 @@ func (s *Server) ListenAndServeBackground() (string, error) {
 		}
 		return "", err
 	}
+	s.startDemoReset()
 	go func() { _ = s.httpSrv.Serve(ln) }()
 	return addr, nil
 }
@@ -258,6 +281,15 @@ func (s *Server) SetLogger(fn func(format string, args ...any)) {
 // SetIssuerTLSCertificate sets the certificate used by the wallet's HTTPS endpoints.
 func (s *Server) SetIssuerTLSCertificate(cert tls.Certificate) {
 	s.issuerTLSCert = &cert
+}
+
+// SetIssuerListenPort overrides the local port of the built-in HTTPS issuer
+// listener, which NewServer derives from the wallet's IssuerURL. Pass a
+// negative port to disable the listener entirely — used when an external TLS
+// terminator serves the issuer origin (IssuerURL equals the base URL), where
+// the derived port would otherwise be 443.
+func (s *Server) SetIssuerListenPort(port int) {
+	s.issuerPort = port
 }
 
 // SetStore makes the server reload the wallet store at request boundaries.
@@ -372,7 +404,7 @@ func (s *Server) startIssuerTLSServer() error {
 	}
 
 	s.issuerSrv = &http.Server{
-		Handler:      s.mux,
+		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -391,6 +423,7 @@ func (s *Server) startIssuerTLSServer() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown() {
+	s.stopDemoReset()
 	if s.httpSrv != nil {
 		s.httpSrv.Close()
 	}
@@ -854,10 +887,21 @@ func (s *Server) Mount(prefix string, h http.Handler) {
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
+	doc := map[string]any{
 		"build_id": processBuildID(),
-		"pid":      os.Getpid(),
-	})
+		"version":  s.version,
+	}
+	if s.demo == nil {
+		doc["pid"] = os.Getpid()
+	}
+	writeJSON(w, http.StatusOK, doc)
+}
+
+// SetVersion sets the human-readable release version reported by
+// /api/version and /api/config. The version lives in the cmd package, so the
+// serve command injects it.
+func (s *Server) SetVersion(version string) {
+	s.version = version
 }
 
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
@@ -1216,12 +1260,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if templatesDir == "" && walletDir != "" {
 		templatesDir = filepath.Join(walletDir, "templates")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"pid":                       os.Getpid(),
+	config := map[string]any{
 		"port":                      s.port,
 		"build_id":                  processBuildID(),
-		"wallet_dir":                walletDir,
-		"templates_dir":             templatesDir,
+		"version":                   s.version,
+		"imprint":                   len(s.imprintHTML) > 0,
 		"base_url":                  s.wallet.BaseURL,
 		"issuer_url":                s.wallet.IssuerURL,
 		"status_list_url":           s.wallet.StatusListURL(),
@@ -1232,7 +1275,17 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"require_haip":              s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"credential_count":          len(s.wallet.GetCredentials()),
-	})
+	}
+	if demo := s.demoConfig(); demo != nil {
+		config["demo"] = demo
+	} else {
+		// Host paths and the pid identify the process on its machine; they
+		// are for local remote-control tooling, not anonymous demo visitors.
+		config["pid"] = os.Getpid()
+		config["wallet_dir"] = walletDir
+		config["templates_dir"] = templatesDir
+	}
+	writeJSON(w, http.StatusOK, config)
 }
 
 // handleShutdown asks the wallet server process to exit. Like the rest of

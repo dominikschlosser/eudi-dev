@@ -21,10 +21,14 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/imprint"
 	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
-var port int
+var (
+	port             int
+	serveImprintFile string
+)
 
 var serveCmd = &cobra.Command{
 	Use:   "serve [credential]",
@@ -36,6 +40,7 @@ var serveCmd = &cobra.Command{
 
 func init() {
 	serveCmd.Flags().IntVar(&port, "port", config.DefaultServePort, "Port to listen on")
+	serveCmd.Flags().StringVar(&serveImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -49,6 +54,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		credential = raw
 	}
 
+	opts := web.MuxOptions{Credential: credential, Version: Version}
+	if serveImprintFile != "" {
+		page, err := imprint.Load(serveImprintFile)
+		if err != nil {
+			return err
+		}
+		opts.ImprintHTML = page
+	}
+
 	fmt.Printf("Starting EUDI Dev Web UI at http://localhost:%d\n", port)
-	return web.ListenAndServe(port, credential)
+	return web.ListenAndServe(port, opts)
 }

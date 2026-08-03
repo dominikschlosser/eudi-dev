@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,5 +100,58 @@ func TestServingConfigWarningsIgnoreForeignIssuers(t *testing.T) {
 
 	if warns := servingConfigWarnings(w, 8085, false); len(warns) != 0 {
 		t.Fatalf("expected no warnings for foreign issuer URLs, got %v", warns)
+	}
+}
+
+func TestDeriveWalletIssuerURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		port    int
+		baseURL string
+		docker  bool
+		want    string
+	}{
+		{name: "no base URL", port: 8085, want: "https://localhost:8086"},
+		{name: "no base URL docker", port: 8085, docker: true, want: "https://host.docker.internal:8086"},
+		{name: "http base URL keeps port+1 listener", port: 8085, baseURL: "http://localhost:8085", want: "https://localhost:8086"},
+		{name: "http base URL custom host", port: 9085, baseURL: "http://wallet:9085", want: "https://wallet:9086"},
+		{name: "https base URL becomes the issuer origin", port: 8085, baseURL: "https://eudi-test.dev", want: "https://eudi-test.dev"},
+		{name: "https base URL trailing slash trimmed", port: 8085, baseURL: "https://eudi-test.dev/", want: "https://eudi-test.dev"},
+		{name: "https base URL with port kept verbatim", port: 8085, baseURL: "https://example.com:8443", want: "https://example.com:8443"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := deriveWalletIssuerURL(tt.port, tt.baseURL, tt.docker)
+			if err != nil {
+				t.Fatalf("deriveWalletIssuerURL: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("deriveWalletIssuerURL = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIssuerServedByBaseURL(t *testing.T) {
+	if !issuerServedByBaseURL("https://eudi-test.dev", "https://eudi-test.dev/") {
+		t.Fatal("expected issuer to be served by base URL")
+	}
+	if issuerServedByBaseURL("https://localhost:8086", "http://localhost:8085") {
+		t.Fatal("expected separate issuer listener for http base URL")
+	}
+	if issuerServedByBaseURL("", "") {
+		t.Fatal("empty URLs must not count as served by base URL")
+	}
+}
+
+func TestWalletServeDemoResetRequiresDemo(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	walletDir = ""
+
+	rootCmd.SetArgs([]string{"wallet", "serve", "--wallet-dir", filepath.Join(tmpDir, "wallet"), "--demo-reset", "5m"})
+	err := rootCmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--demo-reset requires --demo") {
+		t.Fatalf("expected --demo-reset validation error, got %v", err)
 	}
 }

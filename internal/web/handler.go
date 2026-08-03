@@ -24,11 +24,18 @@ import (
 
 const maxRequestBody = 1 << 20 // 1MB
 
+// MuxOptions configures the decoder handler.
+type MuxOptions struct {
+	Credential  string // pre-filled credential served via GET /api/prefill
+	Version     string // release version reported by GET /api/meta
+	ImprintHTML []byte // pre-rendered legal notice served at GET /imprint
+}
+
 // ListenAndServe starts the HTTP server on the given port.
-func ListenAndServe(port int, credential string) error {
+func ListenAndServe(port int, opts MuxOptions) error {
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      NewMux(credential),
+		Handler:      NewMuxWithOptions(opts),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -39,12 +46,32 @@ func ListenAndServe(port int, credential string) error {
 // NewMux creates the HTTP handler with API and static file routes.
 // If credential is non-empty, it is served via GET /api/prefill.
 func NewMux(credential string) http.Handler {
+	return NewMuxWithOptions(MuxOptions{Credential: credential})
+}
+
+// NewMuxWithOptions creates the HTTP handler with API and static file routes.
+func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
 	// API endpoints
 	mux.HandleFunc("POST /api/decode", handleDecode)
 	mux.HandleFunc("POST /api/validate", handleValidate)
-	mux.HandleFunc("GET /api/prefill", handlePrefill(credential))
+	mux.HandleFunc("GET /api/prefill", handlePrefill(opts.Credential))
+	mux.HandleFunc("GET /api/meta", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"version": opts.Version,
+			"imprint": len(opts.ImprintHTML) > 0,
+		})
+	})
+	mux.HandleFunc("GET /imprint", func(w http.ResponseWriter, r *http.Request) {
+		if len(opts.ImprintHTML) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(opts.ImprintHTML)
+	})
 
 	// Static files
 	sub, _ := fs.Sub(staticFiles, "static")

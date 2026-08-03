@@ -123,6 +123,7 @@ When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you 
 ![Wallet UI](docs/wallet-ui.png)
 
 → [Full documentation](docs/wallet.md) — subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
+→ [Public demo hosting](docs/public-demo.md) — run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
 → [Flow diagrams](docs/diagrams/README.md) — GitHub-rendered OID4VP / OID4VCI interaction diagrams and parameter checklists
 
 ---

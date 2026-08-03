@@ -1216,4 +1216,19 @@
       })
       .catch(() => {});
   }
+
+  // Footer: version + imprint link (basePath-relative so the /decoder mount works)
+  fetch(basePath + "api/meta")
+    .then((res) => res.json())
+    .then((meta) => {
+      if (meta.version) {
+        document.getElementById("footer-version").textContent = "eudi-dev " + meta.version;
+      }
+      if (meta.imprint) {
+        const link = document.getElementById("imprint-link");
+        link.href = basePath + "imprint";
+        link.hidden = false;
+      }
+    })
+    .catch(() => {});
 })();

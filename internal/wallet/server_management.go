@@ -179,6 +179,13 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.demo != nil && strings.TrimSpace(req.SaveAsTemplate) != "" {
+		// Template writes are disabled in demo mode; without this check the
+		// issue endpoint would bypass the blocked PUT /api/templates route.
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "saving templates is disabled in public demo mode"})
+		return
+	}
+
 	opts, err := req.Options()
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

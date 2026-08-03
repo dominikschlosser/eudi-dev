@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] - 2026-08-03
+
+### Added
+
+- `wallet serve --demo`: hardened profile for hosting a shared public demo. Implies `--auto-accept` and `--pid`, disables the process and filesystem endpoints (`/api/shutdown`, template writes including `save_as_template`, `/api/next-error`, preferred-format changes) with 403, redacts host paths and the pid from `/api/config` and `/api/version`, caps request bodies, and blocks server-side fetches to internal networks (loopback, RFC 1918, link local including cloud metadata, CGNAT, unique local) at dial time so visitor supplied URLs cannot reach the host's private network
+- `wallet serve --demo-reset <duration>` (default `1h`): periodically restores the clean demo baseline (fresh PID credentials, empty activity log) while keeping keys, certificates, and serving URLs stable. The UI footer shows the reset interval
+- `wallet serve --imprint-file <path>` and `serve --imprint-file <path>`: serve an operator supplied legal notice at `/imprint` (EU hosting requirement), wrapped in a page that includes the EU non-affiliation disclaimer. The wallet and decoder UI footers link to it when configured
+- Both web UIs link to GitHub and CLI install instructions in the header, and show the release version (plus the imprint link when configured) in a footer. The wallet UI shows trust list URLs (with copy buttons) above the certificate downloads, since verifiers need the trust list to trust self-issued credentials
+- Deployment recipe for public hosting: `docs/public-demo.md` and `examples/public-demo/` (Caddy with automatic TLS in front of the wallet)
+
+### Changed
+
+- An https `--base-url` now becomes the issuer URL directly: status list URIs, `iss`, `.well-known` metadata, and trust list URLs all live on the public origin, and the built-in self-signed HTTPS listener is skipped (an external TLS terminator is assumed). Http base URLs keep the previous port+1 behavior
+
+### Fixed
+
+- The decoder's `/api/validate` no longer reads server-side files when `trustListURL` is a local path, and remote fetches are capped at 10 MB
+- Issue dialog: switching between templates without issuing no longer submits a merge of all previously selected templates (stale VCT, doc type, and expiry are cleared when the new template omits them), and selecting `(none)` resets the form
+
 ## [1.15.5] - 2026-08-03
 
 ### Fixed

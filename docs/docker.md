@@ -247,7 +247,7 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 | `/api/config` | GET | Instance introspection document |
 | `/api/shutdown` | POST | Stop the wallet server process |
 
-> See [wallet docs](wallet.md#http-api) for full details and an end-to-end example. The API has no authentication (the wallet is a testing tool). Keep it inside isolated test networks.
+> See [wallet docs](wallet.md#http-api) for full details and an end-to-end example. The API has no authentication (the wallet is a testing tool). Keep it inside isolated test networks, or use the hardened `--demo` profile for internet-facing deployments (see [public demo hosting](public-demo.md)).
 
 ## Supported response modes
 

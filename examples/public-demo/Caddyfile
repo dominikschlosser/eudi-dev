@@ -1,0 +1,13 @@
+eudi-test.dev {
+	reverse_proxy wallet:8085
+
+	# Optional rate limiting (requires the caddy-ratelimit plugin,
+	# https://github.com/mholt/caddy-ratelimit):
+	# rate_limit {
+	# 	zone demo {
+	# 		key {remote_host}
+	# 		events 120
+	# 		window 1m
+	# 	}
+	# }
+}

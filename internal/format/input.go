@@ -28,7 +28,20 @@ import (
 )
 
 var httpClient = &http.Client{
-	Timeout: 15 * time.Second,
+	Timeout:   15 * time.Second,
+	Transport: newPolicyTransport(),
+}
+
+// newPolicyTransport clones the default transport with a dialer that routes
+// every connection through the fetch policy (see policy.go).
+func newPolicyTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control:   dialControl,
+	}).DialContext
+	return transport
 }
 
 // HTTPClientForURL returns a fetch client configured for the target URL.
@@ -39,7 +52,7 @@ func HTTPClientForURL(rawURL string) *http.Client {
 		return httpClient
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := newPolicyTransport()
 	if isLocalFetchHost(u.Hostname()) {
 		transport.Proxy = nil
 		if strings.EqualFold(u.Scheme, "https") {
@@ -50,7 +63,7 @@ func HTTPClientForURL(rawURL string) *http.Client {
 		// On the host itself it usually does not resolve, so URLs baked into
 		// credentials by Docker setups (status lists, issuer metadata) would
 		// fail locally. Fall back to localhost, which is the same endpoint.
-		dialer := &net.Dialer{Timeout: 10 * time.Second}
+		dialer := &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			conn, err := dialer.DialContext(ctx, network, addr)
 			if err != nil {
@@ -117,12 +130,28 @@ func ReadInput(input string) (string, error) {
 		return FetchURL(input)
 	}
 
-	// Try as file path
-	if _, err := os.Stat(input); err == nil {
-		return readFile(input)
+	// Try as file path. Inputs with a URI scheme (openid-credential-offer://,
+	// file://, ...) are never file paths; without this guard they could name
+	// files on unusual filesystems.
+	if !strings.Contains(input, "://") {
+		if _, err := os.Stat(input); err == nil {
+			return readFile(input)
+		}
 	}
 
 	// Treat as raw credential string
+	return input, nil
+}
+
+// ReadRemoteInput reads credential input in server context: http(s) URLs are
+// fetched, everything else is returned verbatim. Unlike ReadInput it never
+// touches stdin or the local filesystem, so visitor-supplied values cannot
+// name files on the server.
+func ReadRemoteInput(input string) (string, error) {
+	input = strings.TrimSpace(input)
+	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
+		return FetchURL(input)
+	}
 	return input, nil
 }
 
@@ -151,6 +180,10 @@ func ReadInputRaw(input string) (string, error) {
 	return input, nil
 }
 
+// maxFetchBytes caps remote responses; credentials, trust lists and status
+// lists are all far smaller, so anything larger is a misdirected fetch.
+const maxFetchBytes = 10 << 20
+
 // FetchURL fetches content from a URL and returns it as a trimmed string.
 func FetchURL(url string) (string, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -173,9 +206,12 @@ func FetchURL(url string) (string, error) {
 		return "", fmt.Errorf("fetching %s: HTTP %d", url, resp.StatusCode)
 	}
 
-	b, err := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("reading response from %s: %w", url, err)
+	}
+	if len(b) > maxFetchBytes {
+		return "", fmt.Errorf("fetching %s: response exceeds %d bytes", url, maxFetchBytes)
 	}
 
 	return strings.TrimSpace(string(b)), nil

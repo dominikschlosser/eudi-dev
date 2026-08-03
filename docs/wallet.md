@@ -278,12 +278,15 @@ eudi wallet serve --register --port 9000
 | `--no-register`         | `false`  | Skip URL scheme registration (overrides --register) |
 | `--preferred-format`    | —        | Preferred credential format when multiple match: `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json` |
 | `--status-list`         | `false`  | Embed status list references in generated credentials (auto-enabled with `--pid`) |
-| `--base-url`            | —        | Base URL for the wallet's HTTP endpoints; its host is also used to derive the HTTPS issuer URL. Existing persisted issuer URLs are reused unless this flag is set |
+| `--base-url`            | —        | Base URL for the wallet's HTTP endpoints. An https base URL becomes the issuer URL directly (external TLS terminator). An http base URL derives a self-signed HTTPS issuer URL on port+1. Existing persisted issuer URLs are reused unless this flag is set |
 | `--docker`              | `false`  | Use `host.docker.internal` instead of `localhost` when deriving new HTTP and HTTPS wallet endpoint URLs |
 | `--vci-client-id`       | —        | Client ID to use for OID4VCI authorization-code flows |
 | `--vci-redirect-uri`    | —        | Redirect URI to use for OID4VCI authorization-code flows |
 | `--haip`                | `false`  | Enforce HAIP 1.0 compliance checks on incoming requests |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
+| `--demo`                | `false`  | Public demo profile: implies `--auto-accept` and `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks (see [public demo hosting](public-demo.md)) |
+| `--demo-reset`          | `1h`     | Interval for restoring the clean demo baseline (requires `--demo`, `0` disables) |
+| `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
 
 ## `wallet accept <uri>`
 

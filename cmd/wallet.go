@@ -151,9 +151,23 @@ func warnIssuedEndpointsOffline(store *wallet.WalletStore, w *wallet.Wallet) {
 
 func deriveWalletIssuerURL(port int, baseURL string, docker bool) (string, error) {
 	if baseURL != "" {
+		// An https base URL means a TLS terminator already serves the wallet
+		// on that origin; issuer metadata, status list and trust list can
+		// live there directly instead of on a second self-signed listener.
+		if u, err := url.Parse(strings.TrimSpace(baseURL)); err == nil && strings.EqualFold(u.Scheme, "https") {
+			return strings.TrimRight(strings.TrimSpace(baseURL), "/"), nil
+		}
 		return wallet.IssuerURLFromBaseURL(baseURL, port+1)
 	}
 	return wallet.LocalIssuerURL(port+1, docker), nil
+}
+
+// issuerServedByBaseURL reports whether the issuer origin equals the base
+// URL, i.e. no separate HTTPS listener is needed because an external TLS
+// terminator serves both.
+func issuerServedByBaseURL(issuerURL, baseURL string) bool {
+	trim := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
+	return trim(issuerURL) != "" && trim(issuerURL) == trim(baseURL)
 }
 
 func configureIssuerTLSCertificate(srv *wallet.Server, store *wallet.WalletStore, issuerURL string) error {

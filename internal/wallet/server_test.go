@@ -63,7 +63,7 @@ func serverRequest(t *testing.T, srv *Server, method, path string, body string) 
 		req.Header.Set("Content-Type", "application/json")
 	}
 	w := httptest.NewRecorder()
-	srv.mux.ServeHTTP(w, req)
+	srv.Handler().ServeHTTP(w, req)
 	return w
 }
 
@@ -2845,4 +2845,26 @@ func generateSDJWTForTest(t *testing.T, srv *Server) string {
 		t.Fatalf("generating test SD-JWT: %v", err)
 	}
 	return result
+}
+
+func TestSetIssuerListenPortDisablesTLSListener(t *testing.T) {
+	w := generateTestWallet(t)
+	// A port-less https issuer URL (external TLS terminator) derives port 443.
+	w.IssuerURL = "https://eudi-test.example"
+	srv := NewServer(w, 0, nil)
+	if srv.issuerPort != 443 {
+		t.Fatalf("issuerPort = %d, want 443 before override", srv.issuerPort)
+	}
+	srv.SetIssuerListenPort(-1)
+	addr, err := srv.ListenAndServeBackground()
+	if err != nil {
+		t.Fatalf("ListenAndServeBackground with disabled issuer listener: %v", err)
+	}
+	defer srv.Shutdown()
+	if addr == "" {
+		t.Fatal("expected a listen address")
+	}
+	if srv.issuerSrv != nil {
+		t.Fatal("issuer TLS server started despite SetIssuerListenPort(-1)")
+	}
 }

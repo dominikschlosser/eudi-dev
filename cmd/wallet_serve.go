@@ -27,6 +27,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/imprint"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
@@ -52,6 +54,9 @@ func walletServeCmd() *cobra.Command {
 		haip                    bool
 		vciClientID             string
 		vciRedirectURI          string
+		demo                    bool
+		demoReset               time.Duration
+		imprintFile             string
 	)
 
 	cmd := &cobra.Command{
@@ -96,6 +101,18 @@ so the wallet automatically receives incoming protocol requests.`,
 					return err
 				}
 				w.IssuerKey = ik
+			}
+
+			if cmd.Flags().Changed("demo-reset") && !demo {
+				return fmt.Errorf("--demo-reset requires --demo")
+			}
+			if demo {
+				// A public demo is headless and needs a known baseline: the
+				// browser-opening consent callback has no desktop to open on,
+				// and the periodic reset restores exactly the --pid state.
+				autoAccept = true
+				pid = true
+				format.SetFetchPolicy(format.BlockPrivateAddresses)
 			}
 
 			if autoAccept {
@@ -184,6 +201,7 @@ so the wallet automatically receives incoming protocol requests.`,
 				publicHTTPURL = fmt.Sprintf("http://host.docker.internal:%d", port)
 			}
 			httpsURL := w.IssuerURL
+			issuerViaBaseURL := issuerServedByBaseURL(w.IssuerURL, w.BaseURL)
 
 			cyan.Printf("EUDI Dev Wallet %s\n", Version)
 			dim.Println("───────────────────────────────────────")
@@ -191,18 +209,31 @@ so the wallet automatically receives incoming protocol requests.`,
 			if publicHTTPURL != fmt.Sprintf("http://localhost:%d", port) {
 				dim.Printf("               %s\n", publicHTTPURL)
 			}
-			fmt.Printf("  HTTPS:       %s\n", httpsURL)
-			fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
-			dim.Printf("               %s/authorize\n", httpsURL)
-			fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
-			dim.Printf("               %s/api/trustlist\n", httpsURL)
-			fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
-			dim.Printf("               %s/api/trustlists\n", httpsURL)
+			if issuerViaBaseURL {
+				fmt.Printf("  Issuer:      %s (served via base URL, external TLS)\n", httpsURL)
+				fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
+				fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
+				fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
+			} else {
+				fmt.Printf("  HTTPS:       %s\n", httpsURL)
+				fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
+				dim.Printf("               %s/authorize\n", httpsURL)
+				fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
+				dim.Printf("               %s/api/trustlist\n", httpsURL)
+				fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
+				dim.Printf("               %s/api/trustlists\n", httpsURL)
+			}
 			fmt.Printf("  Metadata:    %s/.well-known/jwt-vc-issuer\n", httpsURL)
 			fmt.Printf("  Credentials: %d loaded\n", len(w.GetCredentials()))
 			fmt.Printf("  Storage:     %s\n", store.Dir)
 			fmt.Printf("  Validation:  %s\n", w.ValidationMode)
-			if w.AutoAccept {
+			if demo {
+				if demoReset > 0 {
+					fmt.Printf("  Mode:        public demo (auto-accept, admin API disabled, resets every %s)\n", demoReset)
+				} else {
+					fmt.Printf("  Mode:        public demo (auto-accept, admin API disabled)\n")
+				}
+			} else if w.AutoAccept {
 				fmt.Printf("  Mode:        auto-accept\n")
 			} else {
 				fmt.Printf("  Mode:        interactive (consent UI)\n")
@@ -254,17 +285,36 @@ so the wallet automatically receives incoming protocol requests.`,
 				fmt.Println()
 			}
 
+			var imprintHTML []byte
+			if imprintFile != "" {
+				imprintHTML, err = imprint.Load(imprintFile)
+				if err != nil {
+					return err
+				}
+			}
+
 			srv := wallet.NewServer(w, port, func() {
 				if err := store.Save(w); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
 				}
 			})
 			srv.SetStore(store)
+			srv.SetVersion(Version)
+			srv.SetImprint(imprintHTML)
+			if demo {
+				srv.SetDemo(wallet.DemoOptions{ResetInterval: demoReset})
+			}
 			// Embed the credential decoder UI so stored credentials can be
 			// inspected from the wallet UI.
-			srv.Mount("/decoder", web.NewMux(""))
+			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{Version: Version, ImprintHTML: imprintHTML}))
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
+			}
+			if issuerViaBaseURL {
+				// The TLS terminator in front of the base URL serves the
+				// issuer origin; without this the derived port (443 for a
+				// port-less https URL) would be bound locally.
+				srv.SetIssuerListenPort(-1)
 			}
 
 			// Always enable request logging
@@ -327,6 +377,9 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 compliance (x509_hash, direct_post.jwt, DCQL, JAR, ES256)")
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
+	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --auto-accept and --pid, disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().DurationVar(&demoReset, "demo-reset", time.Hour, "Interval for restoring the clean demo baseline (requires --demo; 0 disables)")
+	cmd.Flags().StringVar(&imprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	return cmd
 }
 
