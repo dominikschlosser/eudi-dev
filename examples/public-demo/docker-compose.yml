@@ -26,7 +26,7 @@ services:
       - serve
       - --demo
       - --demo-reset
-      - 1h
+      - 24h
       - --port
       - "8085"
       - --base-url

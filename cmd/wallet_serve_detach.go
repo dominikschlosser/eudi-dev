@@ -77,7 +77,10 @@ func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool)
 	for {
 		select {
 		case err := <-exited:
-			return fmt.Errorf("wallet serve exited during startup (%v), see %s", err, logPath)
+			if err == nil {
+				return fmt.Errorf("wallet serve exited during startup, see %s", logPath)
+			}
+			return fmt.Errorf("wallet serve exited during startup (%w), see %s", err, logPath)
 		case <-timeout:
 			_ = child.Process.Kill()
 			return fmt.Errorf("wallet serve did not become ready within 15s, see %s", logPath)
