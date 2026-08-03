@@ -53,14 +53,12 @@ func activeRemoteURL() (string, error) {
 // directory (a running server and a CLI writing the same files diverge,
 // because the server holds its state in memory). `--remote local` or an
 // explicit --templates-dir forces direct local store access.
-// The target is printed to stderr so routed operations are never silent.
 func remoteClientIfConfigured() (*remote.Client, error) {
 	url, err := activeRemoteURL()
 	if err != nil {
 		return nil, err
 	}
 	if url != "" {
-		fmt.Fprintf(os.Stderr, "Managing remote wallet %s\n", url)
 		return remote.NewClient(url), nil
 	}
 	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
@@ -187,8 +185,21 @@ func runInstancesList() error {
 		}
 	}
 
+	managed := managedInstanceURL(instances)
+
 	if jsonOutput {
-		data, err := json.MarshalIndent(instances, "", "  ")
+		type listedInstance struct {
+			remote.DiscoveredInstance
+			Active bool `json:"active"`
+		}
+		listed := make([]listedInstance, len(instances))
+		for i, inst := range instances {
+			listed[i] = listedInstance{
+				DiscoveredInstance: inst,
+				Active:             managed != "" && managed == strings.TrimRight(inst.URL, "/"),
+			}
+		}
+		data, err := json.MarshalIndent(listed, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -204,7 +215,7 @@ func runInstancesList() error {
 	fmt.Fprintln(tw, "URL\tPID\tWALLET DIR\tSOURCE\tACTIVE")
 	for _, inst := range instances {
 		activeMark := ""
-		if active != "" && active == strings.TrimRight(inst.URL, "/") {
+		if managed != "" && managed == strings.TrimRight(inst.URL, "/") {
 			activeMark = "*"
 		}
 		dir := inst.WalletDir
@@ -214,6 +225,27 @@ func runInstancesList() error {
 		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", inst.URL, inst.PID, dir, inst.Source, activeMark)
 	}
 	return tw.Flush()
+}
+
+// managedInstanceURL resolves which of the discovered instances the
+// management commands currently target, mirroring the routing rules of
+// remoteClientIfConfigured: the --remote flag or the persisted remote target
+// first, then the auto-routed instance that serves the local wallet
+// directory. Empty means the CLI manages the local store directly.
+func managedInstanceURL(instances []remote.DiscoveredInstance) string {
+	if url, err := activeRemoteURL(); err == nil && url != "" {
+		return url
+	}
+	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
+		return ""
+	}
+	localDir := loadStore().Dir
+	for _, inst := range instances {
+		if inst.WalletDir != "" && remote.SamePath(inst.WalletDir, localDir) {
+			return strings.TrimRight(inst.URL, "/")
+		}
+	}
+	return ""
 }
 
 func instancesKillCmd() *cobra.Command {
@@ -363,47 +395,22 @@ func walletInfoCmd() *cobra.Command {
 			"For the local store it shows the equivalent local view.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				cfg, err := c.ServerConfig()
-				if err != nil {
-					return err
-				}
-				cfg["remote_url"] = c.BaseURL
-				data, err := json.MarshalIndent(cfg, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Println(string(data))
-				warnServingConfigDivergence(cfg)
-				return nil
-			}
-
-			w, store, err := loadWallet()
+			svc, err := managedWallet()
 			if err != nil {
 				return err
 			}
-			templates := w.TemplatesDir
-			if templates == "" {
-				templates = store.Dir + "/templates"
+			cfg, err := svc.Config()
+			if err != nil {
+				return err
 			}
-			info := map[string]any{
-				"remote_url":       "",
-				"wallet_dir":       store.Dir,
-				"templates_dir":    templates,
-				"base_url":         w.BaseURL,
-				"issuer_url":       w.IssuerURL,
-				"status_list_url":  w.StatusListURL(),
-				"preferred_format": w.PreferredFormat,
-				"validation_mode":  string(w.ValidationMode),
-				"credential_count": len(w.GetCredentials()),
-			}
-			data, err := json.MarshalIndent(info, "", "  ")
+			data, err := json.MarshalIndent(cfg, "", "  ")
 			if err != nil {
 				return err
 			}
 			fmt.Println(string(data))
+			if svc.URL() != "" {
+				warnServingConfigDivergence(cfg)
+			}
 			return nil
 		},
 	}

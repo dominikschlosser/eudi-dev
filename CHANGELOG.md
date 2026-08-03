@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.5] - 2026-08-03
+
+### Fixed
+
+- Local and remote wallet management now share one code path. Every management command (`wallet list|show|import|remove|logs|ca-cert|tls-cert|info`, `issue ... --wallet`, and all `templates` commands) operates on a single wallet service with a local store backend and a REST backend, so the output is identical no matter where the wallet lives. Previously each command had two separate implementations that could and did drift
+- `issue ... --wallet` against the local store resolves templates and claims through the same request contract as the server's `POST /api/issue`, removing a duplicated resolution path that could behave differently from issuance on a running instance
+- `wallet scan` imported a scanned credential by writing the store files directly, even while a running server owned the wallet directory. It now routes through the managed wallet like every other command, keeping one writer per wallet directory
+- The `ACTIVE` column of `wallet instances list` now marks the instance the CLI actually manages. Previously only an explicitly selected remote target got the mark, while an auto-routed instance (a running server serving the local wallet directory) showed as inactive despite handling every command. The `--json` output gains an `active` field with the same information
+- Remote commands no longer print `Managing remote wallet <url>` on stderr for every invocation, so command output can be scripted without filtering. Check the managed target with `wallet instances use` (without arguments), `wallet info`, or the `ACTIVE` column of `wallet instances list`. The `Routing through the running wallet instance ...` notice for auto-routing remains
+- Certificate export with `--out` prints the written file path to stdout for remote wallets too (previously a different message went to stderr), and template save and delete messages read the same in both modes
+
+## [1.15.4] - 2026-08-03
+
+### Fixed
+
+- The macOS URL scheme handler works with a remote wallet target. Clicked links are submitted to the active remote instance, and the handler opens the remote consent UI on this desktop before submitting (a wallet in a container cannot open a browser here, and the submit blocks until the request is decided). A failed remote submit no longer falls back to processing the link locally, which would have handled the offer a second time
+- `wallet instances list` includes the active remote target even when it is not locally discoverable (for example a wallet in a Docker container). It is health checked and listed with source `active`, with pid, build id, and wallet directory taken from its introspection endpoint
+- `wallet.json` is written atomically (write then rename), so a crash or a concurrent writer never leaves a truncated or interleaved file behind
+
 ## [1.15.3] - 2026-08-02
 
 ### Fixed

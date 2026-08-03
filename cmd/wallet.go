@@ -23,7 +23,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,11 +31,8 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
-	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/internal/output"
 	"github.com/dominikschlosser/eudi-dev/internal/remote"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
@@ -176,38 +172,15 @@ func walletListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List stored credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				return remoteWalletList(c)
-			}
-			w, _, err := loadWallet()
+			svc, err := managedWallet()
 			if err != nil {
 				return err
 			}
-
-			creds := w.GetCredentials()
-			if len(creds) == 0 {
-				fmt.Println("No credentials stored.")
-				return nil
+			creds, err := svc.Credentials()
+			if err != nil {
+				return err
 			}
-
-			if jsonOutput {
-				data, err := w.CredentialsJSON()
-				if err != nil {
-					return err
-				}
-				fmt.Println(string(data))
-				return nil
-			}
-
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS")
-			for _, c := range creds {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", c.ID, c.Format, credLabel(c), len(c.Claims))
-			}
-			tw.Flush()
-			return nil
+			return printCredentialList(creds)
 		},
 	}
 }
@@ -222,45 +195,15 @@ func walletShowCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeCredentialIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				return remoteWalletShow(c, args[0], decoded)
-			}
-			w, _, err := loadWallet()
+			svc, err := managedWallet()
 			if err != nil {
 				return err
 			}
-			cred, ok := w.GetCredential(args[0])
-			if !ok {
-				return fmt.Errorf("credential %s not found", args[0])
+			cred, err := svc.Credential(args[0])
+			if err != nil {
+				return err
 			}
-			if !decoded {
-				fmt.Println(cred.Raw)
-				return nil
-			}
-			opts := output.Options{JSON: jsonOutput, NoColor: noColor, Verbose: verbose}
-			switch cred.Format {
-			case "dc+sd-jwt":
-				token, err := sdjwt.Parse(cred.Raw)
-				if err != nil {
-					return err
-				}
-				output.PrintSDJWT(token, opts)
-			case "mso_mdoc":
-				doc, err := mdoc.Parse(cred.Raw)
-				if err != nil {
-					return err
-				}
-				output.PrintMDOC(doc, opts)
-			case "jwt_vc_json":
-				token, err := sdjwt.Parse(cred.Raw)
-				if err != nil {
-					return err
-				}
-				output.PrintJWT(token, opts)
-			}
-			return nil
+			return printCredentialDoc(cred, decoded)
 		},
 	}
 	cmd.Flags().BoolVar(&decoded, "decoded", false, "Show human-readable decoded output instead of raw")
@@ -279,31 +222,20 @@ func walletImportCmd() *cobra.Command {
 			if len(args) > 0 {
 				input = args[0]
 			}
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				return remoteWalletImport(c, input)
-			}
-			w, store, err := loadWallet()
+			svc, err := managedWallet()
 			if err != nil {
 				return err
 			}
-
 			raw, err := format.ReadInputRaw(input)
 			if err != nil {
 				return fmt.Errorf("reading input: %w", err)
 			}
-
-			imported, err := w.ImportCredential(raw)
+			imported, err := svc.ImportCredential(raw)
 			if err != nil {
-				return fmt.Errorf("importing credential: %w", err)
+				return err
 			}
-
-			if err := store.Save(w); err != nil {
-				return fmt.Errorf("saving wallet: %w", err)
-			}
-
-			fmt.Printf("Imported %s credential (%s) with %d claims\n", imported.Format, credLabel(*imported), len(imported.Claims))
+			claims, _ := imported["claims"].(map[string]any)
+			fmt.Printf("Imported %s credential (%s) with %d claims\n", docString(imported, "format"), docCredLabel(imported), len(claims))
 			return nil
 		},
 	}
@@ -328,37 +260,21 @@ func walletRemoveCmd() *cobra.Command {
 			return cobra.ExactArgs(1)(cmd, args)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				id := ""
-				if len(args) > 0 {
-					id = args[0]
-				}
-				return remoteWalletRemove(c, id, all)
-			}
-			w, store, err := loadWallet()
+			svc, err := managedWallet()
 			if err != nil {
 				return err
 			}
-
 			if all {
-				count := w.ClearCredentials()
-				if err := store.Save(w); err != nil {
-					return fmt.Errorf("saving wallet: %w", err)
+				count, err := svc.RemoveAllCredentials()
+				if err != nil {
+					return err
 				}
 				fmt.Printf("Removed %d credential(s)\n", count)
 				return nil
 			}
-
-			if !w.RemoveCredential(args[0]) {
-				return fmt.Errorf("credential %s not found", args[0])
+			if err := svc.RemoveCredential(args[0]); err != nil {
+				return err
 			}
-
-			if err := store.Save(w); err != nil {
-				return fmt.Errorf("saving wallet: %w", err)
-			}
-
 			fmt.Printf("Removed credential %s\n", args[0])
 			return nil
 		},
@@ -530,17 +446,35 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 	return cmd
 }
 
-// renderCertificateExport converts certificate PEM bytes into the requested
-// export format: PEM passes through (the default), JWKS builds a document with
-// the leaf public key and the chain as x5c.
-func renderCertificateExport(certPEM []byte, asPEM, asJWKS bool) ([]byte, error) {
+// certificateExportFormat maps the --pem/--jwks flags to the certificate
+// export format shared by the walletService backends: PEM is the default,
+// JWKS is a document with the leaf public key and the chain as x5c.
+func certificateExportFormat(asPEM, asJWKS bool) (string, error) {
 	if asPEM && asJWKS {
-		return nil, fmt.Errorf("--pem and --jwks are mutually exclusive")
+		return "", fmt.Errorf("--pem and --jwks are mutually exclusive")
 	}
 	if asJWKS {
-		return keys.CertificatePEMToJWKS(certPEM)
+		return "jwks", nil
 	}
-	return certPEM, nil
+	return "pem", nil
+}
+
+// writeCertificateExport writes exported certificate data to --out (printing
+// the path) or to stdout.
+func writeCertificateExport(cmd *cobra.Command, kind string, data []byte, outPath string) error {
+	if outPath != "" {
+		if err := os.WriteFile(outPath, data, 0644); err != nil {
+			return fmt.Errorf("writing wallet %s certificate: %w", kind, err)
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), outPath); err != nil {
+			return fmt.Errorf("writing wallet %s certificate path: %w", kind, err)
+		}
+		return nil
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), string(data)); err != nil {
+		return fmt.Errorf("writing wallet %s certificate: %w", kind, err)
+	}
+	return nil
 }
 
 func walletCACertCmd() *cobra.Command {
@@ -560,33 +494,19 @@ status list x5c chains, issuer-metadata x5c chains, and HTTPS wallet endpoints.
 Use --jwks to export the certificate as a JWKS document (public key with x5c
 chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
+			certFormat, err := certificateExportFormat(asPEM, asJWKS)
+			if err != nil {
 				return err
-			} else if c != nil {
-				return remoteCertificate(c, "ca", asJWKS, outPath)
 			}
-			store := loadStore()
-			certPEM, err := store.LoadOrCreateSharedCACertificatePEM()
+			svc, err := managedWallet()
 			if err != nil {
-				return fmt.Errorf("loading wallet CA certificate: %w", err)
+				return err
 			}
-			certPEM, err = renderCertificateExport(certPEM, asPEM, asJWKS)
+			certData, err := svc.Certificate("ca", certFormat, walletCertOptions{})
 			if err != nil {
-				return fmt.Errorf("exporting wallet CA certificate: %w", err)
+				return err
 			}
-			if outPath != "" {
-				if err := os.WriteFile(outPath, certPEM, 0644); err != nil {
-					return fmt.Errorf("writing wallet CA certificate: %w", err)
-				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), outPath); err != nil {
-					return fmt.Errorf("writing wallet CA certificate path: %w", err)
-				}
-				return nil
-			}
-			if _, err := fmt.Fprint(cmd.OutOrStdout(), string(certPEM)); err != nil {
-				return fmt.Errorf("writing wallet CA certificate: %w", err)
-			}
-			return nil
+			return writeCertificateExport(cmd, "CA", certData, outPath)
 		},
 	}
 
@@ -616,39 +536,19 @@ Use 'wallet ca-cert' when you want one trust root for all spawned wallets.
 Use --jwks to export the certificate as a JWKS document (public key with x5c
 chain).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				return remoteCertificate(c, "tls", asJWKS, outPath)
-			}
-			store := loadStore()
-			issuerURL, err := deriveWalletIssuerURL(port, baseURL, docker)
+			certFormat, err := certificateExportFormat(asPEM, asJWKS)
 			if err != nil {
 				return err
 			}
-			certPEM, err := store.LoadOrCreateIssuerTLSLeafCertificatePEMForURL(issuerURL)
+			svc, err := managedWallet()
 			if err != nil {
-				return fmt.Errorf("loading wallet TLS certificate: %w", err)
+				return err
 			}
-			certPEM, err = renderCertificateExport(certPEM, asPEM, asJWKS)
+			certData, err := svc.Certificate("tls", certFormat, walletCertOptions{port: port, baseURL: baseURL, docker: docker})
 			if err != nil {
-				return fmt.Errorf("exporting wallet TLS certificate: %w", err)
+				return err
 			}
-
-			if outPath != "" {
-				if err := os.WriteFile(outPath, certPEM, 0644); err != nil {
-					return fmt.Errorf("writing wallet TLS certificate: %w", err)
-				}
-				if _, err := fmt.Fprintln(cmd.OutOrStdout(), outPath); err != nil {
-					return fmt.Errorf("writing wallet TLS certificate path: %w", err)
-				}
-				return nil
-			}
-
-			if _, err := fmt.Fprint(cmd.OutOrStdout(), string(certPEM)); err != nil {
-				return fmt.Errorf("writing wallet TLS certificate: %w", err)
-			}
-			return nil
+			return writeCertificateExport(cmd, "TLS", certData, outPath)
 		},
 	}
 

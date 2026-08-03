@@ -48,26 +48,26 @@ func walletLogsCmd() *cobra.Command {
 			if jsonOutput && follow {
 				return fmt.Errorf("--json cannot be combined with --follow")
 			}
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				return remoteWalletLogs(c, follow)
-			}
-			store := loadStore()
-			w, err := store.LoadOrCreate()
+			svc, err := managedWallet()
 			if err != nil {
-				return fmt.Errorf("loading wallet: %w", err)
+				return err
+			}
+			if follow && svc.URL() != "" {
+				return fmt.Errorf("--follow is not supported with a remote wallet")
 			}
 
 			out := cmd.OutOrStdout()
-			entries := w.GetLog()
+			entries, err := svc.Logs()
+			if err != nil {
+				return err
+			}
 			if err := printWalletLogs(out, entries, walletLogPrintOptions{Verbose: verbose, JSON: jsonOutput}); err != nil {
 				return err
 			}
 			if !follow {
 				return nil
 			}
-			return followWalletLogs(cmd.Context(), out, store, len(entries), walletLogPrintOptions{Verbose: verbose})
+			return followWalletLogs(cmd.Context(), out, loadStore(), len(entries), walletLogPrintOptions{Verbose: verbose})
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow wallet logs and print new entries as they are persisted")

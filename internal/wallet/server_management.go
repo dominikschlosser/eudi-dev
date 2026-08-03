@@ -95,7 +95,11 @@ func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": count})
 }
 
-type issueAPIRequest struct {
+// IssueAPIRequest is the POST /api/issue request body. The server handler
+// and the CLI's local wallet backend both interpret issuance requests
+// through it, so `issue --wallet` behaves identically against the local
+// store and a running instance.
+type IssueAPIRequest struct {
 	Format          string                `json:"format"`
 	Template        string                `json:"template"`
 	Claims          map[string]any        `json:"claims"`
@@ -114,15 +118,8 @@ type issueAPIRequest struct {
 	Trust           IssuedAttestationSpec `json:"trust"`
 }
 
-// handleIssueCredential issues a credential with the wallet's issuer key and
-// imports it, mirroring `issue <format> --wallet`.
-func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
-	var req issueAPIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})
-		return
-	}
-
+// Options converts the API request into IssueOptions.
+func (req IssueAPIRequest) Options() (IssueOptions, error) {
 	opts := IssueOptions{
 		Format:          req.Format,
 		Template:        req.Template,
@@ -142,34 +139,59 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid exp duration: " + err.Error()})
-			return
+			return IssueOptions{}, fmt.Errorf("invalid exp duration: %w", err)
 		}
 		opts.ExpiresIn = expDuration
 	}
 	if req.NBF != "" {
 		nbf, err := parseTimeOrDuration(req.NBF)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
+			return IssueOptions{}, err
 		}
 		opts.NotBefore = nbf
 	}
+	return opts, nil
+}
 
-	result, err := s.wallet.IssueCredential(opts)
+// IssueSummary runs IssueCredential and returns the credential summary
+// document served by POST /api/issue. The caller persists the wallet.
+func (w *Wallet) IssueSummary(opts IssueOptions) (map[string]any, error) {
+	result, err := w.IssueCredential(opts)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
+		return nil, err
 	}
-	s.triggerSave()
-
-	summary := s.wallet.CredentialSummaryWithStatus(*result.Credential)
+	summary := w.CredentialSummaryWithStatus(*result.Credential)
 	if result.StatusRegistered {
 		summary["status_list_idx"] = result.StatusIdx
 	}
 	if result.TemplatePath != "" {
 		summary["template_path"] = result.TemplatePath
 	}
+	return summary, nil
+}
+
+// handleIssueCredential issues a credential with the wallet's issuer key and
+// imports it, mirroring `issue <format> --wallet`.
+func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
+	var req IssueAPIRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})
+		return
+	}
+
+	opts, err := req.Options()
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	summary, err := s.wallet.IssueSummary(opts)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	s.triggerSave()
+
 	writeJSON(w, http.StatusCreated, summary)
 }
 

@@ -106,20 +106,17 @@ func walletScanCmd() *cobra.Command {
 
 			detected := format.Detect(content)
 
-			// For credential formats, import directly
+			// For credential formats, import into the managed wallet
 			if detected == format.FormatSDJWT || detected == format.FormatMDOC || detected == format.FormatJWT {
-				w, store, err := loadWallet()
+				svc, err := managedWallet()
 				if err != nil {
 					return err
 				}
-				imported, err := w.ImportCredential(content)
+				imported, err := svc.ImportCredential(content)
 				if err != nil {
-					return fmt.Errorf("importing credential: %w", err)
+					return err
 				}
-				if err := store.Save(w); err != nil {
-					return fmt.Errorf("saving wallet: %w", err)
-				}
-				fmt.Printf("Imported %s credential (%s)\n", imported.Format, credLabel(*imported))
+				fmt.Printf("Imported %s credential (%s)\n", docString(imported, "format"), docCredLabel(imported))
 				return nil
 			}
 

@@ -55,7 +55,7 @@ func completeTemplateNames(cmd *cobra.Command, args []string, toComplete string)
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		for _, tpl := range templates {
-			completions = append(completions, remoteString(tpl, "name")+"\t"+remoteString(tpl, "format"))
+			completions = append(completions, docString(tpl, "name")+"\t"+docString(tpl, "format"))
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -84,7 +84,7 @@ func completeCredentialIDs(cmd *cobra.Command, args []string, toComplete string)
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
 		for _, cred := range creds {
-			completions = append(completions, remoteString(cred, "id")+"\t"+remoteCredLabel(cred))
+			completions = append(completions, docString(cred, "id")+"\t"+docCredLabel(cred))
 		}
 		return completions, cobra.ShellCompDirectiveNoFileComp
 	}

@@ -52,12 +52,11 @@ var templatesListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available credential templates",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if c, err := remoteClientIfConfigured(); err != nil {
+		svc, err := managedWallet()
+		if err != nil {
 			return err
-		} else if c != nil {
-			return remoteTemplatesList(c)
 		}
-		templates, err := credtemplate.List(resolveTemplatesDir())
+		templates, err := svc.Templates()
 		if err != nil {
 			return err
 		}
@@ -88,12 +87,11 @@ var templatesShowCmd = &cobra.Command{
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeTemplateNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if c, err := remoteClientIfConfigured(); err != nil {
+		svc, err := managedWallet()
+		if err != nil {
 			return err
-		} else if c != nil {
-			return remoteTemplatesShow(c, args[0])
 		}
-		tpl, err := credtemplate.Load(args[0], resolveTemplatesDir())
+		tpl, err := svc.Template(args[0])
 		if err != nil {
 			return err
 		}
@@ -114,33 +112,18 @@ var templatesSaveCmd = &cobra.Command{
 		"as the starting point (e.g. to customize a pre-defined one); other flags override the copied values.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := remoteClientIfConfigured()
+		svc, err := managedWallet()
 		if err != nil {
 			return err
 		}
-		dir := resolveTemplatesDir()
 
 		var tpl credtemplate.Template
 		if templateFrom != "" {
-			if client != nil {
-				doc, err := client.Template(templateFrom)
-				if err != nil {
-					return err
-				}
-				data, err := json.Marshal(doc)
-				if err != nil {
-					return err
-				}
-				if err := json.Unmarshal(data, &tpl); err != nil {
-					return fmt.Errorf("decoding remote template: %w", err)
-				}
-			} else {
-				from, err := credtemplate.Load(templateFrom, dir)
-				if err != nil {
-					return err
-				}
-				tpl = *from
+			from, err := svc.Template(templateFrom)
+			if err != nil {
+				return err
 			}
+			tpl = *from
 		}
 		tpl.Name = args[0]
 
@@ -177,16 +160,12 @@ var templatesSaveCmd = &cobra.Command{
 			return fmt.Errorf("template has no claims: pass --claims or --from")
 		}
 
-		if client != nil {
-			tpl.Predefined = false
-			return remoteTemplatesPut(client, tpl.Name, tpl)
-		}
-
-		path, err := credtemplate.Save(dir, tpl)
+		tpl.Predefined = false
+		path, err := svc.SaveTemplate(tpl)
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", tpl.Name, path)
+		printTemplateSaved("Saved", tpl.Name, path)
 		return nil
 	},
 }
@@ -226,20 +205,18 @@ var templatesImportCmd = &cobra.Command{
 			tpl.Name = strings.TrimSuffix(strings.TrimSuffix(base, ".json"), ".template")
 		}
 
-		if c, err := remoteClientIfConfigured(); err != nil {
-			return err
-		} else if c != nil {
-			if strings.TrimSpace(tpl.Name) == "" {
-				return fmt.Errorf("template name is required: pass --name")
-			}
-			return remoteTemplatesPut(c, tpl.Name, tpl)
-		}
-
-		path, err := credtemplate.Save(resolveTemplatesDir(), tpl)
+		svc, err := managedWallet()
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "Imported template %q to %s\n", tpl.Name, path)
+		if svc.URL() != "" && strings.TrimSpace(tpl.Name) == "" {
+			return fmt.Errorf("template name is required: pass --name")
+		}
+		path, err := svc.SaveTemplate(tpl)
+		if err != nil {
+			return err
+		}
+		printTemplateSaved("Imported", tpl.Name, path)
 		return nil
 	},
 }
@@ -250,12 +227,11 @@ var templatesDeleteCmd = &cobra.Command{
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeTemplateNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if c, err := remoteClientIfConfigured(); err != nil {
+		svc, err := managedWallet()
+		if err != nil {
 			return err
-		} else if c != nil {
-			return remoteTemplatesDelete(c, args[0])
 		}
-		if err := credtemplate.Delete(resolveTemplatesDir(), args[0]); err != nil {
+		if err := svc.DeleteTemplate(args[0]); err != nil {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Deleted template %q\n", args[0])
@@ -292,6 +268,17 @@ func init() {
 	_ = templatesCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
 	_ = templatesCmd.MarkPersistentFlagDirname("wallet-dir")
 	_ = templatesCmd.MarkPersistentFlagDirname("templates-dir")
+}
+
+// printTemplateSaved reports a saved or imported template. The path is only
+// known for the local store; a remote instance keeps its file layout to
+// itself.
+func printTemplateSaved(verb, name, path string) {
+	if path != "" {
+		fmt.Fprintf(os.Stderr, "%s template %q to %s\n", verb, name, path)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s template %q\n", verb, name)
 }
 
 // resolveTemplatesDir returns the credential template directory: the

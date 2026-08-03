@@ -400,79 +400,29 @@ func runIssueMDOCToWallet(cmd *cobra.Command) error {
 }
 
 func runIssueToWallet(cmd *cobra.Command, format string) error {
-	if c, err := remoteClientIfConfigured(); err != nil {
-		return err
-	} else if c != nil {
-		req, err := remoteIssueRequest(cmd, format)
-		if err != nil {
-			return err
-		}
-		return remoteIssue(c, req)
-	}
-	w, store, err := loadWalletForIssue(cmd)
+	req, err := issueAPIRequestFromFlags(cmd, format)
 	if err != nil {
 		return err
 	}
-	tpl, err := resolveIssueTemplate(cmd, format)
+	svc, err := managedWalletWithLoader(func() (*wallet.Wallet, *wallet.WalletStore, error) {
+		return loadWalletForIssue(cmd)
+	})
 	if err != nil {
 		return err
 	}
-	claims, err := resolveIssueClaimsForFormat(format, tpl)
+	result, err := svc.Issue(req)
 	if err != nil {
 		return err
 	}
-	alwaysDisclosed, err := resolveIssueAlwaysDisclosed(format, tpl)
-	if err != nil {
-		return err
+	fmt.Println(docString(result, "raw"))
+	if path := docString(result, "template_path"); path != "" {
+		printTemplateSaved("Saved", issueSaveTemplate, path)
 	}
-	expDuration, err := time.ParseDuration(issueExpires)
-	if err != nil {
-		return fmt.Errorf("invalid --exp duration: %w", err)
-	}
-	nbf, err := parseNBF(issueNBF)
-	if err != nil {
-		return err
-	}
-
-	opts := wallet.IssueOptions{
-		Format:          format,
-		Claims:          claims,
-		AlwaysDisclosed: alwaysDisclosed,
-		SaveTemplate:    issueSaveTemplate,
-		VCT:             issueVCT,
-		DocType:         issueDocType,
-		Namespace:       issueNamespace,
-		ExpiresIn:       expDuration,
-		NotBefore:       nbf,
-		TrustProfile:    issueTrustProfile,
-		Trust:           issueTrustSpecFromFlags(),
-	}
-	if cmd.Flags().Changed("status-list-uri") {
-		opts.StatusListURI = &issueStatusListURI
-	}
-	if cmd.Flags().Changed("status-list-idx") {
-		opts.StatusListIdx = &issueStatusListIdx
-	}
-
-	result, err := w.IssueCredential(opts)
-	if err != nil {
-		return err
-	}
-	fmt.Println(result.Raw)
-	if result.TemplatePath != "" {
-		fmt.Fprintf(os.Stderr, "Saved template %q to %s\n", issueSaveTemplate, result.TemplatePath)
-	}
-
-	if err := store.Save(w); err != nil {
-		return fmt.Errorf("saving wallet: %w", err)
-	}
-
-	label := result.Credential.VCT
+	label := docString(result, "vct")
 	if label == "" {
-		label = result.Credential.DocType
+		label = docString(result, "doctype")
 	}
-	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", result.Credential.Format, label)
-	warnIssuedEndpointsOffline(store, w)
+	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", docString(result, "format"), label)
 	return nil
 }
 
@@ -587,10 +537,11 @@ func saveIssueTemplate(format string, claims map[string]any, alwaysDisclosed []s
 	return nil
 }
 
-// remoteIssueRequest maps the issue flags onto the POST /api/issue request
-// body. Templates resolve on the remote wallet against its template
-// directory, so only the template name and the explicit overrides travel.
-func remoteIssueRequest(cmd *cobra.Command, format string) (map[string]any, error) {
+// issueAPIRequestFromFlags maps the issue flags onto the POST /api/issue
+// request body, the issuance contract shared by both walletService backends.
+// Templates resolve on the managed wallet against its template directory, so
+// only the template name and the explicit overrides travel.
+func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any, error) {
 	req := map[string]any{"format": format}
 	if issueTemplate != "" {
 		req["template"] = issueTemplate
