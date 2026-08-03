@@ -91,6 +91,7 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 // handleDeleteAllCredentials removes all stored credentials.
 func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Request) {
 	count := s.wallet.ClearCredentials()
+	s.wallet.AddLog("management", fmt.Sprintf("Deleted all credentials (%d)", count), true)
 	s.triggerSave()
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": count})
 }
@@ -197,9 +198,21 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.wallet.AddLog("management", fmt.Sprintf("Issued %s credential %s", summary["format"], credentialTypeLabel(summary)), true)
 	s.triggerSave()
 
 	writeJSON(w, http.StatusCreated, summary)
+}
+
+// credentialTypeLabel names a credential summary for log entries: the vct for
+// SD-JWT credentials, the doc type for mDocs, the id otherwise.
+func credentialTypeLabel(summary map[string]any) string {
+	for _, key := range []string{"vct", "doctype", "id"} {
+		if v, ok := summary[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return "credential"
 }
 
 type generatePIDRequest struct {
@@ -225,6 +238,7 @@ func (s *Server) handleGeneratePID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.wallet.AddLog("management", "Regenerated default PID credentials", true)
 	s.triggerSave()
 
 	data, err := s.wallet.CredentialsJSON()

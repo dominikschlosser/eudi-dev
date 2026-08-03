@@ -17,6 +17,8 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 
 ## What stays open (accepted risk)
 
+Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, the verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server.
+
 The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess. The wallet also fetches visitor supplied public URLs (that is what a wallet does), so put rate limiting in front if abuse becomes a concern.
 
 ## Base URL and issuer URL

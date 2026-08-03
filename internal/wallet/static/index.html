@@ -22,6 +22,18 @@
     </div>
   </header>
 
+  <!-- Demo-mode disclaimer banner -->
+  <div id="demo-banner" hidden>
+    <span>
+      <strong>Shared demo instance.</strong> Everything here is visible to every
+      visitor, and anyone can change or delete credentials at any time (state
+      resets daily). Use it for demonstration only. For isolated testing, run
+      your own instance: see <a href="#" id="demo-banner-cli-link">Get the CLI</a>
+      or <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/public-demo.md" target="_blank" rel="noopener">host your own demo</a>.
+    </span>
+    <button class="btn" id="demo-banner-dismiss">Got it</button>
+  </div>
+
   <div class="main">
     <!-- Actions -->
     <div>
@@ -92,6 +104,7 @@
         <pre>eudi wallet register</pre>
       </div>
       <p class="dialog-hint"><code>wallet register</code> installs OS handlers for <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, and <code>haip-vci://</code>, so clicking such links opens this wallet. See the <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for the full protocol surface.</p>
+      <p class="dialog-hint">No issuer or verifier at hand? This deployment also hosts a <a href="/issuer/" target="_blank">demo issuer</a> and a <a href="/verifier/" target="_blank">demo verifier</a> that run these flows against the wallet out of the box.</p>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
       </div>

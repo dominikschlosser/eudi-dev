@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EUDI Test Demo Issuer</title>
+  <style>
+    :root {
+      --bg: #1a1b26; --bg-surface: #24283b; --text: #c0caf5; --text-dim: #8b93b8;
+      --border: #3b4261; --accent: #7aa2f7; --green: #9ece6a; --yellow: #e0af68;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f5f5f5; --bg-surface: #ffffff; --text: #343b58; --text-dim: #6b6f7b;
+        --border: #d0d0d0; --accent: #2569d6; --green: #587539; --yellow: #8c6c3e;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "SF Mono", "Cascadia Code", "Fira Code", Menlo, Consolas, monospace;
+      background: var(--bg); color: var(--text); min-height: 100vh; padding: 40px 20px;
+    }
+    .card { max-width: 640px; margin: 0 auto; background: var(--bg-surface);
+      border: 1px solid var(--border); border-radius: 8px; padding: 24px; }
+    h1 { font-size: 16px; color: var(--accent); margin-bottom: 4px; }
+    .subtitle { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; }
+    p { font-size: 12px; line-height: 1.6; color: var(--text-dim); margin-bottom: 12px; }
+    .btn { font: inherit; font-size: 12px; padding: 8px 16px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--bg); color: var(--text); cursor: pointer; }
+    .btn.primary { border-color: var(--accent); color: var(--accent); }
+    .result { margin-top: 16px; display: none; }
+    .label { font-size: 11px; color: var(--text-dim); margin: 10px 0 4px; }
+    pre { font: inherit; font-size: 11px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 8px; overflow-x: auto; user-select: all; white-space: pre-wrap; word-break: break-all; }
+    a { color: var(--accent); }
+    .links { margin-top: 20px; font-size: 11px; color: var(--text-dim); }
+    .links a { margin-right: 12px; }
+    .error { color: #f7768e; font-size: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>EUDI Test Demo Issuer</h1>
+    <div class="subtitle">A minimal OpenID4VCI issuer for demo purposes</div>
+    <p>
+      This issuer hands out a signed <strong>Demo Event Ticket</strong> credential
+      (SD-JWT VC) through a standard OpenID4VCI pre-authorized code flow. Create an
+      offer, then open it in the wallet on this host, or copy the offer URI into any
+      OID4VCI wallet that can reach this server.
+    </p>
+    <button class="btn primary" id="create-btn">Create credential offer</button>
+    <div class="result" id="result">
+      <div class="label">Open in the wallet on this host</div>
+      <pre><a href="#" id="wallet-link">…</a></pre>
+      <div class="label">Credential offer (custom scheme, for any wallet)</div>
+      <pre id="scheme-uri">…</pre>
+      <div class="label">Offer URI (by reference)</div>
+      <pre id="offer-uri">…</pre>
+      <p>After importing, present it at the <a href="../verifier/">demo verifier</a>.</p>
+    </div>
+    <div class="error" id="error" hidden></div>
+    <div class="links">
+      <a href="../">Wallet UI</a>
+      <a href="../verifier/">Demo Verifier</a>
+      <a href="../decoder/">Decoder</a>
+    </div>
+  </div>
+  <script>
+    document.getElementById("create-btn").addEventListener("click", async () => {
+      const errEl = document.getElementById("error");
+      errEl.hidden = true;
+      try {
+        const resp = await fetch("api/offers", { method: "POST" });
+        const doc = await resp.json();
+        if (!resp.ok) throw new Error(doc.error || resp.status);
+        const link = document.getElementById("wallet-link");
+        link.href = doc.wallet_url;
+        link.textContent = doc.wallet_url;
+        document.getElementById("scheme-uri").textContent = doc.scheme_uri;
+        document.getElementById("offer-uri").textContent = doc.offer_uri;
+        document.getElementById("result").style.display = "block";
+      } catch (e) {
+        errEl.textContent = "Creating the offer failed: " + e.message;
+        errEl.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>

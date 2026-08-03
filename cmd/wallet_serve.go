@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/demorp"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/imprint"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -311,6 +312,20 @@ so the wallet automatically receives incoming protocol requests.`,
 			// Embed the credential decoder UI so stored credentials can be
 			// inspected from the wallet UI.
 			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{Version: Version, ImprintHTML: imprintHTML, Demo: demo}))
+			// Demo issuer and verifier: complete OID4VCI / OID4VP
+			// counterparties for out-of-the-box protocol flows.
+			demoRP := demorp.New(w, func() string {
+				if base := strings.TrimSpace(w.BaseURL); base != "" {
+					return base
+				}
+				return fmt.Sprintf("http://localhost:%d", port)
+			})
+			srv.Mount("/issuer", demoRP.IssuerHandler())
+			srv.Mount("/verifier", demoRP.VerifierHandler())
+			// OID4VCI inserts the well-known segment before the issuer path,
+			// so the metadata for the /issuer-mounted issuer lives at the
+			// server root.
+			srv.Handle("GET /.well-known/openid-credential-issuer/issuer", demoRP.IssuerMetadataHandler())
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
 			}

@@ -319,6 +319,31 @@ header h1 {
   color: var(--yellow);
 }
 
+#demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(224, 175, 104, 0.12);
+  border-bottom: 1px solid var(--yellow);
+}
+
+#demo-banner[hidden] {
+  display: none;
+}
+
+#demo-banner a {
+  color: var(--accent);
+}
+
+#demo-banner button {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .cli-install-label {
   font-size: 11px;
   color: var(--text-dim);

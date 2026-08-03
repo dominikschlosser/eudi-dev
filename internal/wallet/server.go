@@ -884,6 +884,15 @@ func credentialOfferIssuerDisplay(offerURI string) string {
 // stripped before the request reaches the handler. Call before ListenAndServe.
 func (s *Server) Mount(prefix string, h http.Handler) {
 	s.mux.Handle(prefix+"/", http.StripPrefix(prefix, h))
+	// The bare prefix would otherwise fall through to the UI file server.
+	s.mux.Handle("GET "+prefix, http.RedirectHandler(prefix+"/", http.StatusMovedPermanently))
+}
+
+// Handle registers an extra route on the server mux, e.g. a well-known
+// document a mounted handler needs at the server root. Call before
+// ListenAndServe.
+func (s *Server) Handle(pattern string, h http.Handler) {
+	s.mux.Handle(pattern, h)
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
@@ -941,10 +950,22 @@ func (s *Server) handleImportCredential(w http.ResponseWriter, r *http.Request) 
 // handleDeleteCredential removes a credential by ID.
 func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	label := id
+	for _, cred := range s.wallet.GetCredentials() {
+		if cred.ID == id {
+			if cred.VCT != "" {
+				label = cred.VCT
+			} else if cred.DocType != "" {
+				label = cred.DocType
+			}
+			break
+		}
+	}
 	if !s.wallet.RemoveCredential(id) {
 		http.Error(w, "credential not found", http.StatusNotFound)
 		return
 	}
+	s.wallet.AddLog("management", fmt.Sprintf("Deleted credential %s", label), true)
 	s.triggerSave()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1326,6 +1347,14 @@ func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	verb := fmt.Sprintf("Set status %d on", body.Status)
+	switch body.Status {
+	case 0:
+		verb = "Activated"
+	case 1:
+		verb = "Revoked"
+	}
+	s.wallet.AddLog("management", fmt.Sprintf("%s credential %s", verb, id), true)
 	s.triggerSave()
 	writeJSON(w, http.StatusOK, entry)
 }

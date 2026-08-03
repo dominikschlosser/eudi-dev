@@ -1059,6 +1059,17 @@
         document.querySelector('label[for="issue-save-template"]').hidden = true;
         document.getElementById('template-form').hidden = true;
         document.getElementById('templates-btn').hidden = true;
+        if (!localStorage.getItem('demo-banner-dismissed')) {
+          document.getElementById('demo-banner').hidden = false;
+        }
+        document.getElementById('demo-banner-dismiss').addEventListener('click', () => {
+          localStorage.setItem('demo-banner-dismissed', '1');
+          document.getElementById('demo-banner').hidden = true;
+        });
+        document.getElementById('demo-banner-cli-link').addEventListener('click', (event) => {
+          event.preventDefault();
+          cliOverlay.classList.add('active');
+        });
       }
     } catch (e) {
       /* footer extras are optional */

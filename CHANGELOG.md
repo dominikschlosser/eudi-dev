@@ -5,12 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.16.5] - 2026-08-03
+## [1.17.0] - 2026-08-03
 
 ### Added
 
+- Built-in demo issuer and demo verifier, mounted on every wallet server under `/issuer` and `/verifier` (so the public demo works out of the box). The issuer is a minimal OpenID4VCI issuer (pre-authorized code flow) handing out a Demo Event Ticket SD-JWT VC, holder bound to the wallet's proof key and signed under a leaf certificate from the wallet CA, so the wallet's own trust list covers it. The verifier creates plain-parameter OpenID4VP requests (`dcql_query`, `direct_post`) for the ticket or the PID and cryptographically verifies the response (issuer chain against the wallet CA, key binding signature, `sd_hash`, nonce, audience), showing each check and the verified claims. Both have small UI pages and also work with external OID4VCI/OID4VP clients that can reach the server
 - `examples/keycloak-web-wallet-public`: the `keycloak-web-wallet` scenario against the shared public demo wallet (`https://eudi-test.dev` by default, any `--demo` deployment via `WALLET_BASE_URL`). Local Keycloak is exposed through an ngrok tunnel (or a URL supplied via `KEYCLOAK_PUBLIC_URL`) because the public wallet fetches the request object and calls the token endpoint server side. Realms, extension jar, demo UI, and scripts are reused from the local example
 
+- Credential management actions now always appear in the wallet activity log with a `management` action: issuing (including PID regeneration), deleting one or all credentials, and revoking or activating a credential's status entry
+- Demo mode shows a prominent dismissible banner in the wallet UI: the instance is shared, anyone can change or delete credentials, it is for demonstration only, and isolated testing should use your own instance. The dismissal is remembered per browser
 - The wallet UI header gained a "How to use" dialog. It states that the wallet is fully OID4VC compliant, lists the protocol endpoints with the wallet's own origin filled in (`/credential-offer`, `/authorize`, `/api/trustlist`), and shows how custom-scheme links map onto them (CLI `wallet accept` on any platform, `wallet register` system handlers on macOS)
 
 ### Changed

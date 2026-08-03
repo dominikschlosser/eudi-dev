@@ -697,14 +697,22 @@ test.describe("Credential Issuing via UI", () => {
     request,
   }) => {
     await page.goto(WALLET_URL);
-    for (const id of [
-      "ca-cert-pem-link",
-      "ca-cert-jwks-link",
-      "tls-cert-pem-link",
-      "tls-cert-jwks-link",
-    ]) {
+    // This server runs with an https --base-url, so the built-in HTTPS
+    // listener is disabled and the UI hides the TLS leaf downloads (the
+    // self-signed leaf is never presented on the wire). The CA links stay,
+    // and the API endpoints keep working either way.
+    for (const id of ["ca-cert-pem-link", "ca-cert-jwks-link"]) {
       await expect(page.locator(`#${id}`)).toBeVisible();
-      const href = await page.locator(`#${id}`).getAttribute("href");
+    }
+    for (const id of ["tls-cert-pem-link", "tls-cert-jwks-link"]) {
+      await expect(page.locator(`#${id}`)).toBeHidden();
+    }
+    for (const href of [
+      "/api/certificates/ca",
+      "/api/certificates/ca?format=jwks",
+      "/api/certificates/tls",
+      "/api/certificates/tls?format=jwks",
+    ]) {
       const res = await request.get(`${WALLET_URL}${href}`);
       expect(res.status()).toBe(200);
       const body = await res.text();
