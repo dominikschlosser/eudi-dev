@@ -1,13 +1,13 @@
 # OID4VCI Flows
 
-This page covers the OID4VCI flows implemented by `oid4vc-dev` when it acts as a wallet receiving a credential offer.
+This page covers the OID4VCI flows implemented by `eudi-dev` when it acts as a wallet receiving a credential offer.
 
 ## Flow Map
 
 ```mermaid
 sequenceDiagram
     actor Browser
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
     participant Issuer
     participant AS as Authorization Server
 
@@ -30,13 +30,13 @@ sequenceDiagram
 
 ## Common Inputs
 
-| Field / setting | Why it matters in `oid4vc-dev` |
+| Field / setting | Why it matters in `eudi-dev` |
 |-----------------|--------------------------------|
 | `credential_offer` or `credential_offer_uri` | One of these must exist for the wallet to start the issuance flow. |
 | `credential_issuer` | Used to fetch `/.well-known/openid-credential-issuer` and resolve the token and credential endpoints. |
 | `credential_configuration_ids` | The wallet uses the first configuration ID to resolve format and, in the authorization-code flow, the scope. |
 | `c_nonce` | Used to bind the credential proof JWT when the issuer or authorization server provides it. |
-| `authorization_details[].credential_identifiers` | If present in the token response, `oid4vc-dev` uses `credential_identifier` at the credential endpoint instead of `credential_configuration_id`. |
+| `authorization_details[].credential_identifiers` | If present in the token response, `eudi-dev` uses `credential_identifier` at the credential endpoint instead of `credential_configuration_id`. |
 | Issuer metadata `credential_response_encryption` support | When advertised, the wallet requests encrypted credential responses and decrypts compact JWE responses. |
 
 ## Pre-authorized Code Flow
@@ -44,7 +44,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Browser
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
     participant AS as Authorization Server
     participant Issuer
 
@@ -78,7 +78,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Browser
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
     participant Issuer
     participant AS as Authorization Server
 
@@ -111,11 +111,11 @@ sequenceDiagram
 |-----------------|----------|
 | `eudi wallet serve --vci-client-id ...` | Required. The wallet will reject the authorization-code flow without a configured client ID. |
 | `eudi wallet serve --vci-redirect-uri ...` | Required. The wallet will reject the authorization-code flow without a configured redirect URI. |
-| OAuth metadata `pushed_authorization_request_endpoint` | Required. `oid4vc-dev` always uses PAR for this flow. |
+| OAuth metadata `pushed_authorization_request_endpoint` | Required. `eudi-dev` always uses PAR for this flow. |
 | OAuth metadata `authorization_endpoint` | Required for the interactive authorization redirect. |
 | OAuth metadata DPoP support | Required. The current auth-code implementation expects DPoP-capable issuer metadata. |
 | `credential_configuration_ids[0] -> scope` | The wallet resolves the scope from the selected credential configuration and uses it in PAR. |
 | `grants.authorization_code.issuer_state` | If present, forwarded into the PAR request. |
-| `token_endpoint_auth_methods_supported` | `oid4vc-dev` supports `private_key_jwt` and `attest_jwt_client_auth` here. Unsupported methods are rejected. |
+| `token_endpoint_auth_methods_supported` | `eudi-dev` supports `private_key_jwt` and `attest_jwt_client_auth` here. Unsupported methods are rejected. |
 | `transaction_id` + `deferred_credential_endpoint` | If the credential response is deferred, the wallet follows this branch automatically. |
 | `notification_id` + `notification_endpoint` | If both are present, the wallet sends a notification after successful import. |

@@ -2,7 +2,7 @@
 
 GitHub renders the diagrams in this section directly from Mermaid source, so the pages stay reviewable in plain text and do not depend on generated image assets.
 
-These diagrams intentionally treat `oid4vc-dev` as a single actor. They show the external interaction pattern and the request parameters or wallet flags that change behavior, not the internal package structure.
+These diagrams intentionally treat `eudi-dev` as a single actor. They show the external interaction pattern and the request parameters or wallet flags that change behavior, not the internal package structure.
 
 ## Pages
 
@@ -18,7 +18,7 @@ sequenceDiagram
     actor Browser as Browser / calling app
     participant Issuer
     participant AS as Authorization Server
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
     participant RP as RP page / verifier
 
     Issuer-->>Browser: credential_offer or credential_offer_uri
@@ -37,7 +37,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Browser
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
     participant Issuer
     participant AS as Authorization Server
     participant RP as RP page / verifier
@@ -76,4 +76,4 @@ sequenceDiagram
 
 - Start with [OID4VCI Flows](./oid4vci.md) if you want to understand how credentials get into the wallet.
 - Start with [OID4VP Flows](./oid4vp.md) if you want to understand how the wallet selects and returns stored credentials.
-- Use the parameter tables on each page to see which request fields and wallet flags change behavior in `oid4vc-dev`.
+- Use the parameter tables on each page to see which request fields and wallet flags change behavior in `eudi-dev`.

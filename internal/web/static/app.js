@@ -1185,7 +1185,7 @@
   // Update keyboard shortcut hints for platform
   const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const mod = isMac ? "\u2318" : "Ctrl";
-  const hintEl = document.querySelector(".shortcut-hint");
+  const hintEl = document.querySelector(".shortcut-hint .kbd-hints");
   if (hintEl) {
     hintEl.innerHTML =
       "<kbd>" + mod + "+L</kbd> Focus input &nbsp;&middot;&nbsp; " +

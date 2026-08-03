@@ -1,6 +1,6 @@
 # Current OIDF Wallet Conformance Results
 
-These are the current local wallet conformance results for `oid4vc-dev`. Use [Running OIDF Wallet Conformance](./conformance-run.md) to reproduce or update them.
+These are the current local wallet conformance results for `eudi-dev`. Use [Running OIDF Wallet Conformance](./conformance-run.md) to reproduce or update them.
 
 ## Baseline
 

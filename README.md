@@ -118,7 +118,7 @@ For day-to-day use, the main commands are:
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material
 - `wallet --mode debug|strict` and `--preferred-format ...` to control runtime behavior
 
-When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you the available IDs and routes. Use the entry's relative `path` when you access the wallet through Docker port mappings or similar local indirection.
+When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you the available IDs and routes. Use the entry's relative `path` when you access the wallet through Docker port mappings or similar local indirection. The web UI lists the same trust-list URLs with copy buttons above the certificate downloads.
 
 ![Wallet UI](docs/wallet-ui.png)
 
@@ -176,11 +176,11 @@ eudi serve --port 3000
 eudi serve credential.txt
 ```
 
-Opens a split-pane interface at `http://localhost:8080` (default) with auto-decode on paste, format detection, collapsible sections, signature verification, and dark/light theme. Pass a credential as an argument to pre-fill the input on load.
+Opens a split-pane interface at `http://localhost:8080` (default) with auto-decode on paste, format detection, collapsible sections, signature verification, and dark/light theme. Pass a credential as an argument to pre-fill the input on load. Use `--imprint-file` to serve a legal notice at `/imprint` when hosting it publicly.
 
 ![Web UI screenshot](docs/web-ui.png)
 
-> **Warning:** Only run locally — credentials are sent to the local server for decoding.
+> **Warning:** Credentials are sent to the server for decoding. Run it locally, or see [public demo hosting](docs/public-demo.md) for an internet-facing setup.
 
 ---
 

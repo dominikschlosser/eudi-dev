@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The decoder's `/api/validate` no longer reads server-side files when `trustListURL` is a local path, and remote fetches are capped at 10 MB
+- `scripts/build.sh` stamped the version into the pre-rename module path, so builds made with it always reported `dev`. It now builds the `eudi` binary with the correct ldflags path and installs completions under that name
+- Documentation screenshots and the flow diagrams were refreshed for the current UI and the `eudi-dev` name
 - Issue dialog: switching between templates without issuing no longer submits a merge of all previously selected templates (stale VCT, doc type, and expiry are cleared when the new template omits them), and selecting `(none)` resets the form
 
 ## [1.15.5] - 2026-08-03

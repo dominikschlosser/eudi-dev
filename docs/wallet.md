@@ -178,7 +178,9 @@ The whole UI is built for browser automation. Every interactive control has a st
 
 ![Issue credential dialog](./wallet-issue-ui.png)
 
-By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
+The UI header links to the project on GitHub and to CLI install instructions. Below the action buttons the UI lists the wallet's trust list URLs with copy buttons (this is what a verifier needs to trust the wallet's self-issued credentials) plus direct downloads for the CA and HTTPS certificates.
+
+By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. An https `--base-url` is used as the issuer URL directly instead, so issuer metadata, trust lists, and status lists live on the public origin and an external TLS terminator serves them (see [public demo hosting](public-demo.md)). If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
 
 The shared wallet CA can be exported with `wallet ca-cert` for verifier trust stores or CI fixtures. The per-wallet HTTPS leaf certificate can still be exported with `wallet tls-cert` when you need the exact server certificate instead. The wallet continues to serve the same endpoints and response formats on top of that shared trust root.
 The trust list remains certificate- and service-centric. EUDI-style issuer authorization data such as provider entitlements and `providesAttestations` is published through signed OpenID Credential Issuer metadata and registrar-style responses instead of being added as custom trust-list fields.

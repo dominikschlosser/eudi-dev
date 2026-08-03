@@ -1,6 +1,6 @@
 # OID4VP Flows
 
-This page covers the OID4VP presentation flows implemented by `oid4vc-dev` when it acts as a wallet.
+This page covers the OID4VP presentation flows implemented by `eudi-dev` when it acts as a wallet.
 
 ## Flow Map
 
@@ -8,7 +8,7 @@ This page covers the OID4VP presentation flows implemented by `oid4vc-dev` when 
 sequenceDiagram
     actor Browser
     participant RP as RP page / verifier
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
 
     RP-->>Browser: Presentation request
     Browser->>Wallet: Open URI request or trigger Browser API request
@@ -33,16 +33,16 @@ sequenceDiagram
 
 ## Common Request Fields
 
-| Field / setting | Why it matters in `oid4vc-dev` |
+| Field / setting | Why it matters in `eudi-dev` |
 |-----------------|--------------------------------|
-| `client_id` | Always required. `oid4vc-dev` validates the supported client ID scheme. |
+| `client_id` | Always required. `eudi-dev` validates the supported client ID scheme. |
 | `response_type` | Supports `vp_token`, `vp_token id_token`, and `id_token`. |
 | `response_mode` | Drives the response branch: `direct_post`, `direct_post.jwt`, `fragment`, `dc_api`, or `dc_api.jwt`. |
 | `nonce` | Bound into SD-JWT key binding JWTs and self-issued `id_token`s. |
 | `state` | Reflected in the authorization response when present. |
 | `response_uri` | Required for `direct_post` and `direct_post.jwt`. |
 | `redirect_uri` | Required for `fragment`. |
-| `dcql_query` | Practically required for credential selection in `oid4vc-dev`; this is how the wallet matches stored credentials. |
+| `dcql_query` | Practically required for credential selection in `eudi-dev`; this is how the wallet matches stored credentials. |
 | `request` or `request_uri` | Used when the verifier sends a request object directly or by reference. |
 | `client_metadata` | Important for format negotiation and mandatory for encrypted response modes because `client_metadata.jwks` carries the verifier encryption key. |
 
@@ -52,7 +52,7 @@ sequenceDiagram
 sequenceDiagram
     actor Browser
     participant RP as RP page / verifier
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
 
     RP-->>Browser: Authorization request URI or link
     Browser->>Wallet: Open openid4vp://, haip-vp://, or eudi-openid4vp:// request
@@ -79,7 +79,7 @@ sequenceDiagram
 | Field / setting | Used how |
 |-----------------|----------|
 | `response_type=vp_token` | Standard VP-only flow. |
-| `response_type=vp_token id_token` | `oid4vc-dev` returns both artifacts. |
+| `response_type=vp_token id_token` | `eudi-dev` returns both artifacts. |
 | `response_type=id_token` | SIOPv2-only branch without a VP token. |
 | `response_mode=direct_post` | Wallet posts a form with plain `vp_token`, optional `id_token`, and `state`. |
 | `response_mode=direct_post.jwt` | Wallet requires a verifier encryption key in `client_metadata.jwks` and posts an encrypted response JWT. |
@@ -93,7 +93,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant Verifier
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
 
     Verifier-->>Wallet: Authorization request with request_uri and request_uri_method=post
     Wallet->>Verifier: POST request_uri<br/>wallet_metadata + wallet_nonce
@@ -113,10 +113,10 @@ sequenceDiagram
 |-----------------|----------|
 | `request_uri` | The wallet dereferences this URI instead of relying only on outer query parameters. |
 | `request_uri_method=post` | Switches the request-object fetch from GET to POST. |
-| `wallet_metadata` | Sent by `oid4vc-dev`; includes supported formats and signing algorithms, plus an encryption JWK when `--require-encrypted-request` is enabled. |
+| `wallet_metadata` | Sent by `eudi-dev`; includes supported formats and signing algorithms, plus an encryption JWK when `--require-encrypted-request` is enabled. |
 | `wallet_nonce` | Sent by the wallet for replay protection and checked if returned inside the request object. |
 | `--require-encrypted-request` | Makes the wallet advertise an encryption key and require the POSTed `request_uri` response to be a compact JWE. |
-| Request object `Content-Type` | `oid4vc-dev` expects `application/oauth-authz-req+jwt` on the POST response. |
+| Request object `Content-Type` | `eudi-dev` expects `application/oauth-authz-req+jwt` on the POST response. |
 
 ## Browser API Flow
 
@@ -124,7 +124,7 @@ sequenceDiagram
 sequenceDiagram
     actor Browser
     participant RP as Browser / relying party page
-    participant Wallet as oid4vc-dev
+    participant Wallet as eudi-dev
 
     Browser->>RP: Trigger digital credentials request
     RP->>Wallet: Browser API request envelope
@@ -150,7 +150,7 @@ sequenceDiagram
 
 ## Client ID Schemes and Policy Switches
 
-| Item | Behavior in `oid4vc-dev` |
+| Item | Behavior in `eudi-dev` |
 |------|---------------------------|
 | `x509_hash:` | Implemented and verified. |
 | `x509_san_dns:` | Implemented and verified against the verifier certificate SAN. |
