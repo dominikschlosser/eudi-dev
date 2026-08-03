@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.4] - 2026-08-03
+
+### Changed
+
+- Header polish across all UIs: the logo is larger and drawn at its own aspect ratio instead of a square box that letterboxed it, and header items are centered rather than baseline aligned (the mark used to sit visibly high next to the title). The demo issuer and verifier pages get the same treatment with a roomier header
+- The decoder header dropped the "Decode SD-JWT, JWT & mDOC credentials" subtitle. In the same size and color as the neighboring links, it read like another nav item
+
+- The decoder footer no longer advertises keyboard shortcuts. All three bindings collided with browser defaults (`Ctrl`/`Cmd+L` and `+K` focus the address bar, `Ctrl+Shift+C` opens developer tools), so they never reached the page. The hints and the dead handler are gone, leaving the version and imprint links
+
+### Fixed
+
+- Timestamp tooltips now work where people actually read timestamps. Claim and disclosure lists render through a helper that never received the claim name, so only the raw payload block showed the human-readable date on hover. A non-numeric claim value could also have produced an invalid date, which is now guarded
+- The decoder header no longer collapses on narrow viewports. Below 768px the responsive rule stacked everything in `.header-left`, which since the logo was added pushed the title underneath it and out of the header. Title and links now stack inside their own container with the logo beside them
+
 ## [1.18.3] - 2026-08-03
+
+### Added
+
+- `examples/public-demo/deploy.sh`: deploy and operate a public demo host over ssh (`setup`, `push`, `update`, `status`, `verify`, `logs`). The target host, directory, and public URL come from the environment or a gitignored `deploy.env`, so nothing is hardcoded. `setup` also chowns the wallet data volume, which otherwise crash-loops a fresh host
 
 ### Fixed
 

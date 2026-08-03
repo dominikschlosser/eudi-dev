@@ -569,4 +569,25 @@ test.describe("Timestamp hover", () => {
     const title = await tsHover.getAttribute("title");
     expect(title).toContain("2099"); // exp: 4102444799 ≈ 2099-12-31
   });
+
+  test("timestamps in claim lists carry the tooltip too", async ({ page }) => {
+    // Own fixture: TEST_SDJWT's exp sits exactly on the upper sanity bound
+    // (4102444800), which the tooltip deliberately skips.
+    const sdjwt = makeSDJWT(
+      { iss: "https://issuer.example", _sd_alg: "sha-256", exp: 4102444799 },
+      [["salt1", "given_name", "Erika"]]
+    );
+    await page.goto("/");
+    await page.locator("#input").fill(sdjwt);
+    await expect(page.locator("#output .claim-value").first()).toBeAttached({
+      timeout: 3000,
+    });
+
+    // Regression: claim and disclosure lists rendered through a helper that
+    // never received the claim name, so only the raw payload block had
+    // tooltips while the lists users actually read had none.
+    const claimTs = page.locator("#output .claim-value.timestamp-hover").first();
+    await expect(claimTs).toBeAttached({ timeout: 3000 });
+    expect(await claimTs.getAttribute("title")).toContain("2099");
+  });
 });

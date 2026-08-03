@@ -74,15 +74,17 @@ header h1 {
   color: var(--accent);
 }
 
+/* The mark is 46:51, so give it that ratio instead of a square box that
+   would letterbox it and add phantom padding next to the title. */
 .header-logo {
-  width: 22px;
-  height: 22px;
-  align-self: center;
+  width: 26px;
+  height: 29px;
+  flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
 }
 

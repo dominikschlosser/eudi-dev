@@ -286,21 +286,6 @@
 
   input.addEventListener("mouseleave", clearHoverHighlight);
 
-  // Keyboard shortcuts
-  document.addEventListener("keydown", (e) => {
-    // Ctrl+L or Ctrl+K — focus input
-    if ((e.ctrlKey || e.metaKey) && (e.key === "l" || e.key === "k")) {
-      e.preventDefault();
-      input.focus();
-      input.select();
-    }
-    // Ctrl+Shift+C — copy share link (only when not in text selection)
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "C") {
-      e.preventDefault();
-      copyShareLink();
-    }
-  });
-
   function showToast(msg) {
     let toast = document.querySelector(".toast");
     if (!toast) {
@@ -654,7 +639,7 @@
         nameEl.textContent = name;
         item.appendChild(nameEl);
         item.appendChild(document.createTextNode(": "));
-        item.appendChild(renderInlineValue(valStr, "disclosure-value"));
+        item.appendChild(renderInlineValue(valStr, "disclosure-value", name));
 
         const meta = document.createElement("div");
         meta.className = "disclosure-meta";
@@ -767,7 +752,7 @@
     name.textContent = key;
     item.appendChild(name);
     item.appendChild(document.createTextNode(": "));
-    item.appendChild(renderInlineValue(value, "claim-value"));
+    item.appendChild(renderInlineValue(value, "claim-value", key));
     return item;
   }
 
@@ -813,7 +798,7 @@
           name.textContent = k;
           item.appendChild(name);
           item.appendChild(document.createTextNode(": "));
-          item.appendChild(renderInlineValue(valStr, "claim-value"));
+          item.appendChild(renderInlineValue(valStr, "claim-value", k));
           el.appendChild(item);
         });
         appendSection(ns + " (" + keys.length + " claims)", el, claims);
@@ -1018,7 +1003,7 @@
     if (!tsKeys || !currentKey || !tsKeys.has(currentKey)) {
       return "";
     }
-    if (value <= 1000000000 || value >= 4102444800) {
+    if (!Number.isFinite(value) || value <= 1000000000 || value >= 4102444800) {
       return "";
     }
 
@@ -1027,9 +1012,14 @@
     return iso + " (" + relativeTime(date) + ")";
   }
 
-  function renderInlineValue(value, className) {
+  function renderInlineValue(value, className, key) {
     const wrap = document.createElement("span");
     wrap.className = className;
+    const title = timestampTitle(Number(value), key, { timestampKeys: TIMESTAMP_FIELDS });
+    if (title) {
+      wrap.className = className + " timestamp-hover";
+      wrap.title = title;
+    }
     if (typeof value === "string") {
       wrap.appendChild(createEmbeddedValueElement(value, { quoted: false, plainStringClass: className }));
     } else {

@@ -29,6 +29,27 @@ With an https base URL the issuer URL equals the base URL. Status list URIs, `is
 
 Hosting a public site in the EU requires an imprint naming the operator. Pass `--imprint-file` with an HTML snippet (name, address, contact). It is served at `/imprint` (also under `/decoder/imprint`) wrapped in a page that includes the EU non-affiliation disclaimer, and the UI footer links to it. The standalone decoder (`eudi serve`) accepts the same flag.
 
+## Deploying and updating
+
+[`examples/public-demo/deploy.sh`](../examples/public-demo/deploy.sh) drives a host over ssh. The target is configuration, not a hardcoded value: point `DEMO_HOST` at any ssh destination (a `~/.ssh/config` alias, `user@host`, or a bare host), optionally with `DEMO_DIR` and `DEMO_URL`. Put them in the environment or in a `deploy.env` next to the script (gitignored).
+
+```bash
+cd examples/public-demo
+cat > deploy.env <<'ENV'
+DEMO_HOST=root@demo.example
+DEMO_URL=https://demo.example
+ENV
+
+./deploy.sh setup     # first deployment: Docker, stack, volume ownership, start
+./deploy.sh push      # after editing Caddyfile, compose file or imprint
+./deploy.sh update    # pull the released image and restart
+./deploy.sh status    # container status plus the version the site reports
+./deploy.sh verify    # check that every public endpoint answers
+./deploy.sh logs      # follow the wallet log
+```
+
+`setup` also fixes the wallet data volume's ownership. Docker creates named volumes owned by root while the image runs as uid 1000, which otherwise sends the wallet into a crash loop on a fresh host.
+
 ## Deployment notes
 
 - Terminate TLS in a reverse proxy (the example uses Caddy with automatic Let's Encrypt) and forward to the wallet's HTTP port. The wallet derives all advertised URLs from `--base-url`, not from request headers.

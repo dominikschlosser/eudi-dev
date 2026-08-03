@@ -430,10 +430,8 @@ func TestStaticFiles_IndexContainsNewUIElements(t *testing.T) {
 	for _, want := range []string{
 		"raw-view",
 		"shortcut-hint",
-		"Ctrl+L",
-		"Focus input",
-		"Copy share link",
 		"input-editor",
+		"header-logo",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index.html missing %q", want)

@@ -83,15 +83,23 @@ header {
   flex-shrink: 0;
 }
 
+/* The mark is 46:51, so give it that ratio instead of a square box that
+   would letterbox it and add phantom padding next to the title. */
 .header-logo {
-  width: 22px;
-  height: 22px;
-  align-self: center;
+  width: 26px;
+  height: 29px;
+  flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-titles {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 
@@ -610,7 +618,7 @@ textarea.colorized::placeholder {
   background: var(--bg-hover);
 }
 
-/* Keyboard shortcut hints */
+/* Footer */
 .shortcut-hint {
   font-size: 10px;
   color: var(--text-dim);
@@ -619,15 +627,6 @@ textarea.colorized::placeholder {
   border-top: 1px solid var(--border);
   background: var(--bg-surface);
   flex-shrink: 0;
-}
-
-.shortcut-hint kbd {
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
 }
 
 .shortcut-hint .footer-links {
@@ -848,15 +847,10 @@ textarea.colorized::placeholder {
     overflow: visible;
   }
 
-  .header-left {
+  .header-titles {
     flex-direction: column;
+    align-items: flex-start;
     gap: 2px;
-  }
-
-  /* Keyboard hints are pointless on touch screens, but the version and
-     imprint links must stay reachable. */
-  .shortcut-hint .kbd-hints {
-    display: none;
   }
 }
 
