@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
@@ -105,6 +106,24 @@ func TestNonDemoConfigKeepsPaths(t *testing.T) {
 	}
 	if _, ok := config["demo"]; ok {
 		t.Error("/api/config has demo object outside demo mode")
+	}
+}
+
+func TestDemoLogCapped(t *testing.T) {
+	srv := newDemoTestServer(t)
+	for i := 0; i < demoLogLimit+10; i++ {
+		srv.wallet.AddLog("management", fmt.Sprintf("entry %d", i), true)
+	}
+	rec := serverRequest(t, srv, "GET", "/api/log", "")
+	var log []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &log); err != nil {
+		t.Fatalf("parsing log: %v", err)
+	}
+	if len(log) != demoLogLimit {
+		t.Fatalf("demo log length = %d, want %d", len(log), demoLogLimit)
+	}
+	if detail := log[len(log)-1]["detail"]; detail != fmt.Sprintf("entry %d", demoLogLimit+9) {
+		t.Errorf("last entry = %v, want the newest", detail)
 	}
 }
 

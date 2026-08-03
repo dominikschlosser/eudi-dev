@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Consent semantics are now per channel. `--auto-accept` still forces auto-accept everywhere. Without it, programmatic submissions (`POST /api/offers`, `POST /api/presentations`) auto-accept too, because the API call itself is the caller's consent, while interactive channels keep the consent dialog: the web invocation URLs (`GET /credential-offer`, `GET /authorize`), scheme dispatches (`openid4vp://`, `openid-credential-offer://` and synonyms, unless registered with `wallet register --auto-accept`), and browser DC-API flows. Both API endpoints accept `"interactive": true` to opt a submission back into the consent dialog (the macOS URL handler uses this)
 - The public demo no longer forces auto-accept: visitors clicking offer or authorize links now see the wallet's real consent dialog, while the demo stays a reliable auto-accepting counterparty for external issuers, verifiers, and CLI clients using the API
+- Demo mode serves only the newest 50 activity log entries via `GET /api/log`, since a shared wallet accumulates entries from every visitor between resets. Local instances stay unbounded
 
 ## [1.17.1] - 2026-08-03
 

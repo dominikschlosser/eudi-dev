@@ -8,10 +8,6 @@ A developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and pre
 
 > **Try it online:** a shared public demo of the wallet and decoder runs at **<https://eudi-test.dev>**, no install needed. Issue, present, and decode test credentials right in the browser (state is shared between all visitors and resets daily, so do not enter personal data).
 
-> **Disclaimer:** This is an independent open source project. It is **not** an official repository of the European Commission or the European Union, has no affiliation with them, and is not endorsed by them. "EUDI" is used descriptively (a developer tool for the European Digital Identity ecosystem). For official EUDI Wallet resources see the [eu-digital-identity-wallet](https://github.com/eu-digital-identity-wallet) organization.
-
-> **Renamed from oid4vc-dev:** The old name keeps working for the time being. A binary named `oid4vc-dev` behaves identically (help and completion adapt to the invoked name), the legacy `~/.oid4vc-dev` state directory and `OID4VC_DEV_HOME` variable are still honored, and the `ghcr.io/dominikschlosser/oid4vc-dev` image keeps receiving releases.
-
 ## Highlights
 
 - **Testing Wallet** — stateful CLI wallet with file persistence, OID4VP/VCI flows, QR scanning, and OS URL scheme registration ([wallet](#wallet))
@@ -267,6 +263,12 @@ For a system-level view of the implemented issuer and verifier interactions, see
 | `--json`     | Output as JSON           |
 | `--no-color` | Disable colored output   |
 | `-v`         | Verbose output (x5c chain, device key, digest IDs) |
+
+## Notices
+
+**No EU affiliation:** This is an independent open source project. It is **not** an official repository of the European Commission or the European Union, has no affiliation with them, and is not endorsed by them. "EUDI" is used descriptively (a developer tool for the European Digital Identity ecosystem). For official EUDI Wallet resources see the [eu-digital-identity-wallet](https://github.com/eu-digital-identity-wallet) organization.
+
+**Renamed from oid4vc-dev:** The old name keeps working for the time being. A binary named `oid4vc-dev` behaves identically (help and completion adapt to the invoked name), the legacy `~/.oid4vc-dev` state directory and `OID4VC_DEV_HOME` variable are still honored, and the `ghcr.io/dominikschlosser/oid4vc-dev` image keeps receiving releases.
 
 ## License
 

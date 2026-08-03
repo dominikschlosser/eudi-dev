@@ -1101,8 +1101,17 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLog returns the activity log.
+// demoLogLimit caps the activity log served in demo mode: a busy shared
+// wallet accumulates entries from every visitor between resets, and the UI
+// only needs the recent tail. Local instances stay unbounded.
+const demoLogLimit = 50
+
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.wallet.GetLog())
+	log := s.wallet.GetLog()
+	if s.demo != nil && len(log) > demoLogLimit {
+		log = log[len(log)-demoLogLimit:]
+	}
+	writeJSON(w, http.StatusOK, log)
 }
 
 // handleClearLog removes all activity log entries.
