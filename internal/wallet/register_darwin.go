@@ -141,6 +141,16 @@ submit_offer() {
     -d "{\"uri\":\"$URI\"}" >/dev/null
 }
 
+# A remote wallet triggers its browser hook inside its own environment (for
+# example a container), where no browser can reach this desktop. Open the
+# consent UI from here instead, and before submitting: the submit blocks
+# until the user decides in that UI. The local server opens its own tab.
+open_remote_ui() {
+  if [[ -n "$REMOTE_URL" && "$AUTO_ACCEPT" != "true" ]]; then
+    open "$LISTENER/?focus=overview"
+  fi
+}
+
 submit_presentation() {
   curl -sf -X POST "$LISTENER/api/presentations" \
     -H "Content-Type: application/json" \
@@ -162,17 +172,25 @@ accept_cli() {
 case "$URI" in
   openid-credential-offer://*|haip-vci://*)
     if ensure_listener; then
+      open_remote_ui
       submit_offer 2>>"$LOG_FILE" && exit 0
+      # The submit already reached the remote and created its consent
+      # request there: a CLI retry would process the offer a second time.
+      [[ -n "$REMOTE_URL" ]] && exit 1
     fi
     accept_cli offer
     ;;
   *)
     if [[ "$AUTO_ACCEPT" == "true" ]]; then
-      submit_presentation 2>>"$LOG_FILE" || accept_cli presentation
+      submit_presentation 2>>"$LOG_FILE" && exit 0
+      [[ -n "$REMOTE_URL" ]] && exit 1
+      accept_cli presentation
       exit 0
     fi
     if ensure_listener; then
+      open_remote_ui
       submit_presentation 2>>"$LOG_FILE" && exit 0
+      [[ -n "$REMOTE_URL" ]] && exit 1
     fi
     accept_cli presentation
     ;;
