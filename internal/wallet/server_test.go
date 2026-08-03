@@ -2868,3 +2868,19 @@ func TestSetIssuerListenPortDisablesTLSListener(t *testing.T) {
 		t.Fatal("issuer TLS server started despite SetIssuerListenPort(-1)")
 	}
 }
+
+// TestStaticAssetsServed guards the embed pattern: an explicit file list in
+// embed.go once dropped the logo and favicon from the binary, so every asset
+// the UI references must be reachable.
+func TestStaticAssetsServed(t *testing.T) {
+	srv := newTestServer(t, true)
+	for _, path := range []string{"/", "/app.js", "/style.css", "/favicon.svg", "/logo.svg"} {
+		rec := serverRequest(t, srv, "GET", path, "")
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, rec.Code)
+		}
+		if rec.Body.Len() == 0 {
+			t.Errorf("GET %s served an empty body", path)
+		}
+	}
+}

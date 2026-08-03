@@ -16,5 +16,9 @@ package wallet
 
 import "embed"
 
-//go:embed static/index.html static/app.js static/style.css
+// A whole-directory pattern, not a file list: an explicit list silently drops
+// newly added assets from the binary (the logo and favicon shipped missing
+// that way), and everything under static/ belongs to the UI anyway.
+//
+//go:embed static
 var staticFiles embed.FS

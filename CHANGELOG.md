@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.3] - 2026-08-03
+
+### Fixed
+
+- The logo and favicon 404'd on every wallet server: `internal/wallet/embed.go` listed the embedded UI assets file by file, so the newly added SVGs were never compiled into the binary. The wallet now embeds the whole `static/` directory (as the decoder already did), and a test asserts every asset the UI references is served
+
 ## [1.18.2] - 2026-08-03
 
 ### Added
