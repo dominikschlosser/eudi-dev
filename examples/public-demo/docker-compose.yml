@@ -4,7 +4,8 @@
 # 1. Point your domain's DNS at this host.
 # 2. Replace eudi-test.dev in this file and in Caddyfile with your domain.
 # 3. Put your operator details into imprint.html.
-# 4. docker compose up -d
+# 4. Create stats.env with the /stats credentials (./deploy.sh stats-password).
+# 5. docker compose up -d
 services:
   caddy:
     image: caddy:2
@@ -12,10 +13,17 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # stats.env holds STATS_USER and STATS_PASSWORD_HASH (./deploy.sh
+    # stats-password writes it). env_file, not environment: a bcrypt hash is
+    # full of "$" and compose would try to interpolate those.
+    env_file:
+      - stats.env
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+      - stats-report:/srv/stats:ro
 
   wallet:
     image: ghcr.io/dominikschlosser/eudi-dev:latest
@@ -40,7 +48,33 @@ services:
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 
+  # Usage statistics: turns Caddy's (IP-anonymized) access log into a static
+  # HTML report. No JavaScript, no cookies, nothing added to the pages.
+  stats:
+    image: allinurl/goaccess:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        # Caddy creates the log on the first request, which can be after this
+        # container starts, so skip the run instead of failing on a missing file.
+        while true; do
+          if [ -s /var/log/caddy/access.log ]; then
+            goaccess /var/log/caddy/access.log \
+              --log-format=CADDY \
+              --ignore-crawlers --anonymize-ip \
+              --html-report-title="Demo usage" \
+              -o /srv/stats/report.html || true
+          fi
+          sleep 120
+        done
+    volumes:
+      - caddy-logs:/var/log/caddy:ro
+      - stats-report:/srv/stats
+
 volumes:
   caddy-data:
   caddy-config:
+  caddy-logs:
+  stats-report:
   wallet-data:

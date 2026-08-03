@@ -16,6 +16,8 @@
 #   status    container status and the version the site reports
 #   logs      follow the wallet log
 #   verify    check that the deployed endpoints respond
+#   stats     print a usage summary from the access log
+#   stats-password  generate credentials for the /stats report
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,6 +48,9 @@ copy_stack() {
   echo "Copying the stack to ${DEMO_HOST}:${DEMO_DIR}..."
   ssh "${DEMO_HOST}" "mkdir -p ${DEMO_DIR}"
   scp -q Caddyfile docker-compose.yml imprint.html "${DEMO_HOST}:${DEMO_DIR}/"
+  # Basic auth credentials for the /stats report live in stats.env, next to
+  # the compose file, and never in the repository.
+  [[ -f stats.env ]] && scp -q stats.env "${DEMO_HOST}:${DEMO_DIR}/stats.env"
 }
 
 deployed_version() {
@@ -92,6 +97,36 @@ case "${COMMAND}" in
   logs)
     require_host
     compose "logs -f --tail 100 wallet"
+    ;;
+  stats)
+    require_host
+    # Let goaccess produce the summary: the log stores epoch timestamps, so
+    # picking days apart with grep here would not work. Its CSV output uses
+    # CRLF, hence the tr.
+    summary="$(mktemp)"
+    remote "docker compose exec -T stats sh -c 'goaccess /var/log/caddy/access.log --log-format=CADDY --ignore-crawlers -o /tmp/summary.csv >/dev/null 2>&1; cat /tmp/summary.csv'" |
+      tr -d '\r' > "${summary}"
+    sed -n 's/^"[0-9]*",,"general",,,,,,,,"\([^"]*\)","\([^"]*\)"$/\2 \1/p' "${summary}" |
+      grep -E 'requests|visitors|log_size' |
+      while read -r name value; do printf '%-18s %s\n' "${name}" "${value}"; done
+    echo
+    echo "Top requests (bots excluded):"
+    sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" |
+      head -12 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
+    rm -f "${summary}"
+    [[ -n "${DEMO_URL:-}" ]] && echo && echo "Full report: ${DEMO_URL%/}/stats/"
+    ;;
+  stats-password)
+    read -r -p "Username for /stats [admin]: " user
+    user="${user:-admin}"
+    read -r -s -p "Password: " password
+    echo
+    hash="$(docker run --rm caddy:2 caddy hash-password --plaintext "${password}")"
+    # Compose interpolates env_file values, so a bcrypt hash's "$" has to be
+    # written as "$$" to survive into the container.
+    escaped="${hash//\$/\$\$}"
+    printf 'STATS_USER=%s\nSTATS_PASSWORD_HASH=%s\n' "${user}" "${escaped}" > stats.env
+    echo "Wrote stats.env (gitignored). Apply it with: ./deploy.sh push"
     ;;
   verify)
     [[ -n "${DEMO_URL:-}" ]] || die "DEMO_URL is not set, nothing to verify."

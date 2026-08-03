@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.18.5] - 2026-08-04
 
+- Optional usage statistics for a hosted demo, entirely in the deployment: Caddy writes an access log with the client address anonymized at write time, GoAccess renders it into a static HTML report, and Caddy serves that at `/stats` behind basic auth (`./deploy.sh stats-password`). `./deploy.sh stats` prints a summary in the terminal. Nothing is added to the pages: no scripts, no cookies, no third party
+
 ### Changed
 
 - The wallet UI header no longer shows the credential count badge. The credential list right below it already answers the question

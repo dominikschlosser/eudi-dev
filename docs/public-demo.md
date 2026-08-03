@@ -50,6 +50,18 @@ ENV
 
 `setup` also fixes the wallet data volume's ownership. Docker creates named volumes owned by root while the image runs as uid 1000, which otherwise sends the wallet into a crash loop on a fresh host.
 
+## Usage statistics
+
+The compose example ships an optional usage report, so you can tell whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every five minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, no cookies are set, and no third party is involved.
+
+```bash
+./deploy.sh stats-password   # writes stats.env with a bcrypt hash (gitignored)
+./deploy.sh push             # applies it
+./deploy.sh stats            # quick summary in the terminal
+```
+
+Then open `https://your-domain/stats/`. Remove the `handle_path /stats*` block from the Caddyfile (and the `stats` service) to turn the whole thing off. If your imprint claims that no access data is processed, adjust it: the log exists, even anonymized.
+
 ## Deployment notes
 
 - Terminate TLS in a reverse proxy (the example uses Caddy with automatic Let's Encrypt) and forward to the wallet's HTTP port. The wallet derives all advertised URLs from `--base-url`, not from request headers.

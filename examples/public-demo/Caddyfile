@@ -1,5 +1,46 @@
 eudi-test.dev {
-	reverse_proxy wallet:8085
+	# Usage statistics: a GoAccess report built from the access log below,
+	# served behind basic auth. Credentials come from stats.env
+	# (see deploy.sh stats-password). Remove this block to turn stats off.
+	handle_path /stats* {
+		basic_auth {
+			{$STATS_USER:admin} {$STATS_PASSWORD_HASH}
+		}
+		root * /srv/stats
+		file_server {
+			index report.html
+		}
+	}
+
+	handle {
+		reverse_proxy wallet:8085
+	}
+
+	# Access log for the usage report. ip_mask anonymizes at write time:
+	# the last IPv4 octet and the last 80 bits of an IPv6 address are
+	# zeroed, so no full address is ever stored, while GoAccess can still
+	# approximate distinct visitors.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 20MiB
+			roll_keep 3
+		}
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+			}
+		}
+	}
 
 	# Optional rate limiting (requires the caddy-ratelimit plugin,
 	# https://github.com/mholt/caddy-ratelimit):
