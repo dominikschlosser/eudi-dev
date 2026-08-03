@@ -1,4 +1,6 @@
-<img src="docs/assets/logo-mark.svg" alt="eudi-dev logo" width="88" align="right">
+<p align="center">
+  <img src="docs/assets/logo-mark.svg" alt="eudi-dev logo" width="110">
+</p>
 
 # eudi-dev
 
