@@ -1027,7 +1027,8 @@
   }
 
   // Footer: version, imprint link, demo note; demo mode also hides the
-  // template-write controls (the server rejects them with 403 anyway).
+  // Templates button and template-write controls (the server rejects
+  // writes with 403 anyway).
   let demoMode = false;
   async function loadAppConfig() {
     try {
@@ -1050,6 +1051,7 @@
         document.getElementById('issue-save-template').hidden = true;
         document.querySelector('label[for="issue-save-template"]').hidden = true;
         document.getElementById('template-form').hidden = true;
+        document.getElementById('templates-btn').hidden = true;
       }
     } catch (e) {
       /* footer extras are optional */
