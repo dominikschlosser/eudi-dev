@@ -57,6 +57,7 @@ func walletServeCmd() *cobra.Command {
 		demo                    bool
 		demoReset               time.Duration
 		imprintFile             string
+		detached                bool
 	)
 
 	cmd := &cobra.Command{
@@ -75,6 +76,9 @@ Capabilities:
 Use --register to also register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)
 so the wallet automatically receives incoming protocol requests.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if detached {
+				return spawnDetachedServe(cmd, port, register, noRegister)
+			}
 			store := loadStore()
 			w, err := store.LoadOrCreate()
 			if err != nil {
@@ -380,6 +384,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --auto-accept and --pid, disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().DurationVar(&demoReset, "demo-reset", time.Hour, "Interval for restoring the clean demo baseline (requires --demo; 0 disables)")
 	cmd.Flags().StringVar(&imprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
+	cmd.Flags().BoolVarP(&detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
 	return cmd
 }
 
@@ -471,7 +476,7 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 		if err != nil {
 			return
 		}
-		if flag.Name == "register" || flag.Name == "no-register" {
+		if flag.Name == "register" || flag.Name == "no-register" || flag.Name == "detached" {
 			return
 		}
 		switch flag.Value.Type() {

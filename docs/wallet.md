@@ -264,6 +264,7 @@ eudi wallet serve --port 9000 --auto-accept
 eudi wallet serve --pid --credential extra.txt
 eudi wallet serve --register           # also register URL scheme handlers using the current interactive/auto-accept mode
 eudi wallet serve --register --port 9000
+eudi wallet serve -d                   # run in the background (stop with `eudi wallet instances kill`)
 ```
 
 | Flag                    | Default  | Description                                      |
@@ -289,6 +290,7 @@ eudi wallet serve --register --port 9000
 | `--demo`                | `false`  | Public demo profile: implies `--auto-accept` and `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | Interval for restoring the clean demo baseline (requires `--demo`, `0` disables) |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
+| `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet instances kill` |
 
 ## `wallet accept <uri>`
 

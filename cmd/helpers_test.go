@@ -529,8 +529,12 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	flags.StringSlice("credential", nil, "")
 	flags.Bool("register", false, "")
 	flags.Bool("no-register", false, "")
+	flags.Bool("detached", false, "")
 	if err := flags.Set("port", "9123"); err != nil {
 		t.Fatalf("set port: %v", err)
+	}
+	if err := flags.Set("detached", "true"); err != nil {
+		t.Fatalf("set detached: %v", err)
 	}
 	if err := flags.Set("auto-accept", "true"); err != nil {
 		t.Fatalf("set auto-accept: %v", err)
