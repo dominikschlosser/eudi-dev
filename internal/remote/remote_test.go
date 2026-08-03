@@ -62,6 +62,65 @@ func TestActiveRemoteRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDiscoverIncludesActiveRemote(t *testing.T) {
+	withTempConfigDir(t)
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/version":
+			w.Write([]byte(`{"build_id": "remote-build", "pid": 1}`))
+		case "/api/config":
+			w.Write([]byte(`{"wallet_dir": "/home/app/.oid4vc-dev/wallet"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer live.Close()
+
+	if _, err := SetActive(live.URL); err != nil {
+		t.Fatal(err)
+	}
+
+	found := Discover(500 * time.Millisecond)
+	var actives []DiscoveredInstance
+	for _, di := range found {
+		if di.Source == "active" {
+			actives = append(actives, di)
+		}
+	}
+	if len(actives) != 1 {
+		t.Fatalf("expected the active remote to be discovered, got %v", found)
+	}
+	liveURL, _ := url.Parse(live.URL)
+	livePort, _ := strconv.Atoi(liveURL.Port())
+	got := actives[0]
+	if got.Port != livePort || got.PID != 1 || got.BuildID != "remote-build" || got.WalletDir != "/home/app/.oid4vc-dev/wallet" {
+		t.Errorf("unexpected active instance: %+v", got)
+	}
+
+	// A registry entry for the same URL wins: no duplicate "active" row.
+	if err := RegisterInstance(Instance{PID: 1, Port: livePort, URL: live.URL, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	found = Discover(500 * time.Millisecond)
+	for _, di := range found {
+		if di.Source == "active" {
+			t.Fatalf("expected no active row next to the registry entry, got %v", found)
+		}
+	}
+
+	// An unreachable active remote is not listed.
+	live.Close()
+	if err := os.RemoveAll(instancesDir()); err != nil {
+		t.Fatal(err)
+	}
+	for _, di := range Discover(500 * time.Millisecond) {
+		if di.Source == "active" || di.URL == live.URL {
+			t.Fatalf("expected no row for a dead remote, got %+v", di)
+		}
+	}
+}
+
 func TestNormalizeURLRejectsInvalid(t *testing.T) {
 	for _, raw := range []string{"", "ftp://host", "http://"} {
 		if _, err := NormalizeURL(raw); err == nil {

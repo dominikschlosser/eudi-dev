@@ -86,6 +86,8 @@ eudi wallet register --auto-accept
 
 On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `eudi wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
 
+The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet instances use <url>`, clicked links are submitted to that instance instead of the local listener (useful when the wallet runs in a Docker container). The handler never restarts or replaces a remote instance. `wallet instances use local` switches link handling back to the local wallet server.
+
 ## Storage
 
 All wallet state is stored in `~/.eudi-dev/wallet/` by default:
@@ -843,6 +845,8 @@ eudi wallet instances kill --all     # stop every running instance
 `wallet instances` without a subcommand is a shortcut for `wallet instances list`.
 
 Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+
+Discovery only sees instances running directly on this system. A wallet server inside a Docker container (or on another machine) is neither in the local registry nor in the local process list. The active remote target is the exception. After `wallet instances use <url>` (for example `wallet instances use http://localhost:9085` for a wallet published by a container) the target is health checked and listed with source `active` as long as it responds. The `ACTIVE` column marks the instance the CLI currently manages with `*`. When the active remote stops responding, `wallet instances list` prints a warning instead of listing it.
 
 ### Introspection
 

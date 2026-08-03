@@ -112,7 +112,7 @@ eudi wallet logs -f               # Follow persisted wallet interactions
 For day-to-day use, the main commands are:
 - `wallet serve` to run the wallet
 - `issue ... --wallet` (with `--template` or `--pid`) to preload credentials
-- `wallet instances` to find running wallet servers, `wallet instances use <url>` to manage one remotely over its REST API, and `wallet instances kill` to stop one (when a server already runs for the same wallet directory, CLI commands route through it automatically)
+- `wallet instances` to find running wallet servers, `wallet instances use <url>` to manage one remotely over its REST API, and `wallet instances kill` to stop one (when a server already runs for the same wallet directory, CLI commands route through it automatically). Discovery only sees instances running directly on this system plus the active remote target, so a wallet inside a Docker container shows up after `wallet instances use <url>` and clicked credential-offer or presentation links route to it.
 - `wallet trust-list` to get the verifier trust-list URL or JWT
 - `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material

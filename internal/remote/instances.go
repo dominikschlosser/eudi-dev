@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,8 +47,9 @@ type Instance struct {
 type DiscoveredInstance struct {
 	Instance
 	BuildID string `json:"build_id,omitempty"`
-	// Source is "registry" (instance file) or "process" (found via process
-	// scan without an instance file).
+	// Source is "registry" (instance file), "process" (found via process
+	// scan without an instance file), or "active" (the remote target set by
+	// "wallet instances use", reachable but not locally discoverable).
 	Source string `json:"source"`
 }
 
@@ -114,7 +116,9 @@ func fetchInstanceConfig(url string, timeout time.Duration) map[string]any {
 
 // Discover finds running wallet instances on the local system: everything in
 // the instance registry (pruning entries whose server is gone) plus wallet
-// serve processes found by scanning the process list.
+// serve processes found by scanning the process list. The active remote
+// target set by "wallet instances use" is included as well when it responds,
+// even when it is not locally discoverable.
 func Discover(timeout time.Duration) []DiscoveredInstance {
 	if timeout <= 0 {
 		timeout = time.Second
@@ -188,6 +192,41 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 		}
 		found = append(found, di)
 		seenPorts[proc.Port] = true
+	}
+
+	// The active remote target may live outside this system (for example in
+	// a container), where neither the registry nor the process scan can see
+	// it. List it anyway when it responds.
+	if active := Active(); active != "" {
+		known := false
+		for _, inst := range found {
+			if strings.TrimRight(inst.URL, "/") == active {
+				known = true
+				break
+			}
+		}
+		if !known {
+			if version, alive := healthCheck(active, timeout); alive {
+				di := DiscoveredInstance{Instance: Instance{URL: active}, Source: "active"}
+				if u, err := url.Parse(active); err == nil {
+					if p, err := strconv.Atoi(u.Port()); err == nil {
+						di.Port = p
+					}
+				}
+				if pid, ok := version["pid"].(float64); ok {
+					di.PID = int(pid)
+				}
+				if build, ok := version["build_id"].(string); ok {
+					di.BuildID = build
+				}
+				if cfg := fetchInstanceConfig(active, timeout); cfg != nil {
+					if dir, ok := cfg["wallet_dir"].(string); ok {
+						di.WalletDir = dir
+					}
+				}
+				found = append(found, di)
+			}
+		}
 	}
 
 	sort.Slice(found, func(i, j int) bool { return found[i].Port < found[j].Port })

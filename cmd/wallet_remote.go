@@ -158,7 +158,9 @@ func instancesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List running wallet instances",
 		Long: "Scans the instance registry and the local process list for running wallet servers and checks " +
-			"that they respond. Use `wallet instances use <url>` to manage one of them and " +
+			"that they respond. The active remote target set by `wallet instances use <url>` is listed too " +
+			"when it responds, even when it runs elsewhere (for example in a Docker container). " +
+			"Use `wallet instances use <url>` to manage one of them and " +
 			"`wallet instances kill <target>` to stop one.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -170,6 +172,20 @@ func instancesListCmd() *cobra.Command {
 func runInstancesList() error {
 	instances := remote.Discover(time.Second)
 	active := remote.Active()
+
+	// Discover includes a responding active remote, so a missing one is down.
+	if active != "" {
+		listed := false
+		for _, inst := range instances {
+			if strings.TrimRight(inst.URL, "/") == active {
+				listed = true
+				break
+			}
+		}
+		if !listed {
+			fmt.Fprintf(os.Stderr, "Active remote wallet %s is not responding.\n", active)
+		}
+	}
 
 	if jsonOutput {
 		data, err := json.MarshalIndent(instances, "", "  ")
@@ -285,6 +301,11 @@ func stopInstance(inst remote.DiscoveredInstance) error {
 	if err := client.Shutdown(); err == nil {
 		remote.UnregisterInstance(inst.PID)
 		return nil
+	}
+	if inst.Source == "active" {
+		// The pid of an active remote belongs to another system (for example
+		// a container), so a signal from here would hit the wrong process.
+		return fmt.Errorf("shutdown request failed and the instance is not a local process")
 	}
 	if inst.PID <= 0 {
 		return fmt.Errorf("shutdown request failed and no pid is known")

@@ -73,6 +73,15 @@ SERVE_ARGS=({{SERVE_ARGS}})
 LOG_FILE="/tmp/oid4vc-dev-wallet.log"
 SERVER_LOG="/tmp/oid4vc-dev-wallet-server.log"
 
+# The active remote set by "wallet instances use <url>" wins over the baked-in
+# local listener. remote.json lives next to this script and is removed by
+# "wallet instances use local".
+REMOTE_URL=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$(dirname "$0")/remote.json" 2>/dev/null)
+if [[ -n "$REMOTE_URL" ]]; then
+  LISTENER="${REMOTE_URL%/}"
+  echo "routing to active remote wallet $LISTENER" >>"$LOG_FILE"
+fi
+
 listener_ready() {
   curl -sf "$LISTENER/api/credentials" >/dev/null 2>&1
 }
@@ -100,6 +109,12 @@ stop_stale_listener() {
 }
 
 ensure_listener() {
+  # A remote instance is managed elsewhere: never restart it for a build
+  # mismatch and never start a local server in its place.
+  if [[ -n "$REMOTE_URL" ]]; then
+    listener_ready
+    return
+  fi
   if listener_ready; then
     stop_stale_listener
     if listener_ready; then
