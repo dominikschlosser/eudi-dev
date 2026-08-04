@@ -36,6 +36,14 @@
     <button class="btn" id="demo-banner-dismiss">Got it</button>
   </div>
 
+  <!-- Pending consent requests that this browser did not start. On a shared
+       demo nothing may pop a dialog unasked, but a scheme dispatch or another
+       device still needs a way in. -->
+  <div id="pending-banner" hidden>
+    <span id="pending-text"></span>
+    <button class="btn" id="pending-review">Review</button>
+  </div>
+
   <div class="main">
     <!-- Actions -->
     <div>

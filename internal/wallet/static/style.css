@@ -358,6 +358,26 @@ header h1 {
   color: var(--yellow);
 }
 
+#pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(122, 162, 247, 0.14);
+  border-bottom: 1px solid var(--accent);
+}
+
+#pending-banner[hidden] {
+  display: none;
+}
+
+#pending-banner button {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 #demo-banner {
   display: flex;
   align-items: center;
@@ -832,7 +852,27 @@ header h1 {
     gap: 8px;
   }
 
-  #demo-banner {
+  #pending-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(122, 162, 247, 0.14);
+  border-bottom: 1px solid var(--accent);
+}
+
+#pending-banner[hidden] {
+  display: none;
+}
+
+#pending-banner button {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+#demo-banner {
     align-items: flex-start;
     flex-wrap: wrap;
   }

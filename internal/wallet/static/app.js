@@ -804,6 +804,44 @@
     return html;
   }
 
+  // Show or hide the indicator for requests this browser did not start.
+  function updatePendingBanner(requests) {
+    const banner = document.getElementById('pending-banner');
+    const count = (requests || []).length;
+    if (count === 0 || consentOverlay.classList.contains('active')) {
+      banner.hidden = true;
+      return;
+    }
+    document.getElementById('pending-text').textContent = count === 1
+      ? '1 request is waiting for consent.'
+      : count + ' requests are waiting for consent.';
+    banner.hidden = false;
+  }
+
+  async function refreshPendingBanner() {
+    try {
+      const resp = await fetch('/api/requests');
+      updatePendingBanner(await resp.json());
+    } catch (e) {
+      /* leave the banner as it is */
+    }
+  }
+
+  document.getElementById('pending-review').addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/requests');
+      const requests = await resp.json();
+      if (requests && requests.length > 0) {
+        showConsentDialog(requests[0]);
+        document.getElementById('pending-banner').hidden = true;
+        return;
+      }
+      updatePendingBanner(requests);
+    } catch (e) {
+      console.error('Failed to load pending requests:', e);
+    }
+  });
+
   // Load any existing pending consent requests
   async function loadPendingRequests() {
     try {
@@ -822,6 +860,11 @@
           showConsentDialog(requests[0]);
           return;
         }
+        // Demo mode: offer it instead of forcing it open. A scheme dispatch
+        // lands here with no request id, so without this the consent would
+        // stay invisible and the flow would hang.
+        updatePendingBanner(requests);
+        return;
       }
     } catch (e) {
       console.error('Failed to load pending requests:', e);
@@ -846,8 +889,12 @@
       try {
         const req = JSON.parse(event.data);
         // Shared demo: consent dialogs belong to the browser that started
-        // the flow (it arrives via redirect), not to every open tab.
-        if (demoMode) return;
+        // the flow (it arrives via redirect), not to every open tab. Other
+        // tabs get the unobtrusive banner instead.
+        if (demoMode) {
+          refreshPendingBanner();
+          return;
+        }
         showConsentDialog(req);
       } catch (e) {
         console.error('SSE parse error:', e);
@@ -860,6 +907,7 @@
       stateRefresh = setTimeout(() => {
         loadCredentials();
         loadLog();
+        if (demoMode) refreshPendingBanner();
       }, 300);
     });
     es.addEventListener('error', (event) => {
@@ -1020,6 +1068,7 @@
             return;
           }
           consentOverlay.classList.remove('active');
+          if (demoMode) refreshPendingBanner();
           await loadCredentials();
           await loadLog();
           return;

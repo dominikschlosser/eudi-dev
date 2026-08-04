@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.8] - 2026-08-04
+
+### Added
+
+- `e2e/demo.spec.js` covers demo-mode behavior that two changes have already broken in opposite directions: a scheme-dispatched presentation or credential offer must surface as a reviewable pending request, a browser-initiated request must open its dialog in that tab only, a bystander's tab must never be hijacked, and the hardened endpoints and hidden UI elements must stay that way
+
+### Fixed
+
+- A consent request that reaches a demo instance without a browser redirect is now visible. Scheme dispatches (`openid4vp://` handled by the OS, which submits through the API) create a pending consent, but the wallet UI opens without a request id, and demo mode deliberately does not pop dialogs in every tab. The request stayed invisible and the flow hung until it timed out. The UI now shows an unobtrusive "N requests are waiting for consent" bar with a Review button, instead of either hijacking every open tab or hiding the request
+
 ## [1.18.7] - 2026-08-04
 
 ### Changed
