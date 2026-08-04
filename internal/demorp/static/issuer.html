@@ -53,12 +53,18 @@
       </div>
     </div>
     <p>
-      This issuer hands out a signed <strong>Demo Event Ticket</strong> credential
-      (SD-JWT VC) through a standard OpenID4VCI pre-authorized code flow. Create an
-      offer, then open it in the wallet on this host, or copy the offer URI into any
-      OID4VCI wallet that can reach this server.
+      This issuer hands out a signed <strong>Demo Event Ticket</strong> (SD-JWT VC)
+      over OpenID4VCI. Create an offer and open it in the wallet on this host, or
+      copy the offer URI into any wallet that can reach this server.
     </p>
     <button class="btn primary" id="create-btn">Create credential offer</button>
+    <a class="btn" href="login" style="display:inline-block;text-decoration:none;margin-left:8px">Authorization code flow</a>
+    <p style="margin-top:14px">
+      The authorization code flow signs you in first (<strong>alice / alice</strong>),
+      then the wallet collects the ticket with PAR, PKCE, DPoP and a wallet
+      attestation. This issuer is its own authorization server. The account is
+      hardcoded for the demo.
+    </p>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>

@@ -362,6 +362,9 @@ so the wallet automatically receives incoming protocol requests.`,
 			// so the metadata for the /issuer-mounted issuer lives at the
 			// server root.
 			srv.Handle("GET /.well-known/openid-credential-issuer/issuer", demoRP.IssuerMetadataHandler())
+			// Same for the authorization server metadata of the demo issuer,
+			// which is its own authorization server (RFC 8414 §3.1).
+			srv.Handle("GET /.well-known/oauth-authorization-server/issuer", demoRP.AuthorizationServerMetadataHandler())
 			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 				return err
 			}

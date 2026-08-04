@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -37,24 +38,39 @@ const (
 	preAuthGrant          = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 )
 
-func ticketClaims() map[string]any {
-	return map[string]any{
+// ticketClaims returns the ticket's test data. An authorization code flow
+// authenticates an account first, so the ticket carries that holder's name
+// instead of the generic one.
+func ticketClaims(subject string) map[string]any {
+	claims := map[string]any{
 		"event":       "EUDI Interop Fest",
 		"tier":        "backstage",
 		"seat":        "42A",
 		"given_name":  "Erika",
 		"family_name": "Mustermann",
 	}
+	if subject == demoAccountUsername {
+		claims["given_name"] = demoAccountGivenName
+		claims["family_name"] = demoAccountFamily
+	}
+	return claims
 }
 
-// offerState tracks one credential offer through the pre-authorized code
-// flow: created, code exchanged for a token, credential collected.
+// offerState tracks one credential offer from creation through the token
+// exchange to the collected credential. A pre-authorized offer carries a
+// pre-authorized code, an issuer-initiated authorization code offer carries
+// the issuer_state that ties it to a browser login.
 type offerState struct {
 	id          string
 	preAuthCode string
+	issuerState string
+	subject     string
 	accessToken string
 	cNonce      string
-	expires     time.Time
+	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
+	// the pre-authorized flow, which uses a bearer token.
+	jkt     string
+	expires time.Time
 }
 
 // IssuerHandler returns the demo issuer, meant to be mounted with the
@@ -67,6 +83,16 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("POST /token", d.handleToken)
 	mux.HandleFunc("POST /credential", d.handleCredential)
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer", d.handleIssuerMetadata)
+
+	// Authorization code flow, with this issuer as its own authorization
+	// server. /login starts an issuer-initiated flow in the browser, the
+	// rest is the wallet talking to the authorization server.
+	mux.HandleFunc("GET /login", d.handleLoginStart)
+	mux.HandleFunc("POST /login", d.handleLoginSubmit)
+	mux.HandleFunc("POST /par", d.handlePushedAuthorizationRequest)
+	mux.HandleFunc("GET /authorize", d.handleAuthorize)
+	mux.HandleFunc("POST /authorize", d.handleAuthorizeSubmit)
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", d.AuthorizationServerMetadataHandler())
 	return mux
 }
 
@@ -108,6 +134,9 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 			ticketConfigurationID: map[string]any{
 				"format": "dc+sd-jwt",
 				"vct":    TicketVCT,
+				// The scope is what the wallet asks for in the authorization
+				// code flow, so the configuration has to name one.
+				"scope": ticketScope,
 				"cryptographic_binding_methods_supported": []string{"jwk"},
 				"claims": []map[string]any{
 					{"path": []string{"event"}},
@@ -167,14 +196,16 @@ func (d *DemoRP) handleOfferByReference(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown or expired credential offer"})
 		return
 	}
+	grants := map[string]any{}
+	if offer.issuerState != "" {
+		grants[authCodeGrant] = map[string]any{"issuer_state": offer.issuerState}
+	} else {
+		grants[preAuthGrant] = map[string]any{"pre-authorized_code": offer.preAuthCode}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"credential_issuer":            d.issuerID(),
 		"credential_configuration_ids": []string{ticketConfigurationID},
-		"grants": map[string]any{
-			preAuthGrant: map[string]any{
-				"pre-authorized_code": offer.preAuthCode,
-			},
-		},
+		"grants":                       grants,
 	})
 }
 
@@ -184,10 +215,15 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
 		return
 	}
-	if grant := r.PostFormValue("grant_type"); grant != preAuthGrant {
+	switch grant := r.PostFormValue("grant_type"); grant {
+	case preAuthGrant:
+	case authCodeGrant:
+		d.handleAuthorizationCodeToken(w, r)
+		return
+	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":             "unsupported_grant_type",
-			"error_description": fmt.Sprintf("only %s is supported", preAuthGrant),
+			"error_description": fmt.Sprintf("only %s and %s are supported", preAuthGrant, authCodeGrant),
 		})
 		return
 	}
@@ -238,7 +274,7 @@ type credentialRequest struct {
 func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 
-	token, ok := bearerToken(r)
+	token, ok := accessToken(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
 		return
@@ -249,14 +285,29 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		delete(d.tokens, token)
 		known = false
 	}
-	var cNonce string
+	var cNonce, subject, jkt string
 	if known {
 		cNonce = offer.cNonce
+		subject = offer.subject
+		jkt = offer.jkt
 	}
 	d.mu.Unlock()
 	if !known {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
 		return
+	}
+	// A token from the authorization code flow is DPoP-bound, so the
+	// credential request has to prove possession of the same key again.
+	if jkt != "" {
+		presented, err := d.verifyDPoPProof(r, d.issuerID()+"/credential", token)
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_dpop_proof", err.Error()))
+			return
+		}
+		if presented != jkt {
+			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_token", "the access token is bound to a different DPoP key"))
+			return
+		}
 	}
 
 	var req credentialRequest
@@ -279,7 +330,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := d.signTicket(holderKey)
+	credential, err := d.signTicket(holderKey, subject)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "credential_request_denied", "error_description": err.Error()})
 		return
@@ -317,7 +368,7 @@ func verifyProofJWT(raw, cNonce string) (*ecdsa.PublicKey, error) {
 // signTicket mints the demo ticket SD-JWT VC, holder-bound to the proof key
 // and signed with the wallet's issuer key under a leaf certificate from the
 // wallet CA, so the wallet's trust list covers the credential.
-func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey) (string, error) {
+func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string) (string, error) {
 	chain, err := d.wallet.DefaultSigningCertChain()
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
@@ -326,7 +377,7 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey) (string, error) {
 		Issuer:    d.issuerID(),
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
-		Claims:    ticketClaims(),
+		Claims:    ticketClaims(subject),
 		Key:       d.wallet.IssuerKey,
 		HolderKey: holderKey,
 		CertChain: chain,
@@ -338,11 +389,15 @@ func decodeJSONBody(r *http.Request, target any) error {
 	return dec.Decode(target)
 }
 
-func bearerToken(r *http.Request) (string, bool) {
-	const prefix = "Bearer "
-	auth := r.Header.Get("Authorization")
-	if len(auth) <= len(prefix) || auth[:len(prefix)] != prefix {
-		return "", false
+// accessToken reads the access token from the Authorization header. The
+// pre-authorized flow presents a bearer token, the authorization code flow a
+// DPoP-bound one.
+func accessToken(r *http.Request) (string, bool) {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	for _, scheme := range []string{"Bearer ", "DPoP "} {
+		if len(auth) > len(scheme) && strings.EqualFold(auth[:len(scheme)], scheme) {
+			return strings.TrimSpace(auth[len(scheme):]), true
+		}
 	}
-	return auth[len(prefix):], true
+	return "", false
 }

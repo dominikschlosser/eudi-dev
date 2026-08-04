@@ -212,7 +212,7 @@ func jsonString(v string) string {
 // parameters, exactly as a wallet would.
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
 	t.Helper()
-	credential, err := d.signTicket(&holderKey.PublicKey)
+	credential, err := d.signTicket(&holderKey.PublicKey, "")
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -322,7 +322,7 @@ func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, 
 		Issuer:        d.issuerID(),
 		VCT:           TicketVCT,
 		ExpiresIn:     24 * time.Hour,
-		Claims:        ticketClaims(),
+		Claims:        ticketClaims(""),
 		Key:           d.wallet.IssuerKey,
 		HolderKey:     &holderKey.PublicKey,
 		CertChain:     chain,
@@ -610,7 +610,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 
 	id, params := startVerification(t, h, "ticket")
 
-	credential, err := d.signTicket(&holderKey.PublicKey)
+	credential, err := d.signTicket(&holderKey.PublicKey, "")
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -663,16 +663,20 @@ func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) 
 	// The well-known segment comes before the issuer path, so both metadata
 	// documents live at the server root.
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer/issuer", d.IssuerMetadataHandler())
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server/issuer", d.AuthorizationServerMetadataHandler())
 	mux.Handle("/", srv.Handler())
 
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	base = ts.URL
 	w.BaseURL = ts.URL
-	// The authorization code flow needs a redirect target on this origin,
-	// which is what demo mode configures.
+	// The authorization code flow needs a client identity and a redirect
+	// target on this origin, which is what demo mode configures.
 	if w.VCIRedirectURI == "" {
 		w.VCIRedirectURI = ts.URL + "/callback"
+	}
+	if w.VCIClientID == "" {
+		w.VCIClientID = ts.URL
 	}
 	return d, ts
 }
@@ -815,6 +819,104 @@ func TestIssuanceHAIPAcceptsPreAuthorizedOffer(t *testing.T) {
 	// It fails at the issuer's own token endpoint, not on the profile.
 	if strings.Contains(errText, "HAIP") {
 		t.Errorf("a pre-authorized code offer must not be rejected by HAIP enforcement, got %q", errText)
+	}
+}
+
+// The demo issuer is its own authorization server, so the whole HAIP
+// authorization code flow has to work against it: browser login, pushed
+// authorization request with a wallet attestation and DPoP, PKCE, code
+// exchange, DPoP-bound credential request. This drives it through the real
+// wallet client with HAIP enforcement on.
+func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
+	w := newIssuanceWallet(t)
+	w.RequireHAIP = true
+	w.ValidationMode = wallet.ValidationModeStrict
+	_, ts := serveDemoStack(t, w)
+
+	// The browser login is what authorizes the offer. It answers with a
+	// redirect to the wallet, carrying the offer by reference.
+	client := ts.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	form := url.Values{"username": {"alice"}, "password": {"alice"}}
+	resp, err := client.PostForm(ts.URL+"/issuer/login", form)
+	if err != nil {
+		t.Fatalf("logging in: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("login returned %d, want a redirect to the wallet", resp.StatusCode)
+	}
+	walletURL := resp.Header.Get("Location")
+	offerURI := ""
+	if parsed, err := url.Parse(walletURL); err == nil {
+		offerURI = parsed.Query().Get("credential_offer_uri")
+	}
+	if offerURI == "" {
+		t.Fatalf("login redirect %q carries no credential offer", walletURL)
+	}
+
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString("openid-credential-offer://?credential_offer_uri="+url.QueryEscape(offerURI))+`}`)
+	if result["error"] != nil {
+		t.Fatalf("the authorization code flow failed: %v", result["error"])
+	}
+
+	// The ticket carries the authenticated account, which is only knowable
+	// if the login actually drove the flow.
+	var ticket *wallet.StoredCredential
+	for _, c := range w.GetCredentials() {
+		if c.VCT == TicketVCT {
+			credential := c
+			ticket = &credential
+		}
+	}
+	if ticket == nil {
+		t.Fatal("no demo ticket was stored in the wallet")
+	}
+	if got := ticket.Claims["given_name"]; got != demoAccountGivenName {
+		t.Errorf("ticket given_name = %v, want %q from the logged-in account", got, demoAccountGivenName)
+	}
+}
+
+// Without a wallet attestation the authorization server must refuse the
+// pushed authorization request: that is the client authentication HAIP
+// requires, and the demo issuer is the worked example of checking it.
+func TestPushedAuthorizationRequestRequiresWalletAttestation(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {ts.URL},
+		"redirect_uri":          {ts.URL + "/callback"},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
+	}
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	// A valid DPoP proof, so what is left missing is the wallet attestation.
+	dpop := signES256(t, clientKey,
+		map[string]any{"alg": "ES256", "typ": "dpop+jwt", "jwk": holderJWK(t, clientKey)},
+		map[string]any{"htm": "POST", "htu": ts.URL + "/issuer/par", "iat": time.Now().Unix(), "jti": "par-1"},
+	)
+	req, err := http.NewRequest("POST", ts.URL+"/issuer/par", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("building the request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", dpop)
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("pushing the authorization request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusCreated {
+		t.Fatalf("PAR without client authentication was accepted: %s", body)
+	}
+	if !strings.Contains(string(body), "attestation") {
+		t.Errorf("expected the error to name the missing attestation, got %s", body)
 	}
 }
 

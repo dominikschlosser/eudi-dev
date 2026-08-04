@@ -101,7 +101,7 @@
   <div class="consent-overlay" id="howto-overlay">
     <div class="consent-dialog">
       <div class="consent-title">How to use this wallet</div>
-      <p class="dialog-hint">This is a fully spec-compliant wallet: issuers and verifiers interact with it through the standard OpenID4VC protocols, OpenID4VCI for issuance and OpenID4VP for presentation. Point real issuers and verifiers at it and the flows run end to end, including holder binding, SD-JWT VC and mdoc formats, status lists, and trust lists.</p>
+      <p class="dialog-hint">A spec-compliant wallet. Issuers and verifiers talk to it over OpenID4VCI and OpenID4VP. Point real ones at it and the flows run end to end, with holder binding, SD-JWT VC and mdoc, status lists and trust lists.</p>
       <div class="cli-install">
         <div class="cli-install-label">Deliver a credential offer (OpenID4VCI)</div>
         <pre><span class="howto-origin"></span>/credential-offer?credential_offer_uri=&hellip;</pre>
@@ -110,15 +110,15 @@
         <div class="cli-install-label">Trust list (verifiers trusting this wallet's credentials)</div>
         <pre><span class="howto-origin"></span>/api/trustlist</pre>
       </div>
-      <p class="dialog-hint">These endpoints take exactly the same query parameters as their custom-scheme counterparts (<code>openid-credential-offer://</code>, <code>openid4vp://</code>). To convert a custom-scheme link, replace everything before the <code>?</code> with the endpoint URL and keep the query string.</p>
+      <p class="dialog-hint">These endpoints take the same query parameters as the custom-scheme links (<code>openid-credential-offer://</code>, <code>openid4vp://</code>). Replace everything before the <code>?</code> with the endpoint URL.</p>
       <div class="cli-install">
         <div class="cli-install-label">Custom-scheme links via CLI (any platform)</div>
         <pre>eudi wallet accept 'openid4vp://authorize?client_id=&hellip;'</pre>
         <div class="cli-install-label">System URL handler (macOS)</div>
         <pre>eudi wallet register</pre>
       </div>
-      <p class="dialog-hint"><code>wallet register</code> installs OS handlers for <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, and <code>haip-vci://</code>, so clicking such links opens this wallet. See the <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for the full protocol surface.</p>
-      <p class="dialog-hint">No issuer or verifier at hand? This deployment also hosts a <a href="/issuer/" target="_blank">demo issuer</a> and a <a href="/verifier/" target="_blank">demo verifier</a> that run these flows against the wallet out of the box.</p>
+      <p class="dialog-hint"><code>wallet register</code> installs OS handlers for <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code> and <code>haip-vci://</code>, so those links open this wallet. The <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> has the full list of endpoints.</p>
+      <p class="dialog-hint">No issuer or verifier at hand? This deployment also hosts a <a href="/issuer/" target="_blank">demo issuer</a> and a <a href="/verifier/" target="_blank">demo verifier</a>.</p>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
       </div>
@@ -129,7 +129,7 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint">How strictly this wallet holds incoming requests to the EUDI profile. A verifier that passes here has met these rules, and nothing more.</p>
+      <p class="dialog-hint">How strictly this wallet checks incoming requests. A verifier that passes here has met these rules, nothing more.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td id="conf-mode">—</td></tr>
         <tr><td>HAIP 1.0, presentation</td><td id="conf-haip">—</td></tr>
@@ -149,17 +149,20 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">What a verifier needs to trust credentials issued by this wallet. Point its trust list configuration at the URL below, or import the CA certificate directly.</p>
+      <p class="dialog-hint">What others need to trust this wallet. Verifiers check the credentials it issues, issuers check the wallet attestation it sends. Both chain to the same CA.</p>
       <div class="cli-install">
         <div class="cli-install-label">Trust lists</div>
         <div class="cert-links" id="trust-list-links"></div>
+        <p class="dialog-hint">One list per credential type, plus <code>wallet-provider</code> for the wallet attestation. All contain the same CA.</p>
         <div class="cli-install-label">Certificates</div>
         <div class="cert-links" id="cert-links">
           <a id="ca-cert-pem-link" href="/api/certificates/ca">CA (PEM)</a>
           <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">CA (JWKS)</a>
+          <a id="signing-jwks-link" href="/.well-known/jwt-vc-issuer">Signing key (JWKS)</a>
           <a id="tls-cert-pem-link" href="/api/certificates/tls">TLS (PEM)</a>
           <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">TLS (JWKS)</a>
         </div>
+        <p class="dialog-hint">The wallet attestation and key attestation are signed with the signing key. They carry only the leaf certificate, so configure the CA. Leaf certificates change, the CA does not.</p>
       </div>
       <div class="consent-buttons">
         <button class="btn" id="trust-close">Close</button>
@@ -171,7 +174,7 @@
   <div class="consent-overlay" id="cli-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Get the CLI</div>
-      <p class="dialog-hint">This wallet is the web UI of <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">eudi-dev</a>, a developer toolkit for the EUDI / OpenID4VC ecosystem. The <code>eudi</code> CLI decodes, issues, and presents credentials, runs this wallet locally, and proxies live wallet traffic.</p>
+      <p class="dialog-hint">This wallet is the web UI of <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">eudi-dev</a>, a developer toolkit for EUDI and OpenID4VC. The <code>eudi</code> CLI decodes, issues and presents credentials, runs this wallet locally and proxies wallet traffic.</p>
       <div class="cli-install">
         <div class="cli-install-label">Homebrew</div>
         <pre>brew install dominikschlosser/tap/eudi-dev</pre>
@@ -211,7 +214,7 @@
   <div class="consent-overlay" id="issue-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Issue Credential</div>
-      <p class="dialog-hint">Issues a credential with the wallet's issuer key and imports it. All fields except the format are optional. Pick a template (for example german-pid-sdjwt) to fill everything. All values stay editable.</p>
+      <p class="dialog-hint">Issues a credential with the wallet's issuer key and imports it. Only the format is required. Pick a template (for example german-pid-sdjwt) to fill the rest, everything stays editable.</p>
       <form id="issue-form">
         <div class="form-grid">
           <label class="form-label" for="issue-format">Format</label>
@@ -279,7 +282,7 @@
   <div class="consent-overlay" id="templates-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Credential Templates</div>
-      <p class="dialog-hint">Templates are reusable claim sets for issuing credentials. Pre-defined templates are built in. Saving a template under the same name overrides it. Paste template JSON below to import a shared template.</p>
+      <p class="dialog-hint">Templates are reusable claim sets. Some are built in. Saving under an existing name overwrites it. Paste JSON below to import one.</p>
       <div id="templates-list" class="templates-list"></div>
       <form id="template-form">
         <div class="form-grid">

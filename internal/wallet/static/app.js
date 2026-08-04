@@ -1323,15 +1323,15 @@
 
     const parts = [];
     parts.push(strict
-      ? 'Strict validation rejects a request whose findings would only be warnings in debug mode: a bad certificate chain, a broken request object signature, a missing nonce, an unknown client id prefix.'
-      : 'Debug validation reports those findings as warnings and continues, so a request that would fail a real wallet still completes here.');
+      ? 'Strict validation rejects a bad certificate chain, a broken request object signature, a missing nonce or an unknown client id prefix.'
+      : 'Debug validation only warns about those and continues, so a request that a real wallet would reject still completes here.');
     if (config.require_haip) {
-      parts.push('HAIP 1.0 additionally requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, response_mode direct_post.jwt or dc_api.jwt, a DCQL query, and ES256.');
+      parts.push('HAIP 1.0 also requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, direct_post.jwt or dc_api.jwt, DCQL and ES256.');
     }
     if (config.require_haip_issuance) {
-      parts.push('Issuance is held to it too: the credential issuer must be an https origin, and an offer that drives the authorization endpoint must additionally find pushed authorization requests required and PKCE S256, DPoP and client authentication supported. A pre-authorized code offer is not rejected for its grant type.');
+      parts.push('For issuance the credential issuer must be https. An offer that uses the authorization endpoint also needs PAR, PKCE S256, DPoP and client authentication. Pre-authorized code offers are accepted as they are.');
     } else {
-      parts.push('Issuance is not held to the profile: credential offers are accepted whatever flow they use.');
+      parts.push('Issuance is not checked against the profile.');
     }
     const explainer = document.getElementById('conf-explainer');
     if (explainer) explainer.textContent = parts.join(' ');
@@ -1352,9 +1352,10 @@
     return m + ' minutes';
   }
 
-  // Trust list links: what a verifier needs to trust this wallet's
-  // self-issued credentials. Groups can change with issuance, so this is
-  // reloaded whenever credentials change.
+  // Trust list links: what a counterparty needs to trust this wallet, both a
+  // verifier checking its self-issued credentials and an issuer checking its
+  // wallet and key attestations (same CA anchor in every list). Groups can
+  // change with issuance, so this is reloaded whenever credentials change.
   async function loadTrustLists() {
     const row = document.getElementById('trust-list-links');
     try {
@@ -1367,13 +1368,21 @@
         const url = entry.advertised_url || entry.url ||
           (entry.path ? window.location.origin + entry.path : '');
         if (!url) return;
-        const item = document.createElement('span');
+        const item = document.createElement('div');
         item.className = 'trust-list-item';
         const link = document.createElement('a');
         link.href = url;
         link.textContent = entry.id || 'trust list';
         link.title = url;
         item.appendChild(link);
+        // The bare id ("pid") says nothing about what the list covers, so
+        // name the provider profile next to it.
+        if (entry.entityName) {
+          const name = document.createElement('span');
+          name.className = 'trust-list-name';
+          name.textContent = entry.entityName;
+          item.appendChild(name);
+        }
         const copy = document.createElement('button');
         copy.type = 'button';
         copy.className = 'copy-btn';
@@ -1387,6 +1396,15 @@
           } catch (e) { /* clipboard unavailable */ }
         });
         item.appendChild(copy);
+        // Who the list is for. "pid" alone reads like a credential detail,
+        // and gives an issuer no reason to think one of these lists is the
+        // anchor for the wallet attestation.
+        if (entry.description) {
+          const desc = document.createElement('div');
+          desc.className = 'trust-list-desc';
+          desc.textContent = entry.description;
+          item.appendChild(desc);
+        }
         row.appendChild(item);
       });
     } catch (e) {

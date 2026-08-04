@@ -208,15 +208,20 @@ func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 		t.Fatalf("registering local attestation: %v", err)
 	}
 
+	// The wallet-provider list is always present alongside the credential
+	// lists, between pid and local.
 	groups := TrustListGroupsForWallet(w)
-	if len(groups) != 2 {
-		t.Fatalf("expected 2 trust-list groups, got %d", len(groups))
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 trust-list groups, got %d", len(groups))
 	}
 	if groups[0].ID != "pid" {
 		t.Fatalf("expected pid group first, got %s", groups[0].ID)
 	}
-	if groups[1].ID != "local" {
-		t.Fatalf("expected local group second, got %s", groups[1].ID)
+	if groups[1].ID != "wallet-provider" {
+		t.Fatalf("expected wallet-provider group second, got %s", groups[1].ID)
+	}
+	if groups[2].ID != "local" {
+		t.Fatalf("expected local group third, got %s", groups[2].ID)
 	}
 
 	defaultGroup, ok := DefaultTrustListGroupForWallet(w)
@@ -228,6 +233,87 @@ func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 	}
 }
 
+func TestWalletProviderTrustList_AlwaysServedWithSameAnchorButNeverDefault(t *testing.T) {
+	// A wallet that has issued nothing still sends wallet attestations, so
+	// the wallet-provider list must not depend on the attestation registry.
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://wallet.example:8443"
+
+	group, ok := FindTrustListGroupForWallet(w, "wallet-provider", "", "")
+	if !ok {
+		t.Fatal("expected a wallet-provider trust-list group")
+	}
+	if group.Profile.LoTEType != walletProviderTrustListType {
+		t.Fatalf("expected EUWalletProvidersList type, got %s", group.Profile.LoTEType)
+	}
+	if group.Profile.IssuanceServiceType != walletProviderIssuanceServiceType {
+		t.Fatalf("expected wallet solution issuance service type, got %s", group.Profile.IssuanceServiceType)
+	}
+
+	defaultGroup, ok := DefaultTrustListGroupForWallet(w)
+	if !ok {
+		t.Fatal("expected a default trust-list group")
+	}
+	if defaultGroup.ID == "wallet-provider" {
+		t.Fatal("wallet-provider list must never be the default trust list")
+	}
+
+	// Same anchor as the credential list, different list around it. That is
+	// the whole point: an issuer gets its own list without a second CA.
+	walletJWT, err := GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/wallet-provider")
+	if err != nil {
+		t.Fatalf("GenerateTrustListJWTForWalletGroup(wallet-provider): %v", err)
+	}
+	credentialJWT, err := GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, defaultGroup, "/api/trustlists/"+defaultGroup.ID)
+	if err != nil {
+		t.Fatalf("GenerateTrustListJWTForWalletGroup(%s): %v", defaultGroup.ID, err)
+	}
+	if got, want := trustListAnchorCert(t, walletJWT), trustListAnchorCert(t, credentialJWT); got != want {
+		t.Fatal("expected the wallet-provider list to carry the same CA certificate as the credential list")
+	}
+}
+
+// trustListAnchorCert returns the base64 certificate of the first service in a
+// trust list JWT.
+func trustListAnchorCert(t *testing.T, jwt string) string {
+	t.Helper()
+	parts := strings.SplitN(jwt, ".", 3)
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
+	}
+	payloadBytes, err := format.DecodeBase64URL(parts[1])
+	if err != nil {
+		t.Fatalf("decoding payload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("parsing payload: %v", err)
+	}
+	lote, _ := payload["LoTE"].(map[string]any)
+	entities, _ := lote["TrustedEntitiesList"].([]any)
+	if len(entities) == 0 {
+		t.Fatal("expected a trusted entity in the trust list")
+	}
+	entity, _ := entities[0].(map[string]any)
+	services, _ := entity["TrustedEntityServices"].([]any)
+	if len(services) == 0 {
+		t.Fatal("expected a service entry in the trust list")
+	}
+	service, _ := services[0].(map[string]any)
+	info, _ := service["ServiceInformation"].(map[string]any)
+	identity, _ := info["ServiceDigitalIdentity"].(map[string]any)
+	certs, _ := identity["X509Certificates"].([]any)
+	if len(certs) == 0 {
+		t.Fatal("expected a certificate in the service digital identity")
+	}
+	cert, _ := certs[0].(map[string]any)
+	val, _ := cert["val"].(string)
+	if val == "" {
+		t.Fatal("expected a base64 certificate value")
+	}
+	return val
+}
+
 func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.RegisterIssuedAttestation(applyPIDTrustProfileDefaults(IssuedAttestationSpec{
@@ -237,9 +323,11 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 		t.Fatalf("registering PID attestation: %v", err)
 	}
 
+	// Two entries: the PID credential list and the always-present
+	// wallet-provider list.
 	entries := BuildTrustListIndexEntries(w, "")
-	if len(entries) != 1 {
-		t.Fatalf("expected one trust-list entry, got %d", len(entries))
+	if len(entries) != 2 {
+		t.Fatalf("expected two trust-list entries, got %d", len(entries))
 	}
 	if entries[0].Path != "/api/trustlists/pid" {
 		t.Fatalf("expected pid path, got %s", entries[0].Path)
@@ -252,8 +340,8 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 
 	entries = BuildTrustListIndexEntries(w, "https://wallet.example:8443")
-	if len(entries) != 1 {
-		t.Fatalf("expected one trust-list entry, got %d", len(entries))
+	if len(entries) != 2 {
+		t.Fatalf("expected two trust-list entries, got %d", len(entries))
 	}
 	if entries[0].AdvertisedURL != "https://wallet.example:8443/api/trustlists/pid" {
 		t.Fatalf("expected advertised_url, got %s", entries[0].AdvertisedURL)

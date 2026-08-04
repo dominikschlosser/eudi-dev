@@ -454,7 +454,7 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
-	cmd.Flags().StringVar(&id, "id", "", "Trust-list profile ID to print, for example 'pid' or 'local'")
+	cmd.Flags().StringVar(&id, "id", "", "Trust-list profile ID to print, for example 'pid', 'wallet-provider' or 'local'")
 	cmd.Flags().StringVar(&vct, "vct", "", "Select the trust list covering this SD-JWT VCT")
 	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trust list covering this mdoc docType")
 	return cmd

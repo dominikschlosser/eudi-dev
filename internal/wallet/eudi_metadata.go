@@ -42,6 +42,17 @@ const (
 	pidSchemeCommunityRules    = "http://uri.etsi.org/19602/PIDProviders/schemerules/EU"
 	pidIssuanceServiceType     = "http://uri.etsi.org/19602/SvcType/PID/Issuance"
 	pidRevocationServiceType   = "http://uri.etsi.org/19602/SvcType/PID/Revocation"
+
+	// Wallet Provider list. The wallet signs its wallet attestation and its
+	// key attestations with the same CA it signs credentials with, but an
+	// issuer checking those looks for a Wallet Provider list, not a credential
+	// one, so the wallet publishes that list separately. The URIs are the ones
+	// ETSI TS 119 602 assigns and the EUDI reference implementation uses.
+	walletProviderTrustListType         = "http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList"
+	walletProviderStatusDetermination   = "http://uri.etsi.org/19602/WalletProvidersList/StatusDetn/EU"
+	walletProviderSchemeCommunityRules  = "http://uri.etsi.org/19602/WalletProvidersList/schemerules/EU"
+	walletProviderIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
+	walletProviderRevocationServiceType = "http://uri.etsi.org/19602/SvcType/WalletSolution/Revocation"
 )
 
 // IssuedAttestationSpec describes an attestation type the local test issuer is

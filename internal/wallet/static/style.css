@@ -326,6 +326,25 @@ header h1 {
 .cert-links a:hover {
   text-decoration: underline;
 }
+#trust-list-links {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cert-links .trust-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.cert-links .trust-list-name {
+  color: var(--text-dim);
+}
+.cert-links .trust-list-desc {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
 .cert-links .copy-btn {
   background: none;
   border: none;

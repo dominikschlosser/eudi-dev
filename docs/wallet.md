@@ -180,7 +180,7 @@ The whole UI is built for browser automation. Every interactive control has a st
 
 ![Issue credential dialog](./wallet-issue-ui.png)
 
-The UI header links to the project on GitHub and to CLI install instructions. Below the action buttons the UI lists the wallet's trust list URLs with copy buttons (this is what a verifier needs to trust the wallet's self-issued credentials) plus direct downloads for the CA and HTTPS certificates.
+The UI header links to the project on GitHub and to CLI install instructions. Below the action buttons the UI lists the wallet's trust list URLs with copy buttons, each labelled with the provider profile it describes, plus direct downloads for the CA, signing and HTTPS keys. The **Trust & certificates** dialog covers both counterparties: a verifier trusting the wallet's self-issued credentials, and an issuer verifying the wallet attestation and key attestation the wallet sends during issuance. Both chain to the same CA.
 
 By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. An https `--base-url` is used as the issuer URL directly instead, so issuer metadata, trust lists, and status lists live on the public origin and an external TLS terminator serves them (see [public demo hosting](public-demo.md)). If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
 
@@ -200,12 +200,15 @@ Trust lists are created from that registry, not by scanning certificates alone:
 
 Credential-signing certificates are derived per trust-list profile. The wallet keeps one shared CA root, but credentials for different profiles can present different leaf certificates while still chaining to that same CA.
 
+That shared CA is also what an issuer needs on the other side of the flow. The wallet attestation (`OAuth-Client-Attestation`) and the key attestation in credential proofs are signed by the wallet's issuer key and carry only the leaf in `x5c`, so the anchor comes from `/api/certificates/ca` or from any trust list (they all embed the same CA). A trust list id such as `pid` names the credential profile it describes, it does not limit what the list can anchor.
+
 When a wallet already has persisted issuer or status-list URLs, `wallet serve` reuses them by default so previously generated credentials keep resolving against the same issuer metadata, trust-list, and status-list endpoints. Passing `--base-url` or `--docker` explicitly replaces that default. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They never rewrite persisted serving URLs unless the flags ask for it, and they print a note when the embedded URLs are not live because no server is running.
 
 The startup banner warns about serving config that cannot work in the current environment: a persisted Docker hostname when the server does not run in Docker, and stored credentials that embed issuer or status list URLs this server does not serve (they keep failing validation and status checks until they are issued again).
 
 The wallet groups registered attestation entries by trust-list profile. Each group is exposed as its own trust list under `/api/trustlists/{id}`. The `id` is a stable profile identifier:
 - `pid` for the built-in PID profile
+- `wallet-provider` for the Wallet Provider profile (always present, this is the one an issuer uses to check the wallet attestation)
 - `local` for the built-in local ETSI-shaped profile
 - `tl-<hash>` for any additional custom profile
 

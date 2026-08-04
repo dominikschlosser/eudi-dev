@@ -49,6 +49,7 @@ type TrustListGroup struct {
 type TrustListIndexEntry struct {
 	ID                    string                  `json:"id"`
 	Default               bool                    `json:"default"`
+	Description           string                  `json:"description,omitempty"`
 	Path                  string                  `json:"path"`
 	LoTEType              string                  `json:"loTEType"`
 	EntityName            string                  `json:"entityName"`
@@ -109,10 +110,10 @@ func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 	}
 	if len(specs) == 0 {
 		profile := inferWalletTrustListProfile(w)
-		return []TrustListGroup{{
+		return withWalletProviderGroup([]TrustListGroup{{
 			ID:      trustListGroupID(profile),
 			Profile: profile,
-		}}
+		}})
 	}
 
 	byKey := make(map[string]*TrustListGroup)
@@ -130,7 +131,7 @@ func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 		group.Specs = append(group.Specs, spec)
 	}
 
-	groups := make([]TrustListGroup, 0, len(byKey))
+	groups := make([]TrustListGroup, 0, len(byKey)+1)
 	for _, group := range byKey {
 		sort.Slice(group.Specs, func(i, j int) bool {
 			if group.Specs[i].Format != group.Specs[j].Format {
@@ -143,10 +144,45 @@ func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 		})
 		groups = append(groups, *group)
 	}
+	groups = withWalletProviderGroup(groups)
 	sort.Slice(groups, func(i, j int) bool {
 		return trustListGroupSortKey(groups[i]) < trustListGroupSortKey(groups[j])
 	})
 	return groups
+}
+
+// walletProviderTrustListProfile describes the wallet in its Wallet Provider
+// role: the entity whose CA anchors the wallet attestation and the key
+// attestations sent to issuers.
+func walletProviderTrustListProfile() trustListProfile {
+	return trustListProfile{
+		LoTEType:                    walletProviderTrustListType,
+		StatusDeterminationApproach: walletProviderStatusDetermination,
+		SchemeTypeCommunityRules:    walletProviderSchemeCommunityRules,
+		SchemeTerritory:             "EU",
+		IssuanceServiceType:         walletProviderIssuanceServiceType,
+		RevocationServiceType:       walletProviderRevocationServiceType,
+		IssuanceServiceName:         "Wallet Attestation Issuance",
+		RevocationServiceName:       "Wallet Attestation Revocation",
+		EntityName:                  "EUDI Dev Wallet Provider",
+	}
+}
+
+// withWalletProviderGroup adds the wallet-provider list to a set of
+// credential lists. It does not depend on the issued-attestation registry:
+// the wallet attestation exists whether or not the wallet has issued
+// anything, and an issuer should not have to work out that a list named
+// "pid" happens to carry the anchor it needs. The certificate inside is the
+// same shared CA, only the list that presents it differs.
+func withWalletProviderGroup(groups []TrustListGroup) []TrustListGroup {
+	profile := walletProviderTrustListProfile()
+	id := trustListGroupID(profile)
+	for _, group := range groups {
+		if group.ID == id {
+			return groups
+		}
+	}
+	return append(groups, TrustListGroup{ID: id, Profile: profile})
 }
 
 func DefaultTrustListGroupForWallet(w *Wallet) (TrustListGroup, bool) {
@@ -156,6 +192,14 @@ func DefaultTrustListGroupForWallet(w *Wallet) (TrustListGroup, bool) {
 	}
 	for _, group := range groups {
 		if group.Profile.LoTEType == pidTrustListType {
+			return group, true
+		}
+	}
+	// The wallet-provider list anchors attestations rather than credentials,
+	// so it never becomes the default that `/api/trustlist` serves, however
+	// few other lists exist.
+	for _, group := range groups {
+		if group.Profile.LoTEType != walletProviderTrustListType {
 			return group, true
 		}
 	}
@@ -202,6 +246,7 @@ func BuildTrustListIndexEntries(w *Wallet, issuer string) []TrustListIndexEntry 
 		entry := TrustListIndexEntry{
 			ID:                    group.ID,
 			Default:               hasDefault && group.ID == defaultGroup.ID,
+			Description:           trustListDescription(group),
 			Path:                  path,
 			LoTEType:              group.Profile.LoTEType,
 			EntityName:            group.Profile.EntityName,
@@ -216,6 +261,16 @@ func BuildTrustListIndexEntries(w *Wallet, issuer string) []TrustListIndexEntry 
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// trustListDescription says who a list is for, because the id alone does not.
+// "pid" reads like a list about PID credentials only, and nothing about it
+// suggests that an issuer verifying a wallet attestation has its own list.
+func trustListDescription(group TrustListGroup) string {
+	if group.Profile.LoTEType == walletProviderTrustListType {
+		return "Wallet and key attestations, for issuers"
+	}
+	return "Credentials this wallet issues, for verifiers"
 }
 
 func trustListProfileFromSpec(spec IssuedAttestationSpec) trustListProfile {
@@ -251,6 +306,8 @@ func trustListGroupID(profile trustListProfile) string {
 	switch profile.LoTEType {
 	case pidTrustListType:
 		return "pid"
+	case walletProviderTrustListType:
+		return "wallet-provider"
 	case localTrustListType:
 		return "local"
 	}
@@ -262,6 +319,8 @@ func trustListGroupSortKey(group TrustListGroup) string {
 	switch group.Profile.LoTEType {
 	case pidTrustListType:
 		return "0|" + group.ID
+	case walletProviderTrustListType:
+		return "1|" + group.ID
 	case localTrustListType:
 		return "9|" + group.ID
 	default:

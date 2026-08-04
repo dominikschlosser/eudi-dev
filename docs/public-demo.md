@@ -5,7 +5,9 @@ The wallet server can run as a shared public demo (for example on `https://eudi-
 ## Demo mode
 
 ```bash
-eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprint-file imprint.html
+eudi wallet serve --demo --base-url https://eudi-test.dev \
+  --vci-client-id https://eudi-test.dev --vci-redirect-uri https://eudi-test.dev/callback \
+  --status-list --imprint-file imprint.html
 ```
 
 `--demo` changes the server in five ways:
@@ -19,7 +21,7 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 
 ## What stays open (accepted risk)
 
-Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, which HAIP permits: §4 requires an issuer to support the authorization code flow but does not require using it for every credential. The verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP, following HAIP 1.0: it signs its authorization request (served by reference from `/verifier/request/{id}`), identifies itself with an `x509_hash:` client id derived from its signing certificate, and receives the response encrypted as `direct_post.jwt` with a per-request key. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server. Offers and verification requests are in-memory and expire after ten minutes, and each verification request accepts exactly one answer.
+Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, which HAIP permits: §4 requires an issuer to support the authorization code flow but does not require using it for every credential. It also offers the authorization code flow itself (see below), so the profile's client authentication can be exercised. The verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP, following HAIP 1.0: it signs its authorization request (served by reference from `/verifier/request/{id}`), identifies itself with an `x509_hash:` client id derived from its signing certificate, and receives the response encrypted as `direct_post.jwt` with a per-request key. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server. Offers and verification requests are in-memory and expire after ten minutes, and each verification request accepts exactly one answer.
 
 The wallet UI pages the credential list (ten per page), so a demo that accumulated hundreds of credentials between resets stays usable and does not ship the whole list to every visitor on load.
 
@@ -30,6 +32,48 @@ The demo is a shared environment by design. Anyone can issue credentials, delete
 ## Base URL and issuer URL
 
 With an https base URL the issuer URL equals the base URL. Status list URIs, `iss`, the `.well-known` metadata and trust list URLs all live on the public origin, and the built-in self-signed HTTPS listener is not started (the reverse proxy owns TLS). With an http base URL the wallet keeps its second self-signed HTTPS listener on port+1 as before.
+
+## Client identity for authorization-code issuance
+
+A public demo should also be usable as a wallet by external issuers, and HAIP issuance runs the authorization code flow. That flow needs both `--vci-client-id` and `--vci-redirect-uri`, otherwise the wallet rejects the offer before it reaches the pushed authorization request and the issuer never sees a wallet attestation. The example deployment uses the demo origin as the client id and the wallet's own callback endpoint as the redirect URI:
+
+```
+--vci-client-id https://eudi-test.dev --vci-redirect-uri https://eudi-test.dev/callback
+```
+
+Issuers that require registration should register exactly those two values. Pre-authorized code offers work without either flag and carry no client attestation.
+
+## The demo issuer as an authorization server
+
+The demo issuer also runs the authorization code flow, with itself as the authorization server. Its metadata (`/.well-known/oauth-authorization-server/issuer`) advertises what HAIP requires: pushed authorization requests required, PKCE S256, DPoP, and `attest_jwt_client_auth`. The endpoints are `/issuer/par`, `/issuer/authorize` and `/issuer/token`.
+
+Authentication is one hardcoded account, **alice / alice**, printed on the login page. It is a demo, not an account system: no registration, no stored user data, no session beyond the flow it belongs to.
+
+Two entry points:
+
+- **Issuer-initiated** (the button on the `/issuer` page). You sign in at `/issuer/login`, the issuer creates an offer with an `issuer_state` bound to that login and sends the browser to the wallet. The wallet then runs PAR, the authorization endpoint and the token exchange on its own, which is what makes the flow work on a headless host.
+- **Wallet-initiated**. A wallet that opens the authorization endpoint in a browser gets the same login page and is redirected back with the code.
+
+The pushed authorization request and the token request must both carry a wallet attestation, and the demo issuer verifies it rather than waving it through: the certificate in the `x5c` header has to chain to the wallet CA, the PoP has to be signed by the attested key, and `sub`, `iss`, `aud` and the expiry have to line up. The access token is bound to the DPoP key and the credential request has to prove that key again. The ticket then carries the name of the account that signed in, so a flow that skipped the login is visible in the result.
+
+## What an issuer needs to verify the wallet
+
+On the authorization-code path the wallet authenticates with attestation-based client authentication and sends both headers on the pushed authorization request and on the token request:
+
+- `OAuth-Client-Attestation`, signed by the wallet's issuer key (`iss` is the wallet origin, `sub` is the client id, `cnf.jwk` is the wallet's holder key). Its `x5c` header carries the leaf certificate only, the self-signed root is stripped.
+- `OAuth-Client-Attestation-PoP`, signed by that holder key. If the authorization server metadata advertises a `challenge_endpoint`, the wallet fetches a challenge first and includes it.
+
+Credential proofs carry a `key-attestation+jwt` from the same signer when the credential configuration sets `key_attestations_required`.
+
+So the leaf comes with the attestation and the trust anchor is fetched once:
+
+| Source | URL |
+| --- | --- |
+| CA certificate (the anchor to pin) | `/api/certificates/ca`, JWKS form with `?format=jwks` |
+| Signing key by `kid` | `/.well-known/jwt-vc-issuer` |
+| ETSI trust list with the same CA | `/api/trustlists` for the index, `/api/trustlists/{id}` for a list |
+
+Pin the CA, not the leaf or the `kid`. The CA survives restarts and the periodic reset, while a leaf is reissued whenever the wallet regenerates its signing key. The trust lists are grouped by credential profile (`pid`, `local`), but every one of them carries the same CA, so any of them works as the anchor for the attestations too. This is a self-signed development CA, so trust in it is established out of band by design.
 
 ## Imprint
 

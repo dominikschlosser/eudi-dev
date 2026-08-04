@@ -2200,11 +2200,13 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 		t.Fatalf("expected 200, got %d: %s", indexResp.Code, indexResp.Body.String())
 	}
 	index := decodeJSON(t, indexResp)
+	// pid and local for the credentials, plus the wallet-provider list that
+	// is always served.
 	rawLists, ok := index["trust_lists"].([]any)
-	if !ok || len(rawLists) != 2 {
-		t.Fatalf("expected 2 trust-list index entries, got %v", index["trust_lists"])
+	if !ok || len(rawLists) != 3 {
+		t.Fatalf("expected 3 trust-list index entries, got %v", index["trust_lists"])
 	}
-	var sawPIDDefault, sawLocal bool
+	var sawPIDDefault, sawLocal, sawWalletProvider bool
 	for _, raw := range rawLists {
 		entry, ok := raw.(map[string]any)
 		if !ok {
@@ -2234,10 +2236,21 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 				t.Fatalf("expected local advertised_url, got %v", entry["advertised_url"])
 			}
 			sawLocal = true
+		case "wallet-provider":
+			if entry["default"] == true {
+				t.Fatalf("wallet-provider list must never be the default, got %v", entry)
+			}
+			if entry["loTEType"] != walletProviderTrustListType {
+				t.Fatalf("expected wallet-provider LoTE type, got %v", entry["loTEType"])
+			}
+			if desc, _ := entry["description"].(string); !strings.Contains(strings.ToLower(desc), "attestation") {
+				t.Fatalf("expected wallet-provider description to name the wallet attestation, got %v", entry["description"])
+			}
+			sawWalletProvider = true
 		}
 	}
-	if !sawPIDDefault || !sawLocal {
-		t.Fatalf("expected pid+local trust-list entries, got %v", rawLists)
+	if !sawPIDDefault || !sawLocal || !sawWalletProvider {
+		t.Fatalf("expected pid+local+wallet-provider trust-list entries, got %v", rawLists)
 	}
 
 	legacyResp := serverRequest(t, srv, "GET", "/api/trustlist", "")

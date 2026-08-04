@@ -722,14 +722,24 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#trust-link").click();
     await expect(page.locator("#trust-overlay")).toHaveClass(/active/);
 
-    for (const id of ["ca-cert-pem-link", "ca-cert-jwks-link"]) {
+    for (const id of ["ca-cert-pem-link", "ca-cert-jwks-link", "signing-jwks-link"]) {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
+    // A bare trust-list id ("pid") does not say what the list covers, so the
+    // provider profile is named next to it. Issuers need the same anchor for
+    // the wallet attestation, so this dialog has to be readable both ways.
+    await expect(
+      page.locator("#trust-list-links .trust-list-name").first(),
+    ).toContainText("Provider");
     // This server runs with an https --base-url, so the built-in HTTPS
     // listener is disabled and the self-signed TLS leaf stays hidden.
     for (const id of ["tls-cert-pem-link", "tls-cert-jwks-link"]) {
       await expect(page.locator(`#${id}`)).toBeHidden();
     }
+
+    const signing = await request.get(`${WALLET_URL}/.well-known/jwt-vc-issuer`);
+    expect(signing.status()).toBe(200);
+    expect(await signing.text()).toContain('"keys"');
 
     for (const href of [
       "/api/certificates/ca",

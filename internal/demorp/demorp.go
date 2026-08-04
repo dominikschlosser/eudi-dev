@@ -19,9 +19,11 @@
 // hands out credential offers redeemable by any OID4VCI wallet, and the
 // verifier requests and cryptographically verifies presentations.
 //
-// Both are deliberately small: pre-authorized code grant only on the issuer
-// side, plain-parameter authorization requests with direct_post on the
-// verifier side, SD-JWT VC only. Credentials are signed with the wallet's
+// Both are deliberately small: on the issuer side a pre-authorized code
+// grant plus an authorization code grant served by the issuer itself as
+// authorization server (one hardcoded demo account), plain-parameter
+// authorization requests with direct_post on the verifier side, SD-JWT VC
+// only. Credentials are signed with the wallet's
 // issuer key under a leaf certificate minted from the wallet CA, so the
 // wallet's own trust list covers them and verification closes the loop
 // without extra trust setup.
@@ -65,6 +67,12 @@ type DemoRP struct {
 	offers   map[string]*offerState
 	tokens   map[string]*offerState
 	requests map[string]*requestState
+	// Authorization code flow state: pushed authorization requests by
+	// request_uri, the codes minted from them, and the browser logins that
+	// authorize an issuer-initiated offer.
+	authRequests map[string]*authRequestState
+	codes        map[string]*authRequestState
+	logins       map[string]*loginState
 }
 
 // New creates the demo issuer/verifier pair. baseURL returns the public
@@ -72,11 +80,14 @@ type DemoRP struct {
 // or http://localhost:8085.
 func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 	return &DemoRP{
-		wallet:   w,
-		baseURL:  func() string { return strings.TrimRight(baseURL(), "/") },
-		offers:   make(map[string]*offerState),
-		tokens:   make(map[string]*offerState),
-		requests: make(map[string]*requestState),
+		wallet:       w,
+		baseURL:      func() string { return strings.TrimRight(baseURL(), "/") },
+		offers:       make(map[string]*offerState),
+		tokens:       make(map[string]*offerState),
+		requests:     make(map[string]*requestState),
+		authRequests: make(map[string]*authRequestState),
+		codes:        make(map[string]*authRequestState),
+		logins:       make(map[string]*loginState),
 	}
 }
 
@@ -104,6 +115,21 @@ func (d *DemoRP) pruneLocked() {
 	for id, r := range d.requests {
 		if now.After(r.expires) {
 			delete(d.requests, id)
+		}
+	}
+	for uri, a := range d.authRequests {
+		if now.After(a.expires) {
+			delete(d.authRequests, uri)
+		}
+	}
+	for code, a := range d.codes {
+		if now.After(a.expires) || a.codeUsed {
+			delete(d.codes, code)
+		}
+	}
+	for state, l := range d.logins {
+		if now.After(l.expires) {
+			delete(d.logins, state)
 		}
 	}
 }
