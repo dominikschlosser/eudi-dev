@@ -11,13 +11,14 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 `--demo` changes the server in four ways:
 
 1. It implies `--pid`, so the server runs headless with a known credential baseline. Consent stays interactive for browser flows (visitors clicking offer or authorize links approve in the wallet UI), while API submissions auto-accept, keeping the demo a reliable counterparty for external issuers, verifiers, and CLI clients.
+   A consent dialog only opens in the browser that started the flow, never in every open tab. That is the tab a request redirected to (`/?request=<id>`), or the tab the OS scheme handler opened for a dispatched `openid4vp://` link (marked `consent=await`, valid once and for 90 seconds). Everyone else sees a "N requests are waiting for consent" bar with a Review button, so a request can still be reached without a visitor's tab being hijacked.
 2. It disables the admin endpoints. `POST /api/shutdown`, `PUT/DELETE /api/templates/{name}`, `POST/DELETE /api/next-error` and `PUT /api/config/preferred-format` return 403. Saving templates through `POST /api/issue` is rejected too. `GET /api/config` stops reporting host paths and the process id.
 3. It blocks outbound requests to internal networks. Visitor supplied URLs (credential offers, `request_uri`, trust lists, status lists) are still fetched from the public internet, but connections to loopback, RFC 1918, link local (including cloud metadata endpoints), CGNAT and unique local addresses are refused at dial time. The check runs on resolved IP addresses, so DNS tricks do not bypass it.
 4. It resets the wallet periodically. `--demo-reset` takes an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`); `0` disables it. A wall-clock schedule keeps the reset at the same local time every day instead of drifting with each restart, and follows DST. Resets restore the clean baseline (fresh PID credentials, empty activity log) while keys, certificates and URLs survive, so trust list and status list URLs stay stable. The UI footer shows the schedule.
 
 ## What stays open (accepted risk)
 
-Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, the verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server.
+Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, the verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server. Offers and verification requests are in-memory and expire after ten minutes, and each verification request accepts exactly one answer.
 
 The wallet UI pages the credential list (ten per page), so a demo that accumulated hundreds of credentials between resets stays usable and does not ship the whole list to every visitor on load.
 
@@ -62,9 +63,20 @@ The compose example ships an optional usage report, so you can tell whether the 
 ./deploy.sh stats-password   # writes stats.env with a bcrypt hash (gitignored)
 ./deploy.sh push             # applies it
 ./deploy.sh stats            # quick summary in the terminal
+./deploy.sh stats-reset      # discard the log and start counting from zero
 ```
 
 Then open `https://your-domain/stats/`. Remove the `handle_path /stats*` block from the Caddyfile (and the `stats` service) to turn the whole thing off. If your imprint claims that no access data is processed, adjust it: the log exists, even anonymized.
+
+Read the numbers with care. Your own testing counts too, and a single browser tab produces far more requests than a visit: every page load opens an event stream and the UI reloads credentials, log and trust lists whenever anything changes. `deploy.sh stats` therefore lists page requests only (the `/api/` paths are the UI talking to itself). Distinct visitors are approximated from masked addresses, so everyone behind the same `/24` counts once.
+
+### Log bounds
+
+Nothing here grows without bound:
+
+- the access log rolls at 10 MiB, keeps three files and drops anything older than 30 days (about 40 MiB worst case)
+- every container caps its own log at 10 MB with three files, through the `logging` anchor in the compose file. Docker's default is unlimited, which is what actually fills a disk
+- the report only reads the current access log file, so a roll also caps how far back the statistics reach
 
 ## Deployment notes
 

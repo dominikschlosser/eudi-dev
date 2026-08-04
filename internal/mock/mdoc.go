@@ -21,6 +21,8 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
@@ -28,6 +30,63 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
+
+// SplitClaimsByNamespace groups claims by namespace. A key of the form
+// "namespace:element" goes into that namespace, everything else into
+// defaultNamespace. The German PID needs this: its national additions live in
+// eu.europa.ec.eudi.pid.de.1 while the rest stays in eu.europa.ec.eudi.pid.1.
+func SplitClaimsByNamespace(claims map[string]any, defaultNamespace string) map[string]map[string]any {
+	out := make(map[string]map[string]any)
+	for key, value := range claims {
+		ns, name := defaultNamespace, key
+		if i := strings.Index(key, ":"); i > 0 {
+			ns, name = key[:i], key[i+1:]
+		}
+		if out[ns] == nil {
+			out[ns] = make(map[string]any)
+		}
+		out[ns][name] = value
+	}
+	if len(out) == 0 {
+		out[defaultNamespace] = map[string]any{}
+	}
+	return out
+}
+
+// fullDatePattern matches an ISO 8601 calendar date with no time component.
+var fullDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// cborDateValue wraps date-shaped strings in the CBOR tags ISO 18013-5 uses
+// for them: full-date (tag 1004) for YYYY-MM-DD and tdate (tag 0) for a
+// timestamp. Real PIDs encode birth_date and expiry_date this way, and a
+// verifier that type-checks the element sees a plain text string otherwise.
+// Values that are not dates, and every other type, pass through untouched.
+func cborDateValue(v any) any {
+	switch val := v.(type) {
+	case string:
+		if fullDatePattern.MatchString(val) {
+			return cbor.Tag{Number: 1004, Content: val}
+		}
+		if _, err := time.Parse(time.RFC3339, val); err == nil {
+			return cbor.Tag{Number: 0, Content: val}
+		}
+		return val
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, item := range val {
+			out[k] = cborDateValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, item := range val {
+			out[i] = cborDateValue(item)
+		}
+		return out
+	default:
+		return v
+	}
+}
 
 // MDOCConfig holds options for generating a mock mDOC credential.
 type MDOCConfig struct {
@@ -62,7 +121,7 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 
 	namespaceClaims := cfg.NamespaceClaims
 	if namespaceClaims == nil {
-		namespaceClaims = map[string]map[string]any{cfg.Namespace: cfg.Claims}
+		namespaceClaims = SplitClaimsByNamespace(cfg.Claims, cfg.Namespace)
 	}
 
 	// Build IssuerSignedItems and compute value digests per namespace.
@@ -85,7 +144,7 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 				"digestID":          digestID,
 				"random":            random,
 				"elementIdentifier": name,
-				"elementValue":      value,
+				"elementValue":      cborDateValue(value),
 			}
 
 			itemBytes, err := cbor.Marshal(item)

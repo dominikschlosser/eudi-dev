@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
@@ -153,7 +154,7 @@ func TestResolveIssueClaims_PIDWhenFlagged_MDOC(t *testing.T) {
 func TestResolveIssueClaims_PIDWithOmit(t *testing.T) {
 	issuePID = true
 	issueClaims = ""
-	issueOmit = []string{"place_of_birth", "sex"}
+	issueOmit = []string{"place_of_birth", "address"}
 
 	tpl, err := credtemplate.Load("german-pid-sdjwt", t.TempDir())
 	if err != nil {
@@ -171,8 +172,8 @@ func TestResolveIssueClaims_PIDWithOmit(t *testing.T) {
 	if _, ok := claims["place_of_birth"]; ok {
 		t.Error("place_of_birth should be omitted")
 	}
-	if _, ok := claims["sex"]; ok {
-		t.Error("sex should be omitted")
+	if _, ok := claims["address"]; ok {
+		t.Error("address should be omitted")
 	}
 }
 
@@ -630,104 +631,106 @@ func TestDefaultClaims_HasExpectedFields(t *testing.T) {
 	}
 }
 
+// The PID claim sets mirror the credentials the German PID provider issues
+// (see internal/mock/claims.go). These pin the exact sets: a claim silently
+// added or dropped changes what every default PID, template and demo
+// credential contains, and drifting from the real thing is the whole failure
+// mode worth catching.
 func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
-	required := []string{
-		"family_name", "given_name", "birthdate",
-		"age_equal_or_over", "age_in_years", "age_birth_year",
-		"birth_family_name", "birth_given_name",
-		"place_of_birth",
-		"address",
-		"sex", "nationalities",
-		"email", "phone_number", "picture",
-		"date_of_issuance", "date_of_expiry",
-		"personal_administrative_number",
-		"issuing_authority",
-		"issuing_country", "document_number", "issuing_jurisdiction",
+	want := map[string]bool{
+		"family_name": true, "given_name": true, "birth_name": true,
+		"title": true, "also_known_as": true, "birthdate": true,
+		"date_of_expiry": true, "age_equal_or_over": true,
+		"place_of_birth": true, "address": true, "nationalities": true,
+		"issuing_authority": true, "issuing_country": true,
+		"source_document_type": true,
 	}
-	for _, name := range required {
-		if _, ok := mock.SDJWTPIDClaims[name]; !ok {
-			t.Errorf("SDJWTPIDClaims missing %q", name)
+	assertClaimSet(t, "SDJWTPIDClaims", mock.SDJWTPIDClaims, want)
+
+	// Listed in the rulebook but explicitly not issued: the German eID does
+	// not supply them, so a realistic PID must not carry them either.
+	for _, name := range []string{
+		"sex", "picture", "email", "phone_number", "document_number",
+		"personal_administrative_number", "issuing_jurisdiction", "trust_anchor",
+		"age_in_years", "age_birth_year", "birth_family_name", "birth_given_name",
+		"administrative_number",
+	} {
+		if _, ok := mock.SDJWTPIDClaims[name]; ok {
+			t.Errorf("%q is not part of the German PID and must not be present", name)
 		}
 	}
 
-	if len(mock.SDJWTPIDClaims) != 22 {
-		t.Errorf("expected 22 SD-JWT PID claims, got %d", len(mock.SDJWTPIDClaims))
-	}
-
-	// address should be a nested object
 	addr, ok := mock.SDJWTPIDClaims["address"].(map[string]any)
 	if !ok {
 		t.Fatal("address should be a map")
 	}
-	for _, field := range []string{"formatted", "street_address", "house_number", "locality", "postal_code", "country", "region"} {
-		if _, ok := addr[field]; !ok {
-			t.Errorf("address missing subclaim %q", field)
-		}
-	}
+	assertClaimSet(t, "address", addr, map[string]bool{
+		"street_address": true, "postal_code": true, "locality": true,
+		"region": true, "country": true,
+	})
 
-	ageEqualOrOver, ok := mock.SDJWTPIDClaims["age_equal_or_over"].(map[string]any)
+	// All six thresholds, computed from the birthdate at issuance.
+	ages, ok := mock.SDJWTPIDClaims["age_equal_or_over"].(map[string]any)
 	if !ok {
 		t.Fatal("age_equal_or_over should be a map")
 	}
-	if v, ok := ageEqualOrOver["18"].(bool); !ok || !v {
-		t.Errorf("expected age_equal_or_over.18=true, got %v", ageEqualOrOver["18"])
+	assertClaimSet(t, "age_equal_or_over", ages, map[string]bool{
+		"12": true, "14": true, "16": true, "18": true, "21": true, "65": true,
+	})
+	for _, over := range []string{"12", "14", "16", "18", "21"} {
+		if v, ok := ages[over].(bool); !ok || !v {
+			t.Errorf("age_equal_or_over.%s should be true, got %v", over, ages[over])
+		}
+	}
+	if v, ok := ages["65"].(bool); !ok || v {
+		t.Errorf("age_equal_or_over.65 should be false for a 1964 birthdate, got %v", ages["65"])
 	}
 
 	pob, ok := mock.SDJWTPIDClaims["place_of_birth"].(map[string]any)
 	if !ok {
 		t.Fatal("place_of_birth should be a map")
 	}
-	if _, ok := pob["locality"]; !ok {
-		t.Error("place_of_birth missing subclaim \"locality\"")
-	}
-	if len(pob) != 1 {
-		t.Errorf("expected place_of_birth to only contain locality, got %d entries", len(pob))
-	}
+	assertClaimSet(t, "place_of_birth", pob, map[string]bool{
+		"locality": true, "no_place_info": true,
+	})
 
-	// nationalities should be an array
 	nats, ok := mock.SDJWTPIDClaims["nationalities"].([]any)
-	if !ok {
-		t.Fatal("nationalities should be an array")
-	}
-	if len(nats) == 0 {
-		t.Error("nationalities should not be empty")
-	}
-
-	if _, ok := mock.SDJWTPIDClaims["administrative_number"]; ok {
-		t.Error("administrative_number should not be present in SD-JWT PID claims")
-	}
-	if _, ok := mock.SDJWTPIDClaims["trust_anchor"]; ok {
-		t.Error("trust_anchor should not be present in SD-JWT PID claims")
+	if !ok || len(nats) != 1 || nats[0] != "DE" {
+		t.Errorf("nationalities should be [\"DE\"], got %v", mock.SDJWTPIDClaims["nationalities"])
 	}
 }
 
 func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
-	required := []string{
-		"family_name", "given_name", "birth_date",
-		"age_over_18", "age_in_years", "age_birth_year",
-		"family_name_birth", "given_name_birth",
-		"birth_place",
-		"resident_address", "resident_country", "resident_state", "resident_city",
-		"resident_postal_code", "resident_street", "resident_house_number",
-		"personal_administrative_number",
-		"sex", "nationality",
-		"email_address", "mobile_phone_number",
-		"issuance_date", "expiry_date",
-		"issuing_authority",
-		"issuing_country", "document_number", "issuing_jurisdiction",
+	de := mock.PIDDENamespace + ":"
+	want := map[string]bool{
+		// eu.europa.ec.eudi.pid.1
+		"family_name": true, "given_name": true, "birth_date": true,
+		"expiry_date": true, "birth_place": true, "nationality": true,
+		"resident_street": true, "resident_postal_code": true,
+		"resident_city": true, "resident_state": true, "resident_country": true,
+		"issuing_authority": true, "issuing_country": true,
+		// eu.europa.ec.eudi.pid.de.1, the national additions
+		de + "birth_name": true, de + "academic_title": true,
+		de + "also_known_as": true, de + "no_place_info": true,
+		de + "source_document_type": true,
+		de + "age_over_12":          true, de + "age_over_14": true,
+		de + "age_over_16": true, de + "age_over_18": true,
+		de + "age_over_21": true, de + "age_over_65": true,
 	}
-	for _, name := range required {
-		if _, ok := mock.MDOCPIDClaims[name]; !ok {
-			t.Errorf("MDOCPIDClaims missing %q", name)
+	assertClaimSet(t, "MDOCPIDClaims", mock.MDOCPIDClaims, want)
+
+	for _, name := range []string{
+		"sex", "portrait", "email_address", "mobile_phone_number", "document_number",
+		"personal_administrative_number", "issuing_jurisdiction", "trust_anchor",
+		"age_in_years", "age_birth_year", "family_name_birth", "given_name_birth",
+		"resident_address", "resident_house_number", "administrative_number",
+		// The rulebook is explicit that the German PID carries no issuance
+		// date: only the technical validFrom of the credential.
+		"issuance_date",
+	} {
+		if _, ok := mock.MDOCPIDClaims[name]; ok {
+			t.Errorf("%q is not part of the German PID and must not be present", name)
 		}
-	}
-
-	if _, ok := mock.MDOCPIDClaims["trust_anchor"]; ok {
-		t.Error("trust_anchor should not be present in mDoc PID claims (issuer-sample artifact, meaningless for self-issued test credentials)")
-	}
-
-	if len(mock.MDOCPIDClaims) != 27 {
-		t.Errorf("expected 27 mDoc PID claims, got %d", len(mock.MDOCPIDClaims))
 	}
 
 	birthPlace, ok := mock.MDOCPIDClaims["birth_place"].(map[string]any)
@@ -737,24 +740,55 @@ func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
 	if birthPlace["locality"] != "BERLIN" {
 		t.Errorf("expected birth_place.locality BERLIN, got %v", birthPlace["locality"])
 	}
-
-	if _, ok := mock.MDOCPIDClaims["administrative_number"]; ok {
-		t.Error("administrative_number should not be present in mDoc PID claims")
-	}
 }
 
+// The two formats describe one person, so the shared values must agree.
 func TestPIDClaims_TypesAreCorrect(t *testing.T) {
-	ageEqualOrOver, ok := mock.SDJWTPIDClaims["age_equal_or_over"].(map[string]any)
-	if !ok {
-		t.Fatal("age_equal_or_over should be a map")
+	if mock.SDJWTPIDClaims["family_name"] != mock.MDOCPIDClaims["family_name"] {
+		t.Error("family_name differs between the SD-JWT and mDoc PID")
 	}
-	if v, ok := ageEqualOrOver["18"].(bool); !ok || !v {
-		t.Error("age_equal_or_over.18 should be bool true")
+	if mock.SDJWTPIDClaims["given_name"] != mock.MDOCPIDClaims["given_name"] {
+		t.Error("given_name differs between the SD-JWT and mDoc PID")
 	}
-	if v, ok := mock.SDJWTPIDClaims["sex"].(int); !ok || v != 2 {
-		t.Errorf("sex should be int 2, got %T %v", mock.SDJWTPIDClaims["sex"], mock.SDJWTPIDClaims["sex"])
+	if mock.SDJWTPIDClaims["birthdate"] != mock.MDOCPIDClaims["birth_date"] {
+		t.Error("the birthdate differs between the SD-JWT and mDoc PID")
 	}
 	if v, ok := mock.SDJWTPIDClaims["family_name"].(string); !ok || !strings.Contains(v, "MUSTERMANN") {
 		t.Errorf("family_name should be string containing MUSTERMANN, got %v", v)
+	}
+
+	// The expiry is a calendar day with no time component, in both formats,
+	// and the rulebook puts it five years out.
+	if mock.SDJWTPIDClaims["date_of_expiry"] != mock.MDOCPIDClaims["expiry_date"] {
+		t.Error("the expiry differs between the SD-JWT and mDoc PID")
+	}
+	v, ok := mock.MDOCPIDClaims["expiry_date"].(string)
+	if !ok {
+		t.Fatalf("expiry_date should be a string, got %T", mock.MDOCPIDClaims["expiry_date"])
+	}
+	expiry, err := time.Parse(time.DateOnly, v)
+	if err != nil {
+		t.Fatalf("expiry_date = %q is not a calendar date: %v", v, err)
+	}
+	if years := expiry.Year() - time.Now().UTC().Year(); years != 5 {
+		t.Errorf("expiry_date is %d years out, want 5", years)
+	}
+}
+
+// assertClaimSet fails when claims is not exactly want.
+func assertClaimSet(t *testing.T, label string, claims map[string]any, want map[string]bool) {
+	t.Helper()
+	for name := range want {
+		if _, ok := claims[name]; !ok {
+			t.Errorf("%s is missing %q", label, name)
+		}
+	}
+	for name := range claims {
+		if !want[name] {
+			t.Errorf("%s has unexpected claim %q", label, name)
+		}
+	}
+	if len(claims) != len(want) {
+		t.Errorf("%s has %d claims, want %d", label, len(claims), len(want))
 	}
 }

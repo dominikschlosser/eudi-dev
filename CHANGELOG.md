@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.10] - 2026-08-04
+
+### Changed
+
+- The German PID templates and the default PIDs carry the claims the [German PID Rulebook](https://demo.pid-provider.bundesdruckerei.de/credential-claims) defines, with the values of the provider's ERIKA MUSTERMANN test identity. SD-JWT gained `birth_name`, `title`, `also_known_as`, `date_of_expiry`, `source_document_type`, `address.region`, `place_of_birth.no_place_info` and all six age thresholds (only 18 was there before); mdoc gained the same plus `resident_state`. Claims the rulebook lists as unused because the German eID does not supply them are gone (portrait, sex, email, phone number, document number, personal administrative number, issuing jurisdiction, `issuance_date`, `age_in_years`, `age_birth_year`, birth given and family name, `resident_address`, `resident_house_number`, `address.formatted`, `address.house_number`), so a presentation from this wallet exercises the claim set a verifier meets in production. A user template saved under either PID name still overrides all of it
+- The mdoc PID puts the national additions of the German rulebook in the `eu.europa.ec.eudi.pid.de.1` namespace, where verifiers following that rulebook look for them: `birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type` and the age thresholds. Any mdoc claim key can now carry a `namespace:element` prefix, which `GenerateMDOC` routes for every issuance path (the CLI, the API, templates and the default PIDs), not just the wallet's issue endpoint
+- mdoc dates are CBOR tagged the way ISO 18013-5 defines them: a calendar day becomes full-date (tag 1004) and a timestamp becomes tdate (tag 0), matching real PIDs. Previously every date went out as a plain text string, which a verifier that type-checks the element rejects. Parsing unwraps the tags again, so claim matching and presentation are unaffected. A tagged tdate also decodes to the same RFC 3339 string as every other date now instead of surfacing as a Go timestamp
+
+### Fixed
+
+- Regenerating the default PIDs no longer deletes protected credentials. `wallet generate-pid`, `POST /api/generate-pid` and every other path through `GenerateDefaultCredentials` removed the existing PIDs before writing new ones, without checking the protection flag, so a single call replaced a shared instance's protected baseline with unprotected copies. It now keeps a protected PID and skips generating a replacement for it, which is what "only direct file access can remove these" has to mean to be worth anything
+- `go test ./cmd` runs against a throwaway config directory. Commands resolve the active wallet through `remote.json`, so on a machine where `wallet instances use <url>` points at a hosted wallet, running that package issued and deleted credentials on the live instance. It has now happened twice against the public demo, so it is prevented rather than remembered
+- Clicking an `openid4vp://` or `openid-credential-offer://` link opens the consent dialog again instead of only the "1 request is waiting for consent" bar. The OS handler opens the wallet UI itself and submits right after, so that tab is the one that started the flow, but it cannot carry a request id (the id does not exist yet, and the submit blocks until consent is resolved). It looked exactly like an uninvolved visitor's tab, which demo mode deliberately does not interrupt. The handler now marks the tab it opens with `consent=await` and that tab takes the next consent request directly. The claim is single use, expires after 90 seconds and is stripped from the URL, so a stale or shared link cannot collect somebody else's consent, and every other tab keeps getting the bar
+
+- The demo verifier stops reporting `pending` for a request nobody answered. Its status endpoint ignored the ten minute TTL, so an abandoned verifier page polled a dead request every 1.5 seconds indefinitely. On the public demo two such tabs produced 38% of all traffic in the access log. The endpoint now reports `expired` once the window has passed (a request that was answered keeps its result, so returning through the wallet redirect still shows it), and the page stops polling on any settled status
+- The verifier page also backs off between polls (1.5s growing to 8s) and pauses entirely while the tab is hidden, resuming immediately when it becomes visible again. An unattended tab now costs a handful of requests instead of thousands
+- The wallet's event stream sends a keepalive comment every 25 seconds. An idle stream sent nothing at all, so proxies dropped the connection and the browser reconnected, which turned a single open tab into a new request every couple of minutes (318 reconnects from one visitor in 11 hours on the public demo)
+
+### Changed
+
+- The public demo example bounds every log it writes. The container logs of all three services are capped at 10 MB with three files each (Docker's default keeps them forever, which is the one thing in the stack that could fill the disk), and the Caddy access log rolls at 10 MiB keeping three files for at most 30 days
+- `deploy.sh push` pulls the image before recreating the containers and reports the version it ended up with. The compose file and the image move together (a wall-clock `--demo-reset` in the compose file crash-looped a wallet still running the previous release), so pushing files without pulling was the one way this script could take the demo down
+- `deploy.sh stats-reset` discards the access log and rebuilds the report from zero, for when the numbers are mostly your own testing. `deploy.sh stats` now lists top pages only, since the API paths in the log are the UI polling itself and say nothing about visitors
+
 ## [1.18.9] - 2026-08-04
 
 ### Added

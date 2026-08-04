@@ -140,7 +140,7 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	if !ok {
 		t.Fatal("expected address to be a map in resolved claims")
 	}
-	for _, field := range []string{"formatted", "street_address", "house_number", "locality", "postal_code", "country", "region"} {
+	for _, field := range []string{"street_address", "locality", "postal_code", "country"} {
 		if _, ok := addr[field]; !ok {
 			t.Errorf("address missing subclaim %q", field)
 		}
@@ -153,8 +153,11 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	if pob["locality"] != "BERLIN" {
 		t.Errorf("expected place_of_birth.locality BERLIN, got %v", pob["locality"])
 	}
-	if len(pob) != 1 {
-		t.Errorf("expected place_of_birth to only contain locality, got %d entries", len(pob))
+	if _, ok := pob["no_place_info"]; !ok {
+		t.Error("place_of_birth missing subclaim \"no_place_info\"")
+	}
+	if len(pob) != 2 {
+		t.Errorf("expected place_of_birth to contain locality and no_place_info, got %d entries", len(pob))
 	}
 
 	var foundPOB bool
@@ -168,8 +171,8 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 				t.Fatalf("place_of_birth disclosure should contain an object, got %T", disclosure.Value)
 			}
 			sdEntries, ok := value["_sd"].([]any)
-			if !ok || len(sdEntries) != 1 {
-				t.Fatalf("place_of_birth disclosure should contain a single _sd digest for locality, got %v", value["_sd"])
+			if !ok || len(sdEntries) != 2 {
+				t.Fatalf("place_of_birth disclosure should carry _sd digests for locality and no_place_info, got %v", value["_sd"])
 			}
 		case "locality":
 			if disclosure.Value == "BERLIN" {

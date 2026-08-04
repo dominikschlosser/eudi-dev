@@ -6,10 +6,20 @@
 # 3. Put your operator details into imprint.html.
 # 4. Create stats.env with the /stats credentials (./deploy.sh stats-password).
 # 5. docker compose up -d
+#
+# Every service caps its container log (Docker's json-file driver keeps them
+# forever otherwise, which is the one thing here that can fill the disk).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"
@@ -29,6 +39,7 @@ services:
   wallet:
     image: ghcr.io/dominikschlosser/eudi-dev:latest
     restart: unless-stopped
+    logging: *logging
     # No published ports: only Caddy reaches the wallet.
     command:
       - wallet
@@ -56,6 +67,7 @@ services:
   stats:
     image: allinurl/goaccess:latest
     restart: unless-stopped
+    logging: *logging
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

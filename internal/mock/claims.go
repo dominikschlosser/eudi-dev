@@ -15,89 +15,115 @@
 // Package mock generates test credentials (SD-JWT and mDOC) with default EUDI PID claims.
 package mock
 
+import "time"
+
 // DefaultPIDVCT is the default Verifiable Credential Type for German EUDI PIDs.
 const DefaultPIDVCT = "urn:eudi:pid:de:1"
+
+// PIDDENamespace holds the national additions of the German PID Rulebook.
+// In mdoc those claims are namespaced, while SD-JWT keeps everything in one
+// flat claim set.
+const PIDDENamespace = "eu.europa.ec.eudi.pid.de.1"
+
+// The claim sets below follow the claim table of the German PID provider
+// (https://demo.pid-provider.bundesdruckerei.de/credential-claims), using the
+// values of its ERIKA MUSTERMANN test identity. Every claim that table lists
+// as present is here, including the ones it defines as always present but
+// empty when the eID does not carry them (title, also_known_as). Claims it
+// lists as unused (portrait, sex, email, phone number, document number,
+// personal administrative number, issuing jurisdiction, issuance_date,
+// trust_anchor, age_in_years, age_birth_year, birth given/family name,
+// resident_address, resident_house_number) are absent.
 
 // DefaultClaims returns a minimal set of PID-like claims.
 var DefaultClaims = map[string]any{
 	"given_name":  "ERIKA",
 	"family_name": "MUSTERMANN",
-	"birthdate":   "1984-08-12",
+	"birthdate":   "1964-08-12",
 }
 
-// SDJWTPIDClaims returns claims aligned with the current PID Rulebook's
-// SD-JWT claim identifiers and the real German PID samples used in preprod.
-// address, place_of_birth, and age_equal_or_over are nested objects with
-// individually disclosable subclaims. nationalities is an array.
+// SDJWTPIDClaims holds the SD-JWT VC claims of a German PID (vct
+// urn:eudi:pid:de:1). address, place_of_birth and age_equal_or_over are
+// nested objects whose subclaims are individually disclosable, and
+// nationalities is a selectively disclosable array.
 var SDJWTPIDClaims = map[string]any{
 	"family_name": "MUSTERMANN",
 	"given_name":  "ERIKA",
-	"birthdate":   "1984-08-12",
+	"birth_name":  "GABLER",
+	// Always present, and empty when the eID does not carry them.
+	"title":          "",
+	"also_known_as":  "",
+	"birthdate":      "1964-08-12",
+	"date_of_expiry": PIDExpiryDate(),
+	// Derived from birthdate at issuance, which is why 65 is false while the
+	// lower thresholds are true.
 	"age_equal_or_over": map[string]any{
+		"12": true,
+		"14": true,
+		"16": true,
 		"18": true,
+		"21": true,
+		"65": false,
 	},
-	"age_in_years":      41,
-	"age_birth_year":    1984,
-	"birth_family_name": "GABLER",
-	"birth_given_name":  "ERIKA",
 	"place_of_birth": map[string]any{
 		"locality": "BERLIN",
+		// True only when the eID says the place of birth is unknown.
+		"no_place_info": false,
 	},
 	"address": map[string]any{
-		"formatted":      "HEIDESTRAẞE 17, 51147 KÖLN, DE",
 		"street_address": "HEIDESTRAẞE 17",
-		"house_number":   "17",
-		"locality":       "KÖLN",
 		"postal_code":    "51147",
-		"country":        "DE",
+		"locality":       "KÖLN",
 		"region":         "NW",
+		"country":        "DE",
 	},
-	"nationalities":                  []any{"DE"},
-	"sex":                            2,
-	"email":                          "erika.mustermann@example.de",
-	"phone_number":                   "+491701234567",
-	"picture":                        "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q==",
-	"date_of_issuance":               "2024-01-15",
-	"date_of_expiry":                 "2029-01-15",
-	"personal_administrative_number": "L01X00T47",
-	"issuing_authority":              "DE",
-	"issuing_country":                "DE",
-	"document_number":                "TEST-PID-123456",
-	"issuing_jurisdiction":           "DE-BE",
+	"nationalities":        []any{"DE"},
+	"issuing_authority":    "DE",
+	"issuing_country":      "DE",
+	"source_document_type": "ID",
 }
 
-// MDOCPIDClaims returns claims aligned with the PID Rulebook's ISO 18013-5
-// element identifiers and the real German PID samples used in preprod.
-// mDoc claims stay flat at the namespace/element level, but individual element
-// values such as birth_place can still be structured according to the rulebook.
+// MDOCPIDClaims holds the ISO 18013-5 elements of a German PID
+// (eu.europa.ec.eudi.pid.1). The same identity as SDJWTPIDClaims, under the
+// element identifiers of the mdoc encoding: the address is flat here, the age
+// thresholds are individual booleans, and birth_place stays structured.
+// Keys prefixed with a namespace go into that namespace, which is where the
+// rulebook puts the national additions of the German PID.
 var MDOCPIDClaims = map[string]any{
-	"family_name":                    "MUSTERMANN",
-	"given_name":                     "ERIKA",
-	"birth_date":                     "1984-08-12",
-	"age_over_18":                    true,
-	"age_in_years":                   41,
-	"age_birth_year":                 1984,
-	"family_name_birth":              "GABLER",
-	"given_name_birth":               "ERIKA",
-	"birth_place":                    map[string]any{"locality": "BERLIN"},
-	"nationality":                    []any{"DE"},
-	"resident_address":               "HEIDESTRAẞE 17, 51147 KÖLN, DE",
-	"resident_country":               "DE",
-	"resident_state":                 "NW",
-	"resident_city":                  "KÖLN",
-	"resident_postal_code":           "51147",
-	"resident_street":                "HEIDESTRAẞE 17",
-	"resident_house_number":          "17",
-	"personal_administrative_number": "L01X00T47",
-	"sex":                            2,
-	"email_address":                  "erika.mustermann@example.de",
-	"mobile_phone_number":            "+491701234567",
-	"expiry_date":                    "2029-01-15T00:00:00Z",
-	"issuance_date":                  "2024-01-15T00:00:00Z",
-	"issuing_authority":              "DE",
-	"issuing_country":                "DE",
-	"document_number":                "TEST-PID-123456",
-	"issuing_jurisdiction":           "DE-BE",
+	"family_name":          "MUSTERMANN",
+	"given_name":           "ERIKA",
+	"birth_date":           "1964-08-12",
+	"expiry_date":          PIDExpiryDate(),
+	"birth_place":          map[string]any{"locality": "BERLIN"},
+	"nationality":          []any{"DE"},
+	"resident_street":      "HEIDESTRAẞE 17",
+	"resident_postal_code": "51147",
+	"resident_city":        "KÖLN",
+	"resident_state":       "NW",
+	"resident_country":     "DE",
+	"issuing_authority":    "DE",
+	"issuing_country":      "DE",
+
+	PIDDENamespace + ":birth_name":           "GABLER",
+	PIDDENamespace + ":academic_title":       "",
+	PIDDENamespace + ":also_known_as":        "",
+	PIDDENamespace + ":no_place_info":        false,
+	PIDDENamespace + ":age_over_12":          true,
+	PIDDENamespace + ":age_over_14":          true,
+	PIDDENamespace + ":age_over_16":          true,
+	PIDDENamespace + ":age_over_18":          true,
+	PIDDENamespace + ":age_over_21":          true,
+	PIDDENamespace + ":age_over_65":          false,
+	PIDDENamespace + ":source_document_type": "ID",
+}
+
+// PIDExpiryDate is the administrative expiry of the PID: the German rulebook
+// puts it five years after issuance (§10a (2) PAuswG), separate from the
+// technical validity of the credential itself. It is a calendar day with no
+// time component, and computed rather than fixed so the credential does not
+// go stale on the shelf.
+func PIDExpiryDate() string {
+	return time.Now().UTC().AddDate(5, 0, 0).Format(time.DateOnly)
 }
 
 // PIDClaims is an alias for SDJWTPIDClaims for backward compatibility.

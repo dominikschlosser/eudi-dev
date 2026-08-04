@@ -1039,6 +1039,10 @@ func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
+// sseKeepaliveInterval is how often an otherwise idle event stream sends a
+// comment line. A variable so tests do not have to wait for it.
+var sseKeepaliveInterval = 25 * time.Second
+
 // handleRequestStream provides SSE for new consent requests and error events.
 func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -1060,8 +1064,17 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	stateCh, stateUnsub := s.wallet.SubscribeState()
 	defer stateUnsub()
 
+	// An idle stream sends nothing for minutes at a time, and proxies drop
+	// idle connections. The client reconnects, so nothing breaks, but each
+	// reconnect is another request; a comment line keeps the connection up.
+	keepalive := time.NewTicker(sseKeepaliveInterval)
+	defer keepalive.Stop()
+
 	for {
 		select {
+		case <-keepalive.C:
+			fmt.Fprintf(w, ": keepalive\n\n")
+			flusher.Flush()
 		case req := <-reqCh:
 			data, err := json.Marshal(MarshalConsentRequest(req))
 			if err != nil {

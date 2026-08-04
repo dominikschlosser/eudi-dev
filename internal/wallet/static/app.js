@@ -11,6 +11,24 @@
     localStorage.setItem('wallet-theme', isLight ? '' : 'light');
   });
 
+  // A scheme dispatch (openid4vp:// or credential-offer:// handled by the
+  // OS) opens this UI itself and only then submits the request, so this tab
+  // started the flow even though no request id can be in its URL yet. The
+  // marker says so, which is what separates it from the uninvolved tabs the
+  // pending banner exists for. Single use and short lived: a stale link must
+  // not collect someone else's consent later on.
+  const CONSENT_CLAIM_MS = 90000;
+  let consentClaimUntil =
+    new URLSearchParams(window.location.search).get('consent') === 'await'
+      ? Date.now() + CONSENT_CLAIM_MS
+      : 0;
+
+  function claimNextConsent() {
+    if (!consentClaimUntil || Date.now() > consentClaimUntil) return false;
+    consentClaimUntil = 0;
+    return true;
+  }
+
   // State
   let credentials = [];
   let pendingRequests = [];
@@ -911,13 +929,14 @@
           showConsentDialog(own);
           return;
         }
-        if (!demoMode) {
+        // The request may already have been created while this page loaded.
+        // A tab the scheme handler opened still owns it.
+        if (!demoMode || claimNextConsent()) {
           showConsentDialog(requests[0]);
           return;
         }
-        // Demo mode: offer it instead of forcing it open. A scheme dispatch
-        // lands here with no request id, so without this the consent would
-        // stay invisible and the flow would hang.
+        // Demo mode: offer it instead of forcing it open, for tabs that had
+        // nothing to do with the request.
         updatePendingBanner(requests);
         return;
       }
@@ -944,9 +963,10 @@
       try {
         const req = JSON.parse(event.data);
         // Shared demo: consent dialogs belong to the browser that started
-        // the flow (it arrives via redirect), not to every open tab. Other
-        // tabs get the unobtrusive banner instead.
-        if (demoMode) {
+        // the flow (it arrives via redirect, or opened this tab itself for a
+        // scheme dispatch), not to every open tab. Other tabs get the
+        // unobtrusive banner instead.
+        if (demoMode && !claimNextConsent()) {
           refreshPendingBanner();
           return;
         }

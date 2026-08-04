@@ -16,6 +16,7 @@ package mock
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,9 +120,20 @@ func TestGenerateMDOC_PIDClaims(t *testing.T) {
 		t.Fatalf("mdoc.Parse: %v", err)
 	}
 
+	// The German PID splits across two namespaces: the European one and the
+	// national additions.
 	ns := doc.NameSpaces["eu.europa.ec.eudi.pid.1"]
-	if len(ns) != len(MDOCPIDClaims) {
-		t.Errorf("expected %d claims, got %d", len(MDOCPIDClaims), len(ns))
+	de := doc.NameSpaces[PIDDENamespace]
+	if len(ns)+len(de) != len(MDOCPIDClaims) {
+		t.Errorf("expected %d claims across both namespaces, got %d + %d", len(MDOCPIDClaims), len(ns), len(de))
+	}
+	if len(de) == 0 {
+		t.Errorf("expected the national additions in %s", PIDDENamespace)
+	}
+	for _, item := range de {
+		if strings.Contains(item.ElementIdentifier, ":") {
+			t.Errorf("element %q kept its namespace prefix instead of being routed", item.ElementIdentifier)
+		}
 	}
 	var birthPlace any
 	for _, item := range ns {
@@ -456,5 +468,101 @@ func TestGenerateMDOC_WithValidFrom(t *testing.T) {
 	vi := doc.IssuerAuth.MSO.ValidityInfo
 	if !vi.ValidFrom.Equal(vf) {
 		t.Errorf("expected validFrom=%v, got %v", vf, *vi.ValidFrom)
+	}
+}
+
+// ISO 18013-5 encodes dates as tagged CBOR: full-date (1004) for a calendar
+// day, tdate (0) for a timestamp. Real PIDs do it, so the credentials this
+// wallet issues have to as well, or a verifier that type-checks the element
+// sees a plain text string where it expects a date.
+func TestGenerateMDOC_DatesAreTagged(t *testing.T) {
+	key, _ := GenerateKey()
+
+	result, err := GenerateMDOC(MDOCConfig{
+		DocType:   "com.test",
+		Namespace: "com.test",
+		Claims: map[string]any{
+			"birth_date":    "1964-08-12",
+			"expiry_date":   "2031-08-04T00:00:00Z",
+			"family_name":   "MUSTERMANN",
+			"document_ref":  "2024-INVOICE",
+			"nested":        map[string]any{"issued": "2026-07-23"},
+			"age_over_18":   true,
+			"nationality":   []any{"DE"},
+			"not_a_date_at": "12-31-2026",
+		},
+		Key: key,
+	})
+	if err != nil {
+		t.Fatalf("GenerateMDOC: %v", err)
+	}
+
+	data, err := base64.RawURLEncoding.DecodeString(result)
+	if err != nil {
+		t.Fatalf("decoding credential: %v", err)
+	}
+	var issuerSigned struct {
+		NameSpaces map[string][]cbor.RawTag `cbor:"nameSpaces"`
+	}
+	if err := cbor.Unmarshal(data, &issuerSigned); err != nil {
+		t.Fatalf("decoding IssuerSigned: %v", err)
+	}
+
+	tags := make(map[string]uint64)
+	values := make(map[string]any)
+	for _, raw := range issuerSigned.NameSpaces["com.test"] {
+		var item struct {
+			ElementIdentifier string          `cbor:"elementIdentifier"`
+			ElementValue      cbor.RawMessage `cbor:"elementValue"`
+		}
+		// Tag 24 carries the item as an embedded CBOR byte string.
+		var embedded []byte
+		if err := cbor.Unmarshal(raw.Content, &embedded); err != nil {
+			t.Fatalf("unwrapping Tag 24: %v", err)
+		}
+		if err := cbor.Unmarshal(embedded, &item); err != nil {
+			t.Fatalf("decoding IssuerSignedItem: %v", err)
+		}
+		var tagged cbor.RawTag
+		if err := cbor.Unmarshal(item.ElementValue, &tagged); err == nil {
+			tags[item.ElementIdentifier] = tagged.Number
+		}
+		var plain any
+		if err := cbor.Unmarshal(item.ElementValue, &plain); err == nil {
+			values[item.ElementIdentifier] = plain
+		}
+	}
+
+	if got := tags["birth_date"]; got != 1004 {
+		t.Errorf("birth_date should be tagged full-date (1004), got tag %d", got)
+	}
+	if got := tags["expiry_date"]; got != 0 {
+		t.Errorf("expiry_date should be tagged tdate (0), got tag %d", got)
+	}
+	// Everything that is not a date stays exactly as it was.
+	for _, name := range []string{"family_name", "document_ref", "not_a_date_at", "age_over_18", "nationality"} {
+		if tag, ok := tags[name]; ok {
+			t.Errorf("%s must not be tagged as a date, got tag %d", name, tag)
+		}
+	}
+
+	// Parsing unwraps the tags again, so the rest of the wallet keeps seeing
+	// plain strings and claim matching is unaffected.
+	doc, err := mdoc.Parse(result)
+	if err != nil {
+		t.Fatalf("mdoc.Parse: %v", err)
+	}
+	parsed := make(map[string]any)
+	for _, item := range doc.NameSpaces["com.test"] {
+		parsed[item.ElementIdentifier] = item.ElementValue
+	}
+	if parsed["birth_date"] != "1964-08-12" {
+		t.Errorf("birth_date should parse back to the plain date, got %v", parsed["birth_date"])
+	}
+	if parsed["expiry_date"] != "2031-08-04T00:00:00Z" {
+		t.Errorf("expiry_date should parse back to the plain timestamp, got %v", parsed["expiry_date"])
+	}
+	if nested, ok := parsed["nested"].(map[string]any); !ok || nested["issued"] != "2026-07-23" {
+		t.Errorf("nested dates should survive the round trip, got %v", parsed["nested"])
 	}
 }

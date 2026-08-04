@@ -23,9 +23,13 @@ eudi-test.dev {
 	# zeroed, so no full address is ever stored, while GoAccess can still
 	# approximate distinct visitors.
 	log {
+		# Bounded on disk: at most roll_size x (roll_keep + 1), so ~40 MiB,
+		# and nothing older than a month. The report below only reads the
+		# current file, so a roll also caps how far back stats reach.
 		output file /var/log/caddy/access.log {
-			roll_size 20MiB
+			roll_size 10MiB
 			roll_keep 3
+			roll_keep_for 720h
 		}
 		format filter {
 			wrap json

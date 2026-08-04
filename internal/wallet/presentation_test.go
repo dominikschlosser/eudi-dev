@@ -439,7 +439,7 @@ func TestCreateVPToken_SDJWT_NestedSelectiveDisclosure(t *testing.T) {
 		QueryID:      "test",
 		CredentialID: sdCred.ID,
 		Format:       "dc+sd-jwt",
-		SelectedKeys: []string{"given_name", "address.postal_code", "address.region"},
+		SelectedKeys: []string{"given_name", "address.postal_code"},
 	}
 
 	result, err := w.CreateVPToken(match, PresentationParams{Nonce: "n", ClientID: "client", ResponseURI: "response"})
@@ -460,12 +460,12 @@ func TestCreateVPToken_SDJWT_NestedSelectiveDisclosure(t *testing.T) {
 		got[d.Name] = true
 	}
 
-	for _, name := range []string{"given_name", "address", "postal_code", "region"} {
+	for _, name := range []string{"given_name", "address", "postal_code"} {
 		if !got[name] {
 			t.Errorf("expected disclosure %q in VP token", name)
 		}
 	}
-	for _, name := range []string{"country", "locality", "street_address", "formatted", "house_number"} {
+	for _, name := range []string{"country", "locality", "street_address"} {
 		if got[name] {
 			t.Errorf("did not expect disclosure %q in VP token", name)
 		}

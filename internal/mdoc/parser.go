@@ -439,6 +439,11 @@ func parseValidityInfo(vi map[any]any) *ValidityInfo {
 
 func convertCBORValue(v any) any {
 	switch val := v.(type) {
+	case time.Time:
+		// The decoder turns a tdate (tag 0) into a time.Time, while a
+		// full-date (tag 1004) stays a string. Both are dates in a
+		// credential, so present them the same way.
+		return val.UTC().Format(time.RFC3339)
 	case map[any]any:
 		return convertCBORMapToStringKeys(val)
 	case []any:

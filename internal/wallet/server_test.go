@@ -15,6 +15,8 @@
 package wallet
 
 import (
+	"bufio"
+	"context"
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -2940,6 +2942,45 @@ func TestListCredentialsPaging(t *testing.T) {
 	for _, bad := range []string{"?limit=abc", "?offset=-1"} {
 		if rec := serverRequest(t, srv, "GET", "/api/credentials"+bad, ""); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET /api/credentials%s = %d, want 400", bad, rec.Code)
+		}
+	}
+}
+
+// An idle event stream has to send something periodically. Without it,
+// proxies drop the connection, the browser reconnects, and a single open tab
+// turns into a steady stream of new requests.
+func TestRequestStreamKeepalive(t *testing.T) {
+	srv := newTestServer(t, true)
+
+	original := sseKeepaliveInterval
+	sseKeepaliveInterval = 50 * time.Millisecond
+	t.Cleanup(func() { sseKeepaliveInterval = original })
+
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL+"/api/requests/stream", nil)
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("opening stream: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Two of them: one proves the ticker fires, two prove it keeps firing.
+	reader := bufio.NewReader(resp.Body)
+	seen := 0
+	for seen < 2 {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("reading stream after %d keepalives: %v", seen, err)
+		}
+		if strings.HasPrefix(line, ":") {
+			seen++
 		}
 	}
 }

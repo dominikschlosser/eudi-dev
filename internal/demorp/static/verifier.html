@@ -44,6 +44,7 @@
     .status.verified { color: var(--green); }
     .status.failed { color: var(--red); }
     .status.pending { color: var(--yellow); }
+    .status.expired { color: var(--text-dim); }
     .check { font-size: 11px; line-height: 1.7; }
     .check .ok { color: var(--green); }
     .check .fail { color: var(--red); }
@@ -89,7 +90,15 @@
     <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
   <script>
+    // Polling is bounded on purpose: an abandoned tab used to poll a dead
+    // request every 1.5s forever, which dwarfed the real traffic in the
+    // access log. It backs off, pauses while the tab is hidden, and stops
+    // as soon as the request is no longer pending.
+    const POLL_MIN = 1500;
+    const POLL_MAX = 8000;
     let pollTimer = null;
+    let pollDelay = POLL_MIN;
+    let pollID = null;
 
     function esc(s) {
       const div = document.createElement("div");
@@ -105,6 +114,7 @@
       status.textContent =
         doc.status === "verified" ? "✓ Presentation verified" :
         doc.status === "failed" ? "✗ Verification failed" + (doc.error ? ": " + doc.error : "") :
+        doc.status === "expired" ? "Request expired — create a new one" :
         "Waiting for the wallet…";
       const checks = document.getElementById("checks");
       checks.innerHTML = (doc.checks || []).map((c) =>
@@ -124,21 +134,65 @@
       }
     }
 
+    function schedulePoll(id) {
+      pollID = id;
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(() => poll(id), pollDelay);
+      pollDelay = Math.min(Math.round(pollDelay * 1.4), POLL_MAX);
+    }
+
+    function stopPolling() {
+      clearTimeout(pollTimer);
+      pollID = null;
+    }
+
     async function poll(id) {
+      // Nobody is looking: keep the timer, skip the request.
+      if (document.hidden) {
+        schedulePoll(id);
+        return;
+      }
       try {
         const resp = await fetch("api/requests/" + id);
-        if (!resp.ok) return;
+        if (resp.status === 404) {
+          renderResult({ status: "expired" });
+          stopPolling();
+          return;
+        }
+        if (!resp.ok) {
+          schedulePoll(id);
+          return;
+        }
         const doc = await resp.json();
         renderResult(doc);
         if (doc.status === "pending") {
-          pollTimer = setTimeout(() => poll(id), 1500);
+          schedulePoll(id);
+        } else {
+          stopPolling();
         }
-      } catch (e) { /* retry on next poll */ }
+      } catch (e) {
+        schedulePoll(id); // transient network error, try again later
+      }
     }
+
+    function startPolling(id) {
+      pollDelay = POLL_MIN;
+      pollID = id;
+      poll(id);
+    }
+
+    // Coming back to a backgrounded tab should feel immediate again.
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && pollID) {
+        pollDelay = POLL_MIN;
+        clearTimeout(pollTimer);
+        poll(pollID);
+      }
+    });
 
     for (const btn of document.querySelectorAll(".btn[data-type]")) {
       btn.addEventListener("click", async () => {
-        clearTimeout(pollTimer);
+        stopPolling();
         const resp = await fetch("api/requests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -157,13 +211,13 @@
         scheme.href = doc.scheme_uri;
         document.getElementById("request-box").style.display = "block";
         renderResult({ status: "pending" });
-        poll(doc.id);
+        startPolling(doc.id);
       });
     }
 
     // Returning from the wallet redirect: show that request's result.
     const resultID = new URLSearchParams(location.search).get("result");
-    if (resultID) poll(resultID);
+    if (resultID) startPolling(resultID);
   </script>
 </body>
 </html>

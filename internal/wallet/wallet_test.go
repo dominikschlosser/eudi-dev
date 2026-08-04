@@ -171,8 +171,8 @@ func TestGenerateDefaultCredentials_ClaimOverrides(t *testing.T) {
 		t.Errorf("expected family_name MUSTERMANN-OVERRIDE, got %v", sdjwtCred.Claims["family_name"])
 	}
 	// Non-overridden claim should still be present
-	if sdjwtCred.Claims["birthdate"] != "1984-08-12" {
-		t.Errorf("expected birthdate 1984-08-12, got %v", sdjwtCred.Claims["birthdate"])
+	if sdjwtCred.Claims["birthdate"] != "1964-08-12" {
+		t.Errorf("expected birthdate 1964-08-12, got %v", sdjwtCred.Claims["birthdate"])
 	}
 }
 
@@ -764,5 +764,72 @@ func TestHasEncryptionKey_TopLevelJWKSNotUsed(t *testing.T) {
 	}
 	if HasEncryptionKey(reqObj) {
 		t.Error("expected false — wallet should only accept JWK in client_metadata.jwks per OID4VP 1.0")
+	}
+}
+
+// Regenerating the defaults must not be a back door around protection: a
+// leaked test run against a shared instance once replaced its protected
+// baseline PIDs with fresh unprotected ones this way.
+func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("GenerateProtectedDefaults: %v", err)
+	}
+
+	before := w.GetCredentials()
+	if len(before) != 2 {
+		t.Fatalf("expected 2 baseline credentials, got %d", len(before))
+	}
+	ids := make(map[string]bool)
+	for _, c := range before {
+		if !c.Protected {
+			t.Fatalf("baseline credential %s should be protected", c.ID)
+		}
+		ids[c.ID] = true
+	}
+
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("GenerateDefaultCredentials: %v", err)
+	}
+
+	after := w.GetCredentials()
+	if len(after) != 2 {
+		t.Errorf("expected the 2 protected PIDs and no duplicates, got %d", len(after))
+	}
+	for _, c := range after {
+		if !ids[c.ID] {
+			t.Errorf("credential %s (%s) replaced a protected one", c.ID, c.Format)
+		}
+		if !c.Protected {
+			t.Errorf("credential %s lost its protection", c.ID)
+		}
+	}
+}
+
+// Without protection the defaults still get replaced, which is what
+// regenerating is for.
+func TestGenerateDefaultCredentials_ReplacesUnprotected(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("GenerateDefaultCredentials: %v", err)
+	}
+	first := w.GetCredentials()
+	if len(first) != 2 {
+		t.Fatalf("expected 2 credentials, got %d", len(first))
+	}
+
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("second GenerateDefaultCredentials: %v", err)
+	}
+	second := w.GetCredentials()
+	if len(second) != 2 {
+		t.Errorf("expected 2 credentials after regenerating, got %d", len(second))
+	}
+	for _, c := range second {
+		for _, old := range first {
+			if c.ID == old.ID {
+				t.Errorf("unprotected credential %s should have been replaced", c.ID)
+			}
+		}
 	}
 }

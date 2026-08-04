@@ -17,6 +17,7 @@
 #   logs      follow the wallet log
 #   verify    check that the deployed endpoints respond
 #   stats     print a usage summary from the access log
+#   stats-reset     discard the access log and rebuild the report from zero
 #   stats-password  generate credentials for the /stats report
 set -euo pipefail
 
@@ -85,7 +86,16 @@ case "${COMMAND}" in
   push)
     require_host
     copy_stack
-    compose "up -d"
+    # Pull first: the compose file can use flags a released image does not
+    # know yet (a wall-clock --demo-reset once crash-looped the wallet this
+    # way), and recreating containers against a stale image is the one way
+    # push can take the demo down.
+    compose "pull -q wallet" >/dev/null
+    compose "up -d --quiet-pull" >/dev/null
+    sleep 3
+    compose "ps --format '{{.Name}} {{.Status}}'"
+    version="$(deployed_version)"
+    [[ -n "${version}" ]] && echo "Version now live: ${version}"
     ;;
   update)
     require_host
@@ -118,11 +128,30 @@ case "${COMMAND}" in
       grep -E 'requests|visitors|log_size' |
       while read -r name value; do printf '%-18s %s\n' "${name}" "${value}"; done
     echo
-    echo "Top requests (bots excluded):"
+    # Pages only. The API paths are the UI polling itself (one open tab
+    # produces hundreds of them), so they say nothing about visitors.
+    echo "Top pages (bots excluded, API calls omitted):"
     sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" |
-      head -12 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
+      grep -v ' /api/\| /verifier/api/\| /issuer/api/' |
+      head -10 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
     rm -f "${summary}"
     [[ -n "${DEMO_URL:-}" ]] && echo && echo "Full report: ${DEMO_URL%/}/stats/"
+    ;;
+  stats-reset)
+    require_host
+    read -r -p "Discard the access log and every past statistic? [y/N] " confirm
+    [[ "${confirm}" =~ ^[yY]$ ]] || die "aborted"
+    # Truncate in place and drop the rolled files, then restart Caddy so its
+    # log writer starts over from a known size.
+    remote "docker compose exec -T caddy sh -c 'rm -f /var/log/caddy/access-*.log*; : > /var/log/caddy/access.log'"
+    compose "restart caddy" >/dev/null
+    if [[ -n "${DEMO_URL:-}" ]]; then
+      # One request so the log is not empty, otherwise the report generator
+      # skips its run and /stats keeps showing the old numbers.
+      curl -fsS -o /dev/null --max-time 15 --retry 5 --retry-delay 2 --retry-connrefused "${DEMO_URL%/}/api/version" || true
+    fi
+    remote "docker compose exec -T stats sh -c 'goaccess /var/log/caddy/access.log --log-format=CADDY --ignore-crawlers --anonymize-ip --html-report-title=\"Demo usage\" -o /srv/stats/report.html'" >/dev/null 2>&1 || true
+    echo "Access log cleared, report rebuilt."
     ;;
   stats-password)
     read -r -p "Username for /stats [admin]: " user

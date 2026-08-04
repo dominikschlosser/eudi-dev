@@ -448,6 +448,53 @@ func TestVerifierRejectsReplay(t *testing.T) {
 	}
 }
 
+// An unanswered request must stop reporting "pending" once it expires: the
+// verifier page polls while pending, so a request that never expires makes an
+// abandoned tab poll forever.
+func TestVerifierRequestExpires(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, _ := startVerification(t, h, "ticket")
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "pending" {
+		t.Fatalf("fresh request status = %v, want pending", status["status"])
+	}
+
+	d.mu.Lock()
+	d.requests[id].expires = time.Now().Add(-time.Second)
+	d.mu.Unlock()
+
+	code, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if code != http.StatusOK || status["status"] != "expired" {
+		t.Fatalf("expired request status = %d %v, want 200 expired", code, status["status"])
+	}
+}
+
+// A result that already exists must survive past the expiry window: the
+// wallet redirects the browser back to the page, and that page must still be
+// able to show what happened.
+func TestVerifierKeepsResultOfAnsweredRequest(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "ticket")
+	presentation := presentTicket(t, d, holderKey, params.Get("client_id"), params.Get("nonce"))
+	if code := postPresentation(t, h, id, "ticket", presentation); code != http.StatusOK {
+		t.Fatalf("presentation response = %d, want 200", code)
+	}
+
+	d.mu.Lock()
+	d.requests[id].expires = time.Now().Add(-time.Second)
+	d.mu.Unlock()
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want the verified result to survive expiry", status["status"])
+	}
+}
+
 // TestVerifierRejectsInjectedDisclosure models a malicious holder: they own
 // the key binding key, so they can append a disclosure and re-sign a matching
 // sd_hash. Only the "every disclosure is referenced" rule catches it.

@@ -151,8 +151,15 @@ func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 	req, ok := d.requests[id]
 	var doc map[string]any
 	if ok {
+		status := req.status
+		// A request nobody answered stops being pending once it expires.
+		// Without this the page polls a dead request forever, which is most
+		// of the traffic an abandoned tab produces.
+		if status == "pending" && time.Now().After(req.expires) {
+			status = "expired"
+		}
 		doc = map[string]any{
-			"status": req.status,
+			"status": status,
 			"claims": req.claims,
 			"checks": req.checks,
 		}

@@ -314,9 +314,14 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	sdClaims := credtemplate.MergeClaims(sdTpl.Claims, claimOverrides)
 	mdocClaims := credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides)
 
-	// Remove existing PID credentials before generating new ones
-	w.removeByType("dc+sd-jwt", vct, "")
-	w.removeByType("mso_mdoc", "", mdocDocType)
+	// Remove existing PID credentials before generating new ones. A protected
+	// one is kept instead, and then there is nothing to replace: it is the
+	// baseline, and regenerating must not quietly duplicate or discard it.
+	keptSD := w.removeByType("dc+sd-jwt", vct, "") > 0
+	keptMDoc := w.removeByType("mso_mdoc", "", mdocDocType) > 0
+	if keptSD || keptMDoc {
+		log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
+	}
 
 	// Generate SD-JWT PID
 	var holderPubKey *ecdsa.PublicKey
@@ -350,28 +355,32 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 		sdConfig.StatusListIdx = sdStatusIdx
 	}
 
-	sdResult, err := mock.GenerateSDJWT(sdConfig)
-	if err != nil {
-		return fmt.Errorf("generating SD-JWT PID: %w", err)
-	}
-	sdCred, err := w.ImportCredential(sdResult)
-	if err != nil {
-		return fmt.Errorf("importing SD-JWT PID: %w", err)
-	}
+	if !keptSD {
+		sdResult, err := mock.GenerateSDJWT(sdConfig)
+		if err != nil {
+			return fmt.Errorf("generating SD-JWT PID: %w", err)
+		}
+		sdCred, err := w.ImportCredential(sdResult)
+		if err != nil {
+			return fmt.Errorf("importing SD-JWT PID: %w", err)
+		}
 
-	// Register status entry for SD-JWT credential
-	if statusListURL != "" {
-		w.registerStatusEntry(sdCred.ID, sdStatusIdx)
+		// Register status entry for SD-JWT credential
+		if statusListURL != "" {
+			w.registerStatusEntry(sdCred.ID, sdStatusIdx)
+		}
 	}
 
 	mdocConfig := mock.MDOCConfig{
 		DocType:   mdocDocType,
 		Namespace: mdocNamespace,
-		Claims:    mdocClaims,
-		Key:       issuerKey,
-		HolderKey: holderPubKey,
-		ExpiresIn: 30 * 24 * time.Hour,
-		CertChain: pidChain,
+		// The German PID keeps its national additions in a second namespace,
+		// which claim keys carry as a "namespace:element" prefix.
+		NamespaceClaims: splitClaimsByNamespace(mdocClaims, mdocNamespace),
+		Key:             issuerKey,
+		HolderKey:       holderPubKey,
+		ExpiresIn:       30 * 24 * time.Hour,
+		CertChain:       pidChain,
 	}
 
 	if statusListURL != "" {
@@ -381,13 +390,20 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 
 	// Generate mDoc PID
-	mdocResult, err := mock.GenerateMDOC(mdocConfig)
-	if err != nil {
-		return fmt.Errorf("generating mDoc PID: %w", err)
-	}
-	mdocCred, err := w.ImportCredential(mdocResult)
-	if err != nil {
-		return fmt.Errorf("importing mDoc PID: %w", err)
+	if !keptMDoc {
+		mdocResult, err := mock.GenerateMDOC(mdocConfig)
+		if err != nil {
+			return fmt.Errorf("generating mDoc PID: %w", err)
+		}
+		mdocCred, err := w.ImportCredential(mdocResult)
+		if err != nil {
+			return fmt.Errorf("importing mDoc PID: %w", err)
+		}
+
+		// Register status entry for mDoc credential
+		if statusListURL != "" {
+			w.registerStatusEntry(mdocCred.ID, mdocStatusIdx)
+		}
 	}
 
 	w.IssuedAttestations = []IssuedAttestationSpec{
@@ -395,26 +411,29 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 		applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType}),
 	}
 
-	// Register status entry for mDoc credential
-	if statusListURL != "" {
-		w.registerStatusEntry(mdocCred.ID, mdocStatusIdx)
-	}
-
 	return nil
 }
 
-// removeByType removes credentials matching the given format and vct/doctype.
-func (w *Wallet) removeByType(format, vct, docType string) {
+// removeByType drops every credential of the given type. Protected
+// credentials survive: regenerating the defaults must not be a way around the
+// rule that only direct access to the wallet file can remove them. It returns
+// how many protected credentials it kept.
+func (w *Wallet) removeByType(format, vct, docType string) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	var keptProtected int
 	filtered := w.Credentials[:0]
 	for _, c := range w.Credentials {
 		if c.Format == format && (vct == "" || c.VCT == vct) && (docType == "" || c.DocType == docType) {
-			continue
+			if !c.Protected {
+				continue
+			}
+			keptProtected++
 		}
 		filtered = append(filtered, c)
 	}
 	w.Credentials = filtered
+	return keptProtected
 }
 
 // ClearCredentials removes all stored credentials and returns how many were removed.

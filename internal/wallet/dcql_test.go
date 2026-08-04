@@ -447,8 +447,16 @@ func TestEvaluateDCQL_DefaultPIDMatchesVerifierQueries(t *testing.T) {
 			if _, ok := match.Claims["place_of_birth.locality"]; !ok {
 				t.Error("expected SD-JWT match to include place_of_birth.locality")
 			}
+			if _, ok := match.Claims["address.street_address"]; !ok {
+				t.Error("expected SD-JWT match to include address.street_address")
+			}
+			// A real verifier asks for these, and the rulebook says a German
+			// PID always carries them.
 			if _, ok := match.Claims["date_of_expiry"]; !ok {
 				t.Error("expected SD-JWT match to include date_of_expiry")
+			}
+			if _, ok := match.Claims["address.region"]; !ok {
+				t.Error("expected SD-JWT match to include address.region")
 			}
 		default:
 			t.Errorf("unexpected query ID %q", match.QueryID)

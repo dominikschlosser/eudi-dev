@@ -167,6 +167,45 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-dialog")).toContainText("Credential Offer");
   });
 
+  test("the tab the scheme handler opened takes the consent directly", async ({
+    page,
+  }) => {
+    // The handler opens the UI first and submits right after, so the request
+    // can already exist by the time the page finishes loading.
+    const req = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", req.schemeURI);
+    await waitForPending(1);
+
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#consent-approve")).toBeVisible();
+    await expect(page.locator("#pending-banner")).toBeHidden();
+    // The marker is gone, so a reload or a shared link does not claim again.
+    await expect(page).not.toHaveURL(/consent=/);
+  });
+
+  test("a request arriving after that tab opened is claimed too, but only one", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    await expect(page.locator("#pending-banner")).toBeHidden();
+
+    const first = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", first.schemeURI);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+
+    // The claim was for that one dispatch. Anything after it is treated like
+    // any other visitor's request again.
+    const second = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", second.schemeURI);
+    await expect(page.locator("#pending-banner")).toBeVisible();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
   test("a browser-initiated request opens its own dialog", async ({ page }) => {
     const req = await createVerificationRequest();
 
@@ -310,6 +349,59 @@ test.describe("Credential paging", () => {
     await page.goto(BASE);
     await expect(page.locator(".credential-card")).toHaveCount(2, { timeout: 5000 });
     await expect(page.locator("#cred-pager")).toBeHidden();
+  });
+});
+
+// The verifier page polls its request while it is pending. Two abandoned
+// tabs once produced 38% of all traffic on the public demo, because the
+// status endpoint never stopped saying "pending". Polling must end.
+test.describe("Verifier polling", () => {
+  /** Counts status polls the page makes from now on. */
+  function countPolls(page) {
+    const state = { n: 0 };
+    page.on("request", (req) => {
+      if (req.url().includes("/verifier/api/requests/")) state.n++;
+    });
+    return state;
+  }
+
+  test("an unknown or expired request stops the polling", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/?result=00000000000000000000000000000000`);
+    await expect(page.locator("#status")).toHaveText(/expired/, { timeout: 10_000 });
+
+    const polls = countPolls(page);
+    await page.waitForTimeout(4000);
+    expect(polls.n, "no further polls after the request is gone").toBe(0);
+  });
+
+  test("a hidden tab does not poll", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator(".btn[data-type='pid']").click();
+    await expect(page.locator("#status")).toHaveText(/Waiting/);
+
+    // Nobody is looking at this tab any more. Chromium will not background a
+    // page on command, so fake what the page reads.
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { get: () => true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    const polls = countPolls(page);
+    await page.waitForTimeout(8000);
+    expect(polls.n, "a hidden tab must not keep polling").toBe(0);
+  });
+
+  test("a visible tab backs off instead of hammering", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    const polls = countPolls(page);
+    await page.locator(".btn[data-type='pid']").click();
+    await expect(page.locator("#status")).toHaveText(/Waiting/);
+
+    // Ten seconds of the old fixed 1.5s interval was 6 polls and stayed
+    // there forever. With backoff it settles well below that.
+    await page.waitForTimeout(10_000);
+    expect(polls.n, `polls in 10s: ${polls.n}`).toBeLessThanOrEqual(5);
+    expect(polls.n, "but it must still be polling").toBeGreaterThan(0);
   });
 });
 

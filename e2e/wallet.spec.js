@@ -334,8 +334,27 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#issue-template").selectOption("german-pid-sdjwt");
     await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
     await expect(page.locator("#issue-exp")).toHaveValue("720h");
-    const rowCount = await page.locator("#issue-claim-rows .claim-row").count();
-    expect(rowCount).toBeGreaterThan(10);
+    // One row per top-level claim of the German PID.
+    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(14);
+    const keys = await page
+      .locator("#issue-claim-rows .claim-row input[id^=issue-claim-key]")
+      .evaluateAll((inputs) => inputs.map((i) => i.value));
+    expect(keys.sort()).toEqual([
+      "address",
+      "age_equal_or_over",
+      "also_known_as",
+      "birth_name",
+      "birthdate",
+      "date_of_expiry",
+      "family_name",
+      "given_name",
+      "issuing_authority",
+      "issuing_country",
+      "nationalities",
+      "place_of_birth",
+      "source_document_type",
+      "title",
+    ]);
 
     await page.locator("#issue-cancel").click();
     await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);

@@ -397,21 +397,7 @@ func (w *Wallet) resolveIssueStatus(uri *string, idx *int) (string, int, bool, e
 // "namespace:element" go into that namespace, all other keys go into the
 // default namespace.
 func splitClaimsByNamespace(claims map[string]any, defaultNamespace string) map[string]map[string]any {
-	out := make(map[string]map[string]any)
-	for key, value := range claims {
-		ns, name := defaultNamespace, key
-		if i := strings.Index(key, ":"); i > 0 {
-			ns, name = key[:i], key[i+1:]
-		}
-		if out[ns] == nil {
-			out[ns] = make(map[string]any)
-		}
-		out[ns][name] = value
-	}
-	if len(out) == 0 {
-		out[defaultNamespace] = map[string]any{}
-	}
-	return out
+	return mock.SplitClaimsByNamespace(claims, defaultNamespace)
 }
 
 func omitIssueClaims(claims map[string]any, omit []string) map[string]any {
