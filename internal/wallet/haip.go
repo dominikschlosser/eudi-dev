@@ -16,6 +16,8 @@ package wallet
 
 import (
 	"fmt"
+	"net/netip"
+	"net/url"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
@@ -108,6 +110,122 @@ func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool 
 	}
 	for _, value := range values {
 		if text, ok := value.(string); ok && text == origin {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateHAIPIssuanceCompliance checks a credential offer and the issuer's
+// metadata against the HAIP 1.0 profile of OpenID4VCI. It returns violation
+// messages; an empty list means compliant.
+//
+// HAIP 1.0 §4 requires an issuer to *support* the authorization code flow. It
+// does not require an issuer to use it for every credential, and it says
+// nothing about the pre-authorized code flow, so an offer that uses that flow
+// is conformant. §4 also scopes pushed authorization requests to "when using
+// the Authorization Endpoint".
+//
+// The checks therefore follow the flow the offer actually drives, because
+// that is what a wallet can assess from an offer in front of it:
+//
+//   - always: the credential issuer MUST be an https origin
+//   - authorization code offers: the authorization server MUST support the
+//     flow, require pushed authorization requests, support PKCE with S256,
+//     support DPoP, and authenticate the client
+//
+// A pre-authorized code offer never reaches the authorization endpoint, so
+// holding it to those endpoint requirements would be stricter than the
+// profile.
+func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map[string]any) []string {
+	var violations []string
+	if offer == nil {
+		return []string{"HAIP: credential offer is missing"}
+	}
+
+	if issuer := strings.TrimSpace(offer.CredentialIssuer); issuer != "" && !secureIssuerOrigin(issuer) {
+		violations = append(violations, fmt.Sprintf("HAIP: the credential issuer must be an https URL, got %q", issuer))
+	}
+
+	if !usesAuthorizationEndpoint(offer) {
+		return violations
+	}
+
+	if oauthMeta == nil {
+		return append(violations, "HAIP: the authorization server metadata could not be read")
+	}
+	if !supportsAuthorizationCodeFlow(oauthMeta) {
+		violations = append(violations, "HAIP: the authorization server must support the authorization code flow")
+	}
+	if required, _ := oauthMeta["require_pushed_authorization_requests"].(bool); !required {
+		violations = append(violations, "HAIP: the authorization server must require pushed authorization requests")
+	}
+	if !metadataListContains(oauthMeta, "code_challenge_methods_supported", "S256") {
+		violations = append(violations, "HAIP: the authorization server must support PKCE with S256")
+	}
+	if !supportsDPoP(oauthMeta) {
+		violations = append(violations, "HAIP: the authorization server must support DPoP")
+	}
+	if method := detectTokenEndpointAuthMethod(oauthMeta); method != "attest_jwt_client_auth" && method != "private_key_jwt" {
+		violations = append(violations, "HAIP: the authorization server must authenticate the client with attest_jwt_client_auth or private_key_jwt")
+	}
+
+	return violations
+}
+
+// usesAuthorizationEndpoint reports whether redeeming this offer goes through
+// the authorization endpoint. An offer carrying only a pre-authorized code
+// goes straight to the token endpoint.
+func usesAuthorizationEndpoint(offer *oid4vc.CredentialOffer) bool {
+	if offer.Grants.AuthorizationCode != "" || offer.Grants.IssuerState != "" {
+		return true
+	}
+	return offer.Grants.PreAuthorizedCode == ""
+}
+
+// supportsAuthorizationCodeFlow reports whether the authorization server
+// advertises the flow HAIP 1.0 §4 requires it to support. Metadata that
+// omits grant_types_supported defaults to authorization_code per RFC 8414,
+// so an authorization endpoint alone is enough to satisfy it.
+func supportsAuthorizationCodeFlow(oauthMeta map[string]any) bool {
+	if _, declared := oauthMeta["grant_types_supported"]; declared {
+		return metadataListContains(oauthMeta, "grant_types_supported", "authorization_code")
+	}
+	endpoint, _ := oauthMeta["authorization_endpoint"].(string)
+	return strings.TrimSpace(endpoint) != ""
+}
+
+// secureIssuerOrigin reports whether an issuer URL is acceptable transport.
+// https always is; plain http is allowed only on loopback, the way OAuth
+// treats a local development host, so a demo instance on localhost is not
+// rejected for being local.
+func secureIssuerOrigin(issuer string) bool {
+	parsed, err := url.Parse(issuer)
+	if err != nil {
+		return false
+	}
+	if parsed.Scheme == "https" {
+		return true
+	}
+	if parsed.Scheme != "http" {
+		return false
+	}
+	host := parsed.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	addr, err := netip.ParseAddr(host)
+	return err == nil && addr.IsLoopback()
+}
+
+// metadataListContains reports whether a metadata array holds the value.
+func metadataListContains(meta map[string]any, key, want string) bool {
+	values, ok := meta[key].([]any)
+	if !ok {
+		return false
+	}
+	for _, raw := range values {
+		if s, _ := raw.(string); s == want {
 			return true
 		}
 	}

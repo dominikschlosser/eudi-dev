@@ -63,10 +63,13 @@
       </div>
     </div>
     <p>
-      This verifier requests a presentation through a standard OpenID4VP
-      authorization request (<code>dcql_query</code>, <code>direct_post</code>) and
-      cryptographically verifies the response: issuer signature against the wallet's
-      trust anchor, key binding, <code>sd_hash</code>, nonce, and audience.
+      This verifier requests a presentation through an OpenID4VP authorization
+      request following the HAIP 1.0 profile: a signed request object fetched by
+      <code>request_uri</code>, an <code>x509_hash</code> client identifier,
+      <code>dcql_query</code>, and <code>direct_post.jwt</code> with the response
+      encrypted to a per-request key. It then cryptographically verifies that
+      response: issuer signature against the wallet's trust anchor, revocation, key
+      binding, <code>sd_hash</code>, nonce, and audience.
     </p>
     <button class="btn primary" data-type="ticket">Request the demo ticket</button>
     <button class="btn" data-type="pid">Request the PID</button>

@@ -933,3 +933,30 @@ header h1 {
 .conformance-table td.conf-off {
   color: var(--text-dim);
 }
+
+/* Credential offer details in the consent dialog. */
+.offer-facts {
+  font-size: 11px;
+  margin: 8px 0 4px;
+}
+.offer-facts > div {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+}
+.offer-fact-name {
+  color: var(--text-dim);
+  min-width: 120px;
+}
+.offer-type {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  word-break: break-all;
+}
+.offer-description {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin-top: 4px;
+}

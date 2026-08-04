@@ -765,9 +765,11 @@ def wallet_api_path_for_request(request_url: str) -> str:
 
 def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
-    payload = {"uri": request_url, "mode": WALLET_MODE}
-    if api_path == "/api/presentations" and requires_haip:
-        payload["haip"] = True
+    # State the profile explicitly rather than inheriting the server's
+    # setting: the non-HAIP modules have to run without HAIP even against a
+    # wallet that enforces it globally, and the issuance endpoint now honors
+    # the same override.
+    payload = {"uri": request_url, "mode": WALLET_MODE, "haip": bool(requires_haip)}
     for attempt in range(1, 6):
         try:
             result = wallet_request(wallet_url, "POST", api_path, payload)

@@ -151,6 +151,46 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-approve")).toBeVisible();
   });
 
+  test("the issuance consent dialog says what is being issued", async ({ page }) => {
+    const { body: offer } = await postJSON("/issuer/api/offers", {});
+    const offerDoc = await (await fetch(offer.offer_uri)).json();
+    const uri = "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify(offerDoc));
+
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    submitAsSchemeHandler("/api/offers", uri);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+
+    const dialog = page.locator("#consent-dialog");
+    // The issuer's own name, not just its origin.
+    await expect(dialog).toContainText("EUDI Test Demo Issuer");
+    await expect(page.locator("#offer-issuer-origin")).toContainText(BASE);
+    // What is being issued: flow, format, display name, type and claims.
+    await expect(page.locator("#offer-facts")).toContainText("pre-authorized code");
+    await expect(dialog).toContainText("Demo Event Ticket");
+    await expect(dialog).toContainText("urn:eudi-test:demo-ticket:1");
+    for (const claim of ["event", "tier", "seat", "given_name", "family_name"]) {
+      await expect(dialog.locator(".consent-claim-name", { hasText: claim })).toHaveCount(1);
+    }
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("an offer delivered by reference is described too", async ({ page }) => {
+    // The demo issuer hands out credential_offer_uri links, so this is the
+    // path a visitor actually takes.
+    const { body: offer } = await postJSON("/issuer/api/offers", {});
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    submitAsSchemeHandler("/api/offers", offer.scheme_uri);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+
+    const dialog = page.locator("#consent-dialog");
+    await expect(dialog).toContainText("EUDI Test Demo Issuer");
+    await expect(dialog).toContainText("Demo Event Ticket");
+    await expect(dialog.locator(".consent-claim-name", { hasText: "seat" })).toHaveCount(1);
+    await page.locator("#consent-deny").click();
+  });
+
   test("a scheme-dispatched credential offer is reachable the same way", async ({
     page,
   }) => {
@@ -415,14 +455,13 @@ test.describe("Conformance", () => {
 
     await expect(page.locator("#conf-mode")).toHaveText("strict");
     await expect(page.locator("#conf-haip")).toHaveText("enforced");
-    // Issuance is not covered yet, and the dialog has to say so rather than
-    // implying the whole profile is enforced.
-    await expect(page.locator("#conf-haip-issuance")).toHaveText("not enforced");
+    await expect(page.locator("#conf-haip-issuance")).toHaveText("enforced");
     await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
 
     // Only what is enforced is highlighted.
     await expect(page.locator("#conf-mode")).toHaveClass(/conf-on/);
-    await expect(page.locator("#conf-haip-issuance")).toHaveClass(/conf-off/);
+    await expect(page.locator("#conf-haip-issuance")).toHaveClass(/conf-on/);
+    await expect(page.locator("#conf-encrypted")).toHaveClass(/conf-off/);
 
     await expect(page.locator("#conf-explainer")).toContainText("signed request object");
 

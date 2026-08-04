@@ -79,9 +79,20 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 				"credential_issuer":   serverURL,
 				"credential_endpoint": serverURL + "/credential",
 				"token_endpoint":      serverURL + "/token",
+				"display": []any{
+					map[string]any{"name": "Test Issuer", "locale": "en-US"},
+				},
 				"credential_configurations_supported": map[string]any{
 					"test-config": map[string]any{
 						"format": configFormat,
+						"vct":    "urn:test:credential",
+						"display": []any{
+							map[string]any{"name": "Test Credential", "description": "A credential for tests"},
+						},
+						"claims": []any{
+							map[string]any{"path": []any{"given_name"}},
+							map[string]any{"path": []any{"address", "locality"}},
+						},
 					},
 				},
 			}
@@ -1287,5 +1298,129 @@ func TestProcessCredentialOffer_UsesCredentialIdentifierFromAuthorizationDetails
 
 	if _, err := w.ProcessCredentialOffer(offerURI); err != nil {
 		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+}
+
+// The consent dialog has to say what is being issued, not just name a host.
+// Everything beyond the offer comes from the issuer's metadata, which is
+// optional, so this also pins the degraded cases.
+func TestIssuanceConsentDescribesTheOffer(t *testing.T) {
+	srv := newTestServer(t, false)
+	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
+	defer issuer.Close()
+
+	req, _, err := prepareIssuanceConsentRequest(offerURI)
+	if err != nil {
+		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
+	}
+	details := req.OfferDetails
+	if details == nil {
+		t.Fatal("the consent request carries no offer details")
+	}
+
+	if details.IssuerName != "Test Issuer" {
+		t.Errorf("issuer name = %q, want the name from the issuer metadata", details.IssuerName)
+	}
+	if details.Grant != "pre-authorized code" {
+		t.Errorf("grant = %q, want the flow the offer uses", details.Grant)
+	}
+	if len(details.Credentials) != 1 {
+		t.Fatalf("expected one offered credential, got %d", len(details.Credentials))
+	}
+
+	cred := details.Credentials[0]
+	if cred.ID != "test-config" {
+		t.Errorf("configuration id = %q", cred.ID)
+	}
+	if cred.Name != "Test Credential" || cred.Description != "A credential for tests" {
+		t.Errorf("display name/description not taken from the metadata: %+v", cred)
+	}
+	if cred.Format != "dc+sd-jwt" || cred.VCT != "urn:test:credential" {
+		t.Errorf("format/vct not resolved: %+v", cred)
+	}
+	// Nested claim paths are what a user most needs to see, so they must be
+	// rendered as a path rather than dropped.
+	want := []string{"given_name", "address.locality"}
+	if len(cred.Claims) != len(want) {
+		t.Fatalf("claims = %v, want %v", cred.Claims, want)
+	}
+	for i, claim := range want {
+		if cred.Claims[i] != claim {
+			t.Errorf("claim %d = %q, want %q", i, cred.Claims[i], claim)
+		}
+	}
+
+	// The marshalled form is what the UI actually consumes.
+	if _, ok := MarshalConsentRequest(req)["offer_details"]; !ok {
+		t.Error("offer_details missing from the marshalled consent request")
+	}
+}
+
+// An offer delivered by reference is resolved for the dialog too, so the user
+// sees what they are approving rather than a bare hostname. It is fetched
+// again after approval, which the specification permits.
+func TestIssuanceConsentResolvesOfferByReference(t *testing.T) {
+	srv := newTestServer(t, false)
+	fetched := make(chan struct{}, 4)
+	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{
+		offerViaURI:  true,
+		onOfferFetch: func() { fetched <- struct{}{} },
+	})
+	defer issuer.Close()
+
+	req, _, err := prepareIssuanceConsentRequest(offerURI)
+	if err != nil {
+		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
+	}
+	select {
+	case <-fetched:
+	default:
+		t.Fatal("the credential_offer_uri should be fetched to describe the offer")
+	}
+
+	details := req.OfferDetails
+	if details == nil || len(details.Credentials) != 1 {
+		t.Fatalf("a by-reference offer should be described like any other: %+v", details)
+	}
+	if details.Credentials[0].Name != "Test Credential" {
+		t.Errorf("display name not resolved: %+v", details.Credentials[0])
+	}
+}
+
+// An offer whose URI cannot be fetched must still produce a dialog: naming
+// the host and the failure beats refusing to ask.
+func TestIssuanceConsentSurvivesUnresolvableOfferURI(t *testing.T) {
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer_uri=https://issuer.invalid/offer/1")
+	if err != nil {
+		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
+	}
+	if req.OfferDetails == nil || req.OfferDetails.ResolveError == "" {
+		t.Fatalf("the resolve failure should be recorded: %+v", req.OfferDetails)
+	}
+	if req.ClientID == "" {
+		t.Error("the dialog still needs something to name the issuer by")
+	}
+}
+
+// An issuer that publishes no metadata must still produce a usable dialog.
+func TestIssuanceConsentSurvivesMissingIssuerMetadata(t *testing.T) {
+	offer := `{"credential_issuer":"https://issuer.invalid","credential_configuration_ids":["some-config"],` +
+		`"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"abc","tx_code":{"length":6,"input_mode":"numeric"}}}}`
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer=" + url.QueryEscape(offer))
+	if err != nil {
+		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
+	}
+	details := req.OfferDetails
+	if details == nil {
+		t.Fatal("no offer details")
+	}
+	if details.MetadataError == "" {
+		t.Error("the unreachable metadata should be recorded, not hidden")
+	}
+	if len(details.Credentials) != 1 || details.Credentials[0].ID != "some-config" {
+		t.Errorf("the offered configuration should still be listed: %+v", details.Credentials)
+	}
+	if !details.TxCode || details.TxCodeHint != "6 numeric characters" {
+		t.Errorf("tx_code requirement not surfaced: %+v", details)
 	}
 }

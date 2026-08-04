@@ -4,7 +4,7 @@ These are the current local wallet conformance results for `eudi-dev`. Use [Runn
 
 ## Baseline
 
-- date: 2026-07-30
+- date: 2026-08-04 (previous: 2026-07-30, which did not exercise credential status; see below)
 - wallet mode: strict
 - suite server: local `https://localhost:8443/`
 - suite baseline: `release-v5.2.1`, version `5.2.1`, revision `932b46f`
@@ -22,7 +22,24 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The full matrix passed in a single run: all 12 plans finished with 0 condition failures and 0 warnings (106 modules `PASSED`, 38 negative modules `REVIEW` with zero condition failures).
+The full matrix passes in a single run: all 12 plans finish with 0 condition failures and 0 warnings (106 modules `PASSED`, 38 negative modules `REVIEW` with zero condition failures). The 2026-07-30 run reported the same totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
+
+## Run of 2026-08-04
+
+Re-run against the same suite baseline (`release-v5.2.1`), with the server running on the host per [the runbook](./conformance-run.md):
+
+**106 modules PASSED, 38 negative modules REVIEW, 0 FAILED**, across all 12 plans, with zero condition failures.
+
+This run exercises credential status for the first time. Until now the tested configuration produced no status list at all: default PID generation was gated on `w.BaseURL != ""`, and the wrapper starts the wallet with only `--port`, so the credentials carried no `status` claim and the suite skipped `FetchStatusListToken` and everything after it. Once the gate became `StatusListURL() != ""` (which falls back to the always-derived issuer URL), those conditions started running and surfaced two defects that had never been exercised:
+
+- the status list token carried the self-signed trust anchor inside its `x5c` chain, which HAIP 6.1 rejects ("Trust anchor certificate must not be included in x5c chain") — 14 modules
+- the token offered no key-resolution route the Final (non-HAIP) plans accept: that branch verifies with a `jwk` embedded in the header or with `server_jwks`, and `server_jwks` is unreachable in these plans — 17 modules
+
+Both are fixed. The token now strips the trust anchor from `x5c` and additionally embeds the signing key as a `jwk` header, derived from the signing key so it cannot disagree with the `x5c` leaf. `x5c` remains the anchored route that HAIP validates; `jwk` is the convenience route, permitted because Token Status List §5.1 requires only `typ` and `jwk` is a registered JOSE header (RFC 7515 §4.1.3).
+
+### Flaky module to expect
+
+`RequestUriFetchedMoreThanOnce` can fail spuriously. `submit_wallet_request` retries a submission up to five times after a transient HTTP 502, and each submission makes the wallet fetch the `request_uri` once, so a retry produces a second fetch that the suite flags. It appeared once in an earlier run of this same code on a loaded machine and did not reproduce on a quiet one. Re-run before treating it as a defect.
 
 ## New release-v5.2.1 Coverage
 

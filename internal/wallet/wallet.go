@@ -86,7 +86,9 @@ type Wallet struct {
 	Log                     []LogEntry
 	mu                      sync.RWMutex
 	logSink                 func(LogEntry)
-	runtime                 *WalletRuntime
+	// credentialSink forwards imports to the wallet a clone was made from.
+	credentialSink func(StoredCredential)
+	runtime        *WalletRuntime
 }
 
 // WalletRuntime is the in-memory flow state shared by wallet instances backed
@@ -186,9 +188,11 @@ type ConsentRequest struct {
 	CreatedAt    time.Time                    `json:"created_at"`
 	ClientID     string                       `json:"client_id"`
 	OfferConfigs []string                     `json:"offer_configs,omitempty"`
-	Nonce        string                       `json:"nonce,omitempty"`
-	ResponseURI  string                       `json:"response_uri,omitempty"`
-	DCQLQuery    map[string]any               `json:"dcql_query,omitempty"`
+	// OfferDetails describes what the issuer is offering, for the consent UI.
+	OfferDetails *IssuanceOfferDetails `json:"offer_details,omitempty"`
+	Nonce        string                `json:"nonce,omitempty"`
+	ResponseURI  string                `json:"response_uri,omitempty"`
+	DCQLQuery    map[string]any        `json:"dcql_query,omitempty"`
 }
 
 // CredentialMatch links a credential to a DCQL query credential ID.
@@ -670,6 +674,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if len(r.OfferConfigs) > 0 {
 		m["offer_configs"] = r.OfferConfigs
+	}
+	if r.OfferDetails != nil {
+		m["offer_details"] = r.OfferDetails
 	}
 	return m
 }

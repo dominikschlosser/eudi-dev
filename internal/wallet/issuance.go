@@ -65,9 +65,12 @@ type IssuanceResult struct {
 	Error              string `json:"error,omitempty"`
 }
 
-// ProcessCredentialOffer processes an OID4VCI credential offer URI.
+// ProcessCredentialOffer processes an OID4VCI credential offer URI. An offer
+// delivered by reference is dereferenced here even when the consent dialog
+// already fetched it once to show the user what they were approving: fetching
+// a credential_offer_uri more than once is allowed, and it keeps this the
+// single entry point to the flow.
 func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error) {
-	// Parse the credential offer
 	reqType, result, err := oid4vc.Parse(offerURI)
 	if err != nil {
 		return nil, fmt.Errorf("parsing credential offer: %w", err)
@@ -75,12 +78,10 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if reqType != oid4vc.TypeVCI {
 		return nil, fmt.Errorf("expected VCI credential offer, got VP")
 	}
-
 	offer, ok := result.(*oid4vc.CredentialOffer)
 	if !ok {
-		return nil, fmt.Errorf("unexpected result type")
+		return nil, fmt.Errorf("unexpected credential offer type")
 	}
-
 	w.addProtocolLog("issuance", "credential_offer", fmt.Sprintf("Received credential offer from %s", offer.CredentialIssuer), true, map[string]any{
 		"direction":                    "inbound",
 		"offer_uri":                    offerURI,
@@ -136,6 +137,18 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	w.addProtocolLog("issuance", "oauth_metadata_response", fmt.Sprintf("OAuth metadata response from %s", authServer), oauthErr == nil, oauthResponseDetails)
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
+
+	if w.RequireHAIP {
+		if violations := ValidateHAIPIssuanceCompliance(offer, oauthMeta); len(violations) > 0 {
+			w.AddLog("issuance", fmt.Sprintf("HAIP violations: %v", violations), false)
+			w.addProtocolLog("issuance", "haip_violation", "Credential offer rejected by HAIP 1.0 enforcement", false, map[string]any{
+				"issuer":     offer.CredentialIssuer,
+				"violations": violations,
+			})
+			return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
+		}
+	}
+
 	if offer.Grants.PreAuthorizedCode == "" {
 		if w.ValidationMode == ValidationModeStrict {
 			if oauthErr != nil {

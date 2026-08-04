@@ -2502,13 +2502,16 @@ func TestOnUIRequest_CalledOnInteractiveOfferImport(t *testing.T) {
 	}
 }
 
-func TestOnUIRequest_InteractiveOfferImportFetchesOfferOnlyAfterApproval(t *testing.T) {
+// An interactive offer import resolves the offer twice: once to describe it
+// in the consent dialog, and again to run the flow after approval. Fetching a
+// credential_offer_uri more than once is permitted, and it is what lets the
+// dialog show what is being issued rather than a bare hostname.
+func TestOnUIRequest_InteractiveOfferImportFetchesOfferForDialogAndAfterApproval(t *testing.T) {
 	srv := newTestServer(t, false)
 	offerFetched := make(chan struct{}, 2)
 
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{
-		offerViaURI:     true,
-		oneShotOfferURI: true,
+		offerViaURI: true,
 		onOfferFetch: func() {
 			offerFetched <- struct{}{}
 		},
@@ -2537,10 +2540,11 @@ func TestOnUIRequest_InteractiveOfferImportFetchesOfferOnlyAfterApproval(t *test
 	if reqID == "" {
 		t.Fatal("no pending issuance consent request found")
 	}
+	// Fetched once already, to describe the offer in the dialog.
 	select {
 	case <-offerFetched:
-		t.Fatal("credential_offer_uri should not be fetched before approval")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(time.Second):
+		t.Fatal("credential_offer_uri should be fetched to describe the pending offer")
 	}
 
 	approveReq := httptest.NewRequest("POST", "/api/requests/"+reqID+"/approve", strings.NewReader(`{}`))

@@ -290,7 +290,8 @@ so the wallet automatically receives incoming protocol requests.`,
 				fmt.Printf("  Encrypted:   request object encryption required\n")
 			}
 			if w.RequireHAIP {
-				fmt.Printf("  HAIP:        enforced (x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
+				fmt.Printf("  HAIP:        enforced (presentations: x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
+				fmt.Printf("               enforced (issuance: https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)\n")
 			}
 			for _, warning := range servingConfigWarnings(w, port, docker) {
 				yellow.Printf("  Warning:     %s\n", warning)
@@ -430,7 +431,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
 	cmd.Flags().StringVar(&preferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
 	cmd.Flags().BoolVar(&requireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
-	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 compliance (x509_hash, direct_post.jwt, DCQL, JAR, ES256)")
+	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")

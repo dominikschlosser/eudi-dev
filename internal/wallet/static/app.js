@@ -1057,23 +1057,91 @@
     });
   }
 
+
+  // What an issuer is offering. Everything except the offer itself comes from
+  // the issuer's metadata, which is optional, so each part is rendered only
+  // when it is actually known rather than as an empty row.
+  function renderOfferDetails(req) {
+    const details = req.offer_details || {};
+    let html = '';
+
+    const facts = [];
+    if (details.grant) facts.push(['Flow', details.grant]);
+    if (details.tx_code) {
+      facts.push(['Transaction code', details.tx_code_hint
+        ? 'required (' + details.tx_code_hint + ')'
+        : 'required']);
+    }
+    if (facts.length > 0) {
+      html += '<div class="offer-facts" id="offer-facts">' + facts.map(([k, v]) =>
+        '<div><span class="offer-fact-name">' + escHtml(k) + '</span>' +
+        '<span class="offer-fact-value">' + escHtml(v) + '</span></div>'
+      ).join('') + '</div>';
+    }
+
+    // The offer could not be fetched, so only its origin is known.
+    if (details.resolve_error) {
+      html += '<p class="dialog-hint" id="offer-resolve-error">This offer could not be retrieved, ' +
+        'so only the issuer it names is shown. Approving will try again.</p>';
+      return html;
+    }
+
+    const credentials = details.credentials || [];
+    if (credentials.length === 0) {
+      (req.offer_configs || []).forEach(cfg => {
+        html += '<div class="consent-credential"><div class="consent-credential-header">' +
+          '<span style="font-size:12px;font-weight:600;">' + escHtml(cfg) + '</span>' +
+          '</div></div>';
+      });
+      return html;
+    }
+
+    credentials.forEach(cred => {
+      const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt'
+        : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
+      const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT'
+        : cred.format === 'jwt_vc_json' ? 'JWT VC'
+        : cred.format === 'mso_mdoc' ? 'mDoc' : '';
+      const typeLabel = cred.vct || cred.doctype || cred.id;
+
+      html += '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' +
+        '<div class="consent-credential-header">' +
+        (formatLabel ? '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' : '') +
+        '<span style="font-size:12px;font-weight:600;">' + escHtml(cred.name || typeLabel) + '</span>' +
+        '</div>';
+      if (cred.name && typeLabel !== cred.name) {
+        html += '<div class="offer-type">' + escHtml(typeLabel) + '</div>';
+      }
+      if (cred.description) {
+        html += '<div class="offer-description">' + escHtml(cred.description) + '</div>';
+      }
+      if (cred.claims && cred.claims.length > 0) {
+        html += '<div class="consent-claims">' + cred.claims.map(claim =>
+          '<div class="consent-claim"><span class="consent-claim-name">' + escHtml(claim) + '</span></div>'
+        ).join('') + '</div>';
+      }
+      html += '</div>';
+    });
+
+    if (details.metadata_error) {
+      html += '<p class="dialog-hint" id="offer-metadata-error">The issuer published no readable metadata, ' +
+        'so only what the offer itself carries is shown.</p>';
+    }
+    return html;
+  }
+
   function showConsentDialog(req) {
     consentOverlay.classList.add('active');
 
     const isIssuance = req.type === 'issuance';
+    const issuerName = isIssuance && req.offer_details ? req.offer_details.issuer_name : '';
     let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
-      '<div class="consent-verifier">' + (isIssuance ? 'Issuer: ' : 'Verifier: ') + escHtml(req.client_id) + '</div>';
+      '<div class="consent-verifier">' + (isIssuance ? 'Issuer: ' : 'Verifier: ') +
+      escHtml(issuerName || req.client_id) + '</div>' +
+      (issuerName ? '<div class="offer-type" id="offer-issuer-origin">' + escHtml(req.client_id) + '</div>' : '');
 
-    if (isIssuance && req.offer_configs && req.offer_configs.length > 0) {
-      html += '<div class="consent-credential">' +
-        '<div class="consent-credential-header">' +
-          '<span style="font-size:12px;font-weight:600;">Credential configuration</span>' +
-        '</div>' +
-        '<div class="consent-claims">';
-      req.offer_configs.forEach(cfg => {
-        html += '<div class="consent-claim"><span class="consent-claim-name">' + escHtml(cfg) + '</span></div>';
-      });
-      html += '</div></div>';
+    if (isIssuance) {
+      html += renderOfferDetails(req);
     }
 
     if (!isIssuance && req.matched_credentials && req.matched_credentials.length > 0) {
@@ -1260,8 +1328,10 @@
     if (config.require_haip) {
       parts.push('HAIP 1.0 additionally requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, response_mode direct_post.jwt or dc_api.jwt, a DCQL query, and ES256.');
     }
-    if (!config.require_haip_issuance) {
-      parts.push('Issuance is not held to the profile yet: credential offers are accepted whatever flow they use.');
+    if (config.require_haip_issuance) {
+      parts.push('Issuance is held to it too: the credential issuer must be an https origin, and an offer that drives the authorization endpoint must additionally find pushed authorization requests required and PKCE S256, DPoP and client authentication supported. A pre-authorized code offer is not rejected for its grant type.');
+    } else {
+      parts.push('Issuance is not held to the profile: credential offers are accepted whatever flow they use.');
     }
     const explainer = document.getElementById('conf-explainer');
     if (explainer) explainer.textContent = parts.join(' ');

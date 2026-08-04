@@ -21,6 +21,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"strings"
@@ -218,16 +219,14 @@ func TestGenerateStatusListJWT_WithCertChain(t *testing.T) {
 	if !ok {
 		t.Fatal("expected x5c array in header")
 	}
-	if len(x5c) != 2 {
-		t.Fatalf("expected 2 certificates in x5c, got %d", len(x5c))
+	// The self-signed trust anchor is dropped: a relying party has it out of
+	// band, and HAIP 6.1 rejects a chain that carries it. See
+	// TestGenerateStatusListJWTExcludesTrustAnchorFromX5C.
+	if len(x5c) != 1 {
+		t.Fatalf("expected only the leaf certificate in x5c, got %d", len(x5c))
 	}
-
-	// First cert should be the leaf, second the CA
 	if _, ok := x5c[0].(string); !ok {
 		t.Error("expected string certificate in x5c[0]")
-	}
-	if _, ok := x5c[1].(string); !ok {
-		t.Error("expected string certificate in x5c[1]")
 	}
 }
 
@@ -247,5 +246,131 @@ func TestGenerateStatusListJWT_WithoutCertChain(t *testing.T) {
 
 	if header["x5c"] != nil {
 		t.Error("expected no x5c when cert chain not provided")
+	}
+}
+
+// The trust anchor must not be shipped inside x5c: a relying party holds it
+// out of band, and a chain carrying its own root proves nothing. HAIP 6.1
+// rejects a status list token whose chain includes it.
+func TestGenerateStatusListJWTExcludesTrustAnchorFromX5C(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatalf("generating CA cert: %v", err)
+	}
+	leafKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating leaf key: %v", err)
+	}
+	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &leafKey.PublicKey)
+	if err != nil {
+		t.Fatalf("generating leaf cert: %v", err)
+	}
+
+	jwt, err := GenerateStatusListJWT([]byte{0x00}, leafKey, StatusListConfig{
+		URI:       "https://issuer.example/api/statuslist",
+		Issuer:    "https://issuer.example",
+		CertChain: []*x509.Certificate{leafCert, caCert},
+	})
+	if err != nil {
+		t.Fatalf("GenerateStatusListJWT: %v", err)
+	}
+
+	header := decodeJWTHeader(t, jwt)
+	if typ, _ := header["typ"].(string); typ != "statuslist+jwt" {
+		t.Errorf("typ = %v, want statuslist+jwt", typ)
+	}
+	x5c, ok := header["x5c"].([]any)
+	if !ok {
+		t.Fatalf("x5c missing from the header: %v", header)
+	}
+	if len(x5c) != 1 {
+		t.Fatalf("x5c holds %d certificates, want only the leaf", len(x5c))
+	}
+	leafDER := base64.StdEncoding.EncodeToString(leafCert.Raw)
+	if x5c[0] != leafDER {
+		t.Error("the first x5c entry must be the signing certificate")
+	}
+	caDER := base64.StdEncoding.EncodeToString(caCert.Raw)
+	for _, entry := range x5c {
+		if entry == caDER {
+			t.Error("the self-signed trust anchor must not be included in x5c")
+		}
+	}
+}
+
+func decodeJWTHeader(t *testing.T, jwt string) map[string]any {
+	t.Helper()
+	parts := strings.Split(jwt, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected a compact JWS, got %d segments", len(parts))
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("decoding header: %v", err)
+	}
+	var header map[string]any
+	if err := json.Unmarshal(raw, &header); err != nil {
+		t.Fatalf("parsing header: %v", err)
+	}
+	return header
+}
+
+// The embedded jwk must be the same key the x5c leaf certifies, or the token
+// tells two different stories about who signed it. It is derived from the
+// signing key for exactly that reason; this pins it.
+func TestGenerateStatusListJWTEmbedsSigningKeyMatchingX5C(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatalf("generating CA cert: %v", err)
+	}
+	leafKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating leaf key: %v", err)
+	}
+	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &leafKey.PublicKey)
+	if err != nil {
+		t.Fatalf("generating leaf cert: %v", err)
+	}
+
+	jwt, err := GenerateStatusListJWT([]byte{0x00}, leafKey, StatusListConfig{
+		URI:       "https://issuer.example/api/statuslist",
+		Issuer:    "https://issuer.example",
+		CertChain: []*x509.Certificate{leafCert, caCert},
+	})
+	if err != nil {
+		t.Fatalf("GenerateStatusListJWT: %v", err)
+	}
+
+	header := decodeJWTHeader(t, jwt)
+	jwk, ok := header["jwk"].(map[string]any)
+	if !ok {
+		t.Fatalf("no jwk in the header: %v", header)
+	}
+	want := mock.PublicKeyJWKMap(&leafKey.PublicKey)
+	for _, field := range []string{"kty", "crv", "x", "y"} {
+		if jwk[field] != want[field] {
+			t.Errorf("jwk %s = %v, want %v", field, jwk[field], want[field])
+		}
+	}
+	// A private key must never leak into the header.
+	if _, present := jwk["d"]; present {
+		t.Error("the embedded jwk must be a public key")
+	}
+
+	// And it must agree with the certificate that x5c presents.
+	leafJWK := mock.PublicKeyJWKMap(leafCert.PublicKey.(*ecdsa.PublicKey))
+	if jwk["x"] != leafJWK["x"] || jwk["y"] != leafJWK["y"] {
+		t.Error("the embedded jwk does not match the public key in the x5c leaf certificate")
+	}
+	if _, ok := header["x5c"]; !ok {
+		t.Error("x5c must still be present: it is what anchors the key in a trust anchor")
 	}
 }

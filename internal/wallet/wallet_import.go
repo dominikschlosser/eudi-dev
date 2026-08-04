@@ -70,7 +70,15 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 func (w *Wallet) appendCredential(cred StoredCredential) *StoredCredential {
 	w.mu.Lock()
 	w.Credentials = append(w.Credentials, cred)
+	sink := w.credentialSink
 	w.mu.Unlock()
+	// A per-request clone (a profile override on an offer) holds its own
+	// credential slice, so without forwarding, anything it collects would be
+	// thrown away with the clone and the wallet would report an issuance it
+	// did not keep.
+	if sink != nil {
+		sink(cred)
+	}
 	return &cred
 }
 

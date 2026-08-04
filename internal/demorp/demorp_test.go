@@ -187,6 +187,27 @@ func TestIssuerRejectsWrongNonce(t *testing.T) {
 	}
 }
 
+// newIssuanceWallet builds a wallet that enforces HAIP on issuance.
+func newIssuanceWallet(t *testing.T) *wallet.Wallet {
+	t.Helper()
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating holder key: %v", err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating issuer key: %v", err)
+	}
+	w := wallet.New(holderKey, issuerKey, true)
+	w.RequireHAIP = true
+	return w
+}
+
+func jsonString(v string) string {
+	raw, _ := json.Marshal(v)
+	return string(raw)
+}
+
 // presentTicket builds a full SD-JWT+KB presentation for the given request
 // parameters, exactly as a wallet would.
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
@@ -638,12 +659,21 @@ func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) 
 
 	mux := http.NewServeMux()
 	mux.Handle("/verifier/", http.StripPrefix("/verifier", d.VerifierHandler()))
+	mux.Handle("/issuer/", http.StripPrefix("/issuer", d.IssuerHandler()))
+	// The well-known segment comes before the issuer path, so both metadata
+	// documents live at the server root.
+	mux.HandleFunc("GET /.well-known/openid-credential-issuer/issuer", d.IssuerMetadataHandler())
 	mux.Handle("/", srv.Handler())
 
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	base = ts.URL
 	w.BaseURL = ts.URL
+	// The authorization code flow needs a redirect target on this origin,
+	// which is what demo mode configures.
+	if w.VCIRedirectURI == "" {
+		w.VCIRedirectURI = ts.URL + "/callback"
+	}
 	return d, ts
 }
 
@@ -763,4 +793,79 @@ func getJSONFrom(t *testing.T, target string) map[string]any {
 		t.Fatalf("GET %s: decoding response: %v", target, err)
 	}
 	return doc
+}
+
+// A pre-authorized code offer is conformant: HAIP 1.0 §4 requires an issuer
+// to support the authorization code flow, not to use it for everything, and
+// scopes pushed authorization requests to the authorization endpoint. So the
+// wallet accepts one even with enforcement on, and only the transport rule
+// applies to it.
+func TestIssuanceHAIPAcceptsPreAuthorizedOffer(t *testing.T) {
+	legacy := httptest.NewServer(legacyIssuerHandler(t))
+	t.Cleanup(legacy.Close)
+
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	offerURI := "openid-credential-offer://?credential_offer=" +
+		url.QueryEscape(`{"credential_issuer":"`+legacy.URL+`","credential_configuration_ids":["legacy"],"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"abc"}}}`)
+
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(offerURI)+`}`)
+	errText, _ := result["error"].(string)
+	// It fails at the issuer's own token endpoint, not on the profile.
+	if strings.Contains(errText, "HAIP") {
+		t.Errorf("a pre-authorized code offer must not be rejected by HAIP enforcement, got %q", errText)
+	}
+}
+
+// legacyIssuerHandler serves just enough metadata for the offer to be parsed.
+func legacyIssuerHandler(t *testing.T) http.Handler {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-credential-issuer", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"credential_issuer":                   "http://" + r.Host,
+			"credential_endpoint":                 "http://" + r.Host + "/credential",
+			"token_endpoint":                      "http://" + r.Host + "/token",
+			"credential_configurations_supported": map[string]any{"legacy": map[string]any{"format": "dc+sd-jwt", "vct": "urn:test:legacy"}},
+		})
+	})
+	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+	})
+	return mux
+}
+
+// An offer carrying a profile override runs on a per-request clone of the
+// wallet. The credential it collects still has to land in the real wallet:
+// the clone holds its own credential slice, so without forwarding, issuance
+// would report success and store nothing.
+func TestIssuanceWithOverrideStillStoresTheCredential(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	before := len(w.GetCredentials())
+	created := postJSONTo(t, ts.URL+"/issuer/api/offers", "")
+	schemeURI, _ := created["scheme_uri"].(string)
+
+	// haip:true is what the server already does, so the only difference here
+	// is that the request is served by a clone.
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`,"haip":true}`)
+	if result["error"] != nil {
+		t.Fatalf("accepting the offer failed: %v", result["error"])
+	}
+
+	after := w.GetCredentials()
+	if len(after) != before+1 {
+		t.Fatalf("wallet holds %d credentials, want %d: the clone's import was lost", len(after), before+1)
+	}
+	var found bool
+	for _, c := range after {
+		if c.VCT == TicketVCT {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the issued ticket is not in the wallet")
+	}
 }

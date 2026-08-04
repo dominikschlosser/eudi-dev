@@ -26,27 +26,20 @@ git checkout release-v5.2.1
 mvn clean package
 ```
 
-The `eudi-dev` wrapper defaults to plain `localhost` URLs. The upstream dev compose files advertise `localhost.emobix.co.uk`, so add this local override for wallet conformance runs:
+The suite server has to run **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>`, and the suite fetches that URL itself; from inside a container `localhost` is the container, so every module that checks credential status fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, which is what makes `localhost` resolve to the same machine the wallet runs on.
+
+The `eudi-dev` wrapper also defaults to plain `localhost` URLs, so the server must advertise the same host rather than the upstream default of `localhost.emobix.co.uk`:
 
 ```bash
-cat >/tmp/conformance-suite-localhost.override.yml <<'YAML'
-services:
-  server:
-    command: >
-      java
-      -Xdebug -Xrunjdwp:transport=dt_socket,address=*:9999,server=y,suspend=n
-      -jar /server/fapi-test-suite.jar
-      -Djdk.tls.maxHandshakeMessageSize=65536
-      --fintechlabs.base_url=https://localhost:8443
-      --fintechlabs.base_mtls_url=https://localhost:8444
-      --fintechlabs.devmode=true
-      --fintechlabs.startredir=true
-YAML
+cd ../conformance-suite
+docker compose -f docker-compose-dev-mac-nodocker.yml up --detach
 
-docker compose \
-  -f docker-compose-dev-mac.yml \
-  -f /tmp/conformance-suite-localhost.override.yml \
-  up --detach
+java -jar target/fapi-test-suite.jar \
+  --fintechlabs.devmode=true \
+  --fintechlabs.startredir=true \
+  --fintechlabs.base_url=https://localhost:8443 \
+  --fintechlabs.base_mtls_url=https://localhost:8444 \
+  --spring.data.mongodb.uri=mongodb://127.0.0.1:27017/test_suite
 ```
 
 The suite must advertise the same host in generated authorization, callback, and helper URLs:

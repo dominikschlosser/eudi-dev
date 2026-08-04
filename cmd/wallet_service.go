@@ -360,7 +360,7 @@ func (l *localWallet) Config() (map[string]any, error) {
 		"auto_accept":               w.AutoAccept,
 		"session_transcript":        string(w.SessionTranscript),
 		"require_haip":              w.RequireHAIP,
-		"require_haip_issuance":     false,
+		"require_haip_issuance":     w.RequireHAIP,
 		"require_encrypted_request": w.RequireEncryptedRequest,
 		"credential_count":          len(w.GetCredentials()),
 	}, nil

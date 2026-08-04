@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // StatusListConfig holds parameters for generating a status list JWT.
@@ -85,9 +86,22 @@ func GenerateStatusListJWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg S
 		"typ": "statuslist+jwt",
 	}
 
-	if len(cfg.CertChain) > 0 {
-		var x5c []string
-		for _, cert := range cfg.CertChain {
+	// The public half of the signing key, so a relying party that resolves
+	// keys from the token itself can verify without a certificate path.
+	// Token Status List leaves key resolution to the deployment (§11.3) and
+	// requires only `typ` in the header (§5.1), and `jwk` is a registered
+	// JOSE header (RFC 7515 §4.1.3), so this is additive. It is derived from
+	// the signing key rather than passed in, which is what keeps it from
+	// ever disagreeing with the x5c leaf below.
+	header["jwk"] = mock.PublicKeyJWKMap(&signingKey.PublicKey)
+
+	// The trust anchor must not travel in x5c: a relying party has it out of
+	// band, and a chain that carries its own root proves nothing. HAIP 6.1
+	// rejects a status list token whose chain includes it, and the rest of
+	// this wallet already strips it from every other JWS it signs.
+	if chain := mock.WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
+		x5c := make([]string, 0, len(chain))
+		for _, cert := range chain {
 			x5c = append(x5c, base64.StdEncoding.EncodeToString(cert.Raw))
 		}
 		header["x5c"] = x5c

@@ -108,8 +108,19 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 			ticketConfigurationID: map[string]any{
 				"format": "dc+sd-jwt",
 				"vct":    TicketVCT,
+				"cryptographic_binding_methods_supported": []string{"jwk"},
+				"claims": []map[string]any{
+					{"path": []string{"event"}},
+					{"path": []string{"tier"}},
+					{"path": []string{"seat"}},
+					{"path": []string{"given_name"}},
+					{"path": []string{"family_name"}},
+				},
+				"proof_types_supported": map[string]any{
+					"jwt": map[string]any{"proof_signing_alg_values_supported": []string{"ES256"}},
+				},
 				"display": []map[string]any{
-					{"name": "Demo Event Ticket", "locale": "en-US"},
+					{"name": "Demo Event Ticket", "description": "A sample event ticket issued by the demo issuer", "locale": "en-US"},
 				},
 			},
 		},

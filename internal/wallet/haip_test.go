@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
@@ -235,3 +236,176 @@ func TestParseHAIPHeader(t *testing.T) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+func haipCompliantIssuance() (*oid4vc.CredentialOffer, map[string]any) {
+	offer := &oid4vc.CredentialOffer{
+		CredentialIssuer: "https://issuer.example",
+		Grants:           oid4vc.OfferGrants{IssuerState: "abc"},
+	}
+	meta := map[string]any{
+		"authorization_endpoint":                "https://issuer.example/authorize",
+		"grant_types_supported":                 []any{"authorization_code"},
+		"require_pushed_authorization_requests": true,
+		"code_challenge_methods_supported":      []any{"S256"},
+		"dpop_signing_alg_values_supported":     []any{"ES256"},
+		"token_endpoint_auth_methods_supported": []any{"attest_jwt_client_auth"},
+	}
+	return offer, meta
+}
+
+func TestValidateHAIPIssuanceCompliance(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*oid4vc.CredentialOffer, map[string]any)
+		wantSub string
+	}{
+		{name: "compliant issuer"},
+		{
+			// HAIP 1.0 §4 requires an issuer to support the authorization
+			// code flow; it says nothing about the pre-authorized code flow,
+			// so an offer using it is not a violation.
+			name: "pre-authorized code offer is accepted",
+			mutate: func(o *oid4vc.CredentialOffer, _ map[string]any) {
+				o.Grants = oid4vc.OfferGrants{PreAuthorizedCode: "code"}
+			},
+		},
+		{
+			name: "authorization code offer whose issuer does not advertise the flow",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				m["grant_types_supported"] = []any{"urn:ietf:params:oauth:grant-type:pre-authorized_code"}
+			},
+			wantSub: "must support the authorization code flow",
+		},
+		{
+			name: "plain http issuer",
+			mutate: func(o *oid4vc.CredentialOffer, _ map[string]any) {
+				o.CredentialIssuer = "http://issuer.example"
+			},
+			wantSub: "must be an https URL",
+		},
+		{
+			name: "PAR not required for an authorization code offer",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				m["require_pushed_authorization_requests"] = false
+			},
+			wantSub: "must require pushed authorization requests",
+		},
+		{
+			// §4 scopes PAR to "when using the Authorization Endpoint", which
+			// a pre-authorized code offer never reaches. The same goes for
+			// PKCE and the flow-support advertisement.
+			name: "pre-authorized code offer is judged on transport only",
+			mutate: func(o *oid4vc.CredentialOffer, m map[string]any) {
+				o.Grants = oid4vc.OfferGrants{PreAuthorizedCode: "code"}
+				m["require_pushed_authorization_requests"] = false
+				m["code_challenge_methods_supported"] = []any{"plain"}
+				delete(m, "grant_types_supported")
+				delete(m, "dpop_signing_alg_values_supported")
+			},
+		},
+		{
+			name: "pre-authorized code offer over plain http is still rejected",
+			mutate: func(o *oid4vc.CredentialOffer, _ map[string]any) {
+				o.Grants = oid4vc.OfferGrants{PreAuthorizedCode: "code"}
+				o.CredentialIssuer = "http://issuer.example"
+			},
+			wantSub: "must be an https URL",
+		},
+		{
+			name: "no PKCE S256",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				m["code_challenge_methods_supported"] = []any{"plain"}
+			},
+			wantSub: "must support PKCE with S256",
+		},
+		{
+			name: "no DPoP",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				delete(m, "dpop_signing_alg_values_supported")
+			},
+			wantSub: "must support DPoP",
+		},
+		{
+			name: "no client authentication",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				m["token_endpoint_auth_methods_supported"] = []any{"client_secret_post"}
+			},
+			wantSub: "must authenticate the client",
+		},
+		{
+			name: "unreadable authorization server metadata",
+			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
+				for k := range m {
+					delete(m, k)
+				}
+			},
+			wantSub: "must support the authorization code flow",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			offer, meta := haipCompliantIssuance()
+			if tc.mutate != nil {
+				tc.mutate(offer, meta)
+			}
+			violations := ValidateHAIPIssuanceCompliance(offer, meta)
+			if tc.wantSub == "" {
+				if len(violations) != 0 {
+					t.Fatalf("expected a compliant issuer, got %v", violations)
+				}
+				return
+			}
+			if len(violations) == 0 {
+				t.Fatalf("expected a violation containing %q, got none", tc.wantSub)
+			}
+			var found bool
+			for _, v := range violations {
+				if strings.Contains(v, tc.wantSub) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("violations %v do not mention %q", violations, tc.wantSub)
+			}
+		})
+	}
+}
+
+// A local demo instance serves plain http on loopback, and rejecting it for
+// that alone would make the profile untestable locally.
+func TestHAIPIssuanceAllowsLoopbackHTTP(t *testing.T) {
+	for _, issuer := range []string{"http://localhost:8085/issuer", "http://127.0.0.1:8085/issuer", "https://eudi-test.dev/issuer"} {
+		offer, meta := haipCompliantIssuance()
+		offer.CredentialIssuer = issuer
+		if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) != 0 {
+			t.Errorf("issuer %q rejected: %v", issuer, violations)
+		}
+	}
+	offer, meta := haipCompliantIssuance()
+	offer.CredentialIssuer = "http://issuer.example/issuer"
+	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) == 0 {
+		t.Error("a public plain-http issuer must still be rejected")
+	}
+}
+
+// A pre-authorized code offer from an issuer that meets the profile must be
+// accepted. HAIP 1.0 §4 requires support for the authorization code flow; it
+// neither requires nor forbids the pre-authorized code flow, and scopes PAR
+// to "when using the Authorization Endpoint", which this offer never reaches.
+func TestHAIPIssuanceAcceptsCompliantPreAuthorizedOffer(t *testing.T) {
+	offer := &oid4vc.CredentialOffer{
+		CredentialIssuer: "https://issuer.example",
+		Grants:           oid4vc.OfferGrants{PreAuthorizedCode: "abc"},
+	}
+	meta := map[string]any{
+		"authorization_endpoint":                "https://issuer.example/authorize",
+		"grant_types_supported":                 []any{"authorization_code", "urn:ietf:params:oauth:grant-type:pre-authorized_code"},
+		"dpop_signing_alg_values_supported":     []any{"ES256"},
+		"token_endpoint_auth_methods_supported": []any{"attest_jwt_client_auth"},
+		// Deliberately absent: PAR and PKCE, which this offer never uses.
+	}
+	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) != 0 {
+		t.Errorf("a compliant pre-authorized code offer was rejected: %v", violations)
+	}
+}

@@ -639,6 +639,12 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		logSink: func(entry LogEntry) {
 			src.appendLogEntry(entry)
 		},
+		// An issuance run on the clone must still land in the real wallet.
+		credentialSink: func(cred StoredCredential) {
+			src.mu.Lock()
+			src.Credentials = append(src.Credentials, cred)
+			src.mu.Unlock()
+		},
 		runtime: src.runtimeState(),
 	}
 
@@ -684,13 +690,56 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		URI         string `json:"uri"`
 		TxCode      string `json:"tx_code,omitempty"`
 		Interactive bool   `json:"interactive,omitempty"`
+		// Same per-request overrides presentations accept: an explicit value
+		// turns HAIP enforcement on or off for this offer, an absent one
+		// inherits the server setting. Without them an issuer could not be
+		// exercised against a wallet configured the other way.
+		HAIP *bool  `json:"haip,omitempty"`
+		Mode string `json:"mode,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
 
-	s.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
+	reqServer := s
+	if body.HAIP != nil || body.Mode != "" {
+		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
+			RequireHAIP:    body.HAIP,
+			ValidationMode: body.Mode,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		// Field by field rather than a struct copy: Server carries a mutex.
+		clone := &Server{
+			wallet:           reqWallet,
+			port:             s.port,
+			mux:              s.mux,
+			onSave:           s.onSave,
+			onConsentRequest: s.onConsentRequest,
+			onUIRequest:      s.onUIRequest,
+			logFunc:          s.logFunc,
+			httpSrv:          s.httpSrv,
+			issuerSrv:        s.issuerSrv,
+			issuerTLSCert:    s.issuerTLSCert,
+			issuerPort:       s.issuerPort,
+			issuerKeyExpiry:  s.issuerKeyExpiry,
+			store:            s.store,
+			demo:             s.demo,
+			version:          s.version,
+			imprintHTML:      s.imprintHTML,
+		}
+		clone.parseOpts = oid4vc.ParseOptions{
+			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
+				clone.log(format, args...)
+			}),
+		}
+		reqServer = clone
+	}
+
+	reqServer.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
 }
 
 // processOfferURI runs the credential offer flow for an offer delivered as a
@@ -861,14 +910,22 @@ func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) 
 		CreatedAt:    time.Now(),
 	}
 
-	offerURI := extractCredentialOfferURI(trimmed)
-	if offerURI != "" {
-		req.ClientID = credentialOfferIssuerDisplay(offerURI)
-		return req, req.ClientID, nil
-	}
-
+	// The offer is resolved now, by reference as well as by value, so the
+	// dialog can say what is being offered. It is fetched again after
+	// approval, which the specification allows and real wallets do.
 	reqType, parsed, err := oid4vc.Parse(trimmed)
 	if err != nil {
+		// An offer that cannot be resolved is still worth asking about: name
+		// the host rather than failing before the user sees anything.
+		if offerURI := extractCredentialOfferURI(trimmed); offerURI != "" {
+			req.ClientID = credentialOfferIssuerDisplay(offerURI)
+			req.OfferDetails = &IssuanceOfferDetails{
+				Issuer:       req.ClientID,
+				OfferURI:     offerURI,
+				ResolveError: err.Error(),
+			}
+			return req, req.ClientID, nil
+		}
 		return nil, "", err
 	}
 	if reqType != oid4vc.TypeVCI {
@@ -880,6 +937,7 @@ func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) 
 	}
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
+	req.OfferDetails = describeCredentialOffer(offer)
 	return req, offer.CredentialIssuer, nil
 }
 
@@ -1386,10 +1444,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"auto_accept":        s.wallet.AutoAccept,
 		"session_transcript": string(s.wallet.SessionTranscript),
 		"require_haip":       s.wallet.RequireHAIP,
-		// Presentations only for now: nothing on the issuance path consults
-		// RequireHAIP yet, and reporting one flag for both would overstate
-		// what is enforced.
-		"require_haip_issuance":     false,
+		// Presentations and issuance are gated by the same flag, but they are
+		// reported separately: a client should be able to tell which half it
+		// is being held to without inferring it.
+		"require_haip_issuance":     s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"credential_count":          len(s.wallet.GetCredentials()),
 		// False when an external TLS terminator serves the issuer origin: the

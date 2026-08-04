@@ -70,7 +70,7 @@ request boundaries, so later presentation requests see the new credential.`,
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve OID4VP presentations")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
-	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 compliance (x509_hash, direct_post.jwt, DCQL, JAR, ES256)")
+	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	return cmd
 }
 

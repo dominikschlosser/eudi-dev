@@ -56,7 +56,7 @@ Status of implemented features against the relevant specifications.
 | VP signed request object (JAR) | Enforced | Required with `--haip`, except unsigned Browser API `web-origin:` `dc_api.jwt` requests |
 | VP DCQL query | Enforced | `presentation_definition` is rejected with `--haip` |
 | VP Request Object `alg` | Enforced | `ES256` required with `--haip` when a request object is present |
-| VCI authorization-code profile pieces | Implemented | Current auth-code flow uses PAR, DPoP, and supports `private_key_jwt` or `attest_jwt_client_auth` when the issuer metadata requires them |
+| VCI authorization-code profile pieces | Enforced | The client uses PAR, PKCE S256 and DPoP. With `--haip`, an offer that drives the authorization endpoint is rejected unless the issuer requires PAR and supports PKCE S256, DPoP and client authentication; a pre-authorized code offer is held only to the https transport rule, per §4 |
 | VCI encrypted credential responses | Implemented | Requests `credential_response_encryption` and decrypts returned compact JWEs |
 
 This is the HAIP behavior currently exercised by the wallet and the current OIDF Final + HAIP wallet plans. It should not be read as a blanket claim that every HAIP deployment profile or auxiliary feature is implemented beyond those flows.

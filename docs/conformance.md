@@ -74,7 +74,7 @@ Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallba
 - keeps the VCI suite alias aligned with the configured `redirect_uri` and helper-page paths
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
-- enables HAIP enforcement only for HAIP VP modules, while keeping the Final VP modules in strict non-HAIP mode
+- states HAIP enforcement explicitly on every submission (`"haip": true|false`) rather than inheriting the server setting, so the Final modules run non-HAIP and the HAIP modules run enforced regardless of how the wallet under test is configured. The wallet honors the override in both directions, on presentations and on credential offers alike
 - passes explicit VP module lists for each scenario so the suite runs executable coverage for that generated variant
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs
