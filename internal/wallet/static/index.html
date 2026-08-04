@@ -28,8 +28,9 @@
   <div id="demo-banner" hidden>
     <span>
       <strong>Shared demo instance.</strong> Everything here is visible to every
-      visitor, and anyone can change or delete credentials at any time (state
-      resets daily). Use it for demonstration only. For isolated testing, run
+      visitor, and anyone can change or delete credentials at any time
+      (<span id="demo-banner-reset">state is reset regularly</span>). Use it
+      for demonstration only. For isolated testing, run
       your own instance: see <a href="#" id="demo-banner-cli-link">Get the CLI</a>
       or <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/public-demo.md" target="_blank" rel="noopener">host your own demo</a>.
     </span>
@@ -66,6 +67,11 @@
       <div class="section-title">Credentials</div>
       <div id="credentials" class="credentials">
         <div class="empty-state" id="cred-empty">No credentials loaded</div>
+      </div>
+      <div class="pager" id="cred-pager" hidden>
+        <button class="btn btn-sm" id="cred-prev">Previous</button>
+        <span id="cred-range"></span>
+        <button class="btn btn-sm" id="cred-next">Next</button>
       </div>
     </div>
 

@@ -35,7 +35,9 @@ services:
       - serve
       - --demo
       - --demo-reset
-      - 24h
+      # Wall-clock schedule: the reset lands at the same local time every day
+      # instead of drifting with each container restart.
+      - 00:00 Europe/Berlin
       - --port
       - "8085"
       - --base-url

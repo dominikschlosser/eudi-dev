@@ -23,6 +23,12 @@ import (
 func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	for _, c := range w.Credentials {
+		if c.ID == credID && c.Protected {
+			// Revoking the shared baseline would break the demo for everyone.
+			return StatusEntry{}, false
+		}
+	}
 	entry, ok := w.StatusEntries[credID]
 	if !ok {
 		return StatusEntry{}, false

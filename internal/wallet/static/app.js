@@ -14,6 +14,11 @@
   // State
   let credentials = [];
   let pendingRequests = [];
+  // A shared demo can accumulate a lot of credentials, so the list is
+  // windowed server side rather than rendering everything.
+  const CREDENTIALS_PER_PAGE = 10;
+  let credentialPage = 0;
+  let credentialTotal = 0;
 
   // Elements
   const credContainer = document.getElementById('credentials');
@@ -33,15 +38,51 @@
   // Load credentials
   async function loadCredentials() {
     try {
-      const resp = await fetch('/api/credentials');
+      const offset = credentialPage * CREDENTIALS_PER_PAGE;
+      const resp = await fetch('/api/credentials?limit=' + CREDENTIALS_PER_PAGE + '&offset=' + offset);
       credentials = await resp.json();
+      credentialTotal = parseInt(resp.headers.get('X-Total-Count') || '0', 10);
+      // Deleting the last credential of a page (or a reset) can leave us
+      // past the end: step back instead of showing an empty list.
+      if (credentials.length === 0 && credentialPage > 0) {
+        credentialPage = Math.max(0, Math.ceil(credentialTotal / CREDENTIALS_PER_PAGE) - 1);
+        return loadCredentials();
+      }
       renderCredentials();
+      renderPager();
       // Issuance can add trust list groups, so keep the links in sync.
       loadTrustLists();
     } catch (e) {
       console.error('Failed to load credentials:', e);
     }
   }
+
+  function renderPager() {
+    const pager = document.getElementById('cred-pager');
+    const pages = Math.ceil(credentialTotal / CREDENTIALS_PER_PAGE);
+    if (pages <= 1) {
+      pager.hidden = true;
+      return;
+    }
+    const first = credentialPage * CREDENTIALS_PER_PAGE + 1;
+    const last = first + credentials.length - 1;
+    document.getElementById('cred-range').textContent =
+      first + '\u2013' + last + ' of ' + credentialTotal;
+    document.getElementById('cred-prev').disabled = credentialPage === 0;
+    document.getElementById('cred-next').disabled = credentialPage >= pages - 1;
+    pager.hidden = false;
+  }
+
+  document.getElementById('cred-prev').addEventListener('click', () => {
+    if (credentialPage === 0) return;
+    credentialPage--;
+    loadCredentials();
+  });
+  document.getElementById('cred-next').addEventListener('click', () => {
+    if ((credentialPage + 1) * CREDENTIALS_PER_PAGE >= credentialTotal) return;
+    credentialPage++;
+    loadCredentials();
+  });
 
   function renderCredentials() {
     if (credentials.length === 0) {
@@ -60,6 +101,7 @@
       const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt' : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
       const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
       const typeLabel = cred.vct || cred.doctype || cred.format;
+      const isProtected = cred.protected === true;
 
       const claimKeys = Object.keys(cred.claims || {}).slice(0, 6);
       const claimTags = claimKeys.map(k => '<span class="claim-tag">' + escHtml(k) + '</span>').join('');
@@ -70,6 +112,7 @@
       card.id = 'credential-' + cred.id;
       card.dataset.credentialId = cred.id;
       card.dataset.format = formatLabel === 'SD-JWT' ? 'sdjwt' : formatLabel === 'JWT VC' ? 'jwt' : 'mdoc';
+      if (isProtected) card.dataset.protected = 'true';
       if (cred.vct) card.dataset.vct = cred.vct;
       if (cred.doctype) card.dataset.doctype = cred.doctype;
 
@@ -78,11 +121,20 @@
       const st = cred.status;
       let statusBadge = '';
       let revokeBtn = '';
+      // Protected credentials are the shared baseline: the server refuses to
+      // delete or revoke them, so do not offer buttons that would only 403.
+      const protectedBadge = isProtected
+        ? '<span class="status-badge status-protected" id="protected-' + cred.id + '"' +
+          ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
+          ' through the UI or the API, only by editing the wallet file.">Protected</span>'
+        : '';
       if (st && st.managed) {
         const revoked = st.status === 1;
         card.dataset.status = revoked ? 'revoked' : 'active';
         statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked' : 'status-active') + '" id="status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
-        revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (revoked ? 'Activate' : 'Revoke') + '</button>';
+        if (!isProtected) {
+          revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (revoked ? 'Activate' : 'Revoke') + '</button>';
+        }
       } else if (st && st.uri) {
         card.dataset.status = 'external';
         statusBadge = '<span class="status-badge status-external" id="status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External status</span>';
@@ -93,13 +145,13 @@
 
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
         '<div class="credential-info" title="Open in decoder">' +
-          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + '</div>' +
+          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + protectedBadge + '</div>' +
           '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
           revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
-          '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>' +
+          (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
 
       const openDecoder = () => {
@@ -107,7 +159,10 @@
       };
       card.querySelector('[data-show]').addEventListener('click', openDecoder);
       card.querySelector('.credential-info').addEventListener('click', openDecoder);
-      card.querySelector('[data-delete]').addEventListener('click', () => deleteCredential(cred.id));
+      const del = card.querySelector('[data-delete]');
+      if (del) {
+        del.addEventListener('click', () => deleteCredential(cred.id));
+      }
       const revoke = card.querySelector('[data-revoke]');
       if (revoke) {
         revoke.addEventListener('click', () => setCredentialStatus(cred.id, st.status === 1 ? 0 : 1));
@@ -1121,10 +1176,14 @@
       if (config.demo && config.demo.enabled) {
         demoMode = true;
         const note = document.getElementById('demo-note');
-        const secs = config.demo.reset_interval_seconds || 0;
-        note.textContent = secs > 0
-          ? 'Public demo — resets every ' + formatInterval(secs)
+        const schedule = describeReset(config.demo);
+        note.textContent = schedule
+          ? 'Public demo — resets ' + schedule
           : 'Public demo — shared state';
+        const bannerReset = document.getElementById('demo-banner-reset');
+        bannerReset.textContent = schedule
+          ? 'state resets ' + schedule
+          : 'state is shared and never reset automatically';
         note.hidden = false;
         document.getElementById('issue-save-template').hidden = true;
         document.querySelector('label[for="issue-save-template"]').hidden = true;
@@ -1145,6 +1204,13 @@
     } catch (e) {
       /* footer extras are optional */
     }
+  }
+
+  // "daily at 00:00 CET", "every hour", or null when resets are disabled.
+  function describeReset(demo) {
+    if (demo.reset_daily_at) return 'daily at ' + demo.reset_daily_at;
+    const secs = demo.reset_interval_seconds || 0;
+    return secs > 0 ? 'every ' + formatInterval(secs) : null;
   }
 
   function formatInterval(secs) {

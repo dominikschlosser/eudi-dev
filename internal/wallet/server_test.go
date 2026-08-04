@@ -2884,3 +2884,62 @@ func TestStaticAssetsServed(t *testing.T) {
 		}
 	}
 }
+
+// TestListCredentialsPaging covers the window a paging UI needs: a slice of
+// the list plus the full count, without changing the response shape for
+// clients that ask for everything.
+func TestListCredentialsPaging(t *testing.T) {
+	srv := newTestServer(t, true)
+	// The test server starts with the two default PIDs.
+	for i := 0; i < 23; i++ {
+		body := fmt.Sprintf(`{"format":"sdjwt","vct":"urn:example:%d"}`, i)
+		if w := serverRequest(t, srv, "POST", "/api/issue", body); w.Code != http.StatusCreated {
+			t.Fatalf("seeding credential %d: %d", i, w.Code)
+		}
+	}
+	total := len(srv.wallet.GetCredentials())
+	if total != 25 {
+		t.Fatalf("expected 25 credentials, got %d", total)
+	}
+
+	listed := func(query string) ([]map[string]any, string) {
+		t.Helper()
+		rec := serverRequest(t, srv, "GET", "/api/credentials"+query, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d", query, rec.Code)
+		}
+		var docs []map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &docs); err != nil {
+			t.Fatalf("parsing %s: %v", query, err)
+		}
+		return docs, rec.Header().Get("X-Total-Count")
+	}
+
+	all, count := listed("")
+	if len(all) != 25 || count != "25" {
+		t.Fatalf("without parameters: %d credentials, X-Total-Count %q, want all 25", len(all), count)
+	}
+
+	first, count := listed("?limit=10&offset=0")
+	if len(first) != 10 || count != "25" {
+		t.Fatalf("first page: %d credentials, X-Total-Count %q", len(first), count)
+	}
+	last, _ := listed("?limit=10&offset=20")
+	if len(last) != 5 {
+		t.Fatalf("last page: %d credentials, want 5", len(last))
+	}
+	if first[0]["id"] == last[0]["id"] {
+		t.Error("pages returned the same first credential")
+	}
+
+	// A stale page must not error, it just has nothing on it.
+	if beyond, _ := listed("?limit=10&offset=999"); len(beyond) != 0 {
+		t.Errorf("offset past the end returned %d credentials", len(beyond))
+	}
+
+	for _, bad := range []string{"?limit=abc", "?offset=-1"} {
+		if rec := serverRequest(t, srv, "GET", "/api/credentials"+bad, ""); rec.Code != http.StatusBadRequest {
+			t.Errorf("GET /api/credentials%s = %d, want 400", bad, rec.Code)
+		}
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -204,4 +205,143 @@ func TestDemoResetConcurrentWithRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestStartDemoResetUsesDailySchedule(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatalf("loading zone: %v", err)
+	}
+	srv := newTestServer(t, true)
+	srv.SetDemo(DemoOptions{ResetDaily: &DailySchedule{Hour: 3, Minute: 30, Location: berlin}})
+	srv.startDemoReset()
+	defer srv.stopDemoReset()
+
+	srv.demo.mu.Lock()
+	next := srv.demo.nextReset
+	srv.demo.mu.Unlock()
+
+	// The next reset must be the upcoming 03:30 in Berlin, never an offset
+	// from process start.
+	local := next.In(berlin)
+	if local.Hour() != 3 || local.Minute() != 30 {
+		t.Fatalf("next reset is %s, want the next 03:30 Berlin time", local)
+	}
+	if !next.After(time.Now()) || next.After(time.Now().Add(25*time.Hour)) {
+		t.Fatalf("next reset %s is not within the coming day", next)
+	}
+
+	// The schedule is also what /api/config advertises.
+	cfg := decodeJSON(t, serverRequest(t, srv, "GET", "/api/config", ""))
+	demo := cfg["demo"].(map[string]any)
+	if got, ok := demo["reset_daily_at"].(string); !ok || !strings.HasPrefix(got, "03:30 ") {
+		t.Fatalf("reset_daily_at = %v, want 03:30 with a zone", demo["reset_daily_at"])
+	}
+	if demo["reset_interval_seconds"] != float64(0) {
+		t.Errorf("interval should be reported as 0 for a daily schedule, got %v", demo["reset_interval_seconds"])
+	}
+}
+
+// TestProtectedCredentials pins the baseline guarantee of a shared
+// deployment: visitors can do anything except remove or revoke the
+// credentials the wallet was seeded with.
+func TestProtectedCredentials(t *testing.T) {
+	srv := newDemoTestServer(t)
+	srv.SetStore(NewWalletStore(t.TempDir()))
+	// Requests reload the store, so mutations have to be persisted the way
+	// the serve command wires it up.
+	srv.onSave = func() {
+		if err := srv.store.Save(srv.wallet); err != nil {
+			t.Errorf("saving wallet: %v", err)
+		}
+	}
+	srv.wallet.ClearCredentials()
+	if err := srv.wallet.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("generating protected defaults: %v", err)
+	}
+	// Every request reloads the store, so the baseline has to be on disk.
+	if err := srv.store.Save(srv.wallet); err != nil {
+		t.Fatalf("saving baseline: %v", err)
+	}
+	baseline := srv.wallet.GetCredentials()
+	if len(baseline) != 2 {
+		t.Fatalf("expected 2 baseline credentials, got %d", len(baseline))
+	}
+	for _, c := range baseline {
+		if !c.Protected {
+			t.Fatalf("baseline credential %s is not protected", c.ID)
+		}
+	}
+	protectedID := baseline[0].ID
+
+	t.Run("delete is refused", func(t *testing.T) {
+		if w := serverRequest(t, srv, "DELETE", "/api/credentials/"+protectedID, ""); w.Code != http.StatusForbidden {
+			t.Fatalf("DELETE = %d, want 403", w.Code)
+		}
+		if _, ok := srv.wallet.GetCredential(protectedID); !ok {
+			t.Fatal("protected credential disappeared")
+		}
+	})
+
+	t.Run("revocation is refused", func(t *testing.T) {
+		body := `{"status":1}`
+		if w := serverRequest(t, srv, "POST", "/api/credentials/"+protectedID+"/status", body); w.Code != http.StatusForbidden {
+			t.Fatalf("status change = %d, want 403", w.Code)
+		}
+		if entry, ok := srv.wallet.StatusEntryFor(protectedID); ok && entry.Status != 0 {
+			t.Fatalf("status changed to %d despite protection", entry.Status)
+		}
+	})
+
+	t.Run("newly issued credentials stay deletable", func(t *testing.T) {
+		rec := serverRequest(t, srv, "POST", "/api/issue", `{"format":"sdjwt","pid":true}`)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("issue = %d: %s", rec.Code, rec.Body.String())
+		}
+		issued := decodeJSON(t, rec)
+		if _, ok := issued["protected"]; ok {
+			t.Fatal("a freshly issued credential must not be protected")
+		}
+		id := issued["id"].(string)
+		if w := serverRequest(t, srv, "DELETE", "/api/credentials/"+id, ""); w.Code != http.StatusNoContent {
+			t.Fatalf("DELETE issued = %d, want 204", w.Code)
+		}
+	})
+
+	t.Run("delete all keeps the baseline", func(t *testing.T) {
+		if w := serverRequest(t, srv, "POST", "/api/issue", `{"format":"sdjwt"}`); w.Code != http.StatusCreated {
+			t.Fatalf("seeding: %d", w.Code)
+		}
+		rec := serverRequest(t, srv, "DELETE", "/api/credentials", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("DELETE all = %d", rec.Code)
+		}
+		result := decodeJSON(t, rec)
+		if result["kept_protected"] != float64(2) {
+			t.Errorf("kept_protected = %v, want 2", result["kept_protected"])
+		}
+		remaining := srv.wallet.GetCredentials()
+		if len(remaining) != 2 {
+			t.Fatalf("after delete-all: %d credentials, want the 2 protected ones", len(remaining))
+		}
+		for _, c := range remaining {
+			if !c.Protected {
+				t.Errorf("unprotected credential %s survived delete-all", c.ID)
+			}
+		}
+	})
+
+	t.Run("protection survives a save and reload", func(t *testing.T) {
+		if err := srv.store.Save(srv.wallet); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+		if err := srv.reloadFromStore(); err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		for _, c := range srv.wallet.GetCredentials() {
+			if !c.Protected {
+				t.Fatalf("credential %s lost its protection across a reload", c.ID)
+			}
+		}
+	})
 }

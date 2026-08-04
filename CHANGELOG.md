@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.9] - 2026-08-04
+
+### Added
+
+- `GET /api/credentials` takes optional `limit` and `offset` parameters and returns the full count in `X-Total-Count`. Without them the response is unchanged, so the CLI and existing clients keep working. The wallet UI pages the credential list ten at a time, which a shared demo needs once visitors have issued a few hundred credentials between resets
+- Protected credentials: a credential marked `"protected": true` in the wallet file cannot be deleted or revoked through the UI, the HTTP API, or the CLI, and `DELETE /api/credentials` keeps it while removing the rest. Demo mode marks the PID credentials it seeds, so a visitor can no longer leave the shared demo without a baseline (freshly issued credentials, including new PIDs, are never protected). Setting or clearing the flag is only possible with direct access to `wallet.json`. The UI shows a "Protected" badge explaining this and hides the Delete and Revoke buttons for those credentials, and `wallet list` gained a STATUS column showing revocation state and protection
+
+### Changed
+
+- The demo banner states the configured reset schedule instead of claiming "state resets daily" regardless of it. With the default `--demo-reset 1h` that sentence was simply wrong, and it would have kept saying "daily" for any interval. Banner and footer now derive their text from the same description, so they cannot disagree
+- `--demo-reset` accepts a daily wall-clock time, not just an interval: `00:00`, or `"00:00 Europe/Berlin"` with an explicit zone (durations like `24h` still work, `0` still disables). An interval restarts its countdown with the process, so on a demo that gets redeployed the reset wanders through the day. A wall-clock schedule lands at the same local time every day and follows DST, since the next occurrence is recomputed in the target location after each run. The timezone database is embedded in the binary so named zones resolve in the release image, the startup banner and the UI footer show the schedule ("resets daily at 00:00 CET"), and the public demo example now resets at midnight Berlin time
+
 ## [1.18.8] - 2026-08-04
 
 ### Added

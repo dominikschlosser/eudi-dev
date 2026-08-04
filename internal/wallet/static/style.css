@@ -250,6 +250,24 @@ header h1 {
   gap: 6px;
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pager[hidden] {
+  display: none;
+}
+
+.pager button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Actions Bar */
 .actions-bar {
   display: flex;
@@ -539,6 +557,12 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.status-protected {
+  background: rgba(122, 162, 247, 0.18);
+  color: var(--accent);
+  cursor: help;
 }
 
 .status-badge {

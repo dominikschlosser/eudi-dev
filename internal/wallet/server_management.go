@@ -93,9 +93,14 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 // handleDeleteAllCredentials removes all stored credentials.
 func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Request) {
 	count := s.wallet.ClearCredentials()
-	s.wallet.AddLog("management", fmt.Sprintf("Deleted all credentials (%d)", count), true)
+	kept := len(s.wallet.GetCredentials())
+	detail := fmt.Sprintf("Deleted all credentials (%d)", count)
+	if kept > 0 {
+		detail = fmt.Sprintf("Deleted all deletable credentials (%d, kept %d protected)", count, kept)
+	}
+	s.wallet.AddLog("management", detail, true)
 	s.triggerSave()
-	writeJSON(w, http.StatusOK, map[string]int{"deleted": count})
+	writeJSON(w, http.StatusOK, map[string]int{"deleted": count, "kept_protected": kept})
 }
 
 // IssueAPIRequest is the POST /api/issue request body. The server handler

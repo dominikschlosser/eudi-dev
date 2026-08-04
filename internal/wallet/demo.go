@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -31,6 +32,61 @@ type DemoOptions struct {
 	// ResetInterval restores the wallet to a clean baseline (default PID
 	// credentials, empty log) on this interval. 0 disables periodic resets.
 	ResetInterval time.Duration
+	// ResetDaily restores the baseline at a fixed wall-clock time instead of
+	// on an interval, so the reset lands at the same local time every day
+	// rather than drifting with process restarts. Takes precedence over
+	// ResetInterval.
+	ResetDaily *DailySchedule
+}
+
+// DailySchedule is a wall-clock time of day in a specific location.
+type DailySchedule struct {
+	Hour     int
+	Minute   int
+	Location *time.Location
+}
+
+// Next returns the next occurrence strictly after now. Using the location's
+// own calendar keeps it correct across DST changes: the reset stays at the
+// configured local time rather than shifting by an hour.
+func (d DailySchedule) Next(now time.Time) time.Time {
+	local := now.In(d.Location)
+	next := time.Date(local.Year(), local.Month(), local.Day(), d.Hour, d.Minute, 0, 0, d.Location)
+	if !next.After(local) {
+		next = time.Date(local.Year(), local.Month(), local.Day()+1, d.Hour, d.Minute, 0, 0, d.Location)
+	}
+	return next
+}
+
+// String renders the schedule for logs and the UI, e.g. "00:00 CET".
+func (d DailySchedule) String() string {
+	zone, _ := time.Now().In(d.Location).Zone()
+	return fmt.Sprintf("%02d:%02d %s", d.Hour, d.Minute, zone)
+}
+
+// ParseDailySchedule reads "HH:MM" (server local time) or "HH:MM <IANA zone>",
+// for example "00:00 Europe/Berlin".
+func ParseDailySchedule(value string) (*DailySchedule, error) {
+	fields := strings.Fields(strings.TrimSpace(value))
+	if len(fields) == 0 || len(fields) > 2 {
+		return nil, fmt.Errorf("expected \"HH:MM\" or \"HH:MM <timezone>\"")
+	}
+	var hour, minute int
+	if _, err := fmt.Sscanf(fields[0], "%d:%d", &hour, &minute); err != nil {
+		return nil, fmt.Errorf("invalid time of day %q", fields[0])
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return nil, fmt.Errorf("time of day %q is out of range", fields[0])
+	}
+	loc := time.Local
+	if len(fields) == 2 {
+		parsed, err := time.LoadLocation(fields[1])
+		if err != nil {
+			return nil, fmt.Errorf("unknown timezone %q: %w", fields[1], err)
+		}
+		loc = parsed
+	}
+	return &DailySchedule{Hour: hour, Minute: minute, Location: loc}, nil
 }
 
 // demoState is the runtime state of an enabled demo profile.
@@ -109,23 +165,48 @@ func (w *Wallet) ResetToBaseline() {
 // startDemoReset launches the periodic baseline reset when configured.
 // Called from ListenAndServe/ListenAndServeBackground.
 func (s *Server) startDemoReset() {
-	if s.demo == nil || s.demo.opts.ResetInterval <= 0 {
+	if s.demo == nil {
 		return
 	}
+	daily := s.demo.opts.ResetDaily
+	if daily == nil && s.demo.opts.ResetInterval <= 0 {
+		return
+	}
+
+	// nextResetAfter is evaluated per cycle so a daily schedule stays pinned
+	// to the wall clock (and survives DST) instead of drifting.
+	nextResetAfter := func(now time.Time) time.Time {
+		if daily != nil {
+			return daily.Next(now)
+		}
+		return now.Add(s.demo.opts.ResetInterval)
+	}
+
 	s.demo.mu.Lock()
 	s.demo.stop = make(chan struct{})
-	s.demo.nextReset = time.Now().Add(s.demo.opts.ResetInterval)
+	s.demo.nextReset = nextResetAfter(time.Now())
+	stop := s.demo.stop
 	s.demo.mu.Unlock()
+
 	go func() {
-		ticker := time.NewTicker(s.demo.opts.ResetInterval)
-		defer ticker.Stop()
 		for {
+			s.demo.mu.Lock()
+			wait := time.Until(s.demo.nextReset)
+			s.demo.mu.Unlock()
+			if wait < 0 {
+				wait = 0
+			}
+			timer := time.NewTimer(wait)
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				if err := s.demoReset(); err != nil {
 					s.log("  ERROR: demo reset: %v", err)
 				}
-			case <-s.demo.stop:
+				s.demo.mu.Lock()
+				s.demo.nextReset = nextResetAfter(time.Now())
+				s.demo.mu.Unlock()
+			case <-stop:
+				timer.Stop()
 				return
 			}
 		}
@@ -149,7 +230,7 @@ func (s *Server) demoReset() error {
 	defer s.storeSyncMu.Unlock()
 
 	s.wallet.ResetToBaseline()
-	if err := s.wallet.GenerateDefaultCredentials(nil, ""); err != nil {
+	if err := s.wallet.GenerateProtectedDefaults(); err != nil {
 		return err
 	}
 	if s.store != nil {
@@ -157,9 +238,8 @@ func (s *Server) demoReset() error {
 			return err
 		}
 	}
-	s.demo.mu.Lock()
-	s.demo.nextReset = time.Now().Add(s.demo.opts.ResetInterval)
-	s.demo.mu.Unlock()
+	// Scheduling belongs to startDemoReset: computing it here would break a
+	// daily schedule, whose ResetInterval is zero.
 	s.log("  Demo reset: baseline restored")
 	return nil
 }
@@ -173,6 +253,10 @@ func (s *Server) demoConfig() map[string]any {
 	cfg := map[string]any{
 		"enabled":                true,
 		"reset_interval_seconds": int(s.demo.opts.ResetInterval / time.Second),
+	}
+	if s.demo.opts.ResetDaily != nil {
+		cfg["reset_daily_at"] = s.demo.opts.ResetDaily.String()
+		cfg["reset_interval_seconds"] = 0
 	}
 	s.demo.mu.Lock()
 	if !s.demo.nextReset.IsZero() {

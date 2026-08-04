@@ -158,12 +158,17 @@ type WalletError struct {
 
 // StoredCredential is a credential stored in the wallet.
 type StoredCredential struct {
-	ID          string                             `json:"id"`
-	Format      string                             `json:"format"`        // "dc+sd-jwt", "mso_mdoc", or "jwt_vc_json"
-	Raw         string                             `json:"raw"`           // original credential string
-	Claims      map[string]any                     `json:"claims"`        // decoded claims for display/matching
-	VCT         string                             `json:"vct,omitempty"` // SD-JWT vct
-	DocType     string                             `json:"doctype,omitempty"`
+	ID      string         `json:"id"`
+	Format  string         `json:"format"`        // "dc+sd-jwt", "mso_mdoc", or "jwt_vc_json"
+	Raw     string         `json:"raw"`           // original credential string
+	Claims  map[string]any `json:"claims"`        // decoded claims for display/matching
+	VCT     string         `json:"vct,omitempty"` // SD-JWT vct
+	DocType string         `json:"doctype,omitempty"`
+	// Protected marks baseline credentials that the UI, the API and the CLI
+	// must not delete or revoke. It exists for shared deployments, where a
+	// visitor emptying the wallet would break it for everyone. Only direct
+	// access to wallet.json can set or clear it.
+	Protected   bool                               `json:"protected,omitempty"`
 	Disclosures []sdjwt.Disclosure                 `json:"-"`
 	NameSpaces  map[string][]mdoc.IssuerSignedItem `json:"-"`
 }
@@ -416,22 +421,65 @@ func (w *Wallet) removeByType(format, vct, docType string) {
 func (w *Wallet) ClearCredentials() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	count := len(w.Credentials)
-	w.Credentials = nil
-	return count
+	kept := make([]StoredCredential, 0, len(w.Credentials))
+	for _, c := range w.Credentials {
+		if c.Protected {
+			kept = append(kept, c)
+		}
+	}
+	removed := len(w.Credentials) - len(kept)
+	w.Credentials = kept
+	return removed
 }
 
-// RemoveCredential removes a credential by ID.
+// RemoveCredential removes a credential by ID. Protected credentials are
+// never removed, so no API or CLI path can drop a shared baseline.
 func (w *Wallet) RemoveCredential(id string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for i, c := range w.Credentials {
 		if c.ID == id {
+			if c.Protected {
+				return false
+			}
 			w.Credentials = append(w.Credentials[:i], w.Credentials[i+1:]...)
 			return true
 		}
 	}
 	return false
+}
+
+// IsProtected reports whether the credential is part of a protected baseline.
+func (w *Wallet) IsProtected(id string) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	for _, c := range w.Credentials {
+		if c.ID == id {
+			return c.Protected
+		}
+	}
+	return false
+}
+
+// GenerateProtectedDefaults generates the default PID credentials and marks
+// exactly those as protected. Credentials that were already in the wallet
+// keep their current state, so a restart never protects visitor data.
+func (w *Wallet) GenerateProtectedDefaults() error {
+	existing := make(map[string]bool)
+	for _, c := range w.GetCredentials() {
+		existing[c.ID] = true
+	}
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if !existing[w.Credentials[i].ID] {
+			w.Credentials[i].Protected = true
+		}
+	}
+	return nil
 }
 
 // RegisterIssuedAttestation records a credential type and its trust/registration
@@ -565,6 +613,9 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if c.DocType != "" {
 		summary["doctype"] = c.DocType
 	}
+	if c.Protected {
+		summary["protected"] = true
+	}
 	return summary
 }
 
@@ -595,7 +646,22 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 
 // CredentialsJSON returns all credentials as JSON bytes.
 func (w *Wallet) CredentialsJSON() ([]byte, error) {
+	return w.CredentialsJSONWindow(0, 0)
+}
+
+// CredentialsJSONWindow serializes a slice of the stored credentials.
+// A limit of 0 means "to the end", and an offset past the end yields an
+// empty array rather than an error, so a paging client that lands on a
+// stale page simply sees nothing.
+func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	creds := w.GetCredentials()
+	if offset > len(creds) {
+		offset = len(creds)
+	}
+	creds = creds[offset:]
+	if limit > 0 && limit < len(creds) {
+		creds = creds[:limit]
+	}
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
 		summaries[i] = w.CredentialSummaryWithStatus(c)

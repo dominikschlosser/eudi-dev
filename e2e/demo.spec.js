@@ -213,6 +213,106 @@ test.describe("Demo mode consent visibility", () => {
   });
 });
 
+test.describe("Protected baseline credentials", () => {
+  test("the seeded PIDs are marked and offer no destructive actions", async ({
+    page,
+  }) => {
+    await page.goto(BASE);
+    const cards = page.locator(".credential-card[data-protected='true']");
+    await expect(cards).toHaveCount(2, { timeout: 5000 });
+
+    const first = cards.first();
+    await expect(first.locator(".status-protected")).toHaveText("Protected");
+    await expect(first.locator(".status-protected")).toHaveAttribute(
+      "title",
+      /cannot be deleted or revoked/
+    );
+    // No button that the server would only answer with 403.
+    await expect(first.locator("[data-delete]")).toHaveCount(0);
+    await expect(first.locator("[data-revoke]")).toHaveCount(0);
+  });
+
+  test("the API refuses to delete or revoke them", async () => {
+    const res = await fetch(`${BASE}/api/credentials`);
+    const creds = await res.json();
+    const guarded = creds.find((c) => c.protected);
+    expect(guarded, "expected a protected baseline credential").toBeTruthy();
+
+    const del = await fetch(`${BASE}/api/credentials/${guarded.id}`, { method: "DELETE" });
+    expect(del.status).toBe(403);
+
+    const revoke = await fetch(`${BASE}/api/credentials/${guarded.id}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: 1 }),
+    });
+    expect(revoke.status).toBe(403);
+
+    // Still there, still active.
+    const after = await (await fetch(`${BASE}/api/credentials/${guarded.id}`)).json();
+    expect(after.protected).toBe(true);
+    expect(after.status.status).toBe(0);
+  });
+
+  test("issued credentials remain deletable and clearing keeps the baseline", async ({
+    page,
+  }) => {
+    const issued = await postJSON("/api/issue", { format: "sdjwt", vct: "urn:example:e2e" });
+    expect(issued.status).toBe(201);
+    expect(issued.body.protected).toBeUndefined();
+
+    await page.goto(BASE);
+    const card = page.locator(`#credential-${issued.body.id}`);
+    await expect(card).toBeVisible({ timeout: 5000 });
+    await expect(card.locator("[data-delete]")).toHaveCount(1);
+
+    const cleared = await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
+    expect((await cleared.json()).kept_protected).toBe(2);
+
+    const remaining = await (await fetch(`${BASE}/api/credentials`)).json();
+    expect(remaining).toHaveLength(2);
+    expect(remaining.every((c) => c.protected)).toBe(true);
+  });
+});
+
+test.describe("Credential paging", () => {
+  test("pages through a long credential list", async ({ page }) => {
+    // Start from the baseline, then add enough to need three pages.
+    await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
+    for (let i = 0; i < 23; i++) {
+      await postJSON("/api/issue", { format: "sdjwt", vct: `urn:example:page-${i}` });
+    }
+
+    await page.goto(BASE);
+    const range = page.locator("#cred-range");
+    await expect(page.locator(".credential-card")).toHaveCount(10, { timeout: 5000 });
+    await expect(range).toHaveText("1–10 of 25");
+    await expect(page.locator("#cred-prev")).toBeDisabled();
+
+    await page.locator("#cred-next").click();
+    await expect(range).toHaveText("11–20 of 25");
+    await expect(page.locator(".credential-card")).toHaveCount(10);
+
+    await page.locator("#cred-next").click();
+    await expect(range).toHaveText("21–25 of 25");
+    await expect(page.locator(".credential-card")).toHaveCount(5);
+    await expect(page.locator("#cred-next")).toBeDisabled();
+
+    await page.locator("#cred-prev").click();
+    await expect(range).toHaveText("11–20 of 25");
+
+    // Back to the baseline for the following tests.
+    await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
+  });
+
+  test("the pager stays hidden when everything fits on one page", async ({ page }) => {
+    await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
+    await page.goto(BASE);
+    await expect(page.locator(".credential-card")).toHaveCount(2, { timeout: 5000 });
+    await expect(page.locator("#cred-pager")).toBeHidden();
+  });
+});
+
 test.describe("Demo mode hardening", () => {
   test("template writes and process control stay disabled", async () => {
     const blocked = [

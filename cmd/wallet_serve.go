@@ -56,7 +56,7 @@ func walletServeCmd() *cobra.Command {
 		vciClientID             string
 		vciRedirectURI          string
 		demo                    bool
-		demoReset               time.Duration
+		demoReset               string
 		imprintFile             string
 		detached                bool
 	)
@@ -110,6 +110,10 @@ so the wallet automatically receives incoming protocol requests.`,
 
 			if cmd.Flags().Changed("demo-reset") && !demo {
 				return fmt.Errorf("--demo-reset requires --demo")
+			}
+			demoOpts, err := parseDemoReset(demoReset)
+			if err != nil {
+				return fmt.Errorf("invalid --demo-reset %q: %w", demoReset, err)
 			}
 			if demo {
 				// A public demo needs a known baseline: the periodic reset
@@ -176,7 +180,13 @@ so the wallet automatically receives incoming protocol requests.`,
 			}
 
 			if pid {
-				if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+				// In demo mode the generated PIDs are the shared baseline and
+				// must survive whatever visitors do to the wallet.
+				generate := w.GenerateDefaultCredentials
+				if demo {
+					generate = func(map[string]any, string) error { return w.GenerateProtectedDefaults() }
+				}
+				if err := generate(nil, ""); err != nil {
 					return fmt.Errorf("generating PID credentials: %w", err)
 				}
 				if err := store.Save(w); err != nil {
@@ -233,8 +243,8 @@ so the wallet automatically receives incoming protocol requests.`,
 			fmt.Printf("  Storage:     %s\n", store.Dir)
 			fmt.Printf("  Validation:  %s\n", w.ValidationMode)
 			if demo {
-				if demoReset > 0 {
-					fmt.Printf("  Mode:        public demo (auto-accept, admin API disabled, resets every %s)\n", demoReset)
+				if schedule := demoResetDescription(demoOpts); schedule != "" {
+					fmt.Printf("  Mode:        public demo (admin API disabled, %s)\n", schedule)
 				} else {
 					fmt.Printf("  Mode:        public demo (auto-accept, admin API disabled)\n")
 				}
@@ -307,7 +317,7 @@ so the wallet automatically receives incoming protocol requests.`,
 			srv.SetVersion(Version)
 			srv.SetImprint(imprintHTML)
 			if demo {
-				srv.SetDemo(wallet.DemoOptions{ResetInterval: demoReset})
+				srv.SetDemo(demoOpts)
 			}
 			// Embed the credential decoder UI so stored credentials can be
 			// inspected from the wallet UI.
@@ -399,7 +409,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --auto-accept and --pid, disables process/filesystem endpoints, blocks fetches to internal networks")
-	cmd.Flags().DurationVar(&demoReset, "demo-reset", time.Hour, "Interval for restoring the clean demo baseline (requires --demo; 0 disables)")
+	cmd.Flags().StringVar(&demoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&imprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVarP(&detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
 	return cmd
@@ -526,4 +536,42 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 		return nil, err
 	}
 	return args, nil
+}
+
+// parseDemoReset interprets the --demo-reset value: a duration ("24h", "0"),
+// a daily wall-clock time ("00:00"), or one with an explicit zone
+// ("00:00 Europe/Berlin"). A wall-clock schedule keeps the reset at the same
+// local time every day instead of drifting with each process restart.
+func parseDemoReset(value string) (wallet.DemoOptions, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return wallet.DemoOptions{}, nil
+	}
+	if strings.Contains(value, ":") {
+		schedule, err := wallet.ParseDailySchedule(value)
+		if err != nil {
+			return wallet.DemoOptions{}, err
+		}
+		return wallet.DemoOptions{ResetDaily: schedule}, nil
+	}
+	interval, err := time.ParseDuration(value)
+	if err != nil {
+		return wallet.DemoOptions{}, err
+	}
+	if interval < 0 {
+		return wallet.DemoOptions{}, fmt.Errorf("interval must not be negative")
+	}
+	return wallet.DemoOptions{ResetInterval: interval}, nil
+}
+
+// demoResetDescription renders the configured schedule for the startup banner.
+func demoResetDescription(opts wallet.DemoOptions) string {
+	switch {
+	case opts.ResetDaily != nil:
+		return fmt.Sprintf("resets daily at %s", opts.ResetDaily)
+	case opts.ResetInterval > 0:
+		return fmt.Sprintf("resets every %s", opts.ResetInterval)
+	default:
+		return ""
+	}
 }

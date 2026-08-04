@@ -231,6 +231,9 @@ func (l *localWallet) RemoveCredential(id string) error {
 	if err != nil {
 		return err
 	}
+	if w.IsProtected(id) {
+		return fmt.Errorf("credential %s is protected: remove it from the wallet file to delete it", id)
+	}
 	if !w.RemoveCredential(id) {
 		return fmt.Errorf("credential %s not found", id)
 	}

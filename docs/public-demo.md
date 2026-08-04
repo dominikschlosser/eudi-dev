@@ -13,11 +13,15 @@ eudi wallet serve --demo --base-url https://eudi-test.dev --status-list --imprin
 1. It implies `--pid`, so the server runs headless with a known credential baseline. Consent stays interactive for browser flows (visitors clicking offer or authorize links approve in the wallet UI), while API submissions auto-accept, keeping the demo a reliable counterparty for external issuers, verifiers, and CLI clients.
 2. It disables the admin endpoints. `POST /api/shutdown`, `PUT/DELETE /api/templates/{name}`, `POST/DELETE /api/next-error` and `PUT /api/config/preferred-format` return 403. Saving templates through `POST /api/issue` is rejected too. `GET /api/config` stops reporting host paths and the process id.
 3. It blocks outbound requests to internal networks. Visitor supplied URLs (credential offers, `request_uri`, trust lists, status lists) are still fetched from the public internet, but connections to loopback, RFC 1918, link local (including cloud metadata endpoints), CGNAT and unique local addresses are refused at dial time. The check runs on resolved IP addresses, so DNS tricks do not bypass it.
-4. It resets the wallet periodically. `--demo-reset` (default `1h`, `0` disables) restores the clean baseline (fresh PID credentials, empty activity log). Keys, certificates and URLs survive resets, so trust list and status list URLs stay stable. The UI shows the reset interval in the footer.
+4. It resets the wallet periodically. `--demo-reset` takes an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`); `0` disables it. A wall-clock schedule keeps the reset at the same local time every day instead of drifting with each restart, and follows DST. Resets restore the clean baseline (fresh PID credentials, empty activity log) while keys, certificates and URLs survive, so trust list and status list URLs stay stable. The UI footer shows the schedule.
 
 ## What stays open (accepted risk)
 
 Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow, the verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP. Together they make the public demo usable out of the box (issue, then present, all in the browser) and serve as protocol counterparties for external wallets that can reach the server.
+
+The wallet UI pages the credential list (ten per page), so a demo that accumulated hundreds of credentials between resets stays usable and does not ship the whole list to every visitor on load.
+
+The PID credentials the demo seeds are marked protected: the UI, the API and the CLI refuse to delete or revoke them, so a visitor emptying the wallet cannot leave the demo without a baseline. Everything a visitor issues afterwards behaves normally and can be deleted. Clearing the flag needs direct access to `wallet.json`.
 
 The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess. The wallet also fetches visitor supplied public URLs (that is what a wallet does), so put rate limiting in front if abuse becomes a concern.
 

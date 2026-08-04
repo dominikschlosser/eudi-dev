@@ -62,12 +62,38 @@ func printCredentialList(creds []map[string]any) error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS")
+	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS\tSTATUS")
 	for _, cred := range creds {
 		claims, _ := cred["claims"].(map[string]any)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\n", docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n",
+			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims), credStatusLabel(cred))
 	}
 	return tw.Flush()
+}
+
+// credStatusLabel summarizes revocation state and protection for the list,
+// e.g. "active, protected". Empty when the wallet knows neither.
+func credStatusLabel(cred map[string]any) string {
+	var parts []string
+	if status, ok := cred["status"].(map[string]any); ok {
+		value, hasValue := status["status"].(float64)
+		switch {
+		case hasValue && value == 1:
+			parts = append(parts, "revoked")
+		case hasValue:
+			parts = append(parts, "active")
+		case status["uri"] != nil:
+			// Referenced somewhere else: this wallet cannot resolve it here.
+			parts = append(parts, "external")
+		}
+	}
+	if protected, _ := cred["protected"].(bool); protected {
+		parts = append(parts, "protected")
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func printCredentialDoc(cred map[string]any, decoded bool) error {

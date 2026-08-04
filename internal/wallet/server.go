@@ -29,6 +29,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -932,14 +933,47 @@ func (s *Server) SetVersion(version string) {
 	s.version = version
 }
 
+// handleListCredentials serves the stored credentials, optionally windowed
+// with ?limit= and ?offset=. The response stays a plain array so existing
+// clients keep working; the full count travels in X-Total-Count, which a
+// paging UI needs to know how many pages there are.
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
-	data, err := s.wallet.CredentialsJSON()
+	total := len(s.wallet.GetCredentials())
+	limit, err := intParam(r, "limit", 0)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: " + err.Error()})
+		return
+	}
+	offset, err := intParam(r, "offset", 0)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid offset: " + err.Error()})
+		return
+	}
+
+	data, err := s.wallet.CredentialsJSONWindow(offset, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// intParam reads a non-negative integer query parameter.
+func intParam(r *http.Request, name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a number", raw)
+	}
+	if value < 0 {
+		return 0, fmt.Errorf("must not be negative")
+	}
+	return value, nil
 }
 
 // handleImportCredential imports a credential from the request body.
@@ -979,6 +1013,12 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 			}
 			break
 		}
+	}
+	if s.wallet.IsProtected(id) {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "credential is protected and can only be removed through the wallet file",
+		})
+		return
 	}
 	if !s.wallet.RemoveCredential(id) {
 		http.Error(w, "credential not found", http.StatusNotFound)
@@ -1374,6 +1414,12 @@ func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if s.wallet.IsProtected(id) {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "credential is protected and its status can only be changed through the wallet file",
+		})
+		return
+	}
 	entry, ok := s.wallet.SetCredentialStatus(id, body.Status)
 	if !ok {
 		http.Error(w, "credential has no status entry", http.StatusNotFound)
