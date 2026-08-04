@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.0] - 2026-08-04
+
+### Added
+
+- A **Conformance** dialog in the wallet UI header reports what incoming requests are actually held to: validation mode, HAIP 1.0 for presentations and for issuance, encrypted requests, session transcript and preferred format, with an explanation of what the active level rejects. Only what is enforced is highlighted, so "not enforced" cannot be mistaken for a pass. `GET /api/config` gained `require_haip_issuance` alongside the fields it already reported
+- `eudi wallet config` as an alias of `wallet info`, and the local backend now reports `require_haip`, `require_haip_issuance`, `auto_accept`, `session_transcript` and `require_encrypted_request`. Local and remote wallets described the same thing differently before, and the conformance-relevant settings were missing from the local view entirely
+
+### Changed
+
+- **Demo mode enforces the EUDI profile.** `--demo` now implies `--mode strict` and `--haip`, so a publicly hosted wallet holds callers to the rules a real EUDI wallet applies instead of accepting anything and teaching verifiers that they pass. A verifier that is not HAIP-compliant gets `HTTP 400` from the public demo. Both are overridable (`--mode debug`, `--haip=false`) for a self-hosted demo that would rather be permissive, and nothing changes outside demo mode: a plain `wallet serve` keeps `debug` and no HAIP, which is what the OIDF conformance runner relies on
+- The built-in demo verifier is HAIP-compliant, which is what makes the above possible: it signs its authorization request object (ES256, `x5c`) and serves it by reference from `/verifier/request/{id}`, identifies itself with an `x509_hash:` client id derived from its signing certificate, requests `response_mode=direct_post.jwt`, publishes a per-request P-256 encryption key in `client_metadata`, and decrypts the response. It previously failed three of the five HAIP checks
+- The per-request HAIP override works in both directions. `{"haip": false}` on `POST /api/presentations` (or `X-OID4VC-Dev-HAIP: false`) now switches enforcement off for one request, where before a request could only ever turn it on. Without this there was no way to test a non-HAIP verifier against a wallet that enforces HAIP, and the conformance suite's non-HAIP modules would have been rejected outright. An absent field or header still inherits the server setting
+- A demo instance may fetch its own advertised origins. `--demo` blocks connections to internal addresses, which also blocked the wallet from reaching its own demo verifier, so on localhost the built-in flows could not complete at all. The exemption is by exact resolved address and port for the configured base and issuer URLs; a visitor-supplied URL pointing at loopback is still refused
+- `--demo` no longer claims to imply `--auto-accept` in its flag help and startup banner. It never did — consent stays interactive on purpose
+
+### Fixed
+
+- `docs/spec-compliance.md` listed batch credential issuance as not implemented; it has been implemented since `internal/wallet/issuance_batch.go`. The HAIP section of `docs/wallet.md` described enforcement as covering OID4VCI when every enforced check is a presentation check
+
+## [1.18.11] - 2026-08-04
+
+### Fixed
+
+- The wallet refreshes its own protected baseline again. Protecting the default PIDs stopped `GenerateDefaultCredentials` from replacing them, which was the point, but it also stopped the server's own baseline generation, so a demo instance kept serving the PID claim set of whichever release first created it: after updating to 1.18.10 the shared demo still showed `personal_administrative_number` and the other claims the German PID does not have. Startup and the periodic reset now replace the baseline they created earlier, protection included. Nothing reachable from a request can: `POST /api/generate-pid`, the CLI and every other request-driven path still leave a protected credential alone
+
 ## [1.18.10] - 2026-08-04
 
 ### Changed

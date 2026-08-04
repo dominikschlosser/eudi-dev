@@ -388,8 +388,9 @@ func warnServingConfigDivergence(cfg map[string]any) {
 
 func walletInfoCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "info",
-		Short: "Show the configuration of the managed wallet (local or remote)",
+		Use:     "info",
+		Aliases: []string{"config"},
+		Short:   "Show the configuration of the managed wallet (local or remote)",
 		Long: "Prints the introspection document of the wallet the CLI currently manages. For a remote wallet " +
 			"this is the instance's /api/config endpoint (pid, port, directories, URLs, and runtime behavior). " +
 			"For the local store it shows the equivalent local view.",

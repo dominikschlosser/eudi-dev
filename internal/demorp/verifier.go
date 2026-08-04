@@ -15,6 +15,9 @@
 package demorp
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -28,6 +31,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // PIDVCT is the SD-JWT PID type the demo wallet holds by default.
@@ -44,6 +48,14 @@ type requestState struct {
 	expires  time.Time
 	answered bool // a response was accepted, further ones are replays
 
+	// requestObject is the signed JAR served from /verifier/request/{id}, and
+	// encKey decrypts the direct_post.jwt response. Both are per request and
+	// expire with it. HAIP requires the request to be signed and the response
+	// encrypted, so a demo that is meant to model a real EUDI verifier needs
+	// them even though a plain direct_post would be simpler.
+	requestObject string
+	encKey        *ecdsa.PrivateKey
+
 	status string // pending | verified | failed
 	err    string
 	claims map[string]any
@@ -57,8 +69,30 @@ func (d *DemoRP) VerifierHandler() http.Handler {
 	mux.HandleFunc("GET /{$}", d.serveStatic("static/verifier.html"))
 	mux.HandleFunc("POST /api/requests", d.handleCreateRequest)
 	mux.HandleFunc("GET /api/requests/{id}", d.handleRequestStatus)
+	mux.HandleFunc("GET /request/{id}", d.handleRequestObject)
 	mux.HandleFunc("POST /response/{id}", d.handlePresentationResponse)
 	return mux
+}
+
+// handleRequestObject serves the signed authorization request object that the
+// wallet fetches through request_uri.
+func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	d.mu.Lock()
+	req, ok := d.requests[id]
+	var jar string
+	if ok {
+		jar = req.requestObject
+		ok = !time.Now().After(req.expires)
+	}
+	d.mu.Unlock()
+	if !ok || jar == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown or expired request"})
+		return
+	}
+	w.Header().Set("Content-Type", "application/oauth-authz-req+jwt")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte(jar))
 }
 
 type createRequestBody struct {
@@ -99,7 +133,60 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		expires: time.Now().Add(entryTTL),
 	}
 	responseURI := base + "/verifier/response/" + req.id
-	req.clientID = "redirect_uri:" + responseURI
+
+	// The client identifier is the hash of the signing certificate, which is
+	// what makes it verifiable without a trust list and what HAIP requires
+	// (redirect_uri: is not an accepted prefix, and it cannot be combined
+	// with a signed request object anyway).
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil || len(chain) == 0 {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no signing certificate available"})
+		return
+	}
+	req.clientID = wallet.X509HashClientID(chain[0])
+
+	encKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "generating response encryption key: " + err.Error()})
+		return
+	}
+	req.encKey = encKey
+
+	dcqlClaims := make([]map[string]any, 0, len(claims))
+	for _, c := range claims {
+		dcqlClaims = append(dcqlClaims, map[string]any{"path": []string{c}})
+	}
+	dcql := map[string]any{
+		"credentials": []map[string]any{{
+			"id":     req.queryID,
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []string{vct}},
+			"claims": dcqlClaims,
+		}},
+	}
+
+	// Signed request object. Everything the wallet needs is inside it,
+	// including the key it encrypts the response to.
+	now := time.Now()
+	jar, err := wallet.SignRequestObjectJWT(map[string]any{
+		"iss":             req.clientID,
+		"aud":             "https://self-issued.me/v2",
+		"iat":             now.Unix(),
+		"exp":             req.expires.Unix(),
+		"client_id":       req.clientID,
+		"response_type":   "vp_token",
+		"response_mode":   "direct_post.jwt",
+		"response_uri":    responseURI,
+		"nonce":           req.nonce,
+		"state":           req.id,
+		"dcql_query":      dcql,
+		"client_metadata": responseEncryptionMetadata(encKey),
+	}, d.wallet.IssuerKey, chain)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing request object: " + err.Error()})
+		return
+	}
+	req.requestObject = jar
 
 	d.mu.Lock()
 	d.pruneLocked()
@@ -111,31 +198,11 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	d.requests[req.id] = req
 	d.mu.Unlock()
 
-	dcqlClaims := make([]map[string]any, 0, len(claims))
-	for _, c := range claims {
-		dcqlClaims = append(dcqlClaims, map[string]any{"path": []string{c}})
-	}
-	dcql, err := json.Marshal(map[string]any{
-		"credentials": []map[string]any{{
-			"id":     req.queryID,
-			"format": "dc+sd-jwt",
-			"meta":   map[string]any{"vct_values": []string{vct}},
-			"claims": dcqlClaims,
-		}},
-	})
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
+	// By reference rather than inline: the signed object is far too long for
+	// a scheme URI or a QR code.
 	params := url.Values{
-		"client_id":     {req.clientID},
-		"response_type": {"vp_token"},
-		"response_mode": {"direct_post"},
-		"response_uri":  {responseURI},
-		"nonce":         {req.nonce},
-		"state":         {req.id},
-		"dcql_query":    {string(dcql)},
+		"client_id":   {req.clientID},
+		"request_uri": {base + "/verifier/request/" + req.id},
 	}.Encode()
 
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -143,6 +210,32 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"wallet_url": base + "/authorize?" + params,
 		"scheme_uri": "openid4vp://?" + params,
 	})
+}
+
+// responseEncryptionMetadata publishes the public half of the per-request
+// encryption key. The wallet refuses direct_post.jwt without a usable JWK,
+// and requires an explicit alg on it.
+func responseEncryptionMetadata(key *ecdsa.PrivateKey) map[string]any {
+	return map[string]any{
+		"jwks": map[string]any{
+			"keys": []map[string]any{{
+				"kty": "EC",
+				"crv": "P-256",
+				"use": "enc",
+				"alg": "ECDH-ES",
+				"kid": "demo-verifier-response-enc",
+				"x":   base64.RawURLEncoding.EncodeToString(key.PublicKey.X.FillBytes(make([]byte, 32))),
+				"y":   base64.RawURLEncoding.EncodeToString(key.PublicKey.Y.FillBytes(make([]byte, 32))),
+			}},
+		},
+		"encrypted_response_enc_values_supported": []string{"A128GCM"},
+		"vp_formats_supported": map[string]any{
+			"dc+sd-jwt": map[string]any{
+				"sd-jwt_alg_values": []string{"ES256"},
+				"kb-jwt_alg_values": []string{"ES256"},
+			},
+		},
+	}
 }
 
 func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
@@ -175,9 +268,9 @@ func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
-// handlePresentationResponse is the direct_post response endpoint: it
-// receives the vp_token, verifies it, and redirects the wallet's browser
-// back to the verifier page.
+// handlePresentationResponse is the direct_post.jwt response endpoint: it
+// receives the encrypted response, decrypts it, verifies the vp_token, and
+// redirects the wallet's browser back to the verifier page.
 func (d *DemoRP) handlePresentationResponse(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	id := r.PathValue("id")
@@ -210,7 +303,14 @@ func (d *DemoRP) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	claims, checks, err := d.verifyPresentation(req, r.PostFormValue("vp_token"))
+	vpToken, err := decryptResponse(req, r.PostForm)
+	if err != nil {
+		d.finishRequest(req, nil, nil, err)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request"})
+		return
+	}
+
+	claims, checks, err := d.verifyPresentation(req, vpToken)
 	d.finishRequest(req, claims, checks, err)
 
 	// Same-device UX: send the wallet's browser back to the verifier page,
@@ -218,6 +318,46 @@ func (d *DemoRP) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, map[string]string{
 		"redirect_uri": d.baseURL() + "/verifier/?result=" + url.QueryEscape(id),
 	})
+}
+
+// decryptResponse unwraps a direct_post.jwt response and returns the
+// vp_token. The state inside the JWE is checked against the request, so a
+// response encrypted for one request cannot be posted to another.
+func decryptResponse(req *requestState, form url.Values) (string, error) {
+	encrypted := strings.TrimSpace(form.Get("response"))
+	if encrypted == "" {
+		return "", fmt.Errorf("the response carried no encrypted response parameter (direct_post.jwt was requested)")
+	}
+	if req.encKey == nil {
+		return "", fmt.Errorf("this request has no response encryption key")
+	}
+
+	plaintext, err := wallet.DecryptCompactJWE(encrypted, req.encKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypting the response: %w", err)
+	}
+
+	var payload struct {
+		VPToken any    `json:"vp_token"`
+		State   string `json:"state"`
+	}
+	if err := json.Unmarshal([]byte(plaintext), &payload); err != nil {
+		return "", fmt.Errorf("parsing the decrypted response: %w", err)
+	}
+	if payload.State != "" && payload.State != req.id {
+		return "", fmt.Errorf("the decrypted response is for a different request")
+	}
+	if payload.VPToken == nil {
+		return "", fmt.Errorf("the decrypted response carried no vp_token")
+	}
+
+	// vp_token is a JSON object keyed by query id, which verifyPresentation
+	// already parses; re-encode whatever shape arrived.
+	raw, err := json.Marshal(payload.VPToken)
+	if err != nil {
+		return "", fmt.Errorf("re-encoding the vp_token: %w", err)
+	}
+	return string(raw), nil
 }
 
 func (d *DemoRP) finishRequest(req *requestState, claims map[string]any, checks []map[string]any, err error) {

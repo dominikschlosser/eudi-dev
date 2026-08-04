@@ -120,3 +120,36 @@ func TestFetchURLSizeCap(t *testing.T) {
 		t.Fatal("FetchURL accepted an oversized response")
 	}
 }
+
+// The wallet has to be able to reach its own demo issuer and verifier: their
+// request_uri and response_uri sit on its own origin, which on a local demo
+// instance resolves to loopback and would otherwise be refused. Everything
+// else internal stays blocked.
+func TestAllowOwnOrigins(t *testing.T) {
+	policy := AllowOwnOrigins(BlockPrivateAddresses, "http://localhost:18951", "https://localhost:18952")
+
+	allowed := []string{"127.0.0.1:18951", "127.0.0.1:18952"}
+	for _, addr := range allowed {
+		if err := policy("tcp4", addr); err != nil {
+			t.Errorf("policy(%q) = %v, want the wallet's own origin to be allowed", addr, err)
+		}
+	}
+
+	// A different port on the same loopback host is somebody else's service.
+	blocked := []string{"127.0.0.1:18999", "10.0.0.5:80", "169.254.169.254:80", "192.168.1.10:443"}
+	for _, addr := range blocked {
+		if err := policy("tcp4", addr); err == nil {
+			t.Errorf("policy(%q) = nil, want it blocked", addr)
+		}
+	}
+}
+
+// Without any resolvable origin the wrapper must not weaken the policy.
+func TestAllowOwnOriginsKeepsBlockingWhenEmpty(t *testing.T) {
+	for _, urls := range [][]string{nil, {""}, {"not a url"}, {"ftp://example.test"}} {
+		policy := AllowOwnOrigins(BlockPrivateAddresses, urls...)
+		if err := policy("tcp4", "127.0.0.1:8085"); err == nil {
+			t.Errorf("AllowOwnOrigins(%v) stopped blocking loopback", urls)
+		}
+	}
+}

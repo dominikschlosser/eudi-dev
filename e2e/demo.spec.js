@@ -405,6 +405,48 @@ test.describe("Verifier polling", () => {
   });
 });
 
+// The demo is the EUDI profile, and the dialog is where a visitor finds out
+// what that actually means for their verifier.
+test.describe("Conformance", () => {
+  test("the dialog reports what a demo instance enforces", async ({ page }) => {
+    await page.goto(BASE);
+    await page.locator("#conformance-link").click();
+    await expect(page.locator("#conformance-overlay")).toHaveClass(/active/);
+
+    await expect(page.locator("#conf-mode")).toHaveText("strict");
+    await expect(page.locator("#conf-haip")).toHaveText("enforced");
+    // Issuance is not covered yet, and the dialog has to say so rather than
+    // implying the whole profile is enforced.
+    await expect(page.locator("#conf-haip-issuance")).toHaveText("not enforced");
+    await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
+
+    // Only what is enforced is highlighted.
+    await expect(page.locator("#conf-mode")).toHaveClass(/conf-on/);
+    await expect(page.locator("#conf-haip-issuance")).toHaveClass(/conf-off/);
+
+    await expect(page.locator("#conf-explainer")).toContainText("signed request object");
+
+    await page.locator("#conformance-close").click();
+    await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("a request that ignores the profile is rejected", async ({ page }) => {
+    const params = new URLSearchParams({
+      client_id: "redirect_uri:" + BASE + "/nowhere",
+      response_type: "vp_token",
+      response_mode: "direct_post",
+      response_uri: BASE + "/nowhere",
+      nonce: "n-0S6_WzA2Mj",
+      dcql_query: JSON.stringify({
+        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:de:1"] }, claims: [{ path: ["given_name"] }] }],
+      }),
+    });
+    const res = await fetch(`${BASE}/authorize?${params}`);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("HAIP");
+  });
+});
+
 test.describe("Demo mode hardening", () => {
   test("template writes and process control stay disabled", async () => {
     const blocked = [

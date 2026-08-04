@@ -42,6 +42,10 @@ Download the latest binary for your platform from [Releases](https://github.com/
 go install github.com/dominikschlosser/eudi-dev@latest
 ```
 
+This installs the binary as `eudi-dev` (Go names it after the module). The documentation calls the command `eudi`, so link it if you want the shorter name: `ln -s "$(go env GOPATH)/bin/eudi-dev" "$(go env GOPATH)/bin/eudi"`.
+
+The module path is `github.com/dominikschlosser/eudi-dev`. Installing through the old `oid4vc-dev` path fails with a version constraints conflict: the repository redirects, but a module declares exactly one path and this one declares the new name.
+
 ### Build locally
 
 ```bash

@@ -15,6 +15,7 @@
       <span class="header-links">
         <a href="#" id="how-to-use-link">How to use</a>
         <a href="#" id="get-cli-link">Get the CLI</a>
+        <a href="#" id="conformance-link">Conformance</a>
         <a href="#" id="trust-link">Trust &amp; certificates</a>
         <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
       </span>
@@ -120,6 +121,26 @@
       <p class="dialog-hint">No issuer or verifier at hand? This deployment also hosts a <a href="/issuer/" target="_blank">demo issuer</a> and a <a href="/verifier/" target="_blank">demo verifier</a> that run these flows against the wallet out of the box.</p>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conformance Modal -->
+  <div class="consent-overlay" id="conformance-overlay">
+    <div class="consent-dialog">
+      <div class="consent-title">Conformance</div>
+      <p class="dialog-hint">How strictly this wallet holds incoming requests to the EUDI profile. A verifier that passes here has met these rules, and nothing more.</p>
+      <table class="conformance-table">
+        <tr><td>Validation mode</td><td id="conf-mode">—</td></tr>
+        <tr><td>HAIP 1.0, presentation</td><td id="conf-haip">—</td></tr>
+        <tr><td>HAIP 1.0, issuance</td><td id="conf-haip-issuance">—</td></tr>
+        <tr><td>Encrypted requests</td><td id="conf-encrypted">—</td></tr>
+        <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
+        <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
+      </table>
+      <p class="dialog-hint" id="conf-explainer"></p>
+      <div class="consent-buttons">
+        <button class="btn" id="conformance-close">Close</button>
       </div>
     </div>
   </div>

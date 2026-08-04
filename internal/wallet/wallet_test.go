@@ -833,3 +833,63 @@ func TestGenerateDefaultCredentials_ReplacesUnprotected(t *testing.T) {
 		}
 	}
 }
+
+// The server's own baseline generation replaces what it created before,
+// protection included. Otherwise the shared demo keeps serving the PID claim
+// set of whichever release first created it, even after an update: exactly
+// what happened when the claim set was aligned with the German rulebook.
+func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("first GenerateProtectedDefaults: %v", err)
+	}
+	first := w.GetCredentials()
+	if len(first) != 2 {
+		t.Fatalf("expected 2 baseline credentials, got %d", len(first))
+	}
+	oldIDs := map[string]bool{}
+	for _, c := range first {
+		oldIDs[c.ID] = true
+	}
+
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("second GenerateProtectedDefaults: %v", err)
+	}
+
+	second := w.GetCredentials()
+	if len(second) != 2 {
+		t.Fatalf("expected the baseline to stay at 2 credentials, got %d", len(second))
+	}
+	for _, c := range second {
+		if oldIDs[c.ID] {
+			t.Errorf("credential %s (%s) was not refreshed", c.ID, c.Format)
+		}
+		if !c.Protected {
+			t.Errorf("refreshed credential %s must stay protected", c.ID)
+		}
+	}
+}
+
+// The request-driven path still must not touch a protected baseline: that is
+// the whole point of the flag.
+func TestGenerateDefaultCredentials_APIPathCannotReplaceProtected(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("GenerateProtectedDefaults: %v", err)
+	}
+	before := w.GetCredentials()
+
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("GenerateDefaultCredentials: %v", err)
+	}
+
+	after := w.GetCredentials()
+	if len(after) != len(before) {
+		t.Fatalf("expected %d credentials, got %d", len(before), len(after))
+	}
+	for i, c := range after {
+		if c.ID != before[i].ID {
+			t.Errorf("protected credential %s was replaced by %s", before[i].ID, c.ID)
+		}
+	}
+}

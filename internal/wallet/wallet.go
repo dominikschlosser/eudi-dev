@@ -282,6 +282,13 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 // are merged on top of the template claims. vct specifies the SD-JWT VCT; if
 // empty, the template's VCT (mock.DefaultPIDVCT by default) is used.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
+	return w.generateDefaultCredentials(claimOverrides, vct, false)
+}
+
+// generateDefaultCredentials generates the default PIDs. replaceProtected
+// allows it to replace a protected baseline, which only the server's own
+// baseline generation may do (see GenerateProtectedDefaults).
+func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, replaceProtected bool) error {
 	sdTpl, err := credtemplate.Load("german-pid-sdjwt", w.TemplatesDir)
 	if err != nil {
 		return fmt.Errorf("loading german-pid-sdjwt template: %w", err)
@@ -317,8 +324,8 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 	// Remove existing PID credentials before generating new ones. A protected
 	// one is kept instead, and then there is nothing to replace: it is the
 	// baseline, and regenerating must not quietly duplicate or discard it.
-	keptSD := w.removeByType("dc+sd-jwt", vct, "") > 0
-	keptMDoc := w.removeByType("mso_mdoc", "", mdocDocType) > 0
+	keptSD := w.removeByType("dc+sd-jwt", vct, "", replaceProtected) > 0
+	keptMDoc := w.removeByType("mso_mdoc", "", mdocDocType, replaceProtected) > 0
 	if keptSD || keptMDoc {
 		log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
 	}
@@ -418,14 +425,14 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 // credentials survive: regenerating the defaults must not be a way around the
 // rule that only direct access to the wallet file can remove them. It returns
 // how many protected credentials it kept.
-func (w *Wallet) removeByType(format, vct, docType string) int {
+func (w *Wallet) removeByType(format, vct, docType string, includeProtected bool) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var keptProtected int
 	filtered := w.Credentials[:0]
 	for _, c := range w.Credentials {
 		if c.Format == format && (vct == "" || c.VCT == vct) && (docType == "" || c.DocType == docType) {
-			if !c.Protected {
+			if includeProtected || !c.Protected {
 				continue
 			}
 			keptProtected++
@@ -488,7 +495,11 @@ func (w *Wallet) GenerateProtectedDefaults() error {
 	for _, c := range w.GetCredentials() {
 		existing[c.ID] = true
 	}
-	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+	// This replaces its own previous baseline, protection included. It runs
+	// on startup and on the periodic reset, never from a request, so it is
+	// the one path that may. Without it the baseline would freeze on the
+	// claim set of whichever release first created it.
+	if err := w.generateDefaultCredentials(nil, "", true); err != nil {
 		return err
 	}
 	w.mu.Lock()

@@ -622,6 +622,36 @@ func signCredentialIssuerMetadataJWT(w *Wallet, issuer string, exp time.Time) (s
 	return signJSONWebSignature(payload, w.IssuerKey, header)
 }
 
+// SignRequestObjectJWT signs an OpenID4VP authorization request object (JAR)
+// with the signer's certificate chain in x5c. HAIP requires a signed request
+// object, so any relying party that wants to be exercised against a
+// HAIP-enforcing wallet needs one of these; the built-in demo verifier is the
+// first caller. The typ is what ValidateRequestObject expects.
+func SignRequestObjectJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
+	if signingKey == nil {
+		return "", fmt.Errorf("signing key is required")
+	}
+	header := map[string]any{
+		"alg": "ES256",
+		"typ": "oauth-authz-req+jwt",
+	}
+	if x5c := buildJWSX5C(signerCerts); len(x5c) > 0 {
+		header["x5c"] = x5c
+	}
+	return signJSONWebSignature(claims, signingKey, header)
+}
+
+// X509HashClientID returns the `x509_hash:` client identifier for a leaf
+// certificate: the base64url-encoded SHA-256 of its DER encoding, which is
+// what verifyX509Hash compares against.
+func X509HashClientID(leaf *x509.Certificate) string {
+	if leaf == nil {
+		return ""
+	}
+	sum := sha256.Sum256(leaf.Raw)
+	return "x509_hash:" + format.EncodeBase64URL(sum[:])
+}
+
 func signRegistrarResponseJWT(signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate, payload any) (string, error) {
 	header := map[string]any{
 		"alg": "ES256",

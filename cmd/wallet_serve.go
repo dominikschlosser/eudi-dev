@@ -121,7 +121,18 @@ so the wallet automatically receives incoming protocol requests.`,
 				// for browser flows (API submissions auto-accept anyway), so
 				// visitors see the real wallet UX.
 				pid = true
-				format.SetFetchPolicy(format.BlockPrivateAddresses)
+
+				// Demo mode is the EUDI profile: a wallet hosted publicly as
+				// a counterparty should hold callers to the same rules a real
+				// EUDI wallet does, rather than accepting anything and
+				// teaching verifiers that they pass. Both are overridable, so
+				// a self-hosted demo can still be permissive.
+				if !cmd.Flags().Changed("mode") {
+					w.ValidationMode = wallet.ValidationModeStrict
+				}
+				if !cmd.Flags().Changed("haip") {
+					haip = true
+				}
 			}
 
 			if autoAccept {
@@ -177,6 +188,20 @@ so the wallet automatically receives incoming protocol requests.`,
 				if err != nil {
 					return err
 				}
+			}
+
+			if demo {
+				// Installed here rather than with the other demo settings: it
+				// needs the resolved base and issuer URLs, so the wallet stays
+				// able to reach its own demo issuer and verifier (a
+				// request_uri or response_uri on its own origin) while every
+				// other internal address remains blocked.
+				format.SetFetchPolicy(format.AllowOwnOrigins(
+					format.BlockPrivateAddresses,
+					w.BaseURL,
+					w.IssuerURL,
+					fmt.Sprintf("http://localhost:%d", port),
+				))
 			}
 
 			if pid {
@@ -246,7 +271,7 @@ so the wallet automatically receives incoming protocol requests.`,
 				if schedule := demoResetDescription(demoOpts); schedule != "" {
 					fmt.Printf("  Mode:        public demo (admin API disabled, %s)\n", schedule)
 				} else {
-					fmt.Printf("  Mode:        public demo (auto-accept, admin API disabled)\n")
+					fmt.Printf("  Mode:        public demo (admin API disabled)\n")
 				}
 			} else if w.AutoAccept {
 				fmt.Printf("  Mode:        auto-accept\n")
@@ -408,7 +433,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 compliance (x509_hash, direct_post.jwt, DCQL, JAR, ES256)")
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --auto-accept and --pid, disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&demoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&imprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVarP(&detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")

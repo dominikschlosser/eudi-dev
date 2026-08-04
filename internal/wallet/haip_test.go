@@ -168,3 +168,70 @@ func TestValidateHAIPCompliance(t *testing.T) {
 }
 
 // contains and containsSubstring are defined in requestobj_test.go
+
+// The per-request override has to work in both directions. Turning HAIP on
+// for one request is what the conformance harness does for its HAIP modules;
+// turning it off is what lets anyone test a non-HAIP verifier against a
+// wallet that enforces HAIP globally, such as the public demo.
+func TestHAIPPerRequestOverride(t *testing.T) {
+	on, off := true, false
+	tests := []struct {
+		name         string
+		serverHAIP   bool
+		requestHAIP  *bool
+		wantEnforced bool
+	}{
+		{"absent inherits enforcement", true, nil, true},
+		{"absent inherits tolerance", false, nil, false},
+		{"explicit true enables", false, &on, true},
+		{"explicit false disables", true, &off, false},
+		{"explicit true on enforcing stays on", true, &on, true},
+		{"explicit false on tolerant stays off", false, &off, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			src := generateTestWallet(t)
+			src.RequireHAIP = tc.serverHAIP
+
+			clone, err := cloneWalletForPresentation(src, presentationRequestOptions{
+				RequireHAIP: tc.requestHAIP,
+			})
+			if err != nil {
+				t.Fatalf("cloneWalletForPresentation: %v", err)
+			}
+			if clone.RequireHAIP != tc.wantEnforced {
+				t.Errorf("RequireHAIP = %v, want %v", clone.RequireHAIP, tc.wantEnforced)
+			}
+			if src.RequireHAIP != tc.serverHAIP {
+				t.Errorf("the server setting must not be mutated, got %v", src.RequireHAIP)
+			}
+		})
+	}
+}
+
+func TestParseHAIPHeader(t *testing.T) {
+	tests := []struct {
+		header string
+		want   *bool
+	}{
+		{"", nil},
+		{"true", boolPtr(true)},
+		{"false", boolPtr(false)},
+		{"1", boolPtr(true)},
+		{"0", boolPtr(false)},
+		{"nonsense", nil}, // unparseable inherits, rather than silently enforcing
+	}
+	for _, tc := range tests {
+		got := parseHAIPHeader(tc.header)
+		switch {
+		case tc.want == nil && got != nil:
+			t.Errorf("parseHAIPHeader(%q) = %v, want nil", tc.header, *got)
+		case tc.want != nil && got == nil:
+			t.Errorf("parseHAIPHeader(%q) = nil, want %v", tc.header, *tc.want)
+		case tc.want != nil && *got != *tc.want:
+			t.Errorf("parseHAIPHeader(%q) = %v, want %v", tc.header, *got, *tc.want)
+		}
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }

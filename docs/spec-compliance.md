@@ -40,7 +40,7 @@ Status of implemented features against the relevant specifications.
 | Pushed Authorization Request (PAR) | Implemented | Used by the authorization-code flow |
 | Token endpoint | Implemented | Exchanges pre-authorized code or authorization code for access token |
 | Credential endpoint | Implemented | Uses OID4VCI 1.0 final `proofs.jwt` and sends `credential_identifier` or `credential_configuration_id` as required |
-| Batch credential issuance | Not implemented | Optional per spec |
+| Batch credential issuance | Implemented | Requests multiple proofs and selects the holder-bound credential from the batch |
 | Deferred credential issuance | Implemented | Authorization-code flow follows `transaction_id` to `deferred_credential_endpoint` |
 | Credential response encryption | Implemented | Requests `credential_response_encryption` when advertised and decrypts compact JWE responses |
 | Signed OpenID Credential Issuer metadata publication | Implemented | Wallet serves `/.well-known/openid-credential-issuer` as signed `openidvci-issuer-metadata+jwt` with `issuer_info` / `registrar_dataset` |

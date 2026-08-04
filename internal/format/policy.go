@@ -16,7 +16,11 @@ package format
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 )
@@ -42,6 +46,80 @@ func dialControl(network, address string, _ syscall.RawConn) error {
 		return nil
 	}
 	return policy(network, address)
+}
+
+// AllowOwnOrigins wraps a policy so the wallet can always reach its own
+// advertised origins, whatever they resolve to.
+//
+// A wallet legitimately fetches from itself: a request_uri or a response_uri
+// belonging to its own demo verifier, or a credential offer pointing at its
+// own issuer. Those URLs are operator configuration, not visitor input, so
+// exempting them is not an SSRF hole — while without the exemption a demo
+// instance on localhost cannot complete its own flows, because every one of
+// them resolves to loopback and is refused at dial time.
+//
+// The allowance is by exact resolved address and port, so a visitor-supplied
+// URL that merely happens to point at loopback is still blocked.
+func AllowOwnOrigins(next FetchPolicy, urls ...string) FetchPolicy {
+	allowed := make(map[string]bool)
+	for _, raw := range urls {
+		for _, addr := range resolveOriginAddresses(raw) {
+			allowed[addr] = true
+		}
+	}
+	if len(allowed) == 0 {
+		return next
+	}
+	return func(network, address string) error {
+		if allowed[address] {
+			return nil
+		}
+		if next == nil {
+			return nil
+		}
+		return next(network, address)
+	}
+}
+
+// resolveOriginAddresses expands a URL into the "ip:port" strings a dial to
+// it can produce.
+func resolveOriginAddresses(raw string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return nil
+	}
+	host := parsed.Hostname()
+	port := parsed.Port()
+	if port == "" {
+		switch parsed.Scheme {
+		case "https":
+			port = "443"
+		case "http":
+			port = "80"
+		default:
+			return nil
+		}
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if addr, ok := netip.AddrFromSlice(ip); ok {
+			out = append(out, netip.AddrPortFrom(addr.Unmap(), portNumber(port)).String())
+		}
+	}
+	return out
+}
+
+func portNumber(port string) uint16 {
+	n, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
+		return 0
+	}
+	return uint16(n)
 }
 
 var extraBlockedPrefixes = []netip.Prefix{

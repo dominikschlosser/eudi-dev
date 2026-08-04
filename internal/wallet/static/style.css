@@ -901,3 +901,35 @@ header h1 {
     flex-wrap: wrap;
   }
 }
+
+/* Conformance dialog: what incoming requests are held to. */
+.conformance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.conformance-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.conformance-table tr:last-child td {
+  border-bottom: none;
+}
+.conformance-table td:first-child {
+  color: var(--text-dim);
+  width: 55%;
+}
+.conformance-table td:last-child {
+  color: var(--text);
+}
+/* Green is reserved for something actually being enforced; anything that is
+   off reads as neutral rather than as a failure, and plain settings stay
+   plain so the enforcement rows are the ones that stand out. */
+.conformance-table td.conf-on {
+  font-weight: 600;
+  color: var(--green);
+}
+.conformance-table td.conf-off {
+  color: var(--text-dim);
+}

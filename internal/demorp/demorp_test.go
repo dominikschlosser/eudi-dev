@@ -16,11 +16,14 @@ package demorp
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -220,34 +223,19 @@ func TestVerifierFlow(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	code, reqDoc := doJSON(t, h, "POST", "/api/requests", `{"type":"ticket"}`, map[string]string{"Content-Type": "application/json"})
-	if code != http.StatusCreated {
-		t.Fatalf("creating request: %d %v", code, reqDoc)
-	}
-	walletURL, err := url.Parse(reqDoc["wallet_url"].(string))
-	if err != nil {
-		t.Fatalf("parsing wallet_url: %v", err)
-	}
-	params := walletURL.Query()
-	id := params.Get("state")
+	id, params := startVerification(t, h, "ticket")
 	nonce := params.Get("nonce")
 	clientID := params.Get("client_id")
-	if id == "" || nonce == "" || !strings.HasPrefix(clientID, "redirect_uri:") {
+	if id == "" || nonce == "" || !strings.HasPrefix(clientID, "x509_hash:") {
 		t.Fatalf("unexpected authorization parameters: %v", params)
+	}
+	if got := params.Get("response_mode"); got != "direct_post.jwt" {
+		t.Errorf("response_mode = %q, want direct_post.jwt", got)
 	}
 
 	presentation := presentTicket(t, d, holderKey, clientID, nonce)
-	vpToken, err := json.Marshal(map[string][]string{"ticket": {presentation}})
-	if err != nil {
-		t.Fatalf("building vp_token: %v", err)
-	}
-	form := url.Values{"vp_token": {string(vpToken)}, "state": {id}}
-	code, respDoc := doJSON(t, h, "POST", "/response/"+id, form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
-	if code != http.StatusOK {
-		t.Fatalf("presentation response: %d %v", code, respDoc)
-	}
-	if redirect := respDoc["redirect_uri"].(string); !strings.Contains(redirect, "result="+id) {
-		t.Errorf("redirect_uri = %q, want result reference", redirect)
+	if code := postPresentation(t, h, id, "ticket", presentation); code != http.StatusOK {
+		t.Fatalf("presentation response = %d, want 200", code)
 	}
 
 	code, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
@@ -264,15 +252,10 @@ func TestVerifierRejectsWrongNonce(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	_, reqDoc := doJSON(t, h, "POST", "/api/requests", `{"type":"ticket"}`, map[string]string{"Content-Type": "application/json"})
-	walletURL, _ := url.Parse(reqDoc["wallet_url"].(string))
-	params := walletURL.Query()
-	id := params.Get("state")
+	id, params := startVerification(t, h, "ticket")
 
 	presentation := presentTicket(t, d, holderKey, params.Get("client_id"), "wrong-nonce")
-	vpToken, _ := json.Marshal(map[string][]string{"ticket": {presentation}})
-	form := url.Values{"vp_token": {string(vpToken)}}
-	doJSON(t, h, "POST", "/response/"+id, form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	postPresentation(t, h, id, "ticket", presentation)
 
 	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 	if status["status"] != "failed" {
@@ -349,16 +332,11 @@ func TestVerifierRejectsRevokedCredential(t *testing.T) {
 		{"revoked entry", 1, "failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, reqDoc := doJSON(t, h, "POST", "/api/requests", `{"type":"ticket"}`, map[string]string{"Content-Type": "application/json"})
-			walletURL, _ := url.Parse(reqDoc["wallet_url"].(string))
-			params := walletURL.Query()
-			id := params.Get("state")
+			id, params := startVerification(t, h, "ticket")
 
 			credential := signTicketWithStatus(t, d, holderKey, statusSrv.URL+"/statuslist", tc.idx)
 			presentation := presentCredential(t, holderKey, credential, params.Get("client_id"), params.Get("nonce"))
-			vpToken, _ := json.Marshal(map[string][]string{"ticket": {presentation}})
-			form := url.Values{"vp_token": {string(vpToken)}}
-			doJSON(t, h, "POST", "/response/"+id, form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+			postPresentation(t, h, id, "ticket", presentation)
 
 			_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 			if status["status"] != tc.wantStatus {
@@ -369,6 +347,11 @@ func TestVerifierRejectsRevokedCredential(t *testing.T) {
 }
 
 // startVerification creates a request and returns its id and parameters.
+// startVerification creates a request and returns its id plus the parameters
+// of the signed request object. The demo verifier is HAIP-compliant, so the
+// authorization parameters live inside the JAR served from request_uri rather
+// than in the URL: the tests have to fetch and parse it exactly as the wallet
+// does.
 func startVerification(t *testing.T, h http.Handler, kind string) (string, url.Values) {
 	t.Helper()
 	_, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"`+kind+`"}`, map[string]string{"Content-Type": "application/json"})
@@ -376,17 +359,119 @@ func startVerification(t *testing.T, h http.Handler, kind string) (string, url.V
 	if err != nil {
 		t.Fatalf("parsing wallet_url: %v", err)
 	}
-	params := walletURL.Query()
+	requestURI := walletURL.Query().Get("request_uri")
+	if requestURI == "" {
+		t.Fatalf("expected a request_uri in %s", walletURL)
+	}
+	payload := fetchRequestObject(t, h, requestURI)
+
+	params := url.Values{}
+	for _, name := range []string{"client_id", "response_type", "response_mode", "response_uri", "nonce", "state"} {
+		if v, ok := payload[name].(string); ok {
+			params.Set(name, v)
+		}
+	}
 	return params.Get("state"), params
 }
 
+// fetchRequestObject GETs the JAR and returns its (unverified) payload.
+func fetchRequestObject(t *testing.T, h http.Handler, requestURI string) map[string]any {
+	t.Helper()
+	parsed, err := url.Parse(requestURI)
+	if err != nil {
+		t.Fatalf("parsing request_uri: %v", err)
+	}
+	// The handler is mounted with the /verifier prefix stripped.
+	path := strings.TrimPrefix(parsed.Path, "/verifier")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200", path, rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/oauth-authz-req+jwt" {
+		t.Errorf("request object Content-Type = %q", ct)
+	}
+	parts := strings.Split(strings.TrimSpace(rec.Body.String()), ".")
+	if len(parts) != 3 {
+		t.Fatalf("request object is not a compact JWS: %d parts", len(parts))
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decoding request object payload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatalf("parsing request object payload: %v", err)
+	}
+	return payload
+}
+
+// responseEncryptionKey pulls the verifier's public encryption key out of the
+// request object's client_metadata.
+func responseEncryptionKey(t *testing.T, payload map[string]any) (*ecdsa.PublicKey, string) {
+	t.Helper()
+	meta, ok := payload["client_metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("request object has no client_metadata")
+	}
+	jwks, ok := meta["jwks"].(map[string]any)
+	if !ok {
+		t.Fatal("client_metadata has no jwks")
+	}
+	keys, ok := jwks["keys"].([]any)
+	if !ok || len(keys) == 0 {
+		t.Fatal("client_metadata jwks has no keys")
+	}
+	jwk, ok := keys[0].(map[string]any)
+	if !ok {
+		t.Fatal("jwks key is not an object")
+	}
+	if alg, _ := jwk["alg"].(string); alg != "ECDH-ES" {
+		t.Errorf("jwk alg = %q, want ECDH-ES (the wallet rejects a JWK without it)", alg)
+	}
+	xb, err := base64.RawURLEncoding.DecodeString(jwk["x"].(string))
+	if err != nil {
+		t.Fatalf("decoding jwk x: %v", err)
+	}
+	yb, err := base64.RawURLEncoding.DecodeString(jwk["y"].(string))
+	if err != nil {
+		t.Fatalf("decoding jwk y: %v", err)
+	}
+	kid, _ := jwk["kid"].(string)
+	return &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     new(big.Int).SetBytes(xb),
+		Y:     new(big.Int).SetBytes(yb),
+	}, kid
+}
+
+// postPresentation submits a presentation the way a HAIP wallet does: the
+// response is a JWE encrypted to the verifier's per-request key.
 func postPresentation(t *testing.T, h http.Handler, id, queryID, presentation string) int {
 	t.Helper()
-	vpToken, err := json.Marshal(map[string][]string{queryID: {presentation}})
+	return postPresentationTo(t, h, id, id, queryID, presentation)
+}
+
+// postPresentationTo allows the state inside the encrypted payload to differ
+// from the request being posted to, which is what proves the binding.
+func postPresentationTo(t *testing.T, h http.Handler, requestID, state, queryID, presentation string) int {
+	t.Helper()
+	payload := fetchRequestObject(t, h, "/request/"+requestID)
+	pub, kid := responseEncryptionKey(t, payload)
+
+	body, err := json.Marshal(map[string]any{
+		"vp_token": map[string][]string{queryID: {presentation}},
+		"state":    state,
+	})
 	if err != nil {
-		t.Fatalf("building vp_token: %v", err)
+		t.Fatalf("building response payload: %v", err)
 	}
-	code, _ := doJSON(t, h, "POST", "/response/"+id, url.Values{"vp_token": {string(vpToken)}}.Encode(),
+	jwe, _, err := wallet.EncryptJWE(body, pub, kid, "ECDH-ES", "A128GCM", nil, nil)
+	if err != nil {
+		t.Fatalf("encrypting response: %v", err)
+	}
+
+	code, _ := doJSON(t, h, "POST", "/response/"+requestID, url.Values{"response": {jwe}}.Encode(),
 		map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
 	return code
 }
@@ -539,4 +624,143 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 	if last["ok"] != false || !strings.Contains(last["name"].(string), "referenced") {
 		t.Fatalf("expected the disclosure reference check to fail, got %v", last)
 	}
+}
+
+// serveDemoStack runs the wallet and the demo verifier on one origin, the way
+// `wallet serve` mounts them, so a request can be driven end to end over real
+// HTTP.
+func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) {
+	t.Helper()
+	srv := wallet.NewServer(w, 0, nil)
+
+	var base string
+	d := New(w, func() string { return base })
+
+	mux := http.NewServeMux()
+	mux.Handle("/verifier/", http.StripPrefix("/verifier", d.VerifierHandler()))
+	mux.Handle("/", srv.Handler())
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	base = ts.URL
+	w.BaseURL = ts.URL
+	return d, ts
+}
+
+// The point of the exercise: the built-in demo verifier must satisfy HAIP, so
+// that enforcing it on the public demo does not break the demo itself. This
+// drives a real request through a wallet with RequireHAIP on — signed request
+// object fetched over request_uri, x509_hash client id, encrypted response —
+// and expects a verified presentation at the end.
+func TestVerifierIsHAIPCompliantEndToEnd(t *testing.T) {
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating holder key: %v", err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating issuer key: %v", err)
+	}
+	w := wallet.New(holderKey, issuerKey, true)
+	w.RequireHAIP = true
+	w.ValidationMode = wallet.ValidationModeStrict
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating PID: %v", err)
+	}
+
+	_, ts := serveDemoStack(t, w)
+
+	created := postJSONTo(t, ts.URL+"/verifier/api/requests", `{"type":"pid"}`)
+	id, _ := created["id"].(string)
+	walletURL, _ := created["wallet_url"].(string)
+	if id == "" || walletURL == "" {
+		t.Fatalf("unexpected create response: %v", created)
+	}
+
+	resp, err := ts.Client().Get(walletURL)
+	if err != nil {
+		t.Fatalf("driving the authorization request: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode < 300 {
+		t.Fatalf("authorize returned %d: %s", resp.StatusCode, body)
+	}
+	if strings.Contains(string(body), "HAIP 1.0 compliance check failed") {
+		t.Fatalf("the demo verifier is not HAIP-compliant: %s", body)
+	}
+
+	status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified (error: %v, checks: %v)", status["status"], status["error"], status["checks"])
+	}
+	claims, _ := status["claims"].(map[string]any)
+	if claims["family_name"] != "MUSTERMANN" {
+		t.Errorf("verified claims = %v, want the PID holder", claims)
+	}
+}
+
+// The same wallet must still reject a verifier that ignores the profile,
+// which is what makes enforcement worth anything.
+func TestHAIPEnforcementRejectsPlainRequest(t *testing.T) {
+	holderKey, _ := mock.GenerateKey()
+	issuerKey, _ := mock.GenerateKey()
+	w := wallet.New(holderKey, issuerKey, true)
+	w.RequireHAIP = true
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating PID: %v", err)
+	}
+	_, ts := serveDemoStack(t, w)
+
+	// A plain direct_post request with a redirect_uri client id: exactly what
+	// the demo verifier used to send.
+	params := url.Values{
+		"client_id":     {"redirect_uri:" + ts.URL + "/nowhere"},
+		"response_type": {"vp_token"},
+		"response_mode": {"direct_post"},
+		"response_uri":  {ts.URL + "/nowhere"},
+		"nonce":         {"n-0S6_WzA2Mj"},
+		"dcql_query":    {`{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["` + PIDVCT + `"]},"claims":[{"path":["given_name"]}]}]}`},
+	}
+	resp, err := ts.Client().Get(ts.URL + "/authorize?" + params.Encode())
+	if err != nil {
+		t.Fatalf("driving the plain request: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("plain request returned %d, want 400: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "HAIP") {
+		t.Errorf("expected a HAIP violation, got: %s", body)
+	}
+}
+
+func postJSONTo(t *testing.T, target, body string) map[string]any {
+	t.Helper()
+	resp, err := http.Post(target, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	doc := map[string]any{}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatalf("POST %s: decoding response: %v", target, err)
+	}
+	return doc
+}
+
+func getJSONFrom(t *testing.T, target string) map[string]any {
+	t.Helper()
+	resp, err := http.Get(target)
+	if err != nil {
+		t.Fatalf("GET %s: %v", target, err)
+	}
+	defer resp.Body.Close()
+	doc := map[string]any{}
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+		t.Fatalf("GET %s: decoding response: %v", target, err)
+	}
+	return doc
 }

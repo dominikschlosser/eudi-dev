@@ -18,11 +18,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
+
+// parseHAIPHeader reads the X-OID4VC-Dev-HAIP override. An absent or
+// unparseable header returns nil, which inherits the server's own setting;
+// "false" is an explicit opt out, so a caller can still be exercised against
+// a wallet that enforces HAIP globally.
+func parseHAIPHeader(value string) *bool {
+	if value == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
 
 // handleBrowserPresentationAPI executes an OpenID4VP Browser API request and
 // returns the browser-facing result object that navigator.credentials.get()
@@ -35,9 +51,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 
 	reqServer := s
-	if r.Header.Get("X-OID4VC-Dev-HAIP") == "true" || r.Header.Get("X-OID4VC-Dev-Mode") != "" {
+	haipHeader := parseHAIPHeader(r.Header.Get("X-OID4VC-Dev-HAIP"))
+	if haipHeader != nil || r.Header.Get("X-OID4VC-Dev-Mode") != "" {
 		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
-			RequireHAIP:    r.Header.Get("X-OID4VC-Dev-HAIP") == "true",
+			RequireHAIP:    haipHeader,
 			ValidationMode: r.Header.Get("X-OID4VC-Dev-Mode"),
 		})
 		if err != nil {

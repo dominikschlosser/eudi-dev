@@ -1193,6 +1193,7 @@
         document.getElementById('tls-cert-pem-link').hidden = true;
         document.getElementById('tls-cert-jwks-link').hidden = true;
       }
+      renderConformance(config);
       if (config.demo && config.demo.enabled) {
         demoMode = true;
         const note = document.getElementById('demo-note');
@@ -1227,6 +1228,45 @@
   }
 
   // "daily at 00:00 CET", "every hour", or null when resets are disabled.
+  // Shows what an incoming request has to satisfy. The wording is
+  // deliberately about consequences rather than flag names: "enforced" only
+  // means something if you can see what it rejects.
+  function renderConformance(config) {
+    // 'on' is something actively enforced, 'off' something not, and
+    // 'neutral' a setting that is neither (a transcript mode is not a level).
+    const set = (id, text, state) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text;
+      el.classList.toggle('conf-on', state === 'on');
+      el.classList.toggle('conf-off', state === 'off');
+    };
+    const enforced = (on, onText, offText) =>
+      [on ? onText : offText, on ? 'on' : 'off'];
+
+    const strict = config.validation_mode === 'strict';
+    set('conf-mode', ...enforced(strict, 'strict', 'debug'));
+    set('conf-haip', ...enforced(config.require_haip, 'enforced', 'not enforced'));
+    set('conf-haip-issuance', ...enforced(config.require_haip_issuance, 'enforced', 'not enforced'));
+    set('conf-encrypted', ...enforced(config.require_encrypted_request, 'required', 'not required'));
+    set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
+    set('conf-format', config.preferred_format || 'no preference',
+      config.preferred_format ? 'neutral' : 'off');
+
+    const parts = [];
+    parts.push(strict
+      ? 'Strict validation rejects a request whose findings would only be warnings in debug mode: a bad certificate chain, a broken request object signature, a missing nonce, an unknown client id prefix.'
+      : 'Debug validation reports those findings as warnings and continues, so a request that would fail a real wallet still completes here.');
+    if (config.require_haip) {
+      parts.push('HAIP 1.0 additionally requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, response_mode direct_post.jwt or dc_api.jwt, a DCQL query, and ES256.');
+    }
+    if (!config.require_haip_issuance) {
+      parts.push('Issuance is not held to the profile yet: credential offers are accepted whatever flow they use.');
+    }
+    const explainer = document.getElementById('conf-explainer');
+    if (explainer) explainer.textContent = parts.join(' ');
+  }
+
   function describeReset(demo) {
     if (demo.reset_daily_at) return 'daily at ' + demo.reset_daily_at;
     const secs = demo.reset_interval_seconds || 0;
@@ -1292,6 +1332,16 @@
   });
   document.getElementById('trust-close').addEventListener('click', () => {
     trustOverlay.classList.remove('active');
+  });
+
+  // Conformance modal
+  const conformanceOverlay = document.getElementById('conformance-overlay');
+  document.getElementById('conformance-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    conformanceOverlay.classList.add('active');
+  });
+  document.getElementById('conformance-close').addEventListener('click', () => {
+    conformanceOverlay.classList.remove('active');
   });
 
   // Get-the-CLI modal

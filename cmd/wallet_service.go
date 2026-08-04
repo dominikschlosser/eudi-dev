@@ -344,15 +344,24 @@ func (l *localWallet) Config() (map[string]any, error) {
 	if templates == "" {
 		templates = store.Dir + "/templates"
 	}
+	// Mirrors the fields GET /api/config reports for a served wallet, so
+	// `wallet info` says the same thing about a local store as about a
+	// remote one. The conformance-relevant settings in particular have to be
+	// visible in both.
 	return map[string]any{
-		"remote_url":       "",
-		"wallet_dir":       store.Dir,
-		"templates_dir":    templates,
-		"base_url":         w.BaseURL,
-		"issuer_url":       w.IssuerURL,
-		"status_list_url":  w.StatusListURL(),
-		"preferred_format": w.PreferredFormat,
-		"validation_mode":  string(w.ValidationMode),
-		"credential_count": len(w.GetCredentials()),
+		"remote_url":                "",
+		"wallet_dir":                store.Dir,
+		"templates_dir":             templates,
+		"base_url":                  w.BaseURL,
+		"issuer_url":                w.IssuerURL,
+		"status_list_url":           w.StatusListURL(),
+		"preferred_format":          w.PreferredFormat,
+		"validation_mode":           string(w.ValidationMode),
+		"auto_accept":               w.AutoAccept,
+		"session_transcript":        string(w.SessionTranscript),
+		"require_haip":              w.RequireHAIP,
+		"require_haip_issuance":     false,
+		"require_encrypted_request": w.RequireEncryptedRequest,
+		"credential_count":          len(w.GetCredentials()),
 	}, nil
 }

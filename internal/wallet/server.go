@@ -68,8 +68,12 @@ type Server struct {
 type presentationRequestOptions struct {
 	AutoAccept        bool
 	SessionTranscript string
-	RequireHAIP       bool
-	ValidationMode    string
+	// RequireHAIP overrides the server's HAIP enforcement for one request.
+	// Nil inherits the server setting; a value turns enforcement on or off,
+	// so a caller can still be tested against a wallet that enforces HAIP
+	// globally (and a HAIP module can raise the bar on one that does not).
+	RequireHAIP    *bool
+	ValidationMode string
 }
 
 // processBuildID identifies the code this process is running: the SHA-256 of
@@ -474,8 +478,10 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		AutoAccept        bool   `json:"auto_accept,omitempty"`
 		Interactive       bool   `json:"interactive,omitempty"`
 		SessionTranscript string `json:"session_transcript,omitempty"`
-		HAIP              bool   `json:"haip,omitempty"`
-		Mode              string `json:"mode,omitempty"`
+		// Pointer so an explicit "haip": false can switch enforcement off on
+		// a wallet that requires it; omitting the field inherits the server.
+		HAIP *bool  `json:"haip,omitempty"`
+		Mode string `json:"mode,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -488,7 +494,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	s.log("  URI: %s", uriDisplay)
 
 	reqServer := s
-	if body.AutoAccept || body.SessionTranscript != "" || body.HAIP || body.Mode != "" {
+	if body.AutoAccept || body.SessionTranscript != "" || body.HAIP != nil || body.Mode != "" {
 		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
 			AutoAccept:        body.AutoAccept,
 			SessionTranscript: body.SessionTranscript,
@@ -647,8 +653,8 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 			return nil, fmt.Errorf("invalid session transcript %q", opts.SessionTranscript)
 		}
 	}
-	if opts.RequireHAIP {
-		clone.RequireHAIP = true
+	if opts.RequireHAIP != nil {
+		clone.RequireHAIP = *opts.RequireHAIP
 	}
 	if opts.ValidationMode != "" {
 		mode, err := ParseValidationMode(opts.ValidationMode)
@@ -1368,18 +1374,22 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		templatesDir = filepath.Join(walletDir, "templates")
 	}
 	config := map[string]any{
-		"port":                      s.port,
-		"build_id":                  processBuildID(),
-		"version":                   s.version,
-		"imprint":                   len(s.imprintHTML) > 0,
-		"base_url":                  s.wallet.BaseURL,
-		"issuer_url":                s.wallet.IssuerURL,
-		"status_list_url":           s.wallet.StatusListURL(),
-		"preferred_format":          s.wallet.PreferredFormat,
-		"validation_mode":           string(s.wallet.ValidationMode),
-		"auto_accept":               s.wallet.AutoAccept,
-		"session_transcript":        string(s.wallet.SessionTranscript),
-		"require_haip":              s.wallet.RequireHAIP,
+		"port":               s.port,
+		"build_id":           processBuildID(),
+		"version":            s.version,
+		"imprint":            len(s.imprintHTML) > 0,
+		"base_url":           s.wallet.BaseURL,
+		"issuer_url":         s.wallet.IssuerURL,
+		"status_list_url":    s.wallet.StatusListURL(),
+		"preferred_format":   s.wallet.PreferredFormat,
+		"validation_mode":    string(s.wallet.ValidationMode),
+		"auto_accept":        s.wallet.AutoAccept,
+		"session_transcript": string(s.wallet.SessionTranscript),
+		"require_haip":       s.wallet.RequireHAIP,
+		// Presentations only for now: nothing on the issuance path consults
+		// RequireHAIP yet, and reporting one flag for both would overstate
+		// what is enforced.
+		"require_haip_issuance":     false,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"credential_count":          len(s.wallet.GetCredentials()),
 		// False when an external TLS terminator serves the issuer origin: the

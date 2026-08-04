@@ -471,9 +471,9 @@ In interactive mode (no `--auto-accept`) the two callers diverge before consent 
 
 ## HAIP 1.0 Enforcement
 
-This wallet enforces the HAIP checks that are currently exercised by the wallet and the current OIDF HAIP plans. That includes OID4VP `direct_post.jwt` and Browser API `dc_api.jwt` presentation flows, plus the OID4VCI authorization-code and encrypted credential-response behavior used by the current HAIP wallet plans.
+Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) compliance on incoming OID4VP requests. `--demo` turns it on by default (see [hosting a public demo](public-demo.md)).
 
-Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) compliance on incoming OID4VP requests. When enabled, the wallet rejects requests that violate any of:
+Enforcement covers **presentations**: OID4VP `direct_post.jwt` and Browser API `dc_api.jwt`. When enabled, the wallet rejects requests that violate any of:
 
 - `response_mode` must be `direct_post.jwt` or `dc_api.jwt`
 - `client_id` must use `x509_hash:`, `x509_san_dns:`, or Browser API `web-origin:`
@@ -483,10 +483,24 @@ Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](
 
 Non-compliant requests receive an HTTP 400 error with details about which checks failed.
 
+Issuance is **not** enforced. The wallet's own authorization-code client behavior already satisfies the profile (PAR, PKCE S256, DPoP, wallet attestation when the issuer advertises it, ES256 proofs, key attestation), and the OIDF VCI HAIP plans pass because of it, but nothing rejects an issuer that ignores the profile. A credential offer is accepted whatever flow it uses.
+
 ```bash
 eudi wallet serve --haip --auto-accept --pid
 eudi wallet accept --haip 'openid4vp://authorize?...'
 ```
+
+Enforcement can be overridden for a single request, in either direction, which is how a non-HAIP verifier can still be tested against a wallet that enforces it (and how the conformance runner raises the bar for its HAIP modules only):
+
+```bash
+curl -X POST http://localhost:8085/api/presentations \
+  -H 'Content-Type: application/json' \
+  -d '{"uri": "openid4vp://authorize?...", "haip": false}'
+```
+
+Omitting `haip` inherits the server setting. The Browser API endpoint takes the same override as `X-OID4VC-Dev-HAIP: true|false`.
+
+The wallet UI shows the active level under **Conformance** in the header, and `eudi wallet config` (alias of `wallet info`) reports the same fields for a local or remote wallet.
 
 ## HTTP API
 
