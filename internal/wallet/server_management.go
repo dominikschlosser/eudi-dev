@@ -17,8 +17,10 @@ package wallet
 // Management API handlers mirroring the wallet CLI commands (show, remove,
 // issue, generate-pid, ca-cert, tls-cert) so a hosted wallet instance can be
 // driven entirely over HTTP. Like the rest of the wallet server, these
-// endpoints have no authentication: the wallet is a testing tool and must not
-// be exposed to untrusted networks.
+// endpoints have no authentication: the wallet is a testing tool, so keep it
+// on localhost or an isolated network. Internet-facing deployments run the
+// demo profile (see demo.go), which disables the destructive endpoints and
+// treats all wallet state as public and disposable.
 
 import (
 	"encoding/json"

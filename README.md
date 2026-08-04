@@ -107,7 +107,7 @@ eudi wallet scan --screen         # QR scan → auto-dispatch
 eudi wallet logs -f               # Follow persisted wallet interactions
 ```
 
-> **Security:** The wallet server exposes unauthenticated HTTP endpoints for credential management and presentation flows. It is designed exclusively for **local development and testing** — never expose it to untrusted networks.
+> **Security:** By default the wallet server has **no authentication**: anyone who can reach its port controls the wallet and its credentials. Run it on localhost or an isolated test network, and never put real credentials in it. Internet-facing hosting has its own profile, `--demo`, which disables the process and filesystem endpoints and blocks fetches into private networks — that is what runs on [eudi-test.dev](https://eudi-test.dev). See [public demo hosting](docs/public-demo.md).
 
 `wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `issue ... --wallet --template german-pid-sdjwt` gives you a ready-to-use PID wallet and adds new credentials into the same wallet context (`wallet generate-pid` still works but is deprecated), and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
 

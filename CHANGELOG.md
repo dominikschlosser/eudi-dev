@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.18.7] - 2026-08-04
+
+### Changed
+
+- The macOS URL handler bundle is named `EUDI-Dev-Wallet.app` (was `OID4VC-Dev-Wallet.app`), so the system dialog that asks which app may open an `openid4vp://` link shows the current name. `wallet register` and `wallet unregister` remove and deregister the old bundle, otherwise Launch Services would keep two handlers for the same schemes. The bundle identifier is now `dev.eudi.wallet` and the handler logs live in `/tmp/eudi-dev-wallet*.log`
+- The security notes no longer contradict the hosted demo. They said to never expose the wallet to untrusted networks while eudi-test.dev does exactly that, so they now describe the actual rule: no authentication by default, keep it local, and `--demo` as the one supported profile for public hosting. `SECURITY.md` also stopped claiming the CA key is ephemeral (it is persisted and shared, which is what keeps trust lists stable) and now notes that the demo verifier does enforce revocation
+- The custom-scheme URIs on the demo issuer and verifier pages are clickable links, so a wallet that registered `openid4vp://` or `openid-credential-offer://` opens straight from the page instead of requiring copy and paste
+
 ## [1.18.6] - 2026-08-04
 
 ### Changed

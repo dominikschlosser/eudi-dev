@@ -25,7 +25,7 @@ func supportsURLSchemeRegistration() bool {
 // RegisterURLSchemes is not yet supported on Linux.
 func RegisterURLSchemes(opts RegisterOptions) error {
 	_ = opts
-	fmt.Println("URL scheme registration is not available on this platform. Continue with 'oid4vc-dev wallet accept <uri>' for copied offer or presentation links.")
+	fmt.Println("URL scheme registration is not available on this platform. Continue with 'eudi wallet accept <uri>' for copied offer or presentation links.")
 	return nil
 }
 

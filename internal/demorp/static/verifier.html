@@ -73,7 +73,7 @@
       <div class="label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>
       <div class="label">Authorization request (custom scheme, for any wallet)</div>
-      <pre id="scheme-uri">…</pre>
+      <pre><a href="#" id="scheme-uri">…</a></pre>
     </div>
     <div class="result" id="result-box">
       <div class="status" id="status"></div>
@@ -152,7 +152,9 @@
         const link = document.getElementById("wallet-link");
         link.href = doc.wallet_url;
         link.textContent = doc.wallet_url;
-        document.getElementById("scheme-uri").textContent = doc.scheme_uri;
+        const scheme = document.getElementById("scheme-uri");
+        scheme.textContent = doc.scheme_uri;
+        scheme.href = doc.scheme_uri;
         document.getElementById("request-box").style.display = "block";
         renderResult({ status: "pending" });
         poll(doc.id);

@@ -27,7 +27,13 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
-const appBundleName = "OID4VC-Dev-Wallet.app"
+const appBundleName = "EUDI-Dev-Wallet.app"
+
+// legacyAppBundleName is the pre-rename bundle. It has to be removed and
+// deregistered explicitly: leaving it behind means Launch Services keeps a
+// second handler for the same schemes, so macOS either shows the old name in
+// the open dialog or asks which app to use.
+const legacyAppBundleName = "OID4VC-Dev-Wallet.app"
 
 func supportsURLSchemeRegistration() bool {
 	return true
@@ -36,6 +42,21 @@ func supportsURLSchemeRegistration() bool {
 func appBundlePath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Applications", appBundleName)
+}
+
+func legacyAppBundlePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Applications", legacyAppBundleName)
+}
+
+// removeBundle deregisters a bundle from Launch Services and deletes it.
+func removeBundle(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	lsregister := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+	_, _ = exec.Command(lsregister, "-u", path).CombinedOutput() // not registered is fine
+	return os.RemoveAll(path)
 }
 
 func handlerScriptPath() string {
@@ -73,8 +94,8 @@ AUTO_ACCEPT="{{AUTO_ACCEPT}}"
 # the consent dialog even though the handler submits through the API.
 if [[ "$AUTO_ACCEPT" == "true" ]]; then INTERACTIVE=false; else INTERACTIVE=true; fi
 SERVE_ARGS=({{SERVE_ARGS}})
-LOG_FILE="/tmp/oid4vc-dev-wallet.log"
-SERVER_LOG="/tmp/oid4vc-dev-wallet-server.log"
+LOG_FILE="/tmp/eudi-dev-wallet.log"
+SERVER_LOG="/tmp/eudi-dev-wallet-server.log"
 
 # The active remote set by "wallet instances use <url>" wins over the baked-in
 # local listener. remote.json lives next to this script and is removed by
@@ -205,20 +226,24 @@ esac
 		return fmt.Errorf("writing handler script: %w", err)
 	}
 
-	// Remove existing bundle so osacompile can create a fresh one
+	// Remove existing bundles so osacompile can create a fresh one, including
+	// the pre-rename one that would otherwise keep claiming the schemes.
 	bundlePath := appBundlePath()
 	os.RemoveAll(bundlePath)
+	if err := removeBundle(legacyAppBundlePath()); err != nil {
+		return fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
+	}
 	if err := os.MkdirAll(filepath.Dir(bundlePath), 0755); err != nil {
 		return fmt.Errorf("creating Applications directory: %w", err)
 	}
 
 	// Write AppleScript source — "on open location" receives the URL from macOS Apple Events
 	appleScript := fmt.Sprintf(`on open location theURL
-	do shell script quoted form of "%s" & " " & quoted form of theURL & " >> /tmp/oid4vc-dev-wallet.log 2>&1 &"
+	do shell script quoted form of "%s" & " " & quoted form of theURL & " >> /tmp/eudi-dev-wallet.log 2>&1 &"
 end open location
 `, handlerPath)
 
-	tmpScript, err := os.CreateTemp("", "oid4vc-dev-*.applescript")
+	tmpScript, err := os.CreateTemp("", "eudi-dev-*.applescript")
 	if err != nil {
 		return fmt.Errorf("creating temp AppleScript: %w", err)
 	}
@@ -241,7 +266,7 @@ end open location
 	plistBuddy := "/usr/libexec/PlistBuddy"
 
 	plistCmds := [][]string{
-		{"-c", "Add :CFBundleIdentifier string com.oid4vc-dev.wallet", plistPath},
+		{"-c", "Add :CFBundleIdentifier string dev.eudi.wallet", plistPath},
 		{"-c", "Add :LSUIElement bool true", plistPath},
 		{"-c", "Add :CFBundleURLTypes array", plistPath},
 		// OID4VP schemes
@@ -315,14 +340,12 @@ func shellQuote(value string) string {
 func UnregisterURLSchemes() error {
 	bundlePath := appBundlePath()
 
-	// Unregister from Launch Services
-	lsregister := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-	cmd := exec.Command(lsregister, "-u", bundlePath)
-	_, _ = cmd.CombinedOutput() // ignore errors if not registered
-
-	// Remove the app bundle
-	if err := os.RemoveAll(bundlePath); err != nil {
+	if err := removeBundle(bundlePath); err != nil {
 		return fmt.Errorf("removing app bundle: %w", err)
+	}
+	// Also clean up the pre-rename bundle if this machine still has one.
+	if err := removeBundle(legacyAppBundlePath()); err != nil {
+		return fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
 	}
 
 	// Remove handler script
