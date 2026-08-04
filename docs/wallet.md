@@ -851,9 +851,19 @@ eudi wallet info
 
 Remote commands produce the same output as local ones, so scripts do not need to care which wallet is managed. Use `eudi wallet instances use` (without arguments) or `eudi wallet info` to check which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
 
+#### Version compatibility
+
+Every instance reports its release on `GET /api/version` (the `version` field, alongside `build_id`). Any instance can be managed from any machine, so the CLI and the instance are not necessarily the same release. `wallet instances use <url>` compares the two the way semantic versioning defines compatibility:
+
+- A differing major release is refused, because that is where breaking changes live. `--force` selects it anyway.
+- Minor and patch differences are compatible in both directions, so they pass without comment.
+- A development build on either side reports nothing comparable, so no check runs. The same applies to an instance too old to report a version at all.
+
+The instance version is shown when a target is selected, in the `VERSION` column of `wallet instances list` (and the `version` field of its `--json` output), and in the automatic routing notice below. `wallet instances list` marks an incompatible instance with `(!)` and explains it on stderr.
+
 ### Automatic routing (single writer)
 
-A running wallet server owns its wallet directory. When no remote target is configured and a live instance serves the same wallet directory, the CLI automatically routes its commands through that instance's REST API and prints `Routing through the running wallet instance <url>` to stderr. This keeps one writer per wallet directory. Without it, a CLI command and the running server would write the same files with different in-memory state and the wallet would end up inconsistent (for example credentials pointing at issuer URLs the server does not serve).
+A running wallet server owns its wallet directory. When no remote target is configured and a live instance serves the same wallet directory, the CLI automatically routes its commands through that instance's REST API and prints `Routing through the running wallet instance <url>` (with the instance's release and pid) to stderr. An incompatible instance is reported there too, because a long running server can be a major release behind the binary now driving it. This keeps one writer per wallet directory. Without it, a CLI command and the running server would write the same files with different in-memory state and the wallet would end up inconsistent (for example credentials pointing at issuer URLs the server does not serve).
 
 Two flags opt out and force direct file access: `--remote local` and an explicit `--templates-dir`. Direct writes while a server runs can diverge from the server's state, so prefer the routed default.
 
@@ -864,7 +874,7 @@ Two flags opt out and force direct file access: `--remote local` and an explicit
 The CLI can scan the local system for running wallet instances, stop them, and switch management to them:
 
 ```bash
-eudi wallet instances list           # list running instances (URL, pid, wallet dir)
+eudi wallet instances list           # list running instances (URL, version, pid, wallet dir)
 eudi wallet instances use http://localhost:18924
 eudi wallet instances kill 18924     # stop by port, pid, or URL
 eudi wallet instances kill --all     # stop every running instance
@@ -872,10 +882,10 @@ eudi wallet instances kill --all     # stop every running instance
 
 `wallet instances` without a subcommand is a shortcut for `wallet instances list`.
 
-Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. The health check is also where the release and build id of every listed instance come from, so the `VERSION` column always reflects the running process rather than what was recorded at startup. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
 
 Discovery only sees instances running directly on this system. A wallet server inside a Docker container (or on another machine) is neither in the local registry nor in the local process list. The active remote target is the exception. After `wallet instances use <url>` (for example `wallet instances use http://localhost:9085` for a wallet published by a container) the target is health checked and listed with source `active` as long as it responds. The `ACTIVE` column marks the instance the CLI currently manages with `*`. This includes the auto-routed case (a running instance that serves the local wallet directory while no remote target is set). In `--json` output the same information is the `active` field. When the active remote stops responding, `wallet instances list` prints a warning instead of listing it.
 
 ### Introspection
 
-`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `pid`, `port`, `build_id`, `wallet_dir`, `templates_dir`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_encrypted_request`, and `credential_count`. `POST /api/shutdown` stops the instance (the response is sent before the process exits).
+`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `pid`, `port`, `build_id`, `version`, `wallet_dir`, `templates_dir`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_encrypted_request`, and `credential_count`. `POST /api/shutdown` stops the instance (the response is sent before the process exits).

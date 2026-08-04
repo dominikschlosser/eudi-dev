@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -235,6 +237,106 @@ func TestWalletUseRejectsUnreachable(t *testing.T) {
 	if remote.Active() != "" {
 		t.Errorf("unreachable target must not be persisted, got %q", remote.Active())
 	}
+}
+
+func TestWalletUseChecksVersionCompatibility(t *testing.T) {
+	resetRemoteTestState(t)
+	url, srv := startRemoteTestWallet(t)
+	srv.SetVersion("2.4.0")
+	withCLIVersion(t, "1.19.0")
+
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected an instance a major release apart to be refused")
+	}
+	if !strings.Contains(err.Error(), "2.4.0") || !strings.Contains(err.Error(), "1.19.0") {
+		t.Errorf("the error must name both releases, got %q", err)
+	}
+	if remote.Active() != "" {
+		t.Errorf("an incompatible instance must not become the target, got %q", remote.Active())
+	}
+
+	// --force is the escape hatch for a user who knows better.
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", url, "--force"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet instances use --force: %v", err)
+	}
+	if remote.Active() != url {
+		t.Errorf("--force must select the instance, got %q", remote.Active())
+	}
+	t.Cleanup(func() {
+		rootCmd.SetArgs([]string{"wallet", "instances", "use", url, "--force=false"})
+		_ = rootCmd.Execute()
+	})
+
+	// Within the major release the two are compatible, in either direction.
+	srv.SetVersion("1.18.0")
+	if err := remote.ClearActive(); err != nil {
+		t.Fatal(err)
+	}
+	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("an older minor release must still be selectable: %v", err)
+	}
+	if remote.Active() != url {
+		t.Errorf("expected the instance to be selected, got %q", remote.Active())
+	}
+}
+
+func TestInstancesListShowsInstanceVersion(t *testing.T) {
+	resetRemoteTestState(t)
+	url, srv := startRemoteTestWallet(t)
+	srv.SetVersion("1.42.0")
+	withCLIVersion(t, "1.42.0")
+
+	if err := remote.RegisterInstance(remote.Instance{
+		PID: os.Getpid(), Port: portFromURL(t, url), URL: url, StartedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"wallet", "instances", "list"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("wallet instances list: %v", err)
+		}
+	})
+	if !strings.Contains(out, "VERSION") || !strings.Contains(out, "1.42.0") {
+		t.Errorf("the listing must report the instance version, got:\n%s", out)
+	}
+}
+
+// withCLIVersion pins the version this CLI reports for the test.
+func withCLIVersion(t *testing.T, version string) {
+	t.Helper()
+	previous := Version
+	Version = version
+	t.Cleanup(func() { Version = previous })
+}
+
+// captureStdout collects what fn writes to os.Stdout. The instance listing
+// writes there directly rather than through cobra's output writer.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = writer
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, reader)
+		done <- buf.String()
+	}()
+	fn()
+	os.Stdout = previous
+	_ = writer.Close()
+	out := <-done
+	_ = reader.Close()
+	return out
 }
 
 func TestWalletKillViaShutdownEndpoint(t *testing.T) {

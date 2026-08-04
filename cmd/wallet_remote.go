@@ -65,20 +65,33 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 		return nil, nil
 	}
 	if inst := remote.InstanceForWalletDir(loadStore().Dir, 500*time.Millisecond); inst != nil {
-		fmt.Fprintf(os.Stderr, "Routing through the running wallet instance %s (pid %d, same wallet directory). Use --remote local for direct file access.\n", inst.URL, inst.PID)
+		version := inst.Version
+		if version == "" {
+			version = "unknown version"
+		}
+		fmt.Fprintf(os.Stderr, "Routing through the running wallet instance %s (%s, pid %d, same wallet directory). Use --remote local for direct file access.\n", inst.URL, version, inst.PID)
+		// The instance was started from whatever binary was current then, so
+		// it can be a major release behind the CLI now running against it.
+		if notice := incompatibilityNotice(inst.URL, inst.Version); notice != "" {
+			fmt.Fprintln(os.Stderr, notice)
+		}
 		return remote.NewClient(inst.URL), nil
 	}
 	return nil, nil
 }
 
 func instancesUseCmd() *cobra.Command {
-	return &cobra.Command{
+	var force bool
+
+	cmd := &cobra.Command{
 		Use:               "use [url|local]",
 		ValidArgsFunction: completeUseTargets,
 		Short:             "Switch wallet management to a remote instance (or back to local)",
 		Long: "Selects which wallet the management commands operate on. With a URL the CLI manages that " +
 			"running eudi-dev wallet server over its REST API. With \"local\" it manages the local wallet store again. " +
-			"Without arguments it prints the current target.",
+			"Without arguments it prints the current target. The instance is health checked first and its release " +
+			"is compared with this CLI: a differing major release is refused (--force accepts it anyway), while " +
+			"minor and patch differences are compatible.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -88,8 +101,14 @@ func instancesUseCmd() *cobra.Command {
 					return nil
 				}
 				fmt.Println(active)
-				if _, ok := healthSummary(active); !ok {
+				identity, ok := instanceIdentityOf(active)
+				if !ok {
 					fmt.Fprintln(os.Stderr, "Warning: the remote wallet is not reachable")
+					return nil
+				}
+				fmt.Fprintf(os.Stderr, "The instance runs %s\n", identity)
+				if notice := incompatibilityNotice(active, identity.Version); notice != "" {
+					fmt.Fprintln(os.Stderr, notice)
 				}
 				return nil
 			}
@@ -107,31 +126,80 @@ func instancesUseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			version, ok := healthSummary(normalized)
+			identity, ok := instanceIdentityOf(normalized)
 			if !ok {
 				return fmt.Errorf("no eudi-dev wallet reachable at %s (is it running?)", normalized)
+			}
+			notice := incompatibilityNotice(normalized, identity.Version)
+			if notice != "" && !force {
+				return fmt.Errorf("%s\nRun with --force to manage it anyway", notice)
 			}
 			if _, err := remote.SetActive(normalized); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "Managing remote wallet %s %s\n", normalized, version)
+			fmt.Fprintf(os.Stderr, "Managing remote wallet %s %s\n", normalized, identity)
+			if notice != "" {
+				fmt.Fprintln(os.Stderr, notice)
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "Select the instance even when its release is incompatible with this CLI")
+	return cmd
 }
 
-// healthSummary probes a wallet URL and returns a short description.
-func healthSummary(url string) (string, bool) {
+// instanceIdentity is what an instance reports about itself on /api/version.
+type instanceIdentity struct {
+	Version string
+	PID     int
+}
+
+// String renders the identity for a status line: "1.19.0 (pid 4711)", with
+// each part left out when the instance does not report it (a demo instance
+// hides its pid, an instance older than version reporting has no release).
+func (i instanceIdentity) String() string {
+	parts := []string{}
+	if i.Version != "" {
+		parts = append(parts, i.Version)
+	}
+	if i.PID > 0 {
+		parts = append(parts, fmt.Sprintf("(pid %d)", i.PID))
+	}
+	if len(parts) == 0 {
+		return "(version unknown)"
+	}
+	return strings.Join(parts, " ")
+}
+
+// instanceIdentityOf probes a wallet URL and reports what it says about
+// itself, or false when nothing answers there.
+func instanceIdentityOf(url string) (instanceIdentity, bool) {
 	client := remote.NewClient(url)
-	version, err := client.Version()
+	doc, err := client.Version()
 	if err != nil {
-		return "", false
+		return instanceIdentity{}, false
 	}
-	summary := ""
-	if pid, ok := version["pid"].(float64); ok {
-		summary = fmt.Sprintf("(pid %d)", int(pid))
+	identity := instanceIdentity{}
+	if version, ok := doc["version"].(string); ok {
+		identity.Version = strings.TrimSpace(version)
 	}
-	return summary, true
+	if pid, ok := doc["pid"].(float64); ok {
+		identity.PID = int(pid)
+	}
+	return identity, true
+}
+
+// incompatibilityNotice compares an instance's release with this CLI's and
+// returns the message a user needs to see, or "" when the two can work
+// together. Semantic versioning puts breaking changes in the major release,
+// so only that difference is a problem; a development build on either side
+// reports nothing comparable and is left alone.
+func incompatibilityNotice(url, instanceVersion string) string {
+	if remote.CheckCompatibility(Version, instanceVersion) != remote.Incompatible {
+		return ""
+	}
+	return fmt.Sprintf("Incompatible: %s runs %s, this CLI is %s. Different major releases do not share a management API.",
+		url, instanceVersion, Version)
 }
 
 func walletInstancesCmd() *cobra.Command {
@@ -212,7 +280,8 @@ func runInstancesList() error {
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "URL\tPID\tWALLET DIR\tSOURCE\tACTIVE")
+	fmt.Fprintln(tw, "URL\tVERSION\tPID\tWALLET DIR\tSOURCE\tACTIVE")
+	var skewed []remote.DiscoveredInstance
 	for _, inst := range instances {
 		activeMark := ""
 		if managed != "" && managed == strings.TrimRight(inst.URL, "/") {
@@ -222,9 +291,25 @@ func runInstancesList() error {
 		if dir == "" {
 			dir = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", inst.URL, inst.PID, dir, inst.Source, activeMark)
+		version := inst.Version
+		if version == "" {
+			version = "-"
+		}
+		if remote.CheckCompatibility(Version, inst.Version) == remote.Incompatible {
+			version += " (!)"
+			skewed = append(skewed, inst)
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\n", inst.URL, version, inst.PID, dir, inst.Source, activeMark)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	// A major release apart is where the management API may break, so the
+	// marked rows deserve the reason rather than a bare "(!)".
+	for _, inst := range skewed {
+		fmt.Fprintf(os.Stderr, "(!) %s runs %s, incompatible with this CLI (%s)\n", inst.URL, inst.Version, Version)
+	}
+	return nil
 }
 
 // managedInstanceURL resolves which of the discovered instances the

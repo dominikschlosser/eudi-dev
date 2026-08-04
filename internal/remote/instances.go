@@ -47,6 +47,9 @@ type Instance struct {
 type DiscoveredInstance struct {
 	Instance
 	BuildID string `json:"build_id,omitempty"`
+	// Version is the release the instance reports on /api/version. It is
+	// empty for an instance too old to report one.
+	Version string `json:"version,omitempty"`
 	// Source is "registry" (instance file), "process" (found via process
 	// scan without an instance file), or "active" (the remote target set by
 	// "wallet instances use", reachable but not locally discoverable).
@@ -76,6 +79,17 @@ func RegisterInstance(inst Instance) error {
 // UnregisterInstance removes a wallet server from the instance registry.
 func UnregisterInstance(pid int) {
 	_ = os.Remove(instanceFile(pid))
+}
+
+// applyHealth copies the identity an instance reports on /api/version into
+// the discovered row.
+func (d *DiscoveredInstance) applyHealth(version map[string]any) {
+	if build, ok := version["build_id"].(string); ok {
+		d.BuildID = build
+	}
+	if release, ok := version["version"].(string); ok {
+		d.Version = strings.TrimSpace(release)
+	}
 }
 
 // healthCheck probes a wallet server and returns its /api/version document.
@@ -161,9 +175,7 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 		}
 		di := DiscoveredInstance{Instance: inst, Source: "registry"}
 		di.PID = livePID
-		if build, ok := version["build_id"].(string); ok {
-			di.BuildID = build
-		}
+		di.applyHealth(version)
 		found = append(found, di)
 		seenPorts[inst.Port] = true
 	}
@@ -181,9 +193,7 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 			Instance: Instance{PID: proc.PID, Port: proc.Port, URL: url},
 			Source:   "process",
 		}
-		if build, ok := version["build_id"].(string); ok {
-			di.BuildID = build
-		}
+		di.applyHealth(version)
 		// The instance's introspection endpoint knows its wallet directory.
 		if cfg := fetchInstanceConfig(url, timeout); cfg != nil {
 			if dir, ok := cfg["wallet_dir"].(string); ok {
@@ -216,9 +226,7 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 				if pid, ok := version["pid"].(float64); ok {
 					di.PID = int(pid)
 				}
-				if build, ok := version["build_id"].(string); ok {
-					di.BuildID = build
-				}
+				di.applyHealth(version)
 				if cfg := fetchInstanceConfig(active, timeout); cfg != nil {
 					if dir, ok := cfg["wallet_dir"].(string); ok {
 						di.WalletDir = dir

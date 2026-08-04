@@ -85,7 +85,7 @@ func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool)
 			_ = child.Process.Kill()
 			return fmt.Errorf("wallet serve did not become ready within 15s, see %s", logPath)
 		case <-ticker.C:
-			if _, ok := healthSummary(url); !ok {
+			if _, ok := instanceIdentityOf(url); !ok {
 				continue
 			}
 			fmt.Printf("Wallet server running detached at %s (pid %d)\n", url, child.Process.Pid)

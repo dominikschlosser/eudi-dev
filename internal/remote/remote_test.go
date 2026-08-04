@@ -68,7 +68,7 @@ func TestDiscoverIncludesActiveRemote(t *testing.T) {
 	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/version":
-			w.Write([]byte(`{"build_id": "remote-build", "pid": 1}`))
+			w.Write([]byte(`{"build_id": "remote-build", "version": "1.19.0", "pid": 1}`))
 		case "/api/config":
 			w.Write([]byte(`{"wallet_dir": "/home/app/.oid4vc-dev/wallet"}`))
 		default:
@@ -94,7 +94,7 @@ func TestDiscoverIncludesActiveRemote(t *testing.T) {
 	liveURL, _ := url.Parse(live.URL)
 	livePort, _ := strconv.Atoi(liveURL.Port())
 	got := actives[0]
-	if got.Port != livePort || got.PID != 1 || got.BuildID != "remote-build" || got.WalletDir != "/home/app/.oid4vc-dev/wallet" {
+	if got.Port != livePort || got.PID != 1 || got.BuildID != "remote-build" || got.Version != "1.19.0" || got.WalletDir != "/home/app/.oid4vc-dev/wallet" {
 		t.Errorf("unexpected active instance: %+v", got)
 	}
 

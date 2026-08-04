@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.1] - 2026-08-04
+
+### Added
+
+- **Instances report which release they run, and the CLI checks it before managing one.** A wallet instance can live anywhere (a container, a VPS, the public demo), so the CLI driving it is not necessarily the same release. `GET /api/version` already carried `version`; discovery now keeps it, so `wallet instances list` has a `VERSION` column (`version` in `--json`), selecting a target prints the release it runs, and the automatic routing notice names it too. The version comes from the health check rather than the registry file, so it describes the process that is actually answering
+- `wallet instances use <url>` compares that release with the CLI's own, the way semantic versioning defines compatibility: a differing major release is refused (that is where breaking changes live) and `--force` overrides it, while minor and patch differences are compatible in both directions and pass without comment. A development build on either side is not comparable, so nothing is claimed. `wallet instances list` marks an incompatible instance with `(!)`, and an auto-routed instance a major release apart from the CLI is reported the same way
+
 ## [1.19.0] - 2026-08-04
 
 ### Added
