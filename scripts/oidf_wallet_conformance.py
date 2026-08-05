@@ -429,7 +429,7 @@ def build_vp_dcql_query(credential_kind: str) -> dict:
                 "id": "pid",
                 "format": "dc+sd-jwt",
                 "meta": {
-                    "vct_values": ["urn:eudi:pid:de:1"],
+                    "vct_values": ["urn:eudi:pid:1"],
                 },
                 "claims": [
                     {"path": ["given_name"]},

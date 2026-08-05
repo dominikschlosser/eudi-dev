@@ -120,19 +120,17 @@ func TestGenerateMDOC_PIDClaims(t *testing.T) {
 		t.Fatalf("mdoc.Parse: %v", err)
 	}
 
-	// The German PID splits across two namespaces: the European one and the
-	// national additions.
-	ns := doc.NameSpaces["eu.europa.ec.eudi.pid.1"]
-	de := doc.NameSpaces[PIDDENamespace]
-	if len(ns)+len(de) != len(MDOCPIDClaims) {
-		t.Errorf("expected %d claims across both namespaces, got %d + %d", len(MDOCPIDClaims), len(ns), len(de))
+	// The country-independent PID keeps everything in one namespace.
+	ns := doc.NameSpaces[PIDNamespace]
+	if len(ns) != len(MDOCPIDClaims) {
+		t.Errorf("expected %d claims in %s, got %d", len(MDOCPIDClaims), PIDNamespace, len(ns))
 	}
-	if len(de) == 0 {
-		t.Errorf("expected the national additions in %s", PIDDENamespace)
+	if len(doc.NameSpaces) != 1 {
+		t.Errorf("expected a single namespace, got %d: %v", len(doc.NameSpaces), doc.NameSpaces)
 	}
-	for _, item := range de {
+	for _, item := range ns {
 		if strings.Contains(item.ElementIdentifier, ":") {
-			t.Errorf("element %q kept its namespace prefix instead of being routed", item.ElementIdentifier)
+			t.Errorf("element %q kept a namespace prefix", item.ElementIdentifier)
 		}
 	}
 	var birthPlace any

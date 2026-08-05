@@ -17,13 +17,12 @@ package mock
 
 import "time"
 
-// DefaultPIDVCT is the default Verifiable Credential Type for German EUDI PIDs.
-const DefaultPIDVCT = "urn:eudi:pid:de:1"
+// DefaultPIDVCT is the type of the country-independent EUDI PID.
+const DefaultPIDVCT = "urn:eudi:pid:1"
 
-// PIDDENamespace holds the national additions of the German PID Rulebook.
-// In mdoc those claims are namespaced, while SD-JWT keeps everything in one
-// flat claim set.
-const PIDDENamespace = "eu.europa.ec.eudi.pid.de.1"
+// PIDNamespace is the mdoc namespace of the country-independent EUDI PID,
+// and also its doctype.
+const PIDNamespace = "eu.europa.ec.eudi.pid.1"
 
 // The claim sets below follow the claim table of the German PID provider
 // (https://demo.pid-provider.bundesdruckerei.de/credential-claims), using the
@@ -42,10 +41,10 @@ var DefaultClaims = map[string]any{
 	"birthdate":   "1964-08-12",
 }
 
-// SDJWTPIDClaims holds the SD-JWT VC claims of a German PID (vct
-// urn:eudi:pid:de:1). address, place_of_birth and age_equal_or_over are
-// nested objects whose subclaims are individually disclosable, and
-// nationalities is a selectively disclosable array.
+// SDJWTPIDClaims holds the SD-JWT VC claims of a PID (vct urn:eudi:pid:1).
+// address, place_of_birth and age_equal_or_over are nested objects whose
+// subclaims are individually disclosable, and nationalities is a selectively
+// disclosable array.
 var SDJWTPIDClaims = map[string]any{
 	"family_name": "MUSTERMANN",
 	"given_name":  "ERIKA",
@@ -83,12 +82,11 @@ var SDJWTPIDClaims = map[string]any{
 	"source_document_type": "ID",
 }
 
-// MDOCPIDClaims holds the ISO 18013-5 elements of a German PID
+// MDOCPIDClaims holds the ISO 18013-5 elements of a PID
 // (eu.europa.ec.eudi.pid.1). The same identity as SDJWTPIDClaims, under the
 // element identifiers of the mdoc encoding: the address is flat here, the age
-// thresholds are individual booleans, and birth_place stays structured.
-// Keys prefixed with a namespace go into that namespace, which is where the
-// rulebook puts the national additions of the German PID.
+// thresholds are individual booleans, and birth_place stays structured. All of
+// it sits in the PID namespace, with no national additions.
 var MDOCPIDClaims = map[string]any{
 	"family_name":          "MUSTERMANN",
 	"given_name":           "ERIKA",
@@ -104,17 +102,17 @@ var MDOCPIDClaims = map[string]any{
 	"issuing_authority":    "DE",
 	"issuing_country":      "DE",
 
-	PIDDENamespace + ":birth_name":           "GABLER",
-	PIDDENamespace + ":academic_title":       "",
-	PIDDENamespace + ":also_known_as":        "",
-	PIDDENamespace + ":no_place_info":        false,
-	PIDDENamespace + ":age_over_12":          true,
-	PIDDENamespace + ":age_over_14":          true,
-	PIDDENamespace + ":age_over_16":          true,
-	PIDDENamespace + ":age_over_18":          true,
-	PIDDENamespace + ":age_over_21":          true,
-	PIDDENamespace + ":age_over_65":          false,
-	PIDDENamespace + ":source_document_type": "ID",
+	"birth_name":           "GABLER",
+	"academic_title":       "",
+	"also_known_as":        "",
+	"no_place_info":        false,
+	"age_over_12":          true,
+	"age_over_14":          true,
+	"age_over_16":          true,
+	"age_over_18":          true,
+	"age_over_21":          true,
+	"age_over_65":          false,
+	"source_document_type": "ID",
 }
 
 // PIDExpiryDate is the administrative expiry of the PID: the German rulebook

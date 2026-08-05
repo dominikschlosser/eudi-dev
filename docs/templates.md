@@ -6,7 +6,7 @@ Two pre-defined templates ship with the binary:
 
 | Name | Format | Contents |
 |------|--------|----------|
-| `german-pid-sdjwt` | sdjwt | German EUDI PID (`urn:eudi:pid:de:1`) |
+| `german-pid-sdjwt` | sdjwt | German EUDI PID (`urn:eudi:pid:1`) |
 | `german-pid-mdoc` | mdoc | German EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
 
 Both carry the claim set of the [German PID Rulebook](https://demo.pid-provider.bundesdruckerei.de/credential-claims), with the values of that provider's ERIKA MUSTERMANN test identity. Claims the rulebook lists as unused (portrait, sex, email, phone number, document number, personal administrative number, issuing jurisdiction, issuance date, age_in_years, age_birth_year, birth given and family name) are absent, because the German eID does not supply them.

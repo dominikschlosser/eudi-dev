@@ -236,7 +236,7 @@ The wallet evaluates `credential_sets` constraints when processing DCQL queries,
     {
       "id": "urn_eudi_pid_1",
       "format": "dc+sd-jwt",
-      "meta": { "vct_values": ["urn:eudi:pid:de:1"] },
+      "meta": { "vct_values": ["urn:eudi:pid:1"] },
       "claims": [
         { "path": ["birth_date"] },
         { "path": ["family_name"] },

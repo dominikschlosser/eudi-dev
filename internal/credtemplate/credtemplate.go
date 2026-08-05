@@ -106,7 +106,7 @@ func PredefinedTemplates() []Template {
 	return []Template{
 		{
 			Name:        "german-pid-sdjwt",
-			Description: "German EUDI PID (SD-JWT, PID Rulebook claims)",
+			Description: "EUDI PID (SD-JWT, German rulebook sample data)",
 			Format:      "sdjwt",
 			VCT:         mock.DefaultPIDVCT,
 			Exp:         "720h",
@@ -115,10 +115,10 @@ func PredefinedTemplates() []Template {
 		},
 		{
 			Name:        "german-pid-mdoc",
-			Description: "German EUDI PID (mDoc, ISO 18013-5 elements)",
+			Description: "EUDI PID (mDoc, German rulebook sample data)",
 			Format:      "mdoc",
-			DocType:     "eu.europa.ec.eudi.pid.1",
-			Namespace:   "eu.europa.ec.eudi.pid.1",
+			DocType:     mock.PIDNamespace,
+			Namespace:   mock.PIDNamespace,
 			Exp:         "720h",
 			Claims:      deepCopyClaims(mock.MDOCPIDClaims),
 			Predefined:  true,

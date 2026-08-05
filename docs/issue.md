@@ -51,7 +51,7 @@ eudi issue mdoc  | eudi decode
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
 | `--key`    | —                         | Private key file (PEM or JWK); ephemeral if omitted |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
-| `--vct`    | `urn:eudi:pid:de:1`       | Verifiable Credential Type                     |
+| `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
 | `--nbf`    | —                         | Not-before time (RFC3339 or duration, e.g. `-1h`) |
 | `--pid`    | `false`                   | Use full EUDI PID Rulebook claims              |
@@ -70,7 +70,7 @@ eudi issue mdoc  | eudi decode
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
 | `--key`    | —                         | Private key file (PEM or JWK); ephemeral if omitted |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
-| `--vct`    | `urn:eudi:pid:de:1`       | Verifiable Credential Type                     |
+| `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
 | `--nbf`    | —                         | Not-before time (RFC3339 or duration, e.g. `-1h`) |
 | `--pid`    | `false`                   | Use full EUDI PID Rulebook claims              |

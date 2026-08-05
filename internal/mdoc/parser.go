@@ -98,8 +98,18 @@ func parseDeviceResponse(data []byte) (*Document, error) {
 
 func parseDeviceSigned(ds map[any]any) *DeviceSigned {
 	result := &DeviceSigned{}
-	if da, ok := ds["deviceAuth"].(map[any]any); ok {
-		result.DeviceAuth = convertCBORMapToStringKeys(da)
+	da, ok := ds["deviceAuth"].(map[any]any)
+	if !ok {
+		return result
+	}
+	result.DeviceAuth = convertCBORMapToStringKeys(da)
+	// The COSE_Sign1 has to be verified as it arrived. The converted map above
+	// is for display: it turns integer header labels into strings and unwraps
+	// tags, neither of which round-trips back to a verifiable signature.
+	if sig, ok := da["deviceSignature"]; ok {
+		if encoded, err := cbor.Marshal(sig); err == nil {
+			result.RawDeviceSignature = encoded
+		}
 	}
 	return result
 }

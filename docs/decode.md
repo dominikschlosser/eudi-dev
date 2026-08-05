@@ -86,7 +86,7 @@ SD-JWT Credential
   _sd: ["77ofip...", "EyNwlR...", "X3X1zI..."]
   _sd_alg: sha-256
   iss: https://issuer.example
-  vct: urn:eudi:pid:de:1
+  vct: urn:eudi:pid:1
 
 ┌ Disclosed Claims (3)
   [1] given_name: Erika

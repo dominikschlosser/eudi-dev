@@ -191,8 +191,13 @@ func buildSessionTranscriptISO(clientID, responseURI, nonce, mdocNonce string) (
 	return cbor.Marshal(sessionTranscript)
 }
 
+// BuildOID4VPSessionTranscript exposes the OID4VP session transcript so a
+// verifier can rebuild the value the holder signed over.
+func BuildOID4VPSessionTranscript(clientID, nonce string, jwkThumbprint []byte, responseURI string) ([]byte, error) {
+	return buildSessionTranscriptOID4VP(clientID, nonce, jwkThumbprint, responseURI)
+}
+
 // buildSessionTranscriptOID4VP builds the OID4VP 1.0 session transcript.
-// HandoverInfo = CBOR([clientId, nonce, jwkThumbprint, responseUri])
 // OID4VPHandover = ["OpenID4VPHandover", SHA256(HandoverInfo)]
 // SessionTranscript = [null, null, OID4VPHandover]
 func buildSessionTranscriptOID4VP(clientID, nonce string, jwkThumbprint []byte, responseURI string) ([]byte, error) {

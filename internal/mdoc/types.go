@@ -32,6 +32,9 @@ type Document struct {
 // DeviceSigned contains the device-signed portion of a DeviceResponse document.
 type DeviceSigned struct {
 	DeviceAuth map[string]any
+	// RawDeviceSignature is the deviceSignature COSE_Sign1 as it arrived,
+	// which is the only form its signature can be checked against.
+	RawDeviceSignature []byte
 }
 
 // IssuerSignedItem represents a single claim within a namespace.

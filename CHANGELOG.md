@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The demo verifier asks for the PID in either format.** A PID exists as SD-JWT VC and as mdoc, and a verifier that names only one turns the wallet's format choice into a failure. The request now carries both credential queries and one DCQL `credential_sets` option pair, so either satisfies it, and the verifier verifies whichever comes back
+- **mdoc presentations are verified, not just parsed.** `mdoc.VerifyValueDigests` checks the disclosed elements against the digests the issuer signed (the issuer signature only covers the MSO, so without it a holder could return any value it liked), and `mdoc.VerifyDeviceAuth` checks the holder signature over the session transcript, which is what binds a response to one request. The demo verifier runs both, plus the doctype, the issuer certificate chain and the validity period
 - **Demo issuer: one button, one toggle.** "Create credential offer" and "Authorization code offer" sat side by side with the first always highlighted, so the grant looked like a state and the highlight like a selection. The grant is now a toggle (pre-authorized / authorization code) above a single **Create offer** button, with the explanation changing to match the selected grant
 - **Trust lists are grouped by what they anchor** in the wallet's Trust & certificates dialog, under "Credential providers" and "Wallet providers", sorted within each group. They were an unordered flat list, so an issuer looking for the wallet attestation anchor had to read past the credential ones. `GET /api/trustlists` entries carry the group as `category`
 - The demo issuer and demo verifier link the imprint in their footer when the wallet serves one, which public EU hosting requires and only the wallet UI did
@@ -29,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Key attestation and batch issuance no longer collide.** A jwt proof carrying an attestation stands for the single key that signed it, so an issuer advertising `batch_credential_issuance` got a batch of proofs that all claimed the same attestation and refused them. A configuration that requires key attestation now sends one proof, and batch issuance is unchanged everywhere else
 - The authorization scheme for an access token comes from `token_type` in the token response instead of being assumed. RFC 9449 has an authorization server return `DPoP` for a key-bound token, so an issuer that accepts a proof and still hands back a plain bearer token is now addressed as one
 - A credential request advertises `application/jwt` in `Accept` only when the wallet asked for an encrypted response. The authorization code flow claimed it unconditionally, which describes something the request does not accept
+
+### Changed
+
+- **The default PID is the country-independent EUDI PID.** It used the German type and rulebook namespace (`urn:eudi:pid:de:1`, with national additions under `eu.europa.ec.eudi.pid.de.1`), which is where the ecosystem started rather than where it is going. The type is now `urn:eudi:pid:1` and every mdoc element sits in `eu.europa.ec.eudi.pid.1`, with no national namespace. The sample identity is unchanged (ERIKA MUSTERMANN), so only the identifiers move. Anything matching on the old vct (a DCQL `vct_values`, a verifier config) has to be updated
 
 ## [1.19.2] - 2026-08-05
 

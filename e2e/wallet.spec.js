@@ -332,7 +332,7 @@ test.describe("Credential Issuing via UI", () => {
 
     // Selecting the pre-defined PID template fills everything on demand
     await page.locator("#issue-template").selectOption("german-pid-sdjwt");
-    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
+    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:1");
     await expect(page.locator("#issue-exp")).toHaveValue("720h");
     // One row per top-level claim of the German PID.
     await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(14);
@@ -432,7 +432,7 @@ test.describe("Credential Issuing via UI", () => {
 
     await page.locator("#issue-btn").click();
     await page.locator("#issue-template").selectOption("german-pid-sdjwt");
-    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:de:1");
+    await expect(page.locator("#issue-vct")).toHaveValue("urn:eudi:pid:1");
     await page.locator("#issue-vct").fill("urn:example:e2e-test");
 
     await page.locator("#issue-add-claim").click();

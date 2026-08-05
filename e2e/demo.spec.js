@@ -477,7 +477,7 @@ test.describe("Conformance", () => {
       response_uri: BASE + "/nowhere",
       nonce: "n-0S6_WzA2Mj",
       dcql_query: JSON.stringify({
-        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:de:1"] }, claims: [{ path: ["given_name"] }] }],
+        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
       }),
     });
     const res = await fetch(`${BASE}/authorize?${params}`);

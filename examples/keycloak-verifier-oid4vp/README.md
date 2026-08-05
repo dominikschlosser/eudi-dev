@@ -106,7 +106,7 @@ Setup only:
 | `userMappingClaimMdoc` | `family_name` |
 | DCQL credential id | `pid_sd_jwt` |
 | DCQL format | `dc+sd-jwt` |
-| DCQL `vct` | `urn:eudi:pid:de:1` |
+| DCQL `vct` | `urn:eudi:pid:1` |
 | DCQL requested claims | `family_name`, `given_name`, `birthdate` |
 
 ### oid4vc-dev

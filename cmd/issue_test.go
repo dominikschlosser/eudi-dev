@@ -701,21 +701,20 @@ func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
 }
 
 func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
-	de := mock.PIDDENamespace + ":"
+	// All of it in eu.europa.ec.eudi.pid.1: the default PID is the
+	// country-independent one, so nothing is namespaced separately.
 	want := map[string]bool{
-		// eu.europa.ec.eudi.pid.1
 		"family_name": true, "given_name": true, "birth_date": true,
 		"expiry_date": true, "birth_place": true, "nationality": true,
 		"resident_street": true, "resident_postal_code": true,
 		"resident_city": true, "resident_state": true, "resident_country": true,
 		"issuing_authority": true, "issuing_country": true,
-		// eu.europa.ec.eudi.pid.de.1, the national additions
-		de + "birth_name": true, de + "academic_title": true,
-		de + "also_known_as": true, de + "no_place_info": true,
-		de + "source_document_type": true,
-		de + "age_over_12":          true, de + "age_over_14": true,
-		de + "age_over_16": true, de + "age_over_18": true,
-		de + "age_over_21": true, de + "age_over_65": true,
+		"birth_name": true, "academic_title": true,
+		"also_known_as": true, "no_place_info": true,
+		"source_document_type": true,
+		"age_over_12":          true, "age_over_14": true,
+		"age_over_16": true, "age_over_18": true,
+		"age_over_21": true, "age_over_65": true,
 	}
 	assertClaimSet(t, "MDOCPIDClaims", mock.MDOCPIDClaims, want)
 
