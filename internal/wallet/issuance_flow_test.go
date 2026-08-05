@@ -697,18 +697,21 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 	httpClient = issuer.Client()
 	defer func() { httpClient = oldClient }()
 
-	oldBrowser := openAuthorizationBrowser
-	openAuthorizationBrowser = func(authURL string) error {
-		go func() {
-			resp, err := issuer.Client().Get(authURL)
-			if err == nil && resp != nil {
-				_, _ = io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
-			}
-		}()
-		return nil
-	}
-	defer func() { openAuthorizationBrowser = oldBrowser }()
+	// Stand in for the user's browser: take the authorization URL off the
+	// event stream and visit it, the way an open UI tab or the CLI does.
+	authCh, unsubscribe := w.SubscribeAuthorization()
+	defer unsubscribe()
+	go func() {
+		authURL, ok := <-authCh
+		if !ok {
+			return
+		}
+		resp, err := issuer.Client().Get(authURL)
+		if err == nil && resp != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}()
 
 	offer := map[string]any{
 		"credential_issuer":            serverURL,
@@ -807,12 +810,17 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 	httpClient = issuer.Client()
 	defer func() { httpClient = oldClient }()
 
-	oldBrowser := openAuthorizationBrowser
-	openAuthorizationBrowser = func(string) error {
-		t.Fatal("did not expect browser fallback for direct authorization redirect")
-		return nil
-	}
-	defer func() { openAuthorizationBrowser = oldBrowser }()
+	// A redirect the wallet can follow itself needs no user, so nothing
+	// should ask for an interactive sign-in.
+	authCh, unsubscribe := w.SubscribeAuthorization()
+	defer unsubscribe()
+	defer func() {
+		select {
+		case authURL := <-authCh:
+			t.Errorf("did not expect an interactive sign-in for a direct authorization redirect, got %s", authURL)
+		default:
+		}
+	}()
 
 	offer := map[string]any{
 		"credential_issuer":            serverURL,

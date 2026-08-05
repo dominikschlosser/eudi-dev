@@ -842,24 +842,19 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 		t.Fatalf("unexpected offer response: %v", created)
 	}
 
-	// The wallet blocks mid-flow until the user has signed in, so redeem the
-	// offer in the background and play the browser here.
-	done := make(chan map[string]any, 1)
-	go func() { done <- postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`) }()
-
-	// The wallet hands the authorization URL to its UI rather than opening a
-	// browser of its own, which is the only thing that works when the wallet
-	// is hosted.
-	authURLCh, unsubscribe := w.SubscribeAuthorization()
-	defer unsubscribe()
-	var authURL string
-	select {
-	case authURL = <-authURLCh:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the wallet never asked for an authorization URL")
+	// The wallet never opens a browser itself, so redeeming the offer answers
+	// with the URL the user has to sign in at and leaves the flow running.
+	accepted := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`)
+	if accepted["status"] != "authorization_required" {
+		t.Fatalf("redeeming the offer did not ask for a sign-in: %v", accepted)
 	}
+	authURL, _ := accepted["authorization_url"].(string)
+	offerID, _ := accepted["offer_id"].(string)
 	if !strings.Contains(authURL, "/issuer/authorize") || !strings.Contains(authURL, "request_uri=") {
 		t.Fatalf("unexpected authorization URL %q", authURL)
+	}
+	if offerID == "" {
+		t.Fatal("the wallet gave no offer id to follow the flow at")
 	}
 
 	client := ts.Client()
@@ -898,13 +893,20 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	}
 	cb.Body.Close()
 
-	select {
-	case result := <-done:
-		if result["error"] != nil {
-			t.Fatalf("the authorization code flow failed: %v", result["error"])
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		status := getJSONFrom(t, ts.URL+"/api/offers/"+offerID)
+		state, _ := status["status"].(string)
+		if state == "completed" {
+			break
 		}
-	case <-time.After(20 * time.Second):
-		t.Fatal("the issuance never completed after the login")
+		if state == "failed" {
+			t.Fatalf("the authorization code flow failed: %v", status["error"])
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the issuance never completed after the login, last status %v", status)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// The ticket carries the authenticated account, which is only knowable

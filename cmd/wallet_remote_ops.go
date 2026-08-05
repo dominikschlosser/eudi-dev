@@ -194,12 +194,64 @@ func remoteAccept(c *remote.Client, uri, txCode string) error {
 	if err != nil {
 		return err
 	}
+	if status, _ := result["status"].(string); status == "authorization_required" {
+		result, err = completeSignIn(c, result)
+		if err != nil {
+			return err
+		}
+	}
 	data, marshalErr := json.MarshalIndent(result, "", "  ")
 	if marshalErr != nil {
 		return marshalErr
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+// signInPollInterval and signInTimeout bound the wait for a sign-in. The
+// wallet stops waiting for the callback after five minutes, so there is
+// nothing left to wait for past that.
+const (
+	signInPollInterval = 2 * time.Second
+	signInTimeout      = 5 * time.Minute
+)
+
+// completeSignIn handles an offer the issuer wants the user to sign in for.
+// The wallet cannot do this itself (on a hosted one the browser that matters
+// is here, not there), so it hands over the URL and keeps the flow open. The
+// sign-in redirects back to the wallet, which finishes the issuance.
+func completeSignIn(c *remote.Client, pending map[string]any) (map[string]any, error) {
+	authURL, _ := pending["authorization_url"].(string)
+	offerID, _ := pending["offer_id"].(string)
+	if authURL == "" || offerID == "" {
+		return nil, fmt.Errorf("wallet asked for a sign-in but did not say where")
+	}
+
+	fmt.Fprintf(os.Stderr, "Sign in to continue: %s\n", authURL)
+	openBrowser(authURL)
+
+	deadline := time.Now().Add(signInTimeout)
+	for {
+		time.Sleep(signInPollInterval)
+		status, err := c.OfferStatus(offerID)
+		if err != nil {
+			return nil, fmt.Errorf("checking the offer: %w", err)
+		}
+		switch state, _ := status["status"].(string); state {
+		case "authorization_required":
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("gave up waiting for the sign-in at %s", authURL)
+			}
+		case "failed":
+			msg, _ := status["error"].(string)
+			return nil, fmt.Errorf("issuance failed after sign-in: %s", msg)
+		default:
+			if result, ok := status["result"].(map[string]any); ok {
+				return result, nil
+			}
+			return status, nil
+		}
+	}
 }
 
 // isCredentialOfferURI reports whether a URI is an OID4VCI credential offer

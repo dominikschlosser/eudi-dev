@@ -327,7 +327,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--tx-code`             | —        | Transaction code for OID4VCI pre-authorized code flow |
 | `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers |
 
-Note: pre-authorized code offers work directly with `wallet accept`. Authorization-code offers are also supported, but they require a running `wallet serve` instance configured with `--vci-client-id` and `--vci-redirect-uri`, plus issuer metadata that supports PAR and DPoP. In that flow, the wallet opens the issuer's authorization URL in the browser, the user authenticates at the issuer, and the issuer redirects back to the wallet's configured callback URI before the wallet exchanges the code. With `--haip` a pre-authorized code offer is still accepted and held only to the https transport rule. The PAR, PKCE, DPoP and client authentication requirements apply to offers that drive the authorization endpoint.
+Note: pre-authorized code offers work directly with `wallet accept`. Authorization-code offers are also supported, but they require a running `wallet serve` instance configured with `--vci-client-id` and `--vci-redirect-uri`, plus issuer metadata that supports PAR and DPoP. In that flow the wallet server answers with the issuer's authorization URL rather than holding the request open, and `wallet accept` opens it here (printing it as well, for a headless shell). The user authenticates at the issuer, the issuer redirects back to the wallet's configured callback URI, and the wallet exchanges the code. The CLI follows the flow until the credential lands or the issuance fails. This works against a remote wallet as well: the callback is matched by `state`, so the sign-in can happen in any browser that can reach the wallet. With `--haip` a pre-authorized code offer is still accepted and held only to the https transport rule. The PAR, PKCE, DPoP and client authentication requirements apply to offers that drive the authorization endpoint.
 
 ## `wallet scan`
 
@@ -474,6 +474,26 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accept` header, i.e. a clicked link) behave like a same-device wallet: after a presentation is submitted, the browser is redirected to the verifier's `redirect_uri` (or to the wallet UI when the verifier returns none), and after an offer is imported, to the wallet UI. Everything else (`curl`, test harnesses, the JSON APIs) receives the same JSON payloads as `POST /api/presentations` and `POST /api/offers`. This means a verifier or issuer configured with the wallet's URLs completes a standard browser round trip with no custom schemes involved (for example, `keycloak-extension-oid4vp` with `walletScheme` set to the wallet's `/authorize` URL).
 
 In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`). An API call blocks until the request is approved or denied. In the UI or via `POST /api/requests/{id}/approve`.
+
+## Sign-in during issuance
+
+An authorization code offer sends the user to the issuer to authenticate. Only a browser can do that, and the wallet never opens one: the browser that matters belongs to the user, and a hosted wallet opening a browser on its own server reaches nobody.
+
+Instead it hands the URL to whoever is holding the user's attention. An open UI tab takes it off the event stream and navigates. An API caller gets `HTTP 202` and the URL:
+
+```json
+{
+  "status": "authorization_required",
+  "authorization_url": "https://issuer.example/authorize?client_id=...&request_uri=...",
+  "offer_id": "23f9dd49-7e7b-4fca-9fbe-acba4680852f"
+}
+```
+
+The flow is not cancelled, it keeps running. The user signs in, the issuer redirects to the wallet's `/callback`, and the flow resumes there and finishes the issuance. `GET /api/offers/{offer_id}` reports how it ended (`authorization_required`, `completed`, `deferred` or `failed`, the last two carrying the same payloads as a direct answer).
+
+The callback is matched by `state` alone, so the sign-in can happen in any browser that can reach the wallet. `eudi wallet accept` uses this: it opens the URL here, prints it for a headless shell, and follows the offer until it resolves.
+
+The one requirement is that the browser can reach the wallet's redirect URI. That holds for a local wallet and for a public one, but not for a wallet whose base URL is only routable on a network the browser cannot see.
 
 ## Deferred issuance
 

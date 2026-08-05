@@ -256,6 +256,15 @@ func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	return out, err
 }
 
+// OfferStatus reports how an offer that paused for an interactive sign-in
+// ended. The id comes from the offer_id of the authorization_required
+// response.
+func (c *Client) OfferStatus(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do(http.MethodGet, "/api/offers/"+id, nil, &out)
+	return out, err
+}
+
 // DeferredIssuances lists the credentials the remote wallet is still
 // collecting from their issuers.
 func (c *Client) DeferredIssuances() ([]map[string]any, error) {

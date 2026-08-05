@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -19,8 +17,6 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
-
-var openAuthorizationBrowser = openAuthorizationBrowserImpl
 
 type dpopNonceState struct {
 	authzServer string
@@ -1017,16 +1013,16 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 		return nil, err
 	}
 
-	// The user authenticates at the issuer as part of this flow. An open UI
-	// takes the URL and navigates there itself, which is the only thing that
-	// works on a hosted wallet: it has no browser of its own, and the browser
-	// that matters belongs to the visitor. Only when no UI is listening does
-	// the wallet open a local browser, the way a CLI run on a workstation
-	// expects.
+	// The user authenticates at the issuer as part of this flow, which only a
+	// browser can do. The wallet never opens one itself: the browser that
+	// matters belongs to the user, and a hosted wallet opening a browser on
+	// its own server reaches nobody. It hands the URL to whoever is holding
+	// the user's attention (an open UI tab, or the API caller) and waits.
+	//
+	// The callback that resumes this flow is matched by state alone, so it
+	// does not matter which browser performs the sign-in.
 	if !w.NotifyAuthorization(authURL) {
-		if err := openAuthorizationBrowser(authURL); err != nil {
-			return nil, fmt.Errorf("opening browser for authorization request: %w", err)
-		}
+		return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
 	}
 
 	select {
@@ -1161,22 +1157,4 @@ func truncateBody(body string) string {
 		return body
 	}
 	return body[:200] + "..."
-}
-
-func openAuthorizationBrowserImpl(rawURL string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", rawURL)
-	case "linux":
-		cmd = exec.Command("xdg-open", rawURL)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
-	default:
-		return fmt.Errorf("opening browser is not supported on %s", runtime.GOOS)
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return nil
 }

@@ -59,6 +59,10 @@ type Server struct {
 	demo             *demoState
 	// lastCertificateCheck throttles the expiry check the poller ticks.
 	lastCertificateCheck time.Time
+	// pendingOffers holds offers paused for an interactive sign-in, so the
+	// caller that started one can read how it ended.
+	pendingOffers map[string]*pendingOffer
+	offerMu       sync.Mutex
 	// tlsMu guards issuerTLSCert, which a renewal replaces under a live
 	// listener.
 	tlsMu       sync.RWMutex
@@ -146,6 +150,7 @@ func (s *Server) setupRoutes() {
 
 	// API: credential offers
 	s.mux.HandleFunc("POST /api/offers", s.withFreshStore(s.handleOfferAPI))
+	s.mux.HandleFunc("GET /api/offers/{id}", s.handleOfferStatus)
 	s.mux.HandleFunc("GET /callback", s.withFreshStore(s.handleAuthorizationCodeCallback))
 
 	// API: build identity, used by the URL handler script to detect stale servers
@@ -886,41 +891,29 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 			s.wallet.TxCode = consent.TxCode
 			s.wallet.mu.Unlock()
 		}
-		result, err := s.wallet.ProcessCredentialOffer(consentReq.OfferURI)
+		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
+			"credential_requested": consentReq.OfferConfigs,
+		})
 		if err != nil {
-			s.log("  ERROR: %v", err)
-			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
-			s.wallet.NotifyError(WalletError{
-				Message: "Credential issuance failed",
-				Detail:  err.Error(),
-			})
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 
+		if pending != nil {
+			// The UI approved the offer and is already navigating to the
+			// issuer, having taken the same URL off the event stream.
+			consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusAccepted}
+			s.writeAuthorizationRequired(w, pending, browserRedirect)
+			return
+		}
+
 		if result.Pending {
-			s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
-			s.persistWallet()
 			consentReq.SubmissionCh <- SubmissionResult{Pending: true, TransactionID: result.TransactionID, RetryInterval: result.RetryInterval}
 			writeJSON(w, http.StatusAccepted, result)
 			return
 		}
 
-		s.log("  Received:      %s credential from %s", result.Format, result.Issuer)
-		if result.VerificationDetail != "" {
-			s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
-		}
-		s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
-			"offer_uri":            consentReq.OfferURI,
-			"credential_id":        result.CredentialID,
-			"format":               result.Format,
-			"issuer":               result.Issuer,
-			"verification_status":  result.VerificationStatus,
-			"verification_detail":  result.VerificationDetail,
-			"credential_requested": consentReq.OfferConfigs,
-		})
-		s.saveIssuedCredential(result)
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK}
 		if browserRedirect {
 			redirectBrowser(w, "")
@@ -940,14 +933,8 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 // processOfferDirectly runs the credential offer flow without a consent step
 // (auto-accept mode).
 func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browserRedirect bool) {
-	result, err := s.wallet.ProcessCredentialOffer(uri)
+	result, pending, err := s.runOffer(uri, nil)
 	if err != nil {
-		s.log("  ERROR: %v", err)
-		s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
-		s.wallet.NotifyError(WalletError{
-			Message: "Credential issuance failed",
-			Detail:  err.Error(),
-		})
 		if !s.wallet.AutoAccept {
 			s.triggerUIRequest()
 		}
@@ -955,9 +942,12 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browser
 		return
 	}
 
+	if pending != nil {
+		s.writeAuthorizationRequired(w, pending, browserRedirect)
+		return
+	}
+
 	if result.Pending {
-		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
-		s.persistWallet()
 		if browserRedirect {
 			redirectBrowser(w, "")
 		} else {
@@ -966,19 +956,6 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browser
 		return
 	}
 
-	s.log("  Received:      %s credential from %s", result.Format, result.Issuer)
-	if result.VerificationDetail != "" {
-		s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
-	}
-	s.wallet.AddLogDetails("issuance", fmt.Sprintf("Received %s credential from %s", result.Format, result.Issuer), true, map[string]any{
-		"offer_uri":           uri,
-		"credential_id":       result.CredentialID,
-		"format":              result.Format,
-		"issuer":              result.Issuer,
-		"verification_status": result.VerificationStatus,
-		"verification_detail": result.VerificationDetail,
-	})
-	s.saveIssuedCredential(result)
 	if browserRedirect {
 		redirectBrowser(w, "")
 	} else {
