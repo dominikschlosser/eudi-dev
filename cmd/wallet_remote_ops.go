@@ -28,6 +28,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/output"
 	"github.com/dominikschlosser/eudi-dev/internal/remote"
@@ -208,13 +209,10 @@ func remoteAccept(c *remote.Client, uri, txCode string) error {
 	return nil
 }
 
-// signInPollInterval and signInTimeout bound the wait for a sign-in. The
-// wallet stops waiting for the callback after five minutes, so there is
-// nothing left to wait for past that.
-const (
-	signInPollInterval = 2 * time.Second
-	signInTimeout      = 5 * time.Minute
-)
+// signInPollInterval is how often the CLI asks how a sign-in went. The wait
+// itself is bounded by config.AuthorizationCallbackWait, the same span the
+// flow being watched uses.
+const signInPollInterval = 2 * time.Second
 
 // completeSignIn handles an offer the issuer wants the user to sign in for.
 // The wallet cannot do this itself (on a hosted one the browser that matters
@@ -232,7 +230,7 @@ func completeSignIn(c *remote.Client, pending map[string]any) (map[string]any, e
 		openBrowser(authURL)
 	}
 
-	deadline := time.Now().Add(signInTimeout)
+	deadline := time.Now().Add(config.AuthorizationCallbackWait)
 	for {
 		time.Sleep(signInPollInterval)
 		status, err := c.OfferStatus(offerID)

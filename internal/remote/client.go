@@ -260,26 +260,31 @@ func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 // TrustList fetches an ETSI trust list JWT from the remote wallet. Without a
 // selector this is the same default list as /api/trustlist.
 func (c *Client) TrustList(id, vct, docType string) (string, error) {
-	path := "/api/trustlist"
-	query := url.Values{}
-	if id != "" {
-		path = "/api/trustlists/" + url.PathEscape(id)
-	} else {
-		if vct != "" {
-			query.Set("vct", vct)
-		}
-		if docType != "" {
-			query.Set("doctype", docType)
-		}
-	}
-	if encoded := query.Encode(); encoded != "" {
-		path += "?" + encoded
-	}
 	var out []byte
-	if err := c.do(http.MethodGet, path, nil, &out); err != nil {
+	if err := c.do(http.MethodGet, TrustListPath(id, vct, docType), nil, &out); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// TrustListPath maps a trust list selection to its endpoint. The CLI prints
+// this path as well as fetching it, and a second copy of the mapping is how
+// the two drift apart.
+func TrustListPath(id, vct, docType string) string {
+	if id != "" {
+		return "/api/trustlists/" + url.PathEscape(id)
+	}
+	query := url.Values{}
+	if vct != "" {
+		query.Set("vct", vct)
+	}
+	if docType != "" {
+		query.Set("doctype", docType)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return "/api/trustlist?" + encoded
+	}
+	return "/api/trustlist"
 }
 
 // TrustLists lists the trust list profiles the remote wallet serves.

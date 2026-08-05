@@ -410,7 +410,7 @@ so the wallet automatically receives incoming protocol requests.`,
 
 			// Point the user at the consent UI when an interactive
 			// presentation or issuance arrives. On a desktop that means
-			// opening it; on a headless host the URL is all there is to give,
+			// opening it. On a headless host the URL is all there is to give,
 			// so say where it is rather than claiming to open something.
 			// Not on a demo host: visitors get the consent UI through the
 			// browser redirect instead.

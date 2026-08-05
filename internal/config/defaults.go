@@ -34,6 +34,12 @@ const (
 	// ConsentTimeout is how long the wallet waits for interactive consent before timing out.
 	ConsentTimeout = 5 * time.Minute
 
+	// AuthorizationCallbackWait is how long an authorization code flow waits
+	// for the user to finish signing in at the issuer. The CLI follows the
+	// offer for the same span, so it stops looking when the flow it is
+	// watching has already given up.
+	AuthorizationCallbackWait = 5 * time.Minute
+
 	// SlowRequestTimeout covers the requests that legitimately outlast a normal
 	// round trip: an authorization code flow waits for the user to sign in at
 	// the issuer, and a consent approval waits for the flow behind it. It

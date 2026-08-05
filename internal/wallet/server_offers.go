@@ -46,6 +46,16 @@ func (p *pendingOffer) complete(result *IssuanceResult, err error) {
 	p.done, p.result, p.err = true, result, err
 }
 
+// authorizationRequiredBody is what a caller gets while the user still has to
+// sign in, both when the offer is submitted and when its status is polled.
+func (p *pendingOffer) authorizationRequiredBody() map[string]any {
+	return map[string]any{
+		"status":            "authorization_required",
+		"authorization_url": p.AuthURL,
+		"offer_id":          p.ID,
+	}
+}
+
 func (p *pendingOffer) outcome() (*IssuanceResult, error, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -163,11 +173,7 @@ func (s *Server) writeAuthorizationRequired(w http.ResponseWriter, p *pendingOff
 		redirectBrowser(w, p.AuthURL)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"status":            "authorization_required",
-		"authorization_url": p.AuthURL,
-		"offer_id":          p.ID,
-	})
+	writeJSON(w, http.StatusAccepted, p.authorizationRequiredBody())
 }
 
 // handleOfferStatus reports how an offer that paused for a sign-in ended.
@@ -180,11 +186,7 @@ func (s *Server) handleOfferStatus(w http.ResponseWriter, r *http.Request) {
 	result, err, done := p.outcome()
 	switch {
 	case !done:
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":            "authorization_required",
-			"authorization_url": p.AuthURL,
-			"offer_id":          p.ID,
-		})
+		writeJSON(w, http.StatusOK, p.authorizationRequiredBody())
 	case err != nil:
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":   "failed",

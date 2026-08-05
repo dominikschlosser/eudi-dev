@@ -399,25 +399,6 @@ func walletUnregisterCmd() *cobra.Command {
 
 // --- wallet trust-list ---
 
-// trustListPath builds the endpoint a selection resolves to, so the URL the
-// command prints and the one it fetches cannot drift apart.
-func trustListPath(id, vct, docType string) string {
-	if id != "" {
-		return "/api/trustlists/" + url.PathEscape(id)
-	}
-	query := url.Values{}
-	if vct != "" {
-		query.Set("vct", vct)
-	}
-	if docType != "" {
-		query.Set("doctype", docType)
-	}
-	if encoded := query.Encode(); encoded != "" {
-		return "/api/trustlist?" + encoded
-	}
-	return "/api/trustlist"
-}
-
 func walletTrustListCmd() *cobra.Command {
 	var (
 		port    int
@@ -466,7 +447,7 @@ what they declare it to be, so pick the one matching what is being verified.`,
 			}
 
 			if urlOnly {
-				path := trustListPath(id, vct, docType)
+				path := remote.TrustListPath(id, vct, docType)
 				switch {
 				case client != nil:
 					fmt.Printf("%s%s\n", client.BaseURL, path)
@@ -768,6 +749,8 @@ func printTrustListIndex(client *remote.Client) error {
 		if err != nil {
 			return err
 		}
+		// Through the same shape the endpoint returns, so local and remote
+		// listings render from one path rather than two.
 		data, err := json.Marshal(wallet.BuildTrustListIndexEntries(w, w.IssuerURL))
 		if err != nil {
 			return err

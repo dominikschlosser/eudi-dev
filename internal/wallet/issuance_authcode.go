@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
@@ -1031,7 +1032,7 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 			return nil, err
 		}
 		return values, nil
-	case <-time.After(5 * time.Minute):
+	case <-time.After(config.AuthorizationCallbackWait):
 		return nil, fmt.Errorf("timed out waiting for authorization callback at %s", redirectURI)
 	}
 }
