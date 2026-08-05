@@ -15,6 +15,7 @@
 package mock
 
 import (
+	"crypto/x509"
 	"encoding/base64"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
 
 func TestGenerateMDOC_DefaultClaims(t *testing.T) {
@@ -562,5 +564,59 @@ func TestGenerateMDOC_DatesAreTagged(t *testing.T) {
 	}
 	if nested, ok := parsed["nested"].(map[string]any); !ok || nested["issued"] != "2026-07-23" {
 		t.Errorf("nested dates should survive the round trip, got %v", parsed["nested"])
+	}
+}
+
+// TestGenerateMDOC_X5ChainOmitsTheRoot covers what the issuer signature
+// carries. A reader takes the trust anchor from its trust list, so a chain
+// that carries its own root proves nothing and only makes the credential
+// larger. Every other credential this toolkit signs already omits it.
+func TestGenerateMDOC_X5ChainOmitsTheRoot(t *testing.T) {
+	caKey, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	caCert, err := GenerateCACert(caKey)
+	if err != nil {
+		t.Fatalf("GenerateCACert: %v", err)
+	}
+	issuerKey, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	leaf, err := GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
+	if err != nil {
+		t.Fatalf("GenerateLeafCert: %v", err)
+	}
+
+	raw, err := GenerateMDOC(MDOCConfig{
+		DocType:   "eu.europa.ec.eudi.pid.1",
+		Namespace: "eu.europa.ec.eudi.pid.1",
+		Claims:    map[string]any{"given_name": "ERIKA"},
+		Key:       issuerKey,
+		CertChain: []*x509.Certificate{leaf, caCert},
+	})
+	if err != nil {
+		t.Fatalf("GenerateMDOC: %v", err)
+	}
+
+	doc, err := mdoc.Parse(raw)
+	if err != nil {
+		t.Fatalf("mdoc.Parse: %v", err)
+	}
+	certs, err := validate.ExtractMDOCX5ChainCertificates(doc)
+	if err != nil {
+		t.Fatalf("reading x5chain: %v", err)
+	}
+	if len(certs) != 1 {
+		t.Fatalf("x5chain carries %d certificates, want the leaf alone", len(certs))
+	}
+	if !certs[0].Equal(leaf) {
+		t.Error("x5chain does not carry the leaf")
+	}
+	for _, c := range certs {
+		if c.Equal(caCert) {
+			t.Error("x5chain carries the self-signed root")
+		}
 	}
 }

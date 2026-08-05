@@ -242,15 +242,16 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 	msg.Headers.Protected.SetAlgorithm(cose.AlgorithmES256)
 	msg.Payload = taggedMSOBytes
 
-	// Add x5chain (label 33) to unprotected header
-	if len(cfg.CertChain) > 0 {
-		if len(cfg.CertChain) == 1 {
-			// Single cert: encode as bstr
-			msg.Headers.Unprotected[int64(33)] = cfg.CertChain[0].Raw
+	// x5chain (label 33) carries the leaf and any intermediates, never the
+	// root. A reader gets the trust anchor from its trust list, and a chain
+	// that carries its own root proves nothing to anyone who does not already
+	// have it. Every other credential this toolkit signs does the same.
+	if chain := WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
+		if len(chain) == 1 {
+			msg.Headers.Unprotected[int64(33)] = chain[0].Raw
 		} else {
-			// Multiple certs: encode as array of bstr
-			var certDERs [][]byte
-			for _, cert := range cfg.CertChain {
+			certDERs := make([][]byte, 0, len(chain))
+			for _, cert := range chain {
 				certDERs = append(certDERs, cert.Raw)
 			}
 			msg.Headers.Unprotected[int64(33)] = certDERs

@@ -133,6 +133,12 @@ func ExtractMDOCX5ChainLeafKey(doc *mdoc.Document) (crypto.PublicKey, error) {
 	return certs[0].PublicKey, nil
 }
 
+// ExtractMDOCX5ChainCertificates returns the certificates an mdoc carries in
+// its x5chain header (label 33).
+func ExtractMDOCX5ChainCertificates(doc *mdoc.Document) ([]*x509.Certificate, error) {
+	return parseMDOCX5ChainCerts(doc)
+}
+
 // parseMDOCX5ChainCerts decodes the certificates of a COSE x5chain (label 33)
 // in the unprotected header.
 func parseMDOCX5ChainCerts(doc *mdoc.Document) ([]*x509.Certificate, error) {
