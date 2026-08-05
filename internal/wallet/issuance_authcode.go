@@ -82,34 +82,17 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if offer.Grants.IssuerState != "" {
 		parForm.Set("issuer_state", offer.Grants.IssuerState)
 	}
-	if clientAuthMethod == "private_key_jwt" {
-		aud := oauthIssuer(oauthMeta, tokenEndpoint)
-		assertion, err := createClientAssertionJWT(w.HolderKey, clientID, aud)
-		if err != nil {
-			return nil, fmt.Errorf("creating client assertion: %w", err)
-		}
-		parForm.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-		parForm.Set("client_assertion", assertion)
-	}
-	buildClientAttestationHeaders := func() (map[string]string, error) {
-		// private_key_jwt already authenticated this client in the form, so an
-		// attestation on top is not what the server asked for.
-		if clientAuthMethod == "private_key_jwt" || !w.attestsClient(oauthMeta) {
-			return nil, nil
-		}
-		challenge, err := fetchAttestationChallenge(oauthMeta)
-		if err != nil {
-			return nil, fmt.Errorf("fetching client attestation challenge: %w", err)
-		}
-		headers, err := createClientAttestationHeaders(w, clientID, oauthIssuer(oauthMeta, tokenEndpoint), challenge)
-		if err != nil {
-			return nil, fmt.Errorf("creating client attestation headers: %w", err)
-		}
-		return headers, nil
+	// How this authorization server wants the client authenticated, resolved
+	// once here and kept with the credential: a refresh is another token
+	// request at the same endpoint, long after this metadata is gone.
+	authCtx := clientAuthContext{oauthMeta: oauthMeta, clientID: clientID, tokenEndpoint: tokenEndpoint}
+	clientAuth := w.resolveClientAuthentication(clientAuthMethod, authCtx)
+	if err := applyClientAuthentication(parForm, clientAuth, w.HolderKey); err != nil {
+		return nil, err
 	}
 
 	w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
-	parResp, err := postFormWithDPoP(parEndpoint, parForm, w.HolderKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	parResp, err := postFormWithDPoP(parEndpoint, parForm, w.HolderKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
 	w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("PAR request: %w", err)
@@ -156,18 +139,12 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	tokenForm.Set("client_id", clientID)
 	tokenForm.Set("redirect_uri", redirectURI)
 	tokenForm.Set("code_verifier", codeVerifier)
-	if clientAuthMethod == "private_key_jwt" {
-		aud := oauthIssuer(oauthMeta, tokenEndpoint)
-		assertion, err := createClientAssertionJWT(w.HolderKey, clientID, aud)
-		if err != nil {
-			return nil, fmt.Errorf("creating token client assertion: %w", err)
-		}
-		tokenForm.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-		tokenForm.Set("client_assertion", assertion)
+	if err := applyClientAuthentication(tokenForm, clientAuth, w.HolderKey); err != nil {
+		return nil, err
 	}
 
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, formRequestLogDetails(tokenEndpoint, "token", tokenForm))
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, w.HolderKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, w.HolderKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
 	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
@@ -255,6 +232,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		metadata:      metadata,
 		tokenEndpoint: tokenEndpoint,
 		clientID:      clientID,
+		clientAuth:    clientAuth,
 		refreshToken:  refreshToken,
 		expiresIn:     expiresIn,
 		issuer:        offer.CredentialIssuer,
@@ -290,6 +268,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		ConfigurationID:    configID,
 		ClientID:           clientID,
 		UseDPoP:            true,
+		ClientAuth:         clientAuth,
 	})
 
 	if notificationID, _ := credResp["notification_id"].(string); notificationID != "" {
@@ -404,6 +383,78 @@ func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 		w.ForceClientAttestation
 }
 
+// clientAuthContext is what deciding, and re-deciding, client authentication
+// needs: the authorization server's metadata, who the wallet says it is, and
+// the token endpoint that stands in for a server that does not name itself.
+type clientAuthContext struct {
+	oauthMeta     map[string]any
+	clientID      string
+	tokenEndpoint string
+}
+
+// resolveClientAuthentication reads how this authorization server wants the
+// client authenticated. Nil means it asked for nothing. The answer is kept
+// with the credential, because a refresh is another request to the same
+// endpoint long after this metadata is gone.
+func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContext) *ClientAuthentication {
+	if method == ClientAuthPrivateKeyJWT {
+		return &ClientAuthentication{
+			Method:   ClientAuthPrivateKeyJWT,
+			ClientID: ctx.clientID,
+			Audience: oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
+		}
+	}
+	if !w.attestsClient(ctx.oauthMeta) {
+		return nil
+	}
+	return attestationClientAuth(ctx)
+}
+
+func attestationClientAuth(ctx clientAuthContext) *ClientAuthentication {
+	challengeEndpoint, _ := ctx.oauthMeta["challenge_endpoint"].(string)
+	return &ClientAuthentication{
+		Method:            ClientAuthAttestation,
+		ClientID:          ctx.clientID,
+		Audience:          oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
+		ChallengeEndpoint: challengeEndpoint,
+	}
+}
+
+// clientAttestationHeaders builds the wallet attestation a request has to
+// carry, or nil when this authentication needs no headers. The challenge is
+// fetched per request: a server that requires one refuses a stale one.
+func (w *Wallet) clientAttestationHeaders(auth *ClientAuthentication) func() (map[string]string, error) {
+	if auth == nil || auth.Method != ClientAuthAttestation {
+		return nil
+	}
+	return func() (map[string]string, error) {
+		challenge, err := fetchAttestationChallenge(auth.ChallengeEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("fetching client attestation challenge: %w", err)
+		}
+		headers, err := createClientAttestationHeaders(w, auth.ClientID, auth.Audience, challenge)
+		if err != nil {
+			return nil, fmt.Errorf("creating client attestation headers: %w", err)
+		}
+		return headers, nil
+	}
+}
+
+// applyClientAuthentication puts into the form what belongs in the form.
+// private_key_jwt authenticates there, an attestation in the headers.
+func applyClientAuthentication(form url.Values, auth *ClientAuthentication, holderKey *ecdsa.PrivateKey) error {
+	if auth == nil || auth.Method != ClientAuthPrivateKeyJWT {
+		return nil
+	}
+	assertion, err := createClientAssertionJWT(holderKey, auth.ClientID, auth.Audience)
+	if err != nil {
+		return fmt.Errorf("creating client assertion: %w", err)
+	}
+	form.Set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	form.Set("client_assertion", assertion)
+	return nil
+}
+
 func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
@@ -459,8 +510,7 @@ func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge str
 	}, nil
 }
 
-func fetchAttestationChallenge(oauthMeta map[string]any) (string, error) {
-	endpoint, _ := oauthMeta["challenge_endpoint"].(string)
+func fetchAttestationChallenge(endpoint string) (string, error) {
 	if endpoint == "" {
 		return "", nil
 	}
@@ -737,6 +787,7 @@ type deferredContext struct {
 	metadata         map[string]any
 	tokenEndpoint    string
 	clientID         string
+	clientAuth       *ClientAuthentication
 	refreshToken     string
 	expiresIn        int
 	issuer           string

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refresh token request carried no client authentication.** A refresh is a token request at the same endpoint as the one that obtained the credential (`grant_type=refresh_token`), so an issuer that required a wallet attestation or a `private_key_jwt` assertion then requires one now. The wallet sent neither, because the flow that discovered the requirement is gone by the time a credential nears expiry. It now keeps how it authenticated with the credential (and with a deferred issuance, whose access token renewal has the same shape) and rebuilds it per request, fetching a fresh attestation challenge each time rather than replaying the one from issuance
 - **`wallet list --remote local` reported a revoked credential as governed by a foreign status list.** Both backends build the same document, but one travels through JSON (where every number is a float64) and the other is handed over in this process with its Go types intact, and the renderer only read float64. So the status value was invisible to it and it fell back to "external", on exactly the credentials the wallet governs itself. The number is now read in either shape, which also fixes the attempt count on a locally read deferred issuance
 
 ### Documentation

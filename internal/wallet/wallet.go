@@ -204,6 +204,33 @@ type CredentialRenewal struct {
 	ClientID           string `json:"client_id,omitempty"`
 	RefreshToken       string `json:"refresh_token"`
 	UseDPoP            bool   `json:"use_dpop,omitempty"`
+	// ClientAuth is how the issuance authenticated this client, when it had
+	// to. A refresh is another token request at the same endpoint, held to
+	// the same rule.
+	ClientAuth *ClientAuthentication `json:"client_auth,omitempty"`
+}
+
+// Client authentication methods a token request can be held to.
+const (
+	ClientAuthAttestation   = "attestation"
+	ClientAuthPrivateKeyJWT = "private_key_jwt"
+)
+
+// ClientAuthentication is what authenticating to an authorization server
+// again needs once the flow that first did it is gone. An issuer that
+// required client authentication at issuance requires it on every later token
+// request too, a refresh included, and by then nothing is left holding the
+// metadata that said so.
+type ClientAuthentication struct {
+	Method   string `json:"method"`
+	ClientID string `json:"client_id,omitempty"`
+	// Audience is the authorization server identifier the attestation PoP or
+	// the client assertion is addressed to, as the flow resolved it.
+	Audience string `json:"audience,omitempty"`
+	// ChallengeEndpoint mints the challenge an attestation PoP carries. A
+	// server that requires one rejects a stale challenge, so it is fetched
+	// per request rather than stored.
+	ChallengeEndpoint string `json:"challenge_endpoint,omitempty"`
 }
 
 // CanRenew reports whether a credential carries what re-requesting it needs.

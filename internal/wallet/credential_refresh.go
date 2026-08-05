@@ -49,8 +49,13 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if renewal.ClientID != "" {
 		form.Set("client_id", renewal.ClientID)
 	}
+	// A refresh is a token request like the one that obtained the credential,
+	// so an issuer that required client authentication then requires it now.
+	if err := applyClientAuthentication(form, renewal.ClientAuth, w.HolderKey); err != nil {
+		return nil, err
+	}
 	nonce := ""
-	tokenResp, err := postFormWithDPoP(renewal.TokenEndpoint, form, dpopKey, "", &nonce, nil)
+	tokenResp, err := postFormWithDPoP(renewal.TokenEndpoint, form, dpopKey, "", &nonce, w.clientAttestationHeaders(renewal.ClientAuth))
 	if err != nil {
 		return nil, fmt.Errorf("renewing the access token: %w", err)
 	}

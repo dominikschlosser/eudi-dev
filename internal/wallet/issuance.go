@@ -184,27 +184,15 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if supportsDPoP(oauthMeta) {
 		dpopKey = w.HolderKey
 	}
-	buildClientAttestationHeaders := func() (map[string]string, error) {
-		if !w.attestsClient(oauthMeta) {
-			return nil, nil
-		}
-		challenge, err := fetchAttestationChallenge(oauthMeta)
-		if err != nil {
-			return nil, fmt.Errorf("fetching client attestation challenge: %w", err)
-		}
-		// A pre-authorized offer carries no client_id, and the wallet is not
-		// registered with the issuer. The attestation names the wallet itself,
-		// so its own identifier is the subject.
-		clientID := strings.TrimSpace(w.VCIClientID)
-		if clientID == "" {
-			clientID = strings.TrimSpace(w.BaseURL)
-		}
-		headers, err := createClientAttestationHeaders(w, clientID, oauthIssuer(oauthMeta, tokenEndpoint), challenge)
-		if err != nil {
-			return nil, fmt.Errorf("creating client attestation headers: %w", err)
-		}
-		return headers, nil
+	// A pre-authorized offer carries no client_id, and the wallet is not
+	// registered with the issuer. The attestation names the wallet itself, so
+	// its own identifier is the subject.
+	attestationClientID := strings.TrimSpace(w.VCIClientID)
+	if attestationClientID == "" {
+		attestationClientID = strings.TrimSpace(w.BaseURL)
 	}
+	authCtx := clientAuthContext{oauthMeta: oauthMeta, clientID: attestationClientID, tokenEndpoint: tokenEndpoint}
+	clientAuth := w.resolveClientAuthentication("", authCtx)
 
 	w.mu.Lock()
 	txCode := w.TxCode
@@ -225,7 +213,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
 		"tx_code":             txCode,
 	})
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
 	if err != nil {
 		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
 			"direction": "inbound",
@@ -359,6 +347,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				CredentialEndpoint: credentialEndpoint,
 				ConfigurationID:    configID,
 				UseDPoP:            dpopKey != nil,
+				ClientAuth:         clientAuth,
 			})
 			if credFormat == "" {
 				credFormat = imported.Format
@@ -402,6 +391,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		metadata:      metadata,
 		tokenEndpoint: tokenEndpoint,
 		clientID:      "",
+		clientAuth:    clientAuth,
 		refreshToken:  refreshToken,
 		expiresIn:     expiresIn,
 		issuer:        offer.CredentialIssuer,
@@ -437,6 +427,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		CredentialEndpoint: credentialEndpoint,
 		ConfigurationID:    configID,
 		UseDPoP:            dpopKey != nil,
+		ClientAuth:         clientAuth,
 	})
 
 	if credFormat == "" {

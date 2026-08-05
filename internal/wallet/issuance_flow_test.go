@@ -322,7 +322,7 @@ func TestFetchAttestationChallenge_AttestationChallengeField(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	challenge, err := fetchAttestationChallenge(map[string]any{"challenge_endpoint": srv.URL})
+	challenge, err := fetchAttestationChallenge(srv.URL)
 	if err != nil {
 		t.Fatalf("fetchAttestationChallenge: %v", err)
 	}

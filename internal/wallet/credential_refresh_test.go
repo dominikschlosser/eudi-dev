@@ -217,3 +217,172 @@ func TestPresentingRenewsACredentialAboutToExpire(t *testing.T) {
 		t.Error("the renewed credential was not stored")
 	}
 }
+
+// An issuer that required client authentication at issuance requires it on
+// every later token request too, and a refresh is a token request. The flow
+// that discovered the requirement is long gone by then, so what it learned
+// travels with the credential.
+func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://wallet.example"
+	original := generateTestCredential(t, w)
+	renewed := generateTestCredential(t, w)
+
+	var challenges int
+	var sawAttestation, sawPoP, sawAssertion string
+	newIssuer := func() *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			rw.Header().Set("Content-Type", "application/json")
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/challenge"):
+				challenges++
+				_ = json.NewEncoder(rw).Encode(map[string]any{"attestation_challenge": "chal-1"})
+			case strings.HasSuffix(r.URL.Path, "/token"):
+				body, _ := io.ReadAll(r.Body)
+				form, _ := url.ParseQuery(string(body))
+				sawAttestation = r.Header.Get("OAuth-Client-Attestation")
+				sawPoP = r.Header.Get("OAuth-Client-Attestation-PoP")
+				sawAssertion = form.Get("client_assertion")
+				_ = json.NewEncoder(rw).Encode(map[string]any{
+					"access_token": "fresh", "token_type": "Bearer", "expires_in": 300,
+				})
+			case strings.HasSuffix(r.URL.Path, "/credential"):
+				_ = json.NewEncoder(rw).Encode(map[string]any{"credential": renewed})
+			default:
+				rw.WriteHeader(http.StatusNotFound)
+			}
+		}))
+	}
+
+	oldClient := httpClient
+	defer func() { httpClient = oldClient }()
+
+	t.Run("wallet attestation", func(t *testing.T) {
+		srv := newIssuer()
+		defer srv.Close()
+		httpClient = srv.Client()
+		challenges, sawAttestation, sawPoP, sawAssertion = 0, "", "", ""
+
+		imported, err := w.ImportCredential(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+			CredentialEndpoint: srv.URL + "/credential",
+			ClientAuth: &ClientAuthentication{
+				Method:            ClientAuthAttestation,
+				ClientID:          "https://wallet.example",
+				Audience:          srv.URL,
+				ChallengeEndpoint: srv.URL + "/challenge",
+			},
+		})
+		if _, err := w.RefreshCredential(imported.ID); err != nil {
+			t.Fatalf("RefreshCredential: %v", err)
+		}
+		if sawAttestation == "" || sawPoP == "" {
+			t.Error("the refresh carried no client attestation")
+		}
+		// A server that mints challenges rejects a stale one, so the refresh
+		// has to ask for its own rather than replay one from issuance.
+		if challenges != 1 {
+			t.Errorf("the refresh fetched %d attestation challenges, want 1", challenges)
+		}
+	})
+
+	t.Run("private_key_jwt", func(t *testing.T) {
+		srv := newIssuer()
+		defer srv.Close()
+		httpClient = srv.Client()
+		challenges, sawAttestation, sawPoP, sawAssertion = 0, "", "", ""
+
+		imported, err := w.ImportCredential(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+			CredentialEndpoint: srv.URL + "/credential",
+			ClientAuth: &ClientAuthentication{
+				Method: ClientAuthPrivateKeyJWT, ClientID: "wallet-1", Audience: srv.URL,
+			},
+		})
+		if _, err := w.RefreshCredential(imported.ID); err != nil {
+			t.Fatalf("RefreshCredential: %v", err)
+		}
+		if sawAssertion == "" {
+			t.Error("the refresh carried no client assertion")
+		}
+		if sawAttestation != "" || sawPoP != "" {
+			t.Error("private_key_jwt authenticates in the form, not with an attestation on top")
+		}
+	})
+
+	t.Run("nothing required", func(t *testing.T) {
+		srv := newIssuer()
+		defer srv.Close()
+		httpClient = srv.Client()
+		challenges, sawAttestation, sawPoP, sawAssertion = 0, "", "", ""
+
+		imported, err := w.ImportCredential(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+			Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+			CredentialEndpoint: srv.URL + "/credential",
+		})
+		if _, err := w.RefreshCredential(imported.ID); err != nil {
+			t.Fatalf("RefreshCredential: %v", err)
+		}
+		if sawAttestation != "" || sawAssertion != "" {
+			t.Error("an issuer that asked for no client authentication got one anyway")
+		}
+	})
+}
+
+// What the issuance flow keeps with the credential is read off the
+// authorization server's metadata, so it has to be read the same way a
+// request would.
+func TestResolveClientAuthentication(t *testing.T) {
+	w := generateTestWallet(t)
+	ctx := clientAuthContext{
+		clientID:      "https://wallet.example",
+		tokenEndpoint: "https://issuer.example/token",
+		oauthMeta: map[string]any{
+			"issuer":                                "https://issuer.example",
+			"challenge_endpoint":                    "https://issuer.example/challenge",
+			"token_endpoint_auth_methods_supported": []any{"attest_jwt_client_auth"},
+		},
+	}
+
+	auth := w.resolveClientAuthentication(detectTokenEndpointAuthMethod(ctx.oauthMeta), ctx)
+	if auth == nil || auth.Method != ClientAuthAttestation {
+		t.Fatalf("an attesting issuer resolved to %+v", auth)
+	}
+	if auth.Audience != "https://issuer.example" || auth.ChallengeEndpoint != "https://issuer.example/challenge" {
+		t.Errorf("the attestation does not carry what rebuilding it needs: %+v", auth)
+	}
+
+	private := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
+		"issuer":                                "https://issuer.example",
+		"token_endpoint_auth_methods_supported": []any{"private_key_jwt"},
+	}}
+	auth = w.resolveClientAuthentication(detectTokenEndpointAuthMethod(private.oauthMeta), private)
+	if auth == nil || auth.Method != ClientAuthPrivateKeyJWT {
+		t.Fatalf("a private_key_jwt issuer resolved to %+v", auth)
+	}
+
+	// An issuer that asks for nothing, with a wallet that is not enforcing
+	// the profile, gets the same plain request as before.
+	plain := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{}}
+	if auth := w.resolveClientAuthentication("", plain); auth != nil {
+		t.Errorf("an issuer that asked for nothing resolved to %+v", auth)
+	}
+
+	// Enforcing HAIP means authenticating whatever the metadata says.
+	w.RequireHAIP = true
+	if auth := w.resolveClientAuthentication("", plain); auth == nil || auth.Method != ClientAuthAttestation {
+		t.Errorf("HAIP enforcement did not authenticate the client: %+v", auth)
+	}
+}

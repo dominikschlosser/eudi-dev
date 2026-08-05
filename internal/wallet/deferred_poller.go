@@ -393,9 +393,14 @@ func (s *Server) refreshDeferredAccessToken(pending PendingIssuance, dpopKey *ec
 	if pending.ClientID != "" {
 		form.Set("client_id", pending.ClientID)
 	}
+	// The issuer that required client authentication for the first token
+	// requires it for this one too.
+	if err := applyClientAuthentication(form, pending.ClientAuth, s.wallet.HolderKey); err != nil {
+		return pending, err
+	}
 
 	nonce := ""
-	resp, err := postFormWithDPoP(pending.TokenEndpoint, form, dpopKey, "", &nonce, nil)
+	resp, err := postFormWithDPoP(pending.TokenEndpoint, form, dpopKey, "", &nonce, s.wallet.clientAttestationHeaders(pending.ClientAuth))
 	if err != nil {
 		return pending, err
 	}

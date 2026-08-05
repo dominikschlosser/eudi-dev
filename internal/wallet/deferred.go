@@ -52,14 +52,18 @@ type PendingIssuance struct {
 	AccessTokenExpiresAt time.Time `json:"access_token_expires_at,omitempty"`
 	// TokenEndpoint and ClientID are what a refresh needs, and the flow that
 	// knew them is gone by the time the poller runs.
-	TokenEndpoint   string    `json:"token_endpoint,omitempty"`
-	ClientID        string    `json:"client_id,omitempty"`
-	UseDPoP         bool      `json:"use_dpop,omitempty"`
-	IntervalSeconds int       `json:"interval_seconds,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	NextAttemptAt   time.Time `json:"next_attempt_at"`
-	Attempts        int       `json:"attempts,omitempty"`
-	LastError       string    `json:"last_error,omitempty"`
+	TokenEndpoint string `json:"token_endpoint,omitempty"`
+	ClientID      string `json:"client_id,omitempty"`
+	// ClientAuth is how the issuance authenticated this client, when it had
+	// to. Renewing the access token is another token request at the same
+	// endpoint, held to the same rule.
+	ClientAuth      *ClientAuthentication `json:"client_auth,omitempty"`
+	UseDPoP         bool                  `json:"use_dpop,omitempty"`
+	IntervalSeconds int                   `json:"interval_seconds,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+	NextAttemptAt   time.Time             `json:"next_attempt_at"`
+	Attempts        int                   `json:"attempts,omitempty"`
+	LastError       string                `json:"last_error,omitempty"`
 	// ProofKeyPEMs holds the keys the credential request proved possession of,
 	// holder key first. A batch request adds ephemeral keys that exist nowhere
 	// else, and the credential still has to be matched back to one of them.
@@ -118,6 +122,7 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 		RefreshToken:         ctx.refreshToken,
 		TokenEndpoint:        ctx.tokenEndpoint,
 		ClientID:             ctx.clientID,
+		ClientAuth:           ctx.clientAuth,
 		AuthScheme:           ctx.authScheme,
 		UseDPoP:              ctx.dpopKey != nil,
 		IntervalSeconds:      seconds,
