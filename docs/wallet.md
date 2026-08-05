@@ -514,7 +514,13 @@ Collecting happens in `wallet serve`. A one-shot `wallet accept` against the loc
 
 On OID4VCI token requests the wallet authenticates itself with a wallet attestation ([OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)), sent as the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers. The attestation is signed by the wallet's own CA and carries only the leaf in `x5c`, so an issuer verifying it needs the CA from `wallet ca-cert` as its trust anchor.
 
-By default this happens **only when the authorization server advertises it**, by listing `attest_jwt_client_auth` in `token_endpoint_auth_methods_supported`. That is what §8 of the draft asks a client to do:
+Under `--haip` the wallet always attests. HAIP 1.0 §4.4.1 is unconditional about it:
+
+> Wallets MUST use, and Issuers MUST require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that support client authentication (such as the PAR and Token Endpoints).
+
+Nothing there depends on metadata, and nothing requires an issuer to advertise the method, so a wallet holding itself to the profile does not go looking first.
+
+Without `--haip` it attests **only when the authorization server advertises it**, by listing `attest_jwt_client_auth` in `token_endpoint_auth_methods_supported`. That is what §8 of the draft asks a client to do:
 
 > The client SHOULD fetch and parse the Authorization Server metadata and recognize Attestation-Based Client Authentication as a client authentication mechanism if either of the given `token_endpoint_auth_methods_supported` values are present.
 
@@ -522,7 +528,7 @@ Following the metadata is also a privacy measure. This wallet has one holder key
 
 ### `--client-attestation`
 
-Advertising the method is a SHOULD, not a MUST, so an issuer may check an attestation without ever announcing it. Against such an issuer a correct wallet sends nothing and gets `invalid_client`. `--client-attestation` sends the attestation regardless of metadata:
+Advertising the method is a SHOULD, not a MUST, so an issuer may check an attestation without ever announcing it. Against such an issuer a non-HAIP wallet sends nothing and gets `invalid_client`. `--client-attestation` sends the attestation regardless of metadata:
 
 ```bash
 eudi wallet serve --client-attestation --auto-accept

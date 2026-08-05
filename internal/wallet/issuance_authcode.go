@@ -375,17 +375,25 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 }
 
 // attestsClient reports whether to authenticate with the wallet attestation
-// against this authorization server. The metadata is the defined signal, and
-// draft-ietf-oauth-attestation-based-client-auth §8 has a client read it.
-// Advertising it is only a SHOULD, so ForceClientAttestation overrides.
+// against this authorization server.
+//
+// HAIP 1.0 §4.4.1 puts it plainly: "Wallets MUST use, and Issuers MUST
+// require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that
+// support client authentication (such as the PAR and Token Endpoints)." That
+// is unconditional, so a wallet enforcing HAIP attests without asking the
+// metadata first.
+//
+// Outside HAIP the metadata is the signal, which
+// draft-ietf-oauth-attestation-based-client-auth §8 has a client read.
+// Advertising it there is only a SHOULD, so an issuer may check an attestation
+// without announcing it, and ForceClientAttestation covers that.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false
 	}
-	if detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" {
-		return true
-	}
-	return w.ForceClientAttestation
+	return w.RequireHAIP ||
+		detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" ||
+		w.ForceClientAttestation
 }
 
 func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {

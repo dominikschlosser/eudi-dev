@@ -41,20 +41,24 @@ func TestAttestsClient(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		meta  map[string]any
+		haip  bool
 		force bool
 		want  bool
 	}{
-		{"advertised", advertised, false, true},
-		{"advertised, override on", advertised, true, true},
-		{"silent metadata", silent, false, false},
-		{"silent metadata, override on", silent, true, true},
-		{"another method", otherMethod, false, false},
-		{"another method, override on", otherMethod, true, true},
-		{"no metadata at all", nil, false, false},
-		{"no metadata at all, override on", nil, true, true},
+		{"advertised", advertised, false, false, true},
+		{"silent metadata", silent, false, false, false},
+		{"silent metadata, override on", silent, false, true, true},
+		{"another method", otherMethod, false, false, false},
+		{"another method, override on", otherMethod, false, true, true},
+		{"no metadata at all", nil, false, false, false},
+		// HAIP 1.0 §4.4.1 makes client authentication unconditional, so a
+		// wallet enforcing it never needs the metadata or the override.
+		{"haip, silent metadata", silent, true, false, true},
+		{"haip, no metadata at all", nil, true, false, true},
+		{"haip, another method", otherMethod, true, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &Wallet{ForceClientAttestation: tc.force}
+			w := &Wallet{RequireHAIP: tc.haip, ForceClientAttestation: tc.force}
 			if got := w.attestsClient(tc.meta); got != tc.want {
 				t.Errorf("attestsClient = %v, want %v", got, tc.want)
 			}

@@ -132,7 +132,7 @@ func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool 
 //   - always: the credential issuer MUST be an https origin
 //   - authorization code offers: the authorization server MUST support the
 //     flow, require pushed authorization requests, support PKCE with S256,
-//     support DPoP, and authenticate the client
+//     and support DPoP
 //
 // A pre-authorized code offer never reaches the authorization endpoint, so
 // holding it to those endpoint requirements would be stricter than the
@@ -166,9 +166,12 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	if !supportsDPoP(oauthMeta) {
 		violations = append(violations, "HAIP: the authorization server must support DPoP")
 	}
-	if method := detectTokenEndpointAuthMethod(oauthMeta); method != "attest_jwt_client_auth" && method != "private_key_jwt" {
-		violations = append(violations, "HAIP: the authorization server must authenticate the client with attest_jwt_client_auth or private_key_jwt")
-	}
+	// Client authentication is deliberately not checked here. HAIP 1.0 §4.4.1
+	// requires the issuer to require it, but nothing requires the issuer to
+	// advertise it: draft-ietf-oauth-attestation-based-client-auth §10.1 makes
+	// that a SHOULD. Absent metadata is therefore no evidence of a violation,
+	// and the wallet finds out by authenticating, which under HAIP it always
+	// does.
 
 	return violations
 }

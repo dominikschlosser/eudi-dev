@@ -326,13 +326,6 @@ func TestValidateHAIPIssuanceCompliance(t *testing.T) {
 			wantSub: "must support DPoP",
 		},
 		{
-			name: "no client authentication",
-			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
-				m["token_endpoint_auth_methods_supported"] = []any{"client_secret_post"}
-			},
-			wantSub: "must authenticate the client",
-		},
-		{
 			name: "unreadable authorization server metadata",
 			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
 				for k := range m {
@@ -407,5 +400,28 @@ func TestHAIPIssuanceAcceptsCompliantPreAuthorizedOffer(t *testing.T) {
 	}
 	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) != 0 {
 		t.Errorf("a compliant pre-authorized code offer was rejected: %v", violations)
+	}
+}
+
+// TestValidateHAIPIssuanceCompliance_SilentClientAuthIsNotAViolation covers an
+// authorization server that authenticates its clients without advertising it.
+// HAIP requires the issuer to require client authentication, but nothing
+// requires it to say so in metadata, so absence proves nothing.
+func TestValidateHAIPIssuanceCompliance_SilentClientAuthIsNotAViolation(t *testing.T) {
+	offer := &oid4vc.CredentialOffer{
+		CredentialIssuer: "https://issuer.example",
+		Grants:           oid4vc.OfferGrants{IssuerState: "state"},
+	}
+	meta := map[string]any{
+		"issuer":                                "https://issuer.example",
+		"authorization_endpoint":                "https://issuer.example/authorize",
+		"require_pushed_authorization_requests": true,
+		"code_challenge_methods_supported":      []any{"S256"},
+		"dpop_signing_alg_values_supported":     []any{"ES256"},
+		// No token_endpoint_auth_methods_supported at all.
+	}
+
+	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) != 0 {
+		t.Errorf("silent client authentication is not a HAIP violation, got %v", violations)
 	}
 }
