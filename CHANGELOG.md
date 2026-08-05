@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The deferred credential type still did not reach a local wallet.** 1.19.9 fixed the API response; the local store listing is built separately and was missed, so `wallet list` against a local store kept naming a waiting credential by the issuer's configuration id
+- **A deferred credential can now outlive its access token.** The token is minted for the credential request and expires in minutes, while an issuer may ask the wallet back in an hour, so a long deferral used to fail on an authorization the issuer had already expired. The wallet keeps the refresh token and the expiry the token response carried, renews before an attempt that would be refused, and renews once and retries when an issuer refuses anyway (some expire earlier than they said). A rotated refresh token replaces the stored one. Without a refresh token nothing changes: the collection stops and says why
 - **A deferred credential whose token had expired was retried hourly for a day.** The access token is minted for the credential request and expires in minutes, while an issuer may ask the wallet back in an hour, so a long deferral collects with a token the issuer has already refused. A rejected authorization (401, 403) was classed as worth another attempt, so the wallet kept asking until the 24 hour cap with no chance of succeeding. It now stops and says why. Minting a fresh token instead needs refresh token support, which the wallet does not have yet
 
 ## [1.19.9] - 2026-08-05

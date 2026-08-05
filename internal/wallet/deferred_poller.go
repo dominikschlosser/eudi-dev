@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -118,12 +119,37 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 		dpopKey = s.wallet.HolderKey
 	}
 
+	// The access token was minted for the credential request and outlives it
+	// by minutes, while the issuer may ask the wallet back in an hour. Mint a
+	// new one before spending the attempt on a request the issuer will refuse.
+	if pending.AccessTokenExpired(time.Now()) && pending.CanRefresh() {
+		refreshed, err := s.refreshDeferredAccessToken(pending, dpopKey)
+		if err != nil {
+			return s.abandonDeferred(pending, fmt.Sprintf("its access token expired and could not be renewed: %v", err))
+		}
+		pending = refreshed
+	}
+
 	// One request per turn: the schedule lives here, so the request must not
 	// wait on its own or two things would be pacing the same issuer.
 	nonce := ""
 	credResp, err := deferredCredentialAttempt(
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
 		pending.TransactionID, dpopKey, s.wallet.HolderKey, &nonce)
+
+	// An issuer that refuses the authorization may simply have expired the
+	// token earlier than it said. One renewal and one retry is worth it before
+	// giving up on a credential the wallet is owed.
+	if err != nil && isAuthorizationRejected(err) && pending.CanRefresh() {
+		refreshed, refreshErr := s.refreshDeferredAccessToken(pending, dpopKey)
+		if refreshErr == nil {
+			pending = refreshed
+			nonce = ""
+			credResp, err = deferredCredentialAttempt(
+				pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
+				pending.TransactionID, dpopKey, s.wallet.HolderKey, &nonce)
+		}
+	}
 
 	if err != nil {
 		return s.handleDeferredAttemptError(pending, err)
@@ -176,6 +202,15 @@ func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) 
 // dead token cannot succeed, so it is not worth another 24 hours of hourly
 // requests. The wallet cannot yet mint a new one, which is what refresh token
 // support will add.
+// isAuthorizationRejected reports whether the issuer refused the credentials
+// the request carried, rather than the request itself.
+func isAuthorizationRejected(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, "HTTP 401") ||
+		strings.Contains(message, "HTTP 403") ||
+		strings.Contains(message, "invalid_token")
+}
+
 func isRetryableDeferredError(err error) bool {
 	message := err.Error()
 	for _, fatal := range []string{
@@ -268,4 +303,50 @@ func (s *Server) persistWallet() {
 	if s.onSave != nil {
 		s.onSave()
 	}
+}
+
+// refreshDeferredAccessToken exchanges the stored refresh token for a new
+// access token and records it, so the next collection uses an authorization
+// the issuer still accepts.
+func (s *Server) refreshDeferredAccessToken(pending PendingIssuance, dpopKey *ecdsa.PrivateKey) (PendingIssuance, error) {
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", pending.RefreshToken)
+	if pending.ClientID != "" {
+		form.Set("client_id", pending.ClientID)
+	}
+
+	nonce := ""
+	resp, err := postFormWithDPoP(pending.TokenEndpoint, form, dpopKey, "", &nonce, nil)
+	if err != nil {
+		return pending, err
+	}
+	accessToken, _ := resp["access_token"].(string)
+	if accessToken == "" {
+		return pending, fmt.Errorf("the token response carried no access_token")
+	}
+
+	updated := pending
+	updated.AccessToken = accessToken
+	if scheme := accessTokenScheme(resp, pending.UseDPoP); scheme != "" {
+		updated.AuthScheme = scheme
+	}
+	// An issuer may rotate the refresh token, and reusing a rotated one fails.
+	if rotated, _ := resp["refresh_token"].(string); rotated != "" {
+		updated.RefreshToken = rotated
+	}
+	updated.AccessTokenExpiresAt = time.Time{}
+	if seconds, ok := resp["expires_in"].(float64); ok && seconds > 0 {
+		updated.AccessTokenExpiresAt = time.Now().Add(time.Duration(seconds) * time.Second)
+	}
+
+	s.wallet.UpdatePendingIssuance(updated.ID, func(p *PendingIssuance) {
+		p.AccessToken = updated.AccessToken
+		p.AuthScheme = updated.AuthScheme
+		p.RefreshToken = updated.RefreshToken
+		p.AccessTokenExpiresAt = updated.AccessTokenExpiresAt
+	})
+	s.persistWallet()
+	s.log("  Renewed:       access token for the deferred credential from %s", pending.Issuer)
+	return updated, nil
 }

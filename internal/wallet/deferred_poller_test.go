@@ -18,8 +18,11 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -456,5 +459,74 @@ func TestDeferredGivesUpOnARejectedToken(t *testing.T) {
 		if !isRetryableDeferredError(fmt.Errorf("deferred credential request: %s", status)) {
 			t.Errorf("%s should stay retryable", status)
 		}
+	}
+}
+
+// A deferral outlives its access token, so the collection has to mint a new
+// one. Without this the wallet asks with an authorization the issuer already
+// expired and the credential it is owed never arrives.
+func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	var refreshes, refusedWithOldToken int
+	var srvURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/token"):
+			body, _ := io.ReadAll(r.Body)
+			form, _ := url.ParseQuery(string(body))
+			if form.Get("grant_type") != "refresh_token" || form.Get("refresh_token") != "refresh-1" {
+				rw.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			refreshes++
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"access_token": "fresh-token", "token_type": "Bearer", "expires_in": 300,
+			})
+		case strings.HasSuffix(r.URL.Path, "/deferred"):
+			// The issuer only honours the renewed token.
+			if r.Header.Get("Authorization") != "Bearer fresh-token" {
+				refusedWithOldToken++
+				rw.WriteHeader(http.StatusForbidden)
+				return
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, nil)
+	pending := pendingFor(t, w, srvURL+"/deferred", 1)
+	pending.NextAttemptAt = time.Now().Add(-time.Second)
+	pending.AccessToken = "stale-token"
+	pending.AuthScheme = "Bearer"
+	pending.RefreshToken = "refresh-1"
+	pending.TokenEndpoint = srvURL + "/token"
+	pending.AccessTokenExpiresAt = time.Now().Add(-time.Minute) // already expired
+	w.AddPendingIssuance(pending)
+
+	server.collectDueDeferredCredentials(time.Now())
+
+	if refreshes != 1 {
+		t.Errorf("the wallet refreshed %d times, want exactly one renewal", refreshes)
+	}
+	if refusedWithOldToken != 0 {
+		t.Errorf("the wallet spent %d attempts on the expired token before renewing it", refusedWithOldToken)
+	}
+	if got := len(w.GetCredentials()); got != 1 {
+		t.Fatalf("wallet holds %d credentials, want the collected one", got)
+	}
+	if got := len(w.PendingIssuanceList()); got != 0 {
+		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 }

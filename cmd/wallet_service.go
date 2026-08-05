@@ -225,6 +225,7 @@ func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
 			"interval":                    p.Interval().String(),
 			"created_at":                  p.CreatedAt,
 			"next_attempt_at":             p.NextAttemptAt,
+			"can_refresh":                 p.CanRefresh(),
 			"attempts":                    p.Attempts,
 			"last_error":                  p.LastError,
 		})

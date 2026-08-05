@@ -40,10 +40,20 @@ type PendingIssuance struct {
 	// metadata for this configuration. A credential offer carries only
 	// configuration ids, so without these a waiting credential is listed by an
 	// issuer's internal name while a delivered one is listed by its type.
-	VCT             string    `json:"vct,omitempty"`
-	DocType         string    `json:"doctype,omitempty"`
-	AccessToken     string    `json:"access_token"`
-	AuthScheme      string    `json:"auth_scheme,omitempty"`
+	VCT         string `json:"vct,omitempty"`
+	DocType     string `json:"doctype,omitempty"`
+	AccessToken string `json:"access_token"`
+	AuthScheme  string `json:"auth_scheme,omitempty"`
+	// RefreshToken and AccessTokenExpiresAt let a long deferral mint a new
+	// access token. The one the credential request used is short lived, and an
+	// issuer may ask the wallet back in an hour, so without these the
+	// collection fails on an authorization the issuer already expired.
+	RefreshToken         string    `json:"refresh_token,omitempty"`
+	AccessTokenExpiresAt time.Time `json:"access_token_expires_at,omitempty"`
+	// TokenEndpoint and ClientID are what a refresh needs, and the flow that
+	// knew them is gone by the time the poller runs.
+	TokenEndpoint   string    `json:"token_endpoint,omitempty"`
+	ClientID        string    `json:"client_id,omitempty"`
 	UseDPoP         bool      `json:"use_dpop,omitempty"`
 	IntervalSeconds int       `json:"interval_seconds,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -91,22 +101,30 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 	}
 	vct, docType := credentialTypeForConfiguration(ctx.metadata, ctx.configID)
 	now := time.Now()
+	var accessTokenExpiry time.Time
+	if ctx.expiresIn > 0 {
+		accessTokenExpiry = now.Add(time.Duration(ctx.expiresIn) * time.Second)
+	}
 	return &PendingIssuance{
-		ID:               uuid.NewString(),
-		TransactionID:    transactionID,
-		Issuer:           ctx.issuer,
-		DeferredEndpoint: ctx.deferredEndpoint,
-		ConfigurationID:  ctx.configID,
-		Format:           ctx.format,
-		VCT:              vct,
-		DocType:          docType,
-		AccessToken:      ctx.accessToken,
-		AuthScheme:       ctx.authScheme,
-		UseDPoP:          ctx.dpopKey != nil,
-		IntervalSeconds:  seconds,
-		CreatedAt:        now,
-		NextAttemptAt:    now.Add(interval),
-		ProofKeyPEMs:     pems,
+		ID:                   uuid.NewString(),
+		TransactionID:        transactionID,
+		Issuer:               ctx.issuer,
+		DeferredEndpoint:     ctx.deferredEndpoint,
+		ConfigurationID:      ctx.configID,
+		Format:               ctx.format,
+		VCT:                  vct,
+		DocType:              docType,
+		AccessToken:          ctx.accessToken,
+		RefreshToken:         ctx.refreshToken,
+		TokenEndpoint:        ctx.tokenEndpoint,
+		ClientID:             ctx.clientID,
+		AuthScheme:           ctx.authScheme,
+		UseDPoP:              ctx.dpopKey != nil,
+		IntervalSeconds:      seconds,
+		CreatedAt:            now,
+		NextAttemptAt:        now.Add(interval),
+		AccessTokenExpiresAt: accessTokenExpiry,
+		ProofKeyPEMs:         pems,
 	}, nil
 }
 
@@ -263,4 +281,20 @@ func credentialTypeForConfiguration(metadata map[string]any, configID string) (v
 	vct, _ = config["vct"].(string)
 	docType, _ = config["doctype"].(string)
 	return vct, docType
+}
+
+// AccessTokenExpired reports whether the stored access token is past use. A
+// small margin covers the round trip: a token expiring while the request is in
+// flight is refused just the same.
+func (p *PendingIssuance) AccessTokenExpired(now time.Time) bool {
+	if p == nil || p.AccessTokenExpiresAt.IsZero() {
+		return false
+	}
+	return now.Add(15 * time.Second).After(p.AccessTokenExpiresAt)
+}
+
+// CanRefresh reports whether the record carries what minting a new access
+// token needs.
+func (p *PendingIssuance) CanRefresh() bool {
+	return p != nil && p.RefreshToken != "" && p.TokenEndpoint != ""
 }

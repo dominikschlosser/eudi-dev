@@ -244,6 +244,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	accessToken, _ := tokenResp["access_token"].(string)
 	cNonce, _ := tokenResp["c_nonce"].(string)
+	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
 	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
@@ -393,15 +394,19 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	}
 
 	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
-		metadata:    metadata,
-		issuer:      offer.CredentialIssuer,
-		configID:    configID,
-		format:      credFormat,
-		accessToken: accessToken,
-		authScheme:  authScheme,
-		dpopKey:     dpopKey,
-		proofKeys:   proofKeys,
-		nonce:       &nonces.resource,
+		metadata:      metadata,
+		tokenEndpoint: tokenEndpoint,
+		clientID:      "",
+		refreshToken:  refreshToken,
+		expiresIn:     expiresIn,
+		issuer:        offer.CredentialIssuer,
+		configID:      configID,
+		format:        credFormat,
+		accessToken:   accessToken,
+		authScheme:    authScheme,
+		dpopKey:       dpopKey,
+		proofKeys:     proofKeys,
+		nonce:         &nonces.resource,
 	})
 	if err != nil {
 		return nil, err

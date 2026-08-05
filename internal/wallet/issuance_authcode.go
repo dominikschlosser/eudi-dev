@@ -175,6 +175,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	accessToken, _ := tokenResp["access_token"].(string)
 	cNonce, _ := tokenResp["c_nonce"].(string)
+	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	if accessToken == "" {
 		return nil, fmt.Errorf("token response missing access_token")
 	}
@@ -251,15 +252,19 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	// This flow always sends DPoP: it refuses issuer metadata without it.
 	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
-		metadata:    metadata,
-		issuer:      offer.CredentialIssuer,
-		configID:    configID,
-		format:      resolveCredentialFormat(metadata, credentialConfigurationID),
-		accessToken: accessToken,
-		authScheme:  authScheme,
-		dpopKey:     w.HolderKey,
-		proofKeys:   proofKeys,
-		nonce:       &nonces.resource,
+		metadata:      metadata,
+		tokenEndpoint: tokenEndpoint,
+		clientID:      clientID,
+		refreshToken:  refreshToken,
+		expiresIn:     expiresIn,
+		issuer:        offer.CredentialIssuer,
+		configID:      configID,
+		format:        resolveCredentialFormat(metadata, credentialConfigurationID),
+		accessToken:   accessToken,
+		authScheme:    authScheme,
+		dpopKey:       w.HolderKey,
+		proofKeys:     proofKeys,
+		nonce:         &nonces.resource,
 	})
 	if err != nil {
 		return nil, err
@@ -724,6 +729,10 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, a
 // behind when the issuer wants more time than the flow can wait.
 type deferredContext struct {
 	metadata         map[string]any
+	tokenEndpoint    string
+	clientID         string
+	refreshToken     string
+	expiresIn        int
 	issuer           string
 	configID         string
 	format           string
@@ -1158,4 +1167,15 @@ func truncateBody(body string) string {
 		return body
 	}
 	return body[:200] + "..."
+}
+
+// tokenGrantRenewal reads what a token response offers for renewing the
+// access token later. Both issuance flows need it, and a deferred credential
+// collected an hour from now depends on it being read the same way in each.
+func tokenGrantRenewal(tokenResp map[string]any) (refreshToken string, expiresIn int) {
+	refreshToken, _ = tokenResp["refresh_token"].(string)
+	if seconds, ok := tokenResp["expires_in"].(float64); ok && seconds > 0 {
+		expiresIn = int(seconds)
+	}
+	return refreshToken, expiresIn
 }
