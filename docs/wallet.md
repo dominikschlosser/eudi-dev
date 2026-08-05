@@ -530,9 +530,7 @@ The credential keeps its id, so a verifier query or a UI selection that referred
 
 An issuer that gave no refresh token cannot be asked, and the request is refused rather than reporting success.
 
-A refresh is a token request (`grant_type=refresh_token`) at the same endpoint as the one that obtained the credential, so an issuer that required client authentication there requires it here. The wallet keeps how it authenticated (wallet attestation or `private_key_jwt`, with the audience and the challenge endpoint) alongside the refresh token and rebuilds it per request. The attestation challenge is fetched again each time, because a server that mints challenges rejects a replayed one.
-
-The wallet UI does not offer renewal. It happens on its own (below) or on request from the CLI, so a button would only be a third way to do what already happens. The UI does show how long each credential is still valid for.
+A refresh is a token request (`grant_type=refresh_token`) at the same endpoint as the one that obtained the credential, so an issuer that required client authentication there requires it here. The wallet keeps how it authenticated (wallet attestation or `private_key_jwt`, with the audience and the challenge endpoint) alongside the refresh token and rebuilds it per request. The attestation challenge is fetched again each time, because a server that hands out challenges rejects a replayed one.
 
 The wallet also renews on its own, in two places. A background task checks every 30 seconds and renews anything within a minute of expiring, so a credential a verifier would reject is replaced before anyone tries to use it (a renewal that fails is held off for ten minutes rather than retried on every sweep). And a credential is renewed on the way to a verifier when it is that close to expiring, which covers a wallet with no server running. A renewal that fails there is not fatal: the credential in hand may still be accepted.
 

@@ -24,7 +24,7 @@
 // authorization server (one hardcoded demo account), plain-parameter
 // authorization requests with direct_post on the verifier side, SD-JWT VC
 // only. Credentials are signed with the wallet's
-// issuer key under a leaf certificate minted from the wallet CA, so the
+// issuer key under a leaf certificate issued by the wallet CA, so the
 // wallet's own trust list covers them and verification closes the loop
 // without extra trust setup.
 package demorp
@@ -71,7 +71,7 @@ type DemoRP struct {
 	tokens   map[string]*offerState
 	requests map[string]*requestState
 	// Authorization code flow state: pushed authorization requests by
-	// request_uri, and the codes minted from them once the user signed in.
+	// request_uri, and the codes issued from them once the user signed in.
 	authRequests map[string]*authRequestState
 	codes        map[string]*authRequestState
 }

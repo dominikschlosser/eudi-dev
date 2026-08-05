@@ -444,7 +444,7 @@ func TestPendingIssuanceRecordsTheCredentialType(t *testing.T) {
 	}
 }
 
-// A long deferral outlives its access token: the token is minted for the
+// A long deferral outlives its access token: the token is issued for the
 // credential request and expires in minutes, while the issuer may ask the
 // wallet back in an hour. Repeating the request with a dead token cannot
 // succeed, so it must not be retried hourly until the 24 hour cap.
@@ -462,7 +462,7 @@ func TestDeferredGivesUpOnARejectedToken(t *testing.T) {
 	}
 }
 
-// A deferral outlives its access token, so the collection has to mint a new
+// A deferral outlives its access token, so the collection has to obtain a new
 // one. Without this the wallet asks with an authorization the issuer already
 // expired and the credential it is owed never arrives.
 func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {

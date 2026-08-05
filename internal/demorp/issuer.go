@@ -70,7 +70,7 @@ type offerState struct {
 	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
 	// the pre-authorized flow, which uses a bearer token.
 	jkt string
-	// withStatus mints the ticket with a reference to the wallet's own status
+	// withStatus issues the ticket with a reference to the wallet's own status
 	// list, which is what makes the credential revocable and gives the
 	// verifier's revocation check something to resolve.
 	withStatus bool
@@ -169,7 +169,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 // produces an offer the wallet redeems through the authorization code flow,
 // where the user signs in at the authorization endpoint as part of the
 // redemption. Anything else produces a pre-authorized code offer, which
-// carries its own authorization and needs no login at all. ?status=true mints
+// carries its own authorization and needs no login at all. ?status=true issues
 // the ticket with a status list reference, so it can be revoked afterwards.
 func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	authCode := r.URL.Query().Get("grant") == authCodeGrant
@@ -403,7 +403,7 @@ func (d *DemoRP) statusListURI() string {
 	return strings.TrimSpace(d.wallet.StatusListURL())
 }
 
-// signTicket mints the demo ticket SD-JWT VC, holder-bound to the proof key
+// signTicket issues the demo ticket SD-JWT VC, holder-bound to the proof key
 // and signed with the wallet's issuer key under a leaf certificate from the
 // wallet CA, so the wallet's trust list covers the credential.
 func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string, withStatus bool) (string, error) {

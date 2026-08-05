@@ -227,7 +227,7 @@ type ClientAuthentication struct {
 	// Audience is the authorization server identifier the attestation PoP or
 	// the client assertion is addressed to, as the flow resolved it.
 	Audience string `json:"audience,omitempty"`
-	// ChallengeEndpoint mints the challenge an attestation PoP carries. A
+	// ChallengeEndpoint hands out the challenge an attestation PoP carries. A
 	// server that requires one rejects a stale challenge, so it is fetched
 	// per request rather than stored.
 	ChallengeEndpoint string `json:"challenge_endpoint,omitempty"`
