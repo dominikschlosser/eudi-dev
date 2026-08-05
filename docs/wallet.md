@@ -515,6 +515,18 @@ The callback is matched by `state` alone, so the sign-in can happen in any brows
 
 The one requirement is that the browser can reach the wallet's redirect URI. That holds for a local wallet and for a public one, but not for a wallet whose base URL is only routable on a network the browser cannot see.
 
+## Renewing a credential
+
+An issuer that hands over a refresh token at issuance can be asked for a fresh copy of the credential later. The wallet keeps what the request needs (token and credential endpoints, configuration id, refresh token) with the credential, because the flow that obtained it is gone by the time it nears expiry.
+
+```bash
+curl -X POST http://localhost:8085/api/credentials/<id>/refresh
+```
+
+The credential keeps its id, so a verifier query or a UI selection that referred to it still does. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at`, which is read from `exp` for SD-JWT and from the MSO validity for mdoc.
+
+An issuer that gave no refresh token cannot be asked, and the request is refused rather than reporting success.
+
 ## Deferred issuance
 
 An issuer that cannot produce the credential straight away answers the credential request with a `transaction_id` instead, and the wallet collects the credential from the `deferred_credential_endpoint` later. Both issuance flows handle this.

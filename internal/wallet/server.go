@@ -112,6 +112,7 @@ func (s *Server) setupRoutes() {
 	// API: credential offers
 	s.mux.HandleFunc("POST /api/offers", s.withFreshStore(s.handleOfferAPI))
 	s.mux.HandleFunc("GET /api/offers/{id}", s.handleOfferStatus)
+	s.mux.HandleFunc("POST /api/credentials/{id}/refresh", s.withFreshStore(s.handleRefreshCredential))
 	s.mux.HandleFunc("GET /callback", s.withFreshStore(s.handleAuthorizationCodeCallback))
 
 	// API: build identity, used by the URL handler script to detect stale servers

@@ -157,3 +157,14 @@ func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Reques
 	s.triggerSave()
 	writeJSON(w, http.StatusOK, entry)
 }
+
+// handleRefreshCredential re-requests a credential from its issuer now,
+// rather than waiting for the background task to notice it nearing expiry.
+func (s *Server) handleRefreshCredential(w http.ResponseWriter, r *http.Request) {
+	renewed, err := s.RefreshCredential(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, CredentialSummary(*renewed))
+}

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A credential can be renewed from its issuer.** When an issuer hands over a refresh token at issuance, the wallet keeps what re-requesting the credential needs and `POST /api/credentials/{id}/refresh` asks for a fresh copy. The credential keeps its id: a verifier query, a UI selection and the activity log all refer to credentials by id, so a new entry would read as the old one being deleted and an unrelated one appearing. A rotated refresh token replaces the stored one. A credential whose issuer gave no refresh token is refused rather than silently left alone
 - **Credentials report when they expire.** An SD-JWT states it in `exp` and an mdoc in the MSO its issuer signed, so a caller deciding what to do about it had to know which format it was holding. One function reads both, credential listings carry `expires_at`, and a credential that states no lifetime is never treated as expiring. This is what renewal will key off
 
 ### Documentation
