@@ -634,15 +634,37 @@ func applySessionTranscriptMode(w *wallet.Wallet, mode string) error {
 	return nil
 }
 
-func openBrowser(url string) {
+// openBrowser hands a URL to the user's browser.
+//
+// The scheme is checked here rather than at the call sites. Some of these URLs
+// come from a remote wallet's response, and `open` launches file:// paths and
+// any registered application scheme, not just web pages. The wallet validates
+// these URLs before it answers, but that is a peer on the network and this is
+// the process that acts on the answer.
+func openBrowser(rawURL string) {
+	if !isWebURL(rawURL) {
+		fmt.Fprintf(os.Stderr, "refusing to open %q: only http and https URLs\n", rawURL)
+		return
+	}
 	switch runtime.GOOS {
 	case "darwin":
-		_ = exec.Command("open", url).Start()
+		_ = exec.Command("open", rawURL).Start()
 	case "linux":
-		_ = exec.Command("xdg-open", url).Start()
+		_ = exec.Command("xdg-open", rawURL).Start()
 	case "windows":
-		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
 	}
+}
+
+// isWebURL reports whether a URL can be navigated to safely. url.Parse counts
+// javascript: and data: as absolute, so the scheme has to be named.
+func isWebURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || !u.IsAbs() {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return scheme == "http" || scheme == "https"
 }
 
 func loadWalletECKey(path, label string) (*ecdsa.PrivateKey, error) {
