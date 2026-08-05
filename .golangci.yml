@@ -60,4 +60,4 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/dominikschlosser/oid4vc-dev
+      local-prefixes: github.com/dominikschlosser/eudi-dev

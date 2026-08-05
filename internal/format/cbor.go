@@ -24,6 +24,7 @@ import (
 func StripCBORTag(data []byte, expected uint64) ([]byte, error) {
 	var raw cbor.RawTag
 	if err := cbor.Unmarshal(data, &raw); err != nil {
+		// Not a tagged value, which is one of the two shapes this accepts.
 		return data, nil
 	}
 	if raw.Number != expected {
