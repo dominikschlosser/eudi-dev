@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A deferred credential was never collected when the offer set a profile override.** `POST /api/offers` with `haip` or `mode` runs on a per-request clone of the wallet, and the clone was thrown away with the deferred record still on it. The background poller only reads the server's own wallet, so nothing ever asked the issuer again: the wallet reported the credential as on its way and then dropped it, where OpenID4VCI 1.0 section 9.3 has it retry after the interval. Found by the conformance suite, whose deferred module waits for a request that never came
 - **The demo's certificate renewal raced with live requests.** The daily reset re-issues the signing leaf, and it replaced the CA key and the certificate chain without holding the wallet lock while requests were reading both. A slice header is not written atomically, so a credential could be signed against a half-swapped chain. The swap and the reads that matter now take the lock, and `go test -race` is clean across the tree
 - **An error in one visitor's flow raised a dialog in every open tab.** A shared wallet broadcast every failure to all connected browsers, so someone who did nothing was shown an error another visitor ran into, including its detail text. Errors now reach the tab that started the flow and no other, on the event stream and on the stored error a tab picks up when it loads. The three separate claim mechanisms the UI had grown for this (consent, issuer sign-in, errors) are now one
 

@@ -811,6 +811,42 @@ def wallet_api_path_for_request(request_url: str) -> str:
     return "/api/presentations"
 
 
+# The suite prints the code it expects into the offer's own description, the
+# way an issuer would print it on a letter, e.g. "Input the one-time code:
+# <123456> for testing purposes". A real wallet asks the user for it; an
+# automated run reads it from there, because a pre-authorized code offer that
+# declares tx_code is only redeemable with it (OpenID4VCI 1.0 section 6.1).
+TX_CODE_IN_DESCRIPTION = re.compile(r"<(\d{4,12})>")
+
+
+def tx_code_from_offer(request_url: str) -> str | None:
+    query = urllib.parse.parse_qs(urllib.parse.urlsplit(request_url).query)
+    raw = (query.get("credential_offer") or [None])[0]
+    if not raw:
+        return None
+    try:
+        offer = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    grants = offer.get("grants")
+    if not isinstance(grants, dict):
+        return None
+    grant = grants.get("urn:ietf:params:oauth:grant-type:pre-authorized_code")
+    if not isinstance(grant, dict):
+        return None
+    tx_code = grant.get("tx_code")
+    if not isinstance(tx_code, dict):
+        return None
+    match = TX_CODE_IN_DESCRIPTION.search(str(tx_code.get("description", "")))
+    if match:
+        return match.group(1)
+    # No code to read: send something of the declared length rather than
+    # nothing, so the failure is the issuer rejecting a wrong code rather than
+    # the wallet omitting the parameter.
+    length = tx_code.get("length")
+    return "0" * length if isinstance(length, int) and 0 < length <= 12 else None
+
+
 def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
     # State the profile explicitly rather than inheriting the server's
@@ -818,6 +854,10 @@ def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool
     # wallet that enforces it globally, and the issuance endpoint now honors
     # the same override.
     payload = {"uri": request_url, "mode": WALLET_MODE, "haip": bool(requires_haip)}
+    tx_code = tx_code_from_offer(request_url)
+    if tx_code:
+        payload["tx_code"] = tx_code
+        print(f"[monitor] offer declares a transaction code, submitting {tx_code}", flush=True)
     for attempt in range(1, 6):
         try:
             result = wallet_request(wallet_url, "POST", api_path, payload)

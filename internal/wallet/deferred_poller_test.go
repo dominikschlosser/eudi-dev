@@ -367,3 +367,38 @@ func TestAbandonDeferredNow(t *testing.T) {
 		t.Error("abandoning the same id twice should report nothing to drop")
 	}
 }
+
+// The poller only collects if something starts its goroutine. Every other test
+// here calls the sweep directly, which passes whether or not the server ever
+// runs it, and a conformance run found exactly that gap: a deferred credential
+// was recorded and then never fetched.
+func TestDeferredPollerRunsFromTheServer(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+	srv, polls := deferredCollectionIssuer(t, credRaw, 0, 1)
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, nil)
+	pending := pendingFor(t, w, srv.URL, 1)
+	pending.NextAttemptAt = time.Now().Add(-time.Second)
+	w.AddPendingIssuance(pending)
+
+	stop := server.StartDeferredPoller()
+	defer stop()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(w.GetCredentials()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if got := len(w.GetCredentials()); got != 1 {
+		t.Fatalf("the running poller collected %d credentials after %d polls, want 1", got, polls())
+	}
+	if got := len(w.PendingIssuanceList()); got != 0 {
+		t.Errorf("wallet still holds %d pending records, want 0", got)
+	}
+}

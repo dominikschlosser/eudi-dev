@@ -203,3 +203,38 @@ func (w *Wallet) recordPendingIssuance(pending *PendingIssuance) *IssuanceResult
 		Format:        pending.Format,
 	}
 }
+
+// AdoptPendingIssuances takes over deferred credentials recorded on another
+// wallet, skipping any this one already tracks.
+//
+// A request that overrides the profile (haip, mode) runs on a clone of the
+// wallet, which is thrown away when the request ends. A credential is safe
+// there because it is written straight to the shared store, but a deferred
+// issuance is a promise to come back later, and only the server's own wallet
+// is polled. Left on the clone it was recorded, reported to the caller, and
+// then never collected.
+func (w *Wallet) AdoptPendingIssuances(from *Wallet) int {
+	if w == nil || from == nil || w == from {
+		return 0
+	}
+	incoming := from.PendingIssuanceList()
+	if len(incoming) == 0 {
+		return 0
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	known := make(map[string]bool, len(w.PendingIssuances))
+	for _, existing := range w.PendingIssuances {
+		known[existing.Issuer+"|"+existing.TransactionID] = true
+	}
+	adopted := 0
+	for _, pending := range incoming {
+		if known[pending.Issuer+"|"+pending.TransactionID] {
+			continue
+		}
+		w.PendingIssuances = append(w.PendingIssuances, pending)
+		adopted++
+	}
+	return adopted
+}

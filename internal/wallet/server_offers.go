@@ -148,6 +148,9 @@ func (s *Server) applyOfferOutcome(uri string, result *IssuanceResult, err error
 
 	if result.Pending {
 		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
+		// Hand the record to the wallet the poller reads before saving, so a
+		// deferral made on a per-request clone is still collected.
+		s.pendingIssuanceOwner.AdoptPendingIssuances(s.wallet)
 		s.persistWallet()
 		return
 	}
@@ -265,21 +268,22 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		}
 		// Field by field rather than a struct copy: Server carries a mutex.
 		clone := &Server{
-			wallet:           reqWallet,
-			port:             s.port,
-			mux:              s.mux,
-			onSave:           s.onSave,
-			onConsentRequest: s.onConsentRequest,
-			onUIRequest:      s.onUIRequest,
-			logFunc:          s.logFunc,
-			httpSrv:          s.httpSrv,
-			issuerSrv:        s.issuerSrv,
-			issuerTLSCert:    s.issuerTLSCert,
-			issuerPort:       s.issuerPort,
-			store:            s.store,
-			demo:             s.demo,
-			version:          s.version,
-			imprintHTML:      s.imprintHTML,
+			wallet:               reqWallet,
+			pendingIssuanceOwner: s.wallet,
+			port:                 s.port,
+			mux:                  s.mux,
+			onSave:               s.onSave,
+			onConsentRequest:     s.onConsentRequest,
+			onUIRequest:          s.onUIRequest,
+			logFunc:              s.logFunc,
+			httpSrv:              s.httpSrv,
+			issuerSrv:            s.issuerSrv,
+			issuerTLSCert:        s.issuerTLSCert,
+			issuerPort:           s.issuerPort,
+			store:                s.store,
+			demo:                 s.demo,
+			version:              s.version,
+			imprintHTML:          s.imprintHTML,
 		}
 		clone.parseOpts = oid4vc.ParseOptions{
 			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {

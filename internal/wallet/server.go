@@ -48,6 +48,11 @@ type Server struct {
 	demo             *demoState
 	// lastCertificateCheck throttles the expiry check the poller ticks.
 	lastCertificateCheck time.Time
+	// pendingIssuanceOwner is the wallet whose deferred credentials the
+	// poller collects. Set on the per-request clone a profile override
+	// creates, so a deferral recorded there is handed back rather than
+	// thrown away with the clone.
+	pendingIssuanceOwner *Wallet
 	// pendingOffers holds offers paused for an interactive sign-in, so the
 	// caller that started one can read how it ended.
 	pendingOffers map[string]*pendingOffer

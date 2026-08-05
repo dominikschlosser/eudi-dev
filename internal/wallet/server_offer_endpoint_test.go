@@ -15,7 +15,10 @@
 package wallet
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 )
@@ -80,5 +83,36 @@ func TestCredentialOfferEndpoint_CredentialOfferByReference(t *testing.T) {
 	after := len(srv.wallet.GetCredentials())
 	if after != before+1 {
 		t.Fatalf("expected one imported credential, got before=%d after=%d", before, after)
+	}
+}
+
+// A request that overrides the profile runs on a clone of the wallet. A
+// deferred credential recorded there used to stay there, so the poller (which
+// reads the server's own wallet) never collected it: the wallet promised to
+// come back for the credential and never did, which OpenID4VCI 1.0 section 9.3
+// requires it to.
+func TestDeferredIssuanceSurvivesAProfileOverride(t *testing.T) {
+	w := generateTestWallet(t)
+	issuer, offerURI, _ := deferringIssuer(t, w, 1, "error", 1)
+	defer issuer.Close()
+
+	oldClient := httpClient
+	httpClient = issuer.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, nil)
+	body, err := json.Marshal(map[string]any{"uri": offerURI, "mode": "debug", "haip": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/offers", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.handleOfferAPI(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("offer response = %d, want 202 for a deferred credential (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := len(w.PendingIssuanceList()); got != 1 {
+		t.Fatalf("the server's own wallet holds %d deferred records, want 1: the poller only reads this one", got)
 	}
 }
