@@ -100,7 +100,7 @@
           '<div class="deferred-meta">' +
             'The issuer asked the wallet to check back every ' + escHtml(p.interval || '') +
             (when ? '. Next attempt at ' + escHtml(when) : '') +
-            (p.attempts ? ' (' + p.attempts + ' so far)' : '') +
+            (p.attempts ? ' (' + escHtml(p.attempts) + ' so far)' : '') +
           '</div>' +
           (p.last_error ? '<div class="deferred-meta deferred-error">' + escHtml(p.last_error) + '</div>' : '') +
           '<div class="deferred-actions">' +
@@ -1211,7 +1211,7 @@
         '<label for="offer-tx-code-input">Transaction code</label>' +
         '<input type="text" id="offer-tx-code-input" autocomplete="one-time-code"' +
         (numeric ? ' inputmode="numeric" pattern="[0-9]*"' : '') +
-        (details.tx_code_length ? ' maxlength="' + details.tx_code_length + '"' : '') +
+        (details.tx_code_length ? ' maxlength="' + escHtml(details.tx_code_length) + '"' : '') +
         ' placeholder="' + escHtml(details.tx_code_hint || 'code from the issuer') + '">' +
         (details.tx_code_description
           ? '<p class="dialog-hint" id="offer-tx-code-description">' + escHtml(details.tx_code_description) + '</p>'

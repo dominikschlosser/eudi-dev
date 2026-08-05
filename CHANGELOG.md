@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.6] - 2026-08-05
+
+### Security
+
+- **The decoder web UI and the proxy dashboard sent no browser security headers.** Only the wallet server set them, so `eudi serve` and the proxy dashboard ran without a content security policy, without `nosniff`, and framable. Both render content someone else supplied (a credential from a `?credential=` link, traffic from whatever the proxy is pointed at), which is exactly where escaping failing turns into code execution. All three UIs now share one policy: scripts from the page origin only and no inline script, so an injected handler does not run, plus no plugins, no base tag rewriting, no framing, and forms and fetches confined to the origin. The public demo already had this through the wallet server and is unaffected
+- Two values in the wallet UI were interpolated into markup without escaping (a deferred issuance attempt count, a transaction code length). Both are numbers rather than anything a caller controls, so neither was exploitable, but it is the pattern that produced the stored XSS fixed in 1.19.2
+
 ## [1.19.5] - 2026-08-05
 
 ### Added

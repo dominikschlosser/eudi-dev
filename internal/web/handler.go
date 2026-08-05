@@ -20,6 +20,8 @@ import (
 	"io/fs"
 	"net/http"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 )
 
 const maxRequestBody = 1 << 20 // 1MB
@@ -82,7 +84,9 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	sub, _ := fs.Sub(staticFiles, "static")
 	mux.Handle("/", noStaleCache(http.FileServer(http.FS(sub))))
 
-	return mux
+	// This UI decodes whatever it is handed, including a credential someone
+	// else chose and sent as a ?credential= link.
+	return httpsec.Headers(mux)
 }
 
 func noStaleCache(h http.Handler) http.Handler {

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
@@ -50,7 +51,9 @@ func (d *Dashboard) Handler() http.Handler {
 	sub, _ := fs.Sub(staticFiles, "static")
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
-	return mux
+	// The dashboard renders intercepted traffic, which is whatever the other
+	// end of the proxy sent.
+	return httpsec.Headers(mux)
 }
 
 // ListenAndServe starts the dashboard HTTP server.
