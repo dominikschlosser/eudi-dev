@@ -736,9 +736,14 @@ func createProofJWT(holderKey *ecdsa.PrivateKey, audience, cNonce string, extraH
 	}
 
 	payload := map[string]any{
-		"aud":   audience,
-		"iat":   time.Now().Unix(),
-		"nonce": cNonce,
+		"aud": audience,
+		"iat": time.Now().Unix(),
+	}
+	// The nonce claim echoes a c_nonce the issuer provided. An issuer that
+	// provided none expects the claim to be absent, and an empty string is not
+	// the same thing: it reads as a nonce that does not match.
+	if cNonce != "" {
+		payload["nonce"] = cNonce
 	}
 
 	return signJWT(header, payload, holderKey)

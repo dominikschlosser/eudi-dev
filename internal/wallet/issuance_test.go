@@ -472,3 +472,29 @@ func TestParseIssuerMetadataResponse_JSONWithDots(t *testing.T) {
 		t.Fatalf("unexpected credential_issuer: %v", metadata["credential_issuer"])
 	}
 }
+
+// TestCreateProofJWT_OmitsEmptyNonce covers an issuer that provides no
+// c_nonce. The proof must leave the claim out: the OIDF suite's client
+// attestation challenge module rejects an empty one as a nonce that does not
+// match ("expected_nonce = null, actual_nonce = ”").
+func TestCreateProofJWT_OmitsEmptyNonce(t *testing.T) {
+	key := testKey(t)
+
+	withoutNonce, err := createProofJWT(key, "https://issuer.example", "", nil)
+	if err != nil {
+		t.Fatalf("createProofJWT: %v", err)
+	}
+	payload := decodeJWTPart(t, withoutNonce, 1)
+	if _, present := payload["nonce"]; present {
+		t.Errorf("proof carries a nonce claim %v when the issuer gave none", payload["nonce"])
+	}
+
+	withNonce, err := createProofJWT(key, "https://issuer.example", "abc123", nil)
+	if err != nil {
+		t.Fatalf("createProofJWT with nonce: %v", err)
+	}
+	payload = decodeJWTPart(t, withNonce, 1)
+	if payload["nonce"] != "abc123" {
+		t.Errorf("nonce = %v, want abc123", payload["nonce"])
+	}
+}
