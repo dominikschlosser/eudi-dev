@@ -264,6 +264,10 @@
         '<div class="credential-actions">' +
           revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
+          // Only for credentials whose issuer handed over a refresh token.
+          // The wallet renews these on its own shortly before they expire;
+          // this asks now.
+          (cred.can_renew ? '<button class="btn btn-sm" data-renew="' + cred.id + '">Renew</button>' : '') +
           (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
 
@@ -276,6 +280,10 @@
       if (del) {
         del.addEventListener('click', () => deleteCredential(cred.id));
       }
+      const renew = card.querySelector('[data-renew]');
+      if (renew) {
+        renew.addEventListener('click', () => renewCredential(cred.id, renew));
+      }
       const revoke = card.querySelector('[data-revoke]');
       if (revoke) {
         revoke.addEventListener('click', () => setCredentialStatus(cred.id, st.status === 1 ? 0 : 1));
@@ -286,6 +294,31 @@
       }
       credContainer.appendChild(card);
     });
+  }
+
+  // renewCredential asks the issuer for a fresh copy. The credential keeps its
+  // id, so the card is replaced in place rather than the list jumping.
+  async function renewCredential(id, button) {
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Renewing...';
+    // This tab asked, so this tab reports whatever goes wrong.
+    expectError();
+    try {
+      const resp = await fetch('/api/credentials/' + encodeURIComponent(id) + '/refresh', { method: 'POST' });
+      const result = await resp.json();
+      if (result.error) {
+        alert('Renewing failed: ' + result.error);
+        return;
+      }
+      await loadCredentials();
+      await loadLog();
+    } catch (e) {
+      alert('Renewing failed: ' + e.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = label;
+    }
   }
 
   // Revoke (status 1) or re-activate (status 0) a credential on the wallet's
