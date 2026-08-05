@@ -60,7 +60,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 			"HAIP: client_id MUST use 'x509_hash:', 'x509_san_dns:', or 'web-origin:' scheme, got %q", params.ClientID))
 	}
 
-	// Browser API web-origin requests may be unsigned; other HAIP requests require JAR.
+	// Browser API web-origin requests may be unsigned. Other HAIP requests require JAR.
 	requiresJAR := !(params.ResponseMode == "dc_api.jwt" && strings.HasPrefix(params.ClientID, "web-origin:"))
 	if requiresJAR && (reqObj == nil || reqObj.Header == nil) {
 		violations = append(violations, "HAIP: signed Request Object (JAR) MUST be used")
@@ -71,7 +71,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 		violations = append(violations, "HAIP: DCQL query MUST be used (not presentation_definition)")
 	}
 
-	// §7: ES256 MUST be supported; request object alg MUST be ES256
+	// §7: ES256 MUST be supported. Request object alg MUST be ES256
 	if reqObj != nil && reqObj.Header != nil {
 		alg := jsonutil.GetString(reqObj.Header, "alg")
 		if alg != "" && alg != "ES256" {
@@ -118,7 +118,7 @@ func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool 
 
 // ValidateHAIPIssuanceCompliance checks a credential offer and the issuer's
 // metadata against the HAIP 1.0 profile of OpenID4VCI. It returns violation
-// messages; an empty list means compliant.
+// messages. An empty list means compliant.
 //
 // HAIP 1.0 §4 requires an issuer to *support* the authorization code flow. It
 // does not require an issuer to use it for every credential, and it says
@@ -196,7 +196,7 @@ func supportsAuthorizationCodeFlow(oauthMeta map[string]any) bool {
 }
 
 // secureIssuerOrigin reports whether an issuer URL is acceptable transport.
-// https always is; plain http is allowed only on loopback, the way OAuth
+// https always is. Plain http is allowed only on loopback, the way OAuth
 // treats a local development host, so a demo instance on localhost is not
 // rejected for being local.
 func secureIssuerOrigin(issuer string) bool {

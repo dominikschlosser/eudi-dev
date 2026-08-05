@@ -22,7 +22,7 @@ import (
 // handleCredentialOfferEndpoint is the wallet's OID4VCI credential offer
 // endpoint. It accepts the same `credential_offer` / `credential_offer_uri`
 // query parameters that would follow an openid-credential-offer:// scheme, so
-// issuers can deliver offers to the wallet's plain web URL — the counterpart
+// issuers can deliver offers to the wallet's plain web URL. The counterpart
 // of the /authorize endpoint for presentation requests. An optional `tx_code`
 // parameter supplies the pre-authorized code flow transaction code.
 func (s *Server) handleCredentialOfferEndpoint(w http.ResponseWriter, r *http.Request) {

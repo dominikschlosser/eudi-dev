@@ -54,7 +54,7 @@ func dialControl(network, address string, _ syscall.RawConn) error {
 // A wallet legitimately fetches from itself: a request_uri or a response_uri
 // belonging to its own demo verifier, or a credential offer pointing at its
 // own issuer. Those URLs are operator configuration, not visitor input, so
-// exempting them is not an SSRF hole — while without the exemption a demo
+// exempting them is not an SSRF hole. While without the exemption a demo
 // instance on localhost cannot complete its own flows, because every one of
 // them resolves to loopback and is refused at dial time.
 //

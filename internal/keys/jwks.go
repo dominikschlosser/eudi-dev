@@ -29,7 +29,7 @@ import (
 )
 
 // CertificatePEMToJWKS converts one or more PEM certificates into a JWKS JSON
-// document. The first certificate is treated as the key holder; its public key
+// document. The first certificate is treated as the key holder. Its public key
 // becomes the JWK and the full chain is embedded as x5c.
 func CertificatePEMToJWKS(pemData []byte) ([]byte, error) {
 	certs, err := parseCertificatesPEM(pemData)

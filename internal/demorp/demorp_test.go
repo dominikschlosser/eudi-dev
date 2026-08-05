@@ -683,7 +683,7 @@ func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) 
 
 // The point of the exercise: the built-in demo verifier must satisfy HAIP, so
 // that enforcing it on the public demo does not break the demo itself. This
-// drives a real request through a wallet with RequireHAIP on — signed request
+// drives a real request through a wallet with RequireHAIP on. Signed request
 // object fetched over request_uri, x509_hash client id, encrypted response —
 // and expects a verified presentation at the end.
 func TestVerifierIsHAIPCompliantEndToEnd(t *testing.T) {
@@ -828,7 +828,7 @@ func TestIssuanceHAIPAcceptsPreAuthorizedOffer(t *testing.T) {
 // while the wallet waits, PKCE, code exchange, DPoP-bound credential request.
 //
 // The point of the test is the ordering. The offer is created with nobody
-// signed in; authentication happens during redemption, at the authorization
+// signed in. Authentication happens during redemption, at the authorization
 // endpoint, which is where the authorization code flow puts it.
 func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	w := newIssuanceWallet(t)
@@ -891,7 +891,7 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	if !strings.Contains(callback, "code=") {
 		t.Fatalf("login redirect %q carries no authorization code", callback)
 	}
-	// The browser follows the redirect; that is what resumes the flow.
+	// The browser follows the redirect. That is what resumes the flow.
 	cb, err := client.Get(callback)
 	if err != nil {
 		t.Fatalf("following the callback: %v", err)

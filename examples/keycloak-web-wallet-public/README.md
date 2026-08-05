@@ -20,8 +20,8 @@ cd examples/keycloak-web-wallet-public
 
 Then open the demo UI at <http://localhost:9090>:
 
-- **Issuance** — creates a credential offer in Keycloak and shows a clickable `https://eudi-test.dev/credential-offer?...` link. Clicking it delivers the offer to the public wallet, which shows the consent dialog in its UI. Approving imports the membership credential.
-- **Verification** — "Login with wallet" is a plain OIDC login: the browser goes to Keycloak through the tunnel, whose login page links to `https://eudi-test.dev/authorize?...`. The public wallet shows the consent request in its UI. Approving presents the PID credential, and the browser returns through Keycloak to the app's `/callback` with the ID-token claims on screen.
+- **Issuance**: creates a credential offer in Keycloak and shows a clickable `https://eudi-test.dev/credential-offer?...` link. Clicking it delivers the offer to the public wallet, which shows the consent dialog in its UI. Approving imports the membership credential.
+- **Verification**: "Login with wallet" is a plain OIDC login: the browser goes to Keycloak through the tunnel, whose login page links to `https://eudi-test.dev/authorize?...`. The public wallet shows the consent request in its UI. Approving presents the PID credential, and the browser returns through Keycloak to the app's `/callback` with the ID-token claims on screen.
 
 Stop everything with `docker compose down` and `kill $(cat .ngrok.pid)`.
 

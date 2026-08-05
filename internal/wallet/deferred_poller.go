@@ -167,7 +167,7 @@ func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) 
 }
 
 // isRetryableDeferredError reports whether an error is worth another attempt.
-// A network hiccup or a server-side fault is; a refused token or an unknown
+// A network hiccup or a server-side fault is. A refused token or an unknown
 // transaction is not.
 func isRetryableDeferredError(err error) bool {
 	message := err.Error()

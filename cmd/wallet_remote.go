@@ -192,7 +192,7 @@ func instanceIdentityOf(url string) (instanceIdentity, bool) {
 // incompatibilityNotice compares an instance's release with this CLI's and
 // returns the message a user needs to see, or "" when the two can work
 // together. Semantic versioning puts breaking changes in the major release,
-// so only that difference is a problem; a development build on either side
+// so only that difference is a problem. A development build on either side
 // reports nothing comparable and is left alone.
 func incompatibilityNotice(url, instanceVersion string) string {
 	if remote.CheckCompatibility(Version, instanceVersion) != remote.Incompatible {

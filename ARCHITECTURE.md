@@ -102,6 +102,6 @@ Wallet ←→ Proxy (:9090) ←→ Verifier/Issuer (:target)
 
 The tool handles three credential formats throughout:
 
-- **`dc+sd-jwt`** — SD-JWT with selective disclosure. Presented with a Key Binding JWT.
-- **`mso_mdoc`** — ISO 18013-5 mDOC. CBOR-encoded, COSE_Sign1 signed. Presented as DeviceResponse.
-- **`jwt_vc_json`** — Plain JWT Verifiable Credential (W3C format). Presented as-is.
+- **`dc+sd-jwt`**: SD-JWT with selective disclosure. Presented with a Key Binding JWT.
+- **`mso_mdoc`**: ISO 18013-5 mDOC. CBOR-encoded, COSE_Sign1 signed. Presented as DeviceResponse.
+- **`jwt_vc_json`**: Plain JWT Verifiable Credential (W3C format). Presented as-is.

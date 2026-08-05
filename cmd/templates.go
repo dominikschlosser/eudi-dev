@@ -271,7 +271,7 @@ func init() {
 }
 
 // printTemplateSaved reports a saved or imported template. The path is only
-// known for the local store; a remote instance keeps its file layout to
+// known for the local store. A remote instance keeps its file layout to
 // itself.
 func printTemplateSaved(verb, name, path string) {
 	if path != "" {

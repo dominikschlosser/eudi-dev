@@ -28,11 +28,11 @@ function renderResult(doc) {
   status.textContent =
     doc.status === "verified" ? "✓ Presentation verified" :
     doc.status === "failed" ? "✗ Verification failed" + (doc.error ? ": " + doc.error : "") :
-    doc.status === "expired" ? "Request expired — create a new one" :
+    doc.status === "expired" ? "Request expired, create a new one" :
     "Waiting for the wallet…";
   const checks = document.getElementById("checks");
   checks.innerHTML = (doc.checks || []).map((c) =>
-    `<div class="${c.ok ? "ok" : "fail"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? " — " + esc(c.error) : ""}</div>`
+    `<div class="${c.ok ? "ok" : "fail"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`
   ).join("");
   const claims = document.getElementById("claims");
   const label = document.getElementById("claims-label");

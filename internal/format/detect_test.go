@@ -38,7 +38,7 @@ func TestDetect_SDJWT(t *testing.T) {
 }
 
 func TestDetect_MDOC(t *testing.T) {
-	// 0xa2 = CBOR map(2) — a valid CBOR start byte
+	// 0xa2 = CBOR map(2). A valid CBOR start byte
 	hexMDOC := "a26a6e616d65537061636573a0"
 	got := Detect(hexMDOC)
 	if got != FormatMDOC {

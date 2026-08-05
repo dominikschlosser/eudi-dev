@@ -180,7 +180,7 @@ func TestGenerateDefaultCredentials_WithStatusList(t *testing.T) {
 
 func TestGenerateDefaultCredentials_WithoutStatusList(t *testing.T) {
 	w := generateTestWallet(t)
-	// BaseURL not set — status list disabled
+	// BaseURL not set. Status list disabled
 
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("GenerateDefaultCredentials: %v", err)

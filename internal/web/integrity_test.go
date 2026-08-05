@@ -620,7 +620,7 @@ func TestValidate_MDOCStatusWrapping(t *testing.T) {
 		},
 	}
 
-	// Call checkMDOCStatus with CheckStatus=false — should skip
+	// Call checkMDOCStatus with CheckStatus=false. Should skip
 	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: false})
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when CheckStatus=false, got %s", result.Status)

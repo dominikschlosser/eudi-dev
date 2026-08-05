@@ -396,7 +396,7 @@ so the wallet automatically receives incoming protocol requests.`,
 			}
 			if issuerViaBaseURL {
 				// The TLS terminator in front of the base URL serves the
-				// issuer origin; without this the derived port (443 for a
+				// issuer origin. Without this the derived port (443 for a
 				// port-less https URL) would be bound locally.
 				srv.SetIssuerListenPort(-1)
 			}

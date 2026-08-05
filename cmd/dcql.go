@@ -79,7 +79,7 @@ func runDCQL(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unable to auto-detect credential format")
 	}
 
-	// DCQL is a JSON query format — always output as JSON
+	// DCQL is a JSON query format. Always output as JSON
 	output.PrintJSON(query)
 
 	return nil

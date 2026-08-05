@@ -242,7 +242,7 @@ func (c *Client) Present(uri string) (map[string]any, error) {
 }
 
 // AcceptOffer sends a credential offer URI to the remote wallet. An offer
-// whose pre-authorized grant requires a transaction code needs txCode; an
+// whose pre-authorized grant requires a transaction code needs txCode. An
 // empty one is left out so the wallet keeps whatever it already holds.
 func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	var out map[string]any

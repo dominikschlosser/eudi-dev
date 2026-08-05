@@ -14,7 +14,7 @@
 
 // Package imprint renders the operator-supplied imprint (legal notice) page
 // served at /imprint by the wallet and decoder servers. Hosting either UI
-// publicly in the EU requires an imprint naming the site operator; the
+// publicly in the EU requires an imprint naming the site operator. The
 // operator supplies the content, this package supplies the page shell.
 package imprint
 

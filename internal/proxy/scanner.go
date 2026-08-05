@@ -115,7 +115,7 @@ func (s *OutputScanner) scanJWK(line string) {
 		if _, hasD := jwk["d"]; !hasD {
 			continue
 		}
-		// Found a JWK private key — store it for ECDH-ES decryption of JWE responses.
+		// Found a JWK private key. Store it for ECDH-ES decryption of JWE responses.
 		s.mu.Lock()
 		s.lastJWK = jsonStr
 		s.mu.Unlock()
@@ -299,7 +299,7 @@ func isNonJWTCredential(s string) bool {
 	if len(s) < 100 {
 		return false
 	}
-	// Skip JWTs — they're handled by scanCredentials
+	// Skip JWTs. They're handled by scanCredentials
 	if strings.HasPrefix(s, "eyJ") {
 		return false
 	}

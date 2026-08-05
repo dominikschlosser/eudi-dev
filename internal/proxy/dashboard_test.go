@@ -184,7 +184,7 @@ func TestHandleStream(t *testing.T) {
 		t.Fatal("SSE handler did not subscribe in time")
 	}
 
-	// Add an entry — it should arrive over SSE
+	// Add an entry. It should arrive over SSE
 	store.Add(&TrafficEntry{Method: "GET", URL: "http://example.com/test", StatusCode: 200})
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -208,7 +208,7 @@ func TestHandleStream(t *testing.T) {
 		t.Error("no SSE data line found")
 	}
 
-	// Close response body first, then server — avoids hanging on unsub drain
+	// Close response body first, then server. Avoids hanging on unsub drain
 	resp.Body.Close()
 	srv.Close()
 }

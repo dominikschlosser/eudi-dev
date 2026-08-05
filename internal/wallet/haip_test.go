@@ -262,7 +262,7 @@ func TestValidateHAIPIssuanceCompliance(t *testing.T) {
 		{name: "compliant issuer"},
 		{
 			// HAIP 1.0 §4 requires an issuer to support the authorization
-			// code flow; it says nothing about the pre-authorized code flow,
+			// code flow. It says nothing about the pre-authorized code flow,
 			// so an offer using it is not a violation.
 			name: "pre-authorized code offer is accepted",
 			mutate: func(o *oid4vc.CredentialOffer, _ map[string]any) {
@@ -390,7 +390,7 @@ func TestHAIPIssuanceAllowsLoopbackHTTP(t *testing.T) {
 }
 
 // A pre-authorized code offer from an issuer that meets the profile must be
-// accepted. HAIP 1.0 §4 requires support for the authorization code flow; it
+// accepted. HAIP 1.0 §4 requires support for the authorization code flow. It
 // neither requires nor forbids the pre-authorized code flow, and scopes PAR
 // to "when using the Authorization Endpoint", which this offer never reaches.
 func TestHAIPIssuanceAcceptsCompliantPreAuthorizedOffer(t *testing.T) {

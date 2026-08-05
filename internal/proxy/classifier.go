@@ -213,7 +213,7 @@ func decodeEntry(e *TrafficEntry) map[string]any {
 				}
 			}
 		} else if isJWE(responseBody) {
-			// Encrypted request object — surface JWE header info
+			// Encrypted request object. Surface JWE header info
 			headerBytes, err := format.DecodeBase64URL(strings.SplitN(responseBody, ".", 2)[0])
 			if err == nil {
 				var header map[string]any

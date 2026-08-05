@@ -33,7 +33,7 @@ import (
 )
 
 // Instance describes a running wallet server. Every `wallet serve` writes an
-// instance file on startup and removes it on graceful shutdown; discovery
+// instance file on startup and removes it on graceful shutdown. Discovery
 // prunes files whose process is gone.
 type Instance struct {
 	PID       int       `json:"pid"`
@@ -285,7 +285,7 @@ type scannedProcess struct {
 var portFlagPattern = regexp.MustCompile(`--port(?:[= ])(\d+)`)
 
 // scanProcesses finds `wallet serve` processes in the local process list.
-// Windows has no ps; there the instance registry is the only source.
+// Windows has no ps. There the instance registry is the only source.
 func scanProcesses() []scannedProcess {
 	if runtime.GOOS == "windows" {
 		return nil

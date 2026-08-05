@@ -393,7 +393,7 @@ func decryptResponse(req *requestState, form url.Values) (string, error) {
 	}
 
 	// vp_token is a JSON object keyed by query id, which verifyPresentation
-	// already parses; re-encode whatever shape arrived.
+	// already parses. Re-encode whatever shape arrived.
 	raw, err := json.Marshal(payload.VPToken)
 	if err != nil {
 		return "", fmt.Errorf("re-encoding the vp_token: %w", err)

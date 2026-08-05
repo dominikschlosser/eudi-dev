@@ -65,7 +65,7 @@ type Server struct {
 	version     string
 	imprintHTML []byte
 	// ShutdownFunc runs after POST /api/shutdown responded. The serve command
-	// sets it to deregister the instance and exit; when nil the process exits
+	// sets it to deregister the instance and exit. When nil the process exits
 	// directly.
 	ShutdownFunc func()
 }
@@ -74,7 +74,7 @@ type presentationRequestOptions struct {
 	AutoAccept        bool
 	SessionTranscript string
 	// RequireHAIP overrides the server's HAIP enforcement for one request.
-	// Nil inherits the server setting; a value turns enforcement on or off,
+	// Nil inherits the server setting. A value turns enforcement on or off,
 	// so a caller can still be tested against a wallet that enforces HAIP
 	// globally (and a HAIP module can raise the bar on one that does not).
 	RequireHAIP    *bool
@@ -308,7 +308,7 @@ func (s *Server) SetIssuerTLSCertificate(cert tls.Certificate) {
 
 // SetIssuerListenPort overrides the local port of the built-in HTTPS issuer
 // listener, which NewServer derives from the wallet's IssuerURL. Pass a
-// negative port to disable the listener entirely — used when an external TLS
+// negative port to disable the listener entirely. Used when an external TLS
 // terminator serves the issuer origin (IssuerURL equals the base URL), where
 // the derived port would otherwise be 443.
 func (s *Server) SetIssuerListenPort(port int) {
@@ -399,7 +399,7 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 	}
 	// The browser came back from the issuer's login. The flow it belongs to
 	// is still running server-side and finishes on its own, so send the
-	// visitor back to the wallet rather than leaving them on a dead end; the
+	// visitor back to the wallet rather than leaving them on a dead end. The
 	// credential shows up there as soon as it lands.
 	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
 }
@@ -542,7 +542,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		Interactive       bool   `json:"interactive,omitempty"`
 		SessionTranscript string `json:"session_transcript,omitempty"`
 		// Pointer so an explicit "haip": false can switch enforcement off on
-		// a wallet that requires it; omitting the field inherits the server.
+		// a wallet that requires it. Omitting the field inherits the server.
 		HAIP *bool  `json:"haip,omitempty"`
 		Mode string `json:"mode,omitempty"`
 	}
@@ -1087,7 +1087,7 @@ func (s *Server) SetVersion(version string) {
 
 // handleListCredentials serves the stored credentials, optionally windowed
 // with ?limit= and ?offset=. The response stays a plain array so existing
-// clients keep working; the full count travels in X-Total-Count, which a
+// clients keep working. The full count travels in X-Total-Count, which a
 // paging UI needs to know how many pages there are.
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	total := len(s.wallet.GetCredentials())
@@ -1224,7 +1224,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 
 	// An idle stream sends nothing for minutes at a time, and proxies drop
 	// idle connections. The client reconnects, so nothing breaks, but each
-	// reconnect is another request; a comment line keeps the connection up.
+	// reconnect is another request. A comment line keeps the connection up.
 	keepalive := time.NewTicker(sseKeepaliveInterval)
 	defer keepalive.Stop()
 
@@ -1639,7 +1639,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if demo := s.demoConfig(); demo != nil {
 		config["demo"] = demo
 	} else {
-		// Host paths and the pid identify the process on its machine; they
+		// Host paths and the pid identify the process on its machine. They
 		// are for local remote-control tooling, not anonymous demo visitors.
 		config["pid"] = os.Getpid()
 		config["wallet_dir"] = walletDir

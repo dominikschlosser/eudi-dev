@@ -25,8 +25,8 @@ eudi validate credential.txt
 
 | Flag              | Description                                       |
 |-------------------|---------------------------------------------------|
-| `--key`           | Public key file (PEM or JWK) — optional            |
-| `--trust-list`    | ETSI trust list JWT (file path or URL) — optional   |
+| `--key`           | Public key file (PEM or JWK), optional            |
+| `--trust-list`    | ETSI trust list JWT (file path or URL), optional   |
 | `--status-list`   | Check revocation via status list when the credential contains a status reference (enabled by default) |
 | `--allow-expired` | Don't fail on expired credentials                  |
 

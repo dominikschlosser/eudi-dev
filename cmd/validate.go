@@ -249,7 +249,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Status list check for mDOC — wrap in "status" key since ExtractStatusRef
+		// Status list check for mDOC. Wrap in "status" key since ExtractStatusRef
 		// expects {"status": {"status_list": ...}} but MSO.Status is the inner map.
 		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
 			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, tlCerts, opts); err != nil {

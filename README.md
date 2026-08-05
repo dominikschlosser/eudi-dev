@@ -14,13 +14,13 @@ An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, is
 
 ## Highlights
 
-- **Testing Wallet** — stateful CLI wallet with file persistence, OID4VP/VCI flows, QR scanning, and OS URL scheme registration ([wallet](#wallet))
-- **Reverse Proxy** — intercept, classify, and decode OID4VP/VCI wallet traffic in real time ([proxy](#proxy))
-- **Web UI** — paste, decode, and validate credentials in a split-pane browser interface ([serve](#serve))
-- **Unified Decode** — a single `decode` command handles SD-JWT, JWT VC, JWT, mDOC, OID4VCI offers, OID4VP requests, and ETSI trust lists
-- **QR Screen Capture** — scan a QR code straight from your screen to decode credentials or OpenID requests ([decode --screen](#decode))
-- **Offline Decode & Validate** — SD-JWT, JWT VC, mDOC, JWT with signature verification and trust list support
-- **DCQL Generation** — generate Digital Credentials Query Language queries from existing credentials
+- **Testing Wallet**: stateful CLI wallet with file persistence, OID4VP/VCI flows, QR scanning, and OS URL scheme registration ([wallet](#wallet))
+- **Reverse Proxy**: intercept, classify, and decode OID4VP/VCI wallet traffic in real time ([proxy](#proxy))
+- **Web UI**: paste, decode, and validate credentials in a split-pane browser interface ([serve](#serve))
+- **Unified Decode**: a single `decode` command handles SD-JWT, JWT VC, JWT, mDOC, OID4VCI offers, OID4VP requests, and ETSI trust lists
+- **QR Screen Capture**: scan a QR code straight from your screen to decode credentials or OpenID requests ([decode --screen](#decode))
+- **Offline Decode & Validate**: SD-JWT, JWT VC, mDOC, JWT with signature verification and trust list support
+- **DCQL Generation**: generate Digital Credentials Query Language queries from existing credentials
 
 ## Install
 
@@ -61,7 +61,7 @@ docker pull ghcr.io/dominikschlosser/eudi-dev:latest
 docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 ```
 
-The default CMD starts the wallet server with pre-loaded PID credentials in headless mode — ready for automated verifier testing out of the box.
+The default CMD starts the wallet server with pre-loaded PID credentials in headless mode. Ready for automated verifier testing out of the box.
 
 → [Full Docker & verifier testing guide](docs/docker.md)
 → [OIDF conformance status](docs/conformance.md), [runbook](docs/conformance-run.md), and [results](docs/conformance-results.md)
@@ -89,7 +89,7 @@ eudi completion install
 | `issue`    | Generate test SD-JWT, JWT, or mDOC credentials for development |
 | `proxy`    | Debugging reverse proxy for OID4VP/VCI wallet traffic      |
 | `serve`    | Web UI for decoding and validating credentials in the browser |
-| `decode`   | Auto-detect & inspect credentials, OpenID4VCI/VP, and trust lists; may auto-verify issuer metadata when resolvable |
+| `decode`   | Auto-detect & inspect credentials, OpenID4VCI/VP, and trust lists. May auto-verify issuer metadata when resolvable |
 | `validate` | Verify signatures, check expiry, and check revocation status |
 | `dcql`     | Generate a DCQL query from a credential's claims            |
 | `completion` | Generate or install shell completion (`completion install`) |
@@ -111,7 +111,7 @@ eudi wallet scan --screen         # QR scan → auto-dispatch
 eudi wallet logs -f               # Follow persisted wallet interactions
 ```
 
-> **Security:** By default the wallet server has **no authentication**: anyone who can reach its port controls the wallet and its credentials. Run it on localhost or an isolated test network, and never put real credentials in it. Internet-facing hosting has its own profile, `--demo`, which disables the process and filesystem endpoints and blocks fetches into private networks — that is what runs on [eudi-test.dev](https://eudi-test.dev). See [public demo hosting](docs/public-demo.md).
+> **Security:** By default the wallet server has **no authentication**: anyone who can reach its port controls the wallet and its credentials. Run it on localhost or an isolated test network, and never put real credentials in it. Internet-facing hosting has its own profile, `--demo`, which disables the process and filesystem endpoints and blocks fetches into private networks. That is what runs on [eudi-test.dev](https://eudi-test.dev). See [public demo hosting](docs/public-demo.md).
 
 `wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `issue ... --wallet --template german-pid-sdjwt` gives you a ready-to-use PID wallet and adds new credentials into the same wallet context (`wallet generate-pid` still works but is deprecated), and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
 
@@ -128,9 +128,9 @@ When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you 
 
 ![Wallet UI](docs/wallet-ui.png)
 
-→ [Full documentation](docs/wallet.md) — subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
-→ [Public demo hosting](docs/public-demo.md) — run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
-→ [Flow diagrams](docs/diagrams/README.md) — GitHub-rendered OID4VP / OID4VCI interaction diagrams and parameter checklists
+→ [Full documentation](docs/wallet.md): subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
+→ [Public demo hosting](docs/public-demo.md): run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
+→ [Flow diagrams](docs/diagrams/README.md): GitHub-rendered OID4VP / OID4VCI interaction diagrams and parameter checklists
 
 ---
 
@@ -149,8 +149,8 @@ eudi issue sdjwt | eudi decode
 
 Reusable claim sets live in credential templates (`templates list|show|save|import|delete`). Templates carry the credential type, default claims, and the claims to issue without selective disclosure. They work in the CLI, the HTTP API, and the wallet UI.
 
-→ [Full documentation](docs/issue.md) — all flags, round-trip examples
-→ [Credential templates](docs/templates.md) — template files, management commands, always disclosed claims
+→ [Full documentation](docs/issue.md): all flags, round-trip examples
+→ [Credential templates](docs/templates.md): template files, management commands, always disclosed claims
 
 ---
 
@@ -168,7 +168,7 @@ Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
             Live dashboard (:9091)
 ```
 
-→ [Full documentation](docs/proxy.md) — traffic classification, features, flags
+→ [Full documentation](docs/proxy.md): traffic classification, features, flags
 
 ---
 
@@ -200,7 +200,7 @@ eudi decode 'openid4vp://authorize?...'
 eudi decode --screen                    # QR scan from screen
 ```
 
-→ [Full documentation](docs/decode.md) — auto-detection order, format override, QR scanning, flags
+→ [Full documentation](docs/decode.md): auto-detection order, format override, QR scanning, flags
 
 ---
 
@@ -214,7 +214,7 @@ eudi validate --trust-list trust-list.jwt credential.txt
 eudi validate credential.txt
 ```
 
-→ [Full documentation](docs/validate.md) — flags, trust list explanation
+→ [Full documentation](docs/validate.md): flags, trust list explanation
 
 ---
 

@@ -79,7 +79,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		// Expiry check
 		checks = append(checks, checkSDJWTExpiry(token))
 
-		// Integrity — not applicable for plain JWT
+		// Integrity. Not applicable for plain JWT
 		checks = append(checks, CheckResult{
 			Name:   "integrity",
 			Status: "skipped",
@@ -89,7 +89,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		// Signature check
 		checks = append(checks, checkSDJWTSignature(token, opts))
 
-		// Status check — not applicable for plain JWT
+		// Status check. Not applicable for plain JWT
 		checks = append(checks, CheckResult{
 			Name:   "status",
 			Status: "skipped",
@@ -524,7 +524,7 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 	}
 
 	if opts.TrustListURL != "" {
-		// The URL comes from the HTTP request body; ReadRemoteInput never
+		// The URL comes from the HTTP request body. ReadRemoteInput never
 		// touches the server's filesystem.
 		tlRaw, err := format.ReadRemoteInput(opts.TrustListURL)
 		if err != nil {

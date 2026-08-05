@@ -60,7 +60,7 @@ type IssuanceOfferDetails struct {
 }
 
 // describeCredentialOffer summarizes an offer for the consent dialog. It
-// fetches the issuer metadata to resolve display names and claims; a failure
+// fetches the issuer metadata to resolve display names and claims. A failure
 // there is recorded and the offer is still described from what it carries,
 // because a user should not be blocked from deciding by an issuer that
 // publishes no metadata.
@@ -183,7 +183,7 @@ func firstDisplayEntry(raw any) (map[string]any, bool) {
 
 // configurationClaimNames lists the claims a configuration declares. OID4VCI
 // 1.0 uses an array of objects with a "path", while earlier drafts used a
-// nested object keyed by claim name; both appear in the wild.
+// nested object keyed by claim name. Both appear in the wild.
 func configurationClaimNames(raw any) []string {
 	switch claims := raw.(type) {
 	case []any:

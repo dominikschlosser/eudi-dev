@@ -1004,7 +1004,7 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 	// URL is about to be navigated to. A javascript: or data: endpoint would
 	// run in the wallet's own origin, so refuse anything but http(s) before
 	// handing it anywhere. (The call above would already have failed on such
-	// a scheme; this does not depend on that ordering.)
+	// a scheme. This does not depend on that ordering.)
 	if err := validateAbsoluteURI("authorization_endpoint", authURL); err != nil {
 		return nil, err
 	}

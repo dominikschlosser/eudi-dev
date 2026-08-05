@@ -422,7 +422,7 @@ func TestRemoteShowImportLogsInfoViaCLI(t *testing.T) {
 		t.Fatalf("expected re-imported credential: %v %v", creds, err)
 	}
 
-	// logs and info must succeed; --follow is rejected remotely
+	// logs and info must succeed. --follow is rejected remotely
 	rootCmd.SetArgs([]string{"wallet", "logs", "--remote", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("remote logs: %v", err)

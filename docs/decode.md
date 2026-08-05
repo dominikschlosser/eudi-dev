@@ -28,12 +28,12 @@ eudi decode -f trustlist https://example.com/trust-list.jwt
 
 ## Auto-detection order
 
-1. **OpenID URI schemes** — `openid-credential-offer://` / `haip-vci://` (VCI), `openid4vp://` / `haip-vp://` / `eudi-openid4vp://` (VP)
-2. **HTTP(S) URL with OID4 query params** — `credential_offer` / `credential_offer_uri` (VCI), `client_id` / `response_type` / `request_uri` (VP)
-3. **SD-JWT** — contains `~` separator
-4. **mDOC** — hex or base64url encoded CBOR
-5. **JSON** — inspected for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
-6. **JWT** — 3 dot-separated parts; payload inspected for OID4 markers and trust list markers (`TrustedEntitiesList`)
+1. **OpenID URI schemes**: `openid-credential-offer://` / `haip-vci://` (VCI), `openid4vp://` / `haip-vp://` / `eudi-openid4vp://` (VP)
+2. **HTTP(S) URL with OID4 query params**: `credential_offer` / `credential_offer_uri` (VCI), `client_id` / `response_type` / `request_uri` (VP)
+3. **SD-JWT**: contains `~` separator
+4. **mDOC**: hex or base64url encoded CBOR
+5. **JSON**: inspected for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
+6. **JWT**: 3 dot-separated parts. Payload inspected for OID4 markers and trust list markers (`TrustedEntitiesList`)
 
 ## Format override
 
@@ -58,9 +58,9 @@ eudi decode --qr screenshot.png
 eudi decode --screen
 ```
 
-`--screen` uses the native macOS `screencapture` tool in interactive selection mode — a crosshair appears to let you select the region containing the QR code. On other platforms, take a screenshot and use `--qr screenshot.png` instead.
+`--screen` uses the native macOS `screencapture` tool in interactive selection mode. A crosshair appears to let you select the region containing the QR code. On other platforms, take a screenshot and use `--qr screenshot.png` instead.
 
-> **Note:** Screen capture permission on macOS is granted to the **terminal app** (Terminal.app, iTerm2, etc.), not to the `eudi` binary itself. If permission is missing, System Settings will be opened automatically to the Screen Recording pane — enable access for your terminal app there, then re-run the command.
+> **Note:** Screen capture permission on macOS is granted to the **terminal app** (Terminal.app, iTerm2, etc.), not to the `eudi` binary itself. If permission is missing, System Settings will be opened automatically to the Screen Recording pane. Enable access for your terminal app there, then re-run the command.
 
 ## Flags
 

@@ -197,7 +197,7 @@ func parseDisclosure(raw string, sdAlg string) (*Disclosure, error) {
 		disc.Name, _ = arr[1].(string)
 		disc.Value = arr[2]
 	case 2:
-		// [salt, value] — array element disclosure
+		// [salt, value]. Array element disclosure
 		disc.Salt, _ = arr[0].(string)
 		disc.Value = arr[1]
 		disc.IsArrayEntry = true

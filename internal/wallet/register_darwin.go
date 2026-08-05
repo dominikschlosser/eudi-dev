@@ -105,7 +105,7 @@ func RegisterURLSchemes(opts RegisterOptions) error {
 
 // compileHandlerBundle builds the .app that macOS dispatches URL schemes to.
 func compileHandlerBundle(handlerPath, bundlePath, binaryPath string, opts RegisterOptions) error {
-	// Write AppleScript source — "on open location" receives the URL from macOS Apple Events
+	// Write AppleScript source. "on open location" receives the URL from macOS Apple Events
 	appleScript := fmt.Sprintf(`on open location theURL
 	do shell script quoted form of "%s" & " " & quoted form of theURL & " >> /tmp/eudi-dev-wallet.log 2>&1 &"
 end open location

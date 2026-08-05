@@ -493,7 +493,7 @@ func TestEvaluateDCQL_ClaimSets_StringIDs(t *testing.T) {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
 
-	// First claim_set should be selected (preference order) — all three claims
+	// First claim_set should be selected (preference order). All three claims
 	if len(matches[0].SelectedKeys) != 3 {
 		t.Errorf("expected 3 selected keys (first claim_set), got %d: %v",
 			len(matches[0].SelectedKeys), matches[0].SelectedKeys)
@@ -568,7 +568,7 @@ func TestEvaluateDCQL_ClaimSets_NoneMatchable(t *testing.T) {
 func TestEvaluateDCQL_ClaimSets_IntegerIndicesRejected(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Integer indices are not valid per spec — claim_sets must use string IDs
+	// Integer indices are not valid per spec. Claim_sets must use string IDs
 	query := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -925,7 +925,7 @@ func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
 func TestEvaluateDCQL_TrustedAuthorities_NoMatch(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Generate a trust list from a DIFFERENT CA — credentials should NOT match
+	// Generate a trust list from a DIFFERENT CA. Credentials should NOT match
 	otherKey, _ := mock.GenerateKey()
 	otherCACert, _ := mock.GenerateCACert(otherKey)
 	tlJWT, err := GenerateTrustListJWT(otherKey, otherCACert)

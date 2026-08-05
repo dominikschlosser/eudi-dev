@@ -36,7 +36,7 @@ func extractJWKThumbprint(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[st
 }
 
 // findEncryptionJWK locates the first encryption JWK from client_metadata.jwks
-// per OID4VP 1.0. No fallback to other locations — the wallet enforces strict
+// per OID4VP 1.0. No fallback to other locations. The wallet enforces strict
 // spec compliance so verifiers can detect misconfigurations.
 func findEncryptionJWK(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) map[string]any {
 	if reqObj != nil && reqObj.Payload != nil {
@@ -49,8 +49,8 @@ func findEncryptionJWK(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[strin
 }
 
 // firstJWK extracts the first usable encryption key from a JWKS value
-// ({"keys": [...]}). Keys the wallet cannot use — unsupported kty, unsupported
-// curve, or a signing-only use — are ignored per RFC 7517 §5, so verifiers can
+// ({"keys": [...]}). Keys the wallet cannot use. Unsupported kty, unsupported
+// curve, or a signing-only use. Are ignored per RFC 7517 §5, so verifiers can
 // advertise e.g. post-quantum keys ahead of wallet support without breaking
 // encryption to the usable key.
 func firstJWK(jwksVal any) map[string]any {
@@ -241,7 +241,7 @@ func (w *Wallet) EncryptErrorResponse(errorCode, errorDescription, state string,
 
 // detectEncAlgorithm finds the content encryption algorithm from
 // client_metadata.encrypted_response_enc_values_supported per OID4VP 1.0.
-// No fallback to legacy field names — strict spec compliance.
+// No fallback to legacy field names. Strict spec compliance.
 func detectEncAlgorithm(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any, fallback string) string {
 	clientMeta := clientMetadata
 	if reqObj != nil && reqObj.Payload != nil {

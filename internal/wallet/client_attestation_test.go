@@ -143,7 +143,7 @@ func silentAttestationIssuer(t *testing.T, w *Wallet) (*httptest.Server, string,
 }
 
 // TestForceClientAttestation_ReachesSilentIssuer covers the override end to
-// end: off, the wallet correctly sends nothing and the issuer refuses; on, the
+// end: off, the wallet correctly sends nothing and the issuer refuses. On, the
 // attestation goes out and the credential is issued.
 func TestForceClientAttestation_ReachesSilentIssuer(t *testing.T) {
 	for _, tc := range []struct {
@@ -198,7 +198,7 @@ func TestForceClientAttestation_DoesNotDisplacePrivateKeyJWT(t *testing.T) {
 		t.Fatalf("detected %q, want private_key_jwt", method)
 	}
 	// attestsClient is true under the override, so the authorization code path
-	// guards on the detected method as well; this documents that pairing.
+	// guards on the detected method as well. This documents that pairing.
 	if !w.attestsClient(meta) {
 		t.Error("override should make attestsClient true even for private_key_jwt metadata")
 	}

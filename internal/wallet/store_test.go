@@ -305,7 +305,7 @@ func TestWalletStore_KeyPersistence(t *testing.T) {
 		t.Fatalf("LoadOrCreate: %v", err)
 	}
 
-	// Load again — same keys should be used
+	// Load again. Same keys should be used
 	w2, err := store.LoadOrCreate()
 	if err != nil {
 		t.Fatalf("LoadOrCreate second time: %v", err)

@@ -118,7 +118,7 @@ sequenceDiagram
 
 ## Files
 
-- `start.sh`: runs the full setup; starts the wallet and proxy every time, and uses `--ngrok` / `--no-ngrok` for public exposure
+- `start.sh`: runs the full setup. Starts the wallet and proxy every time, and uses `--ngrok` / `--no-ngrok` for public exposure
 - `docker-compose.yml`: starts the HTTP Keycloak setup and imports the base realm from `realm/`
 - `docker-compose.https.yml`: overrides the base compose file for HTTPS mode
 - `realm/wallet-app-demo-realm.json`: source-of-truth base realm with the static user, app client, and credential scope
@@ -177,7 +177,7 @@ When both sandbox verifier files are present, `./start.sh` defaults to ngrok mod
 ./start.sh --wallet-port 8087
 ```
 
-`--ngrok` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`; otherwise it detects the hostname from the sandbox certificate SAN, including when the sandbox files were found in a sibling worktree.
+`--ngrok` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`. Otherwise it detects the hostname from the sandbox certificate SAN, including when the sandbox files were found in a sibling worktree.
 
 Each `./start.sh` run recreates the Keycloak container state and imports `realm/wallet-app-demo-realm.json` from scratch. Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in local mode, and:
 

@@ -45,7 +45,7 @@
     input.focus();
   });
 
-  // Share — copy URL with ?credential= query param
+  // Share: copy the URL with a ?credential= query param
   shareBtn.addEventListener("click", copyShareLink);
 
   function copyShareLink() {
@@ -95,7 +95,7 @@
     applyCredential(next);
   }
 
-  // Colorized input view — overlaid behind transparent textarea
+  // Colorized input view, overlaid behind a transparent textarea
   function showColorized() {
     if (colorized) return;
     colorized = true;
@@ -164,7 +164,7 @@
         pos += sigText.length;
       }
 
-      // SD-JWT disclosures — each gets a unique color
+      // SD-JWT disclosures, each in its own color
       // Detect KB-JWT: last non-empty part that contains dots (JWT structure)
       let kbJwtIndex = -1;
       if (parts.length > 1) {
@@ -182,7 +182,7 @@
         pos += 1; // ~
         if (parts[i]) {
           if (i === kbJwtIndex) {
-            // KB-JWT — colorize its internal structure
+            // KB-JWT: colorize its internal structure
             const kbSegs = parts[i].split(".");
             sectionRanges.push({ start: pos, end: pos + parts[i].length, section: "kb-jwt" });
             html += '<span data-section="kb-jwt">';
@@ -298,7 +298,7 @@
     setTimeout(() => toast.classList.remove("show"), 2000);
   }
 
-  // Decode — calls /api/validate to get both decode result and validation checks
+  // Decode calls /api/validate, which returns the decode result and the checks
   // (integrity, expiry, status run automatically; signature is skipped without key)
   function decode() {
     const text = input.value.trim();
@@ -1239,7 +1239,7 @@
     return major === 4 || major === 5 || major === 6;
   }
 
-  // JSON syntax highlighting regex — matches strings, keys, booleans, null, numbers
+  // JSON syntax highlighting: strings, keys, booleans, null, numbers
   var JSON_TOKEN_RE = /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g;
 
   function syntaxHighlight(json) {

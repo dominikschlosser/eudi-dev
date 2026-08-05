@@ -26,7 +26,7 @@ import (
 
 // strictPreAuthIssuer serves a pre-authorized_code issuer that requires
 // DPoP-bound tokens, client (wallet) attestation, and key attestation in the
-// proof — the combination the Animo playground enables by default. Each
+// proof. The combination the Animo playground enables by default. Each
 // requirement is enforced, so a wallet that omits one gets the same error an
 // issuer would send.
 func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAttestation, requireKeyAttestation bool) (*httptest.Server, string) {

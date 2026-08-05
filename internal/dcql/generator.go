@@ -138,12 +138,12 @@ func extractPaths(prefix []any, v any) []ClaimQuery {
 			result = append(result, extractPaths(path, val[k])...)
 		}
 		if len(result) == 0 {
-			// Object with only _sd entries (all sub-claims undisclosed) — request the object itself
+			// Object with only _sd entries (all sub-claims undisclosed). Request the object itself
 			return []ClaimQuery{{Path: prefix}}
 		}
 		return result
 	case []any:
-		// Array — use null wildcard to request all elements
+		// Array. Use null wildcard to request all elements
 		path := append(append([]any{}, prefix...), nil)
 		return []ClaimQuery{{Path: path}}
 	default:

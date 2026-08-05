@@ -124,7 +124,7 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 //
 // The authorization code flow authenticates the user at the issuer, which
 // only a browser can do. A wallet running on the user's own machine opens
-// one; a hosted wallet has no browser of its own, so it hands the URL to the
+// one. A hosted wallet has no browser of its own, so it hands the URL to the
 // open UI instead and that tab navigates. Either way the login happens inside
 // the flow, between the pushed authorization request and the token exchange.
 func (w *Wallet) SubscribeAuthorization() (<-chan string, func()) {

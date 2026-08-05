@@ -15,7 +15,7 @@
 package cmd
 
 // Dynamic shell completion. The standard cobra `completion` command (bash,
-// zsh, fish, powershell) exists on the root command; the functions here add
+// zsh, fish, powershell) exists on the root command. The functions here add
 // value completion for everything the CLI can know: template names,
 // credential IDs, and running wallet instances. Remote mode is honored, so
 // completions come from the active remote wallet when one is configured.

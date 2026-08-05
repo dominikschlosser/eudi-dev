@@ -342,7 +342,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				return nil, fmt.Errorf("requesting credential: %w", nonceErr)
 			}
 		} else {
-			// First request succeeded without nonce — use the response directly
+			// First request succeeded without nonce. Use the response directly
 			credential, err := selectHolderBoundCredential(nonceResp, proofKeys)
 			if err != nil {
 				return nil, err

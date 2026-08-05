@@ -1,6 +1,6 @@
 # Proxy
 
-Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server — every request and response is captured, classified by protocol step, decoded, and displayed both in the terminal and a live web dashboard.
+Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server. Every request and response is captured, classified by protocol step, decoded, and displayed both in the terminal and a live web dashboard.
 
 ```bash
 eudi proxy --target http://localhost:8080
@@ -14,7 +14,7 @@ Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
             Live dashboard (:9091)
 ```
 
-Optionally launch the target service as a subprocess — the proxy scans its stdout for encryption keys and credentials:
+Optionally launch the target service as a subprocess. The proxy scans its stdout for encryption keys and credentials:
 
 ```bash
 eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
@@ -39,13 +39,13 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 
 ## Features
 
-- **Smart decoding** — payloads are decoded inline (SD-JWT, JWT, mDOC, DCQL queries, JWE headers)
-- **Credential decode hints** — detected credentials are printed as `eudi decode` commands for quick inspection
-- **JARM/JWE decryption** — when the built-in wallet sends a `direct_post.jwt` response through the proxy, the encrypted payload is automatically decrypted (see [JWE Decryption](#jwe-decryption) below)
-- **Flow correlation** — related protocol steps are grouped by shared `state`/`nonce` values
+- **Smart decoding**: payloads are decoded inline (SD-JWT, JWT, mDOC, DCQL queries, JWE headers)
+- **Credential decode hints**: detected credentials are printed as `eudi decode` commands for quick inspection
+- **JARM/JWE decryption**: when the built-in wallet sends a `direct_post.jwt` response through the proxy, the encrypted payload is automatically decrypted (see [JWE Decryption](#jwe-decryption) below)
+- **Flow correlation**: related protocol steps are grouped by shared `state`/`nonce` values
 - **Web dashboard** at `http://localhost:9091` with live SSE updates, expandable cards, "View in Decoder" links, HAR export, and cURL copy
-- **JARM/JWE detection** — shows encrypted response headers and the verifier's ephemeral public key
-- **NDJSON output** — `--json` for machine-readable output, pipe to `jq` or log to file
+- **JARM/JWE detection**: shows encrypted response headers and the verifier's ephemeral public key
+- **NDJSON output**: `--json` for machine-readable output, pipe to `jq` or log to file
 
 ## Flags
 
@@ -85,7 +85,7 @@ When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`dire
 
 This works via a debug header: the wallet includes the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding the request to the verifier, so the verifier never sees it.
 
-No configuration is needed — simply route the wallet through the proxy:
+No configuration is needed. Simply route the wallet through the proxy:
 
 ```
 eudi wallet                          # wallet sends to response_uri
@@ -104,7 +104,7 @@ The proxy detects lines matching patterns like:
 - `CEK: <base64url>` or `content encryption key: <base64url>`
 - JWK objects containing a `"d"` (private key) parameter
 
-This is best-effort — if no key is found, the proxy falls back to showing only the JWE header fields (`alg`, `enc`, `kid`, `epk`).
+This is best-effort. If no key is found, the proxy falls back to showing only the JWE header fields (`alg`, `enc`, `kid`, `epk`).
 
 ### Credential detection from service stdout
 
@@ -124,6 +124,6 @@ When running as a subprocess, the proxy also scans the service's stdout for JWT/
   ```bash
   eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
   ```
-  Service output appears with a `[service]` prefix; detected credentials get decode links.
+  Service output appears with a `[service]` prefix. Detected credentials get decode links.
 - Use `--all-traffic` to see non-OID4VP/VCI requests (health checks, favicon, etc.)
 - Pipe to `jq` with `--json` for structured analysis: `eudi proxy --target ... --json | jq '.credentials'`

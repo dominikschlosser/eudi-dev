@@ -210,7 +210,7 @@ func verifyVerifierAttestation(clientID string, reqObj *oid4vc.RequestObjectJWT)
 
 // verifyDecentralizedIdentifier validates the decentralized_identifier: prefix per OID4VP 1.0.
 // The value must be a valid DID (did:method:identifier format) and a signed Request Object must be present.
-// Note: Full DID resolution is not implemented — only format validation is performed.
+// Note: Full DID resolution is not implemented. Only format validation is performed.
 func verifyDecentralizedIdentifier(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	did := strings.TrimPrefix(clientID, "decentralized_identifier:")
 
@@ -352,7 +352,7 @@ func verifyAlgMatchesCert(reqObj *oid4vc.RequestObjectJWT) string {
 	// Only check when x5c is present.
 	cert, warning := extractLeafCert(reqObj)
 	if warning != "" {
-		// No x5c — nothing to cross-check.
+		// No x5c. Nothing to cross-check.
 		return ""
 	}
 

@@ -49,7 +49,7 @@ eudi issue mdoc  | eudi decode
 | Flag       | Default                   | Description                                    |
 |------------|---------------------------|------------------------------------------------|
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
-| `--key`    | —                         | Private key file (PEM or JWK); ephemeral if omitted |
+| `--key`    | —                         | Private key file (PEM or JWK). Ephemeral if omitted |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
 | `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
@@ -68,7 +68,7 @@ eudi issue mdoc  | eudi decode
 | Flag       | Default                   | Description                                    |
 |------------|---------------------------|------------------------------------------------|
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
-| `--key`    | —                         | Private key file (PEM or JWK); ephemeral if omitted |
+| `--key`    | —                         | Private key file (PEM or JWK). Ephemeral if omitted |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
 | `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
@@ -81,14 +81,14 @@ eudi issue mdoc  | eudi decode
 | `--status-list-uri` | —              | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
 
-Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims directly in the payload — no selective disclosure, no `_sd` or `_sd_alg` fields.
+Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims directly in the payload. No selective disclosure, no `_sd` or `_sd_alg` fields.
 
 ### `issue mdoc`
 
 | Flag          | Default                        | Description                                    |
 |---------------|--------------------------------|------------------------------------------------|
 | `--claims`    | —                              | Claims as JSON string or `@filepath`           |
-| `--key`       | —                              | Private key file (PEM or JWK); ephemeral if omitted |
+| `--key`       | —                              | Private key file (PEM or JWK). Ephemeral if omitted |
 | `--doc-type`  | `eu.europa.ec.eudi.pid.1`      | Document type                                  |
 | `--namespace` | `eu.europa.ec.eudi.pid.1`      | Namespace                                      |
 | `--exp`       | `720h` (30 days)               | Expiration duration                            |
@@ -134,7 +134,7 @@ Use the following flags when you need explicit control over the stored trust or 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--trust-profile` | `auto` | Built-in trust-list profile for `--wallet` metadata: `auto`, `pid`, or `local` |
-| `--entitlement` | — | Registrar entitlement URI to store for the credential type; repeatable |
+| `--entitlement` | — | Registrar entitlement URI to store for the credential type. Repeatable |
 | `--trust-list-type` | — | LoTE type URI to store for the credential type |
 | `--status-determination-approach` | — | Trust-list status determination approach URI to store |
 | `--scheme-community-rule` | — | Trust-list scheme community rule URI to store |

@@ -72,7 +72,7 @@ type IssueOptions struct {
 	ExpiresIn time.Duration
 	NotBefore *time.Time
 	// StatusListURI and StatusListIdx control the embedded status reference.
-	// A nil URI means "use the wallet's own status list when configured"; an
+	// A nil URI means "use the wallet's own status list when configured". An
 	// explicit empty URI disables the status reference. A nil index means
 	// "next free index" when the wallet's own status list is used.
 	StatusListURI *string
@@ -91,7 +91,7 @@ type IssueResult struct {
 	Raw string
 	// Credential is the stored credential imported into the wallet.
 	Credential *StoredCredential
-	// StatusIdx is the status list index embedded in the credential; it is
+	// StatusIdx is the status list index embedded in the credential. It is
 	// only meaningful when StatusRegistered is true.
 	StatusIdx int
 	// StatusRegistered reports whether the credential was registered on the

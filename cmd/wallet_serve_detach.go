@@ -38,7 +38,7 @@ func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool)
 		return fmt.Errorf("serializing wallet serve flags: %w", err)
 	}
 	// serializeWalletServeArgs drops registration flags because the URL
-	// scheme handler it was built for must not re-register; the detached
+	// scheme handler it was built for must not re-register. The detached
 	// child should still honor them.
 	if register {
 		flags = append(flags, "--register")

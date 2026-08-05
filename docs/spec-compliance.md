@@ -8,14 +8,14 @@ Status of implemented features against the relevant specifications.
 |---------|--------|-------|
 | Authorization request parsing | Implemented | `openid4vp://`, `haip-vp://`, `eudi-openid4vp://` schemes |
 | `request_uri` (GET) | Implemented | Fetches and parses signed request objects |
-| `request_uri_method=post` | Implemented | Sends `wallet_metadata` and `wallet_nonce`; strict mode rejects missing `wallet_nonce` in the response |
+| `request_uri_method=post` | Implemented | Sends `wallet_metadata` and `wallet_nonce`. Strict mode rejects missing `wallet_nonce` in the response |
 | Encrypted request objects (JWE) | Implemented | `--require-encrypted-request` flag |
-| DCQL query evaluation | Implemented | Including `credential_sets` constraints; debug mode warns and continues when some required claim paths are missing from an otherwise matching credential, while strict mode treats that credential as non-matching |
+| DCQL query evaluation | Implemented | Including `credential_sets` constraints. Debug mode warns and continues when some required claim paths are missing from an otherwise matching credential, while strict mode treats that credential as non-matching |
 | `direct_post` response mode | Implemented | |
 | `direct_post.jwt` response mode | Implemented | JARM-encrypted responses |
 | `dc_api` response mode | Implemented | Browser API responses via `/api/dc-api` |
 | `dc_api.jwt` response mode | Implemented | Encrypted Browser API responses via `/api/dc-api` |
-| JAR (signed request objects) | Implemented | Strict mode verifies the JWS signature with the leaf `x5c` key and rejects failures; debug mode logs findings and continues |
+| JAR (signed request objects) | Implemented | Strict mode verifies the JWS signature with the leaf `x5c` key and rejects failures. Debug mode logs findings and continues |
 | `x509_san_dns:` client_id | Implemented | Verified against leaf cert SAN |
 | `x509_hash:` client_id | Implemented | SHA-256 thumbprint matching |
 | `web-origin:` client_id | Implemented | Verified against the caller `Origin` for Browser API requests |
@@ -23,11 +23,11 @@ Status of implemented features against the relevant specifications.
 | `verifier_attestation:` client_id | Validated | Checks JWT structure in header, verifies `sub` claim matches client_id |
 | `decentralized_identifier:` client_id | Validated | DID format validation, `kid` cross-check (full DID resolution not implemented) |
 | VP Token as JSON array | Implemented | Multiple credentials in a single response |
-| `fragment` response mode | Implemented | Builds redirect URL with vp_token/state as fragment params; not the default |
+| `fragment` response mode | Implemented | Builds redirect URL with vp_token/state as fragment params. Not the default |
 | SIOPv2 self-issued `id_token` | Implemented | `response_type=vp_token id_token` or `id_token` alone |
 | Request object `typ` header | Enforced in strict mode | Debug mode logs a warning and continues |
 | `trusted_authorities` (`etsi_tl`, `aki`) | Implemented | Filters credentials by issuer certificate chain against ETSI trust lists or matching Authority Key Identifier values |
-| `transaction_data` | Enforced in strict mode | Debug mode logs a warning and continues; strict mode rejects unsupported `transaction_data` |
+| `transaction_data` | Enforced in strict mode | Debug mode logs a warning and continues. Strict mode rejects unsupported `transaction_data` |
 
 
 ## OID4VCI 1.0 (OpenID for Verifiable Credential Issuance)
@@ -56,7 +56,7 @@ Status of implemented features against the relevant specifications.
 | VP signed request object (JAR) | Enforced | Required with `--haip`, except unsigned Browser API `web-origin:` `dc_api.jwt` requests |
 | VP DCQL query | Enforced | `presentation_definition` is rejected with `--haip` |
 | VP Request Object `alg` | Enforced | `ES256` required with `--haip` when a request object is present |
-| VCI authorization-code profile pieces | Enforced | The client uses PAR, PKCE S256 and DPoP. With `--haip`, an offer that drives the authorization endpoint is rejected unless the issuer requires PAR and supports PKCE S256, DPoP and client authentication; a pre-authorized code offer is held only to the https transport rule, per §4 |
+| VCI authorization-code profile pieces | Enforced | The client uses PAR, PKCE S256 and DPoP. With `--haip`, an offer that drives the authorization endpoint is rejected unless the issuer requires PAR and supports PKCE S256, DPoP and client authentication. A pre-authorized code offer is held only to the https transport rule, per §4 |
 | VCI encrypted credential responses | Implemented | Requests `credential_response_encryption` and decrypts returned compact JWEs |
 
 This is the HAIP behavior currently exercised by the wallet and the current OIDF Final + HAIP wallet plans. It should not be read as a blanket claim that every HAIP deployment profile or auxiliary feature is implemented beyond those flows.
@@ -74,7 +74,7 @@ This is the HAIP behavior currently exercised by the wallet and the current OIDF
 | SHA-256/384/512 disclosure digests | Implemented | |
 | Disclosure digest integrity check | Implemented | Verifies each disclosure hash appears in `_sd` arrays |
 | `kid` header on generated SD-JWTs | Implemented | Deterministic RFC 7638 thumbprint of the signing key |
-| X.509 trust-chain based issuer key publication | Implemented | Generated SD-JWTs carry leaf `x5c`; trust anchor remains in wallet trust list |
+| X.509 trust-chain based issuer key publication | Implemented | Generated SD-JWTs carry leaf `x5c`. Trust anchor remains in wallet trust list |
 
 ## mDOC / ISO 18013-5
 
@@ -95,7 +95,7 @@ This is the HAIP behavior currently exercised by the wallet and the current OIDF
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Trusted entity list JWT generation | Implemented | Wallet generates ETSI TS 119 602 JSON-binding JWT lists with the required top-level `LoTE` object |
-| Trusted entity list JWT parsing | Implemented | Signature not verified (intentional for debugging); requires the ETSI JSON-binding `LoTE` wrapper and accepts current EUDI-style fields such as `ListIssueDateTime` |
+| Trusted entity list JWT parsing | Implemented | Signature not verified (intentional for debugging). Requires the ETSI JSON-binding `LoTE` wrapper and accepts current EUDI-style fields such as `ListIssueDateTime` |
 | Certificate chain validation against trusted entity list | Implemented | In `validate` command |
 
 The implementation target for the EUDI wallet trust infrastructure is ETSI TS 119 602, which defines the EUDI trusted-entity list data model and LoTE structures. It does not implement the classic ETSI TS 119 612 XML trusted-list format used for eIDAS trust-service status lists.

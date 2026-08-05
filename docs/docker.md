@@ -9,7 +9,7 @@ docker pull ghcr.io/dominikschlosser/eudi-dev:latest
 docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 ```
 
-The default CMD starts the wallet server with pre-loaded PID credentials in headless mode — ready for automated verifier testing out of the box.
+The default CMD starts the wallet server with pre-loaded PID credentials in headless mode. Ready for automated verifier testing out of the box.
 
 You can override the command to use any CLI feature:
 
@@ -28,13 +28,13 @@ docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://ex
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/authorize` | GET/POST | OID4VP authorization endpoint — accepts standard OID4VP query parameters (`client_id`, `response_type`, `dcql_query`, `nonce`, `state`, `response_uri`, `response_mode`, `request_uri`) |
-| `/api/trustlist` | GET | Legacy trust-list endpoint; returns the PID trust list when one is registered, otherwise the first available trust-list profile |
-| `/api/trustlists` | GET | JSON index of all coherent trust-list profiles registered in the wallet; each entry includes a relative `path` plus optional `advertised_url` / legacy `url` |
+| `/authorize` | GET/POST | OID4VP authorization endpoint, accepting the standard OID4VP query parameters (`client_id`, `response_type`, `dcql_query`, `nonce`, `state`, `response_uri`, `response_mode`, `request_uri`) |
+| `/api/trustlist` | GET | Legacy trust-list endpoint. Returns the PID trust list when one is registered, otherwise the first available trust-list profile |
+| `/api/trustlists` | GET | JSON index of all coherent trust-list profiles registered in the wallet. Each entry includes a relative `path` plus optional `advertised_url` / legacy `url` |
 | `/api/trustlists/<id>` | GET | ETSI trust list JWT for one specific trust-list profile |
 | `https://<wallet>:8086/.well-known/openid-credential-issuer` | GET | Signed OpenID Credential Issuer metadata (`application/openidvci-issuer-metadata+jwt`) with `issuer_info` / `registrar_dataset` authorization data |
-| `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs; exposes the signing key by `kid` and leaf `x5c` chain |
-| `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`; supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
+| `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs. Exposes the signing key by `kid` and leaf `x5c` chain |
+| `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`. Supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
 | `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
 | `/api/statuslist` | GET | Status list JWT on both HTTP and HTTPS (available when PID generation or `--status-list` is enabled) |
@@ -251,4 +251,4 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 
 ## Supported response modes
 
-`direct_post` (default) and `direct_post.jwt` (JARM — the wallet encrypts the response using the verifier's ephemeral key from the request object).
+`direct_post` (default) and `direct_post.jwt` (JARM. The wallet encrypts the response using the verifier's ephemeral key from the request object).

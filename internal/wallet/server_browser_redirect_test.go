@@ -132,7 +132,7 @@ func TestAuthorize_InteractiveBrowserRedirectsToWalletUIThenSubmits(t *testing.T
 		t.Fatalf("expected one pending consent request, got %d", len(pending))
 	}
 
-	// Approving finishes the detached flow; the approve response carries the
+	// Approving finishes the detached flow. The approve response carries the
 	// verifier redirect_uri the UI navigates to.
 	approveRec := serverRequest(t, srv, "POST", "/api/requests/"+pending[0].ID+"/approve", `{}`)
 	if approveRec.Code != http.StatusOK {

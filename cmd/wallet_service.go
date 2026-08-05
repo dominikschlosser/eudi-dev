@@ -29,7 +29,7 @@ import (
 // command formats its output exactly once and managing the local store and a
 // running instance behave identically.
 //
-// Identity model: a wallet IS its store (the wallet directory); an instance
+// Identity model: a wallet IS its store (the wallet directory). An instance
 // is that store plus the URL it is exposed at. The same store can be reached
 // both ways (for example a server started by the registry script serving the
 // local wallet directory). The store has exactly one writer at a time, so

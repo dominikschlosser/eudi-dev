@@ -270,7 +270,7 @@ func TestPreferredFormat_NoPreference(t *testing.T) {
 	}
 
 	// With no preference and credential_sets selecting first match,
-	// both credentials may match — behavior depends on iteration order
+	// both credentials may match. Behavior depends on iteration order
 	// Just verify it works without error
 }
 

@@ -2330,7 +2330,7 @@ func TestOnConsentRequest_CalledOnInteractiveFlow(t *testing.T) {
 	srv := newTestServer(t, false) // interactive mode
 
 	// The callback fires on the request goroutine while this one polls, so
-	// the values it records need a lock; without one `go test -race` flags
+	// the values it records need a lock. Without one `go test -race` flags
 	// the read below.
 	var callbackMu sync.Mutex
 	var callbackCalled bool

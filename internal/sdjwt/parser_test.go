@@ -271,7 +271,7 @@ func TestResolveArray(t *testing.T) {
 		t.Errorf("expected map passthrough, got %T", result2[0])
 	}
 
-	// Non-array-entry digest (IsArrayEntry=false) — not resolved as array element
+	// Non-array-entry digest (IsArrayEntry=false). Not resolved as array element
 	nonArrayDisc := &Disclosure{
 		Name:         "test",
 		Value:        "val",

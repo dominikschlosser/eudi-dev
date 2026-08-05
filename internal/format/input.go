@@ -131,7 +131,7 @@ func ReadInput(input string) (string, error) {
 	}
 
 	// Try as file path. Inputs with a URI scheme (openid-credential-offer://,
-	// file://, ...) are never file paths; without this guard they could name
+	// file://, ...) are never file paths. Without this guard they could name
 	// files on unusual filesystems.
 	if !strings.Contains(input, "://") {
 		if _, err := os.Stat(input); err == nil {
@@ -156,7 +156,7 @@ func ReadRemoteInput(input string) (string, error) {
 }
 
 // ReadInputRaw reads input from stdin, a file, or returns the raw string.
-// Unlike ReadInput, it does NOT HTTP-fetch URLs — useful when the caller
+// Unlike ReadInput, it does NOT HTTP-fetch URLs. Useful when the caller
 // needs to detect the format before deciding whether to fetch.
 func ReadInputRaw(input string) (string, error) {
 	input = strings.TrimSpace(input)
@@ -165,7 +165,7 @@ func ReadInputRaw(input string) (string, error) {
 		return readStdin()
 	}
 
-	// Skip URLs and URI schemes — return as-is for format detection
+	// Skip URLs and URI schemes. Return as-is for format detection
 	if strings.Contains(input, "://") {
 		return input, nil
 	}
@@ -180,7 +180,7 @@ func ReadInputRaw(input string) (string, error) {
 	return input, nil
 }
 
-// maxFetchBytes caps remote responses; credentials, trust lists and status
+// maxFetchBytes caps remote responses. Credentials, trust lists and status
 // lists are all far smaller, so anything larger is a misdirected fetch.
 const maxFetchBytes = 10 << 20
 
@@ -190,7 +190,7 @@ func FetchURL(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("fetching %s: %w", url, err)
 	}
-	// Go sends no Accept header by default; some servers reject that.
+	// Go sends no Accept header by default. Some servers reject that.
 	req.Header.Set("Accept", "*/*")
 	resp, err := HTTPClientForURL(url).Do(req)
 	if err != nil {

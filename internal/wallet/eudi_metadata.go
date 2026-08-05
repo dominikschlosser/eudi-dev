@@ -636,7 +636,7 @@ func signCredentialIssuerMetadataJWT(w *Wallet, issuer string, exp time.Time) (s
 // SignRequestObjectJWT signs an OpenID4VP authorization request object (JAR)
 // with the signer's certificate chain in x5c. HAIP requires a signed request
 // object, so any relying party that wants to be exercised against a
-// HAIP-enforcing wallet needs one of these; the built-in demo verifier is the
+// HAIP-enforcing wallet needs one of these. The built-in demo verifier is the
 // first caller. The typ is what ValidateRequestObject expects.
 func SignRequestObjectJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
 	if signingKey == nil {

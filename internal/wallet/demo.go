@@ -108,7 +108,7 @@ func (s *Server) DemoEnabled() bool {
 	return s.demo != nil
 }
 
-// demoMaxBodyBytes caps request bodies in demo mode; every legitimate
+// demoMaxBodyBytes caps request bodies in demo mode. Every legitimate
 // payload (credentials, offers, presentations) is far smaller.
 const demoMaxBodyBytes = 1 << 20
 
@@ -267,7 +267,7 @@ func (s *Server) demoReset() error {
 	// Re-issue the signing leaf from the same CA. Leaves are valid for a year
 	// and a long-lived demo would eventually serve an expired one, which is
 	// only ever noticed by whatever stops verifying. A daily reset keeps it
-	// fresh; the CA itself is untouched, so anyone who pinned it stays good.
+	// fresh. The CA itself is untouched, so anyone who pinned it stays good.
 	if err := s.wallet.RefreshSigningCertificate(); err != nil {
 		return err
 	}

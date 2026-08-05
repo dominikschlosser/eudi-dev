@@ -41,8 +41,8 @@ const (
 //  2. HTTP(S) URL with OID4 query params
 //  3. SD-JWT (contains '~')
 //  4. mDOC (hex/base64url CBOR)
-//  5. JSON — keys inspected for OID4 markers (before JWT, since JSON with dots can look like JWT)
-//  6. JWT (3 dot-separated parts) — payload inspected for OID4 markers
+//  5. JSON: keys inspected for OID4 markers (before JWT, since JSON with dots can look like JWT)
+//  6. JWT (3 dot-separated parts). Payload inspected for OID4 markers
 func Detect(input string) CredentialFormat {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -63,7 +63,7 @@ func Detect(input string) CredentialFormat {
 		if f := detectHTTPOID4(input); f != FormatUnknown {
 			return f
 		}
-		// Non-OID4 HTTP URLs — return unknown (caller decides whether to fetch)
+		// Non-OID4 HTTP URLs. Return unknown (caller decides whether to fetch)
 		return FormatUnknown
 	}
 
@@ -72,7 +72,7 @@ func Detect(input string) CredentialFormat {
 		return FormatSDJWT
 	}
 
-	// 4. mDOC — hex or base64url encoded CBOR
+	// 4. mDOC: hex or base64url encoded CBOR
 	if isHex(input) {
 		b, err := hex.DecodeString(input)
 		if err == nil && len(b) > 0 && isCBORStart(b[0]) {
@@ -84,7 +84,7 @@ func Detect(input string) CredentialFormat {
 		return FormatMDOC
 	}
 
-	// 5. JSON — inspect keys for OID4 markers (before JWT, since JSON with dots can look like JWT)
+	// 5. JSON: inspect keys for OID4 markers (before JWT, since JSON with dots can look like JWT)
 	if strings.HasPrefix(input, "{") {
 		if f := detectJSONOID4(input); f != FormatUnknown {
 			return f
@@ -92,7 +92,7 @@ func Detect(input string) CredentialFormat {
 		return FormatUnknown
 	}
 
-	// 6. JWT (3 dot-separated parts) — inspect payload for OID4 markers
+	// 6. JWT (3 dot-separated parts). Inspect payload for OID4 markers
 	parts := strings.Split(input, ".")
 	if len(parts) == 3 && len(parts[0]) > 0 && len(parts[1]) > 0 {
 		if f := detectJWTPayloadOID4(parts[1]); f != FormatUnknown {

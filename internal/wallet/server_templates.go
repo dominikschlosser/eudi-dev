@@ -15,7 +15,7 @@
 package wallet
 
 // Credential template API. Templates are JSON documents (see the
-// credtemplate package); pre-defined templates are compiled in and user templates
+// credtemplate package). Pre-defined templates are compiled in and user templates
 // live in the wallet directory's templates/ subdirectory. PUT accepts a full
 // template document, which makes it double as an import endpoint for shared
 // templates.
@@ -51,7 +51,7 @@ func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePutTemplate creates or replaces a user template. The body is a full
-// template document; a name in the body is overridden by the URL name.
+// template document. A name in the body is overridden by the URL name.
 func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 	var tpl credtemplate.Template
 	if err := json.NewDecoder(r.Body).Decode(&tpl); err != nil {
@@ -72,7 +72,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeleteTemplate removes a user template. Pre-defined templates cannot be
-// deleted; deleting a user template that overrides a pre-defined one restores the
+// deleted. Deleting a user template that overrides a pre-defined one restores the
 // pre-defined version.
 func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 	if err := credtemplate.Delete(s.wallet.TemplatesDir, r.PathValue("name")); err != nil {

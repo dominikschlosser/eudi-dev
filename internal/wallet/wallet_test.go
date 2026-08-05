@@ -135,7 +135,7 @@ func TestGenerateDefaultCredentials_SDJWTIssuerUsesWalletIssuerURL(t *testing.T)
 func TestGenerateDefaultCredentials_Overwrite(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Run again — should replace, not duplicate
+	// Run again. Should replace, not duplicate
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID credentials second time: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestGenerateDefaultCredentials_OverwritePreservesOtherCreds(t *testing.T) {
 		t.Fatalf("expected 3 credentials, got %d", len(w.GetCredentials()))
 	}
 
-	// Generate again — should replace only PIDs, keep test
+	// Generate again. Should replace only PIDs, keep test
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID second time: %v", err)
 	}
@@ -751,7 +751,7 @@ func TestHasEncryptionKey_TopLevelJWKSNotUsed(t *testing.T) {
 		t.Fatalf("parsing JWK: %v", err)
 	}
 
-	// JWK only at top-level jwks (not in client_metadata.jwks) — strict OID4VP 1.0
+	// JWK only at top-level jwks (not in client_metadata.jwks). Strict OID4VP 1.0
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{

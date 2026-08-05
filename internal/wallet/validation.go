@@ -61,7 +61,7 @@ func ValidateAuthorizationRequest(mode ValidationMode, params *AuthorizationRequ
 }
 
 // ValidatePresentationRequest evaluates client_id, request-object metadata, and signature checks.
-// In debug mode findings are returned as warnings; in strict mode any finding is fatal.
+// In debug mode findings are returned as warnings. In strict mode any finding is fatal.
 func ValidatePresentationRequest(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string) ([]string, error) {
 	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, "", nil, nil)
 }

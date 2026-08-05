@@ -30,7 +30,7 @@ import (
 // batchProofKeyCount is the number of proofs the wallet sends when the issuer
 // advertises batch_credential_issuance. Two proofs are enough to exercise
 // batch issuance (per-key credential copies with distinct binding keys)
-// without inflating requests; the advertised batch_size still caps the count.
+// without inflating requests. The advertised batch_size still caps the count.
 const batchProofKeyCount = 2
 
 // advertisedBatchSize returns the issuer's batch_credential_issuance.batch_size,
@@ -48,7 +48,7 @@ func advertisedBatchSize(metadata map[string]any) int {
 }
 
 // issuanceProofKeys returns the private keys to prove possession of in the
-// credential request. The wallet's holder key is always first; when the issuer
+// credential request. The wallet's holder key is always first. When the issuer
 // advertises batch issuance with batch_size >= 2, fresh ephemeral keys are
 // added so each credential in the batch is bound to a distinct key (required
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).

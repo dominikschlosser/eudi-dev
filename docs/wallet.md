@@ -3,7 +3,7 @@
 A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration. Credentials and keys are stored in `~/.eudi-dev/wallet/` (configurable via `--wallet-dir`) and persist across invocations.
 
 The wallet has two validation modes:
-- `debug` (default) keeps processing requests when possible and logs spec findings for debugging; during DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
+- `debug` (default) keeps processing requests when possible and logs spec findings for debugging. During DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
 - `strict` rejects requests that violate the latest final specs
 
 For OpenID Foundation conformance work, see [docs/conformance.md](./conformance.md).
@@ -27,8 +27,8 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
 | `instances`    | Manage running wallet instances: `list`, `use <url|local>`, `kill <pid|port|url>` |
 | `info`         | Show the configuration of the managed wallet (local or remote)  |
-| `register`     | Register OS URL scheme handlers on macOS; no-op elsewhere       |
-| `unregister`   | Remove OS URL scheme handlers on macOS; no-op elsewhere         |
+| `register`     | Register OS URL scheme handlers on macOS. No-op elsewhere       |
+| `unregister`   | Remove OS URL scheme handlers on macOS. No-op elsewhere         |
 
 All wallet management operations (list, show, import, remove, issue, generate-pid, credential templates, cert export) are also available over HTTP on a running `wallet serve` instance. This lets you drive hosted or containerized wallets remotely. See [HTTP API](#http-api).
 
@@ -112,8 +112,8 @@ Wallet interaction logs are stored in `wallet.json` under the top-level `log` fi
 
 Keys are P-256 EC keys, auto-generated on first use and reused across invocations. Wallets under the same wallet base directory share a persisted **CA key** and build certificate chains from it:
 
-1. **CA certificate** — self-signed, used as trust anchor in the trust list (`/api/trustlist`)
-2. **Leaf certificate** — signed by the CA, wraps the issuer key's public key
+1. **CA certificate**: self-signed, used as trust anchor in the trust list (`/api/trustlist`)
+2. **Leaf certificate**: signed by the CA, wraps the issuer key's public key
 
 Generated credentials are signed with the **issuer key**. SD-JWT credentials include a deterministic `kid` header, expose the signing key through JWT VC issuer metadata, and include the leaf signing certificate in `x5c`. The shared trust-anchor CA stays in the wallet trust list so verifiers can validate the signing key through the exposed trust chain instead of trusting a bare public key.
 
@@ -154,8 +154,8 @@ eudi wallet logs --json       # JSON array of log entries
 | Flag       | Default | Description                                      |
 |------------|---------|--------------------------------------------------|
 | `-f, --follow` | `false` | Keep running and print new entries as they appear |
-| `-v, --verbose` | `false` | Global flag; expand structured log details        |
-| `--json`   | `false` | Global flag; output the persisted log entries as JSON. Cannot be combined with `--follow` |
+| `-v, --verbose` | `false` | Global flag. Expand structured log details        |
+| `--json`   | `false` | Global flag. Output the persisted log entries as JSON. Cannot be combined with `--follow` |
 
 ## `wallet serve`
 
@@ -164,8 +164,8 @@ Starts a persistent wallet HTTP server with a web UI for managing credentials an
 The server exposes:
 - Web UI for credential management and consent (list, show, import, remove, and issue credentials, with credential templates and CA and TLS certificate downloads)
 - OID4VP authorization endpoint (`/authorize`)
-- OID4VCI credential offer endpoint (`/credential-offer`) — accepts `credential_offer` / `credential_offer_uri` query parameters, so offer links can target the wallet URL instead of a custom scheme (see [Invoking the wallet by URL](#invoking-the-wallet-by-url))
-- Legacy ETSI trust list endpoint (`/api/trustlist`) — use this URL as `--trust-list` when validating PID credentials issued by the wallet
+- OID4VCI credential offer endpoint (`/credential-offer`). Accepts `credential_offer` / `credential_offer_uri` query parameters, so offer links can target the wallet URL instead of a custom scheme (see [Invoking the wallet by URL](#invoking-the-wallet-by-url))
+- Legacy ETSI trust list endpoint (`/api/trustlist`). Use this URL as `--trust-list` when validating PID credentials issued by the wallet
 - Trust-list index endpoint (`/api/trustlists`) with one JWT endpoint per coherent trust-list profile
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
 - A management API mirroring the wallet CLI (list, show, import, and remove credentials, issue credentials, generate PIDs, export certificates). It has no authentication (see [HTTP API](#http-api))
@@ -304,8 +304,8 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 Auto-detects the URI type and dispatches to the appropriate flow:
 
 - `openid4vp://`, `haip-vp://`, `eudi-openid4vp://` → OID4VP presentation (evaluates DCQL, shows consent UI, submits VP token)
-  - Supports `response_type=vp_token id_token` (SIOPv2 + OID4VP combined flow) — generates a self-issued ID token alongside the VP token
-  - Supports `response_type=id_token` (SIOPv2 only) — generates a self-issued ID token without VP token
+  - Supports `response_type=vp_token id_token` (SIOPv2 + OID4VP combined flow). Generates a self-issued ID token alongside the VP token
+  - Supports `response_type=id_token` (SIOPv2 only). Generates a self-issued ID token without VP token
 - `openid-credential-offer://`, `haip-vci://` → OID4VCI credential issuance (fetches credential from issuer)
 
 In interactive mode (default), OID4VP requests start a temporary consent UI server and auto-open it in the browser. With `--auto-accept`, auto-selects and submits the first matching credentials.
@@ -327,7 +327,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--tx-code`             | —        | Transaction code for OID4VCI pre-authorized code flow |
 | `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers |
 
-Note: pre-authorized code offers work directly with `wallet accept`. Authorization-code offers are also supported, but they require a running `wallet serve` instance configured with `--vci-client-id` and `--vci-redirect-uri`, plus issuer metadata that supports PAR and DPoP. In that flow, the wallet opens the issuer's authorization URL in the browser, the user authenticates at the issuer, and the issuer redirects back to the wallet's configured callback URI before the wallet exchanges the code. With `--haip` a pre-authorized code offer is still accepted and held only to the https transport rule; the PAR, PKCE, DPoP and client authentication requirements apply to offers that drive the authorization endpoint.
+Note: pre-authorized code offers work directly with `wallet accept`. Authorization-code offers are also supported, but they require a running `wallet serve` instance configured with `--vci-client-id` and `--vci-redirect-uri`, plus issuer metadata that supports PAR and DPoP. In that flow, the wallet opens the issuer's authorization URL in the browser, the user authenticates at the issuer, and the issuer redirects back to the wallet's configured callback URI before the wallet exchanges the code. With `--haip` a pre-authorized code offer is still accepted and held only to the https transport rule. The PAR, PKCE, DPoP and client authentication requirements apply to offers that drive the authorization endpoint.
 
 ## `wallet scan`
 
@@ -347,7 +347,7 @@ eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 
 ## `wallet trust-list`
 
-Generates and prints the ETSI trust list JWT containing the wallet's CA certificate (trust anchor). The trust list is used by verifiers to validate the x5c/x5chain certificate chain embedded in credentials. It intentionally stays certificate-centric and does not embed issuer authorization data such as provider entitlements or `providesAttestations`; those are exposed through `/.well-known/openid-credential-issuer` and `/api/registrar/wrp`.
+Generates and prints the ETSI trust list JWT containing the wallet's CA certificate (trust anchor). The trust list is used by verifiers to validate the x5c/x5chain certificate chain embedded in credentials. It intentionally stays certificate-centric and does not embed issuer authorization data such as provider entitlements or `providesAttestations`. Those are exposed through `/.well-known/openid-credential-issuer` and `/api/registrar/wrp`.
 
 `wallet trust-list` prints the same trust list as the legacy `/api/trustlist` endpoint. If the wallet has a PID trust-list profile, that PID trust list is printed. Otherwise the first available profile is printed.
 
@@ -429,7 +429,7 @@ By default, the handler script makes sure a local `wallet serve` instance is ava
 Use `--auto-accept` to keep URL handling silent: the handler first tries to POST to a running `wallet serve` instance and otherwise falls back to invoking the CLI directly (`wallet accept`).
 
 - **macOS**: Creates an AppleScript `.app` bundle in `~/Applications/` and registers via Launch Services
-- **Other platforms**: `register` / `unregister` are accepted as no-ops so scripts stay portable; use `wallet accept <uri>` instead
+- **Other platforms**: `register` / `unregister` are accepted as no-ops so scripts stay portable. Use `wallet accept <uri>` instead
 
 ```bash
 eudi wallet register               # Register URL handlers and open the wallet UI by default
@@ -445,7 +445,7 @@ eudi wallet unregister             # Remove URL handlers
 
 ## Invoking the wallet by URL
 
-Custom URL schemes require OS-level handler registration (macOS only). Both wallet flows can be invoked at the wallet's own URL instead — use the wallet URL wherever a verifier or issuer would otherwise emit a custom-scheme link. This works in hosted environments, automated tests, containers, and on platforms without scheme registration.
+Custom URL schemes require OS-level handler registration (macOS only). Both wallet flows can be invoked at the wallet's own URL instead. Use the wallet URL wherever a verifier or issuer would otherwise emit a custom-scheme link. This works in hosted environments, automated tests, containers, and on platforms without scheme registration.
 
 The URLs take exactly the same query parameters as their custom-scheme counterparts:
 
@@ -456,7 +456,7 @@ The URLs take exactly the same query parameters as their custom-scheme counterpa
 
 To convert a link, replace everything before the `?` with the wallet endpoint URL and keep the query string unchanged.
 
-Note on the paths: in a custom-scheme URI the part between `://` and `?` carries no meaning — the scheme alone addresses the wallet, so `openid4vp://?...` and `openid4vp://authorize?...` are the same request (the conventional `authorize` merely fills the empty host slot, and the wallet ignores it). A web URL, in contrast, only addresses the wallet's HTTP server, which also serves the UI and APIs — so a path has to identify the flow. `/authorize` follows the OAuth convention, since in OID4VP the wallet acts as the OAuth authorization server and the verifier's request is an ordinary authorization request; `/credential-offer` names the OID4VCI credential offer endpoint. (OID4VP and OID4VCI don't mandate specific paths — wallets advertise their endpoint URLs in metadata.)
+Note on the paths: in a custom-scheme URI the part between `://` and `?` carries no meaning, because the scheme alone addresses the wallet, so `openid4vp://?...` and `openid4vp://authorize?...` are the same request (the conventional `authorize` merely fills the empty host slot, and the wallet ignores it). A web URL, in contrast, only addresses the wallet's HTTP server, which also serves the UI and APIs, so a path has to identify the flow. `/authorize` follows the OAuth convention, since in OID4VP the wallet acts as the OAuth authorization server and the verifier's request is an ordinary authorization request. `/credential-offer` names the OID4VCI credential offer endpoint. (OID4VP and OID4VCI don't mandate specific paths. Wallets advertise their endpoint URLs in metadata.)
 
 ```bash
 # Presentation request: standard OID4VP authorization request parameters
@@ -471,9 +471,9 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 
 `/credential-offer` accepts `credential_offer` or `credential_offer_uri`, plus an optional `tx_code` for the pre-authorized code flow.
 
-Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accept` header — i.e. a clicked link) behave like a same-device wallet: after a presentation is submitted, the browser is redirected to the verifier's `redirect_uri` (or to the wallet UI when the verifier returns none), and after an offer is imported, to the wallet UI. Everything else — `curl`, test harnesses, the JSON APIs — receives the same JSON payloads as `POST /api/presentations` and `POST /api/offers`. This means a verifier or issuer configured with the wallet's URLs completes a standard browser round trip with no custom schemes involved (for example, `keycloak-extension-oid4vp` with `walletScheme` set to the wallet's `/authorize` URL).
+Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accept` header, i.e. a clicked link) behave like a same-device wallet: after a presentation is submitted, the browser is redirected to the verifier's `redirect_uri` (or to the wallet UI when the verifier returns none), and after an offer is imported, to the wallet UI. Everything else (`curl`, test harnesses, the JSON APIs) receives the same JSON payloads as `POST /api/presentations` and `POST /api/offers`. This means a verifier or issuer configured with the wallet's URLs completes a standard browser round trip with no custom schemes involved (for example, `keycloak-extension-oid4vp` with `walletScheme` set to the wallet's `/authorize` URL).
 
-In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`); an API call blocks until the request is approved or denied — in the UI or via `POST /api/requests/{id}/approve`.
+In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`). An API call blocks until the request is approved or denied. In the UI or via `POST /api/requests/{id}/approve`.
 
 ## Deferred issuance
 
@@ -546,7 +546,7 @@ Enforcement covers **presentations**: OID4VP `direct_post.jwt` and Browser API `
 
 Non-compliant requests receive an HTTP 400 error with details about which checks failed.
 
-Issuance is enforced too, following the flow the offer actually drives. A credential offer is always rejected when the credential issuer is served over plain http. An offer that drives the authorization endpoint is additionally rejected unless the authorization server supports the authorization code flow, requires pushed authorization requests, supports PKCE with S256 and DPoP, and authenticates the client. A pre-authorized code offer is held only to the transport rule: HAIP 1.0 §4 requires an issuer to *support* the authorization code flow rather than to use it for every credential, says nothing about the pre-authorized code flow, and scopes PAR to "when using the Authorization Endpoint". Plain http on loopback is accepted, the way OAuth treats a local development host. The wallet's own client behavior already satisfied the profile (PAR, PKCE S256, DPoP, wallet attestation when advertised, ES256 proofs, key attestation); what is new is refusing an issuer that does not.
+Issuance is enforced too, following the flow the offer actually drives. A credential offer is always rejected when the credential issuer is served over plain http. An offer that drives the authorization endpoint is additionally rejected unless the authorization server supports the authorization code flow, requires pushed authorization requests, supports PKCE with S256 and DPoP, and authenticates the client. A pre-authorized code offer is held only to the transport rule: HAIP 1.0 §4 requires an issuer to *support* the authorization code flow rather than to use it for every credential, says nothing about the pre-authorized code flow, and scopes PAR to "when using the Authorization Endpoint". Plain http on loopback is accepted, the way OAuth treats a local development host. The wallet's own client behavior already satisfied the profile (PAR, PKCE S256, DPoP, wallet attestation when advertised, ES256 proofs, key attestation). What is new is refusing an issuer that does not.
 
 ```bash
 eudi wallet serve --haip --auto-accept --pid
@@ -571,9 +571,9 @@ Everything the wallet CLI can do locally is also available over HTTP on a runnin
 
 > **Security: no authentication.** The wallet's HTTP API has **no authentication or authorization whatsoever**. Anyone who can reach the wallet's port has full control over the wallet and its credentials. This is intentional: it is a testing wallet for local development and isolated test networks. Keep it off untrusted networks and never store real credentials in it. To host it on the public internet anyway, use [`--demo`](public-demo.md), which turns off the process and filesystem endpoints (shutdown, template writes, error injection, format changes), blocks server-side fetches into private networks, and resets state periodically. The remaining endpoints stay open on purpose, so treat everything in such a wallet as public and disposable.
 
-`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the full number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential, so existing clients are unaffected; an offset past the end returns an empty array. The web UI uses this to page through long lists ten credentials at a time.
+`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the full number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential, so existing clients are unaffected. An offset past the end returns an empty array. The web UI uses this to page through long lists ten credentials at a time.
 
-Credentials carrying `"protected": true` in the wallet file are refused by `DELETE /api/credentials/{id}` and `POST /api/credentials/{id}/status` with 403, and `DELETE /api/credentials` keeps them (its response reports `kept_protected`). The flag exists for shared deployments that need a stable baseline; it can only be set or cleared by editing `wallet.json`. `--demo` marks the PID credentials it generates.
+Credentials carrying `"protected": true` in the wallet file are refused by `DELETE /api/credentials/{id}` and `POST /api/credentials/{id}/status` with 403, and `DELETE /api/credentials` keeps them (its response reports `kept_protected`). The flag exists for shared deployments that need a stable baseline. It can only be set or cleared by editing `wallet.json`. `--demo` marks the PID credentials it generates.
 
 ### Credential management
 
@@ -837,8 +837,8 @@ When enabled, the wallet:
 
 1. Generates an ECDSA P-256 encryption key at startup
 2. When `request_uri_method=post` is set in the authorization request, POSTs to the `request_uri` with:
-   - `wallet_metadata` — JSON object containing `vp_formats_supported`, `request_object_signing_alg_values_supported`, and `jwks` with the wallet's public encryption key
-   - `wallet_nonce` — base64url-encoded random nonce for replay protection
+   - `wallet_metadata`. JSON object containing `vp_formats_supported`, `request_object_signing_alg_values_supported`, and `jwks` with the wallet's public encryption key
+   - `wallet_nonce`. Base64url-encoded random nonce for replay protection
 3. Expects the verifier to encrypt the request object as a JWE (ECDH-ES + A128GCM or A256GCM) using the wallet's public key
 4. Decrypts the received JWE to extract the signed JWT request object
 5. In `debug` mode, validates that `wallet_nonce` in the response matches the one sent and warns if it is missing

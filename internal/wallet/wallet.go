@@ -345,7 +345,7 @@ func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error
 // the german-pid-sdjwt and german-pid-mdoc credential templates (user
 // overrides of those templates in the wallet's template directory apply).
 // If PID credentials already exist, they are replaced. Optional claimOverrides
-// are merged on top of the template claims. vct specifies the SD-JWT VCT; if
+// are merged on top of the template claims. vct specifies the SD-JWT VCT. If
 // empty, the template's VCT (mock.DefaultPIDVCT by default) is used.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
 	return w.generateDefaultCredentials(claimOverrides, vct, false)

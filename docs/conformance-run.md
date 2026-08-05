@@ -26,7 +26,7 @@ git checkout release-v5.2.1
 mvn clean package
 ```
 
-The suite server has to run **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>`, and the suite fetches that URL itself; from inside a container `localhost` is the container, so every module that checks credential status fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, which is what makes `localhost` resolve to the same machine the wallet runs on.
+The suite server has to run **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>`, and the suite fetches that URL itself. From inside a container `localhost` is the container, so every module that checks credential status fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, which is what makes `localhost` resolve to the same machine the wallet runs on.
 
 The `eudi-dev` wrapper also defaults to plain `localhost` URLs, so the server must advertise the same host rather than the upstream default of `localhost.emobix.co.uk`:
 
@@ -128,12 +128,12 @@ When updating [Current conformance results](./conformance-results.md), include t
 
 ## Environment Overrides
 
-- `CONFORMANCE_MODE`: `local` by default; use `hosted` only when intentionally running against the OIDF hosted service
-- `CONFORMANCE_SERVER`: local conformance-suite base URL; defaults to `https://localhost:8443/`
-- `CONFORMANCE_SERVER_LOCAL`: local callback/helper base URL; defaults to `CONFORMANCE_SERVER`
-- `CONFORMANCE_SERVER_MTLS`: local mTLS base URL; defaults to `https://localhost:8444/`
-- `OIDF_WALLET_MODE`: wallet validation mode for the run, `strict` (default) or `debug`; debug mode fails the negative modules listed in [Current conformance results](./conformance-results.md)
-- `PORT`: wallet port; defaults to a free local port
+- `CONFORMANCE_MODE`: `local` by default. Use `hosted` only when intentionally running against the OIDF hosted service
+- `CONFORMANCE_SERVER`: local conformance-suite base URL. Defaults to `https://localhost:8443/`
+- `CONFORMANCE_SERVER_LOCAL`: local callback/helper base URL. Defaults to `CONFORMANCE_SERVER`
+- `CONFORMANCE_SERVER_MTLS`: local mTLS base URL. Defaults to `https://localhost:8444/`
+- `OIDF_WALLET_MODE`: wallet validation mode for the run, `strict` (default) or `debug`. Debug mode fails the negative modules listed in [Current conformance results](./conformance-results.md)
+- `PORT`: wallet port. Defaults to a free local port
 - `OIDF_RUN_DIR`: keep all runner artifacts in a chosen directory instead of a temp dir
 - `OIDF_SUITE_DIR`: use an existing conformance-suite checkout for runner/templates instead of downloading the latest release archive
 - `OIDF_SUITE_TAG`: expected conformance-suite tag when `OIDF_SUITE_DIR` or `OIDF_SUITE_URL` is used
@@ -143,8 +143,8 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `OIDF_VCI_CLIENT_ID`: override the configured OID4VCI client ID
 - `OIDF_VCI_REDIRECT_URI`: override the configured OID4VCI redirect URI
 - `OIDF_VCI_ALIAS`: convenience alias used by the default `OIDF_VCI_REDIRECT_URI`
-- `OIDF_SUITE_URL`: override the suite tarball URL; defaults to the latest upstream release archive
-- `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the wrapper terminates a stuck module; defaults to `180`, set `0` to disable
+- `OIDF_SUITE_URL`: override the suite tarball URL. Defaults to the latest upstream release archive
+- `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the wrapper terminates a stuck module. Defaults to `180`, set `0` to disable
 
 ## Hosted Mode
 

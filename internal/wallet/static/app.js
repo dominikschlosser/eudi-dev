@@ -569,7 +569,7 @@
   // claims, and always-disclosed claims. Everything stays editable; the form
   // contents are submitted as explicit values, so edits (including removed
   // claims) win over the template. Every template-controlled field is set
-  // unconditionally (cleared when the template omits it) — otherwise
+  // unconditionally (cleared when the template omits it), because otherwise
   // switching templates before issuing would submit a merge of all
   // previously selected templates.
   function applyIssueTemplate(name) {
@@ -1043,7 +1043,7 @@
       console.error('Failed to load pending requests:', e);
     }
 
-    // No pending consent request — check for a recent error
+    // No pending consent request, so check for a recent error
     try {
       const resp = await fetch('/api/error');
       const err = await resp.json();
@@ -1148,7 +1148,7 @@
   }
 
   function showSubmissionResult(result) {
-    // Only redirect on success — never redirect on error
+    // Only redirect on success, never on error
     if (result.redirect_uri && !result.error) {
       if (navigable(result.redirect_uri)) {
         window.location.href = result.redirect_uri;
@@ -1441,8 +1441,8 @@
         const note = document.getElementById('demo-note');
         const schedule = describeReset(config.demo);
         note.textContent = schedule
-          ? 'Public demo — resets ' + schedule
-          : 'Public demo — shared state';
+          ? 'Public demo, resets ' + schedule
+          : 'Public demo, shared state';
         const bannerReset = document.getElementById('demo-banner-reset');
         bannerReset.textContent = schedule
           ? 'state resets ' + schedule

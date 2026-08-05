@@ -121,7 +121,7 @@ func installRCLine(rcName, shell string) error {
 		return nil
 	}
 
-	// 0600 only applies when the rc file does not exist yet; existing rc
+	// 0600 only applies when the rc file does not exist yet. Existing rc
 	// files keep their permissions.
 	f, err := os.OpenFile(rcPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {

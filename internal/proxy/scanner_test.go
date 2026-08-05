@@ -268,7 +268,7 @@ func TestScanSkipsOAuthAuthzReqJWT(t *testing.T) {
 
 func TestScanShortTokenIgnored(t *testing.T) {
 	s := NewOutputScanner()
-	// eyJ followed by very short content — should be ignored
+	// eyJ followed by very short content. Should be ignored
 	s.Scan("eyJhbGci.eyJz.abc")
 	if len(s.Credentials()) != 0 {
 		t.Error("short token should be ignored")

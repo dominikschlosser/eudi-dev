@@ -1005,7 +1005,7 @@ func TestEncryptResponse_TopLevelJWKSNotUsed(t *testing.T) {
 	key, _ := mock.GenerateKey()
 	jwk := testEncJWK(t, &key.PublicKey)
 
-	// JWK only at top-level jwks (not in client_metadata) — wallet should reject
+	// JWK only at top-level jwks (not in client_metadata). Wallet should reject
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{
@@ -1036,7 +1036,7 @@ func TestEncryptResponse_LegacyFieldNamesIgnored(t *testing.T) {
 	key, _ := mock.GenerateKey()
 	jwk := testEncJWK(t, &key.PublicKey)
 
-	// Legacy field names only — wallet should ignore them and use default A128GCM
+	// Legacy field names only. Wallet should ignore them and use default A128GCM
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{
@@ -1066,7 +1066,7 @@ func TestEncryptResponse_LegacyFieldNamesIgnored(t *testing.T) {
 	headerJSON, _ := format.DecodeBase64URL(parts[0])
 	var header map[string]any
 	json.Unmarshal(headerJSON, &header)
-	// Legacy authorization_encrypted_response_enc should be ignored; default A128GCM used
+	// Legacy authorization_encrypted_response_enc should be ignored. Default A128GCM used
 	if header["enc"] != "A128GCM" {
 		t.Errorf("expected default enc=A128GCM (legacy fields ignored), got %v", header["enc"])
 	}
@@ -1116,7 +1116,7 @@ func TestCreateVPToken_SDJWT_SurvivesPersistReload(t *testing.T) {
 	}
 	w.mu.Unlock()
 
-	// Now present — should include disclosures
+	// Now present. Should include disclosures
 	match := CredentialMatch{
 		QueryID:      "test",
 		CredentialID: sdCred.ID,

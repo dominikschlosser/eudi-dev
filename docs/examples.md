@@ -53,7 +53,7 @@ It includes:
 
 Folder: [`examples/keycloak-web-wallet`](../examples/keycloak-web-wallet/README.md)
 
-Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login — the setup to copy for hosted environments, automated tests, and non-macOS platforms.
+Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login. The setup to copy for hosted environments, automated tests, and non-macOS platforms.
 
 It includes:
 

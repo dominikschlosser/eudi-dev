@@ -44,13 +44,13 @@ type SDJWTConfig struct {
 	// becoming selective disclosures. Entries name top-level claims
 	// ("family_name") or nested subclaims via dotted paths
 	// ("address.country"). A top-level entry embeds the whole claim value
-	// plainly; a dotted entry embeds that subclaim plainly inside its
+	// plainly. A dotted entry embeds that subclaim plainly inside its
 	// parent's disclosure value. Entries that match no claim are ignored.
 	AlwaysDisclosed []string
 }
 
 // GenerateSDJWT creates a mock SD-JWT credential. By default all claims are
-// selectively disclosable; claims listed in AlwaysDisclosed go plainly into
+// selectively disclosable. Claims listed in AlwaysDisclosed go plainly into
 // the payload instead.
 // Map values produce nested disclosures (subclaims with their own _sd array).
 // Slice values produce array element disclosures ({"...": digest} entries).
@@ -189,7 +189,7 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 // For plain values, it returns no sub-disclosures and the value as-is.
 // For map values, it creates sub-disclosures and returns an object with _sd.
 // For slice values, it creates element disclosures and returns an array with {"...": digest}.
-// path is the dotted path of the claim; subclaims whose path is in always are
+// path is the dotted path of the claim. Subclaims whose path is in always are
 // embedded plainly in the transformed value instead of becoming disclosures.
 func makeDisclosure(name string, value any, path string, always map[string]bool) (subDisclosures []string, transformedValue any, err error) {
 	switch v := value.(type) {

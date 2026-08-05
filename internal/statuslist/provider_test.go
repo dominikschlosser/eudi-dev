@@ -321,7 +321,7 @@ func decodeJWTHeader(t *testing.T, jwt string) map[string]any {
 
 // The embedded jwk must be the same key the x5c leaf certifies, or the token
 // tells two different stories about who signed it. It is derived from the
-// signing key for exactly that reason; this pins it.
+// signing key for exactly that reason. This pins it.
 func TestGenerateStatusListJWTEmbedsSigningKeyMatchingX5C(t *testing.T) {
 	caKey, err := mock.GenerateKey()
 	if err != nil {

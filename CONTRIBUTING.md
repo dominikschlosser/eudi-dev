@@ -64,5 +64,5 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and data flow.
 
 1. Create a feature branch from `main`
 2. Ensure `go build ./...`, `go vet ./...`, and `go test ./...` pass
-3. Keep changes focused — one feature or fix per PR
+3. Keep changes focused. One feature or fix per PR
 4. Update docs in `docs/` if adding or changing CLI flags
