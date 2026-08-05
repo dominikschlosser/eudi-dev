@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -344,4 +345,67 @@ func TestProtectedCredentials(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType covers a release
+// that changes the PID identifiers. The old baseline has to go, or the demo
+// ends up showing one PID per identifier it has ever used.
+func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
+	w := generateTestWallet(t)
+
+	// A baseline from an earlier release, under the old country-specific vct.
+	w.Credentials = append(w.Credentials, StoredCredential{
+		ID:        "stale-baseline",
+		Format:    "dc+sd-jwt",
+		VCT:       "urn:eudi:pid:de:1",
+		Protected: true,
+	})
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("GenerateProtectedDefaults: %v", err)
+	}
+
+	for _, c := range w.GetCredentials() {
+		if c.ID == "stale-baseline" {
+			t.Fatal("the previous baseline survived under its old vct")
+		}
+		if c.VCT == "urn:eudi:pid:de:1" {
+			t.Errorf("a credential still carries the old vct: %s", c.ID)
+		}
+	}
+	var protectedSDJWT int
+	for _, c := range w.GetCredentials() {
+		if c.Protected && c.Format == "dc+sd-jwt" {
+			protectedSDJWT++
+		}
+	}
+	if protectedSDJWT != 1 {
+		t.Errorf("wallet holds %d protected SD-JWT PIDs, want exactly 1", protectedSDJWT)
+	}
+}
+
+// TestRefreshSigningCertificate covers the daily reset keeping the signing
+// leaf current without moving the CA anyone may have pinned.
+func TestRefreshSigningCertificate(t *testing.T) {
+	w := generateTestWallet(t)
+	before := w.CertChain
+	if len(before) < 2 {
+		t.Fatal("test wallet has no certificate chain")
+	}
+	oldLeaf, oldCA := before[0], before[len(before)-1]
+
+	if err := w.RefreshSigningCertificate(); err != nil {
+		t.Fatalf("RefreshSigningCertificate: %v", err)
+	}
+	newLeaf, newCA := w.CertChain[0], w.CertChain[len(w.CertChain)-1]
+
+	if newLeaf.NotAfter.Before(oldLeaf.NotAfter) {
+		t.Error("the refreshed leaf expires no later than the one it replaced")
+	}
+	if !newCA.Equal(oldCA) {
+		t.Error("the CA changed; anything that pinned it would break")
+	}
+	leafKey, ok := newLeaf.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !leafKey.Equal(&w.IssuerKey.PublicKey) {
+		t.Error("the refreshed leaf does not carry the wallet's issuer key")
+	}
 }

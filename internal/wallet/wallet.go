@@ -303,6 +303,17 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 	return nil
 }
 
+// RefreshSigningCertificate re-issues the wallet's signing leaf from its own
+// CA, so a wallet that runs for longer than a leaf is valid keeps signing with
+// a current one. The CA and the issuer key stay as they are, so the trust
+// anchor and the published JWKS do not move.
+func (w *Wallet) RefreshSigningCertificate() error {
+	if w == nil || w.CAKey == nil || len(w.CertChain) < 2 {
+		return nil
+	}
+	return w.SetCertificateAuthority(w.CAKey, w.CertChain[len(w.CertChain)-1])
+}
+
 // GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials from
 // the german-pid-sdjwt and german-pid-mdoc credential templates (user
 // overrides of those templates in the wallet's template directory apply).
@@ -471,6 +482,19 @@ func (w *Wallet) removeByType(format, vct, docType string, includeProtected bool
 	return keptProtected
 }
 
+// removeProtected drops every credential of the previous baseline.
+func (w *Wallet) removeProtected() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	kept := w.Credentials[:0]
+	for _, c := range w.Credentials {
+		if !c.Protected {
+			kept = append(kept, c)
+		}
+	}
+	w.Credentials = kept
+}
+
 // ClearCredentials removes all stored credentials and returns how many were removed.
 func (w *Wallet) ClearCredentials() int {
 	w.mu.Lock()
@@ -519,6 +543,12 @@ func (w *Wallet) IsProtected(id string) bool {
 // exactly those as protected. Credentials that were already in the wallet
 // keep their current state, so a restart never protects visitor data.
 func (w *Wallet) GenerateProtectedDefaults() error {
+	// Drop the previous baseline whatever it looked like. Matching it by type
+	// only replaces credentials that still carry today's vct and doctype, so a
+	// release that changes either (urn:eudi:pid:de:1 to urn:eudi:pid:1, say)
+	// would leave the old one behind and the demo would show two.
+	w.removeProtected()
+
 	existing := make(map[string]bool)
 	for _, c := range w.GetCredentials() {
 		existing[c.ID] = true

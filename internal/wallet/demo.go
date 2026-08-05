@@ -264,6 +264,13 @@ func (s *Server) demoReset() error {
 	defer s.storeSyncMu.Unlock()
 
 	s.wallet.ResetToBaseline()
+	// Re-issue the signing leaf from the same CA. Leaves are valid for a year
+	// and a long-lived demo would eventually serve an expired one, which is
+	// only ever noticed by whatever stops verifying. A daily reset keeps it
+	// fresh; the CA itself is untouched, so anyone who pinned it stays good.
+	if err := s.wallet.RefreshSigningCertificate(); err != nil {
+		return err
+	}
 	if err := s.wallet.GenerateProtectedDefaults(); err != nil {
 		return err
 	}
