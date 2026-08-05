@@ -58,12 +58,12 @@
       copy the offer URI into any wallet that can reach this server.
     </p>
     <button class="btn primary" id="create-btn">Create credential offer</button>
-    <a class="btn" href="login" style="display:inline-block;text-decoration:none;margin-left:8px">Authorization code flow</a>
+    <button class="btn" id="create-authcode-btn">Authorization code offer</button>
     <p style="margin-top:14px">
-      The authorization code flow signs you in first (<strong>alice / alice</strong>),
-      then the wallet collects the ticket with PAR, PKCE, DPoP and a wallet
-      attestation. This issuer is its own authorization server. The account is
-      hardcoded for the demo.
+      With the authorization code offer you sign in at this issuer while the
+      wallet redeems it (<strong>alice / alice</strong>), and the wallet uses
+      PAR, PKCE, DPoP and a wallet attestation along the way. This issuer is
+      its own authorization server. The account is hardcoded for the demo.
     </p>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>
@@ -82,27 +82,6 @@
     </div>
     <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
-  <script>
-    document.getElementById("create-btn").addEventListener("click", async () => {
-      const errEl = document.getElementById("error");
-      errEl.hidden = true;
-      try {
-        const resp = await fetch("api/offers", { method: "POST" });
-        const doc = await resp.json();
-        if (!resp.ok) throw new Error(doc.error || resp.status);
-        const link = document.getElementById("wallet-link");
-        link.href = doc.wallet_url;
-        link.textContent = doc.wallet_url;
-        const scheme = document.getElementById("scheme-uri");
-        scheme.textContent = doc.scheme_uri;
-        scheme.href = doc.scheme_uri;
-        document.getElementById("offer-uri").textContent = doc.offer_uri;
-        document.getElementById("result").style.display = "block";
-      } catch (e) {
-        errEl.textContent = "Creating the offer failed: " + e.message;
-        errEl.hidden = false;
-      }
-    });
-  </script>
+  <script src="issuer.js"></script>
 </body>
 </html>

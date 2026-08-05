@@ -211,6 +211,11 @@ func validateResponseMode(responseMode, responseURI, redirectURI string) error {
 	return nil
 }
 
+// validateAbsoluteURI checks a URI the wallet will send a browser to. "Absolute"
+// alone is not enough: url.Parse reports javascript: and data: as absolute, and
+// a verifier that answers a presentation with
+// {"redirect_uri":"javascript:..."} would then get script execution on the
+// wallet's own origin. Only http and https can be navigated to safely.
 func validateAbsoluteURI(field, raw string) error {
 	if raw == "" {
 		return nil
@@ -219,5 +224,10 @@ func validateAbsoluteURI(field, raw string) error {
 	if err != nil || !u.IsAbs() {
 		return fmt.Errorf("%s must be an absolute URI", field)
 	}
-	return nil
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return fmt.Errorf("%s must use http or https, got scheme %q", field, u.Scheme)
+	}
 }

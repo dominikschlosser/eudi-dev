@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.2] - 2026-08-05
+
+### Security
+
+- **Stored cross-site scripting in the wallet UI.** The escaping helper round-tripped values through `textContent`, which escapes `&`, `<` and `>` but leaves `"` and `'` alone. Several values land inside quoted HTML attributes (a credential's status list URI, its `vct` and `doctype`, a claim name, a credential configuration id from an offer), so a crafted value closed the attribute and added an event handler. On a shared wallet those values come from whoever imported the credential or sent the offer, and the script then ran in every other visitor's browser on the wallet's origin. Confirmed with a credential whose status list URI carried an `onmouseover` handler that fired in a second browser. All four UIs (wallet, decoder, proxy dashboard, demo verifier) now escape quotes as well, and an end-to-end test drives the original payload
+- **Browser hardening headers.** Every wallet response now carries `Content-Security-Policy` (`script-src 'self'`, no inline script, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. With no `'unsafe-inline'`, an injected handler does not execute even if escaping fails somewhere. The demo issuer and verifier pages moved their inline scripts into `issuer.js` and `verifier.js` so the policy needs no exception
+- **The consent event stream is no longer readable cross-origin.** `GET /api/requests/stream` sent `Access-Control-Allow-Origin: *`, so any page a user visited could subscribe to it and read incoming consent requests, including the claims a verifier asked for. The wallet's own UI is same-origin and never needed the header; non-browser clients do not enforce CORS and are unaffected
+- **A verifier could execute script in the wallet through its `redirect_uri`.** After a presentation the wallet navigates the browser to the `redirect_uri` (or `Location`) the verifier returns, and it only checked that the URI was absolute. `url.Parse` calls `javascript:` and `data:` absolute, so a verifier answering with `{"redirect_uri":"javascript:..."}` got script execution on the wallet's own origin. Both are now restricted to http and https, server-side and again in the UI before it navigates
+- A wallet attestation with no `exp` claim was accepted by the demo issuer, because the expiry was only checked when present, and a DPoP proof was accepted at any age. `exp` is now required and a proof's `iat` has to fall inside a five-minute window, so a captured proof stops working
+
+### Fixed
+
+- **The login in the demo issuer's authorization code flow happened before redemption instead of during it.** The offer was created only after signing in, and the wallet then completed the flow without the user ever meeting the authorization endpoint. Now the offer is created signed-out and the user authenticates at `/issuer/authorize`, between the pushed authorization request and the token exchange, which is where the flow puts it: the credential is bound to whoever completed the login, not to whoever created the offer
+- **A hosted wallet can complete an authorization code flow at all.** The wallet only knew how to open a browser on the machine it runs on, which does nothing on a demo host. It now offers the authorization URL to the open UI (an `authorize` event on the consent stream) and that tab navigates; `/callback` resumes the flow already in progress and returns the visitor to the wallet. A wallet running locally with no UI attached still opens a local browser
+- `wallet serve` defaults `--vci-client-id` to its own origin and `--vci-redirect-uri` to that origin's `/callback`, so an authorization code offer no longer fails with "requires configured wallet client_id and redirect_uri" on a wallet that never set them. Explicit flags still win
+- **A credential issued by a long-running flow could be lost.** Every request reloads the wallet from its store, replacing the in-memory credential list. An authorization code flow stays open across the user's login, and the UI's burst of requests when it returns landed between the import and the save: issuance reported success and stored nothing. The credential is now put back if a reload dropped it, and the restore and the save happen under the lock the reload takes
+- Only the tab that started an issuance follows the issuer's login page. The authorization event went to every open UI, so on a shared wallet a visitor who did nothing would have been navigated to some issuer's login, which is exactly what the consent dialog already avoids
+- Two tests wrote to variables from a request goroutine and read them from the test goroutine, which `go test -race` flags. The whole repository is race-clean now
+
 ## [1.19.1] - 2026-08-04
 
 ### Added

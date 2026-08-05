@@ -288,6 +288,47 @@ func TestSubmitDirectPost_RejectsRelativeRedirectURI(t *testing.T) {
 	}
 }
 
+// The wallet UI navigates to the redirect_uri a verifier returns. url.Parse
+// calls javascript: and data: absolute, so "absolute" was not enough: a
+// verifier could have answered a presentation with a URI that executes script
+// on the wallet's own origin.
+func TestSubmitDirectPost_RejectsScriptRedirectURI(t *testing.T) {
+	for _, redirect := range []string{
+		"javascript:window.__pwned=1",
+		"JavaScript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+	} {
+		t.Run(redirect, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]string{"redirect_uri": redirect})
+			}))
+			defer ts.Close()
+
+			_, err := SubmitDirectPost(ts.URL, "state123", map[string][]string{"pid": {"token1"}}, "")
+			if err == nil {
+				t.Fatalf("a %q redirect_uri was accepted", redirect)
+			}
+			if !strings.Contains(err.Error(), "http or https") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// The same applies to a Location header, which takes the same path.
+func TestSubmitDirectPost_RejectsScriptLocationHeader(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "javascript:window.__pwned=1")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer ts.Close()
+
+	if _, err := SubmitDirectPost(ts.URL, "state123", map[string][]string{"pid": {"token1"}}, ""); err == nil {
+		t.Fatal("a javascript: Location header was accepted")
+	}
+}
+
 func TestBuildFragmentRedirect_WithIDTokenAndVPToken(t *testing.T) {
 	got, err := BuildFragmentRedirect("https://verifier.example/callback", "s1", map[string][]string{"pid": {"tok1"}}, "eyJ.id.token")
 	if err != nil {

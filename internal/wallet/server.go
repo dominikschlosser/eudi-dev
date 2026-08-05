@@ -388,9 +388,11 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 		})
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, "<!doctype html><html><body><p>Wallet authorization completed. You can close this tab.</p></body></html>")
+	// The browser came back from the issuer's login. The flow it belongs to
+	// is still running server-side and finishes on its own, so send the
+	// visitor back to the wallet rather than leaving them on a dead end; the
+	// credential shows up there as soon as it lands.
+	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
 }
 
 func (s *Server) startIssuerTLSServer() error {
@@ -843,7 +845,7 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 			"verification_detail":  result.VerificationDetail,
 			"credential_requested": consentReq.OfferConfigs,
 		})
-		s.triggerSave()
+		s.saveIssuedCredential(result)
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: http.StatusOK}
 		if browserRedirect {
 			redirectBrowser(w, "")
@@ -890,7 +892,7 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browser
 		"verification_status": result.VerificationStatus,
 		"verification_detail": result.VerificationDetail,
 	})
-	s.triggerSave()
+	s.saveIssuedCredential(result)
 	if browserRedirect {
 		redirectBrowser(w, "")
 	} else {
@@ -1118,7 +1120,11 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// No Access-Control-Allow-Origin: this stream carries consent requests
+	// with the claims a verifier asked for, and the only browser client is
+	// the wallet's own UI, which is same-origin. A wildcard let any page the
+	// user happened to visit subscribe to it. Non-browser clients (the CLI,
+	// the conformance runner) do not enforce CORS and are unaffected.
 	flusher.Flush()
 
 	reqCh, reqUnsub := s.wallet.Subscribe()
@@ -1127,6 +1133,8 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	defer errUnsub()
 	stateCh, stateUnsub := s.wallet.SubscribeState()
 	defer stateUnsub()
+	authCh, authUnsub := s.wallet.SubscribeAuthorization()
+	defer authUnsub()
 
 	// An idle stream sends nothing for minutes at a time, and proxies drop
 	// idle connections. The client reconnects, so nothing breaks, but each
@@ -1155,6 +1163,16 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		case <-stateCh:
 			fmt.Fprintf(w, "event: state\ndata: {}\n\n")
+			flusher.Flush()
+		case authURL := <-authCh:
+			// An issuance is waiting for the user to authenticate at the
+			// issuer. The UI navigates there and comes back through
+			// /callback, which resumes the flow already in progress.
+			data, err := json.Marshal(map[string]string{"url": authURL})
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "event: authorize\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -1625,6 +1643,31 @@ func (s *Server) triggerSave() {
 	}
 	// Every save is a state change other open UIs should see immediately.
 	s.wallet.NotifyStateChanged()
+}
+
+// saveIssuedCredential persists a credential an issuance flow just imported.
+//
+// A flow can stay open for a long time (an authorization code flow waits for
+// the user to sign in at the issuer), and every request meanwhile reloads the
+// wallet from disk, which replaces the in-memory credential list. A reload
+// landing between the import and the save would drop the new credential
+// silently: issuance reports success and the credential is nowhere. So the
+// credential is put back if it went missing, and both steps happen under the
+// same lock the reload takes.
+func (s *Server) saveIssuedCredential(result *IssuanceResult) {
+	if result != nil && result.Imported != nil {
+		s.storeSyncMu.Lock()
+		if _, ok := s.wallet.GetCredential(result.Imported.ID); !ok {
+			s.wallet.RestoreCredential(*result.Imported)
+		}
+		if s.onSave != nil {
+			s.onSave()
+		}
+		s.storeSyncMu.Unlock()
+		s.wallet.NotifyStateChanged()
+		return
+	}
+	s.triggerSave()
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

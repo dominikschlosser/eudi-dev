@@ -4,7 +4,7 @@ These are the current local wallet conformance results for `eudi-dev`. Use [Runn
 
 ## Baseline
 
-- date: 2026-08-04 (previous: 2026-07-30, which did not exercise credential status; see below)
+- date: 2026-08-05 (previous: 2026-08-04, same totals; and 2026-07-30, which did not exercise credential status; see below)
 - wallet mode: strict
 - suite server: local `https://localhost:8443/`
 - suite baseline: `release-v5.2.1`, version `5.2.1`, revision `932b46f`
@@ -36,6 +36,10 @@ This run exercises credential status for the first time. Until now the tested co
 - the token offered no key-resolution route the Final (non-HAIP) plans accept: that branch verifies with a `jwk` embedded in the header or with `server_jwks`, and `server_jwks` is unreachable in these plans — 17 modules
 
 Both are fixed. The token now strips the trust anchor from `x5c` and additionally embeds the signing key as a `jwk` header, derived from the signing key so it cannot disagree with the `x5c` leaf. `x5c` remains the anchored route that HAIP validates; `jwk` is the convenience route, permitted because Token Status List §5.1 requires only `typ` and `jwk` is a registered JOSE header (RFC 7515 §4.1.3).
+
+## Run of 2026-08-05
+
+Re-run for the 1.19.2 release against the same suite baseline, after the browser hardening and the authorization code flow changes: **106 modules PASSED, 38 negative modules REVIEW, 0 FAILED**, 13,951 condition successes with 0 failures and 0 warnings across all 12 plans. Same totals as 2026-08-04, so neither the stricter `redirect_uri` scheme check nor the reworked authorization code flow moved conformance. The suite drives the authorization endpoint through redirects, so it never takes the interactive-login branch the demo issuer uses.
 
 ### Flaky module to expect
 

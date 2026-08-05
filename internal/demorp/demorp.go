@@ -68,11 +68,9 @@ type DemoRP struct {
 	tokens   map[string]*offerState
 	requests map[string]*requestState
 	// Authorization code flow state: pushed authorization requests by
-	// request_uri, the codes minted from them, and the browser logins that
-	// authorize an issuer-initiated offer.
+	// request_uri, and the codes minted from them once the user signed in.
 	authRequests map[string]*authRequestState
 	codes        map[string]*authRequestState
-	logins       map[string]*loginState
 }
 
 // New creates the demo issuer/verifier pair. baseURL returns the public
@@ -87,7 +85,6 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		requests:     make(map[string]*requestState),
 		authRequests: make(map[string]*authRequestState),
 		codes:        make(map[string]*authRequestState),
-		logins:       make(map[string]*loginState),
 	}
 }
 
@@ -125,11 +122,6 @@ func (d *DemoRP) pruneLocked() {
 	for code, a := range d.codes {
 		if now.After(a.expires) || a.codeUsed {
 			delete(d.codes, code)
-		}
-	}
-	for state, l := range d.logins {
-		if now.After(l.expires) {
-			delete(d.logins, state)
 		}
 	}
 }

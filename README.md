@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-banner-dark.png">
-    <img src="docs/assets/logo-banner-light.png" alt="EUDI Dev Wallet" width="600">
-  </picture>
+  <img src="docs/assets/logo-mark.svg" alt="eudi-dev logo" width="110">
 </p>
 
 # eudi-dev

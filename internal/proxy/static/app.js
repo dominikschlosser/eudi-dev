@@ -100,10 +100,16 @@
     return d.toLocaleTimeString("en-GB", { hour12: false });
   }
 
+  // Escapes for both element content and quoted attribute values. A
+  // textContent round-trip leaves " and ' intact, which is not enough for a
+  // value that lands inside an attribute (proxied URLs do).
   function escapeHtml(s) {
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
+    return String(s === undefined || s === null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function generateCurl(entry) {

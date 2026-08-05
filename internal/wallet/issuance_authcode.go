@@ -317,6 +317,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		Issuer:             offer.CredentialIssuer,
 		VerificationStatus: verificationStatus,
 		VerificationDetail: verificationDetail,
+		Imported:           imported,
 	}, nil
 }
 
@@ -829,8 +830,25 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redi
 		"client_id":   {clientID},
 		"request_uri": {requestURI},
 	}.Encode()
-	if err := openAuthorizationBrowser(authURL); err != nil {
-		return nil, fmt.Errorf("opening browser for authorization request: %w", err)
+	// The authorization endpoint comes from an issuer's metadata, and this
+	// URL is about to be navigated to. A javascript: or data: endpoint would
+	// run in the wallet's own origin, so refuse anything but http(s) before
+	// handing it anywhere. (The call above would already have failed on such
+	// a scheme; this does not depend on that ordering.)
+	if err := validateAbsoluteURI("authorization_endpoint", authURL); err != nil {
+		return nil, err
+	}
+
+	// The user authenticates at the issuer as part of this flow. An open UI
+	// takes the URL and navigates there itself, which is the only thing that
+	// works on a hosted wallet: it has no browser of its own, and the browser
+	// that matters belongs to the visitor. Only when no UI is listening does
+	// the wallet open a local browser, the way a CLI run on a workstation
+	// expects.
+	if !w.NotifyAuthorization(authURL) {
+		if err := openAuthorizationBrowser(authURL); err != nil {
+			return nil, fmt.Errorf("opening browser for authorization request: %w", err)
+		}
 	}
 
 	select {

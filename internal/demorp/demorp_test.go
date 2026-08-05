@@ -823,41 +823,88 @@ func TestIssuanceHAIPAcceptsPreAuthorizedOffer(t *testing.T) {
 }
 
 // The demo issuer is its own authorization server, so the whole HAIP
-// authorization code flow has to work against it: browser login, pushed
-// authorization request with a wallet attestation and DPoP, PKCE, code
-// exchange, DPoP-bound credential request. This drives it through the real
-// wallet client with HAIP enforcement on.
+// authorization code flow has to work against it: pushed authorization
+// request with a wallet attestation and DPoP, a login the user completes
+// while the wallet waits, PKCE, code exchange, DPoP-bound credential request.
+//
+// The point of the test is the ordering. The offer is created with nobody
+// signed in; authentication happens during redemption, at the authorization
+// endpoint, which is where the authorization code flow puts it.
 func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	w := newIssuanceWallet(t)
 	w.RequireHAIP = true
 	w.ValidationMode = wallet.ValidationModeStrict
 	_, ts := serveDemoStack(t, w)
 
-	// The browser login is what authorizes the offer. It answers with a
-	// redirect to the wallet, carrying the offer by reference.
-	client := ts.Client()
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	form := url.Values{"username": {"alice"}, "password": {"alice"}}
-	resp, err := client.PostForm(ts.URL+"/issuer/login", form)
-	if err != nil {
-		t.Fatalf("logging in: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("login returned %d, want a redirect to the wallet", resp.StatusCode)
-	}
-	walletURL := resp.Header.Get("Location")
-	offerURI := ""
-	if parsed, err := url.Parse(walletURL); err == nil {
-		offerURI = parsed.Query().Get("credential_offer_uri")
-	}
-	if offerURI == "" {
-		t.Fatalf("login redirect %q carries no credential offer", walletURL)
+	created := postJSONTo(t, ts.URL+"/issuer/api/offers?grant=authorization_code", "")
+	schemeURI, _ := created["scheme_uri"].(string)
+	if schemeURI == "" {
+		t.Fatalf("unexpected offer response: %v", created)
 	}
 
-	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString("openid-credential-offer://?credential_offer_uri="+url.QueryEscape(offerURI))+`}`)
-	if result["error"] != nil {
-		t.Fatalf("the authorization code flow failed: %v", result["error"])
+	// The wallet blocks mid-flow until the user has signed in, so redeem the
+	// offer in the background and play the browser here.
+	done := make(chan map[string]any, 1)
+	go func() { done <- postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`) }()
+
+	// The wallet hands the authorization URL to its UI rather than opening a
+	// browser of its own, which is the only thing that works when the wallet
+	// is hosted.
+	authURLCh, unsubscribe := w.SubscribeAuthorization()
+	defer unsubscribe()
+	var authURL string
+	select {
+	case authURL = <-authURLCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the wallet never asked for an authorization URL")
+	}
+	if !strings.Contains(authURL, "/issuer/authorize") || !strings.Contains(authURL, "request_uri=") {
+		t.Fatalf("unexpected authorization URL %q", authURL)
+	}
+
+	client := ts.Client()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	page, err := client.Get(authURL)
+	if err != nil {
+		t.Fatalf("opening the authorization URL: %v", err)
+	}
+	body, _ := io.ReadAll(page.Body)
+	page.Body.Close()
+	if page.StatusCode != http.StatusOK || !strings.Contains(string(body), "Sign in") {
+		t.Fatalf("the authorization endpoint did not ask for a login: %d %s", page.StatusCode, truncate(string(body)))
+	}
+	requestURI := requestURIFromLoginPage(t, string(body))
+
+	login, err := client.PostForm(ts.URL+"/issuer/authorize", url.Values{
+		"request_uri": {requestURI},
+		"username":    {"alice"},
+		"password":    {"alice"},
+	})
+	if err != nil {
+		t.Fatalf("signing in: %v", err)
+	}
+	login.Body.Close()
+	if login.StatusCode != http.StatusFound {
+		t.Fatalf("login returned %d, want a redirect back to the wallet", login.StatusCode)
+	}
+	callback := login.Header.Get("Location")
+	if !strings.Contains(callback, "code=") {
+		t.Fatalf("login redirect %q carries no authorization code", callback)
+	}
+	// The browser follows the redirect; that is what resumes the flow.
+	cb, err := client.Get(callback)
+	if err != nil {
+		t.Fatalf("following the callback: %v", err)
+	}
+	cb.Body.Close()
+
+	select {
+	case result := <-done:
+		if result["error"] != nil {
+			t.Fatalf("the authorization code flow failed: %v", result["error"])
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the issuance never completed after the login")
 	}
 
 	// The ticket carries the authenticated account, which is only knowable
@@ -875,6 +922,30 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	if got := ticket.Claims["given_name"]; got != demoAccountGivenName {
 		t.Errorf("ticket given_name = %v, want %q from the logged-in account", got, demoAccountGivenName)
 	}
+}
+
+// requestURIFromLoginPage reads the hidden field that ties the login form back
+// to the pushed authorization request.
+func requestURIFromLoginPage(t *testing.T, page string) string {
+	t.Helper()
+	const marker = `name="request_uri" value="`
+	i := strings.Index(page, marker)
+	if i < 0 {
+		t.Fatalf("login page carries no request_uri field: %s", truncate(page))
+	}
+	rest := page[i+len(marker):]
+	end := strings.Index(rest, `"`)
+	if end < 0 {
+		t.Fatalf("malformed request_uri field: %s", truncate(rest))
+	}
+	return rest[:end]
+}
+
+func truncate(s string) string {
+	if len(s) > 200 {
+		return s[:200] + "..."
+	}
+	return s
 }
 
 // Without a wallet attestation the authorization server must refuse the

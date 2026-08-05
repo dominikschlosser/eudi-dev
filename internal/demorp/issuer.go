@@ -78,6 +78,9 @@ type offerState struct {
 func (d *DemoRP) IssuerHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", d.serveStatic("static/issuer.html"))
+	// Served as a file rather than inline, so the page needs no
+	// script-src 'unsafe-inline' in the wallet's Content-Security-Policy.
+	mux.HandleFunc("GET /issuer.js", d.serveStatic("static/issuer.js"))
 	mux.HandleFunc("POST /api/offers", d.handleCreateOffer)
 	mux.HandleFunc("GET /offer/{id}", d.handleOfferByReference)
 	mux.HandleFunc("POST /token", d.handleToken)
@@ -85,10 +88,8 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer", d.handleIssuerMetadata)
 
 	// Authorization code flow, with this issuer as its own authorization
-	// server. /login starts an issuer-initiated flow in the browser, the
-	// rest is the wallet talking to the authorization server.
-	mux.HandleFunc("GET /login", d.handleLoginStart)
-	mux.HandleFunc("POST /login", d.handleLoginSubmit)
+	// server. The user signs in at /authorize, during redemption, not before
+	// the offer is created.
 	mux.HandleFunc("POST /par", d.handlePushedAuthorizationRequest)
 	mux.HandleFunc("GET /authorize", d.handleAuthorize)
 	mux.HandleFunc("POST /authorize", d.handleAuthorizeSubmit)
@@ -111,7 +112,11 @@ func (d *DemoRP) serveStatic(name string) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		contentType := "text/html; charset=utf-8"
+		if strings.HasSuffix(name, ".js") {
+			contentType = "text/javascript; charset=utf-8"
+		}
+		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(data)
 	}
@@ -156,7 +161,14 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleCreateOffer creates a credential offer. ?grant=authorization_code
+// produces an offer the wallet redeems through the authorization code flow,
+// where the user signs in at the authorization endpoint as part of the
+// redemption. Anything else produces a pre-authorized code offer, which
+// carries its own authorization and needs no login at all.
 func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
+	authCode := r.URL.Query().Get("grant") == authCodeGrant
+
 	d.mu.Lock()
 	d.pruneLocked()
 	if len(d.offers) >= maxEntries {
@@ -165,9 +177,13 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offer := &offerState{
-		id:          randToken(),
-		preAuthCode: randToken(),
-		expires:     time.Now().Add(entryTTL),
+		id:      randToken(),
+		expires: time.Now().Add(entryTTL),
+	}
+	if authCode {
+		offer.issuerState = randToken()
+	} else {
+		offer.preAuthCode = randToken()
 	}
 	d.offers[offer.id] = offer
 	d.mu.Unlock()

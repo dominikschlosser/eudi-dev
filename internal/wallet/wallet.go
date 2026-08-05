@@ -103,6 +103,8 @@ type WalletRuntime struct {
 	errSubID          int64
 	stateSubscribers  map[int64]chan struct{}
 	stateSubID        int64
+	authSubscribers   map[int64]chan string
+	authSubID         int64
 	lastError         *WalletError
 	authCodeCallbacks map[string]chan url.Values
 }
@@ -113,6 +115,7 @@ func newWalletRuntime() *WalletRuntime {
 		subscribers:       make(map[int64]chan *ConsentRequest),
 		errSubscribers:    make(map[int64]chan WalletError),
 		stateSubscribers:  make(map[int64]chan struct{}),
+		authSubscribers:   make(map[int64]chan string),
 		authCodeCallbacks: make(map[string]chan url.Values),
 	}
 }
@@ -704,4 +707,19 @@ func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 		summaries[i] = w.CredentialSummaryWithStatus(c)
 	}
 	return json.Marshal(summaries)
+}
+
+// RestoreCredential appends a credential that is already known to have been
+// imported, without re-parsing it. It exists for one case: a store reload
+// replaced the credential list while an issuance flow was in progress, and
+// the credential it produced has to be put back before the wallet is saved.
+func (w *Wallet) RestoreCredential(cred StoredCredential) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for _, existing := range w.Credentials {
+		if existing.ID == cred.ID {
+			return
+		}
+	}
+	w.Credentials = append(w.Credentials, cred)
 }

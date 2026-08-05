@@ -119,6 +119,60 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 	}
 }
 
+// SubscribeAuthorization returns a channel carrying authorization URLs the
+// user has to visit to finish an issuance, plus an unsubscribe function.
+//
+// The authorization code flow authenticates the user at the issuer, which
+// only a browser can do. A wallet running on the user's own machine opens
+// one; a hosted wallet has no browser of its own, so it hands the URL to the
+// open UI instead and that tab navigates. Either way the login happens inside
+// the flow, between the pushed authorization request and the token exchange.
+func (w *Wallet) SubscribeAuthorization() (<-chan string, func()) {
+	ch := make(chan string, 4)
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	rt.authSubID++
+	id := rt.authSubID
+	rt.authSubscribers[id] = ch
+	rt.mu.Unlock()
+
+	return ch, func() {
+		rt.mu.Lock()
+		delete(rt.authSubscribers, id)
+		rt.mu.Unlock()
+		for {
+			select {
+			case <-ch:
+			default:
+				return
+			}
+		}
+	}
+}
+
+// NotifyAuthorization offers an authorization URL to the open UIs. It reports
+// whether anyone took it, so a wallet with no UI attached can fall back to
+// opening a browser locally.
+func (w *Wallet) NotifyAuthorization(authURL string) bool {
+	rt := w.runtimeState()
+	rt.mu.Lock()
+	subs := make([]chan string, 0, len(rt.authSubscribers))
+	for _, ch := range rt.authSubscribers {
+		subs = append(subs, ch)
+	}
+	rt.mu.Unlock()
+
+	delivered := false
+	for _, ch := range subs {
+		select {
+		case ch <- authURL:
+			delivered = true
+		default:
+		}
+	}
+	return delivered
+}
+
 // NotifyError sends an error event to all subscribers and stores it for polling.
 func (w *Wallet) NotifyError(err WalletError) {
 	rt := w.runtimeState()

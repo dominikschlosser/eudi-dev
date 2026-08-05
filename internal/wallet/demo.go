@@ -112,13 +112,14 @@ func (s *Server) DemoEnabled() bool {
 // payload (credentials, offers, presentations) is far smaller.
 const demoMaxBodyBytes = 1 << 20
 
-// Handler returns the server's root handler: the mux, wrapped with the demo
-// guard when the demo profile is enabled.
+// Handler returns the server's root handler: the mux, wrapped with the
+// browser security headers and, when the demo profile is enabled, the demo
+// guard.
 func (s *Server) Handler() http.Handler {
 	if s.demo == nil {
-		return s.mux
+		return withSecurityHeaders(s.mux)
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if demoBlockedRoute(r) {
 			writeJSON(w, http.StatusForbidden, map[string]string{
 				"error": "endpoint disabled in public demo mode",
@@ -127,6 +128,39 @@ func (s *Server) Handler() http.Handler {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, demoMaxBodyBytes)
 		s.mux.ServeHTTP(w, r)
+	}))
+}
+
+// contentSecurityPolicy is defense in depth for a wallet whose stored state
+// is written by one visitor and rendered in another's browser. Scripts load
+// from this origin only, so an injected inline handler or <script> does not
+// run even when some value escapes escaping. Inline styles stay allowed: the
+// UI uses style attributes throughout and CSS injection is not the concern
+// here. No plugins, no framing, no <base> rewriting, and forms may only post
+// back to this origin.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"font-src 'self'; " +
+	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'none'; " +
+	"form-action 'self'; " +
+	"frame-ancestors 'none'"
+
+// withSecurityHeaders sets the headers a browser needs to contain a bad
+// response: the CSP above, no MIME sniffing (a stored credential served as
+// JSON must never be interpreted as HTML), no framing, and no referrer
+// leaking wallet URLs to a verifier or issuer.
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
 	})
 }
 

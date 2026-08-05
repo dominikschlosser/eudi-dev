@@ -190,6 +190,28 @@ so the wallet automatically receives incoming protocol requests.`,
 				}
 			}
 
+			// A wallet that serves a UI can redeem an authorization code offer:
+			// it identifies itself with its own origin and takes the code at
+			// its /callback endpoint. Without both values the flow is refused
+			// before the pushed authorization request, so an issuer never gets
+			// to see the wallet attestation. Explicit flags still win.
+			{
+				base := strings.TrimRight(strings.TrimSpace(w.BaseURL), "/")
+				if base == "" {
+					if docker {
+						base = fmt.Sprintf("http://host.docker.internal:%d", port)
+					} else {
+						base = fmt.Sprintf("http://localhost:%d", port)
+					}
+				}
+				if w.VCIClientID == "" {
+					w.VCIClientID = base
+				}
+				if w.VCIRedirectURI == "" {
+					w.VCIRedirectURI = base + "/callback"
+				}
+			}
+
 			if demo {
 				// Installed here rather than with the other demo settings: it
 				// needs the resolved base and issuer URLs, so the wallet stays

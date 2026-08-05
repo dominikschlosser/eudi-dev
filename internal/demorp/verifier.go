@@ -67,6 +67,7 @@ type requestState struct {
 func (d *DemoRP) VerifierHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", d.serveStatic("static/verifier.html"))
+	mux.HandleFunc("GET /verifier.js", d.serveStatic("static/verifier.js"))
 	mux.HandleFunc("POST /api/requests", d.handleCreateRequest)
 	mux.HandleFunc("GET /api/requests/{id}", d.handleRequestStatus)
 	mux.HandleFunc("GET /request/{id}", d.handleRequestObject)

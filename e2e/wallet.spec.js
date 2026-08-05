@@ -762,6 +762,70 @@ test.describe("Credential Issuing via UI", () => {
   });
 });
 
+test.describe("Stored XSS", () => {
+  // A wallet is shared state: one visitor imports a credential, every other
+  // visitor's browser renders it. The escaping helper used to round-trip
+  // through textContent, which leaves " and ' alone, so a status list URI
+  // could close the title="" attribute and add an event handler that ran in
+  // everyone else's browser.
+  test("a credential cannot inject an attribute into another visitor's page", async ({
+    page,
+    request,
+  }) => {
+    const b64 = (obj) =>
+      Buffer.from(JSON.stringify(obj)).toString("base64url");
+    const credential =
+      b64({ alg: "ES256", typ: "dc+sd-jwt" }) +
+      "." +
+      b64({
+        vct: "urn:xss-probe:1",
+        iss: WALLET_URL,
+        // The trailing // comments out whatever the template appends.
+        status: {
+          status_list: {
+            idx: 1,
+            uri: 'http://x/" onmouseover="window.__XSS_FIRED=1;//',
+          },
+        },
+      }) +
+      "." +
+      Buffer.alloc(64).toString("base64url");
+
+    const imported = await request.post(`${WALLET_URL}/api/credentials`, {
+      headers: { "Content-Type": "text/plain" },
+      data: credential,
+    });
+    expect(imported.status()).toBe(201);
+
+    await page.goto(WALLET_URL);
+    await page.waitForSelector(".credential-card");
+
+    const badge = page.locator(".status-badge.status-external").first();
+    await expect(badge).toBeVisible();
+    // The payload has to stay one attribute value, not become two.
+    const attrs = await badge.evaluate((el) =>
+      [...el.attributes].map((a) => a.name),
+    );
+    expect(attrs).not.toContain("onmouseover");
+
+    const box = await badge.boundingBox();
+    if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.__XSS_FIRED)).toBeUndefined();
+  });
+
+  test("the wallet sends browser hardening headers", async ({ request }) => {
+    const res = await request.get(`${WALLET_URL}/`);
+    const csp = res.headers()["content-security-policy"] || "";
+    // script-src without 'unsafe-inline' is what stops an injected handler
+    // from running even when escaping fails somewhere.
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(res.headers()["x-content-type-options"]).toBe("nosniff");
+  });
+});
+
 test.describe("Mobile layout", () => {
   test("footer stays reachable on a small viewport", async ({ page }) => {
     // Regression: the wallet had no responsive rules, so body height 100vh

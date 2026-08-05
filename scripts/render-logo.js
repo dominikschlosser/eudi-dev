@@ -1,6 +1,7 @@
 // Renders the project wordmark (logo mark + "EUDI Dev Wallet") into
-// docs/assets as PNGs: a banner card for the README, the same wordmark on a
-// transparent background, and a 1200x630 card for social posts.
+// docs/assets as PNGs: a banner card, the bare wordmark on a transparent
+// background, and a 1200x630 card for social posts. Light and dark of each.
+// The README uses the mark alone (docs/assets/logo-mark.svg), not these.
 //
 // Run it with `node scripts/render-logo.js`. It borrows the Playwright
 // installed for the end-to-end tests (`cd e2e && npm install` if missing).
@@ -54,7 +55,8 @@ const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
   const browser = await chromium.launch();
 
   for (const variant of [
-    // Banner cards for the README, one per GitHub theme.
+    // Banner cards, content-sized with rounded corners. The README uses the
+    // bare mark, these are for posts and slides.
     { file: 'logo-banner-dark.png', theme: dark, card: true },
     { file: 'logo-banner-light.png', theme: light, card: true },
     // The same wordmark without a card, to drop on your own background.
@@ -75,8 +77,8 @@ const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
     await p.close();
   }
 
-  // Social cards: the wordmark centered in a 1200x630 frame, sized to keep a
-  // margin on every side.
+  // Social cards: the wordmark in the 1200x630 frame link previews expect,
+  // filling it rather than floating in the middle of it.
   for (const variant of [
     { file: 'logo-social-dark.png', theme: dark },
     { file: 'logo-social-light.png', theme: light },
@@ -84,7 +86,7 @@ const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
     const p = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 2 });
     await p.setContent(page({
       text: variant.theme.text, bg: variant.theme.surface,
-      markWidth: 170, nameSize: 78, gap: 32, pad: '0',
+      markWidth: 215, nameSize: 100, gap: 38, pad: '0',
     }));
     await p.screenshot({ path: path.join(out, variant.file) });
     await p.close();

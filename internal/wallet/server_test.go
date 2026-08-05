@@ -27,6 +27,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2326,9 +2327,15 @@ func TestOfferAPI_InvalidJSON(t *testing.T) {
 func TestOnConsentRequest_CalledOnInteractiveFlow(t *testing.T) {
 	srv := newTestServer(t, false) // interactive mode
 
+	// The callback fires on the request goroutine while this one polls, so
+	// the values it records need a lock; without one `go test -race` flags
+	// the read below.
+	var callbackMu sync.Mutex
 	var callbackCalled bool
 	var callbackReqID string
 	srv.SetOnConsentRequest(func(req *ConsentRequest) {
+		callbackMu.Lock()
+		defer callbackMu.Unlock()
 		callbackCalled = true
 		callbackReqID = req.ID
 	})
@@ -2388,11 +2395,14 @@ func TestOnConsentRequest_CalledOnInteractiveFlow(t *testing.T) {
 		t.Fatal("no pending consent request found")
 	}
 
-	if !callbackCalled {
+	callbackMu.Lock()
+	called, gotReqID := callbackCalled, callbackReqID
+	callbackMu.Unlock()
+	if !called {
 		t.Error("expected onConsentRequest callback to be called")
 	}
-	if callbackReqID != reqID {
-		t.Errorf("callback received request ID %s, expected %s", callbackReqID, reqID)
+	if gotReqID != reqID {
+		t.Errorf("callback received request ID %s, expected %s", gotReqID, reqID)
 	}
 
 	// Approve to let the goroutine finish
@@ -2460,9 +2470,13 @@ func TestOnConsentRequest_NotCalledOnAutoAccept(t *testing.T) {
 func TestOnUIRequest_CalledOnInteractiveOfferImport(t *testing.T) {
 	srv := newTestServer(t, false)
 
+	// Written on the request goroutine, read here: needs a lock for -race.
+	var callbackMu sync.Mutex
 	callbackCalled := false
 	srv.SetOnUIRequest(func() {
+		callbackMu.Lock()
 		callbackCalled = true
+		callbackMu.Unlock()
 	})
 
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
@@ -2490,7 +2504,10 @@ func TestOnUIRequest_CalledOnInteractiveOfferImport(t *testing.T) {
 	if reqID == "" {
 		t.Fatal("no pending issuance consent request found")
 	}
-	if !callbackCalled {
+	callbackMu.Lock()
+	called := callbackCalled
+	callbackMu.Unlock()
+	if !called {
 		t.Fatal("expected onUIRequest callback to be called")
 	}
 	if got := len(srv.wallet.GetCredentials()); got != before {
@@ -2586,9 +2603,13 @@ func TestOnUIRequest_InteractiveOfferImportFetchesOfferForDialogAndAfterApproval
 func TestOnUIRequest_NotCalledOnAutoAcceptOfferImport(t *testing.T) {
 	srv := newTestServer(t, true)
 
+	// Written on the request goroutine, read here: needs a lock for -race.
+	var callbackMu sync.Mutex
 	callbackCalled := false
 	srv.SetOnUIRequest(func() {
+		callbackMu.Lock()
 		callbackCalled = true
+		callbackMu.Unlock()
 	})
 
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})

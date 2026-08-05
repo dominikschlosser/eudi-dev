@@ -29,6 +29,24 @@
     return true;
   }
 
+  // An authorization code issuance sends the user to the issuer to sign in.
+  // Only the tab that started the flow may follow: the wallet is shared, and
+  // navigating every open tab to some issuer's login page would hijack
+  // visitors who did nothing. Claimed when this tab submits an offer or
+  // approves an issuance, single use and short lived like the consent claim.
+  const AUTHORIZE_CLAIM_MS = 120000;
+  let authorizeClaimUntil = 0;
+
+  function expectAuthorization() {
+    authorizeClaimUntil = Date.now() + AUTHORIZE_CLAIM_MS;
+  }
+
+  function claimAuthorization() {
+    if (!authorizeClaimUntil || Date.now() > authorizeClaimUntil) return false;
+    authorizeClaimUntil = 0;
+    return true;
+  }
+
   // State
   let credentials = [];
   let pendingRequests = [];
@@ -265,6 +283,9 @@
         uri.startsWith('openid-credential-offer://') ||
         uri.startsWith('haip-vci://');
       const endpoint = isVCI ? '/api/offers' : '/api/presentations';
+      // Submitting an offer here may lead to an issuer login, and this tab
+      // asked for it, so it is the one allowed to follow.
+      if (isVCI) expectAuthorization();
 
       const resp = await fetch(endpoint, {
         method: 'POST',
@@ -985,6 +1006,18 @@
         if (demoMode) refreshPendingBanner();
       }, 300);
     });
+    // An issuance in progress needs the user to sign in at the issuer. The
+    // wallet cannot do that for them, so this tab goes there; the issuer
+    // redirects back to /callback, which resumes the flow and returns here.
+    es.addEventListener('authorize', (event) => {
+      try {
+        const { url } = JSON.parse(event.data);
+        if (!claimAuthorization()) return;
+        if (navigable(url)) window.location.href = url;
+      } catch (e) {
+        console.error('SSE authorize parse error:', e);
+      }
+    });
     es.addEventListener('error', (event) => {
       try {
         const err = JSON.parse(event.data);
@@ -1021,11 +1054,28 @@
     });
   }
 
+  // Whether a URL handed to us by an issuer or verifier may be navigated to.
+  // javascript: and data: URLs would execute in the wallet's own origin, so a
+  // verifier answering a presentation with {"redirect_uri":"javascript:..."}
+  // must not be followed. The server refuses them too; this is the second
+  // lock on the same door.
+  function navigable(url) {
+    try {
+      const scheme = new URL(url, window.location.href).protocol;
+      return scheme === 'http:' || scheme === 'https:';
+    } catch (e) {
+      return false;
+    }
+  }
+
   function showSubmissionResult(result) {
     // Only redirect on success — never redirect on error
     if (result.redirect_uri && !result.error) {
-      window.location.href = result.redirect_uri;
-      return;
+      if (navigable(result.redirect_uri)) {
+        window.location.href = result.redirect_uri;
+        return;
+      }
+      console.error('refusing to navigate to', result.redirect_uri);
     }
 
     consentOverlay.classList.add('active');
@@ -1194,6 +1244,9 @@
       const denyBtn = document.getElementById('consent-deny');
       approveBtn.disabled = true;
       approveBtn.textContent = 'Submitting...';
+      // Approving an issuance is what may lead to an issuer login, so this
+      // tab is the one allowed to follow it.
+      if (isIssuance) expectAuthorization();
       denyBtn.disabled = true;
 
       try {
@@ -1234,10 +1287,20 @@
     });
   }
 
+  // Escapes for both element content and quoted attribute values. The
+  // textContent/innerHTML trick this used to do leaves " and ' untouched, so
+  // any value interpolated into an attribute (a status list URI, a vct, a
+  // claim name, a credential configuration id) could close the attribute and
+  // add an event handler. On a shared wallet those values come from whoever
+  // imported the credential or sent the offer, so they run in every other
+  // visitor's browser.
   function escHtml(s) {
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // Footer: version, imprint link, demo note; demo mode also hides the

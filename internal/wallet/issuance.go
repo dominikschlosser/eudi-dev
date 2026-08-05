@@ -63,6 +63,11 @@ type IssuanceResult struct {
 	VerificationStatus string `json:"verification_status,omitempty"`
 	VerificationDetail string `json:"verification_detail,omitempty"`
 	Error              string `json:"error,omitempty"`
+	// Imported is the credential this flow stored. The server keeps it so it
+	// can put the credential back if a concurrent store reload dropped it
+	// before the save, which an authorization code flow invites: it stays
+	// open across the user's login while the UI keeps polling.
+	Imported *StoredCredential `json:"-"`
 }
 
 // ProcessCredentialOffer processes an OID4VCI credential offer URI. An offer
@@ -292,6 +297,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				Issuer:             offer.CredentialIssuer,
 				VerificationStatus: verificationStatus,
 				VerificationDetail: verificationDetail,
+				Imported:           imported,
 			}, nil
 		}
 	}
@@ -341,6 +347,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		Issuer:             offer.CredentialIssuer,
 		VerificationStatus: verificationStatus,
 		VerificationDetail: verificationDetail,
+		Imported:           imported,
 	}, nil
 }
 

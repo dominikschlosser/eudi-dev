@@ -1167,10 +1167,16 @@
     return renderJSONBlock(obj);
   }
 
+  // Escapes for both element content and quoted attribute values. A
+  // textContent round-trip leaves " and ' intact, which is not enough for a
+  // value that lands inside an attribute.
   function escapeHtml(str) {
-    const div = document.createElement("div");
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
+    return String(str === undefined || str === null ? "" : str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   // Pre-fill: check ?credential= query param, then /api/prefill

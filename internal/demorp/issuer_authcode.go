@@ -49,6 +49,11 @@ const (
 	// authRequestTTL bounds a pushed authorization request. Short by design,
 	// the wallet redeems it immediately.
 	authRequestTTL = 5 * time.Minute
+	// clockSkew is the tolerance applied to nbf and to a DPoP proof's iat.
+	clockSkew = time.Minute
+	// dpopProofMaxAge bounds how long a DPoP proof stays acceptable. Proofs
+	// are minted per request, so this only has to cover the trip.
+	dpopProofMaxAge = 5 * time.Minute
 )
 
 // authRequestState is one pushed authorization request and the code minted
@@ -67,33 +72,24 @@ type authRequestState struct {
 	expires       time.Time
 }
 
-// loginState records that the hardcoded account authenticated in a browser
-// before the credential offer was handed to the wallet. The wallet's own call
-// to the authorization endpoint carries no browser session, so the offer's
-// issuer_state is what ties the two together (OID4VCI 1.0 §4.1.1).
-type loginState struct {
-	subject string
-	expires time.Time
-}
-
 // authorizationServerMetadata describes this issuer in its authorization
 // server role. It satisfies HAIP 1.0: PAR required, PKCE S256, DPoP, and
 // client authentication through attestation-based client authentication.
 func (d *DemoRP) authorizationServerMetadata() map[string]any {
 	issuer := d.issuerID()
 	return map[string]any{
-		"issuer":                                issuer,
-		"authorization_endpoint":                issuer + "/authorize",
-		"pushed_authorization_request_endpoint": issuer + "/par",
-		"require_pushed_authorization_requests": true,
-		"token_endpoint":                        issuer + "/token",
-		"response_types_supported":              []string{"code"},
-		"response_modes_supported":              []string{"query"},
-		"grant_types_supported":                 []string{authCodeGrant, preAuthGrant},
-		"scopes_supported":                      []string{ticketScope},
-		"code_challenge_methods_supported":      []string{"S256"},
-		"dpop_signing_alg_values_supported":     []string{"ES256"},
-		"token_endpoint_auth_methods_supported": []string{"attest_jwt_client_auth"},
+		"issuer":                                           issuer,
+		"authorization_endpoint":                           issuer + "/authorize",
+		"pushed_authorization_request_endpoint":            issuer + "/par",
+		"require_pushed_authorization_requests":            true,
+		"token_endpoint":                                   issuer + "/token",
+		"response_types_supported":                         []string{"code"},
+		"response_modes_supported":                         []string{"query"},
+		"grant_types_supported":                            []string{authCodeGrant, preAuthGrant},
+		"scopes_supported":                                 []string{ticketScope},
+		"code_challenge_methods_supported":                 []string{"S256"},
+		"dpop_signing_alg_values_supported":                []string{"ES256"},
+		"token_endpoint_auth_methods_supported":            []string{"attest_jwt_client_auth"},
 		"token_endpoint_auth_signing_alg_values_supported": []string{"ES256"},
 	}
 }
@@ -109,55 +105,27 @@ func (d *DemoRP) AuthorizationServerMetadataHandler() http.HandlerFunc {
 	}
 }
 
-// handleLoginStart renders the login page that begins an issuer-initiated
-// authorization code flow.
-func (d *DemoRP) handleLoginStart(w http.ResponseWriter, r *http.Request) {
+// handleAuthorize resolves a pushed authorization request and asks the user to
+// authenticate. This is where the login belongs: the offer is handed to the
+// wallet unauthenticated, and the user proves who they are during redemption,
+// between the pushed authorization request and the token exchange, exactly as
+// the authorization code flow prescribes.
+func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	request, err := d.lookupAuthRequest(r.URL.Query().Get("request_uri"))
+	if err != nil {
+		writeAuthorizeError(w, err.Error())
+		return
+	}
+	if clientID := r.URL.Query().Get("client_id"); clientID != "" && clientID != request.clientID {
+		writeAuthorizeError(w, "client_id does not match the pushed authorization request")
+		return
+	}
 	renderLoginPage(w, loginPageData{
-		Action:      "login",
+		Action:      "authorize",
+		RequestURI:  request.requestURI,
 		Title:       "Sign in",
-		Explanation: "Sign in to get your Demo Event Ticket. The offer then goes to your wallet.",
+		Explanation: "Your wallet is collecting a Demo Event Ticket. Sign in to approve it.",
 	})
-}
-
-// handleLoginSubmit authenticates the hardcoded account, creates an
-// authorization code offer bound to that login, and sends the browser on to
-// the wallet with it.
-func (d *DemoRP) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	if err := r.ParseForm(); err != nil {
-		renderLoginPage(w, loginPageData{Action: "login", Title: "Sign in", Error: "Could not read the form."})
-		return
-	}
-	if !validDemoAccount(r.PostFormValue("username"), r.PostFormValue("password")) {
-		renderLoginPage(w, loginPageData{
-			Action: "login",
-			Title:  "Sign in",
-			Error:  "Wrong account. The demo accepts alice / alice.",
-		})
-		return
-	}
-
-	issuerState := randToken()
-	d.mu.Lock()
-	d.pruneLocked()
-	if len(d.offers) >= maxEntries || len(d.logins) >= maxEntries {
-		d.mu.Unlock()
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open offers, try again later"})
-		return
-	}
-	offer := &offerState{
-		id:          randToken(),
-		issuerState: issuerState,
-		subject:     demoAccountUsername,
-		expires:     time.Now().Add(entryTTL),
-	}
-	d.offers[offer.id] = offer
-	d.logins[issuerState] = &loginState{subject: demoAccountUsername, expires: time.Now().Add(entryTTL)}
-	d.mu.Unlock()
-
-	offerURI := d.issuerID() + "/offer/" + offer.id
-	target := d.baseURL() + "/credential-offer?" + url.Values{"credential_offer_uri": {offerURI}}.Encode()
-	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // handlePushedAuthorizationRequest implements RFC 9126. The wallet
@@ -219,43 +187,8 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 	})
 }
 
-// handleAuthorize resolves a pushed authorization request. A request whose
-// issuer_state came from a completed browser login is approved immediately,
-// which is what lets a headless wallet finish the flow. Anything else gets
-// the login page, so a wallet that opens the authorization URL in a browser
-// works too.
-func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
-	request, err := d.lookupAuthRequest(r.URL.Query().Get("request_uri"))
-	if err != nil {
-		writeAuthorizeError(w, err.Error())
-		return
-	}
-	if clientID := r.URL.Query().Get("client_id"); clientID != "" && clientID != request.clientID {
-		writeAuthorizeError(w, "client_id does not match the pushed authorization request")
-		return
-	}
-
-	d.mu.Lock()
-	login, hasLogin := d.logins[request.issuerState]
-	if hasLogin && time.Now().After(login.expires) {
-		delete(d.logins, request.issuerState)
-		hasLogin = false
-	}
-	d.mu.Unlock()
-	if !hasLogin {
-		renderLoginPage(w, loginPageData{
-			Action:      "authorize",
-			RequestURI:  request.requestURI,
-			Title:       "Sign in",
-			Explanation: "Your wallet is asking for a Demo Event Ticket. Sign in to approve.",
-		})
-		return
-	}
-	d.redirectWithCode(w, r, request, login.subject)
-}
-
-// handleAuthorizeSubmit completes the browser login for a wallet that opened
-// the authorization endpoint itself.
+// handleAuthorizeSubmit completes the login and hands the wallet its
+// authorization code.
 func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
@@ -283,14 +216,17 @@ func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 // the wallet's redirect URI. The `iss` parameter (RFC 9207) is included
 // because a wallet in strict mode requires it.
 func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, request *authRequestState, subject string) {
+	// Everything read from the shared request happens under the lock: the
+	// token endpoint reads the same struct concurrently.
 	code := randToken()
 	d.mu.Lock()
 	request.code = code
 	request.subject = subject
 	d.codes[code] = request
+	redirectURI, state := request.redirectURI, request.state
 	d.mu.Unlock()
 
-	target, err := url.Parse(request.redirectURI)
+	target, err := url.Parse(redirectURI)
 	if err != nil {
 		writeAuthorizeError(w, "the pushed redirect_uri is not a valid URL")
 		return
@@ -298,8 +234,8 @@ func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, reques
 	query := target.Query()
 	query.Set("code", code)
 	query.Set("iss", d.issuerID())
-	if request.state != "" {
-		query.Set("state", request.state)
+	if state != "" {
+		query.Set("state", state)
 	}
 	target.RawQuery = query.Encode()
 	http.Redirect(w, r, target.String(), http.StatusFound)
@@ -327,32 +263,36 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		delete(d.codes, code)
 		known = false
 	}
+	// Copy under the lock: the authorization endpoint writes to the same
+	// struct when it mints a code.
+	var granted authRequestState
 	if known {
 		// An authorization code is single use (RFC 6749 §4.1.2).
 		request.codeUsed = true
+		granted = *request
 	}
 	d.mu.Unlock()
 	if !known {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "unknown, used or expired authorization code"))
 		return
 	}
-	if clientID != request.clientID {
+	if clientID != granted.clientID {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "client_id does not match the authorization request"))
 		return
 	}
-	if redirect := r.PostFormValue("redirect_uri"); redirect != request.redirectURI {
+	if redirect := r.PostFormValue("redirect_uri"); redirect != granted.redirectURI {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "redirect_uri does not match the authorization request"))
 		return
 	}
-	if !pkceMatches(r.PostFormValue("code_verifier"), request.codeChallenge) {
+	if !pkceMatches(r.PostFormValue("code_verifier"), granted.codeChallenge) {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "code_verifier does not match the code_challenge"))
 		return
 	}
 
 	offer := &offerState{
 		id:          randToken(),
-		issuerState: request.issuerState,
-		subject:     request.subject,
+		issuerState: granted.issuerState,
+		subject:     granted.subject,
 		accessToken: randToken(),
 		cNonce:      randToken(),
 		jkt:         jkt,
@@ -434,6 +374,17 @@ func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken strin
 	}
 	if htu, _ := proof.payload["htu"].(string); htu != expectedURL {
 		return "", fmt.Errorf("DPoP htu %q does not match %q", htu, expectedURL)
+	}
+	// A DPoP proof carries no expiry, so freshness comes from iat. Without
+	// this check a proof captured once stays usable forever, which is the
+	// whole thing DPoP is meant to prevent.
+	iat, ok := proof.payload["iat"].(float64)
+	if !ok {
+		return "", fmt.Errorf("DPoP proof has no iat claim")
+	}
+	age := time.Since(time.Unix(int64(iat), 0))
+	if age > dpopProofMaxAge || age < -clockSkew {
+		return "", fmt.Errorf("DPoP proof iat is not within the accepted window")
 	}
 	if accessToken != "" {
 		sum := sha256.Sum256([]byte(accessToken))
@@ -559,18 +510,25 @@ func (d *DemoRP) walletProviderKeyFromX5C(header map[string]any) (*ecdsa.PublicK
 // checkJWTValidity applies the exp and nbf claims when present.
 func checkJWTValidity(payload map[string]any) error {
 	now := time.Now()
-	if exp, ok := payload["exp"].(float64); ok && now.After(time.Unix(int64(exp), 0)) {
+	// exp is required, not optional: without it a leaked attestation would be
+	// usable forever, and an "if present" check would silently accept exactly
+	// the token that omits it.
+	exp, ok := payload["exp"].(float64)
+	if !ok {
+		return fmt.Errorf("has no exp claim")
+	}
+	if now.After(time.Unix(int64(exp), 0)) {
 		return fmt.Errorf("expired")
 	}
-	if nbf, ok := payload["nbf"].(float64); ok && now.Add(time.Minute).Before(time.Unix(int64(nbf), 0)) {
+	if nbf, ok := payload["nbf"].(float64); ok && now.Add(clockSkew).Before(time.Unix(int64(nbf), 0)) {
 		return fmt.Errorf("not valid yet")
 	}
 	return nil
 }
 
 type loginPageData struct {
-	// Action is the form target relative to /issuer: "login" starts an
-	// issuer-initiated flow, "authorize" completes a wallet-initiated one.
+	// Action is the form target relative to /issuer, always "authorize": the
+	// login exists only as a step of the authorization code flow.
 	Action      string
 	RequestURI  string
 	Title       string
