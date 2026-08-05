@@ -16,7 +16,6 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -25,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
@@ -181,34 +181,7 @@ func (w *Wallet) createKBJWT(nonce, audience, sdHash string) (string, error) {
 
 // signJWT creates and signs a JWT with the given header, payload, and key.
 func signJWT(header, payload map[string]any, key *ecdsa.PrivateKey) (string, error) {
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("marshaling header: %w", err)
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-
-	sigInput := headerB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, key, h[:])
-	if err != nil {
-		return "", fmt.Errorf("signing: %w", err)
-	}
-
-	keySize := (key.Curve.Params().BitSize + 7) / 8
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	sig := make([]byte, 2*keySize)
-	copy(sig[keySize-len(rBytes):keySize], rBytes)
-	copy(sig[2*keySize-len(sBytes):], sBytes)
-
-	return sigInput + "." + format.EncodeBase64URL(sig), nil
+	return jws.Sign(header, payload, key)
 }
 
 // VPTokenMapResult holds the result of creating VP tokens for all matches.

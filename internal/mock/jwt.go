@@ -16,14 +16,12 @@ package mock
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 )
 
 // JWTConfig holds options for generating a mock JWT VC credential.
@@ -89,28 +87,5 @@ func GenerateJWT(cfg JWTConfig) (string, error) {
 	}
 
 	// Encode header and payload
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("marshaling header: %w", err)
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-
-	// Sign with ECDSA (JWS r||s format)
-	sigInput := headerB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-
-	sig, err := signECDSA(cfg.Key, h[:])
-	if err != nil {
-		return "", fmt.Errorf("signing: %w", err)
-	}
-
-	sigB64 := format.EncodeBase64URL(sig)
-
-	return headerB64 + "." + payloadB64 + "." + sigB64, nil
+	return jws.Sign(header, payload, cfg.Key)
 }

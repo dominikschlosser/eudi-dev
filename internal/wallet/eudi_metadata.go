@@ -16,17 +16,16 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
@@ -567,33 +566,7 @@ func signJSONWebSignature(payload any, signingKey *ecdsa.PrivateKey, header map[
 	if signingKey == nil {
 		return "", fmt.Errorf("signing key is required")
 	}
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("marshaling JWS header: %w", err)
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling JWS payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-	signingInput := headerB64 + "." + payloadB64
-	hash := sha256.Sum256([]byte(signingInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, signingKey, hash[:])
-	if err != nil {
-		return "", fmt.Errorf("signing JWS: %w", err)
-	}
-
-	keySize := (signingKey.Curve.Params().BitSize + 7) / 8
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	sig := make([]byte, 2*keySize)
-	copy(sig[keySize-len(rBytes):keySize], rBytes)
-	copy(sig[2*keySize-len(sBytes):], sBytes)
-
-	return signingInput + "." + format.EncodeBase64URL(sig), nil
+	return jws.Sign(header, payload, signingKey)
 }
 
 func buildJWSX5C(certs []*x509.Certificate) []string {

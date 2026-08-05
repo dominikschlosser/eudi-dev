@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 )
 
 // SDJWTConfig holds options for generating a mock SD-JWT credential.
@@ -146,42 +147,13 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 	}
 
 	// Encode header and payload
-	headerJSON, err := json.Marshal(header)
+	jwt, err := jws.Sign(header, payload, cfg.Key)
 	if err != nil {
-		return "", fmt.Errorf("marshaling header: %w", err)
+		return "", err
 	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-
-	// Sign with ECDSA (JWS r||s format)
-	sigInput := headerB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, cfg.Key, h[:])
-	if err != nil {
-		return "", fmt.Errorf("signing: %w", err)
-	}
-
-	// Encode r||s with fixed-size padding (32 bytes each for P-256)
-	keySize := (cfg.Key.Curve.Params().BitSize + 7) / 8
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	sig := make([]byte, 2*keySize)
-	copy(sig[keySize-len(rBytes):keySize], rBytes)
-	copy(sig[2*keySize-len(sBytes):], sBytes)
-
-	sigB64 := format.EncodeBase64URL(sig)
 
 	// Assemble: header.payload.sig~disc1~disc2~
-	jwt := headerB64 + "." + payloadB64 + "." + sigB64
-	result := jwt + "~" + strings.Join(disclosures, "~") + "~"
-
-	return result, nil
+	return jwt + "~" + strings.Join(disclosures, "~") + "~", nil
 }
 
 // makeDisclosure handles nested structures. It returns any sub-disclosures and
@@ -276,27 +248,4 @@ func createArrayElementDisclosure(value any) (encoded string, digest string, err
 	enc := format.EncodeBase64URL(discJSON)
 	h := sha256.Sum256([]byte(enc))
 	return enc, format.EncodeBase64URL(h[:]), nil
-}
-
-// signECDSA signs a digest and returns the JWS r||s encoded signature.
-func signECDSA(key *ecdsa.PrivateKey, digest []byte) ([]byte, error) {
-	r, s, err := ecdsa.Sign(rand.Reader, key, digest)
-	if err != nil {
-		return nil, err
-	}
-
-	keySize := (key.Curve.Params().BitSize + 7) / 8
-	rBytes := padToSize(r.Bytes(), keySize)
-	sBytes := padToSize(s.Bytes(), keySize)
-
-	return append(rBytes, sBytes...), nil
-}
-
-func padToSize(b []byte, size int) []byte {
-	if len(b) >= size {
-		return b
-	}
-	padded := make([]byte, size)
-	copy(padded[size-len(b):], b)
-	return padded
 }

@@ -18,15 +18,13 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
@@ -107,34 +105,5 @@ func GenerateStatusListJWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg S
 		header["x5c"] = x5c
 	}
 
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("marshaling header: %w", err)
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-
-	sigInput := headerB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, signingKey, h[:])
-	if err != nil {
-		return "", fmt.Errorf("signing: %w", err)
-	}
-
-	keySize := (signingKey.Curve.Params().BitSize + 7) / 8
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	sig := make([]byte, 2*keySize)
-	copy(sig[keySize-len(rBytes):keySize], rBytes)
-	copy(sig[2*keySize-len(sBytes):], sBytes)
-
-	sigB64 := format.EncodeBase64URL(sig)
-
-	return headerB64 + "." + payloadB64 + "." + sigB64, nil
+	return jws.Sign(header, payload, signingKey)
 }

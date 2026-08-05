@@ -16,18 +16,16 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 )
 
 type trustListOptions struct {
@@ -432,35 +430,5 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		"typ": "JWT",
 	}
 
-	headerJSON, err := json.Marshal(header)
-	if err != nil {
-		return "", fmt.Errorf("marshaling header: %w", err)
-	}
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	headerB64 := format.EncodeBase64URL(headerJSON)
-	payloadB64 := format.EncodeBase64URL(payloadJSON)
-
-	// Sign with ECDSA (JWS r||s format)
-	sigInput := headerB64 + "." + payloadB64
-	h := sha256.Sum256([]byte(sigInput))
-
-	r, s, err := ecdsa.Sign(rand.Reader, signingKey, h[:])
-	if err != nil {
-		return "", fmt.Errorf("signing: %w", err)
-	}
-
-	keySize := (signingKey.Curve.Params().BitSize + 7) / 8
-	rBytes := r.Bytes()
-	sBytes := s.Bytes()
-	sig := make([]byte, 2*keySize)
-	copy(sig[keySize-len(rBytes):keySize], rBytes)
-	copy(sig[2*keySize-len(sBytes):], sBytes)
-
-	sigB64 := format.EncodeBase64URL(sig)
-
-	return headerB64 + "." + payloadB64 + "." + sigB64, nil
+	return jws.Sign(header, payload, signingKey)
 }
