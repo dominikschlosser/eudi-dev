@@ -376,11 +376,10 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 	return fallback
 }
 
-// attestsClient reports whether the wallet should authenticate with its
-// attestation against this authorization server. The metadata is the signal
-// the specification defines, and draft-ietf-oauth-attestation-based-client-auth
-// §8 has a client read it. Advertising is only a SHOULD there, so an operator
-// who knows better can override it, which is what ForceClientAttestation is.
+// attestsClient reports whether to authenticate with the wallet attestation
+// against this authorization server. The metadata is the defined signal, and
+// draft-ietf-oauth-attestation-based-client-auth §8 has a client read it.
+// Advertising it is only a SHOULD, so ForceClientAttestation overrides.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false
@@ -734,17 +733,14 @@ type deferredContext struct {
 }
 
 // resolveDeferredCredential completes an issuance the issuer deferred. A
-// credential response carrying a transaction_id and no credential means the
-// credential is not ready, and that transaction_id is what claims it later
-// from the deferred credential endpoint. A response that already carries the
-// credential is returned untouched, so both issuance flows can call this
-// unconditionally.
+// response carrying a transaction_id and no credential means it is not ready,
+// and that transaction_id claims it later from the deferred endpoint. A
+// response that already has the credential is returned untouched, so both
+// issuance flows can call this unconditionally.
 //
-// A short deferral is waited out here, because a caller that gets its
-// credential back from the call it made is the better outcome. When the issuer
-// wants longer than that, the poll stops and a PendingIssuance is returned for
-// the caller to hand to the background poller: the issuance is not finished,
-// but it has not failed either.
+// A short deferral is waited out here, so the caller gets its credential from
+// the call it made. A longer one returns a PendingIssuance for the background
+// poller: not finished, but not failed either.
 func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *PendingIssuance, error) {
 	txID, _ := credResp["transaction_id"].(string)
 	if txID == "" {
@@ -782,9 +778,9 @@ func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferred
 // deferredPollInterval is used when the issuer names no interval of its own.
 const deferredPollInterval = 5 * time.Second
 
-// deferralTooLongError says the issuer wants more time than the flow that
-// started the issuance is willing to hold its caller for. It is not a failure:
-// the transaction is still good, and the interval says when to come back.
+// deferralTooLongError says the issuer wants more time than the flow will hold
+// its caller for. Not a failure: the transaction is good and the interval says
+// when to come back.
 type deferralTooLongError struct {
 	transactionID string
 	interval      time.Duration
@@ -796,10 +792,9 @@ func (e deferralTooLongError) Error() string {
 		config.DeferredCredentialMaxWait, e.interval, e.transactionID)
 }
 
-// deferredCredentialAttempt makes exactly one deferred credential request.
-// The credential is returned when it is ready; a deferralTooLongError carries
-// the interval when the issuer is still working, whatever that interval says,
-// because deciding whether to wait belongs to the caller.
+// deferredCredentialAttempt makes exactly one deferred credential request. A
+// still-working issuer comes back as a deferralTooLongError carrying its
+// interval, because whether to wait is the caller's decision.
 func deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	body, err := json.Marshal(map[string]any{"transaction_id": transactionID})
 	if err != nil {
@@ -828,9 +823,9 @@ func deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID 
 }
 
 // requestDeferredCredentialWithDPoP collects a deferred credential inside the
-// issuance flow, waiting out a deferral short enough to be worth holding the
-// caller for. A longer one comes back as a deferralTooLongError, which is the
-// flow's cue to hand the transaction to the background poller instead.
+// issuance flow, waiting out a deferral short enough to hold the caller for.
+// A longer one comes back as a deferralTooLongError, the flow's cue to hand it
+// to the background poller.
 func requestDeferredCredentialWithDPoP(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	deadline := time.Now().Add(config.DeferredCredentialMaxWait)
 	for {

@@ -726,11 +726,21 @@ test.describe("Credential Issuing via UI", () => {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
     // A bare trust-list id ("pid") does not say what the list covers, so the
-    // provider profile is named next to it. Issuers need the same anchor for
-    // the wallet attestation, so this dialog has to be readable both ways.
-    await expect(
-      page.locator("#trust-list-links .trust-list-name").first(),
-    ).toContainText("Provider");
+    // provider profile is named next to it, and the lists are grouped by what
+    // they anchor. Verifiers want the credential anchor, issuers the wallet
+    // attestation one, and neither should have to read past the other.
+    const categories = page.locator("#trust-list-links .trust-list-category");
+    await expect(categories).toHaveText(["Credential providers", "Wallet providers"]);
+    const walletGroup = page.locator(".trust-list-group", {
+      has: page.locator(".trust-list-category", { hasText: "Wallet providers" }),
+    });
+    await expect(walletGroup.locator(".trust-list-item a")).toHaveText(["wallet-provider"]);
+    // Every entry names its profile, not just its id.
+    const names = page.locator("#trust-list-links .trust-list-name");
+    expect(await names.count()).toBeGreaterThan(0);
+    for (const name of await names.allTextContents()) {
+      expect(name.trim()).not.toBe("");
+    }
     // This server runs with an https --base-url, so the built-in HTTPS
     // listener is disabled and the self-signed TLS leaf stays hidden.
     for (const id of ["tls-cert-pem-link", "tls-cert-jwks-link"]) {

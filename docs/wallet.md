@@ -479,13 +479,13 @@ In interactive mode (no `--auto-accept`) the two callers diverge before consent 
 
 An issuer that cannot produce the credential straight away answers the credential request with a `transaction_id` instead, and the wallet collects the credential from the `deferred_credential_endpoint` later. Both issuance flows handle this.
 
-While the credential is not ready the issuer answers the deferred request with the `issuance_pending` error and an `interval` saying how long to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet honors that interval, and also accepts issuers that signal pending by echoing the `transaction_id` back in a success-shaped response.
+While the credential is not ready the issuer answers with the `issuance_pending` error and an `interval` to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet honors that interval. Some issuers signal the same thing by echoing the `transaction_id` back in a success response, which is accepted too.
 
-A deferral short enough to wait out is waited out, up to **90 seconds**, so a quick one still returns the credential from the call that started the issuance. Accepting an offer is one of the few requests that can legitimately run that long, so the wallet server's write timeout, the CLI's remote client, and the consent approval wait are all sized above it.
+A short deferral is waited out, up to **90 seconds**, so a quick one still returns the credential from the call that started the issuance. Accepting an offer is one of the few requests that can run that long, so the wallet server's write timeout, the CLI's remote client and the consent approval wait are all sized above it.
 
 ### Longer deferrals
 
-An issuer may defer for hours. Past the 90 seconds the wallet stops waiting and records the transaction instead, and `wallet serve` collects it in the background on the interval the issuer asked for. Nothing failed, and there is nothing to click: the issuer named a time to come back, so the wallet comes back then.
+An issuer may defer for hours. Past those 90 seconds the wallet stops waiting and records the transaction, and `wallet serve` collects it in the background on the interval the issuer asked for. Nothing has failed, and nothing needs doing.
 
 Accepting such an offer answers `HTTP 202` with the outcome:
 
@@ -506,9 +506,9 @@ eudi wallet deferred check [id]      # ask the issuer now instead of at the next
 eudi wallet deferred abandon <id>    # stop collecting it
 ```
 
-**Check now** makes one request immediately, for when the credential is known to be ready or the exchange is what you want to watch. It reports what came back: the credential, that the issuer is still working, or that the issuance was refused. Its next scheduled attempt moves on by one interval, exactly as if the poller had made it. The UI has the same on each entry.
+**Check now** asks the issuer straight away, for when the credential is known to be ready (or the exchange is what you want to watch). It reports what came back: the credential, a still-working issuer, or a refusal. The next scheduled attempt then moves on by one interval, as if the poller had made it. The UI has the same button on each entry.
 
-**Abandon** drops the entry from the schedule. The transaction stays valid at the issuer; the wallet simply stops asking, rather than waiting out the 24 hours after which it gives up on its own.
+**Abandon** drops the entry from the schedule. The transaction stays valid at the issuer, the wallet just stops asking. Use it instead of waiting out the 24 hours after which the wallet gives up on its own.
 
 Pending issuances are persisted, so a wallet that restarts keeps collecting. A record is dropped when the credential arrives, when the issuer answers something that will not improve by asking again (a rejected token, an unknown transaction), when it is abandoned, or after 24 hours.
 
@@ -522,7 +522,7 @@ By default this happens **only when the authorization server advertises it**, by
 
 > The client SHOULD fetch and parse the Authorization Server metadata and recognize Attestation-Based Client Authentication as a client authentication mechanism if either of the given `token_endpoint_auth_methods_supported` values are present.
 
-Following the metadata is also a privacy measure. This wallet has one holder key and one attestation, and §10.1 of the same draft warns that reusing them across authorization servers lets those servers correlate the user through the attestation claims and the `cnf` key. Attesting only where it is asked for keeps that exposure to issuers that already require identification.
+Following the metadata is also a privacy measure. This wallet has one holder key and one attestation, and §10.1 of the same draft warns that reusing them across authorization servers lets those servers correlate the user. Attesting only where it is asked for limits that to issuers who already require identification.
 
 ### `--client-attestation`
 
@@ -532,7 +532,7 @@ Advertising the method is a SHOULD, not a MUST, so an issuer may check an attest
 eudi wallet serve --client-attestation --auto-accept
 ```
 
-Use it when you know the issuer wants an attestation, and accept the correlation cost above. The wallet deliberately does not infer this from an `invalid_client` error: guessing from one issuer's error message would make every issuer pay for one issuer's metadata bug. `GET /api/config` reports the setting as `force_client_attestation`.
+Use it when you know the issuer wants an attestation, accepting the correlation cost above. The wallet does not infer this from an `invalid_client` error, because one issuer's metadata bug should not change how it treats every other issuer. `GET /api/config` reports the setting as `force_client_attestation`.
 
 The override never displaces client authentication the server did ask for: an authorization server that advertises `private_key_jwt` still gets the client assertion, not an attestation.
 

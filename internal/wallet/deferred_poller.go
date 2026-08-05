@@ -22,18 +22,13 @@ import (
 	"time"
 )
 
-// deferredPollerTick is how often the poller looks for work. It is not the
-// retry interval: each pending issuance carries the interval its own issuer
-// asked for, and this only decides how promptly that time is noticed.
+// deferredPollerTick is how often the poller looks for work, not how often it
+// asks an issuer. Each pending issuance carries its own interval.
 const deferredPollerTick = time.Second
 
-// StartDeferredPoller collects credentials their issuers deferred, in the
-// background, on the schedule each issuer asked for.
-//
-// A deferred issuance is not something the user can usefully act on: the
-// issuer named an interval to come back after, so the wallet comes back after
-// it. Pending issuances are persisted, so a wallet that restarts picks up
-// where it left off. The returned function stops the poller.
+// StartDeferredPoller collects deferred credentials in the background, each on
+// the interval its issuer asked for. Pending issuances are persisted, so a
+// restarted wallet picks up where it left off. The returned function stops it.
 func (s *Server) StartDeferredPoller() func() {
 	done := make(chan struct{})
 	go func() {
@@ -66,9 +61,8 @@ func (s *Server) collectDueDeferredCredentials(now time.Time) {
 	}
 }
 
-// DeferredAttempt is what came of one deferred credential request, so a
-// caller that asked for it explicitly can be told what happened rather than
-// having to watch the log.
+// DeferredAttempt is the outcome of one deferred credential request, so a
+// caller that asked for it can be told what happened.
 type DeferredAttempt struct {
 	// Collected is set when the credential arrived and was imported.
 	Collected  bool              `json:"collected"`
@@ -131,9 +125,8 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 }
 
 // handleDeferredAttemptError decides what a failed attempt means. Being told
-// to wait longer reschedules; anything else ends the attempt, because a
-// rejected token or an unknown transaction does not recover by being asked
-// again on a timer.
+// to wait longer reschedules. Anything else ends it, because a rejected token
+// or an unknown transaction will not recover on a timer.
 func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) DeferredAttempt {
 	var stillPending deferralTooLongError
 	if errors.As(err, &stillPending) {
@@ -200,9 +193,7 @@ func (s *Server) abandonDeferred(pending PendingIssuance, reason string) Deferre
 }
 
 // CollectDeferredNow asks the issuer for a deferred credential right away,
-// without waiting for its next scheduled attempt. The poller would get there
-// on the issuer's own schedule; this is for when someone knows the credential
-// is ready, or simply wants to see the exchange happen.
+// ahead of its next scheduled attempt.
 func (s *Server) CollectDeferredNow(id string) (DeferredAttempt, bool) {
 	for _, pending := range s.wallet.PendingIssuanceList() {
 		if pending.ID == id {
@@ -212,9 +203,8 @@ func (s *Server) CollectDeferredNow(id string) (DeferredAttempt, bool) {
 	return DeferredAttempt{}, false
 }
 
-// AbandonDeferredNow drops a deferred issuance because someone asked to, not
-// because the issuer said anything. The transaction stays valid on the
-// issuer's side; the wallet simply stops asking for it.
+// AbandonDeferredNow drops a deferred issuance on request. The transaction
+// stays valid at the issuer, the wallet just stops asking for it.
 func (s *Server) AbandonDeferredNow(id string) (PendingIssuance, bool) {
 	for _, pending := range s.wallet.PendingIssuanceList() {
 		if pending.ID != id {

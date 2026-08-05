@@ -174,12 +174,11 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	// Token exchange (pre-authorized code flow).
 	//
-	// An issuer may protect this flow exactly as it protects the authorization
-	// code flow: DPoP-bound access tokens (RFC 9449), client authentication by
-	// wallet attestation (OAuth 2.0 Attestation-Based Client Authentication),
-	// and key attestation inside the proof of possession. Each one is driven by
-	// the issuer's own metadata, so an issuer that asks for none of them still
-	// sees the same plain request it saw before.
+	// An issuer may protect this flow like the authorization code flow:
+	// DPoP-bound tokens (RFC 9449), client authentication by wallet attestation
+	// (OAuth 2.0 Attestation-Based Client Authentication), and key attestation
+	// in the proof. Each follows the issuer's metadata, so an issuer that asks
+	// for none of them sees the same plain request as before.
 	nonces := &dpopNonceState{}
 	var dpopKey *ecdsa.PrivateKey
 	if supportsDPoP(oauthMeta) {

@@ -132,3 +132,12 @@ for (const btn of document.querySelectorAll(".btn[data-type]")) {
 // Returning from the wallet redirect: show that request's result.
 const resultID = new URLSearchParams(location.search).get("result");
 if (resultID) startPolling(resultID);
+
+// The imprint is the wallet's, and it is only served when the operator
+// configured one, so the link appears only then.
+fetch("../api/config")
+  .then((resp) => resp.json())
+  .then((config) => {
+    if (config.imprint) document.getElementById("imprint-link").hidden = false;
+  })
+  .catch(() => {});

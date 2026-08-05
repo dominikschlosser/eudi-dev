@@ -26,6 +26,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/output"
@@ -48,13 +49,17 @@ func docCredLabel(cred map[string]any) string {
 	return docString(cred, "format")
 }
 
-func printCredentialList(creds []map[string]any) error {
-	if len(creds) == 0 {
+func printCredentialList(creds []map[string]any, deferred []map[string]any) error {
+	if len(creds) == 0 && len(deferred) == 0 {
 		fmt.Println("No credentials stored.")
 		return nil
 	}
 	if jsonOutput {
-		data, err := json.Marshal(creds)
+		out := map[string]any{"credentials": creds}
+		if len(deferred) > 0 {
+			out["deferred"] = deferred
+		}
+		data, err := json.Marshal(out)
 		if err != nil {
 			return err
 		}
@@ -68,7 +73,50 @@ func printCredentialList(creds []map[string]any) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n",
 			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims), credStatusLabel(cred))
 	}
+	for _, entry := range deferred {
+		label := docString(entry, "credential_configuration_id")
+		if label == "" {
+			label = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t-\t%s\n",
+			docString(entry, "id"), docString(entry, "format"), label, "deferred")
+	}
 	return tw.Flush()
+}
+
+// printDeferredDoc reports where a deferred issuance stands: who owes the
+// credential, and when the wallet asks next.
+func printDeferredDoc(entry map[string]any) error {
+	if jsonOutput {
+		data, err := json.MarshalIndent(entry, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+	fmt.Println("Status:         deferred (the issuer has not handed it over yet)")
+	fmt.Printf("Issuer:         %s\n", docString(entry, "issuer"))
+	if configID := docString(entry, "credential_configuration_id"); configID != "" {
+		fmt.Printf("Configuration:  %s\n", configID)
+	}
+	if credFormat := docString(entry, "format"); credFormat != "" {
+		fmt.Printf("Format:         %s\n", credFormat)
+	}
+	fmt.Printf("Transaction:    %s\n", docString(entry, "transaction_id"))
+	fmt.Printf("Retry interval: %s\n", docString(entry, "interval"))
+	if next := docString(entry, "next_attempt_at"); next != "" {
+		if parsed, err := time.Parse(time.RFC3339, next); err == nil {
+			fmt.Printf("Next attempt:   %s\n", parsed.Local().Format(time.Kitchen))
+		}
+	}
+	if attempts, ok := entry["attempts"].(float64); ok && attempts > 0 {
+		fmt.Printf("Attempts:       %d\n", int(attempts))
+	}
+	if lastErr := docString(entry, "last_error"); lastErr != "" {
+		fmt.Printf("Last error:     %s\n", lastErr)
+	}
+	return nil
 }
 
 // credStatusLabel summarizes revocation state and protection for the list,

@@ -41,6 +41,14 @@
     .disclaimer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
       font-size: 10px; line-height: 1.5; color: var(--text-dim); }
     .error { color: #f7768e; font-size: 12px; margin-top: 12px; }
+    .grant-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+    .grant-label { font-size: 11px; color: var(--text-dim); }
+    .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .toggle-option { font: inherit; font-size: 12px; padding: 6px 12px; border: 0; background: var(--bg);
+      color: var(--text-dim); cursor: pointer; }
+    .toggle-option + .toggle-option { border-left: 1px solid var(--border); }
+    .toggle-option.selected { background: var(--accent); color: #fff; }
+    .grant-hint { font-size: 11px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -57,14 +65,17 @@
       over OpenID4VCI. Create an offer and open it in the wallet on this host, or
       copy the offer URI into any wallet that can reach this server.
     </p>
-    <button class="btn primary" id="create-btn">Create credential offer</button>
-    <button class="btn" id="create-authcode-btn">Authorization code offer</button>
-    <p style="margin-top:14px">
-      With the authorization code offer you sign in at this issuer while the
-      wallet redeems it (<strong>alice / alice</strong>), and the wallet uses
-      PAR, PKCE, DPoP and a wallet attestation along the way. This issuer is
-      its own authorization server. The account is hardcoded for the demo.
+    <div class="grant-row">
+      <span class="grant-label">Grant</span>
+      <div class="toggle" id="grant-toggle" role="radiogroup" aria-label="Grant type">
+        <button type="button" class="toggle-option selected" data-grant="" role="radio" aria-checked="true">Pre-authorized code</button>
+        <button type="button" class="toggle-option" data-grant="authorization_code" role="radio" aria-checked="false">Authorization code</button>
+      </div>
+    </div>
+    <p class="grant-hint" id="grant-hint">
+      The offer carries the code, so the wallet redeems it without any sign-in.
     </p>
+    <button class="btn primary" id="create-btn">Create offer</button>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>
@@ -79,6 +90,7 @@
       <a href="../">Wallet UI</a>
       <a href="../verifier/">Demo Verifier</a>
       <a href="../decoder/">Decoder</a>
+      <a href="../imprint" id="imprint-link" hidden>Imprint</a>
     </div>
     <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>

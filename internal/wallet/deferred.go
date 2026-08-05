@@ -24,14 +24,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// PendingIssuance is a credential the issuer deferred, kept so the wallet can
-// collect it when the issuer says it is ready.
-//
-// The issuer hands out a transaction_id and an interval to come back after,
-// which can be hours. Waiting that out inside the request that started the
-// issuance is not an option, so the ticket is persisted instead and a poller
-// works through it in the background. Everything the deferred request needs
-// travels with it, because the flow that created it is long gone by then.
+// PendingIssuance is a credential the issuer deferred, kept until the wallet
+// manages to collect it. The issuer's interval can be hours, too long to hold
+// the request that started the issuance, so the ticket is persisted and a
+// poller works through it. It carries everything the deferred request needs:
+// the flow that created it is gone by the time it runs.
 type PendingIssuance struct {
 	ID               string    `json:"id"`
 	TransactionID    string    `json:"transaction_id"`
@@ -47,10 +44,9 @@ type PendingIssuance struct {
 	NextAttemptAt    time.Time `json:"next_attempt_at"`
 	Attempts         int       `json:"attempts,omitempty"`
 	LastError        string    `json:"last_error,omitempty"`
-	// ProofKeyPEMs holds the keys the credential request proved possession of.
-	// The holder key is always the first, and a batch request adds ephemeral
-	// ones; a deferred credential still has to be matched back to the key it
-	// was bound to, and those ephemeral keys exist nowhere else.
+	// ProofKeyPEMs holds the keys the credential request proved possession of,
+	// holder key first. A batch request adds ephemeral keys that exist nowhere
+	// else, and the credential still has to be matched back to one of them.
 	ProofKeyPEMs []string `json:"proof_keys,omitempty"`
 }
 
@@ -62,10 +58,9 @@ func (p *PendingIssuance) Interval() time.Duration {
 	return time.Duration(p.IntervalSeconds) * time.Second
 }
 
-// Expired reports whether a pending issuance has been carried around for
-// longer than it is worth. An issuer that has not produced the credential
-// within a day is not going to, and the access token that would collect it has
-// almost certainly expired.
+// Expired reports whether a pending issuance is past being worth keeping. An
+// issuer that has not produced the credential within a day is unlikely to, and
+// the access token to collect it has probably expired.
 func (p *PendingIssuance) Expired(now time.Time) bool {
 	return p != nil && now.Sub(p.CreatedAt) > pendingIssuanceMaxAge
 }
@@ -189,8 +184,8 @@ func (w *Wallet) UpdatePendingIssuance(id string, apply func(*PendingIssuance)) 
 }
 
 // recordPendingIssuance stores a deferred credential and reports it as the
-// outcome of the issuance. Nothing failed: the issuer took the request and
-// named a time to come back, and the poller does that.
+// outcome. Nothing failed: the issuer took the request and named a time to
+// come back.
 func (w *Wallet) recordPendingIssuance(pending *PendingIssuance) *IssuanceResult {
 	w.AddPendingIssuance(pending)
 	w.addProtocolLog("issuance", "issuance_deferred",

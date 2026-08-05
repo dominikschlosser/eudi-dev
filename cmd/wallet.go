@@ -195,7 +195,14 @@ func walletListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printCredentialList(creds)
+			// A deferred credential is not in the store yet but is on its way.
+			// Leaving it out makes a running issuance look like one that
+			// never happened.
+			deferred, err := svc.DeferredIssuances()
+			if err != nil {
+				return err
+			}
+			return printCredentialList(creds, deferred)
 		},
 	}
 }
@@ -213,6 +220,16 @@ func walletShowCmd() *cobra.Command {
 			svc, err := managedWallet()
 			if err != nil {
 				return err
+			}
+			// A deferred issuance answers to its own id, so show where it
+			// stands instead of "credential not found".
+			deferred, derr := svc.DeferredIssuances()
+			if derr == nil {
+				for _, entry := range deferred {
+					if docString(entry, "id") == args[0] {
+						return printDeferredDoc(entry)
+					}
+				}
 			}
 			cred, err := svc.Credential(args[0])
 			if err != nil {

@@ -50,6 +50,7 @@ type TrustListIndexEntry struct {
 	ID                    string                  `json:"id"`
 	Default               bool                    `json:"default"`
 	Description           string                  `json:"description,omitempty"`
+	Category              string                  `json:"category,omitempty"`
 	Path                  string                  `json:"path"`
 	LoTEType              string                  `json:"loTEType"`
 	EntityName            string                  `json:"entityName"`
@@ -247,6 +248,7 @@ func BuildTrustListIndexEntries(w *Wallet, issuer string) []TrustListIndexEntry 
 			ID:                    group.ID,
 			Default:               hasDefault && group.ID == defaultGroup.ID,
 			Description:           trustListDescription(group),
+			Category:              trustListCategory(group),
 			Path:                  path,
 			LoTEType:              group.Profile.LoTEType,
 			EntityName:            group.Profile.EntityName,
@@ -271,6 +273,15 @@ func trustListDescription(group TrustListGroup) string {
 		return "Wallet and key attestations, for issuers"
 	}
 	return "Credentials this wallet issues, for verifiers"
+}
+
+// trustListCategory groups lists by what they anchor, so a reader looking for
+// one kind is not reading past the other.
+func trustListCategory(group TrustListGroup) string {
+	if group.Profile.LoTEType == walletProviderTrustListType {
+		return "Wallet providers"
+	}
+	return "Credential providers"
 }
 
 func trustListProfileFromSpec(spec IssuedAttestationSpec) trustListProfile {

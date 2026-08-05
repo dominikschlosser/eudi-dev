@@ -72,9 +72,8 @@
   const consentDialog = document.getElementById('consent-dialog');
 
   // Load credentials
-  // Credentials an issuer deferred. The wallet collects them on the interval
-  // the issuer asked for, so this section reports what is outstanding rather
-  // than offering a button: there is nothing for a person to do.
+  // Credentials an issuer deferred. The wallet collects them on the issuer's
+  // own interval; the buttons are for going faster than that, or giving up.
   async function loadDeferred() {
     try {
       const resp = await fetch('/api/deferred');
@@ -111,9 +110,8 @@
         '</div>';
       }).join('');
 
-      // Checking asks the issuer immediately instead of waiting for the next
-      // scheduled attempt. Abandoning stops the wallet asking at all; the
-      // transaction stays valid at the issuer.
+      // Check asks the issuer now instead of at the next scheduled attempt.
+      // Abandon stops the wallet asking at all.
       list.querySelectorAll('.deferred-check').forEach(btn => {
         btn.addEventListener('click', async () => {
           btn.disabled = true;
@@ -1206,9 +1204,7 @@
     }
 
     // An offer that requires a transaction code cannot be approved without
-    // one, so this asks for it rather than only reporting that it is needed.
-    // The issuer delivers the code out of band (the Animo playground prints
-    // it next to the QR code, a bank would text it).
+    // one. The issuer delivers it out of band, so ask for it here.
     if (details.tx_code) {
       const numeric = details.tx_code_input_mode !== 'text';
       html += '<div class="offer-tx-code">' +
@@ -1323,8 +1319,8 @@
     consentDialog.innerHTML = html;
 
     document.getElementById('consent-approve').addEventListener('click', async () => {
-      // A required transaction code is checked here so an empty one fails in
-      // the dialog rather than as an issuer error after the offer is spent.
+      // Checked here so an empty code fails in the dialog, rather than as an
+      // issuer error after the offer is spent.
       const txCodeField = document.getElementById('offer-tx-code-input');
       if (txCodeField && !txCodeField.value.trim()) {
         txCodeField.classList.add('input-error');
@@ -1365,9 +1361,8 @@
         });
         const result = await resp.json();
         if (isIssuance) {
-          // The issuer deferred the credential. Nothing failed, so this must
-          // not read as a failure: the wallet keeps collecting it on the
-          // interval the issuer asked for, and it appears once it arrives.
+          // Deferred, not failed: the wallet keeps collecting it and the
+          // credential appears once it arrives.
           if (result.pending) {
             consentOverlay.classList.remove('active');
             await loadDeferred();
@@ -1541,50 +1536,69 @@
       const resp = await fetch('/api/trustlists');
       const doc = await resp.json();
       const lists = (doc && doc.trust_lists) || [];
-      row.querySelectorAll('.trust-list-item').forEach(el => el.remove());
+      row.querySelectorAll('.trust-list-group').forEach(el => el.remove());
       row.hidden = lists.length === 0;
+
+      // Grouped by what each list anchors, so a reader looking for one kind
+      // does not have to read past the other.
+      const groups = new Map();
       lists.forEach(entry => {
-        const url = entry.advertised_url || entry.url ||
-          (entry.path ? window.location.origin + entry.path : '');
-        if (!url) return;
-        const item = document.createElement('div');
-        item.className = 'trust-list-item';
-        const link = document.createElement('a');
-        link.href = url;
-        link.textContent = entry.id || 'trust list';
-        link.title = url;
-        item.appendChild(link);
-        // The bare id ("pid") says nothing about what the list covers, so
-        // name the provider profile next to it.
-        if (entry.entityName) {
-          const name = document.createElement('span');
-          name.className = 'trust-list-name';
-          name.textContent = entry.entityName;
-          item.appendChild(name);
-        }
-        const copy = document.createElement('button');
-        copy.type = 'button';
-        copy.className = 'copy-btn';
-        copy.textContent = '⧉';
-        copy.title = 'Copy trust list URL';
-        copy.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(url);
-            copy.textContent = '✓';
-            setTimeout(() => { copy.textContent = '⧉'; }, 1200);
-          } catch (e) { /* clipboard unavailable */ }
-        });
-        item.appendChild(copy);
-        // Who the list is for. "pid" alone reads like a credential detail,
-        // and gives an issuer no reason to think one of these lists is the
-        // anchor for the wallet attestation.
-        if (entry.description) {
-          const desc = document.createElement('div');
-          desc.className = 'trust-list-desc';
-          desc.textContent = entry.description;
-          item.appendChild(desc);
-        }
-        row.appendChild(item);
+        const category = entry.category || 'Other';
+        if (!groups.has(category)) groups.set(category, []);
+        groups.get(category).push(entry);
+      });
+
+      [...groups.keys()].sort().forEach(category => {
+        const group = document.createElement('div');
+        group.className = 'trust-list-group';
+        const heading = document.createElement('div');
+        heading.className = 'trust-list-category';
+        heading.textContent = category;
+        group.appendChild(heading);
+
+        groups.get(category)
+          .slice()
+          .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+          .forEach(entry => {
+            const url = entry.advertised_url || entry.url ||
+              (entry.path ? window.location.origin + entry.path : '');
+            if (!url) return;
+            const item = document.createElement('div');
+            item.className = 'trust-list-item';
+            const link = document.createElement('a');
+            link.href = url;
+            link.textContent = entry.id || 'trust list';
+            link.title = url;
+            item.appendChild(link);
+            if (entry.entityName) {
+              const name = document.createElement('span');
+              name.className = 'trust-list-name';
+              name.textContent = entry.entityName;
+              item.appendChild(name);
+            }
+            const copy = document.createElement('button');
+            copy.type = 'button';
+            copy.className = 'copy-btn';
+            copy.textContent = '\u29C9';
+            copy.title = 'Copy trust list URL';
+            copy.addEventListener('click', async () => {
+              try {
+                await navigator.clipboard.writeText(url);
+                copy.textContent = '\u2713';
+                setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
+              } catch (e) { /* clipboard unavailable */ }
+            });
+            item.appendChild(copy);
+            if (entry.description) {
+              const desc = document.createElement('div');
+              desc.className = 'trust-list-desc';
+              desc.textContent = entry.description;
+              item.appendChild(desc);
+            }
+            group.appendChild(item);
+          });
+
+        row.appendChild(group);
       });
     } catch (e) {
       row.hidden = true;

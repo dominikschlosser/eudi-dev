@@ -42,6 +42,9 @@ type walletService interface {
 	URL() string
 	Credentials() ([]map[string]any, error)
 	Credential(id string) (map[string]any, error)
+	// DeferredIssuances are credentials an issuer accepted but has not handed
+	// over yet. They are not in the store, so they are listed separately.
+	DeferredIssuances() ([]map[string]any, error)
 	ImportCredential(raw string) (map[string]any, error)
 	RemoveCredential(id string) error
 	RemoveAllCredentials() (int, error)
@@ -97,6 +100,8 @@ func (r *remoteWallet) URL() string { return r.c.BaseURL }
 func (r *remoteWallet) Credentials() ([]map[string]any, error) { return r.c.Credentials() }
 
 func (r *remoteWallet) Credential(id string) (map[string]any, error) { return r.c.Credential(id) }
+
+func (r *remoteWallet) DeferredIssuances() ([]map[string]any, error) { return r.c.DeferredIssuances() }
 
 func (r *remoteWallet) ImportCredential(raw string) (map[string]any, error) {
 	return r.c.ImportCredential(raw)
@@ -197,6 +202,32 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 		summaries[i] = w.CredentialSummaryWithStatus(c)
 	}
 	return summaries, nil
+}
+
+// DeferredIssuances reads the pending records straight out of the store. A
+// local wallet has no poller, so these only move when a wallet server runs.
+func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	pending := w.PendingIssuanceList()
+	out := make([]map[string]any, 0, len(pending))
+	for _, p := range pending {
+		out = append(out, map[string]any{
+			"id":                          p.ID,
+			"transaction_id":              p.TransactionID,
+			"issuer":                      p.Issuer,
+			"credential_configuration_id": p.ConfigurationID,
+			"format":                      p.Format,
+			"interval":                    p.Interval().String(),
+			"created_at":                  p.CreatedAt,
+			"next_attempt_at":             p.NextAttemptAt,
+			"attempts":                    p.Attempts,
+			"last_error":                  p.LastError,
+		})
+	}
+	return out, nil
 }
 
 func (l *localWallet) Credential(id string) (map[string]any, error) {

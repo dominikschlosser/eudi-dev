@@ -28,15 +28,14 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/qr"
 )
 
-// resolveTxCode returns the transaction code to use for an offer. A code
-// given on the command line always wins. Otherwise, when the offer says a
-// code is required and someone is there to type one, it is asked for: the
-// issuer delivers it out of band, so the person running the command is the
-// only place it can come from.
+// resolveTxCode returns the transaction code for an offer. A code passed on
+// the command line wins. Otherwise, if the offer requires one and there is a
+// terminal to type it into, ask: the issuer delivers it out of band, so the
+// person running the command is the only source.
 //
-// Anything that goes wrong here (an offer that is not VCI, one that cannot be
-// fetched, no terminal attached) leaves the code empty and lets the flow
-// continue, because the issuer's own error says more than a guess would.
+// Anything that goes wrong (not a VCI offer, an offer that cannot be fetched,
+// no terminal) leaves the code empty and lets the flow run, because the
+// issuer's own error is clearer than a guess.
 func resolveTxCode(uri, given string) string {
 	if strings.TrimSpace(given) != "" {
 		return given
