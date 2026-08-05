@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.3] - 2026-08-05
+
+### Fixed
+
+- **The pre-authorized code flow ignored every protection the issuer asked for.** It was a separate path from the authorization code flow and never gained what that one has, so it sent no DPoP proof, no `OAuth-Client-Attestation` headers, and no key attestation in the credential proof. The wallet even read `key_attestations_required` out of the issuer metadata and then did nothing with it. An issuer that requires any of the three refused to issue, so testing against one (the Animo playground requires all three) meant turning the requirements off first. Each is now driven by the issuer's own metadata, so an issuer that asks for none of them sees exactly the request it saw before. Both flows share one transport now, and the duplicated HTTP code on the pre-authorized path is gone
+- **A key attestation says what it protects.** OID4VCI 1.0 Appendix D has the attestation state how well the key storage and the user authentication resist attack, and an issuer that names required values in `key_attestations_required` checks them. The attestation carried neither, so an issuer asking for `iso_18045_high` rejected it as insufficient. The attestation now mirrors the values the credential configuration requires
+- **Key attestation and batch issuance no longer collide.** A jwt proof carrying an attestation stands for the single key that signed it, so an issuer advertising `batch_credential_issuance` got a batch of proofs that all claimed the same attestation and refused them. A configuration that requires key attestation now sends one proof, and batch issuance is unchanged everywhere else
+- **A wallet attestation is offered even when the issuer never asks in metadata.** Client authentication is advertised through `token_endpoint_auth_methods_supported`, and an issuer that requires attestation while publishing no such field (the Animo playground publishes none) left the wallet nothing to act on. A token request refused with `invalid_client` is now retried once with the attestation attached, so the refusal itself is the signal
+- The authorization scheme for an access token comes from `token_type` in the token response instead of being assumed. RFC 9449 has an authorization server return `DPoP` for a key-bound token, so an issuer that accepts a proof and still hands back a plain bearer token is now addressed as one
+- A credential request advertises `application/jwt` in `Accept` only when the wallet asked for an encrypted response. The authorization code flow claimed it unconditionally, which describes something the request does not accept
+
 ## [1.19.2] - 2026-08-05
 
 ### Security

@@ -365,7 +365,7 @@ func TestDoDPoPRequest_RegeneratesExtraHeadersOnRetry(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	nonce := ""
-	_, _, err := doDPoPRequest(http.MethodPost, srv.URL, "application/json", []byte(`{}`), "", "", w.HolderKey, &nonce, func() (map[string]string, error) {
+	_, _, err := doDPoPRequest(http.MethodPost, srv.URL, "application/json", "", []byte(`{}`), "", "", w.HolderKey, &nonce, func() (map[string]string, error) {
 		return createClientAttestationHeaders(w, "wallet-client", srv.URL, "")
 	})
 	if err != nil {

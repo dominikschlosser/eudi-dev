@@ -52,8 +52,15 @@ func advertisedBatchSize(metadata map[string]any) int {
 // advertises batch issuance with batch_size >= 2, fresh ephemeral keys are
 // added so each credential in the batch is bound to a distinct key (required
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).
-func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]*ecdsa.PrivateKey, error) {
+func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, configID string) ([]*ecdsa.PrivateKey, error) {
 	keys := []*ecdsa.PrivateKey{holderKey}
+	// A jwt proof carrying a key attestation stands for the one key that
+	// signed it, so issuers reject a batch of them. Key attestation and batch
+	// issuance do not combine on this proof type, and the attestation is the
+	// requirement, so it wins.
+	if _, required := credentialKeyAttestationRequirement(metadata, configID); required {
+		return keys, nil
+	}
 	batchSize := advertisedBatchSize(metadata)
 	if batchSize < 2 {
 		return keys, nil

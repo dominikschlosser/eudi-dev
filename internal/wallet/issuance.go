@@ -166,11 +166,57 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint)
 	}
 
-	// Token exchange (pre-authorized code flow)
+	// Token exchange (pre-authorized code flow).
+	//
+	// An issuer may protect this flow exactly as it protects the authorization
+	// code flow: DPoP-bound access tokens (RFC 9449), client authentication by
+	// wallet attestation (OAuth 2.0 Attestation-Based Client Authentication),
+	// and key attestation inside the proof of possession. Each one is driven by
+	// the issuer's own metadata, so an issuer that asks for none of them still
+	// sees the same plain request it saw before.
+	nonces := &dpopNonceState{}
+	var dpopKey *ecdsa.PrivateKey
+	if supportsDPoP(oauthMeta) {
+		dpopKey = w.HolderKey
+	}
+	// An issuer is supposed to ask for client attestation through
+	// token_endpoint_auth_methods_supported, and most do. Some require it
+	// while advertising nothing at all (the Animo playground is one), which
+	// leaves the metadata no way to say so. The flow therefore starts from the
+	// metadata and, on an invalid_client refusal, attests and tries once more.
+	forceClientAttestation := false
+	buildClientAttestationHeaders := func() (map[string]string, error) {
+		if !forceClientAttestation && detectTokenEndpointAuthMethod(oauthMeta) != "attest_jwt_client_auth" {
+			return nil, nil
+		}
+		challenge, err := fetchAttestationChallenge(oauthMeta)
+		if err != nil {
+			return nil, fmt.Errorf("fetching client attestation challenge: %w", err)
+		}
+		// A pre-authorized offer carries no client_id, and the wallet is not
+		// registered with the issuer. The attestation names the wallet itself,
+		// so its own identifier is the subject.
+		clientID := strings.TrimSpace(w.VCIClientID)
+		if clientID == "" {
+			clientID = strings.TrimSpace(w.BaseURL)
+		}
+		headers, err := createClientAttestationHeaders(w, clientID, oauthIssuer(oauthMeta, tokenEndpoint), challenge)
+		if err != nil {
+			return nil, fmt.Errorf("creating client attestation headers: %w", err)
+		}
+		return headers, nil
+	}
+
 	w.mu.Lock()
 	txCode := w.TxCode
 	w.TxCode = "" // clear after use
 	w.mu.Unlock()
+	tokenForm := url.Values{}
+	tokenForm.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
+	tokenForm.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)
+	if txCode != "" {
+		tokenForm.Set("tx_code", txCode)
+	}
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, map[string]any{
 		"direction":           "outbound",
 		"method":              "POST",
@@ -180,7 +226,16 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
 		"tx_code":             txCode,
 	})
-	tokenResp, err := exchangePreAuthorizedToken(tokenEndpoint, offer, txCode)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	if err != nil && w.canAttestClient() && strings.Contains(err.Error(), "invalid_client") {
+		forceClientAttestation = true
+		w.addProtocolLog("issuance", "client_attestation_retry", "Token request refused with invalid_client, retrying with a wallet attestation", true, map[string]any{
+			"url":      tokenEndpoint,
+			"endpoint": "token",
+			"error":    err.Error(),
+		})
+		tokenResp, err = postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, buildClientAttestationHeaders)
+	}
 	if err != nil {
 		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
 			"direction": "inbound",
@@ -199,6 +254,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	accessToken, _ := tokenResp["access_token"].(string)
 	cNonce, _ := tokenResp["c_nonce"].(string)
+	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
 	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
 	log.Printf("[VCI] Credential endpoint: %s", credentialEndpoint)
@@ -209,11 +265,21 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	// Create proof of possession JWTs (multiple when the issuer advertises
 	// batch credential issuance)
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
+	configID := ""
+	if len(offer.CredentialConfigurationIDs) > 0 {
+		configID = offer.CredentialConfigurationIDs[0]
+	}
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
-	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
+	// A key attestation covers the nonce, so it is rebuilt wherever the proofs
+	// are rebuilt below.
+	proofHeader, err := createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
+	if err != nil {
+		return nil, fmt.Errorf("building credential proof header: %w", err)
+	}
+	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
 	if err != nil {
 		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}
@@ -221,8 +287,8 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	// Request credential
 	credFormat := ""
-	if len(offer.CredentialConfigurationIDs) > 0 {
-		credFormat = resolveCredentialFormat(metadata, offer.CredentialConfigurationIDs[0])
+	if configID != "" {
+		credFormat = resolveCredentialFormat(metadata, configID)
 	}
 	responseEncryption := buildCredentialResponseEncryptionRequest(metadata, w.HolderKey)
 
@@ -236,9 +302,13 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	// If no c_nonce in token response, try a nonce endpoint or send without
 	// proof first to get a c_nonce from the error response.
 	if cNonce == "" {
-		cNonce = fetchNonce(metadata, offer.CredentialIssuer)
+		cNonce = fetchNonceWithDPoP(metadata, accessToken, authScheme, dpopKey, &nonces.resource)
 		if cNonce != "" {
-			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
+			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
+			if err != nil {
+				return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
+			}
+			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
 			if err != nil {
 				return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
 			}
@@ -250,15 +320,18 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		// Try credential request without proof to get c_nonce from error response
 		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
 		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
-		nonceResp, nonceErr := requestCredential(
+		nonceResp, nonceErr := requestCredentialWithDPoP(
 			metadata,
 			credentialEndpoint,
 			accessToken,
+			authScheme,
 			proofJWTs,
 			credentialIdentifier,
 			credentialConfigurationID,
 			responseEncryption,
+			dpopKey,
 			w.HolderKey,
+			&nonces.resource,
 		)
 		w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), nonceErr == nil, credentialResponseLogDetails(credentialEndpoint, nonceResp, nonceErr))
 		if nonceErr != nil {
@@ -267,7 +340,11 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				cNonce = n
 				log.Printf("[VCI] Got c_nonce from error response: %s", cNonce)
 				// Recreate proofs with the real nonce
-				proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, nil)
+				proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
+				if err != nil {
+					return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
+				}
+				proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
 				if err != nil {
 					return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
 				}
@@ -303,15 +380,18 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	}
 
 	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
-	credResp, err := requestCredential(
+	credResp, err := requestCredentialWithDPoP(
 		metadata,
 		credentialEndpoint,
 		accessToken,
+		authScheme,
 		proofJWTs,
 		credentialIdentifier,
 		credentialConfigurationID,
 		responseEncryption,
+		dpopKey,
 		w.HolderKey,
+		&nonces.resource,
 	)
 	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), err == nil, credentialResponseLogDetails(credentialEndpoint, credResp, err))
 	if err != nil {
@@ -629,46 +709,6 @@ func resolveCredentialFormat(metadata map[string]any, configID string) string {
 	return f
 }
 
-// exchangePreAuthorizedToken performs the pre-authorized code token exchange.
-func exchangePreAuthorizedToken(tokenEndpoint string, offer *oid4vc.CredentialOffer, txCode string) (map[string]any, error) {
-	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
-	form.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)
-	if txCode != "" {
-		form.Set("tx_code", txCode)
-	}
-
-	req, err := http.NewRequest("POST", tokenEndpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return nil, fmt.Errorf("creating token request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := doIssuanceRequest(req)
-	if err != nil {
-		return nil, fmt.Errorf("token request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading token response: %w", err)
-	}
-
-	var tokenResp map[string]any
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return nil, fmt.Errorf("parsing token response: %w", err)
-	}
-
-	if errMsg, ok := tokenResp["error"].(string); ok {
-		desc, _ := tokenResp["error_description"].(string)
-		return nil, fmt.Errorf("token error: %s: %s", errMsg, desc)
-	}
-
-	return tokenResp, nil
-}
-
 // createProofJWT creates an OID4VCI proof of possession JWT.
 func createProofJWT(holderKey *ecdsa.PrivateKey, audience, cNonce string, extraHeader map[string]any) (string, error) {
 	// Build JWK for holder public key
@@ -919,45 +959,6 @@ func parseCredentialResponseBody(body []byte, holderKey *ecdsa.PrivateKey) (map[
 	return out, nil
 }
 
-// fetchNonce tries to obtain a c_nonce from a dedicated nonce endpoint.
-// OID4VCI draft 15+ defines an optional nonce_endpoint in issuer metadata.
-func fetchNonce(metadata map[string]any, issuer string) string {
-	ep, ok := metadata["nonce_endpoint"].(string)
-	if !ok || ep == "" {
-		return ""
-	}
-
-	req, err := http.NewRequest("POST", ep, nil)
-	if err != nil {
-		log.Printf("[VCI] Nonce endpoint request creation failed: %v", err)
-		return ""
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := doIssuanceRequest(req)
-	if err != nil {
-		log.Printf("[VCI] Nonce endpoint request failed: %v", err)
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return ""
-	}
-
-	var nonceResp map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&nonceResp); err != nil {
-		return ""
-	}
-
-	if n, ok := nonceResp["c_nonce"].(string); ok {
-		log.Printf("[VCI] Got c_nonce from nonce endpoint: %s", n)
-		return n
-	}
-	return ""
-}
-
 func credentialRequestLogDetails(endpoint, accessToken string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
@@ -1001,75 +1002,4 @@ func credentialResponseLogDetails(endpoint string, response map[string]any, err 
 		details["error"] = err.Error()
 	}
 	return details
-}
-
-// requestCredential sends a credential request to the issuer.
-func requestCredential(
-	metadata map[string]any,
-	credentialEndpoint,
-	accessToken string,
-	proofJWTs []string,
-	credentialIdentifier string,
-	credentialConfigurationID string,
-	credentialResponseEncryption map[string]any,
-	holderKey *ecdsa.PrivateKey,
-) (map[string]any, error) {
-	reqBody := map[string]any{
-		"proofs": map[string]any{
-			"jwt": proofJWTs,
-		},
-	}
-
-	if credentialIdentifier != "" {
-		reqBody["credential_identifier"] = credentialIdentifier
-	} else if credentialConfigurationID != "" {
-		reqBody["credential_configuration_id"] = credentialConfigurationID
-	}
-	if credentialResponseEncryption != nil {
-		reqBody["credential_response_encryption"] = credentialResponseEncryption
-	}
-
-	reqBodyBytes, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", credentialEndpoint, strings.NewReader(string(reqBodyBytes)))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	// Advertise application/jwt only for encrypted responses: Keycloak 26.6's
-	// credential endpoint returns signed issuer *metadata* (a JWT string) when
-	// it sees application/jwt in Accept and then fails on it internally.
-	if credentialResponseEncryption != nil {
-		req.Header.Set("Accept", "application/json, application/jwt")
-	} else {
-		req.Header.Set("Accept", "application/json")
-	}
-
-	resp, err := doIssuanceRequest(req)
-	if err != nil {
-		return nil, fmt.Errorf("credential request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading credential response: %w", err)
-	}
-
-	credResp, err := parseCredentialResponseBody(body, holderKey)
-	if err != nil {
-		return nil, err
-	}
-
-	if errMsg, ok := credResp["error"].(string); ok {
-		desc, _ := credResp["error_description"].(string)
-		// Return the response map alongside the error so callers can extract c_nonce
-		return credResp, fmt.Errorf("credential error: %s: %s", errMsg, desc)
-	}
-
-	return credResp, nil
 }

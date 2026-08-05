@@ -179,8 +179,9 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if accessToken == "" {
 		return nil, fmt.Errorf("token response missing access_token")
 	}
+	authScheme := accessTokenScheme(tokenResp, true)
 
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
@@ -209,7 +210,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 				"endpoint":  "nonce",
 			})
 		}
-		cNonce = fetchNonceWithDPoP(metadata, accessToken, w.HolderKey, &nonces.resource)
+		cNonce = fetchNonceWithDPoP(metadata, accessToken, authScheme, w.HolderKey, &nonces.resource)
 		if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
 			w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", nonceEndpoint), cNonce != "", map[string]any{
 				"direction": "inbound",
@@ -235,10 +236,12 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		metadata,
 		credentialEndpoint,
 		accessToken,
+		authScheme,
 		proofJWTs,
 		credentialIdentifier,
 		credentialConfigurationID,
 		responseEncryption,
+		w.HolderKey,
 		w.HolderKey,
 		&nonces.resource,
 	)
@@ -259,7 +262,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 			"endpoint":       "deferred_credential",
 			"transaction_id": txID,
 		})
-		credResp, err = requestDeferredCredentialWithDPoP(deferredEndpoint, accessToken, txID, w.HolderKey, &nonces.resource)
+		credResp, err = requestDeferredCredentialWithDPoP(deferredEndpoint, accessToken, authScheme, txID, w.HolderKey, w.HolderKey, &nonces.resource)
 		w.addProtocolLog("issuance", "deferred_credential_response", fmt.Sprintf("Deferred credential response from %s", deferredEndpoint), err == nil, responseMapLogDetails(deferredEndpoint, "deferred_credential", credResp, err))
 		if err != nil {
 			return nil, fmt.Errorf("requesting deferred credential: %w", err)
@@ -289,7 +292,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 				"notification_id":    notificationID,
 				"notification_event": "credential_accepted",
 			})
-			if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, notificationID, w.HolderKey, &nonces.resource); err != nil {
+			if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, authScheme, notificationID, w.HolderKey, &nonces.resource); err != nil {
 				w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), false, map[string]any{
 					"direction": "inbound",
 					"url":       notificationEndpoint,
@@ -367,6 +370,12 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 		return issuer
 	}
 	return fallback
+}
+
+// canAttestClient reports whether the wallet holds the signing material a
+// client attestation needs.
+func (w *Wallet) canAttestClient() bool {
+	return w != nil && w.IssuerKey != nil && len(w.CertChain) > 0
 }
 
 func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {
@@ -455,7 +464,8 @@ func fetchAttestationChallenge(oauthMeta map[string]any) (string, error) {
 }
 
 func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, cNonce string, proofKeys []*ecdsa.PrivateKey) (map[string]any, error) {
-	if !credentialRequiresKeyAttestation(metadata, configID) {
+	requirement, required := credentialKeyAttestationRequirement(metadata, configID)
+	if !required {
 		return nil, nil
 	}
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
@@ -482,6 +492,18 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 		"exp":           time.Now().Add(5 * time.Minute).Unix(),
 		"attested_keys": attestedKeys,
 	}
+	// OID4VCI 1.0 Appendix D has the attestation state how well the key
+	// storage and the user authentication resist attack. An issuer that names
+	// the values it wants in key_attestations_required checks them, and
+	// rejects an attestation that claims nothing, so mirror what it asks for.
+	// This is a test wallet: the claim describes a software key, not a
+	// certified secure element, which is why it only ever repeats the
+	// issuer's own requirement.
+	for _, claim := range []string{"key_storage", "user_authentication"} {
+		if values, ok := requirement[claim].([]any); ok && len(values) > 0 {
+			payload[claim] = values
+		}
+	}
 	if cNonce != "" {
 		payload["nonce"] = cNonce
 	}
@@ -492,28 +514,38 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 	return map[string]any{"key_attestation": keyAttestationJWT}, nil
 }
 
-func credentialRequiresKeyAttestation(metadata map[string]any, configID string) bool {
+// credentialKeyAttestationRequirement reports whether a credential
+// configuration requires a key attestation in the proof, and returns what it
+// requires. key_attestations_required is an object in OID4VCI 1.0, but its
+// presence alone is what makes the attestation mandatory, so an issuer that
+// sends an empty one (or a non-object, which some do) still gets an
+// attestation, just without claims it never asked for.
+func credentialKeyAttestationRequirement(metadata map[string]any, configID string) (map[string]any, bool) {
 	if configID == "" {
-		return false
+		return nil, false
 	}
 	configs, ok := metadata["credential_configurations_supported"].(map[string]any)
 	if !ok {
-		return false
+		return nil, false
 	}
 	cfg, ok := configs[configID].(map[string]any)
 	if !ok {
-		return false
+		return nil, false
 	}
 	proofTypes, ok := cfg["proof_types_supported"].(map[string]any)
 	if !ok {
-		return false
+		return nil, false
 	}
 	jwtProof, ok := proofTypes["jwt"].(map[string]any)
 	if !ok {
-		return false
+		return nil, false
 	}
-	_, ok = jwtProof["key_attestations_required"]
-	return ok
+	raw, ok := jwtProof["key_attestations_required"]
+	if !ok {
+		return nil, false
+	}
+	requirement, _ := raw.(map[string]any)
+	return requirement, true
 }
 
 func codeChallengeS256(verifier string) string {
@@ -603,9 +635,25 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 	return details
 }
 
+// accessTokenScheme picks the HTTP authorization scheme for an access token.
+// RFC 9449 §5 has an authorization server return token_type "DPoP" for a
+// DPoP-bound token, so a wallet that sent a proof and got "Bearer" back holds
+// a plain bearer token and has to say so. A server that omits token_type
+// after accepting a proof is taken at the flow's word.
+func accessTokenScheme(tokenResp map[string]any, sentDPoP bool) string {
+	tokenType, _ := tokenResp["token_type"].(string)
+	if strings.EqualFold(tokenType, "DPoP") {
+		return "DPoP"
+	}
+	if tokenType == "" && sentDPoP {
+		return "DPoP"
+	}
+	return "Bearer"
+}
+
 func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, accessToken string, nonce *string, extraHeaders func() (map[string]string, error)) (map[string]any, error) {
 	body := []byte(form.Encode())
-	respBody, _, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", body, "", accessToken, key, nonce, extraHeaders)
+	respBody, _, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, extraHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +668,7 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	return out, nil
 }
 
-func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
 			"jwt": proofJWTs,
@@ -638,11 +686,11 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken st
 	if err != nil {
 		return nil, err
 	}
-	respBody, _, err := doDPoPRequest("POST", endpoint, contentType, body, "DPoP", accessToken, key, nonce, nil)
+	respBody, _, err := doDPoPRequest("POST", endpoint, contentType, credentialAccept(credentialResponseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
 	if err != nil {
 		return nil, err
 	}
-	out, err := parseCredentialResponseBody(respBody, key)
+	out, err := parseCredentialResponseBody(respBody, holderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -653,17 +701,17 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken st
 	return out, nil
 }
 
-func requestDeferredCredentialWithDPoP(endpoint, accessToken, transactionID string, key *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+func requestDeferredCredentialWithDPoP(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	body, err := json.Marshal(map[string]any{"transaction_id": transactionID})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling deferred credential request: %w", err)
 	}
 	for {
-		respBody, _, err := doDPoPRequest("POST", endpoint, "application/json", body, "DPoP", accessToken, key, nonce, nil)
+		respBody, _, err := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
 		if err != nil {
 			return nil, err
 		}
-		out, err := parseCredentialResponseBody(respBody, key)
+		out, err := parseCredentialResponseBody(respBody, holderKey)
 		if err != nil {
 			return nil, fmt.Errorf("parsing deferred credential response: %w", err)
 		}
@@ -683,7 +731,7 @@ func requestDeferredCredentialWithDPoP(endpoint, accessToken, transactionID stri
 	}
 }
 
-func sendNotificationWithDPoP(endpoint, accessToken, notificationID string, key *ecdsa.PrivateKey, nonce *string) error {
+func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
 	body, err := json.Marshal(map[string]any{
 		"notification_id": notificationID,
 		"event":           "credential_accepted",
@@ -691,7 +739,7 @@ func sendNotificationWithDPoP(endpoint, accessToken, notificationID string, key 
 	if err != nil {
 		return fmt.Errorf("marshaling notification request: %w", err)
 	}
-	_, statusCode, err := doDPoPRequest("POST", endpoint, "application/json", body, "DPoP", accessToken, key, nonce, nil)
+	_, statusCode, err := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
 	if err != nil {
 		return err
 	}
@@ -701,12 +749,12 @@ func sendNotificationWithDPoP(endpoint, accessToken, notificationID string, key 
 	return nil
 }
 
-func fetchNonceWithDPoP(metadata map[string]any, accessToken string, key *ecdsa.PrivateKey, nonce *string) string {
+func fetchNonceWithDPoP(metadata map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) string {
 	ep, _ := metadata["nonce_endpoint"].(string)
 	if ep == "" {
 		return ""
 	}
-	respBody, _, err := doDPoPRequest("POST", ep, "application/x-www-form-urlencoded", nil, "DPoP", accessToken, key, nonce, nil)
+	respBody, _, err := doDPoPRequest("POST", ep, "application/x-www-form-urlencoded", "", nil, authScheme, accessToken, dpopKey, nonce, nil)
 	if err != nil {
 		return ""
 	}
@@ -718,7 +766,24 @@ func fetchNonceWithDPoP(metadata map[string]any, accessToken string, key *ecdsa.
 	return value
 }
 
-func doDPoPRequest(method, target, contentType string, body []byte, authScheme, token string, key *ecdsa.PrivateKey, nonce *string, extraHeaders func() (map[string]string, error)) ([]byte, int, error) {
+// credentialAccept returns the Accept header for a credential request.
+// Advertise application/jwt only for encrypted responses: Keycloak 26.6's
+// credential endpoint returns signed issuer *metadata* (a JWT string) when it
+// sees application/jwt in Accept and then fails on it internally.
+func credentialAccept(credentialResponseEncryption map[string]any) string {
+	if credentialResponseEncryption != nil {
+		return "application/json, application/jwt"
+	}
+	return "application/json"
+}
+
+// doDPoPRequest sends one issuance request, optionally DPoP-bound. A nil key
+// sends no DPoP proof, which is what an issuer that does not advertise
+// dpop_signing_alg_values_supported expects.
+func doDPoPRequest(method, target, contentType, accept string, body []byte, authScheme, token string, key *ecdsa.PrivateKey, nonce *string, extraHeaders func() (map[string]string, error)) ([]byte, int, error) {
+	if accept == "" {
+		accept = "application/json, application/jwt"
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		reqBody := bytes.NewReader(body)
 		req, err := http.NewRequest(method, target, reqBody)
@@ -728,7 +793,7 @@ func doDPoPRequest(method, target, contentType string, body []byte, authScheme, 
 		if contentType != "" {
 			req.Header.Set("Content-Type", contentType)
 		}
-		req.Header.Set("Accept", "application/json, application/jwt")
+		req.Header.Set("Accept", accept)
 		if token != "" && authScheme != "" {
 			req.Header.Set("Authorization", authScheme+" "+token)
 		}
@@ -741,11 +806,13 @@ func doDPoPRequest(method, target, contentType string, body []byte, authScheme, 
 				req.Header.Set(headerName, headerValue)
 			}
 		}
-		dpopJWT, err := createDPoPProofJWT(key, method, target, derefString(nonce), token)
-		if err != nil {
-			return nil, 0, fmt.Errorf("creating DPoP proof: %w", err)
+		if key != nil {
+			dpopJWT, err := createDPoPProofJWT(key, method, target, derefString(nonce), token)
+			if err != nil {
+				return nil, 0, fmt.Errorf("creating DPoP proof: %w", err)
+			}
+			req.Header.Set("DPoP", dpopJWT)
 		}
-		req.Header.Set("DPoP", dpopJWT)
 
 		resp, err := doIssuanceRequest(req)
 		if err != nil {
