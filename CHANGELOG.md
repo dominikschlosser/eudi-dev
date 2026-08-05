@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **JWS signing and JWE decryption each have one implementation now.** ES256 signing was written out six times (credentials, presentations, trust lists, status lists, issuer metadata, client attestations) and ECDH-ES decryption twice, key derivation and all. Every copy was correct, which is the problem: a fix to one of six reaches one of six, and the r||s padding and the Concat KDF are both easy to get subtly wrong in ways that fail as "bad signature" somewhere else. They now live in `internal/jws` and `internal/jwe`, with tests. No behaviour changes
+- **The wallet server is split by concern.** `server.go` had grown to 1819 lines holding about forty handlers, so finding the code behind an endpoint meant scrolling past everything else. It keeps the type, construction, routing and lifecycle, and the handlers move to files named for what they serve (TLS, presentations, offers, credentials, consent requests, deferred issuance, published metadata, control). Pure code motion, verified declaration by declaration
 
 ### Fixed
 
