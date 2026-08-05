@@ -481,11 +481,7 @@ An issuer that cannot produce the credential straight away answers the credentia
 
 While the credential is not ready the issuer answers with the `issuance_pending` error and an `interval` to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet honors that interval. Some issuers signal the same thing by echoing the `transaction_id` back in a success response, which is accepted too.
 
-A short deferral is waited out, up to **90 seconds**, so a quick one still returns the credential from the call that started the issuance. Accepting an offer is one of the few requests that can run that long, so the wallet server's write timeout, the CLI's remote client and the consent approval wait are all sized above it.
-
-### Longer deferrals
-
-An issuer may defer for hours. Past those 90 seconds the wallet stops waiting and records the transaction, and `wallet serve` collects it in the background on the interval the issuer asked for. Nothing has failed, and nothing needs doing.
+The wallet does not wait. It records the transaction and returns straight away, and `wallet serve` collects the credential in the background on the interval the issuer asked for. Whoever started the issuance (a consent dialog, a CLI run) is not held for an interval that may be hours, and nothing has failed: the credential is simply not ready.
 
 Accepting such an offer answers `HTTP 202` with the outcome:
 

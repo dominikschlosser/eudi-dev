@@ -119,49 +119,6 @@ func deferringIssuer(t *testing.T, w *Wallet, pendingRounds int, pendingStyle st
 	}
 }
 
-// TestProcessCredentialOffer_DeferredIssuance covers a pre-authorized offer
-// the issuer defers. That flow had no deferred handling at all: it read the
-// transaction_id response as a credential response and failed with "no
-// credential in response".
-func TestProcessCredentialOffer_DeferredIssuance(t *testing.T) {
-	for _, tc := range []struct {
-		name          string
-		pendingRounds int
-		style         string
-		wantPolls     int
-	}{
-		{"ready on the first poll", 0, "issuance_pending", 1},
-		{"pending once, per the spec error", 1, "issuance_pending", 2},
-		{"pending twice", 2, "issuance_pending", 3},
-		{"pending as an echoed transaction_id", 1, "echo", 2},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			w := generateTestWallet(t)
-			srv, offerURI, polls := deferringIssuer(t, w, tc.pendingRounds, tc.style, 1)
-			defer srv.Close()
-
-			oldClient := httpClient
-			httpClient = srv.Client()
-			defer func() { httpClient = oldClient }()
-
-			result, err := w.ProcessCredentialOffer(offerURI)
-			if err != nil {
-				t.Fatalf("ProcessCredentialOffer: %v", err)
-			}
-			if result.CredentialID == "" {
-				t.Error("expected the deferred credential to be imported")
-			}
-			if got := polls(); got != tc.wantPolls {
-				t.Errorf("deferred endpoint polled %d times, want %d", got, tc.wantPolls)
-			}
-
-			logs := w.GetLog()
-			assertWalletLogEvent(t, logs, "deferred_credential_request")
-			assertWalletLogEvent(t, logs, "deferred_credential_response")
-		})
-	}
-}
-
 // TestProcessCredentialOffer_DeferredWithoutEndpoint covers an issuer that
 // defers without publishing anywhere to collect the credential from.
 func TestProcessCredentialOffer_DeferredWithoutEndpoint(t *testing.T) {
@@ -269,19 +226,14 @@ func TestDeferredIssuancePending(t *testing.T) {
 	}
 }
 
-// TestRequestDeferredCredential_GivesUpOnLongDeferral covers an issuer that
-// defers past what the wallet is willing to wait. It has to report the pending
-// transaction rather than block its caller for the issuer's whole interval.
-func TestRequestDeferredCredential_GivesUpOnLongDeferral(t *testing.T) {
-	polls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		polls++
-		rw.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(rw).Encode(map[string]any{
-			"error":    "issuance_pending",
-			"interval": float64(86400), // a day
-		})
-	}))
+// TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut covers the shape
+// of a deferral: the flow returns straight away with the ticket, so whoever
+// started it is not held for the issuer's interval.
+func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
+	w := generateTestWallet(t)
+	// Pending for far longer than any caller would wait, and the deferred
+	// endpoint must not be touched during the offer flow at all.
+	srv, offerURI, polls := deferringIssuer(t, w, 1000, "issuance_pending", 3600)
 	defer srv.Close()
 
 	oldClient := httpClient
@@ -289,19 +241,27 @@ func TestRequestDeferredCredential_GivesUpOnLongDeferral(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	started := time.Now()
-	_, err := requestDeferredCredentialWithDPoP(srv.URL, "token", "Bearer", "test-transaction", nil, nil, nil)
+	result, err := w.ProcessCredentialOffer(offerURI)
 	elapsed := time.Since(started)
-
-	if err == nil || !strings.Contains(err.Error(), "still pending") {
-		t.Fatalf("error = %v, want it to report the credential as still pending", err)
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
 	}
-	if !strings.Contains(err.Error(), "test-transaction") {
-		t.Errorf("error %q should name the transaction_id to retry with", err)
+	if !result.Pending {
+		t.Fatalf("result = %+v, want it reported as pending", result)
+	}
+	if result.TransactionID == "" {
+		t.Error("a pending result should carry the transaction id")
 	}
 	if elapsed > 5*time.Second {
-		t.Errorf("gave up after %s, want it to return without waiting out the interval", elapsed)
+		t.Errorf("the flow took %s, want it to return without waiting out the deferral", elapsed)
 	}
-	if polls != 1 {
-		t.Errorf("polled %d times, want 1 before giving up", polls)
+	if got := polls(); got != 0 {
+		t.Errorf("deferred endpoint was called %d times during the offer flow, want 0", got)
+	}
+	if got := len(w.PendingIssuanceList()); got != 1 {
+		t.Fatalf("wallet holds %d pending issuances, want 1", got)
+	}
+	if w.PendingIssuanceList()[0].Interval() != time.Hour {
+		t.Errorf("interval = %s, want the issuer's 1h", w.PendingIssuanceList()[0].Interval())
 	}
 }

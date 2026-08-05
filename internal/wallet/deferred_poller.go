@@ -128,7 +128,7 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 // to wait longer reschedules. Anything else ends it, because a rejected token
 // or an unknown transaction will not recover on a timer.
 func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) DeferredAttempt {
-	var stillPending deferralTooLongError
+	var stillPending stillPendingError
 	if errors.As(err, &stillPending) {
 		return s.rescheduleDeferred(pending, stillPending.interval, "")
 	}
