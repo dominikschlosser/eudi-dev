@@ -5,11 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.19.6] - 2026-08-05
-
-### Added
-
-- **`wallet trust-list --list` shows which trust list profiles a wallet serves.** The ids were only discoverable by reading `/api/trustlists`, so picking one from the CLI meant guessing. Every profile carries the same certificate (the wallet has one CA) and differs in what it declares that CA to be, so the listing names the category to pick by. `--json` emits the `/api/trustlists` body unchanged
+## [1.19.7] - 2026-08-05
 
 ### Changed
 
@@ -19,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The demo's certificate renewal raced with live requests.** The daily reset re-issues the signing leaf, and it replaced the CA key and the certificate chain without holding the wallet lock while requests were reading both. A slice header is not written atomically, so a credential could be signed against a half-swapped chain. The swap and the reads that matter now take the lock, and `go test -race` is clean across the tree
 - **An error in one visitor's flow raised a dialog in every open tab.** A shared wallet broadcast every failure to all connected browsers, so someone who did nothing was shown an error another visitor ran into, including its detail text. Errors now reach the tab that started the flow and no other, on the event stream and on the stored error a tab picks up when it loads. The three separate claim mechanisms the UI had grown for this (consent, issuer sign-in, errors) are now one
+
+## [1.19.6] - 2026-08-05
+
+### Added
+
+- **`wallet trust-list --list` shows which trust list profiles a wallet serves.** The ids were only discoverable by reading `/api/trustlists`, so picking one from the CLI meant guessing. Every profile carries the same certificate (the wallet has one CA) and differs in what it declares that CA to be, so the listing names the category to pick by. `--json` emits the `/api/trustlists` body unchanged
+
+### Fixed
+
 - **A verifier's redirect after a presentation was buried in the JSON output.** OpenID4VP 1.0 section 8.2 has the wallet send the user agent to the `redirect_uri` a verifier answers with, which is how a same-device flow returns to the site that asked. The CLI now prints it and, when a person is running the command, opens it. A scripted run only prints it, and `--no-open` turns it off everywhere
 - **`wallet serve` tried to open a browser on headless hosts.** An incoming interactive request printed "Opening wallet UI" and spawned a browser on the serving machine, which reaches nobody over SSH or in a container while claiming otherwise. The CLI now opens a browser only where there is a desktop to open it on, and names the consent URL instead when there is not
 - **`wallet trust-list` ignored the remote target and printed the local wallet's CA.** It read the local store directly instead of routing through the active remote, so with a remote wallet selected it handed out an anchor that validates nothing that wallet issues, silently. It now fetches from the wallet it is pointed at, and `--url` prints that wallet's URL rather than a localhost one
