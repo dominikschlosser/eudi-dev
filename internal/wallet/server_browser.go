@@ -73,7 +73,6 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			issuerSrv:        s.issuerSrv,
 			issuerTLSCert:    s.issuerTLSCert,
 			issuerPort:       s.issuerPort,
-			issuerKeyExpiry:  s.issuerKeyExpiry,
 		}
 		reqServer.parseOpts = oid4vc.ParseOptions{
 			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {

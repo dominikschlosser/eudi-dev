@@ -39,11 +39,38 @@ func (s *Server) StartDeferredPoller() func() {
 			case <-done:
 				return
 			case <-ticker.C:
-				s.collectDueDeferredCredentials(time.Now())
+				now := time.Now()
+				s.collectDueDeferredCredentials(now)
+				s.renewSigningCertificateIfNeeded(now)
 			}
 		}
 	}()
 	return func() { close(done) }
+}
+
+// certificateCheckInterval is how often the signing certificate is checked
+// against its expiry. Leaves last a year, so this only has to be often enough
+// that a wallet left running notices before the day arrives.
+const certificateCheckInterval = time.Hour
+
+// renewSigningCertificateIfNeeded re-issues the signing leaf as it approaches
+// expiry. A hosted wallet runs for months and nobody watches its certificate:
+// an expired leaf keeps issuing credentials that quietly stop verifying.
+func (s *Server) renewSigningCertificateIfNeeded(now time.Time) {
+	if now.Sub(s.lastCertificateCheck) < certificateCheckInterval {
+		return
+	}
+	s.lastCertificateCheck = now
+	renewed, err := s.wallet.RefreshSigningCertificateIfExpiring(now)
+	if err != nil {
+		s.log("  ERROR: re-issuing the signing certificate: %v", err)
+		return
+	}
+	if renewed {
+		s.log("  Renewed:       signing certificate, now valid until %s",
+			s.wallet.SigningCertificateExpiry().Format(time.DateOnly))
+		s.persistWallet()
+	}
 }
 
 // collectDueDeferredCredentials makes one attempt for every pending issuance

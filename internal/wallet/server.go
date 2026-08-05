@@ -53,13 +53,14 @@ type Server struct {
 	issuerSrv        *http.Server
 	issuerTLSCert    *tls.Certificate
 	issuerPort       int
-	issuerKeyExpiry  time.Time
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
 	demo             *demoState
-	version          string
-	imprintHTML      []byte
+	// lastCertificateCheck throttles the expiry check the poller ticks.
+	lastCertificateCheck time.Time
+	version              string
+	imprintHTML          []byte
 	// ShutdownFunc runs after POST /api/shutdown responded. The serve command
 	// sets it to deregister the instance and exit; when nil the process exits
 	// directly.
@@ -102,10 +103,9 @@ var processBuildID = sync.OnceValue(func() string {
 func NewServer(w *Wallet, port int, onSave func()) *Server {
 	processBuildID()
 	s := &Server{
-		wallet:          w,
-		port:            port,
-		onSave:          onSave,
-		issuerKeyExpiry: time.Now().Add(24 * time.Hour),
+		wallet: w,
+		port:   port,
+		onSave: onSave,
 	}
 	w.SetLogSink(func(LogEntry) {
 		s.triggerSave()
@@ -401,6 +401,17 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
 }
 
+// signingKeyExpiry is what the wallet publishes as the expiry of its signing
+// key. It follows the signing certificate rather than a value computed once at
+// startup: a wallet that runs for months would otherwise advertise a key that
+// expired on its first day.
+func (s *Server) signingKeyExpiry() time.Time {
+	if expiry := s.wallet.SigningCertificateExpiry(); !expiry.IsZero() {
+		return expiry
+	}
+	return time.Now().Add(24 * time.Hour)
+}
+
 func (s *Server) startIssuerTLSServer() error {
 	if s.issuerPort <= 0 || s.issuerSrv != nil {
 		return nil
@@ -525,12 +536,11 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 					s.triggerUIRequest()
 				}
 			},
-			logFunc:         s.logFunc,
-			httpSrv:         s.httpSrv,
-			issuerSrv:       s.issuerSrv,
-			issuerTLSCert:   s.issuerTLSCert,
-			issuerPort:      s.issuerPort,
-			issuerKeyExpiry: s.issuerKeyExpiry,
+			logFunc:       s.logFunc,
+			httpSrv:       s.httpSrv,
+			issuerSrv:     s.issuerSrv,
+			issuerTLSCert: s.issuerTLSCert,
+			issuerPort:    s.issuerPort,
 		}
 		reqServer.parseOpts = oid4vc.ParseOptions{
 			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
@@ -733,7 +743,6 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 			issuerSrv:        s.issuerSrv,
 			issuerTLSCert:    s.issuerTLSCert,
 			issuerPort:       s.issuerPort,
-			issuerKeyExpiry:  s.issuerKeyExpiry,
 			store:            s.store,
 			demo:             s.demo,
 			version:          s.version,
@@ -1438,7 +1447,7 @@ func (s *Server) handleJWTVCIssuerMetadata(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
 		return
 	}
-	jwk := buildIssuerSigningJWK(s.wallet, s.issuerKeyExpiry)
+	jwk := buildIssuerSigningJWK(s.wallet, s.signingKeyExpiry())
 	if jwk == nil {
 		http.Error(w, "wallet has no issuer signing key", http.StatusInternalServerError)
 		return
@@ -1461,7 +1470,7 @@ func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *
 		http.Error(w, "wallet has no issuer certificate chain", http.StatusInternalServerError)
 		return
 	}
-	jwt, err := signCredentialIssuerMetadataJWT(s.wallet, issuer, s.issuerKeyExpiry)
+	jwt, err := signCredentialIssuerMetadataJWT(s.wallet, issuer, s.signingKeyExpiry())
 	if err != nil {
 		http.Error(w, fmt.Sprintf("signing issuer metadata: %v", err), http.StatusInternalServerError)
 		return

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.5] - 2026-08-05
+
+### Fixed
+
+- **The wallet published a signing key expiry that was almost always in the past.** The `exp` in `/.well-known/jwt-vc-issuer` and in the signed issuer metadata was computed once when the server started, as that moment plus a day, and never moved. Any wallet running for more than a day advertised an expired key, and a hosted one advertised a key that expired on its first day. It now follows the signing certificate, so it says what is actually true
+- **A long-running wallet renews its signing certificate.** Leaves are valid for a year and nothing about an expired one announces itself: the wallet keeps issuing credentials and they quietly stop verifying. A wallet within a month of expiry re-issues its leaf from the same CA, so an instance left running does not need anyone to notice. The CA is untouched, so a party that pinned it keeps working
+
 ## [1.19.4] - 2026-08-05
 
 ### Added

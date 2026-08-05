@@ -409,3 +409,60 @@ func TestRefreshSigningCertificate(t *testing.T) {
 		t.Error("the refreshed leaf does not carry the wallet's issuer key")
 	}
 }
+
+// TestSigningKeyExpiry_FollowsTheCertificate covers what the wallet publishes
+// as its signing key expiry. It used to be computed once when the server was
+// built, so a wallet running for more than a day advertised a key that had
+// already expired in its JWKS and signed issuer metadata.
+func TestSigningKeyExpiry_FollowsTheCertificate(t *testing.T) {
+	w := generateTestWallet(t)
+	s := NewServer(w, 0, nil)
+
+	if got, want := s.signingKeyExpiry(), w.SigningCertificateExpiry(); !got.Equal(want) {
+		t.Errorf("published expiry = %s, want the certificate's %s", got, want)
+	}
+	if s.signingKeyExpiry().Before(time.Now().Add(300 * 24 * time.Hour)) {
+		t.Error("a fresh wallet should publish an expiry roughly a year out")
+	}
+
+	// Re-issuing the leaf moves the published expiry with it.
+	before := s.signingKeyExpiry()
+	if err := w.RefreshSigningCertificate(); err != nil {
+		t.Fatalf("RefreshSigningCertificate: %v", err)
+	}
+	if !s.signingKeyExpiry().After(before.Add(-time.Minute)) {
+		t.Error("the published expiry did not follow the re-issued certificate")
+	}
+}
+
+// TestRefreshSigningCertificateIfExpiring covers the renewal a long-running
+// wallet depends on: nothing renews near expiry, everything does once inside
+// the window.
+func TestRefreshSigningCertificateIfExpiring(t *testing.T) {
+	w := generateTestWallet(t)
+	expiry := w.SigningCertificateExpiry()
+
+	renewed, err := w.RefreshSigningCertificateIfExpiring(time.Now())
+	if err != nil {
+		t.Fatalf("RefreshSigningCertificateIfExpiring: %v", err)
+	}
+	if renewed {
+		t.Error("a certificate with a year left should not be re-issued")
+	}
+
+	// A wallet that has been running until just before its leaf expires.
+	almostExpired := expiry.Add(-signingCertificateRenewBefore).Add(time.Hour)
+	renewed, err = w.RefreshSigningCertificateIfExpiring(almostExpired)
+	if err != nil {
+		t.Fatalf("RefreshSigningCertificateIfExpiring near expiry: %v", err)
+	}
+	if !renewed {
+		t.Fatal("a certificate inside the renewal window should be re-issued")
+	}
+	// The re-issued leaf is dated from the real clock, so its validity is
+	// measured from now rather than from the simulated expiry above.
+	if w.SigningCertificateExpiry().Before(time.Now().Add(300 * 24 * time.Hour)) {
+		t.Errorf("the re-issued certificate expires %s, want roughly a year out",
+			w.SigningCertificateExpiry())
+	}
+}

@@ -1820,9 +1820,11 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
 	}
-	expMin := time.Now().Add(24 * time.Hour).Unix()
 	srv := NewServer(w, 0, nil)
-	expMax := time.Now().Add(24 * time.Hour).Unix()
+	// The published expiry is the signing certificate's, not a value fixed
+	// when the server was built: a wallet running for a day would otherwise
+	// advertise a key that had already expired.
+	wantExp := w.SigningCertificateExpiry().Unix()
 
 	metaResp := serverRequest(t, srv, "GET", "/.well-known/jwt-vc-issuer", "")
 	if metaResp.Code != http.StatusOK {
@@ -1853,8 +1855,8 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected numeric exp in JWK, got %T", jwk["exp"])
 	}
-	if got := int64(exp); got < expMin || got > expMax {
-		t.Fatalf("expected JWK exp between %d and %d, got %d", expMin, expMax, got)
+	if got := int64(exp); got != wantExp {
+		t.Fatalf("expected JWK exp %d (the signing certificate's), got %d", wantExp, got)
 	}
 
 	x5c, ok := jwk["x5c"].([]any)

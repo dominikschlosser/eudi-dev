@@ -304,14 +304,41 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 }
 
 // RefreshSigningCertificate re-issues the wallet's signing leaf from its own
-// CA, so a wallet that runs for longer than a leaf is valid keeps signing with
-// a current one. The CA and the issuer key stay as they are, so the trust
-// anchor and the published JWKS do not move.
+// CA. The CA and the issuer key stay as they are, so the trust anchor and the
+// published key do not move.
 func (w *Wallet) RefreshSigningCertificate() error {
 	if w == nil || w.CAKey == nil || len(w.CertChain) < 2 {
 		return nil
 	}
 	return w.SetCertificateAuthority(w.CAKey, w.CertChain[len(w.CertChain)-1])
+}
+
+// SigningCertificateExpiry is when the wallet's signing leaf stops being
+// valid, or the zero time when it has no chain.
+func (w *Wallet) SigningCertificateExpiry() time.Time {
+	if w == nil || len(w.CertChain) == 0 || w.CertChain[0] == nil {
+		return time.Time{}
+	}
+	return w.CertChain[0].NotAfter
+}
+
+// signingCertificateRenewBefore is how close to expiry a leaf is re-issued.
+// A wallet that runs for months is the normal case for a hosted one, and
+// nothing about an expired leaf announces itself: credentials keep being
+// issued and quietly stop verifying.
+const signingCertificateRenewBefore = 30 * 24 * time.Hour
+
+// RefreshSigningCertificateIfExpiring re-issues the signing leaf when it is
+// near its expiry, and reports whether it did.
+func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error) {
+	expiry := w.SigningCertificateExpiry()
+	if expiry.IsZero() || now.Add(signingCertificateRenewBefore).Before(expiry) {
+		return false, nil
+	}
+	if err := w.RefreshSigningCertificate(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials from
