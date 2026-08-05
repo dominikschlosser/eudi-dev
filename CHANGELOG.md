@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.4] - 2026-08-05
+
+### Added
+
+- **The conformance harness runs the pre-authorized code grant.** All four VCI scenarios pinned `authorization_code`, so the grant most wallets actually meet (scan a QR, no sign-in) went untested, which is where every issuance bug of the 1.19.3 cycle turned out to live. Two scenarios now run it in SD-JWT and mDoc. HAIP is deliberately not among them: the suite refuses that combination outright, and pre-authorized offers are outside the profile anyway
+- The demo reset re-issues the wallet's signing leaf from its own CA. Leaves are valid for a year, so a long-running demo would eventually sign with an expired one, noticed only by whatever stopped verifying. The CA is untouched, so anything that pinned it keeps working
+
+### Fixed
+
+- **A credential proof carried an empty nonce claim when the issuer had given none.** An absent `c_nonce` still produced `"nonce": ""`, which an issuer reads as a nonce that does not match rather than as no nonce at all. The OIDF client attestation challenge module rejected it (`expected_nonce = null, actual_nonce = ""`), and with the claim omitted all four VCI plans pass, pre-authorized ones included
+- **A deferred issuance no longer holds up whoever started it.** 1.19.3 waited out a short deferral before answering, which left the consent dialog spinning for the issuer's interval, showed nothing under "Awaiting issuance" while it did, and then produced the credential out of nowhere. The transaction is recorded and reported immediately, and the poller collects on the issuer's own schedule
+- **Two protected PIDs after a change of credential type.** The baseline was replaced by matching the type it was generated with, so the 1.19.3 move to `urn:eudi:pid:1` left the `urn:eudi:pid:de:1` one in place beside it. The whole protected set is replaced now, whatever it was generated as
+
+### Changed
+
+- **Trust & certificates is laid out rather than listed.** The dialog put trust lists and five certificate links in one block with the explanation trailing after, which had to be read start to finish. Trust lists and certificates are now separate sections, and each certificate is a labelled row (trust anchor, signing key, TLS) with a line saying what it is for
+
 ## [1.19.3] - 2026-08-05
 
 ### Added
