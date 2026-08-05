@@ -105,6 +105,32 @@ func completeCredentialIDs(cmd *cobra.Command, args []string, toComplete string)
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
+// completeDeferredIDs completes the ids of credentials the wallet is still
+// collecting, for `wallet deferred check` and `wallet deferred abandon`. A
+// deferred id is not a credential id, so it comes from its own listing.
+func completeDeferredIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	svc, err := managedWallet()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	pending, err := svc.DeferredIssuances()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var completions []string
+	for _, entry := range pending {
+		label := docCredLabel(entry)
+		if label == "" {
+			label = docString(entry, "credential_configuration_id")
+		}
+		completions = append(completions, docString(entry, "id")+"\t"+label)
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
 // completeInstanceTargets completes running wallet instances for
 // `wallet instances kill` (URLs, ports, and pids).
 func completeInstanceTargets(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

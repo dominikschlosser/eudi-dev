@@ -803,7 +803,8 @@ func walletRefreshCmd() *cobra.Command {
 
 The credential keeps its id, so anything referring to it still does. A wallet
 server renews on its own shortly before expiry; this asks now.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeCredentialIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()
 			if err != nil {

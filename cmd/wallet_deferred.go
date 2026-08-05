@@ -79,7 +79,8 @@ scheduled attempt.
 
 Without an id, every deferred credential is checked. A checked entry's next
 attempt then moves on by its interval, as if the poller had made it.`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeDeferredIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := deferredClient()
 			if err != nil {
@@ -138,7 +139,8 @@ func walletDeferredAbandonCmd() *cobra.Command {
 The transaction stays valid at the issuer, the wallet just stops asking. Use
 it for an issuance you no longer want, instead of waiting out the 24 hours
 after which the wallet gives up on its own.`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeDeferredIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := deferredClient()
 			if err != nil {
