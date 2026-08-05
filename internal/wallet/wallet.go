@@ -298,6 +298,12 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 	if err != nil {
 		return fmt.Errorf("generating issuer leaf certificate: %w", err)
 	}
+	// Under the lock because the demo reset renews this while requests are
+	// being served. A slice header is not written atomically, so an unguarded
+	// swap can hand a reader a length from one chain and a pointer from
+	// another. Generating the leaf above stays outside it.
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.CAKey = caKey
 	w.CertChain = []*x509.Certificate{leafCert, caCert}
 	return nil

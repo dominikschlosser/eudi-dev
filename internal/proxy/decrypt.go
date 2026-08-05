@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -67,7 +68,10 @@ func DecryptJWEWithCEK(jwe string, cek []byte) ([]byte, error) {
 	aad := []byte(headerB64)
 
 	// AES-GCM expects ciphertext || tag
-	sealed := append(ciphertext, tag...)
+	// Concatenated into a new slice: appending to ciphertext would write the
+	// tag into its backing array when it has the capacity, corrupting the
+	// caller's buffer.
+	sealed := slices.Concat(ciphertext, tag)
 
 	plaintext, err := aead.Open(nil, ivBytes, sealed, aad)
 	if err != nil {

@@ -26,6 +26,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -451,6 +452,9 @@ func decryptAESGCM(key, iv, ciphertext, tag, aad []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating GCM: %w", err)
 	}
-	sealed := append(ciphertext, tag...)
+	// Concatenated into a new slice: appending to ciphertext would write the
+	// tag into its backing array when it has the capacity, corrupting the
+	// caller's buffer.
+	sealed := slices.Concat(ciphertext, tag)
 	return aead.Open(nil, iv, sealed, aad)
 }
