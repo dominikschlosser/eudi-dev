@@ -5,11 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.19.8] - 2026-08-05
+## [1.19.9] - 2026-08-05
 
 ### Fixed
 
 - **An error from an issuer sign-in reached no tab, and then surfaced on the next unrelated action.** The tab that starts an authorization code flow navigates away to the issuer, so the claim that says "this failure is mine" was gone by the time the flow failed. Nothing showed the error, it stayed stored, and the next issuance picked it up instead: a working flow reporting the previous one's failure. The tab coming back from the sign-in now claims that outcome, and starting something new drops any error still stored from before
+- **The credential type added in 1.19.8 never reached the UI.** The deferred record carried it, but `GET /api/deferred` builds its response field by field and the two new ones were not in the list, so the wallet still listed a waiting credential by the issuer's configuration id. The endpoint now returns them
+
+## [1.19.8] - 2026-08-05
+
+### Fixed
+
 - **A deferred credential was listed by the issuer's configuration id instead of its type.** A credential offer names configurations (`eudi-pid-sd-jwt-bdr-key-attestations`), never credential types, so a credential still being collected read as an issuer's internal name while the same credential became `urn:eudi:pid:1` the moment it arrived. The type is in the issuer's metadata all along, so the wallet now records it with the deferred credential and the UI, `wallet list` and `wallet deferred` show it, falling back to the configuration id for an issuer whose metadata declares neither
 
 ## [1.19.7] - 2026-08-05
