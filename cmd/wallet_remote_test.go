@@ -16,6 +16,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -550,4 +552,92 @@ func TestCompletionInstall(t *testing.T) {
 	if err := rootCmd.Execute(); err == nil {
 		t.Error("expected error for unsupported shell")
 	}
+}
+
+// Every wallet has its own CA, so a trust list read from the local store while
+// the CLI is pointed at a remote wallet anchors nothing the remote issues.
+func TestTrustListFollowsTheRemoteWallet(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+
+	// A local wallet with its own CA, which is what the command used to print.
+	localHolder, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	localIssuer, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := wallet.New(localHolder, localIssuer, false)
+	if err := loadStore().Save(local); err != nil {
+		t.Fatal(err)
+	}
+
+	served, err := remote.NewClient(url).TrustList("", "", "")
+	if err != nil {
+		t.Fatalf("fetching the remote trust list: %v", err)
+	}
+	// Compared by anchor rather than by JWT: each list is signed when it is
+	// asked for, so two fetches never match byte for byte.
+	wantAnchors := trustListAnchors(t, served)
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"wallet", "trust-list", "--remote", url})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("wallet trust-list --remote: %v", err)
+		}
+	})
+
+	anchors := trustListAnchors(t, strings.TrimSpace(out))
+	if len(anchors) == 0 {
+		t.Fatal("the printed trust list carries no certificate")
+	}
+	for der := range wantAnchors {
+		if !anchors[der] {
+			t.Error("trust-list --remote does not anchor the remote wallet's CA")
+		}
+	}
+	if anchors[string(local.CertChain[len(local.CertChain)-1].Raw)] {
+		t.Error("trust-list --remote anchored the local CA, which validates nothing the remote issues")
+	}
+}
+
+// trustListAnchors returns the DER of every certificate a trust list JWT
+// carries, keyed for lookup.
+func trustListAnchors(t *testing.T, jwt string) map[string]bool {
+	t.Helper()
+	parts := strings.Split(jwt, ".")
+	if len(parts) < 2 {
+		t.Fatalf("not a JWT: %.40s", jwt)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decoding the trust list payload: %v", err)
+	}
+	var doc any
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("parsing the trust list payload: %v", err)
+	}
+	found := map[string]bool{}
+	var walk func(any)
+	walk = func(node any) {
+		switch v := node.(type) {
+		case map[string]any:
+			if raw, ok := v["val"].(string); ok {
+				if der, err := base64.StdEncoding.DecodeString(raw); err == nil {
+					found[string(der)] = true
+				}
+			}
+			for _, child := range v {
+				walk(child)
+			}
+		case []any:
+			for _, child := range v {
+				walk(child)
+			}
+		}
+	}
+	walk(doc)
+	return found
 }

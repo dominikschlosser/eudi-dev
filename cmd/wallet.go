@@ -393,6 +393,25 @@ func walletUnregisterCmd() *cobra.Command {
 
 // --- wallet trust-list ---
 
+// trustListPath builds the endpoint a selection resolves to, so the URL the
+// command prints and the one it fetches cannot drift apart.
+func trustListPath(id, vct, docType string) string {
+	if id != "" {
+		return "/api/trustlists/" + url.PathEscape(id)
+	}
+	query := url.Values{}
+	if vct != "" {
+		query.Set("vct", vct)
+	}
+	if docType != "" {
+		query.Set("doctype", docType)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return "/api/trustlist?" + encoded
+	}
+	return "/api/trustlist"
+}
+
 func walletTrustListCmd() *cobra.Command {
 	var (
 		port    int
@@ -419,27 +438,34 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The trust list belongs to the wallet that serves it, and every
+			// wallet has its own CA. Reading the local store while the CLI is
+			// pointed at a remote one would print an anchor that validates
+			// nothing it issues.
+			client, err := remoteClientIfConfigured()
+			if err != nil {
+				return err
+			}
+
 			if urlOnly {
-				path := "/api/trustlist"
-				query := url.Values{}
-				if id != "" {
-					path = "/api/trustlists/" + url.PathEscape(id)
-				} else {
-					if vct != "" {
-						query.Set("vct", vct)
-					}
-					if docType != "" {
-						query.Set("doctype", docType)
-					}
-				}
-				if encoded := query.Encode(); encoded != "" {
-					path += "?" + encoded
-				}
-				if docker {
+				path := trustListPath(id, vct, docType)
+				switch {
+				case client != nil:
+					fmt.Printf("%s%s\n", client.BaseURL, path)
+				case docker:
 					fmt.Printf("http://host.docker.internal:%d%s\n", port, path)
-				} else {
+				default:
 					fmt.Printf("http://localhost:%d%s\n", port, path)
 				}
+				return nil
+			}
+
+			if client != nil {
+				jwt, err := client.TrustList(id, vct, docType)
+				if err != nil {
+					return err
+				}
+				fmt.Println(jwt)
 				return nil
 			}
 

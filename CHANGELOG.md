@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`wallet trust-list` ignored the remote target and printed the local wallet's CA.** It read the local store directly instead of routing through the active remote, so with a remote wallet selected it handed out an anchor that validates nothing that wallet issues, silently. It now fetches from the wallet it is pointed at, and `--url` prints that wallet's URL rather than a localhost one
+
 - **`wallet accept` did nothing with an authorization code offer against a hosted wallet.** The offer needs the user to sign in at the issuer, so the wallet handed the URL to an open UI tab, and with no tab attached it fell back to opening a browser on its own machine. On a hosted wallet that reaches nobody, and it then blocked five minutes waiting for a callback nobody could produce while the caller timed out with nothing to act on. The wallet no longer opens browsers at all: it answers `HTTP 202` with the authorization URL and an `offer_id`, keeps the flow running, and `GET /api/offers/{offer_id}` reports how it ended. `wallet accept` opens the URL on the machine the user is at (and prints it), then follows the offer to the credential. The callback is matched by `state`, so any browser that can reach the wallet completes the flow
 
 ### Security

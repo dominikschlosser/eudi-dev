@@ -206,6 +206,8 @@ When a wallet already has persisted issuer or status-list URLs, `wallet serve` r
 
 The startup banner warns about serving config that cannot work in the current environment: a persisted Docker hostname when the server does not run in Docker, and stored credentials that embed issuer or status list URLs this server does not serve (they keep failing validation and status checks until they are issued again).
 
+Every trust list a wallet serves carries the same certificate, its own CA. The profiles differ in what they declare that CA to be (LoTE type, entity name, service types), not in what they anchor. So `eudi wallet trust-list` follows the wallet the CLI is pointed at: with an active remote target it fetches from that wallet rather than reading the local store, which holds a different CA and would anchor nothing the remote issues.
+
 The wallet groups registered attestation entries by trust-list profile. Each group is exposed as its own trust list under `/api/trustlists/{id}`. The `id` is a stable profile identifier:
 - `pid` for the built-in PID profile
 - `wallet-provider` for the Wallet Provider profile (always present, this is the one an issuer uses to check the wallet attestation)

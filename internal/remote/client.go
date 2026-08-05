@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -254,6 +255,42 @@ func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	// call waits as long as the wallet server is willing to.
 	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/offers", body, &out)
 	return out, err
+}
+
+// TrustList fetches an ETSI trust list JWT from the remote wallet. Without a
+// selector this is the same default list as /api/trustlist.
+func (c *Client) TrustList(id, vct, docType string) (string, error) {
+	path := "/api/trustlist"
+	query := url.Values{}
+	if id != "" {
+		path = "/api/trustlists/" + url.PathEscape(id)
+	} else {
+		if vct != "" {
+			query.Set("vct", vct)
+		}
+		if docType != "" {
+			query.Set("doctype", docType)
+		}
+	}
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var out []byte
+	if err := c.do(http.MethodGet, path, nil, &out); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// TrustLists lists the trust list profiles the remote wallet serves.
+func (c *Client) TrustLists() ([]map[string]any, error) {
+	var out struct {
+		TrustLists []map[string]any `json:"trust_lists"`
+	}
+	if err := c.do(http.MethodGet, "/api/trustlists", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.TrustLists, nil
 }
 
 // OfferStatus reports how an offer that paused for an interactive sign-in
