@@ -67,6 +67,7 @@ func init() {
 	walletCmd.AddCommand(walletScanCmd())
 	walletCmd.AddCommand(walletLogsCmd())
 	walletCmd.AddCommand(walletDeferredCmd())
+	walletCmd.AddCommand(walletRefreshCmd())
 	walletCmd.AddCommand(walletRegisterCmd())
 	walletCmd.AddCommand(walletUnregisterCmd())
 	walletCmd.AddCommand(walletTrustListCmd())
@@ -790,4 +791,41 @@ func printTrustListIndex(client *remote.Client) error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", str("id"), def, str("category"), str("path"))
 	}
 	return tw.Flush()
+}
+
+// --- wallet refresh ---
+
+func walletRefreshCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "refresh <credential-id>",
+		Short: "Ask a credential's issuer for a fresh copy",
+		Long: `Renews a credential using the refresh token its issuer handed over at issuance.
+
+The credential keeps its id, so anything referring to it still does. A wallet
+server renews on its own shortly before expiry; this asks now.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := managedWallet()
+			if err != nil {
+				return err
+			}
+			renewed, err := svc.RefreshCredential(args[0])
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				data, err := json.MarshalIndent(renewed, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Printf("Renewed %s (%s)\n", docString(renewed, "id"), docCredLabel(renewed))
+			if expiry := docString(renewed, "expires_at"); expiry != "" {
+				fmt.Printf("Valid until %s\n", expiry)
+			}
+			return nil
+		},
+	}
 }

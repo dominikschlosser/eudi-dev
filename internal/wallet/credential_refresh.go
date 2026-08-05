@@ -28,8 +28,8 @@ import (
 // activity log all refer to credentials by id, so replacing one with a new
 // entry would read as the old one being deleted and an unrelated one
 // appearing, when what happened is that the same credential was renewed.
-func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
-	cred, ok := s.wallet.GetCredential(id)
+func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
+	cred, ok := w.GetCredential(id)
 	if !ok {
 		return nil, fmt.Errorf("credential %s not found", id)
 	}
@@ -40,7 +40,7 @@ func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 
 	var dpopKey *ecdsa.PrivateKey
 	if renewal.UseDPoP {
-		dpopKey = s.wallet.HolderKey
+		dpopKey = w.HolderKey
 	}
 
 	form := url.Values{}
@@ -63,14 +63,14 @@ func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 
 	// The holder key alone: a renewal replaces one credential, so there is no
 	// batch to match back to several ephemeral keys.
-	proofKeys := []*ecdsa.PrivateKey{s.wallet.HolderKey}
+	proofKeys := []*ecdsa.PrivateKey{w.HolderKey}
 	proofJWTs, err := createProofJWTs(proofKeys, renewal.Issuer, cNonce, nil)
 	if err != nil {
 		return nil, fmt.Errorf("building the proof: %w", err)
 	}
 
 	credResp, err := requestCredentialWithDPoP(nil, renewal.CredentialEndpoint, accessToken, authScheme,
-		proofJWTs, "", renewal.ConfigurationID, nil, dpopKey, s.wallet.HolderKey, &nonce)
+		proofJWTs, "", renewal.ConfigurationID, nil, dpopKey, w.HolderKey, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("requesting the credential: %w", err)
 	}
@@ -85,16 +85,26 @@ func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 		renewal.RefreshToken = rotated
 	}
 
-	renewed, err := s.wallet.ReplaceCredential(id, raw, &renewal)
+	renewed, err := w.ReplaceCredential(id, raw, &renewal)
 	if err != nil {
 		return nil, err
 	}
-	s.log("  Renewed:       %s credential %s from %s", renewed.Format, renewed.ID, renewal.Issuer)
-	s.wallet.AddLogDetails("issuance", fmt.Sprintf("Renewed credential %s from %s", renewed.ID, renewal.Issuer), true, map[string]any{
+	w.AddLogDetails("issuance", fmt.Sprintf("Renewed credential %s from %s", renewed.ID, renewal.Issuer), true, map[string]any{
 		"credential_id": renewed.ID,
 		"issuer":        renewal.Issuer,
 		"format":        renewed.Format,
 	})
+	return renewed, nil
+}
+
+// RefreshCredential renews a credential and persists the result. The wallet
+// does the exchange; the server owns the store and the log the operator sees.
+func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
+	renewed, err := s.wallet.RefreshCredential(id)
+	if err != nil {
+		return nil, err
+	}
+	s.log("  Renewed:       %s credential %s", renewed.Format, renewed.ID)
 	s.persistWallet()
 	return renewed, nil
 }

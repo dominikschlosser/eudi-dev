@@ -156,6 +156,14 @@ func (c *Client) ImportCredential(raw string) (map[string]any, error) {
 	return out, err
 }
 
+// RefreshCredential asks the remote wallet to renew a credential from its
+// issuer.
+func (c *Client) RefreshCredential(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/credentials/"+id+"/refresh", nil, &out)
+	return out, err
+}
+
 // RemoveCredential deletes one credential by ID.
 func (c *Client) RemoveCredential(id string) error {
 	return c.do(http.MethodDelete, "/api/credentials/"+id, nil, nil)

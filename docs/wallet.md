@@ -520,6 +520,7 @@ The one requirement is that the browser can reach the wallet's redirect URI. Tha
 An issuer that hands over a refresh token at issuance can be asked for a fresh copy of the credential later. The wallet keeps what the request needs (token and credential endpoints, configuration id, refresh token) with the credential, because the flow that obtained it is gone by the time it nears expiry.
 
 ```bash
+eudi wallet refresh <credential-id>
 curl -X POST http://localhost:8085/api/credentials/<id>/refresh
 ```
 

@@ -253,6 +253,7 @@ func parityCases() []parityCase {
 			}
 			return keysOf(imported)
 		}},
+		{method: "RefreshCredential", skip: "renewing needs a live issuer to exchange a refresh token with; internal/wallet covers the operation against a stub"},
 		{method: "RemoveCredential", observe: func(t *testing.T, s walletService) any {
 			id := importedCredential(t, s)
 			before, err := s.Credentials()

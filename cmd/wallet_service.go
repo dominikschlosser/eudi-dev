@@ -46,6 +46,9 @@ type walletService interface {
 	// over yet. They are not in the store, so they are listed separately.
 	DeferredIssuances() ([]map[string]any, error)
 	ImportCredential(raw string) (map[string]any, error)
+	// RefreshCredential asks a credential's issuer for a fresh copy, for the
+	// credentials whose issuer handed over a refresh token.
+	RefreshCredential(id string) (map[string]any, error)
 	RemoveCredential(id string) error
 	RemoveAllCredentials() (int, error)
 	Issue(req map[string]any) (map[string]any, error)
@@ -105,6 +108,10 @@ func (r *remoteWallet) DeferredIssuances() ([]map[string]any, error) { return r.
 
 func (r *remoteWallet) ImportCredential(raw string) (map[string]any, error) {
 	return r.c.ImportCredential(raw)
+}
+
+func (r *remoteWallet) RefreshCredential(id string) (map[string]any, error) {
+	return r.c.RefreshCredential(id)
 }
 
 func (r *remoteWallet) RemoveCredential(id string) error { return r.c.RemoveCredential(id) }
@@ -202,6 +209,21 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 		summaries[i] = w.CredentialSummaryWithStatus(c)
 	}
 	return summaries, nil
+}
+
+func (l *localWallet) RefreshCredential(id string) (map[string]any, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	renewed, err := w.RefreshCredential(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Save(w); err != nil {
+		return nil, fmt.Errorf("saving the renewed credential: %w", err)
+	}
+	return wallet.CredentialSummary(*renewed), nil
 }
 
 // DeferredIssuances reads the pending records straight out of the store. A
