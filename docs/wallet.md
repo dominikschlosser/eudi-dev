@@ -131,7 +131,9 @@ Generated credentials expire in **30 days** by default. Use `--exp` to override 
 
 ## `wallet show <id>`
 
-Displays a stored credential by its ID (as shown in `wallet list`). By default, outputs the raw credential string. Use `--decoded` for human-readable decoded output (supports `--json` and `-v` global flags).
+Displays a stored credential by its ID (as shown in `wallet list`). By default, outputs the raw credential string and nothing else, so it can be piped. Use `--decoded` for human-readable decoded output (supports `--json` and `-v` global flags), which begins with a validity line (the decoded payload states the expiry as a Unix timestamp, which does not answer whether the credential is still good).
+
+`wallet list` carries the same thing in its `VALID` column, as the time left (`29d`, `5h`, `expired`) or `-` for a credential that states no lifetime.
 
 ```bash
 eudi wallet show <id>                  # Raw credential string
@@ -527,6 +529,8 @@ curl -X POST http://localhost:8085/api/credentials/<id>/refresh
 The credential keeps its id, so a verifier query or a UI selection that referred to it still does. A rotated refresh token replaces the stored one. Credentials that can be renewed report `can_renew` in listings, alongside `expires_at`, which is read from `exp` for SD-JWT and from the MSO validity for mdoc.
 
 An issuer that gave no refresh token cannot be asked, and the request is refused rather than reporting success.
+
+The wallet UI does not offer renewal. It happens on its own (below) or on request from the CLI, so a button would only be a third way to do what already happens. The UI does show how long each credential is still valid for.
 
 The wallet also renews on its own, in two places. A background task checks every 30 seconds and renews anything within a minute of expiring, so a credential a verifier would reject is replaced before anyone tries to use it (a renewal that fails is held off for ten minutes rather than retried on every sweep). And a credential is renewed on the way to a verifier when it is that close to expiring, which covers a wallet with no server running. A renewal that fails there is not fatal: the credential in hand may still be accepted.
 

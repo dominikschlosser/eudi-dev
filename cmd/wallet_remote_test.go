@@ -696,3 +696,31 @@ func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
 		})
 	}
 }
+// The validity column answers "is this still good", so it has to distinguish
+// an expired credential from one that never states a lifetime.
+func TestCredentialValidityLabel(t *testing.T) {
+	// RFC 3339 carries whole seconds, and the label floors rather than
+	// overstating what is left, so the stamps get a second of slack.
+	stamp := func(d time.Duration) map[string]any {
+		return map[string]any{"expires_at": time.Now().Add(d + time.Second).UTC().Format(time.RFC3339)}
+	}
+	for _, tc := range []struct {
+		name string
+		cred map[string]any
+		want string
+	}{
+		{"no expiry", map[string]any{}, "-"},
+		{"unparseable", map[string]any{"expires_at": "soon"}, "-"},
+		{"expired", stamp(-time.Hour), "expired"},
+		{"days", stamp(72 * time.Hour), "3d"},
+		{"hours", stamp(5 * time.Hour), "5h"},
+		{"minutes", stamp(30 * time.Minute), "30m"},
+		{"seconds", stamp(30 * time.Second), "<1m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := credValidityLabel(tc.cred); got != tc.want {
+				t.Errorf("credValidityLabel = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

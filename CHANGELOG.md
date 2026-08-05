@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.11] - 2026-08-06
 
+### Changed
+
+- **The wallet UI shows how long a credential is good for, and no longer offers to renew it.** The Renew button was a third way to do something that already happens twice on its own (a background task shortly before expiry, and again on the way to a verifier) and that `wallet refresh <id>` covers when it has to be now. What the UI was missing is the question behind it, so every credential card now carries its remaining validity, marked when it is inside a day and when it has lapsed. `wallet list` gained a `VALID` column and `wallet show --decoded` a validity line, because the decoded payload states the expiry as a Unix timestamp
+
 ### Added
 
 - **The demo verifier links the presentation it received to the decoder.** The result showed a claims table and a list of checks, which says nothing about the key binding JWT or the device auth the wallet signed. The verification result now carries the presentation exactly as it arrived (SD-JWT with its key binding, mdoc DeviceResponse with its device auth) and the page offers it to the decoder. It is offered whether the presentation verified or not, because one that failed is the one worth opening
@@ -17,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`wallet list --remote local` reported a revoked credential as governed by a foreign status list.** Both backends build the same document, but one travels through JSON (where every number is a float64) and the other is handed over in this process with its Go types intact, and the renderer only read float64. So the status value was invisible to it and it fell back to "external", on exactly the credentials the wallet governs itself. The number is now read in either shape, which also fixes the attempt count on a locally read deferred issuance
+
+### Documentation
+
+- The wallet documentation says where credential validity is reported and that the UI does not renew
 
 ## [1.19.10] - 2026-08-05
 

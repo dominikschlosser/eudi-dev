@@ -256,18 +256,24 @@
         card.dataset.status = 'none';
       }
 
+      // How long the credential is still good for. The wallet renews what it
+      // can shortly before this, so a date here is not always a deadline.
+      const expiry = expiryInfo(cred.expires_at);
+      let expiryBadge = '';
+      if (expiry) {
+        card.dataset.expiry = expiry.state;
+        expiryBadge = '<span class="status-badge status-' + expiry.state + '" id="expiry-' + cred.id +
+          '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
+      }
+
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
         '<div class="credential-info" title="Open in decoder">' +
-          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + protectedBadge + '</div>' +
+          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + '</div>' +
           '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
           revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
-          // Only for credentials whose issuer handed over a refresh token.
-          // The wallet renews these on its own shortly before they expire;
-          // this asks now.
-          (cred.can_renew ? '<button class="btn btn-sm" data-renew="' + cred.id + '">Renew</button>' : '') +
           (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
 
@@ -282,10 +288,6 @@
       if (del) {
         del.addEventListener('click', () => deleteCredential(cred.id));
       }
-      const renew = card.querySelector('[data-renew]');
-      if (renew) {
-        renew.addEventListener('click', () => renewCredential(cred.id, renew));
-      }
       const revoke = card.querySelector('[data-revoke]');
       if (revoke) {
         revoke.addEventListener('click', () => setCredentialStatus(cred.id, st.status === 1 ? 0 : 1));
@@ -298,29 +300,43 @@
     });
   }
 
-  // renewCredential asks the issuer for a fresh copy. The credential keeps its
-  // id, so the card is replaced in place rather than the list jumping.
-  async function renewCredential(id, button) {
-    const label = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Renewing...';
-    // This tab asked, so this tab reports whatever goes wrong.
-    expectError();
-    try {
-      const resp = await fetch('/api/credentials/' + encodeURIComponent(id) + '/refresh', { method: 'POST' });
-      const result = await resp.json();
-      if (result.error) {
-        alert('Renewing failed: ' + result.error);
-        return;
-      }
-      await loadCredentials();
-      await loadLog();
-    } catch (e) {
-      alert('Renewing failed: ' + e.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = label;
+  // expiryInfo turns an RFC 3339 expiry into what the badge shows: how long
+  // is left, because "in 3 days" answers the question the absolute date only
+  // implies. The exact time stays on the tooltip. Returns null for a
+  // credential that states no lifetime, which then gets no badge at all.
+  function expiryInfo(value) {
+    if (!value) return null;
+    const when = new Date(value);
+    if (isNaN(when.getTime())) return null;
+
+    const absolute = when.toLocaleString();
+    const seconds = (when.getTime() - Date.now()) / 1000;
+    if (seconds <= 0) {
+      return { state: 'expired', label: 'Expired', title: 'Expired ' + absolute };
     }
+    // Under a day is worth pointing at: the wallet renews shortly before
+    // expiry, and a credential this close is either about to be renewed or
+    // cannot be.
+    const state = seconds < 24 * 3600 ? 'expiring' : 'valid';
+    return { state: state, label: 'Valid ' + humanizeDuration(seconds), title: 'Valid until ' + absolute };
+  }
+
+  // humanizeDuration renders seconds as the one unit worth reading.
+  function humanizeDuration(seconds) {
+    const units = [
+      [365 * 24 * 3600, 'year'],
+      [30 * 24 * 3600, 'month'],
+      [24 * 3600, 'day'],
+      [3600, 'hour'],
+      [60, 'minute'],
+    ];
+    for (const [size, name] of units) {
+      if (seconds >= size) {
+        const count = Math.floor(seconds / size);
+        return 'for ' + count + ' ' + name + (count === 1 ? '' : 's');
+      }
+    }
+    return 'for less than a minute';
   }
 
   // Revoke (status 1) or re-activate (status 0) a credential on the wallet's

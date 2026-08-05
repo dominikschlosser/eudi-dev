@@ -90,11 +90,12 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS\tSTATUS")
+	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS\tVALID\tSTATUS")
 	for _, cred := range creds {
 		claims, _ := cred["claims"].(map[string]any)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n",
-			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims), credStatusLabel(cred))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n",
+			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims),
+			credValidityLabel(cred), credStatusLabel(cred))
 	}
 	for _, entry := range deferred {
 		// The credential type when the issuer's metadata named one, so a
@@ -107,7 +108,7 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 		if label == "" {
 			label = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t-\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t-\t-\t%s\n",
 			docString(entry, "id"), docString(entry, "format"), label, "deferred")
 	}
 	return tw.Flush()
@@ -176,11 +177,62 @@ func credStatusLabel(cred map[string]any) string {
 	return strings.Join(parts, ", ")
 }
 
+// credExpiry reads the expiry every credential listing carries. A credential
+// that states no lifetime has none, which is not the same as an expired one.
+func credExpiry(cred map[string]any) (time.Time, bool) {
+	raw := docString(cred, "expires_at")
+	if raw == "" {
+		return time.Time{}, false
+	}
+	when, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return when, true
+}
+
+// credValidityLabel is the list column: how much longer the credential is
+// good for, in the one unit worth reading. It floors, so it never claims more
+// time than there is.
+func credValidityLabel(cred map[string]any) string {
+	when, ok := credExpiry(cred)
+	if !ok {
+		return "-"
+	}
+	remaining := time.Until(when)
+	if remaining <= 0 {
+		return "expired"
+	}
+	switch {
+	case remaining >= 48*time.Hour:
+		return fmt.Sprintf("%dd", int(remaining.Hours()/24))
+	case remaining >= 2*time.Hour:
+		return fmt.Sprintf("%dh", int(remaining.Hours()))
+	case remaining >= time.Minute:
+		return fmt.Sprintf("%dm", int(remaining.Minutes()))
+	default:
+		return "<1m"
+	}
+}
+
 func printCredentialDoc(cred map[string]any, decoded bool) error {
 	raw := docString(cred, "raw")
 	if !decoded {
+		// The documented contract of this form is the credential string and
+		// nothing else, so that it can be piped.
 		fmt.Println(raw)
 		return nil
+	}
+	// The decoded payload states the expiry as a Unix timestamp, which is not
+	// an answer to "is this still good".
+	if !jsonOutput {
+		if when, ok := credExpiry(cred); ok {
+			validity := "expired " + when.Local().Format(time.RFC1123)
+			if time.Until(when) > 0 {
+				validity = "valid for " + credValidityLabel(cred) + ", until " + when.Local().Format(time.RFC1123)
+			}
+			fmt.Printf("Validity: %s\n\n", validity)
+		}
 	}
 	opts := output.Options{JSON: jsonOutput, NoColor: noColor, Verbose: verbose}
 	switch docString(cred, "format") {

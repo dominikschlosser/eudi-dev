@@ -609,6 +609,24 @@ header h1 {
   color: var(--text-dim);
 }
 
+.status-valid {
+  background: rgba(125, 125, 125, 0.15);
+  color: var(--text-dim);
+  cursor: help;
+}
+
+.status-expiring {
+  background: rgba(224, 175, 104, 0.2);
+  color: var(--yellow);
+  cursor: help;
+}
+
+.status-expired {
+  background: rgba(247, 118, 142, 0.2);
+  color: var(--red);
+  cursor: help;
+}
+
 .templates-list {
   display: flex;
   flex-direction: column;
