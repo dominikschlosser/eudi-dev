@@ -35,13 +35,16 @@
   // started the flow even though no request id can be in its URL yet. The
   // marker says so, which is what separates it from the uninvolved tabs the
   // pending banner exists for. It covers the resulting error too.
-  const schemeDispatch =
-    new URLSearchParams(window.location.search).get('consent') === 'await';
+  const params = new URLSearchParams(window.location.search);
+  const schemeDispatch = params.get('consent') === 'await';
+  // Coming back from an issuer sign-in: this tab started that flow, so its
+  // outcome is this tab's to report.
+  const returnedFromSignIn = params.get('signin') === 'done';
 
   const consentClaim = createClaim(90000, schemeDispatch);
   // Longer, because both run past a round trip to the issuer.
   const authorizeClaim = createClaim(120000);
-  const errorClaim = createClaim(120000, schemeDispatch);
+  const errorClaim = createClaim(120000, schemeDispatch || returnedFromSignIn);
 
   // State
   let credentials = [];
@@ -361,7 +364,7 @@
       // asked for it, so it is the one allowed to follow.
       if (isVCI) authorizeClaim.expect();
       // Whatever goes wrong with this submission is this tab's to report.
-      errorClaim.expect();
+      expectError();
 
       const resp = await fetch(endpoint, {
         method: 'POST',
@@ -1108,6 +1111,14 @@
   // presentError is the one way a wallet error reaches the user, whether it
   // arrived on the stream or was found stored on load. The claim lives here so
   // both routes cannot disagree about who the error belongs to.
+  // Claiming the next error also drops one still stored from before: a claim
+  // says the next failure is this tab's, and an older one is not it. Without
+  // this a later action inherits an error it had nothing to do with.
+  function expectError() {
+    errorClaim.expect();
+    fetch('/api/error', { method: 'DELETE' }).catch(() => {});
+  }
+
   function presentError(err) {
     if (!err || !err.message) return;
     if (!errorClaim.take()) return;
@@ -1350,7 +1361,7 @@
       // Approving an issuance is what may lead to an issuer login, so this
       // tab is the one allowed to follow it.
       if (isIssuance) authorizeClaim.expect();
-      errorClaim.expect();
+      expectError();
       denyBtn.disabled = true;
 
       try {

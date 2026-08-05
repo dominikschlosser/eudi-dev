@@ -235,7 +235,10 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 	// is still running server-side and finishes on its own, so send the
 	// visitor back to the wallet rather than leaving them on a dead end. The
 	// credential shows up there as soon as it lands.
-	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
+	// The marker claims the outcome for this tab. The sign-in navigated it to
+	// the issuer, so whatever claim it held is gone, and without one it would
+	// miss the report for the very flow it just completed.
+	http.Redirect(w, r, "/?focus=overview&signin=done", http.StatusSeeOther)
 }
 
 // handleOfferAPI processes a credential offer URI.
