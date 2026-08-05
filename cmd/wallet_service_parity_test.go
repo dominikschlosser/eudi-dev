@@ -63,7 +63,14 @@ func parityWallets(t *testing.T, seed func(*wallet.Wallet)) (local walletService
 	if err := servedStore.Save(served); err != nil {
 		t.Fatal(err)
 	}
-	srv := wallet.NewServer(served, 0, nil)
+	// A store without a save hook is a trap: withFreshStore reloads from the
+	// store on every request while triggerSave only calls onSave, so writes
+	// would be dropped by the next reload.
+	srv := wallet.NewServer(served, 0, func() {
+		if err := servedStore.Save(served); err != nil {
+			t.Errorf("saving the served wallet: %v", err)
+		}
+	})
 	srv.SetStore(servedStore)
 	srv.ShutdownFunc = func() {}
 	addr, err := srv.ListenAndServeBackground()
@@ -246,12 +253,7 @@ func parityCases() []parityCase {
 			}
 			return keysOf(imported)
 		}},
-		// SUSPECTED DIVERGENCE, not yet explained: removing a credential the
-		// same call just imported answers 404 against a running server. The
-		// import returns an id, so either the import is not persisted before
-		// the next request reloads the store, or the two disagree about which
-		// id identifies it. Enable this case when chasing it down.
-		{method: "RemoveCredential", skip: "suspected real divergence: remote remove of a just-imported credential returns 404", observe: func(t *testing.T, s walletService) any {
+		{method: "RemoveCredential", observe: func(t *testing.T, s walletService) any {
 			id := importedCredential(t, s)
 			before, err := s.Credentials()
 			if err != nil {
@@ -266,10 +268,7 @@ func parityCases() []parityCase {
 			}
 			return len(before) - len(after)
 		}},
-		// SUSPECTED DIVERGENCE, not yet explained: the delete count and what is
-		// left afterwards differ, most likely over how each backend treats the
-		// protected baseline credentials.
-		{method: "RemoveAllCredentials", skip: "suspected real divergence: delete count and remainder differ", observe: func(t *testing.T, s walletService) any {
+		{method: "RemoveAllCredentials", observe: func(t *testing.T, s walletService) any {
 			importedCredential(t, s)
 			deleted, err := s.RemoveAllCredentials()
 			if err != nil {

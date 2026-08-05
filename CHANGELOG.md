@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.19.9] - 2026-08-05
+## [1.19.10] - 2026-08-05
 
 ### Changed
 
@@ -13,9 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The deferred credential type still did not reach a local wallet.** 1.19.9 fixed the API response; the local store listing is built separately and was missed, so `wallet list` against a local store kept naming a waiting credential by the issuer's configuration id
 - **A deferred credential whose token had expired was retried hourly for a day.** The access token is minted for the credential request and expires in minutes, while an issuer may ask the wallet back in an hour, so a long deferral collects with a token the issuer has already refused. A rejected authorization (401, 403) was classed as worth another attempt, so the wallet kept asking until the 24 hour cap with no chance of succeeding. It now stops and says why. Minting a fresh token instead needs refresh token support, which the wallet does not have yet
+
+## [1.19.9] - 2026-08-05
+
+### Fixed
+
 - **An error from an issuer sign-in reached no tab, and then surfaced on the next unrelated action.** The tab that starts an authorization code flow navigates away to the issuer, so the claim that says "this failure is mine" was gone by the time the flow failed. Nothing showed the error, it stayed stored, and the next issuance picked it up instead: a working flow reporting the previous one's failure. The tab coming back from the sign-in now claims that outcome, and starting something new drops any error still stored from before
-- **The credential type added in 1.19.8 never reached the UI.** The deferred record carried it, but the API response and the local store listing are each built field by field and the two new ones were in neither list, so the wallet still named a waiting credential by the issuer's configuration id. Both now return them, and a test compares the two backends document by document: every management command runs against either a local store or a remote instance, and a field only one of them fills is invisible until a column shows the wrong thing
+- **The credential type added in 1.19.8 never reached the UI.** The deferred record carried it, but `GET /api/deferred` builds its response field by field and the two new ones were not in the list, so the wallet still listed a waiting credential by the issuer's configuration id. The endpoint now returns them
 
 ## [1.19.8] - 2026-08-05
 
