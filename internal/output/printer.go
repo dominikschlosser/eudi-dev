@@ -226,13 +226,97 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 		}
 		out["mso"] = msoOut
 	}
+	// The holder binding, summarized. The raw COSE_Key stays under
+	// mso.deviceKeyInfo, but integer labels and byte strings are not something
+	// a reader can identify a key by.
+	out["deviceKey"] = buildDeviceKeyJSON(doc)
 	if doc.DeviceSigned != nil && doc.DeviceSigned.DeviceAuth != nil {
 		out["deviceAuth"] = doc.DeviceSigned.DeviceAuth
+		out["deviceAuthType"] = deviceAuthType(doc)
 	}
 	return out
 }
 
 // PrintMDOC prints a decoded mDOC to the terminal.
+// buildDeviceKeyJSON summarizes the holder binding, or reports its absence.
+func buildDeviceKeyJSON(doc *mdoc.Document) map[string]any {
+	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.DeviceKeyInfo == nil {
+		return map[string]any{"bound": false}
+	}
+	out := map[string]any{"bound": true}
+	key, err := mdoc.DeviceKey(doc)
+	if err != nil {
+		out["error"] = err.Error()
+		return out
+	}
+	out["type"] = "EC"
+	out["curve"] = key.Curve.Params().Name
+	out["thumbprint"] = mdoc.DeviceKeyThumbprint(key)
+	return out
+}
+
+// deviceAuthType names how the holder authenticated a presentation.
+func deviceAuthType(doc *mdoc.Document) string {
+	switch {
+	case doc.DeviceSigned == nil:
+		return ""
+	case len(doc.DeviceSigned.RawDeviceSignature) > 0:
+		return "deviceSignature"
+	case doc.DeviceSigned.DeviceAuth["deviceMac"] != nil:
+		return "deviceMac"
+	default:
+		return "unknown"
+	}
+}
+
+// printDeviceKey reports the key the credential is bound to. An mdoc without
+// one cannot be presented with device authentication, which is worth saying
+// rather than leaving the section out.
+func printDeviceKey(doc *mdoc.Document, mso *mdoc.MSO, opts Options) {
+	if mso.DeviceKeyInfo == nil {
+		printSection("Device Key")
+		dimColor.Println("  none (the credential is not bound to a holder key)")
+		return
+	}
+	printSection("Device Key (holder binding)")
+	key, err := mdoc.DeviceKey(doc)
+	if err != nil {
+		printKV("Key", dimColor.Sprintf("unreadable: %v", err), 1)
+		printMap(mso.DeviceKeyInfo, 1)
+		return
+	}
+	printKV("Type", "EC "+key.Curve.Params().Name, 1)
+	if thumbprint := mdoc.DeviceKeyThumbprint(key); thumbprint != "" {
+		printKV("Thumbprint", thumbprint, 1)
+	}
+	if opts.Verbose {
+		printMap(mso.DeviceKeyInfo, 1)
+	}
+}
+
+// printDeviceAuth reports whether a presentation carries the holder's own
+// signature. Only a DeviceResponse has one: a bare credential is what an
+// issuer handed over, before any holder proved anything about it.
+func printDeviceAuth(doc *mdoc.Document, opts Options) {
+	if !doc.IsDeviceResponse {
+		return
+	}
+	printSection("Device Authentication")
+	if doc.DeviceSigned == nil || len(doc.DeviceSigned.DeviceAuth) == 0 {
+		dimColor.Println("  none (the response carries no holder signature)")
+		return
+	}
+	switch {
+	case len(doc.DeviceSigned.RawDeviceSignature) > 0:
+		printKV("Type", "deviceSignature (COSE_Sign1)", 1)
+		dimColor.Println("    signed over the session transcript of the request it answers")
+	case doc.DeviceSigned.DeviceAuth["deviceMac"] != nil:
+		printKV("Type", "deviceMac (COSE_Mac0)", 1)
+	default:
+		dimColor.Println("  present, but neither deviceSignature nor deviceMac")
+	}
+}
+
 func PrintMDOC(doc *mdoc.Document, opts Options) {
 	if opts.JSON {
 		PrintJSON(BuildMDOCJSON(doc))
@@ -273,12 +357,13 @@ func PrintMDOC(doc *mdoc.Document, opts Options) {
 			printMap(mso.Status, 1)
 		}
 
-		// Device Key (verbose only)
-		if mso.DeviceKeyInfo != nil && opts.Verbose {
-			printSection("Device Key")
-			printMap(mso.DeviceKeyInfo, 1)
-		}
+		// Device key: the holder binding. It is the same fact cnf carries in
+		// an SD-JWT, and whether a credential is bound to a key at all is not
+		// a detail worth hiding behind a flag.
+		printDeviceKey(doc, mso, opts)
 	}
+
+	printDeviceAuth(doc, opts)
 
 	// Claims by namespace
 	namespaces := sortedKeys(doc.NameSpaces)

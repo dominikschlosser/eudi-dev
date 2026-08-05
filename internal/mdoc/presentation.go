@@ -19,6 +19,7 @@ import (
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/base64"
 	"fmt"
 	"math/big"
 
@@ -210,4 +211,18 @@ func tag24Raw(encoded []byte) ([]byte, error) {
 		return nil, fmt.Errorf("wrapping in Tag 24: %w", err)
 	}
 	return wrapped, nil
+}
+
+// DeviceKeyThumbprint is the RFC 7638 JWK thumbprint of a device key, which
+// identifies it the same way a kid does elsewhere in the toolkit.
+func DeviceKeyThumbprint(key *ecdsa.PublicKey) string {
+	if key == nil {
+		return ""
+	}
+	canonical := fmt.Sprintf(`{"crv":%q,"kty":"EC","x":%q,"y":%q}`,
+		key.Curve.Params().Name,
+		base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
+		base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))))
+	sum := sha256.Sum256([]byte(canonical))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

@@ -783,6 +783,26 @@
       appendSection("Mobile Security Object", el, mso);
     }
 
+    // Holder binding. An mdoc is bound to a key the holder proves possession
+    // of when presenting, which is the same fact cnf carries in an SD-JWT, so
+    // it gets a section of its own rather than living inside the raw MSO.
+    if (data.deviceKey) {
+      const el = document.createElement("div");
+      if (!data.deviceKey.bound) {
+        el.appendChild(renderKV("Bound to a holder key", "no"));
+      } else if (data.deviceKey.error) {
+        el.appendChild(renderKV("Bound to a holder key", "yes"));
+        el.appendChild(renderKV("Key", "unreadable: " + data.deviceKey.error));
+      } else {
+        el.appendChild(renderKV("Type", data.deviceKey.type + " " + data.deviceKey.curve));
+        el.appendChild(renderKV("Thumbprint", data.deviceKey.thumbprint));
+      }
+      if (data.mso && data.mso.deviceKeyInfo) {
+        el.appendChild(createSubSection("COSE_Key", renderJSONBlock(data.mso.deviceKeyInfo)));
+      }
+      appendSection("Device Key (holder binding)", el, data.deviceKey);
+    }
+
     if (data.claims) {
       Object.keys(data.claims).sort().forEach((ns) => {
         const claims = data.claims[ns];
@@ -806,7 +826,12 @@
     }
 
     if (data.deviceAuth) {
-      appendSection("Device Auth", renderJSONBlock(data.deviceAuth), data.deviceAuth);
+      const el = document.createElement("div");
+      if (data.deviceAuthType) {
+        el.appendChild(renderKV("Type", data.deviceAuthType));
+      }
+      el.appendChild(createSubSection("COSE", renderJSONBlock(data.deviceAuth)));
+      appendSection("Device Authentication", el, data.deviceAuth);
     }
   }
 

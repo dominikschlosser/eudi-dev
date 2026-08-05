@@ -821,3 +821,34 @@ func TestRelativeTime(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildMDOCJSON_DeviceBinding covers the holder binding the decoder shows.
+// It used to be reachable only as a raw COSE_Key behind -v, and not at all in
+// the decoder UI, which made a bound credential indistinguishable from an
+// unbound one.
+func TestBuildMDOCJSON_DeviceBinding(t *testing.T) {
+	t.Run("no device key", func(t *testing.T) {
+		doc := &mdoc.Document{IssuerAuth: &mdoc.IssuerAuth{MSO: &mdoc.MSO{}}}
+		out := BuildMDOCJSON(doc)
+		key, ok := out["deviceKey"].(map[string]any)
+		if !ok {
+			t.Fatalf("deviceKey = %T, want an object", out["deviceKey"])
+		}
+		if key["bound"] != false {
+			t.Errorf("bound = %v, want false for a credential with no device key", key["bound"])
+		}
+	})
+
+	t.Run("unreadable device key", func(t *testing.T) {
+		doc := &mdoc.Document{IssuerAuth: &mdoc.IssuerAuth{MSO: &mdoc.MSO{
+			DeviceKeyInfo: map[string]any{"deviceKey": map[string]any{"1": int64(3)}},
+		}}}
+		key := BuildMDOCJSON(doc)["deviceKey"].(map[string]any)
+		if key["bound"] != true {
+			t.Error("a credential naming a device key is bound, even if it cannot be read")
+		}
+		if key["error"] == nil {
+			t.Error("an unreadable key should say why")
+		}
+	})
+}
