@@ -408,13 +408,20 @@ so the wallet automatically receives incoming protocol requests.`,
 				fmt.Printf(format+"\n", args...)
 			})
 
-			// Open browser UI for incoming interactive presentation and issuance
-			// flows. Not on a demo host: it is headless, and visitors get the
-			// consent UI through the browser redirect instead.
+			// Point the user at the consent UI when an interactive
+			// presentation or issuance arrives. On a desktop that means
+			// opening it; on a headless host the URL is all there is to give,
+			// so say where it is rather than claiming to open something.
+			// Not on a demo host: visitors get the consent UI through the
+			// browser redirect instead.
 			if !w.AutoAccept && !demo {
 				srv.SetOnUIRequest(func() {
 					url := fmt.Sprintf("http://localhost:%d/?focus=overview", port)
-					fmt.Printf("  Opening wallet UI: %s\n", url)
+					if hasDesktopSession() {
+						fmt.Printf("  Opening wallet UI: %s\n", url)
+					} else {
+						fmt.Printf("  Waiting for consent at: %s\n", url)
+					}
 					openBrowser(url)
 				})
 			}

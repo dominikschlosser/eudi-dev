@@ -686,6 +686,9 @@ func openBrowser(rawURL string) {
 		fmt.Fprintf(os.Stderr, "refusing to open %q: only http and https URLs\n", rawURL)
 		return
 	}
+	if !hasDesktopSession() {
+		return
+	}
 	switch runtime.GOOS {
 	case "darwin":
 		_ = exec.Command("open", rawURL).Start()
@@ -693,6 +696,21 @@ func openBrowser(rawURL string) {
 		_ = exec.Command("xdg-open", rawURL).Start()
 	case "windows":
 		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
+	}
+}
+
+// hasDesktopSession reports whether there is a desktop to open a browser on.
+// A wallet server on a headless host has none, and spawning a browser there
+// reaches nobody: printing the URL is all that helps.
+func hasDesktopSession() bool {
+	switch runtime.GOOS {
+	case "darwin":
+		// A Mac has a desktop unless this process arrived over SSH.
+		return os.Getenv("SSH_CONNECTION") == "" && os.Getenv("SSH_TTY") == ""
+	case "linux":
+		return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
+	default:
+		return true
 	}
 }
 

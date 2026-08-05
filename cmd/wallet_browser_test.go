@@ -14,7 +14,10 @@
 
 package cmd
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 // A URL handed to the browser can come from a remote wallet, and the opener
 // launches more than web pages, so anything but http(s) has to be refused.
@@ -36,5 +39,36 @@ func TestIsWebURL(t *testing.T) {
 		if got := isWebURL(tc.url); got != tc.want {
 			t.Errorf("isWebURL(%q) = %v, want %v", tc.url, got, tc.want)
 		}
+	}
+}
+
+// A wallet server on a headless host has no desktop to open a browser on, and
+// trying reaches nobody.
+func TestHasDesktopSession(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skipf("no session heuristic on %s", runtime.GOOS)
+	}
+	t.Setenv("SSH_CONNECTION", "")
+	t.Setenv("SSH_TTY", "")
+	t.Setenv("DISPLAY", "")
+	t.Setenv("WAYLAND_DISPLAY", "")
+
+	if runtime.GOOS == "linux" {
+		if hasDesktopSession() {
+			t.Error("a linux host with no display should not count as a desktop")
+		}
+		t.Setenv("DISPLAY", ":0")
+		if !hasDesktopSession() {
+			t.Error("a linux host with DISPLAY set should count as a desktop")
+		}
+		return
+	}
+
+	if !hasDesktopSession() {
+		t.Error("a local macOS session should count as a desktop")
+	}
+	t.Setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22")
+	if hasDesktopSession() {
+		t.Error("a macOS session arriving over SSH should not count as a desktop")
 	}
 }
