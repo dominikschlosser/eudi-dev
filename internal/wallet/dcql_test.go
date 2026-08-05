@@ -1078,3 +1078,108 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 		t.Fatalf("expected 0 matches (no x5c in credential), got %d", len(matches))
 	}
 }
+
+// credential_sets does two jobs: several entries ask for several credentials
+// at once, and the options inside one entry are alternatives. These cover the
+// first job, which the tests above did not.
+func TestEvaluateDCQL_CredentialSets_MultipleRequiredSets(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_sdjwt",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				"claims": []any{map[string]any{"path": []any{"given_name"}}},
+			},
+			map[string]any{
+				"id":     "pid_mdoc",
+				"format": "mso_mdoc",
+				"meta":   map[string]any{"doctype_value": "eu.europa.ec.eudi.pid.1"},
+				"claims": []any{map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "given_name"}}},
+			},
+		},
+		// Two separate sets, both required: the verifier wants both credentials.
+		"credential_sets": []any{
+			map[string]any{"required": true, "options": []any{[]any{"pid_sdjwt"}}},
+			map[string]any{"required": true, "options": []any{[]any{"pid_mdoc"}}},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 2 {
+		t.Fatalf("expected both credentials, got %d", len(matches))
+	}
+	seen := map[string]bool{}
+	for _, m := range matches {
+		seen[m.QueryID] = true
+	}
+	if !seen["pid_sdjwt"] || !seen["pid_mdoc"] {
+		t.Errorf("expected pid_sdjwt and pid_mdoc, got %v", seen)
+	}
+}
+
+func TestEvaluateDCQL_CredentialSets_OptionAskingForTwoCredentials(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_sdjwt",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				"claims": []any{map[string]any{"path": []any{"given_name"}}},
+			},
+			map[string]any{
+				"id":     "pid_mdoc",
+				"format": "mso_mdoc",
+				"meta":   map[string]any{"doctype_value": "eu.europa.ec.eudi.pid.1"},
+				"claims": []any{map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "given_name"}}},
+			},
+		},
+		// A single option listing two ids means both together satisfy it.
+		"credential_sets": []any{
+			map[string]any{"options": []any{[]any{"pid_sdjwt", "pid_mdoc"}}},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 2 {
+		t.Fatalf("an option naming two credentials should return both, got %d", len(matches))
+	}
+}
+
+func TestEvaluateDCQL_CredentialSets_OptionalSetIsSkipped(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_sdjwt",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+				"claims": []any{map[string]any{"path": []any{"given_name"}}},
+			},
+			map[string]any{
+				"id":     "mdl",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{"urn:eudi:mdl:1"}}, // not held
+			},
+		},
+		"credential_sets": []any{
+			map[string]any{"required": true, "options": []any{[]any{"pid_sdjwt"}}},
+			// The wallet holds no mDL, but the set is optional, so the query
+			// still succeeds with what it does hold.
+			map[string]any{"required": false, "options": []any{[]any{"mdl"}}},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+	if matches == nil {
+		t.Fatal("an unsatisfiable optional set must not fail the whole query")
+	}
+	if len(matches) != 1 || matches[0].QueryID != "pid_sdjwt" {
+		t.Fatalf("expected only pid_sdjwt, got %d matches: %+v", len(matches), matches)
+	}
+}
