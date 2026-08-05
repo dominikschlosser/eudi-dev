@@ -475,6 +475,45 @@ Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accep
 
 In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`); an API call blocks until the request is approved or denied — in the UI or via `POST /api/requests/{id}/approve`.
 
+## Deferred issuance
+
+An issuer that cannot produce the credential straight away answers the credential request with a `transaction_id` instead, and the wallet collects the credential from the `deferred_credential_endpoint` later. Both issuance flows handle this.
+
+While the credential is not ready the issuer answers the deferred request with the `issuance_pending` error and an `interval` saying how long to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet honors that interval, and also accepts issuers that signal pending by echoing the `transaction_id` back in a success-shaped response.
+
+A deferral short enough to wait out is waited out, up to **90 seconds**, so a quick one still returns the credential from the call that started the issuance. Accepting an offer is one of the few requests that can legitimately run that long, so the wallet server's write timeout, the CLI's remote client, and the consent approval wait are all sized above it.
+
+### Longer deferrals
+
+An issuer may defer for hours. Past the 90 seconds the wallet stops waiting and records the transaction instead, and `wallet serve` collects it in the background on the interval the issuer asked for. Nothing failed, and there is nothing to click: the issuer named a time to come back, so the wallet comes back then.
+
+Accepting such an offer answers `HTTP 202` with the outcome:
+
+```json
+{
+  "pending": true,
+  "issuer": "https://playground.animo.id/oid4vci/a27a9f50-...",
+  "transaction_id": "6a02ebb4-a256-4c71-a0dc-af1e5a7c1495",
+  "retry_interval": "1m0s"
+}
+```
+
+The wallet UI lists it under **Awaiting issuance** and the credential appears on its own once collected. From the CLI:
+
+```bash
+eudi wallet deferred                 # what is outstanding, and when the next attempt is
+eudi wallet deferred check [id]      # ask the issuer now instead of at the next attempt
+eudi wallet deferred abandon <id>    # stop collecting it
+```
+
+**Check now** makes one request immediately, for when the credential is known to be ready or the exchange is what you want to watch. It reports what came back: the credential, that the issuer is still working, or that the issuance was refused. Its next scheduled attempt moves on by one interval, exactly as if the poller had made it. The UI has the same on each entry.
+
+**Abandon** drops the entry from the schedule. The transaction stays valid at the issuer; the wallet simply stops asking, rather than waiting out the 24 hours after which it gives up on its own.
+
+Pending issuances are persisted, so a wallet that restarts keeps collecting. A record is dropped when the credential arrives, when the issuer answers something that will not improve by asking again (a rejected token, an unknown transaction), when it is abandoned, or after 24 hours.
+
+Collecting happens in `wallet serve`. A one-shot `wallet accept` against the local store has nowhere to run a poller, so it reports the deferral and says so.
+
 ## Wallet attestation
 
 On OID4VCI token requests the wallet authenticates itself with a wallet attestation ([OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)), sent as the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers. The attestation is signed by the wallet's own CA and carries only the leaf in `x5c`, so an issuer verifying it needs the CA from `wallet ca-cert` as its trust anchor.

@@ -624,6 +624,20 @@ func processCredentialOffer(uri string, txCode string) error {
 		return fmt.Errorf("saving wallet: %w", err)
 	}
 
+	if result.Pending {
+		// The issuer took the request but is not ready. Without a wallet
+		// server there is nothing to collect it later, so say so rather than
+		// leave the impression that it will turn up.
+		fmt.Printf("Issuer %s deferred the credential (transaction %s, retry every %s)\n",
+			result.Issuer, result.TransactionID, result.RetryInterval)
+		fmt.Println("Run 'eudi wallet serve' and accept the offer there to have the wallet collect it in the background.")
+		if jsonOutput {
+			data, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(data))
+		}
+		return nil
+	}
+
 	fmt.Printf("Received %s credential from %s (ID: %s)\n", result.Format, result.Issuer, result.CredentialID)
 	if result.VerificationDetail != "" {
 		fmt.Printf("Verification: %s", result.VerificationDetail)

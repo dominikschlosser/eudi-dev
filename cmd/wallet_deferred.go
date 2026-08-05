@@ -1,0 +1,201 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
+)
+
+func walletDeferredCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "deferred",
+		Short: "Credentials an issuer deferred and the wallet is still collecting",
+		Long: `Lists the credentials an issuer accepted but was not ready to hand over.
+
+An issuer that defers a credential answers with a transaction id and an
+interval to come back after, and a running wallet server collects it on that
+interval by itself. Entries leave this list when the credential arrives.
+
+Use "check" to ask an issuer right now instead of waiting for the next
+scheduled attempt, and "abandon" to stop collecting one.
+
+All of these need a running wallet server, because that is where the
+collecting happens.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := deferredClient()
+			if err != nil {
+				return err
+			}
+			pending, err := c.DeferredIssuances()
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				data, err := json.MarshalIndent(pending, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+			if len(pending) == 0 {
+				fmt.Println("No deferred credentials.")
+				return nil
+			}
+			for _, p := range pending {
+				printDeferred(p)
+			}
+			return nil
+		},
+	}
+	cmd.AddCommand(walletDeferredCheckCmd())
+	cmd.AddCommand(walletDeferredAbandonCmd())
+	return cmd
+}
+
+func walletDeferredCheckCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "check [id]",
+		Short: "Ask the issuer for a deferred credential now",
+		Long: `Makes one deferred credential request immediately, instead of waiting for
+the next scheduled attempt.
+
+Without an id, every deferred credential is checked. The schedule is unchanged
+except that a checked entry's next attempt moves on by its interval, the same
+as if the poller had done it.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := deferredClient()
+			if err != nil {
+				return err
+			}
+			ids := args
+			if len(ids) == 0 {
+				pending, err := c.DeferredIssuances()
+				if err != nil {
+					return err
+				}
+				if len(pending) == 0 {
+					fmt.Println("No deferred credentials.")
+					return nil
+				}
+				for _, p := range pending {
+					if id, ok := p["id"].(string); ok {
+						ids = append(ids, id)
+					}
+				}
+			}
+			for _, id := range ids {
+				result, err := c.CollectDeferred(id)
+				if err != nil {
+					return err
+				}
+				if jsonOutput {
+					data, _ := json.MarshalIndent(result, "", "  ")
+					fmt.Println(string(data))
+					continue
+				}
+				switch {
+				case result["collected"] == true:
+					fmt.Printf("Collected %v credential (ID: %v)\n", result["format"], result["credential_id"])
+				case result["abandoned"] == true:
+					fmt.Printf("Gave up on %s: %v\n", id, result["reason"])
+				default:
+					fmt.Printf("Still pending. Next attempt in %v", result["interval"])
+					if reason, ok := result["reason"].(string); ok && reason != "" {
+						fmt.Printf(" (%s)", reason)
+					}
+					fmt.Println()
+				}
+			}
+			return nil
+		},
+	}
+}
+
+func walletDeferredAbandonCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "abandon <id>",
+		Short: "Stop collecting a deferred credential",
+		Long: `Drops a deferred credential from the wallet's collection schedule.
+
+The transaction stays valid at the issuer; the wallet simply stops asking for
+it. Use this for an issuance you no longer want, rather than waiting out the
+24 hours after which the wallet gives up on its own.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := deferredClient()
+			if err != nil {
+				return err
+			}
+			result, err := c.AbandonDeferred(args[0])
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				data, _ := json.MarshalIndent(result, "", "  ")
+				fmt.Println(string(data))
+				return nil
+			}
+			fmt.Printf("Stopped collecting the credential from %v (transaction %v)\n",
+				result["issuer"], result["transaction_id"])
+			return nil
+		},
+	}
+}
+
+// deferredClient returns the remote client, or explains why there is none.
+// Deferred credentials are collected by the wallet server, so without one
+// there is nothing to talk to.
+func deferredClient() (*remote.Client, error) {
+	c, err := remoteClientIfConfigured()
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, fmt.Errorf("no wallet server is running: deferred credentials are collected by 'eudi wallet serve'")
+	}
+	return c, nil
+}
+
+func printDeferred(p map[string]any) {
+	name, _ := p["credential_configuration_id"].(string)
+	if name == "" {
+		name, _ = p["format"].(string)
+	}
+	fmt.Printf("%s\n", name)
+	fmt.Printf("  ID:             %v\n", p["id"])
+	fmt.Printf("  Issuer:         %v\n", p["issuer"])
+	fmt.Printf("  Transaction:    %v\n", p["transaction_id"])
+	fmt.Printf("  Retry interval: %v\n", p["interval"])
+	if next, ok := p["next_attempt_at"].(string); ok {
+		if parsed, err := time.Parse(time.RFC3339, next); err == nil {
+			fmt.Printf("  Next attempt:   %s\n", parsed.Local().Format(time.Kitchen))
+		}
+	}
+	if attempts, ok := p["attempts"].(float64); ok && attempts > 0 {
+		fmt.Printf("  Attempts:       %d\n", int(attempts))
+	}
+	if lastErr, ok := p["last_error"].(string); ok && lastErr != "" {
+		fmt.Printf("  Last error:     %s\n", lastErr)
+	}
+}

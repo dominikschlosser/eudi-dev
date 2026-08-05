@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
@@ -252,23 +254,23 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
 
-	if txID, _ := credResp["transaction_id"].(string); txID != "" {
-		deferredEndpoint, _ := metadata["deferred_credential_endpoint"].(string)
-		if deferredEndpoint == "" {
-			return nil, fmt.Errorf("deferred credential response missing deferred_credential_endpoint metadata")
-		}
-		w.addProtocolLog("issuance", "deferred_credential_request", fmt.Sprintf("Request deferred credential from %s", deferredEndpoint), true, map[string]any{
-			"direction":      "outbound",
-			"method":         "POST",
-			"url":            deferredEndpoint,
-			"endpoint":       "deferred_credential",
-			"transaction_id": txID,
-		})
-		credResp, err = requestDeferredCredentialWithDPoP(deferredEndpoint, accessToken, authScheme, txID, w.HolderKey, w.HolderKey, &nonces.resource)
-		w.addProtocolLog("issuance", "deferred_credential_response", fmt.Sprintf("Deferred credential response from %s", deferredEndpoint), err == nil, responseMapLogDetails(deferredEndpoint, "deferred_credential", credResp, err))
-		if err != nil {
-			return nil, fmt.Errorf("requesting deferred credential: %w", err)
-		}
+	// This flow always sends DPoP: it refuses issuer metadata without it.
+	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
+		metadata:    metadata,
+		issuer:      offer.CredentialIssuer,
+		configID:    configID,
+		format:      resolveCredentialFormat(metadata, credentialConfigurationID),
+		accessToken: accessToken,
+		authScheme:  authScheme,
+		dpopKey:     w.HolderKey,
+		proofKeys:   proofKeys,
+		nonce:       &nonces.resource,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pending != nil {
+		return w.recordPendingIssuance(pending), nil
 	}
 
 	credential, err := selectHolderBoundCredential(credResp, proofKeys)
@@ -697,13 +699,16 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, a
 	if err != nil {
 		return nil, err
 	}
-	respBody, _, err := doDPoPRequest("POST", endpoint, contentType, credentialAccept(credentialResponseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
-	if err != nil {
-		return nil, err
+	respBody, _, reqErr := doDPoPRequest("POST", endpoint, contentType, credentialAccept(credentialResponseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
+	out, parseErr := parseCredentialResponseBody(respBody, holderKey)
+	if reqErr != nil {
+		// The parsed error response is returned alongside the failure: a
+		// credential request refused for a stale proof answers with the
+		// c_nonce to rebuild it with.
+		return out, reqErr
 	}
-	out, err := parseCredentialResponseBody(respBody, holderKey)
-	if err != nil {
-		return nil, err
+	if parseErr != nil {
+		return nil, parseErr
 	}
 	if errMsg, _ := out["error"].(string); errMsg != "" {
 		desc, _ := out["error_description"].(string)
@@ -712,34 +717,158 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, a
 	return out, nil
 }
 
-func requestDeferredCredentialWithDPoP(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+// deferredContext carries what a deferred credential request needs, both for
+// the poll that happens inside the issuance flow and for the record left
+// behind when the issuer wants more time than the flow can wait.
+type deferredContext struct {
+	metadata         map[string]any
+	issuer           string
+	configID         string
+	format           string
+	deferredEndpoint string
+	accessToken      string
+	authScheme       string
+	dpopKey          *ecdsa.PrivateKey
+	proofKeys        []*ecdsa.PrivateKey
+	nonce            *string
+}
+
+// resolveDeferredCredential completes an issuance the issuer deferred. A
+// credential response carrying a transaction_id and no credential means the
+// credential is not ready, and that transaction_id is what claims it later
+// from the deferred credential endpoint. A response that already carries the
+// credential is returned untouched, so both issuance flows can call this
+// unconditionally.
+//
+// A short deferral is waited out here, because a caller that gets its
+// credential back from the call it made is the better outcome. When the issuer
+// wants longer than that, the poll stops and a PendingIssuance is returned for
+// the caller to hand to the background poller: the issuance is not finished,
+// but it has not failed either.
+func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *PendingIssuance, error) {
+	txID, _ := credResp["transaction_id"].(string)
+	if txID == "" {
+		return credResp, nil, nil
+	}
+	ctx.deferredEndpoint, _ = ctx.metadata["deferred_credential_endpoint"].(string)
+	if ctx.deferredEndpoint == "" {
+		return nil, nil, fmt.Errorf("issuer deferred the credential but published no deferred_credential_endpoint")
+	}
+
+	w.addProtocolLog("issuance", "deferred_credential_request", fmt.Sprintf("Request deferred credential from %s", ctx.deferredEndpoint), true, map[string]any{
+		"direction":      "outbound",
+		"method":         "POST",
+		"url":            ctx.deferredEndpoint,
+		"endpoint":       "deferred_credential",
+		"transaction_id": txID,
+	})
+	out, err := requestDeferredCredentialWithDPoP(ctx.deferredEndpoint, ctx.accessToken, ctx.authScheme, txID, ctx.dpopKey, w.HolderKey, ctx.nonce)
+	w.addProtocolLog("issuance", "deferred_credential_response", fmt.Sprintf("Deferred credential response from %s", ctx.deferredEndpoint), err == nil, responseMapLogDetails(ctx.deferredEndpoint, "deferred_credential", out, err))
+	if err == nil {
+		return out, nil, nil
+	}
+
+	var stillPending deferralTooLongError
+	if errors.As(err, &stillPending) {
+		pending, buildErr := newPendingIssuance(ctx, txID, stillPending.interval)
+		if buildErr != nil {
+			return nil, nil, buildErr
+		}
+		return nil, pending, nil
+	}
+	return nil, nil, fmt.Errorf("requesting deferred credential: %w", err)
+}
+
+// deferredPollInterval is used when the issuer names no interval of its own.
+const deferredPollInterval = 5 * time.Second
+
+// deferralTooLongError says the issuer wants more time than the flow that
+// started the issuance is willing to hold its caller for. It is not a failure:
+// the transaction is still good, and the interval says when to come back.
+type deferralTooLongError struct {
+	transactionID string
+	interval      time.Duration
+}
+
+func (e deferralTooLongError) Error() string {
+	return fmt.Sprintf(
+		"credential is still pending after %s: the issuer asks to retry every %s with transaction_id %s",
+		config.DeferredCredentialMaxWait, e.interval, e.transactionID)
+}
+
+// deferredCredentialAttempt makes exactly one deferred credential request.
+// The credential is returned when it is ready; a deferralTooLongError carries
+// the interval when the issuer is still working, whatever that interval says,
+// because deciding whether to wait belongs to the caller.
+func deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	body, err := json.Marshal(map[string]any{"transaction_id": transactionID})
 	if err != nil {
 		return nil, fmt.Errorf("marshaling deferred credential request: %w", err)
 	}
+	respBody, _, reqErr := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
+	out, parseErr := parseCredentialResponseBody(respBody, holderKey)
+	if parseErr != nil {
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		return nil, fmt.Errorf("parsing deferred credential response: %w", parseErr)
+	}
+
+	if pending, interval := deferredIssuancePending(out); pending {
+		return nil, deferralTooLongError{transactionID: transactionID, interval: interval}
+	}
+	if errMsg, _ := out["error"].(string); errMsg != "" {
+		desc, _ := out["error_description"].(string)
+		return nil, fmt.Errorf("deferred credential error: %s: %s", errMsg, desc)
+	}
+	if reqErr != nil {
+		return nil, reqErr
+	}
+	return out, nil
+}
+
+// requestDeferredCredentialWithDPoP collects a deferred credential inside the
+// issuance flow, waiting out a deferral short enough to be worth holding the
+// caller for. A longer one comes back as a deferralTooLongError, which is the
+// flow's cue to hand the transaction to the background poller instead.
+func requestDeferredCredentialWithDPoP(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+	deadline := time.Now().Add(config.DeferredCredentialMaxWait)
 	for {
-		respBody, _, err := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
-		if err != nil {
+		out, err := deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID, dpopKey, holderKey, nonce)
+		if err == nil {
+			return out, nil
+		}
+		var stillPending deferralTooLongError
+		if !errors.As(err, &stillPending) {
 			return nil, err
 		}
-		out, err := parseCredentialResponseBody(respBody, holderKey)
-		if err != nil {
-			return nil, fmt.Errorf("parsing deferred credential response: %w", err)
+		if time.Now().Add(stillPending.interval).After(deadline) {
+			return nil, stillPending
 		}
-		if txID, _ := out["transaction_id"].(string); txID != "" {
-			interval := 1
-			if raw, ok := out["interval"].(float64); ok && raw >= 1 {
-				interval = int(raw)
-			}
-			time.Sleep(time.Duration(interval) * time.Second)
-			continue
-		}
-		if errMsg, _ := out["error"].(string); errMsg != "" {
-			desc, _ := out["error_description"].(string)
-			return nil, fmt.Errorf("deferred credential error: %s: %s", errMsg, desc)
-		}
-		return out, nil
+		time.Sleep(stillPending.interval)
 	}
+}
+
+// deferredIssuancePending reports whether a deferred credential response says
+// the credential is not ready yet, and how long to wait before asking again.
+//
+// OID4VCI 1.0 §9.3 answers a deferred request for a credential that is not
+// ready with the issuance_pending error and an optional interval, so the
+// pending state arrives as an HTTP error rather than as a success body. Some
+// issuers instead echo the transaction_id back in a success-shaped response
+// carrying no credential, which means the same thing, so both are accepted.
+func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
+	interval := deferredPollInterval
+	if seconds, ok := numericValue(out["interval"]); ok && seconds >= 1 {
+		interval = time.Duration(seconds) * time.Second
+	}
+	if code, _ := out["error"].(string); code == "issuance_pending" {
+		return true, interval
+	}
+	if txID, _ := out["transaction_id"].(string); txID != "" && len(credentialStringsFromResponse(out)) == 0 {
+		return true, interval
+	}
+	return false, 0
 }
 
 func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
@@ -839,7 +968,10 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 			continue
 		}
 		if resp.StatusCode >= 400 {
-			return nil, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+			// The body travels with the error: an OID4VCI error response
+			// carries members the caller has to act on, such as a c_nonce to
+			// rebuild a proof with or issuance_pending and its interval.
+			return respBody, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		}
 		return respBody, resp.StatusCode, nil
 	}

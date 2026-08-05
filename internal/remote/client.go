@@ -26,6 +26,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // Client calls the management REST API of a running wallet server.
@@ -45,6 +47,14 @@ func NewClient(baseURL string) *Client {
 // do runs a request and decodes the JSON response into out (when out is not
 // nil). Non-2xx responses become errors carrying the server's error message.
 func (c *Client) do(method, path string, body any, out any) error {
+	return c.doWithTimeout(0, method, path, body, out)
+}
+
+// doWithTimeout is do with a per-request deadline, for the calls that
+// legitimately outlast a normal round trip. Accepting a credential offer is
+// one: the issuer may defer the credential, and the wallet then polls for it.
+// A zero timeout keeps the client's own default.
+func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body any, out any) error {
 	var reader io.Reader
 	contentType := ""
 	switch b := body.(type) {
@@ -68,7 +78,13 @@ func (c *Client) do(method, path string, body any, out any) error {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := c.HTTP.Do(req)
+	client := c.HTTP
+	if timeout > 0 && client != nil && client.Timeout < timeout {
+		withDeadline := *client
+		withDeadline.Timeout = timeout
+		client = &withDeadline
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("calling %s: %w", c.BaseURL+path, err)
 	}
@@ -234,7 +250,32 @@ func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	if txCode != "" {
 		body["tx_code"] = txCode
 	}
-	err := c.do(http.MethodPost, "/api/offers", body, &out)
+	// An issuer can defer the credential, and the wallet polls for it, so this
+	// call waits as long as the wallet server is willing to.
+	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/offers", body, &out)
+	return out, err
+}
+
+// DeferredIssuances lists the credentials the remote wallet is still
+// collecting from their issuers.
+func (c *Client) DeferredIssuances() ([]map[string]any, error) {
+	var out []map[string]any
+	err := c.do(http.MethodGet, "/api/deferred", nil, &out)
+	return out, err
+}
+
+// CollectDeferred asks the remote wallet to make one deferred credential
+// request now, rather than at the next scheduled attempt.
+func (c *Client) CollectDeferred(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/deferred/"+id+"/collect", nil, &out)
+	return out, err
+}
+
+// AbandonDeferred stops the remote wallet collecting a deferred credential.
+func (c *Client) AbandonDeferred(id string) (map[string]any, error) {
+	var out map[string]any
+	err := c.do(http.MethodDelete, "/api/deferred/"+id, nil, &out)
 	return out, err
 }
 

@@ -33,6 +33,21 @@ const (
 
 	// ConsentTimeout is how long the wallet waits for interactive consent before timing out.
 	ConsentTimeout = 5 * time.Minute
+
+	// DeferredCredentialMaxWait bounds how long an issuance the issuer
+	// deferred is polled before the wallet gives up and reports the pending
+	// transaction. An issuer may defer for a day, so something has to stop
+	// waiting; the shortest deferral worth testing against is a minute, so the
+	// bound sits above that.
+	DeferredCredentialMaxWait = 90 * time.Second
+
+	// SlowRequestTimeout covers the requests that legitimately outlast a
+	// normal round trip, which is every one that can end up polling a deferred
+	// issuance: accepting a credential offer, and approving the consent
+	// request for one. It bounds the wallet server's response write, the
+	// remote CLI client, and the consent approval wait, so none of the three
+	// cuts off an issuance the other two are still willing to wait for.
+	SlowRequestTimeout = DeferredCredentialMaxWait + 30*time.Second
 )
 
 // BaseDir returns the tool's state directory. Resolution order: the

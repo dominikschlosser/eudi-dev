@@ -42,6 +42,7 @@ type walletJSON struct {
 	Credentials        []StoredCredential      `json:"credentials"`
 	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
 	Log                []LogEntry              `json:"log,omitempty"`
+	PendingIssuances   []PendingIssuance       `json:"pending_issuances,omitempty"`
 	StatusEntries      map[string]StatusEntry  `json:"status_entries,omitempty"`
 	StatusListCounter  int                     `json:"status_list_counter,omitempty"`
 	BaseURL            string                  `json:"base_url,omitempty"`
@@ -173,6 +174,7 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 	}
 
 	w.Credentials = wj.Credentials
+	w.PendingIssuances = wj.PendingIssuances
 	w.IssuedAttestations = dedupeIssuedAttestations(wj.IssuedAttestations)
 	w.Log = s.filterLogEntries(wj.Log)
 	w.StatusEntries = wj.StatusEntries
@@ -199,6 +201,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	creds := w.GetCredentials()
 	w.mu.RLock()
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
+	pendingIssuances := append([]PendingIssuance(nil), w.PendingIssuances...)
 	logEntries := s.filterLogEntries(w.Log)
 	statusEntries := w.StatusEntries
 	statusListCounter := w.StatusListCounter
@@ -207,6 +210,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	w.mu.RUnlock()
 	wj := walletJSON{
 		Credentials:        creds,
+		PendingIssuances:   pendingIssuances,
 		IssuedAttestations: issuedAttestations,
 		Log:                logEntries,
 		StatusEntries:      statusEntries,

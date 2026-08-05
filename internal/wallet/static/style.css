@@ -974,6 +974,56 @@ header h1 {
   word-break: break-all;
 }
 
+/* Credentials an issuer deferred, still being collected. */
+.deferred-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.deferred-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+}
+.deferred-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.deferred-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.deferred-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.deferred-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+.deferred-error {
+  color: var(--red);
+}
+.deferred-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.btn-sm {
+  font-size: 10px;
+  padding: 2px 8px;
+}
+
 /* Transaction code entry, for an offer that requires one. */
 .offer-tx-code {
   margin: 10px 0 4px;

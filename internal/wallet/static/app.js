@@ -72,6 +72,86 @@
   const consentDialog = document.getElementById('consent-dialog');
 
   // Load credentials
+  // Credentials an issuer deferred. The wallet collects them on the interval
+  // the issuer asked for, so this section reports what is outstanding rather
+  // than offering a button: there is nothing for a person to do.
+  async function loadDeferred() {
+    try {
+      const resp = await fetch('/api/deferred');
+      const pending = await resp.json();
+      const section = document.getElementById('deferred-section');
+      const list = document.getElementById('deferred-list');
+      if (!section || !list) return;
+      if (!Array.isArray(pending) || pending.length === 0) {
+        section.hidden = true;
+        list.innerHTML = '';
+        return;
+      }
+      section.hidden = false;
+      list.innerHTML = pending.map(p => {
+        const name = p.credential_configuration_id || p.format || 'Credential';
+        const next = p.next_attempt_at ? new Date(p.next_attempt_at) : null;
+        const when = next && !isNaN(next) ? next.toLocaleTimeString() : '';
+        return '<div class="deferred-item" data-id="' + escHtml(p.id) + '">' +
+          '<div class="deferred-item-head">' +
+            '<span class="deferred-badge">Deferred</span>' +
+            '<span class="deferred-name">' + escHtml(name) + '</span>' +
+          '</div>' +
+          '<div class="deferred-meta">' + escHtml(p.issuer || '') + '</div>' +
+          '<div class="deferred-meta">' +
+            'The issuer asked the wallet to check back every ' + escHtml(p.interval || '') +
+            (when ? '. Next attempt at ' + escHtml(when) : '') +
+            (p.attempts ? ' (' + p.attempts + ' so far)' : '') +
+          '</div>' +
+          (p.last_error ? '<div class="deferred-meta deferred-error">' + escHtml(p.last_error) + '</div>' : '') +
+          '<div class="deferred-actions">' +
+            '<button class="btn btn-sm deferred-check" data-id="' + escHtml(p.id) + '">Check now</button>' +
+            '<button class="btn btn-sm btn-danger deferred-abandon" data-id="' + escHtml(p.id) + '">Abandon</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      // Checking asks the issuer immediately instead of waiting for the next
+      // scheduled attempt. Abandoning stops the wallet asking at all; the
+      // transaction stays valid at the issuer.
+      list.querySelectorAll('.deferred-check').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = 'Checking...';
+          try {
+            const resp = await fetch('/api/deferred/' + encodeURIComponent(btn.dataset.id) + '/collect', { method: 'POST' });
+            const result = await resp.json();
+            if (result.abandoned) {
+              showErrorDialog('Deferred credential was not issued', result.reason || 'The issuer refused it.');
+            }
+            await loadDeferred();
+            await loadCredentials();
+            await loadLog();
+          } catch (e) {
+            console.error('Checking a deferred credential failed:', e);
+            btn.disabled = false;
+            btn.textContent = 'Check now';
+          }
+        });
+      });
+      list.querySelectorAll('.deferred-abandon').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await fetch('/api/deferred/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' });
+            await loadDeferred();
+            await loadLog();
+          } catch (e) {
+            console.error('Abandoning a deferred credential failed:', e);
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      console.error('Loading deferred issuances failed:', e);
+    }
+  }
+
   async function loadCredentials() {
     try {
       const offset = credentialPage * CREDENTIALS_PER_PAGE;
@@ -1002,6 +1082,7 @@
       clearTimeout(stateRefresh);
       stateRefresh = setTimeout(() => {
         loadCredentials();
+        loadDeferred();
         loadLog();
         if (demoMode) refreshPendingBanner();
       }, 300);
@@ -1284,6 +1365,15 @@
         });
         const result = await resp.json();
         if (isIssuance) {
+          // The issuer deferred the credential. Nothing failed, so this must
+          // not read as a failure: the wallet keeps collecting it on the
+          // interval the issuer asked for, and it appears once it arrives.
+          if (result.pending) {
+            consentOverlay.classList.remove('active');
+            await loadDeferred();
+            await loadLog();
+            return;
+          }
           if (!resp.ok || result.error || (result.status_code && result.status_code >= 400)) {
             const detail = result.error || ('HTTP ' + (result.status_code || resp.status));
             showErrorDialog('Credential issuance failed', detail);
@@ -1550,6 +1640,7 @@
   }
   const loadAppConfigPromise = loadAppConfig();
   loadCredentials();
+  loadDeferred();
   loadLog();
   loadAppConfigPromise.then(loadPendingRequests);
   connectSSE();

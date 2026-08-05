@@ -63,6 +63,12 @@ type IssuanceResult struct {
 	VerificationStatus string `json:"verification_status,omitempty"`
 	VerificationDetail string `json:"verification_detail,omitempty"`
 	Error              string `json:"error,omitempty"`
+	// Pending marks an issuance the issuer deferred. The credential is not in
+	// the wallet yet and nothing went wrong: TransactionID identifies the
+	// deferred issuance and RetryInterval is how often the wallet retries it.
+	Pending       bool   `json:"pending,omitempty"`
+	TransactionID string `json:"transaction_id,omitempty"`
+	RetryInterval string `json:"retry_interval,omitempty"`
 	// Imported is the credential this flow stored. The server keeps it so it
 	// can put the credential back if a concurrent store reload dropped it
 	// before the save, which an authorization code flow invites: it stays
@@ -385,6 +391,24 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	if credJSON, err := json.MarshalIndent(credResp, "", "  "); err == nil {
 		log.Printf("[VCI] Credential response:\n%s", credJSON)
+	}
+
+	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
+		metadata:    metadata,
+		issuer:      offer.CredentialIssuer,
+		configID:    configID,
+		format:      credFormat,
+		accessToken: accessToken,
+		authScheme:  authScheme,
+		dpopKey:     dpopKey,
+		proofKeys:   proofKeys,
+		nonce:       &nonces.resource,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pending != nil {
+		return w.recordPendingIssuance(pending), nil
 	}
 
 	credential, err := selectHolderBoundCredential(credResp, proofKeys)

@@ -34,6 +34,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
@@ -149,6 +150,9 @@ func (s *Server) setupRoutes() {
 
 	// API: credential management
 	s.mux.HandleFunc("GET /api/credentials", s.withFreshStore(s.handleListCredentials))
+	s.mux.HandleFunc("GET /api/deferred", s.withFreshStore(s.handleListDeferred))
+	s.mux.HandleFunc("POST /api/deferred/{id}/collect", s.withFreshStore(s.handleCollectDeferred))
+	s.mux.HandleFunc("DELETE /api/deferred/{id}", s.withFreshStore(s.handleAbandonDeferred))
 	s.mux.HandleFunc("POST /api/credentials", s.withFreshStore(s.handleImportCredential))
 	s.mux.HandleFunc("DELETE /api/credentials", s.withFreshStore(s.handleDeleteAllCredentials))
 	s.mux.HandleFunc("GET /api/credentials/{id}", s.withFreshStore(s.handleGetCredential))
@@ -244,13 +248,14 @@ func (s *Server) ListenAndServe() error {
 		Addr:         fmt.Sprintf(":%d", s.port),
 		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: config.SlowRequestTimeout,
 		IdleTimeout:  120 * time.Second,
 	}
 	if err := s.startIssuerTLSServer(); err != nil {
 		return err
 	}
 	s.startDemoReset()
+	defer s.StartDeferredPoller()()
 	return s.httpSrv.ListenAndServe()
 }
 
@@ -264,7 +269,7 @@ func (s *Server) ListenAndServeBackground() (string, error) {
 	s.httpSrv = &http.Server{
 		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: config.SlowRequestTimeout,
 		IdleTimeout:  120 * time.Second,
 	}
 	if err := s.startIssuerTLSServer(); err != nil {
@@ -369,6 +374,7 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
 	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
+	s.wallet.PendingIssuances = append([]PendingIssuance(nil), reloaded.PendingIssuances...)
 	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
 	s.wallet.StatusListCounter = reloaded.StatusListCounter
 	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)
@@ -423,7 +429,7 @@ func (s *Server) startIssuerTLSServer() error {
 	s.issuerSrv = &http.Server{
 		Handler:      s.Handler(),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: config.SlowRequestTimeout,
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -840,6 +846,14 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 			return
 		}
 
+		if result.Pending {
+			s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
+			s.persistWallet()
+			consentReq.SubmissionCh <- SubmissionResult{Pending: true, TransactionID: result.TransactionID, RetryInterval: result.RetryInterval}
+			writeJSON(w, http.StatusAccepted, result)
+			return
+		}
+
 		s.log("  Received:      %s credential from %s", result.Format, result.Issuer)
 		if result.VerificationDetail != "" {
 			s.log("  Verification:  %s [%s]", result.VerificationDetail, result.VerificationStatus)
@@ -885,6 +899,17 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browser
 			s.triggerUIRequest()
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if result.Pending {
+		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
+		s.persistWallet()
+		if browserRedirect {
+			redirectBrowser(w, "")
+		} else {
+			writeJSON(w, http.StatusAccepted, result)
+		}
 		return
 	}
 
@@ -1218,13 +1243,22 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	// Wait for the VP submission to complete so we can return the result to the UI
 	select {
 	case submission := <-req.SubmissionCh:
-		writeJSON(w, http.StatusOK, map[string]any{
+		out := map[string]any{
 			"status":       "approved",
 			"redirect_uri": submission.RedirectURI,
 			"error":        submission.Error,
 			"status_code":  submission.StatusCode,
-		})
-	case <-time.After(30 * time.Second):
+		}
+		if submission.Pending {
+			// The issuer deferred the credential. Saying "approved" with no
+			// error would read as issued, so the outcome is named.
+			out["status"] = "pending"
+			out["pending"] = true
+			out["transaction_id"] = submission.TransactionID
+			out["retry_interval"] = submission.RetryInterval
+		}
+		writeJSON(w, http.StatusOK, out)
+	case <-time.After(config.SlowRequestTimeout):
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "approved",
 			"error":  "submission timeout",
@@ -1248,6 +1282,71 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 	req.ResultCh <- ConsentResult{Approved: false}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "denied"})
+}
+
+// handleListDeferred lists the credentials an issuer deferred and the wallet
+// is still collecting. The access token is left out: it is a bearer secret,
+// and nothing outside the wallet needs it.
+func (s *Server) handleListDeferred(w http.ResponseWriter, r *http.Request) {
+	pending := s.wallet.PendingIssuanceList()
+	out := make([]map[string]any, 0, len(pending))
+	for _, p := range pending {
+		out = append(out, map[string]any{
+			"id":                          p.ID,
+			"transaction_id":              p.TransactionID,
+			"issuer":                      p.Issuer,
+			"credential_configuration_id": p.ConfigurationID,
+			"format":                      p.Format,
+			"interval":                    p.Interval().String(),
+			"created_at":                  p.CreatedAt,
+			"next_attempt_at":             p.NextAttemptAt,
+			"attempts":                    p.Attempts,
+			"last_error":                  p.LastError,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleCollectDeferred asks the issuer for a deferred credential right now,
+// instead of waiting for its next scheduled attempt.
+func (s *Server) handleCollectDeferred(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	attempt, ok := s.CollectDeferredNow(id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no deferred issuance with that id"})
+		return
+	}
+	out := map[string]any{
+		"collected": attempt.Collected,
+		"pending":   attempt.Pending,
+		"abandoned": attempt.Abandoned,
+	}
+	if attempt.Credential != nil {
+		out["credential_id"] = attempt.Credential.ID
+		out["format"] = attempt.Credential.Format
+	}
+	if attempt.Pending {
+		out["next_attempt_at"] = attempt.NextAttemptAt
+		out["interval"] = attempt.Interval
+	}
+	if attempt.Reason != "" {
+		out["reason"] = attempt.Reason
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleAbandonDeferred stops collecting a deferred credential.
+func (s *Server) handleAbandonDeferred(w http.ResponseWriter, r *http.Request) {
+	pending, ok := s.AbandonDeferredNow(r.PathValue("id"))
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no deferred issuance with that id"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"abandoned":      true,
+		"issuer":         pending.Issuer,
+		"transaction_id": pending.TransactionID,
+	})
 }
 
 // handleLog returns the activity log.

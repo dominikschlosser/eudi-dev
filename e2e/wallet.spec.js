@@ -928,3 +928,28 @@ test.describe("Transaction code in the consent dialog", () => {
     await expect(page.locator("#offer-tx-code-input")).toHaveCount(0);
   });
 });
+
+test.describe("Deferred issuance in the UI", () => {
+  // A credential the issuer deferred is collected in the background, so the
+  // section reports rather than asks. The two buttons are for going faster
+  // than the issuer's interval, and for giving up on it.
+  test("nothing is shown when no issuance is outstanding", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await expect(page.locator("#deferred-section")).toBeHidden();
+  });
+
+  test("the deferred API reports an empty list", async () => {
+    const res = await jsonGet(`${WALLET_URL}/api/deferred`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  test("collecting an unknown deferred id is a 404", async () => {
+    const res = await jsonPost(
+      `${WALLET_URL}/api/deferred/no-such-id/collect`,
+      {}
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain("no deferred issuance");
+  });
+});

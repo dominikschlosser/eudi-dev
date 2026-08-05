@@ -82,17 +82,20 @@ type Wallet struct {
 	ForceClientAttestation bool
 	ValidationMode         ValidationMode `json:"-"`
 	Credentials            []StoredCredential
-	StatusEntries          map[string]StatusEntry // credential ID → status entry
-	StatusListCounter      int                    // next available status list index
-	BaseURL                string                 // base URL for status list endpoint
-	IssuerURL              string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
-	VCIClientID            string                 `json:"-"`
-	VCIRedirectURI         string                 `json:"-"`
-	TemplatesDir           string                 `json:"-"` // credential template directory; empty selects the default
-	TxCode                 string                 `json:"-"` // one-shot tx_code for OID4VCI token request
-	Log                    []LogEntry
-	mu                     sync.RWMutex
-	logSink                func(LogEntry)
+	// PendingIssuances are credentials an issuer deferred, kept until the
+	// wallet manages to collect them.
+	PendingIssuances  []PendingIssuance
+	StatusEntries     map[string]StatusEntry // credential ID → status entry
+	StatusListCounter int                    // next available status list index
+	BaseURL           string                 // base URL for status list endpoint
+	IssuerURL         string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
+	VCIClientID       string                 `json:"-"`
+	VCIRedirectURI    string                 `json:"-"`
+	TemplatesDir      string                 `json:"-"` // credential template directory; empty selects the default
+	TxCode            string                 `json:"-"` // one-shot tx_code for OID4VCI token request
+	Log               []LogEntry
+	mu                sync.RWMutex
+	logSink           func(LogEntry)
 	// credentialSink forwards imports to the wallet a clone was made from.
 	credentialSink func(StoredCredential)
 	runtime        *WalletRuntime
@@ -226,11 +229,18 @@ type ConsentResult struct {
 	TxCode string
 }
 
-// SubmissionResult is the outcome of VP token submission after consent approval.
+// SubmissionResult is the outcome of VP token submission after consent
+// approval, or of the issuance an approved credential offer started.
 type SubmissionResult struct {
 	RedirectURI string `json:"redirect_uri,omitempty"`
 	Error       string `json:"error,omitempty"`
 	StatusCode  int    `json:"status_code,omitempty"`
+	// Pending marks an issuance the issuer deferred. The dialog has to tell
+	// that apart from a failure: nothing went wrong, the credential simply is
+	// not ready, and the wallet keeps collecting it in the background.
+	Pending       bool   `json:"pending,omitempty"`
+	TransactionID string `json:"transaction_id,omitempty"`
+	RetryInterval string `json:"retry_interval,omitempty"`
 }
 
 // LogEntry records a wallet action.
