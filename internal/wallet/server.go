@@ -46,8 +46,6 @@ type Server struct {
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
 	demo             *demoState
-	// lastCertificateCheck throttles the expiry check the poller ticks.
-	lastCertificateCheck time.Time
 	// pendingIssuanceOwner is the wallet whose deferred credentials the
 	// poller collects. Set on the per-request clone a profile override
 	// creates, so a deferral recorded there is handed back rather than
@@ -211,7 +209,7 @@ func (s *Server) ListenAndServe() error {
 		return err
 	}
 	s.startDemoReset()
-	defer s.StartDeferredPoller()()
+	defer s.StartBackgroundTasks()()
 	return s.httpSrv.ListenAndServe()
 }
 

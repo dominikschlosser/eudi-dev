@@ -23,30 +23,108 @@ import (
 	"time"
 )
 
-// deferredPollerTick is how often the poller looks for work, not how often it
-// asks an issuer. Each pending issuance carries its own interval.
-const deferredPollerTick = time.Second
+// backgroundTask is one job the wallet does on its own, without a caller
+// waiting for it: collecting a deferred credential, renewing a certificate.
+type backgroundTask struct {
+	// name appears in the log when the task fails, so a wallet that stops
+	// doing something says which something.
+	name string
+	// every is how often the task is worth considering. The task itself
+	// decides whether there is anything to do.
+	every time.Duration
+	// run reports whether the task got its work done. A task that fails is
+	// tried again on the next tick rather than waiting out its interval,
+	// because the usual cause is something transient.
+	run func(now time.Time) error
+}
 
-// StartDeferredPoller collects deferred credentials in the background, each on
-// the interval its issuer asked for. Pending issuances are persisted, so a
-// restarted wallet picks up where it left off. The returned function stops it.
-func (s *Server) StartDeferredPoller() func() {
+// backgroundTick is how often the loop wakes. It is the resolution of every
+// task's schedule, not a rate: a task due hourly is considered once an hour.
+const backgroundTick = time.Second
+
+func (s *Server) backgroundTasks() []backgroundTask {
+	return []backgroundTask{
+		{name: "deferred credentials", every: backgroundTick, run: s.collectDueDeferredCredentials},
+		{name: "signing certificate", every: certificateCheckInterval, run: s.renewSigningCertificate},
+	}
+}
+
+// StartBackgroundTasks runs the wallet's own work on one loop and returns a
+// function that stops it.
+//
+// One loop rather than a goroutine per job: they all reduce to "is anything
+// due", they all touch the same wallet, and a single place to look is what
+// makes it possible to say what the wallet does when nobody is asking. Each
+// task carries its own interval instead of throttling itself inside its body,
+// which is how the certificate check used to hide its schedule.
+func (s *Server) StartBackgroundTasks() func() {
 	done := make(chan struct{})
+	tasks := s.backgroundTasks()
+	state := make([]taskState, len(tasks))
+
 	go func() {
-		ticker := time.NewTicker(deferredPollerTick)
+		ticker := time.NewTicker(backgroundTick)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
-			case <-ticker.C:
-				now := time.Now()
-				s.collectDueDeferredCredentials(now)
-				s.renewSigningCertificateIfNeeded(now)
+			case now := <-ticker.C:
+				for i := range tasks {
+					if state[i].abandoned {
+						continue
+					}
+					// A failed task is due again immediately: the interval
+					// paces successful work, not recovery.
+					if state[i].failures == 0 && !state[i].lastRun.IsZero() &&
+						now.Sub(state[i].lastRun) < tasks[i].every {
+						continue
+					}
+					state[i].lastRun = now
+					if err := s.runBackgroundTask(tasks[i], now); err != nil {
+						state[i].failures++
+						s.log("  ERROR: the %s task failed (attempt %d of %d): %v",
+							tasks[i].name, state[i].failures, maxTaskFailures, err)
+						if state[i].failures >= maxTaskFailures {
+							state[i].abandoned = true
+							s.log("  ERROR: giving up on the %s task after %d failures; restart the wallet to run it again",
+								tasks[i].name, state[i].failures)
+						}
+						continue
+					}
+					state[i].failures = 0
+				}
 			}
 		}
 	}()
 	return func() { close(done) }
+}
+
+// taskState is one task's schedule and failure history.
+type taskState struct {
+	lastRun  time.Time
+	failures int
+	// abandoned marks a task that failed too often to keep trying. The others
+	// carry on: one broken job must not take the rest of the wallet's own work
+	// with it.
+	abandoned bool
+}
+
+// maxTaskFailures bounds retrying. A task that has failed this many times in a
+// row is not going to start working on the next tick, and repeating it forever
+// buries the reason in a log nobody reads to the end.
+const maxTaskFailures = 5
+
+// runBackgroundTask isolates one run. A panic in one task must not take the
+// loop down with it: the wallet would go on serving requests while quietly
+// doing none of its own work, which is the failure that is hardest to notice.
+func (s *Server) runBackgroundTask(task backgroundTask, now time.Time) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return task.run(now)
 }
 
 // certificateCheckInterval is how often the signing certificate is checked
@@ -54,30 +132,26 @@ func (s *Server) StartDeferredPoller() func() {
 // that a wallet left running notices before the day arrives.
 const certificateCheckInterval = time.Hour
 
-// renewSigningCertificateIfNeeded re-issues the signing leaf as it approaches
+// renewSigningCertificate re-issues the signing leaf as it approaches
 // expiry. A hosted wallet runs for months and nobody watches its certificate:
 // an expired leaf keeps issuing credentials that quietly stop verifying.
-func (s *Server) renewSigningCertificateIfNeeded(now time.Time) {
-	if now.Sub(s.lastCertificateCheck) < certificateCheckInterval {
-		return
-	}
-	s.lastCertificateCheck = now
+func (s *Server) renewSigningCertificate(now time.Time) error {
 	s.renewIssuerTLSCertificateIfNeeded(now)
 	renewed, err := s.wallet.RefreshSigningCertificateIfExpiring(now)
 	if err != nil {
-		s.log("  ERROR: re-issuing the signing certificate: %v", err)
-		return
+		return fmt.Errorf("re-issuing the signing certificate: %w", err)
 	}
 	if renewed {
 		s.log("  Renewed:       signing certificate, now valid until %s",
 			s.wallet.SigningCertificateExpiry().Format(time.DateOnly))
 		s.persistWallet()
 	}
+	return nil
 }
 
 // collectDueDeferredCredentials makes one attempt for every pending issuance
 // whose next attempt is due.
-func (s *Server) collectDueDeferredCredentials(now time.Time) {
+func (s *Server) collectDueDeferredCredentials(now time.Time) error {
 	for _, pending := range s.wallet.PendingIssuanceList() {
 		if pending.NextAttemptAt.After(now) {
 			continue
@@ -88,6 +162,9 @@ func (s *Server) collectDueDeferredCredentials(now time.Time) {
 		}
 		s.attemptDeferredCollection(pending)
 	}
+	// Each record carries its own schedule and its own give-up rule, so a
+	// credential the issuer will not hand over is not a failure of the sweep.
+	return nil
 }
 
 // DeferredAttempt is the outcome of one deferred credential request, so a

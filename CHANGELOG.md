@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The wallet's own work runs on one loop that reports what it does.** Deferred collection and certificate renewal each carried their own schedule inside their own body, one of them throttling itself with a field on the server. They are now tasks on a single background loop, off the request path, each declaring how often it is worth running. A task that fails is retried on the next tick rather than waiting out its interval, and is dropped with a reason after five failures in a row instead of repeating forever. A panic is caught and counted as a failure, so one broken job cannot stop the rest of the wallet's own work
 - **Both wallet backends are compared method by method.** Every management command runs against either a local store or a remote instance, and each backend builds its documents separately, so a field only one of them fills is invisible until a column shows the wrong thing. A table now runs all fifteen `walletService` methods through both and compares what a caller can read, and a completeness check fails when a new method arrives without a case
 
 ### Fixed

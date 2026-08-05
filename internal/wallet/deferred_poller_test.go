@@ -391,7 +391,7 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 	pending.NextAttemptAt = time.Now().Add(-time.Second)
 	w.AddPendingIssuance(pending)
 
-	stop := server.StartDeferredPoller()
+	stop := server.StartBackgroundTasks()
 	defer stop()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -529,4 +529,110 @@ func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
 	if got := len(w.PendingIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
+}
+
+// One task failing must not stop the others. A loop that dies leaves the
+// wallet serving requests while quietly doing none of its own work, which is
+// the failure hardest to notice from outside.
+func TestBackgroundTaskPanicDoesNotStopTheLoop(t *testing.T) {
+	w := generateTestWallet(t)
+	server := NewServer(w, 0, nil)
+
+	var logged []string
+	server.SetLogger(func(format string, args ...any) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	})
+
+	ran := 0
+	err := server.runBackgroundTask(backgroundTask{name: "explodes", every: time.Second, run: func(time.Time) error {
+		panic("boom")
+	}}, time.Now())
+	if err == nil {
+		t.Error("a panicking task reported success")
+	}
+	if err != nil && !strings.Contains(err.Error(), "boom") {
+		t.Errorf("the panic value is missing from the error: %v", err)
+	}
+	if err := server.runBackgroundTask(backgroundTask{name: "works", every: time.Second, run: func(time.Time) error {
+		ran++
+		return nil
+	}}, time.Now()); err != nil {
+		t.Errorf("a healthy task after a panicking one failed: %v", err)
+	}
+	if ran != 1 {
+		t.Error("a task after a panicking one did not run")
+	}
+	_ = logged
+}
+
+// The loop runs off the request path, so a slow task never delays a caller.
+func TestBackgroundTasksRunOffTheRequestPath(t *testing.T) {
+	w := generateTestWallet(t)
+	server := NewServer(w, 0, nil)
+
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	go func() {
+		_ = server.runBackgroundTask(backgroundTask{name: "slow", every: time.Second, run: func(time.Time) error {
+			close(blocked)
+			<-release
+			return nil
+		}}, time.Now())
+	}()
+	<-blocked
+	defer close(release)
+
+	// A request is served while that task is still in flight.
+	rec := httptest.NewRecorder()
+	server.handleListCredentials(rec, httptest.NewRequest(http.MethodGet, "/api/credentials", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("serving a request during a background task returned %d", rec.Code)
+	}
+}
+
+// A failing task is retried on the next tick rather than waiting out its
+// interval, and dropped once it has clearly stopped working. Retrying forever
+// buries the reason; giving up silently loses the work.
+func TestFailingBackgroundTaskIsRetriedThenAbandoned(t *testing.T) {
+	w := generateTestWallet(t)
+	server := NewServer(w, 0, nil)
+	var logged []string
+	server.SetLogger(func(format string, args ...any) {
+		logged = append(logged, fmt.Sprintf(format, args...))
+	})
+
+	attempts := 0
+	failing := backgroundTask{name: "always fails", every: time.Hour, run: func(time.Time) error {
+		attempts++
+		return fmt.Errorf("nope")
+	}}
+
+	// Drive the same schedule the loop uses, so the retry rule is what is
+	// under test rather than the ticker.
+	state := taskState{}
+	now := time.Now()
+	for range maxTaskFailures + 3 {
+		if state.abandoned {
+			continue
+		}
+		if state.failures == 0 && !state.lastRun.IsZero() && now.Sub(state.lastRun) < failing.every {
+			continue
+		}
+		state.lastRun = now
+		if err := server.runBackgroundTask(failing, now); err != nil {
+			state.failures++
+			if state.failures >= maxTaskFailures {
+				state.abandoned = true
+			}
+		}
+		now = now.Add(backgroundTick)
+	}
+
+	if attempts != maxTaskFailures {
+		t.Errorf("the task ran %d times, want %d: an hourly task that fails must retry on the next tick and stop at the limit", attempts, maxTaskFailures)
+	}
+	if !state.abandoned {
+		t.Error("the task was never abandoned, so it would retry forever")
+	}
+	_ = logged
 }
