@@ -528,7 +528,7 @@ The credential keeps its id, so a verifier query or a UI selection that referred
 
 An issuer that gave no refresh token cannot be asked, and the request is refused rather than reporting success.
 
-The wallet also renews on its own: a background task checks every 30 seconds and renews anything within a minute of expiring, so a credential a verifier would reject is replaced before anyone tries to use it. A renewal that fails is held off for ten minutes rather than retried on every sweep.
+The wallet also renews on its own, in two places. A background task checks every 30 seconds and renews anything within a minute of expiring, so a credential a verifier would reject is replaced before anyone tries to use it (a renewal that fails is held off for ten minutes rather than retried on every sweep). And a credential is renewed on the way to a verifier when it is that close to expiring, which covers a wallet with no server running. A renewal that fails there is not fatal: the credential in hand may still be accepted.
 
 ## Deferred issuance
 

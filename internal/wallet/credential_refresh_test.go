@@ -165,3 +165,55 @@ func TestRenewExpiringCredentialsSweep(t *testing.T) {
 		t.Error("a credential far from expiry was attempted")
 	}
 }
+
+// A credential about to expire is renewed on the way out. The background task
+// only runs on a wallet server, so one that lapses between two presentations
+// would otherwise be sent for the verifier to reject.
+func TestPresentingRenewsACredentialAboutToExpire(t *testing.T) {
+	w := generateTestWallet(t)
+	replacement := generateTestCredential(t, w)
+
+	var credentialRequests int
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/token"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{"access_token": "fresh", "token_type": "Bearer"})
+		case strings.HasSuffix(r.URL.Path, "/credential"):
+			credentialRequests++
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": replacement})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	expiring, err := w.IssueCredential(IssueOptions{
+		Format: "sdjwt", VCT: "urn:test:expiring:1",
+		Claims: map[string]any{"given_name": "Alice"}, ExpiresIn: 20 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := expiring.Credential.ID
+	w.rememberRenewal(id, "refresh-1", CredentialRenewal{
+		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token", CredentialEndpoint: srv.URL + "/credential",
+	})
+
+	if _, err := w.CreateVPToken(CredentialMatch{
+		CredentialID: id, QueryID: "q", Format: "dc+sd-jwt", SelectedKeys: []string{"given_name"},
+	}, PresentationParams{Nonce: "n", ClientID: "verifier"}); err != nil {
+		t.Fatalf("creating the VP token: %v", err)
+	}
+
+	if credentialRequests != 1 {
+		t.Errorf("the issuer saw %d credential requests, want 1: a credential about to expire is renewed before it is presented", credentialRequests)
+	}
+	if stored, _ := w.GetCredential(id); stored.Raw != replacement {
+		t.Error("the renewed credential was not stored")
+	}
+}

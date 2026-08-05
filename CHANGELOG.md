@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A credential about to expire is renewed on the way to a verifier.** The background task only runs on a wallet server, so a credential lapsing between two presentations would otherwise be sent for the verifier to reject. A renewal that fails is not fatal: the credential in hand may still be accepted, and refusing to present it is not better
 - **The wallet UI has a Renew button.** It appears on credentials whose issuer handed over a refresh token and nowhere else, so it never offers something the wallet cannot do
 - **`wallet refresh <id>` renews a credential from the CLI.** It asks now rather than waiting for the background task, against a local store or a remote instance alike
 - **Credentials are renewed shortly before they expire.** A task on the background loop renews what is within a minute of expiring and can be renewed, so a credential a verifier would reject is replaced before anyone tries to use it. One credential failing does not stop the sweep, and a credential whose renewal failed is held off for ten minutes rather than retried every half minute until it expires

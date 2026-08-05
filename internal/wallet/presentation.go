@@ -54,6 +54,21 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 		return VPTokenResult{}, fmt.Errorf("credential %s not found", match.CredentialID)
 	}
 
+	// Renew on the way out when the credential is about to expire. The
+	// background task only runs on a wallet server, and a credential that
+	// lapses between two presentations would otherwise be sent for the
+	// verifier to reject. A renewal that fails is not fatal: the credential in
+	// hand may still be accepted, and refusing to present it certainly is not
+	// better.
+	if cred.CanRenew() && CredentialNeedsRenewal(cred, time.Now()) {
+		if renewed, err := w.RefreshCredential(cred.ID); err != nil {
+			log.Printf("[VP] renewing %s before presenting it failed, sending the credential as it is: %v", cred.ID, err)
+		} else {
+			log.Printf("[VP] renewed %s before presenting it", cred.ID)
+			cred = *renewed
+		}
+	}
+
 	typeLabel := cred.VCT
 	if typeLabel == "" {
 		typeLabel = cred.DocType
