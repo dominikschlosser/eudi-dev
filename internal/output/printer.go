@@ -201,6 +201,15 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 		"docType": doc.DocType,
 		"claims":  formatMDOCClaimsJSON(doc),
 	}
+	if doc.IsDeviceResponse {
+		out["isDeviceResponse"] = true
+		if doc.ResponseVersion != "" {
+			out["responseVersion"] = doc.ResponseVersion
+		}
+		if doc.ResponseStatus != nil {
+			out["responseStatus"] = *doc.ResponseStatus
+		}
+	}
 	if doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil {
 		mso := doc.IssuerAuth.MSO
 		msoOut := map[string]any{

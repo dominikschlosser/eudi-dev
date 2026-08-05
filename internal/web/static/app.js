@@ -497,37 +497,19 @@
 
     banner.classList.add(cls);
 
-    // Build summary detail from the most relevant check so the banner explains
-    // what actually passed/failed instead of always defaulting to expiry.
+    // A failure names itself. Everything passing used to show the status check
+    // alone, which read as though nothing else had been looked at.
     let detail = "";
     const firstFailed = checks.find((c) => c.status === "fail");
-    const statusCheck = checks.find((c) => c.name === "status" && c.status !== "skipped");
     if (firstFailed) {
       detail = firstFailed.name + ": " + firstFailed.detail;
-    } else if (statusCheck) {
-      detail = "status: " + statusCheck.detail;
-    } else if (sigCheck && sigCheck.status !== "skipped") {
-      detail = "signature: " + sigCheck.detail;
-    } else {
-      const expiryCheck = checks.find((c) => c.name === "expiry" && c.status !== "skipped");
-      if (expiryCheck) {
-        detail = "expiry: " + expiryCheck.detail;
-      } else {
-        const firstRelevant = checks.find((c) => c.status !== "skipped" && c.detail);
-        if (firstRelevant) {
-          detail = firstRelevant.name + ": " + firstRelevant.detail;
-        } else {
-          const firstSkipped = checks.find((c) => c.detail);
-          if (firstSkipped) {
-            detail = firstSkipped.name + ": " + firstSkipped.detail;
-          }
-        }
-      }
+    } else if (nonSkipped.length > 0) {
+      detail = "checked " + nonSkipped.map((c) => c.name).join(", ");
     }
 
     let html = '<span class="validity-banner-text">' + icon + " " + label;
     if (detail) {
-      html += '<span class="validity-detail"> \u2014 ' + escapeHtml(detail) + "</span>";
+      html += '<span class="validity-detail"> (' + escapeHtml(detail) + ")</span>";
     }
     html += "</span>";
 
@@ -765,13 +747,13 @@
   // to learn the format, and "issuerAuth" says nothing on its own.
   const MDOC_NOTES = {
     structure:
-      "An mdoc is CBOR, not text. issuerSigned holds what the issuer signed (the elements and the COSE_Sign1 over them), deviceSigned holds what the holder signed when presenting.",
+      "An mdoc is CBOR, not text. issuerSigned holds what the issuer signed (the elements and the COSE_Sign1 over them). deviceSigned holds what the holder signed when presenting.",
     issuerAuth:
       "A COSE_Sign1, the CBOR counterpart of a JWT: protected header, unprotected header, payload and signature. The payload is the Mobile Security Object.",
     mso:
       "What the issuer actually signed. It carries a digest per element rather than the values, which is what lets a holder disclose some elements and withhold the rest.",
     items:
-      "One entry per disclosed element. The issuer signed a digest of each; recomputing it from the value and its salt is what proves the value was not changed.",
+      "One entry per disclosed element. The issuer signed a digest of each. Recomputing it from the value and its salt is what proves the value was not changed.",
     deviceKey:
       "The key the credential is bound to. The holder proves possession of it when presenting, which is the same role cnf plays in an SD-JWT.",
     deviceAuth:
@@ -791,6 +773,8 @@
     info.appendChild(renderKV("DocType", data.docType));
     if (data.isDeviceResponse) {
       info.appendChild(renderKV("Container", "DeviceResponse (a presentation)"));
+      if (data.responseVersion) info.appendChild(renderKV("version", data.responseVersion));
+      if (data.responseStatus !== undefined) info.appendChild(renderKV("status", data.responseStatus));
     } else {
       info.appendChild(renderKV("Container", "IssuerSigned (a credential as issued)"));
     }
@@ -831,19 +815,25 @@
       const mso = data.mso;
       const el = document.createElement("div");
       el.appendChild(renderNote(MDOC_NOTES.mso));
-      if (mso.version) el.appendChild(renderKV("Version", mso.version));
-      if (mso.digestAlgorithm) el.appendChild(renderKV("Digest Algorithm", mso.digestAlgorithm));
+      // In the order ISO 18013-5 declares them: version, digestAlgorithm,
+      // valueDigests, deviceKeyInfo, docType, validityInfo.
+      if (mso.version) el.appendChild(renderKV("version", mso.version));
+      if (mso.digestAlgorithm) el.appendChild(renderKV("digestAlgorithm", mso.digestAlgorithm));
+      if (mso.valueDigests) {
+        el.appendChild(createSubSection("valueDigests (one per element)", renderJSONBlock(mso.valueDigests)));
+      }
+      el.appendChild(renderKV("deviceKeyInfo", "shown as its own section below"));
+      if (mso.docType) el.appendChild(renderKV("docType", mso.docType));
       if (mso.validityInfo) {
         const vi = mso.validityInfo;
-        if (vi.signed) el.appendChild(renderKV("Signed", vi.signed));
-        if (vi.validFrom) el.appendChild(renderKV("Valid From", vi.validFrom));
-        if (vi.validUntil) el.appendChild(renderKV("Valid Until", vi.validUntil));
+        const validity = document.createElement("div");
+        if (vi.signed) validity.appendChild(renderKV("signed", vi.signed));
+        if (vi.validFrom) validity.appendChild(renderKV("validFrom", vi.validFrom));
+        if (vi.validUntil) validity.appendChild(renderKV("validUntil", vi.validUntil));
+        el.appendChild(createSubSection("validityInfo", validity));
       }
       if (mso.status) {
         el.appendChild(createSubSection("status", renderJSONBlock(mso.status)));
-      }
-      if (mso.valueDigests) {
-        el.appendChild(createSubSection("valueDigests (one per element)", renderJSONBlock(mso.valueDigests)));
       }
       appendSection("issuerAuth.payload \u2192 Mobile Security Object", el, mso);
     }

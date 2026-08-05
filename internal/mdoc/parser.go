@@ -90,6 +90,17 @@ func parseDeviceResponse(data []byte) (*Document, error) {
 		doc.DeviceSigned = parseDeviceSigned(ds)
 	}
 
+	if v, ok := resp["version"].(string); ok {
+		doc.ResponseVersion = v
+	}
+	switch st := resp["status"].(type) {
+	case uint64:
+		doc.ResponseStatus = &st
+	case int64:
+		converted := uint64(st)
+		doc.ResponseStatus = &converted
+	}
+
 	doc.IsDeviceResponse = true
 	doc.Raw = data
 

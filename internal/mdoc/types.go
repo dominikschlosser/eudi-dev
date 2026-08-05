@@ -25,6 +25,10 @@ type Document struct {
 	IssuerAuth *IssuerAuth
 	// DeviceSigned contains the device authentication data from a DeviceResponse.
 	DeviceSigned *DeviceSigned
+	// ResponseVersion and ResponseStatus are the DeviceResponse members that
+	// sit outside the document itself.
+	ResponseVersion string
+	ResponseStatus  *uint64
 	// IsDeviceResponse indicates this was parsed from a DeviceResponse wrapper.
 	IsDeviceResponse bool
 }
