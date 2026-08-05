@@ -75,7 +75,13 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims), credStatusLabel(cred))
 	}
 	for _, entry := range deferred {
-		label := docString(entry, "credential_configuration_id")
+		// The credential type when the issuer's metadata named one, so a
+		// waiting row reads like a delivered one. The configuration id is an
+		// issuer's internal name and only a fallback.
+		label := docCredLabel(entry)
+		if label == "" {
+			label = docString(entry, "credential_configuration_id")
+		}
 		if label == "" {
 			label = "-"
 		}
@@ -98,6 +104,9 @@ func printDeferredDoc(entry map[string]any) error {
 	}
 	fmt.Println("Status:         deferred (the issuer has not handed it over yet)")
 	fmt.Printf("Issuer:         %s\n", docString(entry, "issuer"))
+	if credType := docCredLabel(entry); credType != "" && credType != docString(entry, "format") {
+		fmt.Printf("Type:           %s\n", credType)
+	}
 	if configID := docString(entry, "credential_configuration_id"); configID != "" {
 		fmt.Printf("Configuration:  %s\n", configID)
 	}

@@ -171,6 +171,8 @@ def verify_suite_support(suite_dir: Path) -> None:
 
 
 def final_scenarios() -> list[PlanScenario]:
+    import os as _os
+    _only = _os.environ.get("ONLY_SCENARIOS", "")
     scenarios = [
         PlanScenario(
             slug="vp-final-sdjwt-signed-direct-post",
@@ -395,6 +397,8 @@ def final_scenarios() -> list[PlanScenario]:
             ),
         ]
     )
+    if _only:
+        scenarios = [sc for sc in scenarios if any(w in sc.slug for w in _only.split(","))]
     return scenarios
 
 

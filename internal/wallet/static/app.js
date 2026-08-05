@@ -84,7 +84,7 @@
       }
       section.hidden = false;
       list.innerHTML = pending.map(p => {
-        const name = p.credential_configuration_id || p.format || 'Credential';
+        const name = p.vct || p.doctype || p.credential_configuration_id || p.format || 'Credential';
         const next = p.next_attempt_at ? new Date(p.next_attempt_at) : null;
         const when = next && !isNaN(next) ? next.toLocaleTimeString() : '';
         return '<div class="deferred-item" data-id="' + escHtml(p.id) + '">' +

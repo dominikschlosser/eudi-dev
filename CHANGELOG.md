@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.8] - 2026-08-05
+
+### Fixed
+
+- **A deferred credential was listed by the issuer's configuration id instead of its type.** A credential offer names configurations (`eudi-pid-sd-jwt-bdr-key-attestations`), never credential types, so a credential still being collected read as an issuer's internal name while the same credential became `urn:eudi:pid:1` the moment it arrived. The type is in the issuer's metadata all along, so the wallet now records it with the deferred credential and the UI, `wallet list` and `wallet deferred` show it, falling back to the configuration id for an issuer whose metadata declares neither
+
 ## [1.19.7] - 2026-08-05
 
 ### Changed

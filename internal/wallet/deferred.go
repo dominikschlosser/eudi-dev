@@ -30,20 +30,26 @@ import (
 // poller works through it. It carries everything the deferred request needs:
 // the flow that created it is gone by the time it runs.
 type PendingIssuance struct {
-	ID               string    `json:"id"`
-	TransactionID    string    `json:"transaction_id"`
-	Issuer           string    `json:"issuer"`
-	DeferredEndpoint string    `json:"deferred_endpoint"`
-	ConfigurationID  string    `json:"credential_configuration_id,omitempty"`
-	Format           string    `json:"format,omitempty"`
-	AccessToken      string    `json:"access_token"`
-	AuthScheme       string    `json:"auth_scheme,omitempty"`
-	UseDPoP          bool      `json:"use_dpop,omitempty"`
-	IntervalSeconds  int       `json:"interval_seconds,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	NextAttemptAt    time.Time `json:"next_attempt_at"`
-	Attempts         int       `json:"attempts,omitempty"`
-	LastError        string    `json:"last_error,omitempty"`
+	ID               string `json:"id"`
+	TransactionID    string `json:"transaction_id"`
+	Issuer           string `json:"issuer"`
+	DeferredEndpoint string `json:"deferred_endpoint"`
+	ConfigurationID  string `json:"credential_configuration_id,omitempty"`
+	Format           string `json:"format,omitempty"`
+	// VCT and DocType name what is being issued, read from the issuer's
+	// metadata for this configuration. A credential offer carries only
+	// configuration ids, so without these a waiting credential is listed by an
+	// issuer's internal name while a delivered one is listed by its type.
+	VCT             string    `json:"vct,omitempty"`
+	DocType         string    `json:"doctype,omitempty"`
+	AccessToken     string    `json:"access_token"`
+	AuthScheme      string    `json:"auth_scheme,omitempty"`
+	UseDPoP         bool      `json:"use_dpop,omitempty"`
+	IntervalSeconds int       `json:"interval_seconds,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	NextAttemptAt   time.Time `json:"next_attempt_at"`
+	Attempts        int       `json:"attempts,omitempty"`
+	LastError       string    `json:"last_error,omitempty"`
 	// ProofKeyPEMs holds the keys the credential request proved possession of,
 	// holder key first. A batch request adds ephemeral keys that exist nowhere
 	// else, and the credential still has to be matched back to one of them.
@@ -83,6 +89,7 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 	if seconds < 1 {
 		seconds = 1
 	}
+	vct, docType := credentialTypeForConfiguration(ctx.metadata, ctx.configID)
 	now := time.Now()
 	return &PendingIssuance{
 		ID:               uuid.NewString(),
@@ -91,6 +98,8 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 		DeferredEndpoint: ctx.deferredEndpoint,
 		ConfigurationID:  ctx.configID,
 		Format:           ctx.format,
+		VCT:              vct,
+		DocType:          docType,
 		AccessToken:      ctx.accessToken,
 		AuthScheme:       ctx.authScheme,
 		UseDPoP:          ctx.dpopKey != nil,
@@ -237,4 +246,21 @@ func (w *Wallet) AdoptPendingIssuances(from *Wallet) int {
 		adopted++
 	}
 	return adopted
+}
+
+// credentialTypeForConfiguration reads the credential type an issuer declares
+// for one configuration id, so a deferred credential can be named the way a
+// delivered one is.
+func credentialTypeForConfiguration(metadata map[string]any, configID string) (vct, docType string) {
+	configs, ok := metadata["credential_configurations_supported"].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	config, ok := configs[configID].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	vct, _ = config["vct"].(string)
+	docType, _ = config["doctype"].(string)
+	return vct, docType
 }

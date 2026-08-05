@@ -402,3 +402,40 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 }
+
+// A credential offer names configurations, not credential types, so a deferred
+// row used to be labelled with an issuer's internal id ("eudi-pid-sd-jwt-bdr-
+// key-attestations") while the same credential became "urn:eudi:pid:1" the
+// moment it arrived. The type is in the issuer's metadata all along.
+func TestPendingIssuanceRecordsTheCredentialType(t *testing.T) {
+	metadata := map[string]any{
+		"credential_configurations_supported": map[string]any{
+			"eudi-pid-sd-jwt-bdr-key-attestations": map[string]any{
+				"format": "dc+sd-jwt",
+				"vct":    "urn:eudi:pid:1",
+			},
+			"pid-mdoc": map[string]any{
+				"format":  "mso_mdoc",
+				"doctype": "eu.europa.ec.eudi.pid.1",
+			},
+		},
+	}
+
+	vct, docType := credentialTypeForConfiguration(metadata, "eudi-pid-sd-jwt-bdr-key-attestations")
+	if vct != "urn:eudi:pid:1" || docType != "" {
+		t.Errorf("sd-jwt configuration resolved to vct=%q doctype=%q", vct, docType)
+	}
+
+	vct, docType = credentialTypeForConfiguration(metadata, "pid-mdoc")
+	if vct != "" || docType != "eu.europa.ec.eudi.pid.1" {
+		t.Errorf("mdoc configuration resolved to vct=%q doctype=%q", vct, docType)
+	}
+
+	// An issuer that declares nothing leaves the row on its configuration id.
+	if vct, docType = credentialTypeForConfiguration(metadata, "unknown"); vct != "" || docType != "" {
+		t.Errorf("unknown configuration resolved to vct=%q doctype=%q, want empty", vct, docType)
+	}
+	if vct, docType = credentialTypeForConfiguration(nil, "any"); vct != "" || docType != "" {
+		t.Errorf("missing metadata resolved to vct=%q doctype=%q, want empty", vct, docType)
+	}
+}
