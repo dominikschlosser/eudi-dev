@@ -17,6 +17,7 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -437,5 +438,23 @@ func TestPendingIssuanceRecordsTheCredentialType(t *testing.T) {
 	}
 	if vct, docType = credentialTypeForConfiguration(nil, "any"); vct != "" || docType != "" {
 		t.Errorf("missing metadata resolved to vct=%q doctype=%q, want empty", vct, docType)
+	}
+}
+
+// A long deferral outlives its access token: the token is minted for the
+// credential request and expires in minutes, while the issuer may ask the
+// wallet back in an hour. Repeating the request with a dead token cannot
+// succeed, so it must not be retried hourly until the 24 hour cap.
+func TestDeferredGivesUpOnARejectedToken(t *testing.T) {
+	for _, status := range []string{"HTTP 401", "HTTP 403"} {
+		if isRetryableDeferredError(fmt.Errorf("deferred credential request: %s: ", status)) {
+			t.Errorf("%s is treated as retryable, so the wallet keeps asking with a token the issuer already refused", status)
+		}
+	}
+	// A server-side fault is still worth another attempt.
+	for _, status := range []string{"HTTP 500", "HTTP 502", "connection refused"} {
+		if !isRetryableDeferredError(fmt.Errorf("deferred credential request: %s", status)) {
+			t.Errorf("%s should stay retryable", status)
+		}
 	}
 }

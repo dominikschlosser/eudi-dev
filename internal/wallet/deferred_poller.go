@@ -169,11 +169,19 @@ func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) 
 // isRetryableDeferredError reports whether an error is worth another attempt.
 // A network hiccup or a server-side fault is. A refused token or an unknown
 // transaction is not.
+//
+// A rejected authorization is the case a long deferral runs into: the access
+// token was minted for the credential request and expires in minutes, while
+// the issuer may ask the wallet back in an hour. Asking again with the same
+// dead token cannot succeed, so it is not worth another 24 hours of hourly
+// requests. The wallet cannot yet mint a new one, which is what refresh token
+// support will add.
 func isRetryableDeferredError(err error) bool {
 	message := err.Error()
 	for _, fatal := range []string{
 		"invalid_token", "invalid_grant", "invalid_transaction_id",
 		"invalid_request", "invalid_client", "expired",
+		"HTTP 401", "HTTP 403",
 	} {
 		if strings.Contains(message, fatal) {
 			return false
