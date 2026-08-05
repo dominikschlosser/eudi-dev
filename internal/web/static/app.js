@@ -761,14 +761,76 @@
     appendSection("Payload", renderJSONBlock(data.payload, { timestampKeys: TIMESTAMP_FIELDS }), data.payload, "payload");
   }
 
+  // What each part of an mdoc is for. The decoder is also where people come
+  // to learn the format, and "issuerAuth" says nothing on its own.
+  const MDOC_NOTES = {
+    structure:
+      "An mdoc is CBOR, not text. issuerSigned holds what the issuer signed (the elements and the COSE_Sign1 over them), deviceSigned holds what the holder signed when presenting.",
+    issuerAuth:
+      "A COSE_Sign1, the CBOR counterpart of a JWT: protected header, unprotected header, payload and signature. The payload is the Mobile Security Object.",
+    mso:
+      "What the issuer actually signed. It carries a digest per element rather than the values, which is what lets a holder disclose some elements and withhold the rest.",
+    items:
+      "One entry per disclosed element. The issuer signed a digest of each; recomputing it from the value and its salt is what proves the value was not changed.",
+    deviceKey:
+      "The key the credential is bound to. The holder proves possession of it when presenting, which is the same role cnf plays in an SD-JWT.",
+    deviceAuth:
+      "The holder's own signature over this presentation, covering the session transcript of the request it answers. A bare credential has none.",
+  };
+
+  function renderNote(text) {
+    const el = document.createElement("div");
+    el.className = "format-note";
+    el.textContent = text;
+    return el;
+  }
+
   function renderMDOC(data) {
     const info = document.createElement("div");
+    info.appendChild(renderNote(MDOC_NOTES.structure));
     info.appendChild(renderKV("DocType", data.docType));
+    if (data.isDeviceResponse) {
+      info.appendChild(renderKV("Container", "DeviceResponse (a presentation)"));
+    } else {
+      info.appendChild(renderKV("Container", "IssuerSigned (a credential as issued)"));
+    }
     appendSection("Document Info", info, { docType: data.docType });
+
+    // issuerSigned.nameSpaces, as mdoc selective disclosure actually works.
+    if (data.issuerSignedItems) {
+      Object.keys(data.issuerSignedItems).sort().forEach((ns) => {
+        const items = data.issuerSignedItems[ns];
+        const el = document.createElement("div");
+        el.appendChild(renderNote(MDOC_NOTES.items));
+        items.forEach((item) => {
+          el.appendChild(renderIssuerSignedItem(item));
+        });
+        appendSection("issuerSigned.nameSpaces \u2192 " + ns + " (" + items.length + " elements)", el, items);
+      });
+    }
+
+    // issuerSigned.issuerAuth, broken into its COSE_Sign1 parts.
+    if (data.issuerAuth) {
+      const el = document.createElement("div");
+      el.appendChild(renderNote(MDOC_NOTES.issuerAuth));
+      el.appendChild(renderKV("Structure", data.issuerAuth.structure));
+      if (data.issuerAuth.protected) {
+        el.appendChild(createSubSection("protected header (signed)", renderJSONBlock(data.issuerAuth.protected)));
+      }
+      if (data.issuerAuth.unprotected) {
+        el.appendChild(createSubSection("unprotected header (not signed)", renderJSONBlock(data.issuerAuth.unprotected)));
+      }
+      const payload = document.createElement("div");
+      payload.appendChild(renderKV("payload", data.issuerAuth.payload + " (" + data.issuerAuth.payloadBytes + " bytes)"));
+      payload.appendChild(renderKV("signature", data.issuerAuth.signatureBytes + " bytes"));
+      el.appendChild(payload);
+      appendSection("issuerSigned.issuerAuth (COSE_Sign1)", el, data.issuerAuth);
+    }
 
     if (data.mso) {
       const mso = data.mso;
       const el = document.createElement("div");
+      el.appendChild(renderNote(MDOC_NOTES.mso));
       if (mso.version) el.appendChild(renderKV("Version", mso.version));
       if (mso.digestAlgorithm) el.appendChild(renderKV("Digest Algorithm", mso.digestAlgorithm));
       if (mso.validityInfo) {
@@ -778,16 +840,17 @@
         if (vi.validUntil) el.appendChild(renderKV("Valid Until", vi.validUntil));
       }
       if (mso.status) {
-        el.appendChild(createSubSection("Status", renderJSONBlock(mso.status)));
+        el.appendChild(createSubSection("status", renderJSONBlock(mso.status)));
       }
-      appendSection("Mobile Security Object", el, mso);
+      if (mso.valueDigests) {
+        el.appendChild(createSubSection("valueDigests (one per element)", renderJSONBlock(mso.valueDigests)));
+      }
+      appendSection("issuerAuth.payload \u2192 Mobile Security Object", el, mso);
     }
 
-    // Holder binding. An mdoc is bound to a key the holder proves possession
-    // of when presenting, which is the same fact cnf carries in an SD-JWT, so
-    // it gets a section of its own rather than living inside the raw MSO.
     if (data.deviceKey) {
       const el = document.createElement("div");
+      el.appendChild(renderNote(MDOC_NOTES.deviceKey));
       if (!data.deviceKey.bound) {
         el.appendChild(renderKV("Bound to a holder key", "no"));
       } else if (data.deviceKey.error) {
@@ -797,42 +860,59 @@
         el.appendChild(renderKV("Type", data.deviceKey.type + " " + data.deviceKey.curve));
         el.appendChild(renderKV("Thumbprint", data.deviceKey.thumbprint));
       }
-      if (data.mso && data.mso.deviceKeyInfo) {
-        el.appendChild(createSubSection("COSE_Key", renderJSONBlock(data.mso.deviceKeyInfo)));
+      if (data.deviceKey.coseKey) {
+        el.appendChild(createSubSection("COSE_Key", renderJSONBlock(data.deviceKey.coseKey)));
       }
-      appendSection("Device Key (holder binding)", el, data.deviceKey);
+      appendSection("mso.deviceKeyInfo \u2192 device key", el, data.deviceKey);
     }
 
-    if (data.claims) {
-      Object.keys(data.claims).sort().forEach((ns) => {
-        const claims = data.claims[ns];
-        const keys = Object.keys(claims).sort();
-        const el = document.createElement("div");
-        keys.forEach((k) => {
-          const val = claims[k];
-          const valStr = typeof val === "object" && val !== null ? JSON.stringify(val, null, 2) : String(val);
-          const item = document.createElement("div");
-          item.className = "claim-item";
-          const name = document.createElement("span");
-          name.className = "claim-name";
-          name.textContent = k;
-          item.appendChild(name);
-          item.appendChild(document.createTextNode(": "));
-          item.appendChild(renderInlineValue(valStr, "claim-value", k));
-          el.appendChild(item);
-        });
-        appendSection(ns + " (" + keys.length + " claims)", el, claims);
-      });
-    }
-
+    const deviceAuth = document.createElement("div");
+    deviceAuth.appendChild(renderNote(MDOC_NOTES.deviceAuth));
     if (data.deviceAuth) {
-      const el = document.createElement("div");
-      if (data.deviceAuthType) {
-        el.appendChild(renderKV("Type", data.deviceAuthType));
-      }
-      el.appendChild(createSubSection("COSE", renderJSONBlock(data.deviceAuth)));
-      appendSection("Device Authentication", el, data.deviceAuth);
+      if (data.deviceAuthType) deviceAuth.appendChild(renderKV("Type", data.deviceAuthType));
+      deviceAuth.appendChild(createSubSection("COSE", renderJSONBlock(data.deviceAuth)));
+    } else {
+      deviceAuth.appendChild(renderKV("Present", "no (this is a credential, not a presentation)"));
     }
+    appendSection("deviceSigned.deviceAuth", deviceAuth, data.deviceAuth || {});
+  }
+
+  // One disclosed element: the value, and the salt and digest that make
+  // withholding the others possible.
+  function renderIssuerSignedItem(item) {
+    const wrap = document.createElement("div");
+    wrap.className = "mdoc-item";
+
+    const head = document.createElement("div");
+    head.className = "claim-item";
+    const name = document.createElement("span");
+    name.className = "claim-name";
+    name.textContent = item.elementIdentifier;
+    head.appendChild(name);
+    head.appendChild(document.createTextNode(": "));
+    const val = item.elementValue;
+    const valStr = typeof val === "object" && val !== null ? JSON.stringify(val, null, 2) : String(val);
+    head.appendChild(renderInlineValue(valStr, "claim-value", item.elementIdentifier));
+    wrap.appendChild(head);
+
+    const meta = document.createElement("div");
+    meta.className = "mdoc-item-meta";
+    const parts = [
+      "digestID " + item.digestID,
+      "salt " + item.randomBytes + " bytes",
+    ];
+    if (item.digestMatches === true) {
+      parts.push("digest matches the MSO");
+    } else if (item.digestMatches === false) {
+      parts.push("DIGEST DOES NOT MATCH");
+      meta.classList.add("mdoc-item-bad");
+    } else if (item.digestError) {
+      parts.push(item.digestError);
+    }
+    meta.textContent = parts.join(" \u00b7 ");
+    meta.title = item.random ? "salt: " + item.random + "\ndigest: " + (item.digest || "?") : "";
+    wrap.appendChild(meta);
+    return wrap;
   }
 
   // UI helpers

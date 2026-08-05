@@ -1536,7 +1536,7 @@
       const resp = await fetch('/api/trustlists');
       const doc = await resp.json();
       const lists = (doc && doc.trust_lists) || [];
-      row.querySelectorAll('.trust-list-group').forEach(el => el.remove());
+      row.querySelectorAll('.trust-items').forEach(el => el.remove());
       row.hidden = lists.length === 0;
 
       // Grouped by what each list anchors, so a reader looking for one kind
@@ -1548,14 +1548,16 @@
         groups.get(category).push(entry);
       });
 
+      // Same shape as the certificates below: a bold label on the left, the
+      // entries and their explanation on the right.
+      const list = document.createElement('dl');
+      list.className = 'trust-items';
       [...groups.keys()].sort().forEach(category => {
-        const group = document.createElement('div');
-        group.className = 'trust-list-group';
-        const heading = document.createElement('div');
-        heading.className = 'trust-list-category';
-        heading.textContent = category;
-        group.appendChild(heading);
+        const term = document.createElement('dt');
+        term.textContent = category;
+        list.appendChild(term);
 
+        const detail = document.createElement('dd');
         groups.get(category)
           .slice()
           .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
@@ -1563,18 +1565,18 @@
             const url = entry.advertised_url || entry.url ||
               (entry.path ? window.location.origin + entry.path : '');
             if (!url) return;
-            const item = document.createElement('div');
-            item.className = 'trust-list-item';
+            const links = document.createElement('span');
+            links.className = 'trust-links';
             const link = document.createElement('a');
             link.href = url;
             link.textContent = entry.id || 'trust list';
             link.title = url;
-            item.appendChild(link);
+            links.appendChild(link);
             if (entry.entityName) {
               const name = document.createElement('span');
               name.className = 'trust-list-name';
               name.textContent = entry.entityName;
-              item.appendChild(name);
+              links.appendChild(name);
             }
             const copy = document.createElement('button');
             copy.type = 'button';
@@ -1588,18 +1590,18 @@
                 setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
               } catch (e) { /* clipboard unavailable */ }
             });
-            item.appendChild(copy);
+            links.appendChild(copy);
+            detail.appendChild(links);
             if (entry.description) {
-              const desc = document.createElement('div');
-              desc.className = 'trust-list-desc';
+              const desc = document.createElement('span');
+              desc.className = 'trust-item-hint';
               desc.textContent = entry.description;
-              item.appendChild(desc);
+              detail.appendChild(desc);
             }
-            group.appendChild(item);
           });
-
-        row.appendChild(group);
+        list.appendChild(detail);
       });
+      row.appendChild(list);
     } catch (e) {
       row.hidden = true;
     }

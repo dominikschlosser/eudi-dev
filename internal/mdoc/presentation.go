@@ -19,9 +19,11 @@ import (
 	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
@@ -225,4 +227,135 @@ func DeviceKeyThumbprint(key *ecdsa.PublicKey) string {
 		base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))))
 	sum := sha256.Sum256([]byte(canonical))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// ItemDigest returns the digest of a disclosed item and the digest the issuer
+// signed for it. They are what makes mdoc selective disclosure work: the
+// issuer signs a digest per element, the holder sends the element with its
+// salt, and anyone can recompute the digest and compare.
+func ItemDigest(doc *Document, namespace string, item IssuerSignedItem) (got, want []byte, err error) {
+	if doc == nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
+		return nil, nil, fmt.Errorf("document carries no MSO")
+	}
+	hash, err := digestHasher(doc.IssuerAuth.MSO.DigestAlgorithm)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(item.RawCBOR) == 0 {
+		return nil, nil, fmt.Errorf("element kept no encoded form to hash")
+	}
+	got = hash(item.RawCBOR)
+	want = doc.IssuerAuth.MSO.ValueDigests[namespace][item.DigestID]
+	return got, want, nil
+}
+
+// coseHeaderLabels names the COSE header parameters this toolkit meets.
+var coseHeaderLabels = map[int64]string{
+	1: "alg", 2: "crit", 3: "content type", 4: "kid",
+	32: "x5bag", 33: "x5chain", 34: "x5t", 35: "x5u",
+}
+
+// coseAlgLabels names the COSE algorithms by their registered identifier.
+var coseAlgLabels = map[int64]string{
+	-7: "ES256", -35: "ES384", -36: "ES512", -8: "EdDSA",
+	-257: "RS256", -258: "RS384", -259: "RS512",
+}
+
+// NameCOSEHeader turns a COSE header map into one keyed by parameter name,
+// with known algorithm identifiers spelled out. The raw form is integers on
+// both sides, which is unreadable without the registry to hand.
+func NameCOSEHeader(header map[string]any) map[string]any {
+	if len(header) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(header))
+	for key, value := range header {
+		label := key
+		if n, err := strconv.ParseInt(key, 10, 64); err == nil {
+			if name, ok := coseHeaderLabels[n]; ok {
+				label = name
+			}
+			if n == 1 {
+				if alg, ok := coseAlgLabels[coseInt(value)]; ok {
+					value = alg
+				}
+			}
+		}
+		if label == "x5chain" || label == "x5bag" {
+			value = describeCertificates(value)
+		}
+		out[label] = value
+	}
+	return out
+}
+
+// describeCertificates replaces raw DER with something a reader can place.
+func describeCertificates(value any) any {
+	var ders [][]byte
+	switch v := value.(type) {
+	case []byte:
+		ders = [][]byte{v}
+	case []any:
+		for _, entry := range v {
+			if der, ok := entry.([]byte); ok {
+				ders = append(ders, der)
+			}
+		}
+	default:
+		return value
+	}
+	out := make([]any, 0, len(ders))
+	for _, der := range ders {
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			out = append(out, fmt.Sprintf("%d bytes (unparseable)", len(der)))
+			continue
+		}
+		out = append(out, map[string]any{
+			"subject":   cert.Subject.String(),
+			"issuer":    cert.Issuer.String(),
+			"notAfter":  cert.NotAfter.Format("2006-01-02"),
+			"serial":    cert.SerialNumber.String(),
+			"algorithm": cert.SignatureAlgorithm.String(),
+		})
+	}
+	return out
+}
+
+// NameCOSEKey turns a COSE_Key into named members. EC2 keys arrive as
+// {1: 2, -1: 1, -2: x, -3: y}, which says nothing without the registry.
+func NameCOSEKey(key map[string]any) map[string]any {
+	if len(key) == 0 {
+		return nil
+	}
+	names := map[string]string{"1": "kty", "-1": "crv", "-2": "x", "-3": "y", "3": "alg", "2": "kid"}
+	ktyNames := map[int64]string{1: "OKP", 2: "EC2", 3: "RSA", 4: "Symmetric"}
+	crvNames := map[int64]string{1: "P-256", 2: "P-384", 3: "P-521", 6: "Ed25519"}
+	out := make(map[string]any, len(key))
+	for k, v := range key {
+		name := k
+		if named, ok := names[k]; ok {
+			name = named
+		}
+		switch name {
+		case "kty":
+			if s, ok := ktyNames[coseInt(v)]; ok {
+				v = s
+			}
+		case "crv":
+			if s, ok := crvNames[coseInt(v)]; ok {
+				v = s
+			}
+		case "x", "y":
+			if b, ok := v.([]byte); ok {
+				v = base64.RawURLEncoding.EncodeToString(b)
+			}
+		case "alg":
+			if s, ok := coseAlgLabels[coseInt(v)]; ok {
+				v = s
+			}
+		}
+		out[name] = v
+	}
+	return out
 }

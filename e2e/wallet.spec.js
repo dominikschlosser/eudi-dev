@@ -729,12 +729,10 @@ test.describe("Credential Issuing via UI", () => {
     // provider profile is named next to it, and the lists are grouped by what
     // they anchor. Verifiers want the credential anchor, issuers the wallet
     // attestation one, and neither should have to read past the other.
-    const categories = page.locator("#trust-list-links .trust-list-category");
+    const categories = page.locator("#trust-list-links .trust-items dt");
     await expect(categories).toHaveText(["Credential providers", "Wallet providers"]);
-    const walletGroup = page.locator(".trust-list-group", {
-      has: page.locator(".trust-list-category", { hasText: "Wallet providers" }),
-    });
-    await expect(walletGroup.locator(".trust-list-item a")).toHaveText(["wallet-provider"]);
+    const walletGroup = page.locator("#trust-list-links .trust-items dd").nth(1);
+    await expect(walletGroup.locator(".trust-links a")).toHaveText(["wallet-provider"]);
     // Every entry names its profile, not just its id.
     const names = page.locator("#trust-list-links .trust-list-name");
     expect(await names.count()).toBeGreaterThan(0);

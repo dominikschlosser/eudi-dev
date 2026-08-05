@@ -331,22 +331,6 @@ header h1 {
   align-items: flex-start;
   gap: 8px;
 }
-.cert-links .trust-list-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-}
-.cert-links .trust-list-group + .trust-list-group {
-  margin-top: 10px;
-}
-.cert-links .trust-list-category {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-dim);
-  opacity: 0.8;
-}
 .cert-links .trust-list-item {
   display: flex;
   flex-wrap: wrap;
@@ -1031,6 +1015,10 @@ header h1 {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+/* A trust-list group lists several entries under one term. */
+.trust-items dd .trust-links + .trust-item-hint {
+  margin-bottom: 4px;
 }
 .trust-links {
   display: flex;

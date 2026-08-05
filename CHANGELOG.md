@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.5] - 2026-08-05
 
+### Added
+
+- **The decoder explains the mdoc format instead of dumping it.** An SD-JWT arrives as text whose parts can be coloured, an mdoc arrives as one binary blob, and the decoder showed little more than the MSO and the claim values. It now follows the container: `issuerSigned.nameSpaces`, `issuerSigned.issuerAuth` broken into its COSE_Sign1 parts, the MSO as that signature's payload, the device key, and `deviceSigned.deviceAuth`. Each element shows its salt and digest id next to the value, and whether the digest recomputes to the one the issuer signed, which is what mdoc selective disclosure actually is. COSE integer labels are named (`alg`, `kid`, `x5chain`, `kty`, `crv`), certificate chains are shown as subject, issuer and expiry, and each section says in a line what it is for
+
 ### Fixed
 
 - **The mdoc decoder did not show the holder binding.** An mdoc is bound to a device key the holder proves possession of when presenting, which is the same fact `cnf` carries in an SD-JWT and is shown there by default. In mdoc it was reachable only as a raw COSE_Key behind `-v`, and not at all in the decoder UI, so a bound credential looked like an unbound one. Both now show it next to the MSO, as the curve and a thumbprint rather than integer-labelled bytes, and say so plainly when a credential carries no device key at all. A presentation also reports whether it carries a `deviceSignature` or a `deviceMac`

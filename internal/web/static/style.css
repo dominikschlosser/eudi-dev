@@ -931,3 +931,30 @@ textarea.colorized::placeholder {
   justify-content: flex-end;
   margin-top: 16px;
 }
+
+/* mdoc decoder: an explanation per section, and the salt/digest that make
+   selective disclosure work shown next to each element. */
+.format-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border);
+  padding: 2px 0 2px 8px;
+  margin-bottom: 8px;
+}
+.mdoc-item {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mdoc-item:last-child {
+  border-bottom: 0;
+}
+.mdoc-item-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  cursor: help;
+}
+.mdoc-item-bad {
+  color: var(--red);
+}

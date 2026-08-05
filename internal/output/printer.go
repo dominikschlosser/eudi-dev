@@ -15,10 +15,13 @@
 package output
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -221,6 +224,17 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 		if mso.Status != nil {
 			msoOut["status"] = mso.Status
 		}
+		if len(mso.ValueDigests) > 0 {
+			digests := make(map[string]any, len(mso.ValueDigests))
+			for ns, byID := range mso.ValueDigests {
+				entries := make(map[string]any, len(byID))
+				for id, digest := range byID {
+					entries[strconv.FormatUint(id, 10)] = base64.RawURLEncoding.EncodeToString(digest)
+				}
+				digests[ns] = entries
+			}
+			msoOut["valueDigests"] = digests
+		}
 		if mso.DeviceKeyInfo != nil {
 			msoOut["deviceKeyInfo"] = mso.DeviceKeyInfo
 		}
@@ -230,6 +244,8 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 	// mso.deviceKeyInfo, but integer labels and byte strings are not something
 	// a reader can identify a key by.
 	out["deviceKey"] = buildDeviceKeyJSON(doc)
+	out["issuerAuth"] = buildIssuerAuthJSON(doc)
+	out["issuerSignedItems"] = buildIssuerSignedItemsJSON(doc)
 	if doc.DeviceSigned != nil && doc.DeviceSigned.DeviceAuth != nil {
 		out["deviceAuth"] = doc.DeviceSigned.DeviceAuth
 		out["deviceAuthType"] = deviceAuthType(doc)
@@ -238,12 +254,91 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 }
 
 // PrintMDOC prints a decoded mDOC to the terminal.
+// buildIssuerAuthJSON describes the COSE_Sign1 the issuer signed the MSO
+// with. It is the mdoc counterpart of a JWT's header and signature, so it is
+// broken into the same parts rather than left as one blob.
+func buildIssuerAuthJSON(doc *mdoc.Document) map[string]any {
+	if doc.IssuerAuth == nil {
+		return nil
+	}
+	out := map[string]any{
+		"structure": "COSE_Sign1 [protected, unprotected, payload, signature]",
+	}
+	if named := mdoc.NameCOSEHeader(cborKeyedMap(doc.IssuerAuth.ProtectedHeader)); named != nil {
+		out["protected"] = named
+	}
+	if named := mdoc.NameCOSEHeader(cborKeyedMap(doc.IssuerAuth.UnprotectedHeader)); named != nil {
+		out["unprotected"] = named
+	}
+	out["payload"] = "the Mobile Security Object, below"
+	out["payloadBytes"] = len(doc.IssuerAuth.Payload)
+	out["signatureBytes"] = len(doc.IssuerAuth.Signature)
+	return out
+}
+
+// cborKeyedMap turns a CBOR map with arbitrary keys into string keys, which
+// is what the naming helpers expect.
+func cborKeyedMap(m map[any]any) map[string]any {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[fmt.Sprintf("%v", k)] = v
+	}
+	return out
+}
+
+// buildIssuerSignedItemsJSON describes each disclosed element the way mdoc
+// actually carries it: a salt, a digest id, and a value whose digest the
+// issuer signed. Recomputing that digest is what proves the value was not
+// changed, so the result of the comparison travels with it.
+func buildIssuerSignedItemsJSON(doc *mdoc.Document) map[string]any {
+	if len(doc.NameSpaces) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(doc.NameSpaces))
+	for namespace, items := range doc.NameSpaces {
+		entries := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			entry := map[string]any{
+				"elementIdentifier": item.ElementIdentifier,
+				"elementValue":      item.ElementValue,
+				"digestID":          item.DigestID,
+				"random":            base64.RawURLEncoding.EncodeToString(item.Random),
+				"randomBytes":       len(item.Random),
+			}
+			got, want, err := mdoc.ItemDigest(doc, namespace, item)
+			switch {
+			case err != nil:
+				entry["digestError"] = err.Error()
+			case want == nil:
+				entry["digestMatches"] = false
+				entry["digestError"] = "the MSO lists no digest for this id"
+			default:
+				entry["digest"] = base64.RawURLEncoding.EncodeToString(got)
+				entry["signedDigest"] = base64.RawURLEncoding.EncodeToString(want)
+				entry["digestMatches"] = bytes.Equal(got, want)
+			}
+			entries = append(entries, entry)
+		}
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i]["elementIdentifier"].(string) < entries[j]["elementIdentifier"].(string)
+		})
+		out[namespace] = entries
+	}
+	return out
+}
+
 // buildDeviceKeyJSON summarizes the holder binding, or reports its absence.
 func buildDeviceKeyJSON(doc *mdoc.Document) map[string]any {
 	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.DeviceKeyInfo == nil {
 		return map[string]any{"bound": false}
 	}
 	out := map[string]any{"bound": true}
+	if named := mdoc.NameCOSEKey(deviceKeyMap(doc)); named != nil {
+		out["coseKey"] = named
+	}
 	key, err := mdoc.DeviceKey(doc)
 	if err != nil {
 		out["error"] = err.Error()
@@ -253,6 +348,15 @@ func buildDeviceKeyJSON(doc *mdoc.Document) map[string]any {
 	out["curve"] = key.Curve.Params().Name
 	out["thumbprint"] = mdoc.DeviceKeyThumbprint(key)
 	return out
+}
+
+// deviceKeyMap pulls the COSE_Key out of deviceKeyInfo.
+func deviceKeyMap(doc *mdoc.Document) map[string]any {
+	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
+		return nil
+	}
+	key, _ := doc.IssuerAuth.MSO.DeviceKeyInfo["deviceKey"].(map[string]any)
+	return key
 }
 
 // deviceAuthType names how the holder authenticated a presentation.
