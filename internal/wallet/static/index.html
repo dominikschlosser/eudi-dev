@@ -155,21 +155,45 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">What others need to trust this wallet. Verifiers check the credentials it issues, issuers check the wallet attestation it sends. Both chain to the same CA.</p>
-      <div class="cli-install">
-        <div class="cli-install-label">Trust lists</div>
+      <p class="dialog-hint">What another party needs in order to trust this wallet. Verifiers check the credentials it issues, issuers check the attestations it sends. Everything below chains to the same CA.</p>
+
+      <div class="trust-section">
+        <div class="trust-section-title">Trust lists</div>
+        <p class="trust-section-hint">ETSI trust lists naming this wallet&rsquo;s CA as the anchor, grouped by what each one covers.</p>
         <div class="cert-links" id="trust-list-links"></div>
-        <p class="dialog-hint">One list per credential type, plus <code>wallet-provider</code> for the wallet attestation. All contain the same CA.</p>
-        <div class="cli-install-label">Certificates</div>
-        <div class="cert-links" id="cert-links">
-          <a id="ca-cert-pem-link" href="/api/certificates/ca">CA (PEM)</a>
-          <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">CA (JWKS)</a>
-          <a id="signing-jwks-link" href="/.well-known/jwt-vc-issuer">Signing key (JWKS)</a>
-          <a id="tls-cert-pem-link" href="/api/certificates/tls">TLS (PEM)</a>
-          <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">TLS (JWKS)</a>
-        </div>
-        <p class="dialog-hint">The wallet attestation and key attestation are signed with the signing key. They carry only the leaf certificate, so configure the CA. Leaf certificates change, the CA does not.</p>
       </div>
+
+      <div class="trust-section">
+        <div class="trust-section-title">Certificates &amp; keys</div>
+        <dl class="trust-items">
+          <dt>Trust anchor</dt>
+          <dd>
+            <span class="trust-links">
+              <a id="ca-cert-pem-link" href="/api/certificates/ca">PEM</a>
+              <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">JWKS</a>
+            </span>
+            <span class="trust-item-hint">Configure this one. Attestations carry only the leaf, and leaves change; the CA does not.</span>
+          </dd>
+
+          <dt>Signing key</dt>
+          <dd>
+            <span class="trust-links">
+              <a id="signing-jwks-link" href="/.well-known/jwt-vc-issuer">JWKS</a>
+            </span>
+            <span class="trust-item-hint">Signs issued credentials, the wallet attestation and the key attestation.</span>
+          </dd>
+
+          <dt id="tls-row-label">TLS</dt>
+          <dd id="tls-row">
+            <span class="trust-links">
+              <a id="tls-cert-pem-link" href="/api/certificates/tls">PEM</a>
+              <a id="tls-cert-jwks-link" href="/api/certificates/tls?format=jwks">JWKS</a>
+            </span>
+            <span class="trust-item-hint">The wallet&rsquo;s own HTTPS leaf, for a client that pins it.</span>
+          </dd>
+        </dl>
+      </div>
+
       <div class="consent-buttons">
         <button class="btn" id="trust-close">Close</button>
       </div>

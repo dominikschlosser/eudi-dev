@@ -990,6 +990,76 @@ header h1 {
   word-break: break-all;
 }
 
+/* Trust & certificates dialog: two labelled sections, each item on its own
+   row with a one-line explanation, so the dialog can be scanned instead of
+   read start to finish. */
+.trust-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--bg);
+}
+.trust-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.trust-section-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.trust-items {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  align-items: baseline;
+  margin: 0;
+}
+.trust-items dt {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.trust-items dd {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.trust-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+}
+.trust-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.trust-links a:hover {
+  text-decoration: underline;
+}
+.trust-item-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+@media (max-width: 480px) {
+  .trust-items {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .trust-items dt {
+    margin-top: 6px;
+  }
+}
+
 /* Credentials an issuer deferred, still being collected. */
 .deferred-list {
   display: flex;

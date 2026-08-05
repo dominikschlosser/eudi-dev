@@ -1432,8 +1432,8 @@
         // No built-in HTTPS listener (external TLS terminator serves the
         // issuer origin): the self-signed TLS leaf is never presented, so
         // offering it for download would only mislead.
-        document.getElementById('tls-cert-pem-link').hidden = true;
-        document.getElementById('tls-cert-jwks-link').hidden = true;
+        document.getElementById('tls-row-label').hidden = true;
+        document.getElementById('tls-row').hidden = true;
       }
       renderConformance(config);
       if (config.demo && config.demo.enabled) {
