@@ -69,8 +69,12 @@ type offerState struct {
 	cNonce      string
 	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
 	// the pre-authorized flow, which uses a bearer token.
-	jkt     string
-	expires time.Time
+	jkt string
+	// withStatus mints the ticket with a reference to the wallet's own status
+	// list, which is what makes the credential revocable and gives the
+	// verifier's revocation check something to resolve.
+	withStatus bool
+	expires    time.Time
 }
 
 // IssuerHandler returns the demo issuer, meant to be mounted with the
@@ -165,9 +169,17 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 // produces an offer the wallet redeems through the authorization code flow,
 // where the user signs in at the authorization endpoint as part of the
 // redemption. Anything else produces a pre-authorized code offer, which
-// carries its own authorization and needs no login at all.
+// carries its own authorization and needs no login at all. ?status=true mints
+// the ticket with a status list reference, so it can be revoked afterwards.
 func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	authCode := r.URL.Query().Get("grant") == authCodeGrant
+	withStatus := r.URL.Query().Get("status") == "true"
+	if withStatus && d.statusListURI() == "" {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "this wallet has no status list URL, so the ticket cannot carry a status reference",
+		})
+		return
+	}
 
 	d.mu.Lock()
 	d.pruneLocked()
@@ -177,8 +189,9 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offer := &offerState{
-		id:      randToken(),
-		expires: time.Now().Add(entryTTL),
+		id:         randToken(),
+		withStatus: withStatus,
+		expires:    time.Now().Add(entryTTL),
 	}
 	if authCode {
 		offer.issuerState = randToken()
@@ -302,10 +315,12 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		known = false
 	}
 	var cNonce, subject, jkt string
+	var withStatus bool
 	if known {
 		cNonce = offer.cNonce
 		subject = offer.subject
 		jkt = offer.jkt
+		withStatus = offer.withStatus
 	}
 	d.mu.Unlock()
 	if !known {
@@ -346,7 +361,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := d.signTicket(holderKey, subject)
+	credential, err := d.signTicket(holderKey, subject, withStatus)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "credential_request_denied", "error_description": err.Error()})
 		return
@@ -381,15 +396,22 @@ func verifyProofJWT(raw, cNonce string) (*ecdsa.PublicKey, error) {
 	return holderKey, nil
 }
 
+// statusListURI is the status list a ticket issued with a status reference
+// points at: the wallet's own, so the wallet UI can revoke the credential and
+// the demo verifier resolves the list from the same host it trusts.
+func (d *DemoRP) statusListURI() string {
+	return strings.TrimSpace(d.wallet.StatusListURL())
+}
+
 // signTicket mints the demo ticket SD-JWT VC, holder-bound to the proof key
 // and signed with the wallet's issuer key under a leaf certificate from the
 // wallet CA, so the wallet's trust list covers the credential.
-func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string) (string, error) {
+func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string, withStatus bool) (string, error) {
 	chain, err := d.wallet.DefaultSigningCertChain()
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
 	}
-	return mock.GenerateSDJWT(mock.SDJWTConfig{
+	config := mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
@@ -397,7 +419,20 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string) (string,
 		Key:       d.wallet.IssuerKey,
 		HolderKey: holderKey,
 		CertChain: chain,
-	})
+	}
+	if withStatus {
+		uri := d.statusListURI()
+		if uri == "" {
+			return "", fmt.Errorf("this wallet has no status list URL")
+		}
+		config.StatusListURI = uri
+		// The index has to survive this process: every wallet API request
+		// reloads the store, which would otherwise hand the same index to the
+		// next credential and revoking one would revoke both.
+		config.StatusListIdx = d.wallet.NextStatusIndex()
+		d.saveWallet()
+	}
+	return mock.GenerateSDJWT(config)
 }
 
 func decodeJSONBody(r *http.Request, target any) error {

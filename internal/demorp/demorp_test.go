@@ -212,7 +212,7 @@ func jsonString(v string) string {
 // parameters, exactly as a wallet would.
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
 	t.Helper()
-	credential, err := d.signTicket(&holderKey.PublicKey, "")
+	credential, err := d.signTicket(&holderKey.PublicKey, "", false)
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -610,7 +610,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 
 	id, params := startVerification(t, h, "ticket")
 
-	credential, err := d.signTicket(&holderKey.PublicKey, "")
+	credential, err := d.signTicket(&holderKey.PublicKey, "", false)
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -1043,4 +1043,179 @@ func TestIssuanceWithOverrideStillStoresTheCredential(t *testing.T) {
 	if !found {
 		t.Error("the issued ticket is not in the wallet")
 	}
+}
+
+// A ticket offered without the status toggle carries no status reference at
+// all, which is what makes the toggle worth having.
+func TestIssuerOffersTicketWithoutStatusByDefault(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	ticket := redeemDemoTicket(t, w, ts, "")
+	if _, ok := ticket.Claims["status"]; ok {
+		t.Errorf("ticket carries a status claim without the toggle: %v", ticket.Claims["status"])
+	}
+	if _, managed := w.StatusEntryFor(ticket.ID); managed {
+		t.Error("the wallet registered a status entry for a ticket without one")
+	}
+}
+
+// TestIssuerOffersRevocableTicket is the whole point of the status toggle: a
+// ticket issued with a status reference lands in the wallet as a credential
+// the wallet governs, verifies at the demo verifier, and stops verifying once
+// it is revoked there.
+func TestIssuerOffersRevocableTicket(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	ticket := redeemDemoTicket(t, w, ts, "?status=true")
+	ref := wallet.CredentialStatusRef(*ticket)
+	if ref == nil {
+		t.Fatalf("ticket carries no status reference: %v", ticket.Claims)
+	}
+	if ref.URI != w.StatusListURL() {
+		t.Errorf("status uri = %q, want the wallet's own list %q", ref.URI, w.StatusListURL())
+	}
+	// Without an entry of its own the wallet could never flip the bit, and the
+	// Revoke button would not even appear.
+	entry, managed := w.StatusEntryFor(ticket.ID)
+	if !managed {
+		t.Fatal("the wallet did not adopt the status entry of the ticket it issued to itself")
+	}
+	if entry.Index != ref.Idx {
+		t.Errorf("adopted index = %d, want the one in the credential %d", entry.Index, ref.Idx)
+	}
+
+	if got := presentDemoTicket(t, ts); got["status"] != "verified" {
+		t.Fatalf("a fresh ticket did not verify: %v (checks: %v)", got, got["checks"])
+	}
+
+	if _, ok := w.SetCredentialStatus(ticket.ID, 1); !ok {
+		t.Fatal("revoking the ticket failed")
+	}
+	result := presentDemoTicket(t, ts)
+	if result["status"] != "failed" {
+		t.Fatalf("a revoked ticket still verified: %v (checks: %v)", result, result["checks"])
+	}
+	if !strings.Contains(fmt.Sprint(result["error"]), "revoked") {
+		t.Errorf("verification failed for the wrong reason: %v", result["error"])
+	}
+}
+
+// Two tickets issued with a status reference must land on different indices,
+// or revoking one would revoke the other.
+func TestIssuerReservesOneStatusIndexPerTicket(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	first := wallet.CredentialStatusRef(*redeemDemoTicket(t, w, ts, "?status=true"))
+	second := wallet.CredentialStatusRef(*redeemDemoTicket(t, w, ts, "?status=true"))
+	if first == nil || second == nil {
+		t.Fatalf("a ticket carries no status reference: %v %v", first, second)
+	}
+	if first.Idx == second.Idx {
+		t.Errorf("both tickets sit on status index %d", first.Idx)
+	}
+}
+
+// A wallet with no status list URL cannot mint a status reference, so the
+// offer is refused rather than silently handing out a ticket without one.
+func TestIssuerRefusesStatusOfferWithoutAStatusList(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	code, doc := doJSON(t, d.IssuerHandler(), "POST", "/api/offers?status=true", "", nil)
+	if code != http.StatusConflict {
+		t.Fatalf("creating the offer = %d %v, want 409", code, doc)
+	}
+}
+
+// Reserving an index changes wallet state that every wallet API request
+// reloads from disk, so it has to be persisted right away.
+func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
+	d, w, holderKey := newDemoRP(t)
+	w.BaseURL = "http://demo.example"
+	saves := 0
+	d.SetOnWalletChange(func() { saves++ })
+
+	if _, err := d.signTicket(&holderKey.PublicKey, "", false); err != nil {
+		t.Fatalf("signing a ticket without a status reference: %v", err)
+	}
+	if saves != 0 {
+		t.Errorf("a ticket without a status reference saved the wallet %d times", saves)
+	}
+	if _, err := d.signTicket(&holderKey.PublicKey, "", true); err != nil {
+		t.Fatalf("signing a ticket with a status reference: %v", err)
+	}
+	if saves != 1 {
+		t.Errorf("the wallet was saved %d times after reserving an index, want 1", saves)
+	}
+}
+
+// The authorization code flow mints a second state for the same offer, so the
+// choice made when the offer was created has to survive the sign-in.
+func TestAuthorizationCodeOfferKeepsTheStatusChoice(t *testing.T) {
+	d, w, _ := newDemoRP(t)
+	w.BaseURL = "http://demo.example"
+	h := d.IssuerHandler()
+
+	code, doc := doJSON(t, h, "POST", "/api/offers?grant=authorization_code&status=true", "", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("creating the offer: %d %v", code, doc)
+	}
+	offerURI := doc["offer_uri"].(string)
+	_, offer := doJSON(t, h, "GET", "/offer/"+offerURI[strings.LastIndex(offerURI, "/")+1:], "", nil)
+	grants := offer["grants"].(map[string]any)[authCodeGrant].(map[string]any)
+	issuerState := grants["issuer_state"].(string)
+
+	if !d.offerWantsStatus(issuerState) {
+		t.Error("the status choice was lost between the offer and its issuer_state")
+	}
+	if d.offerWantsStatus("some-other-state") {
+		t.Error("an unknown issuer_state must not inherit a status choice")
+	}
+}
+
+// redeemDemoTicket creates a demo issuer offer with the given query string,
+// redeems it through the wallet, and returns the stored ticket.
+func redeemDemoTicket(t *testing.T, w *wallet.Wallet, ts *httptest.Server, query string) *wallet.StoredCredential {
+	t.Helper()
+	created := postJSONTo(t, ts.URL+"/issuer/api/offers"+query, "")
+	schemeURI, _ := created["scheme_uri"].(string)
+	if schemeURI == "" {
+		t.Fatalf("unexpected offer response: %v", created)
+	}
+	known := make(map[string]bool)
+	for _, c := range w.GetCredentials() {
+		known[c.ID] = true
+	}
+
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`)
+	if result["error"] != nil {
+		t.Fatalf("accepting the offer failed: %v", result["error"])
+	}
+	for _, c := range w.GetCredentials() {
+		if c.VCT == TicketVCT && !known[c.ID] {
+			ticket := c
+			return &ticket
+		}
+	}
+	t.Fatal("the issued ticket is not in the wallet")
+	return nil
+}
+
+// presentDemoTicket drives one demo verifier ticket request through the
+// wallet and returns the verification result.
+func presentDemoTicket(t *testing.T, ts *httptest.Server) map[string]any {
+	t.Helper()
+	created := postJSONTo(t, ts.URL+"/verifier/api/requests", `{"type":"ticket"}`)
+	id, _ := created["id"].(string)
+	walletURL, _ := created["wallet_url"].(string)
+	if id == "" || walletURL == "" {
+		t.Fatalf("unexpected create response: %v", created)
+	}
+	resp, err := ts.Client().Get(walletURL)
+	if err != nil {
+		t.Fatalf("driving the authorization request: %v", err)
+	}
+	resp.Body.Close()
+	return getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
 }

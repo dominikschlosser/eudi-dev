@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.11] - 2026-08-06
+
+### Added
+
+- **The demo issuer can hand out a revocable ticket.** A toggle on its page mints the Demo Event Ticket with a reference to the wallet's own status list, on an index reserved for that credential alone. A wallet importing a credential that points at the status list it serves now adopts the entry, so the ticket arrives with a working Revoke button and the demo verifier rejects the next presentation once it is revoked. Without the toggle nothing changes: the ticket carries no status reference and the verifier reports that there is none to resolve
+
 ## [1.19.10] - 2026-08-05
 
 ### Changed

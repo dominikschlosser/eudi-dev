@@ -382,6 +382,14 @@ so the wallet automatically receives incoming protocol requests.`,
 				}
 				return fmt.Sprintf("http://localhost:%d", port)
 			})
+			// Issuing with a status list reserves an index on the wallet's own
+			// list, and every wallet API request reloads the store, so the
+			// reservation has to reach disk before the next one.
+			demoRP.SetOnWalletChange(func() {
+				if err := store.Save(w); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
+				}
+			})
 			srv.Mount("/issuer", demoRP.IssuerHandler())
 			srv.Mount("/verifier", demoRP.VerifierHandler())
 			// OID4VCI inserts the well-known segment before the issuer path,

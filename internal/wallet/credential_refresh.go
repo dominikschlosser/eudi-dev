@@ -135,6 +135,14 @@ func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (
 	}
 	w.Credentials = kept
 
+	// The renewed copy was imported under a throwaway id, so a status entry
+	// adopted during that import has to follow it onto the entry that keeps
+	// the original id.
+	if entry, ok := w.StatusEntries[appendedID]; ok {
+		delete(w.StatusEntries, appendedID)
+		w.StatusEntries[id] = entry
+	}
+
 	for i := range w.Credentials {
 		if w.Credentials[i].ID != id {
 			continue

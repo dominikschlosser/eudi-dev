@@ -298,6 +298,11 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		jkt:         jkt,
 		expires:     time.Now().Add(entryTTL),
 	}
+	// This is a second state for the same offer, so what the offer was created
+	// with has to travel with it: the issuer_state is the only thing tying the
+	// two together.
+	offer.withStatus = d.offerWantsStatus(granted.issuerState)
+
 	d.mu.Lock()
 	d.tokens[offer.accessToken] = offer
 	d.mu.Unlock()
@@ -309,6 +314,22 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		"c_nonce":            offer.cNonce,
 		"c_nonce_expires_in": int(entryTTL.Seconds()),
 	})
+}
+
+// offerWantsStatus reports whether the offer an issuer_state belongs to was
+// created with a status list reference.
+func (d *DemoRP) offerWantsStatus(issuerState string) bool {
+	if issuerState == "" {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, offer := range d.offers {
+		if offer.issuerState == issuerState {
+			return offer.withStatus
+		}
+	}
+	return false
 }
 
 func (d *DemoRP) lookupAuthRequest(requestURI string) (*authRequestState, error) {

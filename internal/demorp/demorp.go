@@ -62,6 +62,9 @@ const (
 type DemoRP struct {
 	wallet  *wallet.Wallet
 	baseURL func() string
+	// onWalletChange persists the wallet after the issuer changed something in
+	// it, which so far means reserving a status list index.
+	onWalletChange func()
 
 	mu       sync.Mutex
 	offers   map[string]*offerState
@@ -85,6 +88,18 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		requests:     make(map[string]*requestState),
 		authRequests: make(map[string]*authRequestState),
 		codes:        make(map[string]*authRequestState),
+	}
+}
+
+// SetOnWalletChange registers the callback that persists the wallet after the
+// demo issuer changed it. Call before serving.
+func (d *DemoRP) SetOnWalletChange(fn func()) {
+	d.onWalletChange = fn
+}
+
+func (d *DemoRP) saveWallet() {
+	if d.onWalletChange != nil {
+		d.onWalletChange()
 	}
 }
 

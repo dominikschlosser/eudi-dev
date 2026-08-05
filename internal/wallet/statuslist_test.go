@@ -479,3 +479,74 @@ func TestGenerateSDJWT_WithoutStatusList(t *testing.T) {
 		t.Error("expected no status claim when not configured")
 	}
 }
+
+// A credential that points at the wallet's own status list is one the wallet
+// can revoke, whoever handed it over. The demo issuer runs on the same host
+// and hands out exactly that, and without an entry of its own the wallet
+// would offer no way to flip the bit.
+func TestImportAdoptsOwnStatusListEntry(t *testing.T) {
+	w := generateTestWallet(t)
+	w.BaseURL = "http://localhost:8085"
+
+	for _, tc := range []struct {
+		name  string
+		uri   string
+		want  bool
+		index int
+	}{
+		{"own status list", "http://localhost:8085/api/statuslist", true, 7},
+		{"someone else's status list", "https://issuer.example/statuslist", false, 7},
+		{"no status list", "", false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+				Issuer:        "https://issuer.example",
+				VCT:           "test",
+				ExpiresIn:     3600,
+				Claims:        map[string]any{"name": "Test"},
+				Key:           w.IssuerKey,
+				StatusListURI: tc.uri,
+				StatusListIdx: tc.index,
+			})
+			if err != nil {
+				t.Fatalf("generating the credential: %v", err)
+			}
+			imported, err := w.ImportCredential(raw)
+			if err != nil {
+				t.Fatalf("importing: %v", err)
+			}
+			entry, managed := w.StatusEntryFor(imported.ID)
+			if managed != tc.want {
+				t.Fatalf("managed = %v, want %v", managed, tc.want)
+			}
+			if managed && entry.Index != tc.index {
+				t.Errorf("adopted index = %d, want %d", entry.Index, tc.index)
+			}
+		})
+	}
+}
+
+// A wallet without a status list of its own must not claim entries on
+// whatever list a credential happens to reference.
+func TestImportAdoptsNothingWithoutAStatusList(t *testing.T) {
+	w := generateTestWallet(t)
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:        "https://issuer.example",
+		VCT:           "test",
+		ExpiresIn:     3600,
+		Claims:        map[string]any{"name": "Test"},
+		Key:           w.IssuerKey,
+		StatusListURI: "http://localhost:8085/api/statuslist",
+		StatusListIdx: 3,
+	})
+	if err != nil {
+		t.Fatalf("generating the credential: %v", err)
+	}
+	imported, err := w.ImportCredential(raw)
+	if err != nil {
+		t.Fatalf("importing: %v", err)
+	}
+	if _, managed := w.StatusEntryFor(imported.ID); managed {
+		t.Error("a wallet with no status list URL adopted a status entry")
+	}
+}

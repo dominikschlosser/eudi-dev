@@ -75,6 +75,16 @@
     <p class="grant-hint" id="grant-hint">
       The offer carries the code, so the wallet redeems it without any sign-in.
     </p>
+    <div class="grant-row" id="status-row" hidden>
+      <span class="grant-label">Status list</span>
+      <div class="toggle" id="status-toggle" role="radiogroup" aria-label="Status list reference">
+        <button type="button" class="toggle-option selected" data-status="" role="radio" aria-checked="true">Without</button>
+        <button type="button" class="toggle-option" data-status="true" role="radio" aria-checked="false">With</button>
+      </div>
+    </div>
+    <p class="grant-hint" id="status-hint" hidden>
+      The ticket carries no status reference, so nothing can revoke it.
+    </p>
     <button class="btn primary" id="create-btn">Create offer</button>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>

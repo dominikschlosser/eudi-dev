@@ -39,6 +39,7 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported SD-JWT credential: vct=%s claims=%d disclosures=%d", cred.VCT, len(cred.Claims), len(cred.Disclosures))
+		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 
@@ -50,6 +51,7 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported mDoc credential: docType=%s claims=%d", cred.DocType, len(cred.Claims))
+		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 
@@ -60,10 +62,34 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported plain JWT credential: vct=%s claims=%d", cred.VCT, len(cred.Claims))
+		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 
 	return nil, fmt.Errorf("unable to detect credential format (expected SD-JWT or mDoc)")
+}
+
+// adoptOwnStatusEntry records a status list entry for an imported credential
+// that points at this wallet's own status list. The wallet is the holder of
+// such a credential, not its issuer, but the list is still the one it serves:
+// without the entry the credential would show up as externally governed and
+// nothing could ever flip its bit. The demo issuer produces exactly this case.
+func (w *Wallet) adoptOwnStatusEntry(cred *StoredCredential) {
+	if w == nil || cred == nil {
+		return
+	}
+	own := strings.TrimSpace(w.StatusListURL())
+	if own == "" {
+		return
+	}
+	ref := CredentialStatusRef(*cred)
+	if ref == nil || ref.URI != own {
+		return
+	}
+	if _, exists := w.StatusEntryFor(cred.ID); exists {
+		return
+	}
+	w.registerStatusEntry(cred.ID, ref.Idx)
 }
 
 // appendCredential adds a credential to the wallet and returns a copy.
