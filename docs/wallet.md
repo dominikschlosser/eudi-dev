@@ -90,6 +90,12 @@ The macOS URL handler honors the active remote wallet. While a remote target is 
 
 ## Storage
 
+Everything the wallet holds is stored unencrypted, including private keys and,
+where an issuer hands them over, access and refresh tokens. This is a
+development and test wallet: the store is meant to be readable so you can see
+what a flow produced, and it is not a place for credentials or tokens that
+matter. Point it at test issuers, and treat the wallet directory as disposable.
+
 All wallet state is stored in `~/.eudi-dev/wallet/` by default:
 
 ```
