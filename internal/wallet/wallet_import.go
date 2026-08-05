@@ -209,3 +209,22 @@ func (c *StoredCredential) Rehydrate() error {
 
 	return nil
 }
+
+// rememberRenewal records what re-requesting a credential from its issuer
+// needs. Only an issuer that handed over a refresh token can be asked again,
+// so without one nothing is stored and the credential simply expires.
+func (w *Wallet) rememberRenewal(credentialID, refreshToken string, renewal CredentialRenewal) {
+	if w == nil || refreshToken == "" || renewal.CredentialEndpoint == "" || renewal.TokenEndpoint == "" {
+		return
+	}
+	renewal.RefreshToken = refreshToken
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if w.Credentials[i].ID == credentialID {
+			w.Credentials[i].Renewal = &renewal
+			return
+		}
+	}
+}

@@ -355,6 +355,13 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			importDetails := credentialImportLogDetails(imported, credential)
 			importDetails["issuer"] = offer.CredentialIssuer
 			w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
+			w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
+				Issuer:             offer.CredentialIssuer,
+				TokenEndpoint:      tokenEndpoint,
+				CredentialEndpoint: credentialEndpoint,
+				ConfigurationID:    configID,
+				UseDPoP:            dpopKey != nil,
+			})
 			if credFormat == "" {
 				credFormat = imported.Format
 			}
@@ -428,6 +435,13 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	importDetails := credentialImportLogDetails(imported, credential)
 	importDetails["issuer"] = offer.CredentialIssuer
 	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
+	w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
+		Issuer:             offer.CredentialIssuer,
+		TokenEndpoint:      tokenEndpoint,
+		CredentialEndpoint: credentialEndpoint,
+		ConfigurationID:    configID,
+		UseDPoP:            dpopKey != nil,
+	})
 
 	if credFormat == "" {
 		credFormat = imported.Format

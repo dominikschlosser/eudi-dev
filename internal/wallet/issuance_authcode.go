@@ -285,6 +285,14 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	importDetails := credentialImportLogDetails(imported, credential)
 	importDetails["issuer"] = offer.CredentialIssuer
 	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
+	w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
+		Issuer:             offer.CredentialIssuer,
+		TokenEndpoint:      tokenEndpoint,
+		CredentialEndpoint: credentialEndpoint,
+		ConfigurationID:    configID,
+		ClientID:           clientID,
+		UseDPoP:            true,
+	})
 
 	if notificationID, _ := credResp["notification_id"].(string); notificationID != "" {
 		if notificationEndpoint, _ := metadata["notification_endpoint"].(string); notificationEndpoint != "" {

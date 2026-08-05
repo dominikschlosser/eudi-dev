@@ -183,9 +183,33 @@ type StoredCredential struct {
 	// must not delete or revoke. It exists for shared deployments, where a
 	// visitor emptying the wallet would break it for everyone. Only direct
 	// access to wallet.json can set or clear it.
-	Protected   bool                               `json:"protected,omitempty"`
+	Protected bool `json:"protected,omitempty"`
+	// Renewal is what re-requesting this credential from its issuer needs,
+	// kept only when the issuer handed over a refresh token. Everything here
+	// is stored in the clear like the rest of the wallet, which is a
+	// development and test store by design (see docs/wallet.md).
+	Renewal     *CredentialRenewal                 `json:"renewal,omitempty"`
 	Disclosures []sdjwt.Disclosure                 `json:"-"`
 	NameSpaces  map[string][]mdoc.IssuerSignedItem `json:"-"`
+}
+
+// CredentialRenewal is the issuer context a credential can be re-requested
+// with. The flow that obtained the credential is long gone by the time it
+// nears expiry, so what that flow knew has to travel with the credential.
+type CredentialRenewal struct {
+	Issuer             string `json:"issuer"`
+	TokenEndpoint      string `json:"token_endpoint"`
+	CredentialEndpoint string `json:"credential_endpoint"`
+	ConfigurationID    string `json:"credential_configuration_id,omitempty"`
+	ClientID           string `json:"client_id,omitempty"`
+	RefreshToken       string `json:"refresh_token"`
+	UseDPoP            bool   `json:"use_dpop,omitempty"`
+}
+
+// CanRenew reports whether a credential carries what re-requesting it needs.
+func (c StoredCredential) CanRenew() bool {
+	return c.Renewal != nil && c.Renewal.RefreshToken != "" &&
+		c.Renewal.TokenEndpoint != "" && c.Renewal.CredentialEndpoint != ""
 }
 
 // ConsentRequest represents a pending presentation or issuance consent.
@@ -741,6 +765,11 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	// expiry reads the same value whichever one answered.
 	if expiry := CredentialExpiry(c); !expiry.IsZero() {
 		summary["expires_at"] = expiry.UTC().Format(time.RFC3339)
+	}
+	// Whether it can be asked for again, not the token that would do it: a
+	// listing is printed and logged in places a refresh token should not go.
+	if c.CanRenew() {
+		summary["can_renew"] = true
 	}
 	return summary
 }

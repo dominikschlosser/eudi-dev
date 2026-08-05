@@ -265,3 +265,36 @@ func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
 		t.Errorf("interval = %s, want the issuer's 1h", w.PendingIssuanceList()[0].Interval())
 	}
 }
+
+// A credential can only be re-requested from an issuer that handed over a
+// refresh token, and the flow that obtained it is gone by the time it nears
+// expiry, so what that flow knew has to travel with the credential.
+func TestIssuanceRemembersHowToRenew(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	w.Credentials = append(w.Credentials, StoredCredential{ID: "cred-1", Format: "dc+sd-jwt", Raw: credRaw})
+
+	w.rememberRenewal("cred-1", "refresh-1", CredentialRenewal{
+		Issuer: "https://issuer.example", TokenEndpoint: "https://issuer.example/token",
+		CredentialEndpoint: "https://issuer.example/credential", ConfigurationID: "cfg", UseDPoP: true,
+	})
+	stored, _ := w.GetCredential("cred-1")
+	if !stored.CanRenew() {
+		t.Fatalf("the credential cannot be renewed: %+v", stored.Renewal)
+	}
+	if stored.Renewal.RefreshToken != "refresh-1" {
+		t.Errorf("refresh token = %q", stored.Renewal.RefreshToken)
+	}
+
+	// An issuer that gave no refresh token leaves nothing behind: there is no
+	// way to ask again, and a half-filled block would look like there is.
+	w.Credentials = append(w.Credentials, StoredCredential{ID: "cred-2", Format: "dc+sd-jwt", Raw: credRaw})
+	w.rememberRenewal("cred-2", "", CredentialRenewal{
+		Issuer: "https://issuer.example", TokenEndpoint: "https://issuer.example/token",
+		CredentialEndpoint: "https://issuer.example/credential",
+	})
+	if stored, _ := w.GetCredential("cred-2"); stored.CanRenew() || stored.Renewal != nil {
+		t.Error("a credential without a refresh token was recorded as renewable")
+	}
+}
