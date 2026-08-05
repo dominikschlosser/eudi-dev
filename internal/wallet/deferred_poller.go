@@ -61,6 +61,7 @@ func (s *Server) renewSigningCertificateIfNeeded(now time.Time) {
 		return
 	}
 	s.lastCertificateCheck = now
+	s.renewIssuerTLSCertificateIfNeeded(now)
 	renewed, err := s.wallet.RefreshSigningCertificateIfExpiring(now)
 	if err != nil {
 		s.log("  ERROR: re-issuing the signing certificate: %v", err)

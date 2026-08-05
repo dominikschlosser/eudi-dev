@@ -59,8 +59,11 @@ type Server struct {
 	demo             *demoState
 	// lastCertificateCheck throttles the expiry check the poller ticks.
 	lastCertificateCheck time.Time
-	version              string
-	imprintHTML          []byte
+	// tlsMu guards issuerTLSCert, which a renewal replaces under a live
+	// listener.
+	tlsMu       sync.RWMutex
+	version     string
+	imprintHTML []byte
 	// ShutdownFunc runs after POST /api/shutdown responded. The serve command
 	// sets it to deregister the instance and exit; when nil the process exits
 	// directly.
@@ -401,6 +404,45 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
 }
 
+// setIssuerTLSCertificate replaces the certificate served on the HTTPS
+// listener.
+func (s *Server) setIssuerTLSCertificate(cert tls.Certificate) {
+	s.tlsMu.Lock()
+	defer s.tlsMu.Unlock()
+	s.issuerTLSCert = &cert
+}
+
+// currentIssuerTLSCertificate is the certificate to answer a handshake with.
+func (s *Server) currentIssuerTLSCertificate() *tls.Certificate {
+	s.tlsMu.RLock()
+	defer s.tlsMu.RUnlock()
+	return s.issuerTLSCert
+}
+
+// renewIssuerTLSCertificateIfNeeded re-issues the HTTPS leaf as it approaches
+// expiry, on the same reasoning as the signing leaf.
+func (s *Server) renewIssuerTLSCertificateIfNeeded(now time.Time) {
+	current := s.currentIssuerTLSCertificate()
+	if current == nil || len(current.Certificate) == 0 {
+		return
+	}
+	leaf, err := x509.ParseCertificate(current.Certificate[0])
+	if err != nil || now.Add(signingCertificateRenewBefore).Before(leaf.NotAfter) {
+		return
+	}
+	var caCert *x509.Certificate
+	if len(s.wallet.CertChain) > 1 {
+		caCert = s.wallet.CertChain[len(s.wallet.CertChain)-1]
+	}
+	renewed, err := generateIssuerTLSCertificate(parseIssuerHost(s.wallet.IssuerURL), s.wallet.CAKey, caCert)
+	if err != nil {
+		s.log("  ERROR: re-issuing the HTTPS certificate: %v", err)
+		return
+	}
+	s.setIssuerTLSCertificate(renewed)
+	s.log("  Renewed:       HTTPS certificate")
+}
+
 // signingKeyExpiry is what the wallet publishes as the expiry of its signing
 // key. It follows the signing certificate rather than a value computed once at
 // startup: a wallet that runs for months would otherwise advertise a key that
@@ -417,19 +459,16 @@ func (s *Server) startIssuerTLSServer() error {
 		return nil
 	}
 
-	cert := tls.Certificate{}
-	if s.issuerTLSCert != nil {
-		cert = *s.issuerTLSCert
-	} else {
-		var err error
+	if s.currentIssuerTLSCertificate() == nil {
 		var caCert *x509.Certificate
 		if len(s.wallet.CertChain) > 1 {
 			caCert = s.wallet.CertChain[len(s.wallet.CertChain)-1]
 		}
-		cert, err = generateIssuerTLSCertificate(parseIssuerHost(s.wallet.IssuerURL), s.wallet.CAKey, caCert)
+		cert, err := generateIssuerTLSCertificate(parseIssuerHost(s.wallet.IssuerURL), s.wallet.CAKey, caCert)
 		if err != nil {
 			return fmt.Errorf("generating issuer TLS certificate: %w", err)
 		}
+		s.setIssuerTLSCertificate(cert)
 	}
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", s.issuerPort))
@@ -446,8 +485,13 @@ func (s *Server) startIssuerTLSServer() error {
 
 	go func() {
 		tlsListener := tls.NewListener(ln, &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
+			// Resolved per handshake so a renewal reaches clients without a
+			// restart. A wallet outlives a certificate, and a listener holding
+			// the one it started with would serve an expired leaf forever.
+			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+				return s.currentIssuerTLSCertificate(), nil
+			},
+			MinVersion: tls.VersionTLS12,
 		})
 		_ = s.issuerSrv.Serve(tlsListener)
 	}()

@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -464,5 +465,50 @@ func TestRefreshSigningCertificateIfExpiring(t *testing.T) {
 	if w.SigningCertificateExpiry().Before(time.Now().Add(300 * 24 * time.Hour)) {
 		t.Errorf("the re-issued certificate expires %s, want roughly a year out",
 			w.SigningCertificateExpiry())
+	}
+}
+
+// TestRenewIssuerTLSCertificateIfNeeded covers the HTTPS leaf on a wallet that
+// outlives it. The listener resolves the certificate per handshake, so a
+// renewal reaches clients without a restart.
+func TestRenewIssuerTLSCertificateIfNeeded(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://localhost:8443"
+	s := NewServer(w, 0, nil)
+
+	var caCert *x509.Certificate
+	if len(w.CertChain) > 1 {
+		caCert = w.CertChain[len(w.CertChain)-1]
+	}
+	cert, err := generateIssuerTLSCertificate("localhost", w.CAKey, caCert)
+	if err != nil {
+		t.Fatalf("generateIssuerTLSCertificate: %v", err)
+	}
+	s.setIssuerTLSCertificate(cert)
+	leaf, err := x509.ParseCertificate(s.currentIssuerTLSCertificate().Certificate[0])
+	if err != nil {
+		t.Fatalf("parsing the leaf: %v", err)
+	}
+	first := leaf.SerialNumber.String()
+
+	// Well before expiry nothing changes.
+	s.renewIssuerTLSCertificateIfNeeded(time.Now())
+	same, _ := x509.ParseCertificate(s.currentIssuerTLSCertificate().Certificate[0])
+	if same.SerialNumber.String() != first {
+		t.Error("a certificate with a year left was re-issued")
+	}
+
+	// Inside the renewal window it is replaced, and the listener sees the new
+	// one because it asks for it per handshake.
+	s.renewIssuerTLSCertificateIfNeeded(leaf.NotAfter.Add(-time.Hour))
+	renewed, err := x509.ParseCertificate(s.currentIssuerTLSCertificate().Certificate[0])
+	if err != nil {
+		t.Fatalf("parsing the renewed leaf: %v", err)
+	}
+	if renewed.SerialNumber.String() == first {
+		t.Fatal("the HTTPS certificate was not re-issued inside the renewal window")
+	}
+	if renewed.NotAfter.Before(time.Now().Add(300 * 24 * time.Hour)) {
+		t.Errorf("renewed HTTPS certificate expires %s, want roughly a year out", renewed.NotAfter)
 	}
 }
