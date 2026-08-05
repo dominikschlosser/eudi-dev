@@ -677,3 +677,48 @@ func TestHandleMetaAndImprint(t *testing.T) {
 		t.Fatalf("prefixed meta = %s", rec.Body.String())
 	}
 }
+
+// A decoder link can name a credential the wallet holds instead of carrying
+// it, which is the difference between a link that fits in a message and one
+// that does not.
+func TestCredentialByID(t *testing.T) {
+	mux := NewMuxWithOptions(MuxOptions{
+		CredentialByID: func(id string) (string, bool) {
+			if id != "cred-1" {
+				return "", false
+			}
+			return "header.payload.signature~", true
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/credentials/cred-1", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET known credential = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if got := decodeResponse(t, w)["credential"]; got != "header.payload.signature~" {
+		t.Errorf("credential = %v", got)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/credentials/nope", nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("GET unknown credential = %d, want 404", w.Code)
+	}
+}
+
+// A decoder that is not mounted on a wallet has nothing to resolve ids
+// against, and has to say so rather than pretending the id is unknown data.
+func TestCredentialByIDWithoutAWallet(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/credentials/cred-1", nil)
+	w := httptest.NewRecorder()
+	NewMux("").ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("GET without a wallet = %d, want 404", w.Code)
+	}
+	if detail, _ := decodeResponse(t, w)["error"].(string); !strings.Contains(detail, "not attached to a wallet") {
+		t.Errorf("error = %q, want it to name the missing wallet", detail)
+	}
+}

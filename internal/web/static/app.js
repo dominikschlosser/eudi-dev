@@ -21,6 +21,10 @@
   let lastData = null;
   let lastValidation = null;
   let colorized = false; // true when showing colorized view instead of textarea
+  // The credential currently shown, when it came from a wallet this decoder
+  // is mounted on: {id, credential}. A link can then name it by id instead of
+  // carrying kilobytes of base64url, and the share button keeps that form.
+  let walletCredential = null;
 
   // Disclosure color palette size
   const DISC_COLORS = 8;
@@ -51,7 +55,7 @@
   function copyShareLink() {
     const text = input.value.trim();
     if (!text) return;
-    const url = window.location.origin + window.location.pathname + "?credential=" + encodeURIComponent(text);
+    const url = window.location.origin + buildCredentialURL(text);
     navigator.clipboard.writeText(url).then(() => {
       showToast("Link copied to clipboard");
     }).catch(() => {
@@ -69,6 +73,10 @@
 
   function buildCredentialURL(text) {
     if (!text) return window.location.pathname;
+    // The short form, while what is shown is still the credential it named.
+    if (walletCredential && walletCredential.credential === text) {
+      return window.location.pathname + "?id=" + encodeURIComponent(walletCredential.id);
+    }
     return window.location.pathname + "?credential=" + encodeURIComponent(text);
   }
 
@@ -1306,7 +1314,9 @@
       "Hover timestamps for human-readable dates";
   }
 
-  const queryCredential = new URLSearchParams(window.location.search).get("credential");
+  const queryParams = new URLSearchParams(window.location.search);
+  const queryCredential = queryParams.get("credential");
+  const queryID = queryParams.get("id");
 
   window.addEventListener("popstate", (event) => {
     const credential = event.state && typeof event.state.credential === "string"
@@ -1315,7 +1325,28 @@
     applyCredential(credential);
   });
 
-  if (queryCredential) {
+  // ?id= names a credential held by the wallet this decoder is mounted on,
+  // which keeps a link short. Anything else is carried in the link itself.
+  function loadWalletCredential(id) {
+    return fetch(basePath + "api/credentials/" + encodeURIComponent(id))
+      .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+      .then(({ ok, data }) => {
+        if (!ok || !data.credential) {
+          throw new Error(data.error || "the wallet returned no credential");
+        }
+        walletCredential = { id: id, credential: data.credential };
+        history.replaceState({ credential: data.credential }, "", buildCredentialURL(data.credential));
+        prefill(data.credential);
+      })
+      .catch((e) => {
+        outputEl.innerHTML = '<div class="placeholder">Could not load credential ' +
+          escapeHtml(id) + ": " + escapeHtml(e.message) + "</div>";
+      });
+  }
+
+  if (queryID) {
+    loadWalletCredential(queryID);
+  } else if (queryCredential) {
     history.replaceState({ credential: queryCredential }, "", buildCredentialURL(queryCredential));
     prefill(queryCredential);
   } else {

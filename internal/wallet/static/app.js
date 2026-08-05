@@ -272,7 +272,9 @@
         '</div>';
 
       const openDecoder = () => {
-        window.open('/decoder/?credential=' + encodeURIComponent(cred.raw || ''), '_blank');
+        // By id: the decoder is mounted on this wallet and can look the
+        // credential up, which keeps the link short enough to share.
+        window.open('/decoder/?id=' + encodeURIComponent(cred.id), '_blank');
       };
       card.querySelector('[data-show]').addEventListener('click', openDecoder);
       card.querySelector('.credential-info').addEventListener('click', openDecoder);

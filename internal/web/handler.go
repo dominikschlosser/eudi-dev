@@ -32,6 +32,12 @@ type MuxOptions struct {
 	Version     string // release version reported by GET /api/meta
 	ImprintHTML []byte // pre-rendered legal notice served at GET /imprint
 	Demo        bool   // public demo deployment, the UI shows a data disclaimer
+	// CredentialByID resolves a credential held by the wallet this decoder is
+	// mounted on. It backs the ?id= link form, which keeps a decoder link
+	// short enough to paste and to read: a credential is kilobytes of
+	// base64url, and every one of them ends up in the URL otherwise. A
+	// decoder without a wallet behind it leaves this nil and answers 404.
+	CredentialByID func(id string) (string, bool)
 }
 
 // ListenAndServe starts the HTTP server on the given port.
@@ -60,6 +66,7 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux.HandleFunc("POST /api/decode", handleDecode)
 	mux.HandleFunc("POST /api/validate", handleValidate)
 	mux.HandleFunc("GET /api/prefill", handlePrefill(opts.Credential))
+	mux.HandleFunc("GET /api/credentials/{id}", handleCredentialByID(opts.CredentialByID))
 	mux.HandleFunc("GET /api/meta", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
@@ -98,6 +105,24 @@ func noStaleCache(h http.Handler) http.Handler {
 
 func handlePrefill(credential string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"credential": credential})
+	}
+}
+
+// handleCredentialByID resolves the ?id= form of a decoder link against the
+// wallet the decoder is mounted on.
+func handleCredentialByID(resolve func(string) (string, bool)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if resolve == nil {
+			writeError(w, http.StatusNotFound, "this decoder is not attached to a wallet, so it cannot resolve credential ids")
+			return
+		}
+		credential, ok := resolve(r.PathValue("id"))
+		if !ok {
+			writeError(w, http.StatusNotFound, "no credential with that id in this wallet")
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"credential": credential})
 	}

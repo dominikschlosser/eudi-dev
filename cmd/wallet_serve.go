@@ -372,8 +372,20 @@ so the wallet automatically receives incoming protocol requests.`,
 				srv.SetDemo(demoOpts)
 			}
 			// Embed the credential decoder UI so stored credentials can be
-			// inspected from the wallet UI.
-			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{Version: Version, ImprintHTML: imprintHTML, Demo: demo}))
+			// inspected from the wallet UI. Resolving credentials by id lets
+			// those links name a credential instead of carrying it.
+			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{
+				Version:     Version,
+				ImprintHTML: imprintHTML,
+				Demo:        demo,
+				CredentialByID: func(id string) (string, bool) {
+					cred, ok := w.GetCredential(id)
+					if !ok {
+						return "", false
+					}
+					return cred.Raw, true
+				},
+			}))
 			// Demo issuer and verifier: complete OID4VCI / OID4VP
 			// counterparties for out-of-the-box protocol flows.
 			demoRP := demorp.New(w, func() string {
