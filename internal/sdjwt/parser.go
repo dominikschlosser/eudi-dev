@@ -284,3 +284,48 @@ func resolveValue(v any, digestMap map[string]*Disclosure) any {
 		return v
 	}
 }
+
+// ReferencedDigests returns every digest the credential refers to: the entries
+// of its "_sd" arrays and the array elements of the form {"...": digest}. A
+// disclosure whose digest is missing from this set belongs to some other
+// credential, so it discloses nothing here.
+func ReferencedDigests(token *Token) map[string]bool {
+	out := make(map[string]bool)
+	if token == nil {
+		return out
+	}
+	collectDigests(token.Payload, out)
+	for _, d := range token.Disclosures {
+		// A nested disclosure's digest lives inside its parent's value.
+		collectDigests(d.Value, out)
+	}
+	return out
+}
+
+func collectDigests(value any, out map[string]bool) {
+	switch v := value.(type) {
+	case map[string]any:
+		for key, val := range v {
+			switch key {
+			case "_sd":
+				if arr, ok := val.([]any); ok {
+					for _, entry := range arr {
+						if digest, ok := entry.(string); ok {
+							out[digest] = true
+						}
+					}
+				}
+			case "...":
+				if digest, ok := val.(string); ok {
+					out[digest] = true
+				}
+			default:
+				collectDigests(val, out)
+			}
+		}
+	case []any:
+		for _, item := range v {
+			collectDigests(item, out)
+		}
+	}
+}

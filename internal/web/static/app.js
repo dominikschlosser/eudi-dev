@@ -631,9 +631,25 @@
         digest.title = d.digest;
         digest.textContent = truncatedDigest;
         meta.appendChild(digest);
+        // The digest is what ties a disclosure to the signed credential. One
+        // the credential never refers to discloses nothing.
+        if (d.referenced === true) {
+          meta.appendChild(document.createTextNode(" \u00b7 matches _sd"));
+        } else if (d.referenced === false) {
+          const bad = document.createElement("span");
+          bad.className = "disclosure-unreferenced";
+          bad.textContent = " \u00b7 NOT REFERENCED BY THE CREDENTIAL";
+          meta.appendChild(bad);
+        }
         item.appendChild(meta);
         disc.appendChild(item);
       });
+      disc.insertBefore(
+        renderNote(
+          "One entry per selectively disclosable claim. The credential signs a digest of each. " +
+          "Recomputing it from the salt and value is what ties the claim to the signature, and " +
+          "withholding a disclosure withholds the claim without breaking it."),
+        disc.firstChild);
       appendSection("Disclosures (" + data.disclosures.length + ")", disc, data.disclosures, "disclosures");
 
       // Bidirectional hover: disclosure items <-> colorized input spans

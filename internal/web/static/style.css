@@ -958,3 +958,9 @@ textarea.colorized::placeholder {
 .mdoc-item-bad {
   color: var(--red);
 }
+
+/* A disclosure the credential never refers to discloses nothing. */
+.disclosure-unreferenced {
+  color: var(--red);
+  font-weight: 600;
+}

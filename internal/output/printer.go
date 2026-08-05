@@ -89,7 +89,7 @@ func BuildSDJWTJSON(token *sdjwt.Token) map[string]any {
 		"format":         "dc+sd-jwt",
 		"header":         token.Header,
 		"payload":        token.Payload,
-		"disclosures":    formatDisclosuresJSON(token.Disclosures),
+		"disclosures":    formatDisclosuresJSON(token, token.Disclosures),
 		"resolvedClaims": token.ResolvedClaims,
 	}
 	if len(token.Warnings) > 0 {
@@ -674,7 +674,10 @@ func isSimpleArray(arr []any) bool {
 	return true
 }
 
-func formatDisclosuresJSON(disclosures []sdjwt.Disclosure) []map[string]any {
+func formatDisclosuresJSON(token *sdjwt.Token, disclosures []sdjwt.Disclosure) []map[string]any {
+	// A disclosure only discloses something if the credential refers to its
+	// digest. One that does not belongs to another credential.
+	referenced := sdjwt.ReferencedDigests(token)
 	result := make([]map[string]any, len(disclosures))
 	for i, d := range disclosures {
 		result[i] = map[string]any{
@@ -683,6 +686,7 @@ func formatDisclosuresJSON(disclosures []sdjwt.Disclosure) []map[string]any {
 			"salt":         d.Salt,
 			"digest":       d.Digest,
 			"isArrayEntry": d.IsArrayEntry,
+			"referenced":   referenced[d.Digest],
 		}
 	}
 	return result

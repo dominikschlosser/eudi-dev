@@ -852,3 +852,30 @@ func TestBuildMDOCJSON_DeviceBinding(t *testing.T) {
 		}
 	})
 }
+
+// TestFormatDisclosuresJSON_Referenced covers the link between a disclosure
+// and the credential that signed it. A disclosure the credential never refers
+// to discloses nothing, and the decoder has to say so.
+func TestFormatDisclosuresJSON_Referenced(t *testing.T) {
+	token := &sdjwt.Token{
+		Payload: map[string]any{
+			"_sd": []any{"known-digest"},
+			"address": map[string]any{
+				"_sd": []any{"nested-digest"},
+			},
+		},
+		Disclosures: []sdjwt.Disclosure{
+			{Name: "given_name", Digest: "known-digest"},
+			{Name: "locality", Digest: "nested-digest"},
+			{Name: "stranger", Digest: "unknown-digest"},
+		},
+	}
+	out := formatDisclosuresJSON(token, token.Disclosures)
+	want := map[string]bool{"given_name": true, "locality": true, "stranger": false}
+	for _, entry := range out {
+		name := entry["name"].(string)
+		if entry["referenced"] != want[name] {
+			t.Errorf("%s referenced = %v, want %v", name, entry["referenced"], want[name])
+		}
+	}
+}

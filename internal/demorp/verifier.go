@@ -561,12 +561,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 // after issuance, and the spec requires rejecting it rather than quietly
 // dropping the claim.
 func checkDisclosuresReferenced(token *sdjwt.Token) error {
-	referenced := make(map[string]bool)
-	collectDigests(token.Payload, referenced)
-	for _, d := range token.Disclosures {
-		// A nested disclosure's digest lives inside its parent's value.
-		collectDigests(d.Value, referenced)
-	}
+	referenced := sdjwt.ReferencedDigests(token)
 
 	seen := make(map[string]bool, len(token.Disclosures))
 	for _, d := range token.Disclosures {
@@ -583,36 +578,6 @@ func checkDisclosuresReferenced(token *sdjwt.Token) error {
 		seen[d.Digest] = true
 	}
 	return nil
-}
-
-// collectDigests gathers every digest a payload or disclosure value refers to:
-// entries of "_sd" arrays and array elements of the form {"...": digest}.
-func collectDigests(value any, out map[string]bool) {
-	switch v := value.(type) {
-	case map[string]any:
-		for key, val := range v {
-			switch key {
-			case "_sd":
-				if arr, ok := val.([]any); ok {
-					for _, entry := range arr {
-						if digest, ok := entry.(string); ok {
-							out[digest] = true
-						}
-					}
-				}
-			case "...":
-				if digest, ok := val.(string); ok {
-					out[digest] = true
-				}
-			default:
-				collectDigests(val, out)
-			}
-		}
-	case []any:
-		for _, item := range v {
-			collectDigests(item, out)
-		}
-	}
 }
 
 // checkRevocation resolves the credential's status list reference, if it has
