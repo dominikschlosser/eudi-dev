@@ -225,6 +225,43 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page).not.toHaveURL(/consent=/);
   });
 
+  test("an error from someone else's flow stays out of uninvolved tabs", async ({
+    browser,
+  }) => {
+    // A failed flow used to raise a dialog in every open tab, so a visitor who
+    // did nothing was shown an error another visitor ran into.
+    const context = await browser.newContext();
+    const bystander = await context.newPage();
+    await bystander.goto(`${BASE}/?focus=overview`);
+    await expect(bystander.locator("#credentials")).toBeVisible();
+
+    // An offer that cannot be resolved, submitted by nobody's tab.
+    await postJSON("/api/offers", {
+      uri: "openid-credential-offer://?credential_offer_uri=http://127.0.0.1:1/gone",
+    }).catch(() => {});
+
+    await bystander.waitForTimeout(1500);
+    await expect(bystander.locator("#consent-overlay")).not.toHaveClass(/active/);
+    await context.close();
+  });
+
+  test("the tab that started the failing flow does see the error", async ({
+    page,
+  }) => {
+    page.on("dialog", (d) => d.dismiss().catch(() => {}));
+    await page.goto(`${BASE}/?focus=overview`);
+
+    await page
+      .locator("#offer-input")
+      .fill("openid-credential-offer://?credential_offer_uri=http://127.0.0.1:1/gone");
+    await page.locator("#process-btn").click();
+
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/, {
+      timeout: 10_000,
+    });
+    await expect(page.locator("#consent-dialog")).toContainText("Error");
+  });
+
   test("a request arriving after that tab opened is claimed too, but only one", async ({
     page,
   }) => {

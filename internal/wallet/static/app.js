@@ -11,41 +11,37 @@
     localStorage.setItem('wallet-theme', isLight ? '' : 'light');
   });
 
-  // A scheme dispatch (openid4vp:// or credential-offer:// handled by the
-  // OS) opens this UI itself and only then submits the request, so this tab
+  // The wallet is shared, so anything meant for the visitor who started a flow
+  // has to reach that tab and no other: the consent dialog, the issuer
+  // sign-in, the error report. A claim is how a tab says the next one is
+  // hers. Single use and short lived, so a stale marker never collects
+  // someone else's.
+  function createClaim(windowMs, claimedNow) {
+    let until = claimedNow ? Date.now() + windowMs : 0;
+    return {
+      expect() {
+        until = Date.now() + windowMs;
+      },
+      take() {
+        if (!until || Date.now() > until) return false;
+        until = 0;
+        return true;
+      },
+    };
+  }
+
+  // A scheme dispatch (openid4vp:// or credential-offer:// handled by the OS)
+  // opens this UI itself and only then submits the request, so this tab
   // started the flow even though no request id can be in its URL yet. The
   // marker says so, which is what separates it from the uninvolved tabs the
-  // pending banner exists for. Single use and short lived: a stale link must
-  // not collect someone else's consent later on.
-  const CONSENT_CLAIM_MS = 90000;
-  let consentClaimUntil =
-    new URLSearchParams(window.location.search).get('consent') === 'await'
-      ? Date.now() + CONSENT_CLAIM_MS
-      : 0;
+  // pending banner exists for. It covers the resulting error too.
+  const schemeDispatch =
+    new URLSearchParams(window.location.search).get('consent') === 'await';
 
-  function claimNextConsent() {
-    if (!consentClaimUntil || Date.now() > consentClaimUntil) return false;
-    consentClaimUntil = 0;
-    return true;
-  }
-
-  // An authorization code issuance sends the user to the issuer to sign in.
-  // Only the tab that started the flow may follow: the wallet is shared, and
-  // navigating every open tab to some issuer's login page would hijack
-  // visitors who did nothing. Claimed when this tab submits an offer or
-  // approves an issuance, single use and short lived like the consent claim.
-  const AUTHORIZE_CLAIM_MS = 120000;
-  let authorizeClaimUntil = 0;
-
-  function expectAuthorization() {
-    authorizeClaimUntil = Date.now() + AUTHORIZE_CLAIM_MS;
-  }
-
-  function claimAuthorization() {
-    if (!authorizeClaimUntil || Date.now() > authorizeClaimUntil) return false;
-    authorizeClaimUntil = 0;
-    return true;
-  }
+  const consentClaim = createClaim(90000, schemeDispatch);
+  // Longer, because both run past a round trip to the issuer.
+  const authorizeClaim = createClaim(120000);
+  const errorClaim = createClaim(120000, schemeDispatch);
 
   // State
   let credentials = [];
@@ -363,7 +359,9 @@
       const endpoint = isVCI ? '/api/offers' : '/api/presentations';
       // Submitting an offer here may lead to an issuer login, and this tab
       // asked for it, so it is the one allowed to follow.
-      if (isVCI) expectAuthorization();
+      if (isVCI) authorizeClaim.expect();
+      // Whatever goes wrong with this submission is this tab's to report.
+      errorClaim.expect();
 
       const resp = await fetch(endpoint, {
         method: 'POST',
@@ -1030,7 +1028,7 @@
         }
         // The request may already have been created while this page loaded.
         // A tab the scheme handler opened still owns it.
-        if (!demoMode || claimNextConsent()) {
+        if (!demoMode || consentClaim.take()) {
           showConsentDialog(requests[0]);
           return;
         }
@@ -1043,13 +1041,10 @@
       console.error('Failed to load pending requests:', e);
     }
 
-    // No pending consent request, so check for a recent error
+    // No pending consent request, so check for a recent error.
     try {
       const resp = await fetch('/api/error');
-      const err = await resp.json();
-      if (err && err.message) {
-        showErrorDialog(err.message, err.detail);
-      }
+      presentError(await resp.json());
     } catch (e) {
       console.error('Failed to load last error:', e);
     }
@@ -1065,7 +1060,7 @@
         // the flow (it arrives via redirect, or opened this tab itself for a
         // scheme dispatch), not to every open tab. Other tabs get the
         // unobtrusive banner instead.
-        if (demoMode && !claimNextConsent()) {
+        if (demoMode && !consentClaim.take()) {
           refreshPendingBanner();
           return;
         }
@@ -1091,7 +1086,7 @@
     es.addEventListener('authorize', (event) => {
       try {
         const { url } = JSON.parse(event.data);
-        if (!claimAuthorization()) return;
+        if (!authorizeClaim.take()) return;
         if (navigable(url)) window.location.href = url;
       } catch (e) {
         console.error('SSE authorize parse error:', e);
@@ -1099,8 +1094,7 @@
     });
     es.addEventListener('error', (event) => {
       try {
-        const err = JSON.parse(event.data);
-        showErrorDialog(err.message, err.detail);
+        presentError(JSON.parse(event.data));
       } catch (e) {
         console.error('SSE error parse error:', e);
       }
@@ -1109,6 +1103,15 @@
       es.close();
       setTimeout(connectSSE, 3000);
     };
+  }
+
+  // presentError is the one way a wallet error reaches the user, whether it
+  // arrived on the stream or was found stored on load. The claim lives here so
+  // both routes cannot disagree about who the error belongs to.
+  function presentError(err) {
+    if (!err || !err.message) return;
+    if (!errorClaim.take()) return;
+    showErrorDialog(err.message, err.detail);
   }
 
   function showErrorDialog(message, detail) {
@@ -1346,7 +1349,8 @@
       approveBtn.textContent = 'Submitting...';
       // Approving an issuance is what may lead to an issuer login, so this
       // tab is the one allowed to follow it.
-      if (isIssuance) expectAuthorization();
+      if (isIssuance) authorizeClaim.expect();
+      errorClaim.expect();
       denyBtn.disabled = true;
 
       try {
