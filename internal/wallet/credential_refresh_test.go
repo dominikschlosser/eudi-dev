@@ -386,3 +386,68 @@ func TestResolveClientAuthentication(t *testing.T) {
 		t.Errorf("HAIP enforcement did not authenticate the client: %+v", auth)
 	}
 }
+
+// A refused token request has to read as what the server said. The raw body
+// plus a repeat of the status code is what the wallet used to hand back, and
+// it buries the one line that explains the refusal.
+func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
+	w := generateTestWallet(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		rw.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(rw).Encode(map[string]any{
+			"error":             "invalid_grant",
+			"error_description": "Invalid authorization code",
+		})
+	}))
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	imported, err := w.ImportCredential(generateTestCredential(t, w))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+		CredentialEndpoint: srv.URL + "/credential",
+	})
+
+	_, err = w.RefreshCredential(imported.ID)
+	if err == nil {
+		t.Fatal("a refused refresh reported success")
+	}
+	want := "renewing the access token: invalid_grant: Invalid authorization code"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// An error response without the OAuth fields is still reported, body and all.
+func TestRefreshReportsANonOAuthRefusal(t *testing.T) {
+	w := generateTestWallet(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		http.Error(rw, "gateway is on fire", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	imported, err := w.ImportCredential(generateTestCredential(t, w))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+		CredentialEndpoint: srv.URL + "/credential",
+	})
+
+	_, err = w.RefreshCredential(imported.ID)
+	if err == nil || !strings.Contains(err.Error(), "gateway is on fire") {
+		t.Errorf("error = %v, want the body of a refusal that is not an OAuth error", err)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -731,17 +732,40 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	body := []byte(form.Encode())
 	respBody, _, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, extraHeaders)
 	if err != nil {
+		// A refusal states its reason in the response, in the two fields
+		// RFC 6749 §5.2 defines for it. Reporting those beats handing the
+		// caller the raw body and the status code a second time.
+		if refusal := oauthErrorMessage(respBody); refusal != "" {
+			return nil, errors.New(refusal)
+		}
 		return nil, err
 	}
 	var out map[string]any
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return nil, fmt.Errorf("parsing JSON response: %w", err)
 	}
-	if errMsg, _ := out["error"].(string); errMsg != "" {
-		desc, _ := out["error_description"].(string)
-		return nil, fmt.Errorf("server error: %s: %s", errMsg, desc)
+	// Some servers answer 200 with an error document, so the body decides
+	// rather than the status.
+	if refusal := oauthErrorMessage(respBody); refusal != "" {
+		return nil, errors.New(refusal)
 	}
 	return out, nil
+}
+
+// oauthErrorMessage renders an OAuth 2.0 error response as "code: what it
+// says", or empty when the body is not one.
+func oauthErrorMessage(body []byte) string {
+	var doc struct {
+		Error       string `json:"error"`
+		Description string `json:"error_description"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil || doc.Error == "" {
+		return ""
+	}
+	if doc.Description == "" {
+		return doc.Error
+	}
+	return doc.Error + ": " + doc.Description
 }
 
 func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
