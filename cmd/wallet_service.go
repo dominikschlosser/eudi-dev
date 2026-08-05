@@ -220,6 +220,8 @@ func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
 			"issuer":                      p.Issuer,
 			"credential_configuration_id": p.ConfigurationID,
 			"format":                      p.Format,
+			"vct":                         p.VCT,
+			"doctype":                     p.DocType,
 			"interval":                    p.Interval().String(),
 			"created_at":                  p.CreatedAt,
 			"next_attempt_at":             p.NextAttemptAt,
