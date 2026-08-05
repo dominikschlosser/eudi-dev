@@ -352,9 +352,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 			if err != nil {
 				return nil, fmt.Errorf("importing received credential: %w", err)
 			}
-			importDetails := credentialImportLogDetails(imported, credential)
-			importDetails["issuer"] = offer.CredentialIssuer
-			w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
+			w.logCredentialImport(imported, credential, offer.CredentialIssuer)
 			w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
 				Issuer:             offer.CredentialIssuer,
 				TokenEndpoint:      tokenEndpoint,
@@ -432,9 +430,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
 	}
-	importDetails := credentialImportLogDetails(imported, credential)
-	importDetails["issuer"] = offer.CredentialIssuer
-	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, importDetails)
+	w.logCredentialImport(imported, credential, offer.CredentialIssuer)
 	w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
 		Issuer:             offer.CredentialIssuer,
 		TokenEndpoint:      tokenEndpoint,

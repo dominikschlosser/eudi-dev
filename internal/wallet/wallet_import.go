@@ -228,3 +228,12 @@ func (w *Wallet) rememberRenewal(credentialID, refreshToken string, renewal Cred
 		}
 	}
 }
+
+// logCredentialImport records an issued credential the same way from every
+// issuance path, so the activity log does not depend on which flow produced
+// the credential.
+func (w *Wallet) logCredentialImport(imported *StoredCredential, raw, issuer string) {
+	details := credentialImportLogDetails(imported, raw)
+	details["issuer"] = issuer
+	w.addProtocolLog("issuance", "credential_imported", fmt.Sprintf("Imported credential %s", imported.ID), true, details)
+}

@@ -236,21 +236,7 @@ func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
 	pending := w.PendingIssuanceList()
 	out := make([]map[string]any, 0, len(pending))
 	for _, p := range pending {
-		out = append(out, map[string]any{
-			"id":                          p.ID,
-			"transaction_id":              p.TransactionID,
-			"issuer":                      p.Issuer,
-			"credential_configuration_id": p.ConfigurationID,
-			"format":                      p.Format,
-			"vct":                         p.VCT,
-			"doctype":                     p.DocType,
-			"interval":                    p.Interval().String(),
-			"created_at":                  p.CreatedAt,
-			"next_attempt_at":             p.NextAttemptAt,
-			"can_refresh":                 p.CanRefresh(),
-			"attempts":                    p.Attempts,
-			"last_error":                  p.LastError,
-		})
+		out = append(out, wallet.PendingIssuanceSummary(p))
 	}
 	return out, nil
 }

@@ -298,3 +298,25 @@ func (p *PendingIssuance) AccessTokenExpired(now time.Time) bool {
 func (p *PendingIssuance) CanRefresh() bool {
 	return p != nil && p.RefreshToken != "" && p.TokenEndpoint != ""
 }
+
+// PendingIssuanceSummary is the document a caller reads a deferred credential
+// from, wherever it asked. Built once here rather than in each backend: two
+// hand-written maps that have to agree is how the credential type reached the
+// API and not the local store.
+func PendingIssuanceSummary(p PendingIssuance) map[string]any {
+	return map[string]any{
+		"id":                          p.ID,
+		"transaction_id":              p.TransactionID,
+		"issuer":                      p.Issuer,
+		"credential_configuration_id": p.ConfigurationID,
+		"format":                      p.Format,
+		"vct":                         p.VCT,
+		"doctype":                     p.DocType,
+		"can_refresh":                 p.CanRefresh(),
+		"interval":                    p.Interval().String(),
+		"created_at":                  p.CreatedAt,
+		"next_attempt_at":             p.NextAttemptAt,
+		"attempts":                    p.Attempts,
+		"last_error":                  p.LastError,
+	}
+}
