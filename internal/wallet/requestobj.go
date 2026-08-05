@@ -15,9 +15,6 @@
 package wallet
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/json"
@@ -26,10 +23,10 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jwe"
 )
 
 // BuildWalletMetadata builds the wallet_metadata JSON object per OID4VP 1.0 §10.
@@ -309,91 +306,18 @@ func isJWE(s string) bool {
 
 // DecryptCompactJWE decrypts a compact JWE using the wallet's EC private key
 // via ECDH-ES key agreement and returns the plaintext.
-func DecryptCompactJWE(jwe string, key *ecdsa.PrivateKey) (string, error) {
-	parts := strings.Split(jwe, ".")
-	if len(parts) != 5 {
-		return "", fmt.Errorf("invalid JWE: expected 5 parts, got %d", len(parts))
+func DecryptCompactJWE(compact string, key *ecdsa.PrivateKey) (string, error) {
+	if key == nil {
+		return "", fmt.Errorf("decryption requires a private key")
 	}
-
-	// Parse protected header
-	headerBytes, err := format.DecodeBase64URL(parts[0])
-	if err != nil {
-		return "", fmt.Errorf("decoding JWE header: %w", err)
-	}
-	var header map[string]any
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		return "", fmt.Errorf("parsing JWE header: %w", err)
-	}
-
-	enc, _ := header["enc"].(string)
-	if enc == "" {
-		return "", fmt.Errorf("missing enc in JWE header")
-	}
-
-	// Parse ephemeral public key from header
-	epkMap, ok := header["epk"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("missing epk in JWE header")
-	}
-
-	epkPub, err := parseECPublicKeyFromEPK(epkMap)
-	if err != nil {
-		return "", fmt.Errorf("parsing epk: %w", err)
-	}
-
-	// Convert our ECDSA private key to ECDH
-	ecdhPriv, err := key.ECDH()
+	ecdhKey, err := key.ECDH()
 	if err != nil {
 		return "", fmt.Errorf("converting private key to ECDH: %w", err)
 	}
-
-	// ECDH key agreement
-	z, err := ecdhPriv.ECDH(epkPub)
-	if err != nil {
-		return "", fmt.Errorf("ECDH key agreement: %w", err)
-	}
-
-	// Decode apu/apv from header
-	var apu, apv []byte
-	if apuB64, ok := header["apu"].(string); ok {
-		apu, _ = format.DecodeBase64URL(apuB64)
-	}
-	if apvB64, ok := header["apv"].(string); ok {
-		apv, _ = format.DecodeBase64URL(apvB64)
-	}
-
-	// Derive CEK via Concat KDF (reuse the wallet's existing concatKDF)
-	keyBitLen, err := encKeyBitLen(enc)
+	plaintext, err := jwe.Decrypt(compact, ecdhKey)
 	if err != nil {
 		return "", err
 	}
-	cek := concatKDF(z, enc, apu, apv, keyBitLen)
-
-	// Decrypt
-	ivBytes, err := format.DecodeBase64URL(parts[2])
-	if err != nil {
-		return "", fmt.Errorf("decoding IV: %w", err)
-	}
-	ciphertext, err := format.DecodeBase64URL(parts[3])
-	if err != nil {
-		return "", fmt.Errorf("decoding ciphertext: %w", err)
-	}
-	tag, err := format.DecodeBase64URL(parts[4])
-	if err != nil {
-		return "", fmt.Errorf("decoding tag: %w", err)
-	}
-
-	var plaintext []byte
-	switch enc {
-	case "A128GCM", "A256GCM":
-		plaintext, err = decryptAESGCM(cek, ivBytes, ciphertext, tag, []byte(parts[0]))
-	default:
-		return "", fmt.Errorf("unsupported enc algorithm for request object: %s", enc)
-	}
-	if err != nil {
-		return "", err
-	}
-
 	return strings.TrimSpace(string(plaintext)), nil
 }
 
@@ -401,60 +325,4 @@ func DecryptCompactJWE(jwe string, key *ecdsa.PrivateKey) (string, error) {
 // EC private key via ECDH-ES key agreement. Returns the decrypted JWT string.
 func DecryptRequestObjectJWE(jwe string, key *ecdsa.PrivateKey) (string, error) {
 	return DecryptCompactJWE(jwe, key)
-}
-
-// parseECPublicKeyFromEPK parses an EC public key from a JWK map (epk field).
-func parseECPublicKeyFromEPK(m map[string]any) (*ecdh.PublicKey, error) {
-	crv, _ := m["crv"].(string)
-	if crv != "P-256" {
-		return nil, fmt.Errorf("unsupported curve: %s", crv)
-	}
-	xB64, _ := m["x"].(string)
-	yB64, _ := m["y"].(string)
-	if xB64 == "" || yB64 == "" {
-		return nil, fmt.Errorf("missing x or y coordinate")
-	}
-
-	xBytes, err := format.DecodeBase64URL(xB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding x: %w", err)
-	}
-	yBytes, err := format.DecodeBase64URL(yB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding y: %w", err)
-	}
-
-	pub := make([]byte, 1+32+32)
-	pub[0] = 0x04
-	copy(pub[1:33], padTo32(xBytes))
-	copy(pub[33:65], padTo32(yBytes))
-
-	return ecdh.P256().NewPublicKey(pub)
-}
-
-// padTo32 left-pads b with zeros to 32 bytes (P-256 coordinate size).
-func padTo32(b []byte) []byte {
-	if len(b) >= 32 {
-		return b[len(b)-32:]
-	}
-	padded := make([]byte, 32)
-	copy(padded[32-len(b):], b)
-	return padded
-}
-
-// decryptAESGCM decrypts with AES-GCM.
-func decryptAESGCM(key, iv, ciphertext, tag, aad []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("creating AES cipher: %w", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("creating GCM: %w", err)
-	}
-	// Concatenated into a new slice: appending to ciphertext would write the
-	// tag into its backing array when it has the capacity, corrupting the
-	// caller's buffer.
-	sealed := slices.Concat(ciphertext, tag)
-	return aead.Open(nil, iv, sealed, aad)
 }

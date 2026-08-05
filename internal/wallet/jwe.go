@@ -26,10 +26,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jwe"
 )
 
 func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, apu, apv []byte) (string, []byte, error) {
@@ -48,7 +48,7 @@ func EncryptJWEWithContentType(payload []byte, recipientKey *ecdsa.PublicKey, ki
 // Agreement PartyVInfo. Returns the JWE compact serialization and the derived content
 // encryption key (CEK).
 func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, cty string, apu, apv []byte) (string, []byte, error) {
-	keyBitLen, err := encKeyBitLen(enc)
+	keyBitLen, err := jwe.EncKeyBitLen(enc)
 	if err != nil {
 		return "", nil, err
 	}
@@ -73,7 +73,7 @@ func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 	}
 
 	// Derive key via Concat KDF (NIST SP 800-56A, RFC 7518 §4.6)
-	derivedKey := concatKDF(z, enc, apu, apv, keyBitLen)
+	derivedKey := jwe.ConcatKDF(z, enc, apu, apv, keyBitLen)
 
 	// Build protected header
 	epkX, epkY := unmarshalECDHPublicKey(ephemeralPub)
@@ -203,61 +203,6 @@ func pkcs7Pad(data []byte, blockSize int) []byte {
 		padded[i] = byte(padding)
 	}
 	return padded
-}
-
-// concatKDF derives a key using the Concat KDF from NIST SP 800-56A (single round for <=256 bits).
-func concatKDF(z []byte, enc string, apu, apv []byte, keyBitLen int) []byte {
-	h := sha256.New()
-
-	// round = 0x00000001
-	var round [4]byte
-	binary.BigEndian.PutUint32(round[:], 1)
-	h.Write(round[:])
-
-	// Z (shared secret)
-	h.Write(z)
-
-	// AlgorithmID = len(enc) || enc
-	writeWithLength(h, []byte(enc))
-
-	// PartyUInfo = len(apu) || apu
-	writeWithLength(h, apu)
-
-	// PartyVInfo = len(apv) || apv
-	writeWithLength(h, apv)
-
-	// SuppPubInfo = keyBitLen (4-byte big-endian)
-	var suppPub [4]byte
-	binary.BigEndian.PutUint32(suppPub[:], uint32(keyBitLen))
-	h.Write(suppPub[:])
-
-	derived := h.Sum(nil)
-	return derived[:keyBitLen/8]
-}
-
-// writeWithLength writes a 4-byte big-endian length prefix followed by data.
-// If data is nil, writes 0x00000000.
-func writeWithLength(h io.Writer, data []byte) {
-	var lenBuf [4]byte
-	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
-	h.Write(lenBuf[:])
-	if len(data) > 0 {
-		h.Write(data)
-	}
-}
-
-// encKeyBitLen returns the key bit length for the given content encryption algorithm.
-func encKeyBitLen(enc string) (int, error) {
-	switch enc {
-	case "A128GCM":
-		return 128, nil
-	case "A256GCM":
-		return 256, nil
-	case "A128CBC-HS256":
-		return 256, nil // 128-bit MAC key + 128-bit enc key
-	default:
-		return 0, fmt.Errorf("unsupported content encryption algorithm: %s", enc)
-	}
 }
 
 // unmarshalECDHPublicKey extracts the raw x, y coordinates from an ECDH public key.

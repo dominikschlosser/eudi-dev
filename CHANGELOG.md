@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`wallet trust-list --list` shows which trust list profiles a wallet serves.** The ids were only discoverable by reading `/api/trustlists`, so picking one from the CLI meant guessing. Every profile carries the same certificate (the wallet has one CA) and differs in what it declares that CA to be, so the listing names the category to pick by. `--json` emits the `/api/trustlists` body unchanged
 
+### Changed
+
+- **JWS signing and JWE decryption each have one implementation now.** ES256 signing was written out six times (credentials, presentations, trust lists, status lists, issuer metadata, client attestations) and ECDH-ES decryption twice, key derivation and all. Every copy was correct, which is the problem: a fix to one of six reaches one of six, and the r||s padding and the Concat KDF are both easy to get subtly wrong in ways that fail as "bad signature" somewhere else. They now live in `internal/jws` and `internal/jwe`, with tests. No behaviour changes
+
 ### Fixed
 
 - **The demo's certificate renewal raced with live requests.** The daily reset re-issues the signing leaf, and it replaced the CA key and the certificate chain without holding the wallet lock while requests were reading both. A slice header is not written atomically, so a credential could be signed against a half-swapped chain. The swap and the reads that matter now take the lock, and `go test -race` is clean across the tree
