@@ -737,6 +737,11 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if c.Protected {
 		summary["protected"] = true
 	}
+	// Both backends build their listings from this, so a caller reading the
+	// expiry reads the same value whichever one answered.
+	if expiry := CredentialExpiry(c); !expiry.IsZero() {
+		summary["expires_at"] = expiry.UTC().Format(time.RFC3339)
+	}
 	return summary
 }
 
