@@ -97,100 +97,33 @@ func keysOf(doc map[string]any) []string {
 	return out
 }
 
-func assertSameKeys(t *testing.T, what string, localDoc, remoteDoc map[string]any) {
-	t.Helper()
-	inRemote := make(map[string]bool, len(remoteDoc))
-	for _, k := range keysOf(remoteDoc) {
-		inRemote[k] = true
-	}
-	for _, k := range keysOf(localDoc) {
-		if !inRemote[k] {
-			t.Errorf("%s: the local backend returns %q and the remote one does not, so the same command prints differently against a remote wallet", what, k)
-		}
-	}
-	inLocal := make(map[string]bool, len(localDoc))
-	for _, k := range keysOf(localDoc) {
-		inLocal[k] = true
-	}
-	for _, k := range keysOf(remoteDoc) {
-		if !inLocal[k] {
-			t.Errorf("%s: the remote backend returns %q and the local one does not", what, k)
-		}
-	}
-}
-
-func TestCredentialDocumentsMatchAcrossBackends(t *testing.T) {
-	resetRemoteTestState(t)
-	localSvc, remoteSvc := parityWallets(t, func(w *wallet.Wallet) {
-		if err := w.GenerateProtectedDefaults(); err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	localCreds, err := localSvc.Credentials()
-	if err != nil {
-		t.Fatalf("local credentials: %v", err)
-	}
-	remoteCreds, err := remoteSvc.Credentials()
-	if err != nil {
-		t.Fatalf("remote credentials: %v", err)
-	}
-	if len(localCreds) == 0 || len(localCreds) != len(remoteCreds) {
-		t.Fatalf("credential counts differ: local %d, remote %d", len(localCreds), len(remoteCreds))
-	}
-	assertSameKeys(t, "credential list entry", localCreds[0], remoteCreds[0])
-
-	localOne, err := localSvc.Credential(localCreds[0]["id"].(string))
-	if err != nil {
-		t.Fatalf("local credential: %v", err)
-	}
-	remoteOne, err := remoteSvc.Credential(remoteCreds[0]["id"].(string))
-	if err != nil {
-		t.Fatalf("remote credential: %v", err)
-	}
-	assertSameKeys(t, "credential detail", localOne, remoteOne)
-}
-
-// The case that shipped broken: a deferred credential names what is being
-// issued, and only one backend used to say so.
-func TestDeferredDocumentsMatchAcrossBackends(t *testing.T) {
+// The table compares document shapes. This pins the one value that shipped
+// wrong: a deferred credential has to name what is being issued, not the
+// issuer's internal configuration id.
+func TestDeferredDocumentsCarryTheCredentialType(t *testing.T) {
 	resetRemoteTestState(t)
 	localSvc, remoteSvc := parityWallets(t, func(w *wallet.Wallet) {
 		w.AddPendingIssuance(&wallet.PendingIssuance{
-			ID:              "pending-1",
-			TransactionID:   "tx-1",
-			Issuer:          "https://issuer.example",
-			ConfigurationID: "msisdn-sd-jwt-key-attestations",
-			Format:          "dc+sd-jwt",
-			VCT:             "eu.europa.ec.eudi.msisdn.1",
-			IntervalSeconds: 60,
+			ID: "pending-1", TransactionID: "tx-1", Issuer: "https://issuer.example",
+			ConfigurationID: "msisdn-sd-jwt-key-attestations", Format: "dc+sd-jwt",
+			VCT: "eu.europa.ec.eudi.msisdn.1", IntervalSeconds: 60,
 		})
 	})
 
-	localPending, err := localSvc.DeferredIssuances()
-	if err != nil {
-		t.Fatalf("local deferred: %v", err)
-	}
-	remotePending, err := remoteSvc.DeferredIssuances()
-	if err != nil {
-		t.Fatalf("remote deferred: %v", err)
-	}
-	if len(localPending) != 1 || len(remotePending) != 1 {
-		t.Fatalf("deferred counts differ: local %d, remote %d", len(localPending), len(remotePending))
-	}
-	assertSameKeys(t, "deferred entry", localPending[0], remotePending[0])
-
-	// The type has to reach the caller, whichever backend answered.
-	for name, doc := range map[string]map[string]any{"local": localPending[0], "remote": remotePending[0]} {
-		if got := doc["vct"]; got != "eu.europa.ec.eudi.msisdn.1" {
+	for name, svc := range map[string]walletService{"local": localSvc, "remote": remoteSvc} {
+		docs, err := svc.DeferredIssuances()
+		if err != nil {
+			t.Fatalf("%s deferred: %v", name, err)
+		}
+		if len(docs) != 1 {
+			t.Fatalf("%s backend returned %d deferred records, want 1", name, len(docs))
+		}
+		if got := docs[0]["vct"]; got != "eu.europa.ec.eudi.msisdn.1" {
 			t.Errorf("%s backend reports vct %v, so the row is labelled by the issuer's configuration id", name, got)
 		}
 	}
 }
 
-// The config document is the one place the two legitimately differ: a running
-// server knows its port, build and listeners, a store on disk does not. What
-// must hold is that nothing the local backend reports goes missing remotely.
 func TestConfigDocumentsMatchAcrossBackends(t *testing.T) {
 	resetRemoteTestState(t)
 	localSvc, remoteSvc := parityWallets(t, func(*wallet.Wallet) {})

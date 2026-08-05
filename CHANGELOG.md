@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.9] - 2026-08-05
 
+### Changed
+
+- **Both wallet backends are compared method by method.** Every management command runs against either a local store or a remote instance, and each backend builds its documents separately, so a field only one of them fills is invisible until a column shows the wrong thing. A table now runs all fifteen `walletService` methods through both and compares what a caller can read, and a completeness check fails when a new method arrives without a case
+
 ### Fixed
 
 - **A deferred credential whose token had expired was retried hourly for a day.** The access token is minted for the credential request and expires in minutes, while an issuer may ask the wallet back in an hour, so a long deferral collects with a token the issuer has already refused. A rejected authorization (401, 403) was classed as worth another attempt, so the wallet kept asking until the 24 hour cap with no chance of succeeding. It now stops and says why. Minting a fresh token instead needs refresh token support, which the wallet does not have yet
