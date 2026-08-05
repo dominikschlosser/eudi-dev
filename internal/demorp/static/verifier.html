@@ -51,6 +51,14 @@
     table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 6px; }
     td { border: 1px solid var(--border); padding: 4px 8px; }
     td:first-child { color: var(--text-dim); }
+    .format-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+    .format-label { font-size: 11px; color: var(--text-dim); }
+    .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .toggle-option { font: inherit; font-size: 12px; padding: 6px 12px; border: 0; background: var(--bg);
+      color: var(--text-dim); cursor: pointer; }
+    .toggle-option + .toggle-option { border-left: 1px solid var(--border); }
+    .toggle-option.selected { background: var(--accent); color: #fff; }
+    .format-hint { font-size: 11px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -69,6 +77,17 @@
       <code>direct_post.jwt</code> with an encrypted response. It then checks the
       response: issuer signature, revocation, key binding, <code>sd_hash</code>,
       nonce and audience.
+    </p>
+    <div class="format-row">
+      <span class="format-label">PID format</span>
+      <div class="toggle" id="format-toggle" role="radiogroup" aria-label="Requested PID format">
+        <button type="button" class="toggle-option selected" data-format="both" role="radio" aria-checked="true">Both</button>
+        <button type="button" class="toggle-option" data-format="sd-jwt" role="radio" aria-checked="false">SD-JWT</button>
+        <button type="button" class="toggle-option" data-format="mdoc" role="radio" aria-checked="false">mDoc</button>
+      </div>
+    </div>
+    <p class="format-hint" id="format-hint">
+      The request asks for either format and the wallet answers with the one it holds.
     </p>
     <button class="btn primary" data-type="ticket">Request the demo ticket</button>
     <button class="btn" data-type="pid">Request the PID</button>

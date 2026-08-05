@@ -104,13 +104,37 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// What each PID format choice asks of the wallet. The ticket only exists as
+// an SD-JWT VC, so the choice applies to the PID alone.
+const FORMAT_HINTS = {
+  both: "The request asks for either format and the wallet answers with the one it holds.",
+  "sd-jwt": "The request asks for the SD-JWT VC PID only. A wallet holding only the mdoc cannot answer it.",
+  mdoc: "The request asks for the mdoc PID only. A wallet holding only the SD-JWT VC cannot answer it.",
+};
+
+let pidFormat = "both";
+
+for (const option of document.querySelectorAll("#format-toggle .toggle-option")) {
+  option.addEventListener("click", () => {
+    pidFormat = option.dataset.format;
+    for (const other of document.querySelectorAll("#format-toggle .toggle-option")) {
+      const selected = other === option;
+      other.classList.toggle("selected", selected);
+      other.setAttribute("aria-checked", String(selected));
+    }
+    document.getElementById("format-hint").textContent = FORMAT_HINTS[pidFormat];
+  });
+}
+
 for (const btn of document.querySelectorAll(".btn[data-type]")) {
   btn.addEventListener("click", async () => {
     stopPolling();
+    const request = { type: btn.dataset.type };
+    if (btn.dataset.type === "pid") request.format = pidFormat;
     const resp = await fetch("api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: btn.dataset.type }),
+      body: JSON.stringify(request),
     });
     const doc = await resp.json();
     if (!resp.ok) {

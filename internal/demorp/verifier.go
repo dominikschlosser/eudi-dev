@@ -72,6 +72,18 @@ type requestState struct {
 	checks []map[string]any
 }
 
+// queryIDs are the DCQL credential ids this request asked under, quoted for
+// an error message.
+func (r *requestState) queryIDs() []string {
+	var ids []string
+	for _, id := range []string{r.queryID, r.mdocQueryID} {
+		if id != "" {
+			ids = append(ids, fmt.Sprintf("%q", id))
+		}
+	}
+	return ids
+}
+
 // VerifierHandler returns the demo verifier, meant to be mounted with the
 // /verifier prefix stripped.
 func (d *DemoRP) VerifierHandler() http.Handler {
@@ -108,6 +120,25 @@ func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
 
 type createRequestBody struct {
 	Type string `json:"type"` // "ticket" (default) or "pid"
+	// Format narrows a PID request to one credential format: "sd-jwt",
+	// "mdoc", or "both" (the default). It does not apply to the ticket,
+	// which the demo issuer only ever mints as an SD-JWT VC.
+	Format string `json:"format"`
+}
+
+// normalizePIDFormat maps what the API accepts onto the two formats a PID
+// request can ask for. It returns whether each is wanted.
+func normalizePIDFormat(format string) (sdjwt, mdoc bool, err error) {
+	switch strings.TrimSpace(format) {
+	case "", "both":
+		return true, true, nil
+	case "sd-jwt", "sdjwt", "dc+sd-jwt":
+		return true, false, nil
+	case "mdoc", "mso_mdoc":
+		return false, true, nil
+	default:
+		return false, false, fmt.Errorf("format must be sd-jwt, mdoc or both")
+	}
 }
 
 func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
@@ -123,16 +154,38 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	switch body.Type {
 	case "", "ticket":
 		body.Type = "ticket"
+		wantSDJWT, _, err := normalizePIDFormat(body.Format)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		// There is no mdoc ticket, so asking for one would promise something
+		// no wallet can answer.
+		if !wantSDJWT {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the demo ticket only exists as an SD-JWT VC"})
+			return
+		}
 		vct = TicketVCT
 		claims = []string{"event", "tier", "seat", "given_name", "family_name"}
 	case "pid":
 		// A PID exists in both formats, and a verifier that only knows one of
-		// them turns a wallet's format choice into a failure. The request asks
-		// for either.
-		vct = PIDVCT
-		docType = PIDDocType
-		claims = []string{"given_name", "family_name"}
-		mdocClaims = []string{"given_name", "family_name"}
+		// them turns a wallet's format choice into a failure. By default the
+		// request asks for either and the wallet answers with what it holds.
+		// Asking for one format on purpose is what shows a wallet refusing a
+		// request it cannot satisfy.
+		wantSDJWT, wantMDOC, err := normalizePIDFormat(body.Format)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if wantSDJWT {
+			vct = PIDVCT
+			claims = []string{"given_name", "family_name"}
+		}
+		if wantMDOC {
+			docType = PIDDocType
+			mdocClaims = []string{"given_name", "family_name"}
+		}
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket or pid"})
 		return
@@ -141,7 +194,6 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	base := d.baseURL()
 	req := &requestState{
 		id:       randToken(),
-		queryID:  body.Type,
 		vct:      vct,
 		docType:  docType,
 		want:     claims,
@@ -149,6 +201,15 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		nonce:    randToken(),
 		status:   "pending",
 		expires:  time.Now().Add(entryTTL),
+	}
+	// A query id per format the request asks for. An mdoc-only request has no
+	// SD-JWT query id at all, so nothing invites an answer in a format the
+	// request did not ask for.
+	if vct != "" {
+		req.queryID = body.Type
+	}
+	if docType != "" {
+		req.mdocQueryID = body.Type + "_mdoc"
 	}
 	responseURI := base + "/verifier/response/" + req.id
 
@@ -170,34 +231,39 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	req.encKey = encKey
 
-	dcqlClaims := make([]map[string]any, 0, len(claims))
-	for _, c := range claims {
-		dcqlClaims = append(dcqlClaims, map[string]any{"path": []string{c}})
+	credentials := make([]map[string]any, 0, 2)
+	if req.queryID != "" {
+		dcqlClaims := make([]map[string]any, 0, len(claims))
+		for _, c := range claims {
+			dcqlClaims = append(dcqlClaims, map[string]any{"path": []string{c}})
+		}
+		credentials = append(credentials, map[string]any{
+			"id":     req.queryID,
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []string{vct}},
+			"claims": dcqlClaims,
+		})
 	}
-	credentials := []map[string]any{{
-		"id":     req.queryID,
-		"format": "dc+sd-jwt",
-		"meta":   map[string]any{"vct_values": []string{vct}},
-		"claims": dcqlClaims,
-	}}
-	dcql := map[string]any{"credentials": credentials}
-
-	if docType != "" {
+	if req.mdocQueryID != "" {
 		// mdoc claim paths are [namespace, element].
 		mdocDCQLClaims := make([]map[string]any, 0, len(mdocClaims))
 		for _, c := range mdocClaims {
 			mdocDCQLClaims = append(mdocDCQLClaims, map[string]any{"path": []string{docType, c}})
 		}
-		req.mdocQueryID = req.queryID + "_mdoc"
 		credentials = append(credentials, map[string]any{
 			"id":     req.mdocQueryID,
 			"format": "mso_mdoc",
 			"meta":   map[string]any{"doctype_value": docType},
 			"claims": mdocDCQLClaims,
 		})
-		dcql["credentials"] = credentials
+	}
+	dcql := map[string]any{"credentials": credentials}
+
+	if req.queryID != "" && req.mdocQueryID != "" {
 		// One credential set with two options: either format satisfies it, and
-		// the wallet picks whichever it holds.
+		// the wallet picks whichever it holds. Without the set both listed
+		// credentials would be required, which no wallet holding one format
+		// could answer.
 		dcql["credential_sets"] = []map[string]any{{
 			"options": [][]string{{req.queryID}, {req.mdocQueryID}},
 		}}
@@ -430,16 +496,19 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if err := json.Unmarshal([]byte(vpToken), &tokenDoc); err != nil {
 		return nil, log.entries, check("vp_token parses", fmt.Errorf("vp_token is not a JSON object of query id to presentations: %w", err))
 	}
-	// A PID request offers both formats, so the wallet answers under whichever
-	// query id it could satisfy.
-	presentations := tokenDoc[req.queryID]
+	// A PID request can offer both formats, so the wallet answers under
+	// whichever query id it could satisfy.
+	var presentations []string
+	if req.queryID != "" {
+		presentations = tokenDoc[req.queryID]
+	}
 	answeredMDOC := false
 	if len(presentations) == 0 && req.mdocQueryID != "" {
 		presentations = tokenDoc[req.mdocQueryID]
 		answeredMDOC = len(presentations) > 0
 	}
 	if err := check("vp_token holds one of the requested query ids",
-		errIf(len(presentations) == 0, "no presentation for query id %q", req.queryID)); err != nil {
+		errIf(len(presentations) == 0, "no presentation for query id %s", strings.Join(req.queryIDs(), " or "))); err != nil {
 		return nil, log.entries, err
 	}
 

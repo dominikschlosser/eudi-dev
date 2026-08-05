@@ -375,7 +375,14 @@ func TestVerifierRejectsRevokedCredential(t *testing.T) {
 // does.
 func startVerification(t *testing.T, h http.Handler, kind string) (string, url.Values) {
 	t.Helper()
-	_, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"`+kind+`"}`, map[string]string{"Content-Type": "application/json"})
+	return startVerificationWith(t, h, `{"type":"`+kind+`"}`)
+}
+
+// startVerificationWith is startVerification with the request body spelled
+// out, for the parameters beyond the credential type.
+func startVerificationWith(t *testing.T, h http.Handler, body string) (string, url.Values) {
+	t.Helper()
+	_, doc := doJSON(t, h, "POST", "/api/requests", body, map[string]string{"Content-Type": "application/json"})
 	walletURL, err := url.Parse(doc["wallet_url"].(string))
 	if err != nil {
 		t.Fatalf("parsing wallet_url: %v", err)
@@ -1218,4 +1225,131 @@ func presentDemoTicket(t *testing.T, ts *httptest.Server) map[string]any {
 	}
 	resp.Body.Close()
 	return getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
+}
+
+// The PID exists in two formats, so the request the verifier signs has to say
+// which of them it will accept.
+func TestVerifierPIDRequestAsksForTheChosenFormats(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	for _, tc := range []struct {
+		name        string
+		body        string
+		wantFormats []string
+		wantSets    bool
+	}{
+		{"default", `{"type":"pid"}`, []string{"dc+sd-jwt", "mso_mdoc"}, true},
+		{"both", `{"type":"pid","format":"both"}`, []string{"dc+sd-jwt", "mso_mdoc"}, true},
+		{"sd-jwt only", `{"type":"pid","format":"sd-jwt"}`, []string{"dc+sd-jwt"}, false},
+		{"mdoc only", `{"type":"pid","format":"mdoc"}`, []string{"mso_mdoc"}, false},
+		{"ticket", `{"type":"ticket"}`, []string{"dc+sd-jwt"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, doc := doJSON(t, h, "POST", "/api/requests", tc.body, map[string]string{"Content-Type": "application/json"})
+			walletURL, err := url.Parse(doc["wallet_url"].(string))
+			if err != nil {
+				t.Fatalf("parsing wallet_url: %v", err)
+			}
+			payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
+			dcql, ok := payload["dcql_query"].(map[string]any)
+			if !ok {
+				t.Fatalf("request object carries no dcql_query: %v", payload)
+			}
+			credentials, _ := dcql["credentials"].([]any)
+			var formats []string
+			for _, c := range credentials {
+				entry, _ := c.(map[string]any)
+				format, _ := entry["format"].(string)
+				formats = append(formats, format)
+			}
+			if strings.Join(formats, ",") != strings.Join(tc.wantFormats, ",") {
+				t.Errorf("requested formats = %v, want %v", formats, tc.wantFormats)
+			}
+			// Two credentials without a credential set would mean the wallet
+			// has to present both, which no wallet holding one format can do.
+			if _, hasSets := dcql["credential_sets"]; hasSets != tc.wantSets {
+				t.Errorf("credential_sets present = %v, want %v", hasSets, tc.wantSets)
+			}
+		})
+	}
+}
+
+// A format the verifier cannot ask for is refused when the request is
+// created, rather than producing a request no wallet can answer.
+func TestVerifierRejectsAnImpossibleFormat(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	for _, tc := range []struct{ name, body string }{
+		{"unknown format", `{"type":"pid","format":"jwt_vc_json"}`},
+		{"mdoc ticket", `{"type":"ticket","format":"mdoc"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, doc := doJSON(t, h, "POST", "/api/requests", tc.body, map[string]string{"Content-Type": "application/json"})
+			if code != http.StatusBadRequest {
+				t.Fatalf("creating the request = %d %v, want 400", code, doc)
+			}
+		})
+	}
+}
+
+// The wallet holds the PID in both formats, so which one comes back is the
+// verifier's choice and has to be verified as that format.
+func TestVerifierSteersThePIDFormatEndToEnd(t *testing.T) {
+	for _, tc := range []struct{ name, format, wantCheck string }{
+		{"sd-jwt only", "sd-jwt", "presentation parses as SD-JWT"},
+		{"mdoc only", "mdoc", "presentation parses as an mdoc DeviceResponse"},
+		{"both", "both", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			holderKey, err := mock.GenerateKey()
+			if err != nil {
+				t.Fatalf("generating holder key: %v", err)
+			}
+			issuerKey, err := mock.GenerateKey()
+			if err != nil {
+				t.Fatalf("generating issuer key: %v", err)
+			}
+			w := wallet.New(holderKey, issuerKey, true)
+			w.RequireHAIP = true
+			w.ValidationMode = wallet.ValidationModeStrict
+			if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+				t.Fatalf("generating PID: %v", err)
+			}
+			_, ts := serveDemoStack(t, w)
+
+			created := postJSONTo(t, ts.URL+"/verifier/api/requests", `{"type":"pid","format":"`+tc.format+`"}`)
+			id, _ := created["id"].(string)
+			walletURL, _ := created["wallet_url"].(string)
+			if id == "" || walletURL == "" {
+				t.Fatalf("unexpected create response: %v", created)
+			}
+			resp, err := ts.Client().Get(walletURL)
+			if err != nil {
+				t.Fatalf("driving the authorization request: %v", err)
+			}
+			resp.Body.Close()
+
+			status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
+			if status["status"] != "verified" {
+				t.Fatalf("status = %v, want verified (error: %v, checks: %v)", status["status"], status["error"], status["checks"])
+			}
+			if tc.wantCheck != "" && !hasCheck(status, tc.wantCheck) {
+				t.Errorf("the presentation was not verified as the requested format, checks: %v", status["checks"])
+			}
+		})
+	}
+}
+
+// hasCheck reports whether the verification log records a step by that name.
+func hasCheck(status map[string]any, name string) bool {
+	checks, _ := status["checks"].([]any)
+	for _, entry := range checks {
+		check, _ := entry.(map[string]any)
+		if check["name"] == name {
+			return true
+		}
+	}
+	return false
 }
