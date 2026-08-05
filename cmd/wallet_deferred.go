@@ -188,7 +188,7 @@ func printDeferred(p map[string]any) {
 			fmt.Printf("  Next attempt:   %s\n", parsed.Local().Format(time.Kitchen))
 		}
 	}
-	if attempts, ok := p["attempts"].(float64); ok && attempts > 0 {
+	if attempts, ok := docNumber(p, "attempts"); ok && attempts > 0 {
 		fmt.Printf("  Attempts:       %d\n", int(attempts))
 	}
 	if lastErr, ok := p["last_error"].(string); ok && lastErr != "" {

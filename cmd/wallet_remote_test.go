@@ -667,3 +667,32 @@ func TestTrustListListsProfiles(t *testing.T) {
 		t.Error("--list with --id was accepted")
 	}
 }
+
+// The same document reaches these renderers from two directions: through JSON
+// from a remote instance (every number a float64) and straight out of the
+// wallet in this process (numbers keep their Go type). Reading only float64
+// made `wallet list --remote local` report a revoked credential as governed
+// by someone else's status list.
+func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status any
+		want   string
+	}{
+		{"from JSON", float64(1), "revoked"},
+		{"from this process", 1, "revoked"},
+		{"active from this process", 0, "active"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cred := map[string]any{"status": map[string]any{
+				"managed": true,
+				"status":  tc.status,
+				"uri":     "https://wallet.example/api/statuslist",
+				"idx":     2,
+			}}
+			if got := credStatusLabel(cred); got != tc.want {
+				t.Errorf("credStatusLabel = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

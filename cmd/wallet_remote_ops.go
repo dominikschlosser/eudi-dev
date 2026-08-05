@@ -40,6 +40,28 @@ func docString(m map[string]any, key string) string {
 	return s
 }
 
+// docNumber reads a number out of a wallet document. The same document is
+// built by both backends, but one travels through JSON (where every number is
+// a float64) and the other is handed over in this process with its Go type
+// intact. Reading only float64 makes a listing disagree with itself depending
+// on which backend answered.
+func docNumber(m map[string]any, key string) (float64, bool) {
+	switch v := m[key].(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case json.Number:
+		parsed, err := v.Float64()
+		return parsed, err == nil
+	}
+	return 0, false
+}
+
 func docCredLabel(cred map[string]any) string {
 	if vct := docString(cred, "vct"); vct != "" {
 		return vct
@@ -120,7 +142,7 @@ func printDeferredDoc(entry map[string]any) error {
 			fmt.Printf("Next attempt:   %s\n", parsed.Local().Format(time.Kitchen))
 		}
 	}
-	if attempts, ok := entry["attempts"].(float64); ok && attempts > 0 {
+	if attempts, ok := docNumber(entry, "attempts"); ok && attempts > 0 {
 		fmt.Printf("Attempts:       %d\n", int(attempts))
 	}
 	if lastErr := docString(entry, "last_error"); lastErr != "" {
@@ -134,7 +156,7 @@ func printDeferredDoc(entry map[string]any) error {
 func credStatusLabel(cred map[string]any) string {
 	var parts []string
 	if status, ok := cred["status"].(map[string]any); ok {
-		value, hasValue := status["status"].(float64)
+		value, hasValue := docNumber(status, "status")
 		switch {
 		case hasValue && value == 1:
 			parts = append(parts, "revoked")

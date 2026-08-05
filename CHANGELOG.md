@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The demo verifier asks for the PID in the format you pick.** A PID request offered both formats and left the choice to the wallet, which is the right default but hides half the behaviour: a wallet that only holds one format, or picks the other one, looks the same from here. A toggle now asks for the SD-JWT VC only, the mdoc only, or either (the default). A one-format request carries exactly that credential and no credential set, so a wallet that cannot answer it says so instead of substituting the format it has. The ticket takes no format (the demo issuer only mints it as an SD-JWT VC) and a request that asks for one is refused
 - **The demo issuer can hand out a revocable ticket.** A toggle on its page mints the Demo Event Ticket with a reference to the wallet's own status list, on an index reserved for that credential alone. A wallet importing a credential that points at the status list it serves now adopts the entry, so the ticket arrives with a working Revoke button and the demo verifier rejects the next presentation once it is revoked. Without the toggle nothing changes: the ticket carries no status reference and the verifier reports that there is none to resolve
 
+### Fixed
+
+- **`wallet list --remote local` reported a revoked credential as governed by a foreign status list.** Both backends build the same document, but one travels through JSON (where every number is a float64) and the other is handed over in this process with its Go types intact, and the renderer only read float64. So the status value was invisible to it and it fell back to "external", on exactly the credentials the wallet governs itself. The number is now read in either shape, which also fixes the attempt count on a locally read deferred issuance
+
 ## [1.19.10] - 2026-08-05
 
 ### Changed
