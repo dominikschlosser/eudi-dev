@@ -51,6 +51,9 @@ type Server struct {
 	// creates, so a deferral recorded there is handed back rather than
 	// thrown away with the clone.
 	pendingIssuanceOwner *Wallet
+	// renewalBackoff holds off retrying a credential whose renewal failed.
+	renewalBackoff map[string]time.Time
+	renewalMu      sync.Mutex
 	// pendingOffers holds offers paused for an interactive sign-in, so the
 	// caller that started one can read how it ended.
 	pendingOffers map[string]*pendingOffer

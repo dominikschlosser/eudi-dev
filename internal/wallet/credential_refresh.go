@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"net/url"
+	"time"
 )
 
 // RefreshCredential asks a credential's issuer for a fresh copy, using the
@@ -135,4 +136,52 @@ func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (
 		return &w.Credentials[i], nil
 	}
 	return nil, fmt.Errorf("credential %s not found", id)
+}
+
+// renewalCheckInterval is how often credentials are checked against their
+// expiry. It only has to be shorter than the margin, so a credential is
+// noticed while there is still time to renew it.
+const renewalCheckInterval = 30 * time.Second
+
+// renewalRetryAfter keeps a credential whose renewal failed from being retried
+// on every sweep. An issuer that refused once will usually refuse again, and a
+// wallet asking every half minute until the credential expires is noise that
+// buries the reason.
+const renewalRetryAfter = 10 * time.Minute
+
+// renewExpiringCredentials renews what is close enough to expiry to be worth
+// renewing. One credential failing is not a failure of the sweep: the others
+// still need doing, and the task would otherwise be abandoned over a single
+// issuer being unreachable.
+func (s *Server) renewExpiringCredentials(now time.Time) error {
+	for _, cred := range s.wallet.GetCredentials() {
+		if !cred.CanRenew() || !CredentialNeedsRenewal(cred, now) {
+			continue
+		}
+		if !s.renewalDue(cred.ID, now) {
+			continue
+		}
+		if _, err := s.RefreshCredential(cred.ID); err != nil {
+			s.noteRenewalFailure(cred.ID, now)
+			s.log("  ERROR: renewing credential %s: %v", cred.ID, err)
+		}
+	}
+	return nil
+}
+
+// renewalDue reports whether a credential may be tried again yet.
+func (s *Server) renewalDue(credentialID string, now time.Time) bool {
+	s.renewalMu.Lock()
+	defer s.renewalMu.Unlock()
+	next, seen := s.renewalBackoff[credentialID]
+	return !seen || now.After(next)
+}
+
+func (s *Server) noteRenewalFailure(credentialID string, now time.Time) {
+	s.renewalMu.Lock()
+	defer s.renewalMu.Unlock()
+	if s.renewalBackoff == nil {
+		s.renewalBackoff = make(map[string]time.Time)
+	}
+	s.renewalBackoff[credentialID] = now.Add(renewalRetryAfter)
 }

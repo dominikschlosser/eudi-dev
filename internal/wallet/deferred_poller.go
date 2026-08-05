@@ -45,6 +45,7 @@ const backgroundTick = time.Second
 func (s *Server) backgroundTasks() []backgroundTask {
 	return []backgroundTask{
 		{name: "deferred credentials", every: backgroundTick, run: s.collectDueDeferredCredentials},
+		{name: "credential renewal", every: renewalCheckInterval, run: s.renewExpiringCredentials},
 		{name: "signing certificate", every: certificateCheckInterval, run: s.renewSigningCertificate},
 	}
 }

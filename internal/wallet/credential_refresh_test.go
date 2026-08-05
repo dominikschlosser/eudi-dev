@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A renewed credential keeps its id: a verifier query, a UI selection and the
@@ -113,5 +114,54 @@ func TestRefreshCredentialRefusesWithoutARefreshToken(t *testing.T) {
 	server := NewServer(w, 0, nil)
 	if _, err := server.RefreshCredential(imported.ID); err == nil {
 		t.Error("a credential with no refresh token was renewed")
+	}
+}
+
+// The automatic sweep renews what is near expiry and leaves the rest alone,
+// and one credential failing must not stop the others: the task would
+// otherwise be abandoned over a single issuer being unreachable.
+func TestRenewExpiringCredentialsSweep(t *testing.T) {
+	w := generateTestWallet(t)
+
+	fresh, err := w.IssueCredential(IssueOptions{
+		Format: "sdjwt", VCT: "urn:test:fresh:1",
+		Claims: map[string]any{"a": "1"}, ExpiresIn: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiring, err := w.IssueCredential(IssueOptions{
+		Format: "sdjwt", VCT: "urn:test:expiring:1",
+		Claims: map[string]any{"a": "1"}, ExpiresIn: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both can be renewed, but only one is close enough to expiry.
+	unreachable := CredentialRenewal{
+		Issuer: "https://issuer.example", TokenEndpoint: "https://127.0.0.1:1/token",
+		CredentialEndpoint: "https://127.0.0.1:1/credential",
+	}
+	w.rememberRenewal(fresh.Credential.ID, "refresh-1", unreachable)
+	w.rememberRenewal(expiring.Credential.ID, "refresh-1", unreachable)
+
+	server := NewServer(w, 0, nil)
+	now := time.Now()
+	if err := server.renewExpiringCredentials(now); err != nil {
+		t.Fatalf("the sweep reported failure over one credential: %v", err)
+	}
+
+	// The unreachable issuer failed, so the credential is held off rather than
+	// retried on the next sweep half a minute later.
+	if server.renewalDue(expiring.Credential.ID, now) {
+		t.Error("a credential whose renewal just failed is due again immediately")
+	}
+	if !server.renewalDue(expiring.Credential.ID, now.Add(renewalRetryAfter+time.Second)) {
+		t.Error("a failed renewal is never retried")
+	}
+	// The one nowhere near expiry was never attempted, so it has no backoff.
+	if !server.renewalDue(fresh.Credential.ID, now) {
+		t.Error("a credential far from expiry was attempted")
 	}
 }
