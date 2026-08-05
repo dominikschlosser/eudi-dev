@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
@@ -1352,4 +1353,91 @@ func hasCheck(status map[string]any, name string) bool {
 		}
 	}
 	return false
+}
+
+// Whatever the wallet returned has to come back with the result, so the page
+// can offer it to the decoder. A presentation that failed verification is the
+// one most worth looking at, so it is kept too.
+func TestVerifierReportsTheReceivedPresentation(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		nonce      func(params url.Values) string
+		wantStatus string
+	}{
+		{"verified", func(p url.Values) string { return p.Get("nonce") }, "verified"},
+		{"failed", func(url.Values) string { return "wrong-nonce" }, "failed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, holderKey := newDemoRP(t)
+			h := d.VerifierHandler()
+
+			id, params := startVerification(t, h, "ticket")
+			presentation := presentTicket(t, d, holderKey, params.Get("client_id"), tc.nonce(params))
+			postPresentation(t, h, id, "ticket", presentation)
+
+			_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+			if status["status"] != tc.wantStatus {
+				t.Fatalf("status = %v, want %v", status["status"], tc.wantStatus)
+			}
+			if status["presentation"] != presentation {
+				t.Errorf("the result does not carry the presentation that arrived: %v", status["presentation"])
+			}
+		})
+	}
+}
+
+// A request nobody answered has no presentation to offer.
+func TestVerifierReportsNoPresentationWhilePending(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, _ := startVerification(t, h, "ticket")
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if _, ok := status["presentation"]; ok {
+		t.Errorf("a pending request reported a presentation: %v", status["presentation"])
+	}
+}
+
+// The mdoc answer is a DeviceResponse, not a credential: it carries the
+// device auth the wallet signed over this request. That is what the link has
+// to open, so it has to arrive whole.
+func TestVerifierReportsTheReceivedMDOCPresentation(t *testing.T) {
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating holder key: %v", err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating issuer key: %v", err)
+	}
+	w := wallet.New(holderKey, issuerKey, true)
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating PID: %v", err)
+	}
+	_, ts := serveDemoStack(t, w)
+
+	created := postJSONTo(t, ts.URL+"/verifier/api/requests", `{"type":"pid","format":"mdoc"}`)
+	id, _ := created["id"].(string)
+	walletURL, _ := created["wallet_url"].(string)
+	resp, err := ts.Client().Get(walletURL)
+	if err != nil {
+		t.Fatalf("driving the authorization request: %v", err)
+	}
+	resp.Body.Close()
+
+	status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
+	}
+	presentation, _ := status["presentation"].(string)
+	if presentation == "" {
+		t.Fatal("the result carries no presentation")
+	}
+	doc, err := mdoc.Parse(presentation)
+	if err != nil {
+		t.Fatalf("the reported presentation does not parse as a DeviceResponse: %v", err)
+	}
+	if doc.DeviceSigned == nil {
+		t.Error("the reported presentation carries no device auth")
+	}
 }

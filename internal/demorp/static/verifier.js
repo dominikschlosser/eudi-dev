@@ -46,6 +46,26 @@ function renderResult(doc) {
     claims.hidden = true;
     label.hidden = true;
   }
+  renderPresentationLink(doc.presentation);
+}
+
+// The decoder opens whatever arrived, key binding JWT or device auth
+// included, which is the part a claims table cannot show. It is offered
+// whether the presentation verified or not: a failed one is the interesting
+// case. The presentation is not a credential in any wallet, so the link has
+// to carry it rather than name it by id.
+function renderPresentationLink(presentation) {
+  const box = document.getElementById("presentation-box");
+  const label = document.getElementById("presentation-label");
+  if (!presentation) {
+    box.hidden = true;
+    label.hidden = true;
+    return;
+  }
+  const link = document.getElementById("presentation-link");
+  link.href = "../decoder/?credential=" + encodeURIComponent(presentation);
+  box.hidden = false;
+  label.hidden = false;
 }
 
 function schedulePoll(id) {

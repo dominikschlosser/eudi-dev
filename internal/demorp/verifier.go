@@ -70,6 +70,11 @@ type requestState struct {
 	err    string
 	claims map[string]any
 	checks []map[string]any
+	// presentation is what the wallet actually returned in the vp_token: an
+	// SD-JWT with its key binding JWT, or an mdoc DeviceResponse with its
+	// device auth. It is kept whatever the outcome, because a presentation
+	// that failed verification is the one worth looking at.
+	presentation string
 }
 
 // queryIDs are the DCQL credential ids this request asked under, quoted for
@@ -363,6 +368,11 @@ func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 			"claims": req.claims,
 			"checks": req.checks,
 		}
+		// So the page can offer it to the decoder: what arrived, exactly as it
+		// arrived, key binding and device auth included.
+		if req.presentation != "" {
+			doc["presentation"] = req.presentation
+		}
 		if req.err != "" {
 			doc["error"] = req.err
 		}
@@ -467,6 +477,14 @@ func decryptResponse(req *requestState, form url.Values) (string, error) {
 	return string(raw), nil
 }
 
+// recordPresentation keeps what the wallet returned, so the page can hand it
+// to the decoder however the verification turns out.
+func (d *DemoRP) recordPresentation(req *requestState, presentation string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	req.presentation = presentation
+}
+
 func (d *DemoRP) finishRequest(req *requestState, claims map[string]any, checks []map[string]any, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -506,6 +524,11 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if len(presentations) == 0 && req.mdocQueryID != "" {
 		presentations = tokenDoc[req.mdocQueryID]
 		answeredMDOC = len(presentations) > 0
+	}
+	if len(presentations) > 0 {
+		// Recorded before anything is checked: a presentation that fails
+		// verification is exactly the one someone will want to decode.
+		d.recordPresentation(req, presentations[0])
 	}
 	if err := check("vp_token holds one of the requested query ids",
 		errIf(len(presentations) == 0, "no presentation for query id %s", strings.Join(req.queryIDs(), " or "))); err != nil {
