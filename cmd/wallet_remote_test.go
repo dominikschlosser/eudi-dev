@@ -641,3 +641,29 @@ func trustListAnchors(t *testing.T, jwt string) map[string]bool {
 	walk(doc)
 	return found
 }
+
+// Without a listing the profile ids are only discoverable by reading the HTTP
+// index, so a caller has to guess which one covers what it verifies.
+func TestTrustListListsProfiles(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+
+	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"wallet", "trust-list", "--list", "--remote", url})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("wallet trust-list --list: %v", err)
+		}
+	})
+
+	for _, want := range []string{"wallet-provider", "/api/trustlists/"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the listing does not mention %q:\n%s", want, out)
+		}
+	}
+
+	// A listing plus a selection is a contradiction, not a narrowed listing.
+	rootCmd.SetArgs([]string{"wallet", "trust-list", "--list", "--id", "pid", "--remote", url})
+	if err := rootCmd.Execute(); err == nil {
+		t.Error("--list with --id was accepted")
+	}
+}

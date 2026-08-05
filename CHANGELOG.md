@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.6] - 2026-08-05
 
+### Added
+
+- **`wallet trust-list --list` shows which trust list profiles a wallet serves.** The ids were only discoverable by reading `/api/trustlists`, so picking one from the CLI meant guessing. Every profile carries the same certificate (the wallet has one CA) and differs in what it declares that CA to be, so the listing names the category to pick by. `--json` emits the `/api/trustlists` body unchanged
+
 ### Fixed
 
 - **`wallet trust-list` ignored the remote target and printed the local wallet's CA.** It read the local store directly instead of routing through the active remote, so with a remote wallet selected it handed out an anchor that validates nothing that wallet issues, silently. It now fetches from the wallet it is pointed at, and `--url` prints that wallet's URL rather than a localhost one

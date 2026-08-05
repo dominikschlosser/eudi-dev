@@ -22,7 +22,7 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `accept`       | Accept an OID4VP presentation request or OID4VCI credential offer (auto-detects) |
 | `scan`         | Scan a QR code and auto-dispatch to accept/import               |
 | `logs`         | Show persisted wallet-side OID4VP/OID4VCI interaction logs      |
-| `trust-list`   | Print the trust list JWT (or just the URL with `--url`)         |
+| `trust-list`   | Print the trust list JWT (`--list` for the profiles, `--url` for the URL) |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
 | `instances`    | Manage running wallet instances: `list`, `use <url|local>`, `kill <pid|port|url>` |
@@ -213,6 +213,16 @@ The wallet groups registered attestation entries by trust-list profile. Each gro
 - `wallet-provider` for the Wallet Provider profile (always present, this is the one an issuer uses to check the wallet attestation)
 - `local` for the built-in local ETSI-shaped profile
 - `tl-<hash>` for any additional custom profile
+
+`eudi wallet trust-list --list` prints the same profiles from the CLI:
+
+```
+ID               DEFAULT  CATEGORY              PATH
+pid              yes      Credential providers  /api/trustlists/pid
+wallet-provider           Wallet providers      /api/trustlists/wallet-provider
+```
+
+With `--json` it emits the `/api/trustlists` body unchanged, so a caller parsing one parses the other.
 
 `/api/trustlists` is a local discovery endpoint for those profiles. It is not the ETSI trust-list payload itself. Each entry includes:
 - `id`, for example `pid` or `local`

@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -417,6 +418,7 @@ func walletTrustListCmd() *cobra.Command {
 		port    int
 		docker  bool
 		urlOnly bool
+		list    bool
 		id      string
 		vct     string
 		docType string
@@ -430,10 +432,17 @@ The output can be piped to a file or used directly with --trust-list in the vali
 
 Without selection flags, this prints the same legacy PID-first trust list as /api/trustlist.
 Use --id, --vct, or --doctype to select a specific trust-list profile.
-Use --url to print only the trust list URL for a running wallet server instead.`,
+Use --list to see which profiles this wallet serves.
+Use --url to print only the trust list URL for a running wallet server instead.
+
+Every profile carries the same certificate, the wallet's own CA. They differ in
+what they declare it to be, so pick the one matching what is being verified.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if id != "" && (vct != "" || docType != "") {
 				return fmt.Errorf("--id cannot be combined with --vct or --doctype")
+			}
+			if list && (id != "" || vct != "" || docType != "" || urlOnly) {
+				return fmt.Errorf("--list prints every profile, so it takes no selection flags")
 			}
 			return nil
 		},
@@ -445,6 +454,10 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 			client, err := remoteClientIfConfigured()
 			if err != nil {
 				return err
+			}
+
+			if list {
+				return printTrustListIndex(client)
 			}
 
 			if urlOnly {
@@ -496,6 +509,7 @@ Use --url to print only the trust list URL for a running wallet server instead.`
 	}
 
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
+	cmd.Flags().BoolVar(&list, "list", false, "List the trust list profiles this wallet serves instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
 	cmd.Flags().StringVar(&id, "id", "", "Trust-list profile ID to print, for example 'pid', 'wallet-provider' or 'local'")
@@ -713,4 +727,61 @@ func loadWalletECKey(path, label string) (*ecdsa.PrivateKey, error) {
 
 	fmt.Fprintf(os.Stderr, "Generated ephemeral %s key\n", label)
 	return key, nil
+}
+
+// printTrustListIndex lists the profiles a wallet serves. Without it the ids
+// are only discoverable by reading /api/trustlists, so a caller has to guess
+// which one covers what it is verifying.
+func printTrustListIndex(client *remote.Client) error {
+	var entries []map[string]any
+	if client != nil {
+		remoteEntries, err := client.TrustLists()
+		if err != nil {
+			return err
+		}
+		entries = remoteEntries
+	} else {
+		w, _, err := loadWallet()
+		if err != nil {
+			return err
+		}
+		data, err := json.Marshal(wallet.BuildTrustListIndexEntries(w, w.IssuerURL))
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, &entries); err != nil {
+			return err
+		}
+	}
+
+	if jsonOutput {
+		// The same shape as GET /api/trustlists, so a caller parsing one
+		// parses the other.
+		data, err := json.MarshalIndent(map[string]any{"trust_lists": entries}, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+		return nil
+	}
+
+	if len(entries) == 0 {
+		fmt.Println("No trust list profiles.")
+		return nil
+	}
+
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tDEFAULT\tCATEGORY\tPATH")
+	for _, entry := range entries {
+		str := func(key string) string {
+			v, _ := entry[key].(string)
+			return v
+		}
+		def := ""
+		if isDefault, _ := entry["default"].(bool); isDefault {
+			def = "yes"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", str("id"), def, str("category"), str("path"))
+	}
+	return tw.Flush()
 }
