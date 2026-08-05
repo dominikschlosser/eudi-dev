@@ -1,7 +1,8 @@
 // Renders the project wordmark (logo mark + "EUDI Dev Wallet") into
 // docs/assets as PNGs: a banner card, the bare wordmark on a transparent
-// background, and a 1200x630 card for social posts. Light and dark of each.
-// The README uses the mark alone (docs/assets/logo-mark.svg), not these.
+// background (light, dark and plain black text), and a 1200x630 card for
+// social posts. The README uses the mark alone
+// (docs/assets/logo-mark.svg), not these.
 //
 // Run it with `node scripts/render-logo.js`. It borrows the Playwright
 // installed for the end-to-end tests (`cd e2e && npm install` if missing).
@@ -47,9 +48,12 @@ function page({ text, bg, cardBg, cardBorder, radius, markWidth, nameSize, gap, 
 
 const wordmark = { markWidth: 220, nameSize: 104, gap: 40 };
 
-// The wallet UI's two themes, so the logo matches the product either way.
+// The wallet UI's two themes, so the logo matches the product either way,
+// plus plain black for a white page or print, where the UI's near-black
+// navy reads as slightly blue.
 const dark = { text: '#c0caf5', surface: '#1a1b26', border: 'transparent' };
 const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
+const black = { text: '#000000', surface: '#ffffff', border: '#d0d0d0' };
 
 (async () => {
   const browser = await chromium.launch();
@@ -62,6 +66,7 @@ const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
     // The same wordmark without a card, to drop on your own background.
     { file: 'logo-wordmark-dark.png', theme: dark, card: false },
     { file: 'logo-wordmark-light.png', theme: light, card: false },
+    { file: 'logo-wordmark-black.png', theme: black, card: false },
   ]) {
     const p = await browser.newPage({ viewport: { width: 1800, height: 600 }, deviceScaleFactor: 2 });
     await p.setContent(page({
@@ -93,5 +98,5 @@ const light = { text: '#24283b', surface: '#ffffff', border: '#d0d0d0' };
   }
 
   await browser.close();
-  console.log('wrote banner, wordmark and social variants (light and dark) to docs/assets');
+  console.log('wrote banner, wordmark (light, dark, black) and social variants to docs/assets');
 })();
