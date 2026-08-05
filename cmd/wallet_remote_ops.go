@@ -228,7 +228,9 @@ func completeSignIn(c *remote.Client, pending map[string]any) (map[string]any, e
 	}
 
 	fmt.Fprintf(os.Stderr, "Sign in to continue: %s\n", authURL)
-	openBrowser(authURL)
+	if !noOpen {
+		openBrowser(authURL)
+	}
 
 	deadline := time.Now().Add(signInTimeout)
 	for {

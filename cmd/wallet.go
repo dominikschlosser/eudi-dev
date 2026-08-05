@@ -41,6 +41,10 @@ var walletDir string
 var templatesDir string
 var walletValidationMode string
 
+// noOpen suppresses the browser this CLI opens on the user's behalf, for
+// anyone on a desktop who would rather follow the printed URL themselves.
+var noOpen bool
+
 var walletCmd = &cobra.Command{
 	Use:   "wallet",
 	Short: "Manage a local testing wallet for OID4VP/OID4VCI flows",
@@ -52,6 +56,7 @@ func init() {
 	walletCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "Manage a remote wallet server at this URL for this invocation (\"local\" forces the local store)")
 	walletCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	walletCmd.PersistentFlags().StringVar(&walletValidationMode, "mode", string(wallet.ValidationModeDebug), "Wallet validation mode: 'debug' (default) or 'strict'")
+	walletCmd.PersistentFlags().BoolVar(&noOpen, "no-open", false, "Never open a browser, only print the URL")
 	walletCmd.AddCommand(walletServeCmd())
 	walletCmd.AddCommand(walletListCmd())
 	walletCmd.AddCommand(walletShowCmd())

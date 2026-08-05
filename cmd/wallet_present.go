@@ -571,6 +571,8 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	w.AddLogDetails("presentation", fmt.Sprintf("Verifier result from %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), result.StatusCode < 400, resultDetails)
 	dim.Println("───────────────────────────────────────")
 
+	followVerifierRedirect(result.RedirectURI)
+
 	if submissionCh != nil {
 		submissionCh <- submission
 	}
@@ -653,4 +655,21 @@ func processCredentialOffer(uri string, txCode string) error {
 	}
 
 	return nil
+}
+
+// followVerifierRedirect takes the user back to the verifier once the
+// presentation is in. OID4VP has the wallet send the user agent to the
+// redirect_uri the verifier answers with, which is how a same-device flow
+// returns to the site that asked (OpenID4VP 1.0 section 8.2).
+//
+// A script does not want browser windows appearing, so this only opens one
+// when a person is running the command. The URL is printed either way.
+func followVerifierRedirect(redirectURI string) {
+	if redirectURI == "" {
+		return
+	}
+	fmt.Printf("  Continue at: %s\n", redirectURI)
+	if !noOpen && stdinIsTerminal() {
+		openBrowser(redirectURI)
+	}
 }

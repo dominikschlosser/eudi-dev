@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -70,5 +71,21 @@ func TestHasDesktopSession(t *testing.T) {
 	t.Setenv("SSH_CONNECTION", "10.0.0.1 22 10.0.0.2 22")
 	if hasDesktopSession() {
 		t.Error("a macOS session arriving over SSH should not count as a desktop")
+	}
+}
+
+// OID4VP has the wallet return the user agent to the verifier, but a script
+// running presentations does not want browser windows appearing.
+func TestFollowVerifierRedirectPrintsTheURL(t *testing.T) {
+	t.Cleanup(func() { noOpen = false })
+	noOpen = true
+
+	out := captureStdout(t, func() { followVerifierRedirect("https://verifier.example/done?session=1") })
+	if !strings.Contains(out, "https://verifier.example/done?session=1") {
+		t.Errorf("the verifier redirect was not shown:\n%s", out)
+	}
+
+	if out := captureStdout(t, func() { followVerifierRedirect("") }); out != "" {
+		t.Errorf("a verifier that returned no redirect should print nothing, got %q", out)
 	}
 }

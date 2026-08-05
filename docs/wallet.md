@@ -322,6 +322,8 @@ Auto-detects the URI type and dispatches to the appropriate flow:
 
 In interactive mode (default), OID4VP requests start a temporary consent UI server and auto-open it in the browser. With `--auto-accept`, auto-selects and submits the first matching credentials.
 
+When a verifier answers a presentation with a `redirect_uri`, that URL is printed and, when a person is running the command, opened. OpenID4VP has the wallet return the user agent to the verifier so a same-device flow lands back on the site that asked. A scripted run only prints it. The CLI opens a browser only where there is a desktop to open it on, and `--no-open` turns it off everywhere.
+
 When DCQL is present, `debug` mode is intentionally forgiving for troubleshooting verifier queries: if a credential matches the requested format and metadata and at least one requested claim, the wallet logs a warning and still keeps that credential as a match even when other required claim paths are missing. `strict` mode treats the same query as non-matching.
 
 ```bash
