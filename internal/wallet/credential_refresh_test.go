@@ -283,7 +283,7 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 		if sawAttestation == "" || sawPoP == "" {
 			t.Error("the refresh carried no client attestation")
 		}
-		// A server that mints challenges rejects a stale one, so the refresh
+		// A server that hands out challenges rejects a stale one, so the refresh
 		// has to ask for its own rather than replay one from issuance.
 		if challenges != 1 {
 			t.Errorf("the refresh fetched %d attestation challenges, want 1", challenges)

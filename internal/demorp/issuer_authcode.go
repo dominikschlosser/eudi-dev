@@ -52,11 +52,11 @@ const (
 	// clockSkew is the tolerance applied to nbf and to a DPoP proof's iat.
 	clockSkew = time.Minute
 	// dpopProofMaxAge bounds how long a DPoP proof stays acceptable. Proofs
-	// are minted per request, so this only has to cover the trip.
+	// are created per request, so this only has to cover the trip.
 	dpopProofMaxAge = 5 * time.Minute
 )
 
-// authRequestState is one pushed authorization request and the code minted
+// authRequestState is one pushed authorization request and the code issued
 // from it once the account has authenticated.
 type authRequestState struct {
 	requestURI    string
@@ -212,7 +212,7 @@ func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	d.redirectWithCode(w, r, request, demoAccountUsername)
 }
 
-// redirectWithCode mints the authorization code and sends the caller back to
+// redirectWithCode issues the authorization code and sends the caller back to
 // the wallet's redirect URI. The `iss` parameter (RFC 9207) is included
 // because a wallet in strict mode requires it.
 func (d *DemoRP) redirectWithCode(w http.ResponseWriter, r *http.Request, request *authRequestState, subject string) {
@@ -264,7 +264,7 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		known = false
 	}
 	// Copy under the lock: the authorization endpoint writes to the same
-	// struct when it mints a code.
+	// struct when it issues a code.
 	var granted authRequestState
 	if known {
 		// An authorization code is single use (RFC 6749 §4.1.2).

@@ -127,7 +127,7 @@ type createRequestBody struct {
 	Type string `json:"type"` // "ticket" (default) or "pid"
 	// Format narrows a PID request to one credential format: "sd-jwt",
 	// "mdoc", or "both" (the default). It does not apply to the ticket,
-	// which the demo issuer only ever mints as an SD-JWT VC.
+	// which the demo issuer only ever issues as an SD-JWT VC.
 	Format string `json:"format"`
 }
 

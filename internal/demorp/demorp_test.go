@@ -312,7 +312,7 @@ func serveStatusList(t *testing.T, d *DemoRP, w *wallet.Wallet) *httptest.Server
 	return srv
 }
 
-// signTicketWithStatus mints a ticket carrying a status list reference.
+// signTicketWithStatus issues a ticket carrying a status list reference.
 func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, uri string, idx int) string {
 	t.Helper()
 	chain, err := d.wallet.DefaultSigningCertChain()
@@ -1126,7 +1126,7 @@ func TestIssuerReservesOneStatusIndexPerTicket(t *testing.T) {
 	}
 }
 
-// A wallet with no status list URL cannot mint a status reference, so the
+// A wallet with no status list URL cannot issue a status reference, so the
 // offer is refused rather than silently handing out a ticket without one.
 func TestIssuerRefusesStatusOfferWithoutAStatusList(t *testing.T) {
 	d, _, _ := newDemoRP(t)
@@ -1158,7 +1158,7 @@ func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
 	}
 }
 
-// The authorization code flow mints a second state for the same offer, so the
+// The authorization code flow creates a second state for the same offer, so the
 // choice made when the offer was created has to survive the sign-in.
 func TestAuthorizationCodeOfferKeepsTheStatusChoice(t *testing.T) {
 	d, w, _ := newDemoRP(t)

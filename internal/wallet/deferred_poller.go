@@ -197,9 +197,9 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 		dpopKey = s.wallet.HolderKey
 	}
 
-	// The access token was minted for the credential request and outlives it
-	// by minutes, while the issuer may ask the wallet back in an hour. Mint a
-	// new one before spending the attempt on a request the issuer will refuse.
+	// The access token was issued for the credential request and outlives it
+	// by minutes, while the issuer may ask the wallet back in an hour. Ask for
+	// a new one before spending the attempt on a request the issuer refuses.
 	if pending.AccessTokenExpired(time.Now()) && pending.CanRefresh() {
 		refreshed, err := s.refreshDeferredAccessToken(pending, dpopKey)
 		if err != nil {
@@ -275,10 +275,10 @@ func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) 
 // transaction is not.
 //
 // A rejected authorization is the case a long deferral runs into: the access
-// token was minted for the credential request and expires in minutes, while
+// token was issued for the credential request and expires in minutes, while
 // the issuer may ask the wallet back in an hour. Asking again with the same
 // dead token cannot succeed, so it is not worth another 24 hours of hourly
-// requests. The wallet cannot yet mint a new one, which is what refresh token
+// requests. The wallet cannot yet obtain a new one, which is what refresh token
 // support will add.
 // isAuthorizationRejected reports whether the issuer refused the credentials
 // the request carried, rather than the request itself.

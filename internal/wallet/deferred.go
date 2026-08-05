@@ -44,7 +44,7 @@ type PendingIssuance struct {
 	DocType     string `json:"doctype,omitempty"`
 	AccessToken string `json:"access_token"`
 	AuthScheme  string `json:"auth_scheme,omitempty"`
-	// RefreshToken and AccessTokenExpiresAt let a long deferral mint a new
+	// RefreshToken and AccessTokenExpiresAt let a long deferral obtain a new
 	// access token. The one the credential request used is short lived, and an
 	// issuer may ask the wallet back in an hour, so without these the
 	// collection fails on an authorization the issuer already expired.
@@ -298,7 +298,7 @@ func (p *PendingIssuance) AccessTokenExpired(now time.Time) bool {
 	return now.Add(15 * time.Second).After(p.AccessTokenExpiresAt)
 }
 
-// CanRefresh reports whether the record carries what minting a new access
+// CanRefresh reports whether the record carries what obtaining a new access
 // token needs.
 func (p *PendingIssuance) CanRefresh() bool {
 	return p != nil && p.RefreshToken != "" && p.TokenEndpoint != ""
