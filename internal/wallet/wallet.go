@@ -73,19 +73,26 @@ type Wallet struct {
 	RequireEncryptedRequest bool                  // when true, sends encryption keys in wallet_metadata
 	RequestEncryptionKey    *ecdsa.PrivateKey     // key for decrypting encrypted request objects
 	RequireHAIP             bool                  // when true, enforce HAIP 1.0 compliance checks
-	ValidationMode          ValidationMode        `json:"-"`
-	Credentials             []StoredCredential
-	StatusEntries           map[string]StatusEntry // credential ID → status entry
-	StatusListCounter       int                    // next available status list index
-	BaseURL                 string                 // base URL for status list endpoint
-	IssuerURL               string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
-	VCIClientID             string                 `json:"-"`
-	VCIRedirectURI          string                 `json:"-"`
-	TemplatesDir            string                 `json:"-"` // credential template directory; empty selects the default
-	TxCode                  string                 `json:"-"` // one-shot tx_code for OID4VCI token request
-	Log                     []LogEntry
-	mu                      sync.RWMutex
-	logSink                 func(LogEntry)
+	// ForceClientAttestation sends the wallet attestation on OID4VCI token
+	// requests even when the authorization server does not advertise
+	// attest_jwt_client_auth. Advertising it is only a SHOULD, so its absence
+	// does not prove the issuer will not check one, and this is the operator
+	// saying they know it does. Off by default: an attestation reused across
+	// issuers is a correlation handle.
+	ForceClientAttestation bool
+	ValidationMode         ValidationMode `json:"-"`
+	Credentials            []StoredCredential
+	StatusEntries          map[string]StatusEntry // credential ID → status entry
+	StatusListCounter      int                    // next available status list index
+	BaseURL                string                 // base URL for status list endpoint
+	IssuerURL              string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
+	VCIClientID            string                 `json:"-"`
+	VCIRedirectURI         string                 `json:"-"`
+	TemplatesDir           string                 `json:"-"` // credential template directory; empty selects the default
+	TxCode                 string                 `json:"-"` // one-shot tx_code for OID4VCI token request
+	Log                    []LogEntry
+	mu                     sync.RWMutex
+	logSink                func(LogEntry)
 	// credentialSink forwards imports to the wallet a clone was made from.
 	credentialSink func(StoredCredential)
 	runtime        *WalletRuntime

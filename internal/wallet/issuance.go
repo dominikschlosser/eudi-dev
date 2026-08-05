@@ -180,7 +180,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		dpopKey = w.HolderKey
 	}
 	buildClientAttestationHeaders := func() (map[string]string, error) {
-		if detectTokenEndpointAuthMethod(oauthMeta) != "attest_jwt_client_auth" {
+		if !w.attestsClient(oauthMeta) {
 			return nil, nil
 		}
 		challenge, err := fetchAttestationChallenge(oauthMeta)

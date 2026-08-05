@@ -95,7 +95,9 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		parForm.Set("client_assertion", assertion)
 	}
 	buildClientAttestationHeaders := func() (map[string]string, error) {
-		if clientAuthMethod != "attest_jwt_client_auth" {
+		// private_key_jwt already authenticated this client in the form, so an
+		// attestation on top is not what the server asked for.
+		if clientAuthMethod == "private_key_jwt" || !w.attestsClient(oauthMeta) {
 			return nil, nil
 		}
 		challenge, err := fetchAttestationChallenge(oauthMeta)
@@ -370,6 +372,21 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 		return issuer
 	}
 	return fallback
+}
+
+// attestsClient reports whether the wallet should authenticate with its
+// attestation against this authorization server. The metadata is the signal
+// the specification defines, and draft-ietf-oauth-attestation-based-client-auth
+// §8 has a client read it. Advertising is only a SHOULD there, so an operator
+// who knows better can override it, which is what ForceClientAttestation is.
+func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
+	if w == nil {
+		return false
+	}
+	if detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" {
+		return true
+	}
+	return w.ForceClientAttestation
 }
 
 func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {

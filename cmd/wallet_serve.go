@@ -53,6 +53,7 @@ func walletServeCmd() *cobra.Command {
 		preferredFormat         string
 		requireEncryptedRequest bool
 		haip                    bool
+		clientAttestation       bool
 		vciClientID             string
 		vciRedirectURI          string
 		demo                    bool
@@ -158,6 +159,9 @@ so the wallet automatically receives incoming protocol requests.`,
 
 			if haip {
 				w.RequireHAIP = true
+			}
+			if clientAttestation {
+				w.ForceClientAttestation = true
 			}
 			if vciClientID != "" {
 				w.VCIClientID = vciClientID
@@ -456,6 +460,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
 	cmd.Flags().StringVar(&preferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
 	cmd.Flags().BoolVar(&requireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
+	cmd.Flags().BoolVar(&clientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")

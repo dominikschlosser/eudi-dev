@@ -291,6 +291,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--vci-client-id`       | —        | Client ID to use for OID4VCI authorization-code flows |
 | `--vci-redirect-uri`    | —        | Redirect URI to use for OID4VCI authorization-code flows |
 | `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers |
+| `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](#wallet-attestation)) |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
 | `--demo`                | `false`  | Public demo profile: implies `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
@@ -473,6 +474,28 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 Responses depend on the caller. Browser navigations (a `GET` with an HTML `Accept` header — i.e. a clicked link) behave like a same-device wallet: after a presentation is submitted, the browser is redirected to the verifier's `redirect_uri` (or to the wallet UI when the verifier returns none), and after an offer is imported, to the wallet UI. Everything else — `curl`, test harnesses, the JSON APIs — receives the same JSON payloads as `POST /api/presentations` and `POST /api/offers`. This means a verifier or issuer configured with the wallet's URLs completes a standard browser round trip with no custom schemes involved (for example, `keycloak-extension-oid4vp` with `walletScheme` set to the wallet's `/authorize` URL).
 
 In interactive mode (no `--auto-accept`) the two callers diverge before consent as well: a browser navigation redirects to the wallet UI immediately, which shows the pending consent request and continues the flow once it is approved (a presentation then navigates on to the verifier's `redirect_uri`); an API call blocks until the request is approved or denied — in the UI or via `POST /api/requests/{id}/approve`.
+
+## Wallet attestation
+
+On OID4VCI token requests the wallet authenticates itself with a wallet attestation ([OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)), sent as the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers. The attestation is signed by the wallet's own CA and carries only the leaf in `x5c`, so an issuer verifying it needs the CA from `wallet ca-cert` as its trust anchor.
+
+By default this happens **only when the authorization server advertises it**, by listing `attest_jwt_client_auth` in `token_endpoint_auth_methods_supported`. That is what §8 of the draft asks a client to do:
+
+> The client SHOULD fetch and parse the Authorization Server metadata and recognize Attestation-Based Client Authentication as a client authentication mechanism if either of the given `token_endpoint_auth_methods_supported` values are present.
+
+Following the metadata is also a privacy measure. This wallet has one holder key and one attestation, and §10.1 of the same draft warns that reusing them across authorization servers lets those servers correlate the user through the attestation claims and the `cnf` key. Attesting only where it is asked for keeps that exposure to issuers that already require identification.
+
+### `--client-attestation`
+
+Advertising the method is a SHOULD, not a MUST, so an issuer may check an attestation without ever announcing it. Against such an issuer a correct wallet sends nothing and gets `invalid_client`. `--client-attestation` sends the attestation regardless of metadata:
+
+```bash
+eudi wallet serve --client-attestation --auto-accept
+```
+
+Use it when you know the issuer wants an attestation, and accept the correlation cost above. The wallet deliberately does not infer this from an `invalid_client` error: guessing from one issuer's error message would make every issuer pay for one issuer's metadata bug. `GET /api/config` reports the setting as `force_client_attestation`.
+
+The override never displaces client authentication the server did ask for: an authorization server that advertises `private_key_jwt` still gets the client assertion, not an attestation.
 
 ## HAIP 1.0 Enforcement
 

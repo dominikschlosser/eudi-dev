@@ -1477,6 +1477,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		// is being held to without inferring it.
 		"require_haip_issuance":     s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
+		"force_client_attestation":  s.wallet.ForceClientAttestation,
 		"credential_count":          len(s.wallet.GetCredentials()),
 		// False when an external TLS terminator serves the issuer origin: the
 		// built-in HTTPS listener is disabled then, and the wallet's
