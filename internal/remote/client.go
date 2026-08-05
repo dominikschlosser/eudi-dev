@@ -225,10 +225,16 @@ func (c *Client) Present(uri string) (map[string]any, error) {
 	return out, err
 }
 
-// AcceptOffer sends a credential offer URI to the remote wallet.
-func (c *Client) AcceptOffer(uri string) (map[string]any, error) {
+// AcceptOffer sends a credential offer URI to the remote wallet. An offer
+// whose pre-authorized grant requires a transaction code needs txCode; an
+// empty one is left out so the wallet keeps whatever it already holds.
+func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodPost, "/api/offers", map[string]any{"uri": uri}, &out)
+	body := map[string]any{"uri": uri}
+	if txCode != "" {
+		body["tx_code"] = txCode
+	}
+	err := c.do(http.MethodPost, "/api/offers", body, &out)
 	return out, err
 }
 

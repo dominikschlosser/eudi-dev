@@ -179,14 +179,8 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if supportsDPoP(oauthMeta) {
 		dpopKey = w.HolderKey
 	}
-	// An issuer is supposed to ask for client attestation through
-	// token_endpoint_auth_methods_supported, and most do. Some require it
-	// while advertising nothing at all (the Animo playground is one), which
-	// leaves the metadata no way to say so. The flow therefore starts from the
-	// metadata and, on an invalid_client refusal, attests and tries once more.
-	forceClientAttestation := false
 	buildClientAttestationHeaders := func() (map[string]string, error) {
-		if !forceClientAttestation && detectTokenEndpointAuthMethod(oauthMeta) != "attest_jwt_client_auth" {
+		if detectTokenEndpointAuthMethod(oauthMeta) != "attest_jwt_client_auth" {
 			return nil, nil
 		}
 		challenge, err := fetchAttestationChallenge(oauthMeta)
@@ -227,15 +221,6 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		"tx_code":             txCode,
 	})
 	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, buildClientAttestationHeaders)
-	if err != nil && w.canAttestClient() && strings.Contains(err.Error(), "invalid_client") {
-		forceClientAttestation = true
-		w.addProtocolLog("issuance", "client_attestation_retry", "Token request refused with invalid_client, retrying with a wallet attestation", true, map[string]any{
-			"url":      tokenEndpoint,
-			"endpoint": "token",
-			"error":    err.Error(),
-		})
-		tokenResp, err = postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, buildClientAttestationHeaders)
-	}
 	if err != nil {
 		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
 			"direction": "inbound",

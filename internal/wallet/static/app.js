@@ -1117,16 +1117,29 @@
 
     const facts = [];
     if (details.grant) facts.push(['Flow', details.grant]);
-    if (details.tx_code) {
-      facts.push(['Transaction code', details.tx_code_hint
-        ? 'required (' + details.tx_code_hint + ')'
-        : 'required']);
-    }
     if (facts.length > 0) {
       html += '<div class="offer-facts" id="offer-facts">' + facts.map(([k, v]) =>
         '<div><span class="offer-fact-name">' + escHtml(k) + '</span>' +
         '<span class="offer-fact-value">' + escHtml(v) + '</span></div>'
       ).join('') + '</div>';
+    }
+
+    // An offer that requires a transaction code cannot be approved without
+    // one, so this asks for it rather than only reporting that it is needed.
+    // The issuer delivers the code out of band (the Animo playground prints
+    // it next to the QR code, a bank would text it).
+    if (details.tx_code) {
+      const numeric = details.tx_code_input_mode !== 'text';
+      html += '<div class="offer-tx-code">' +
+        '<label for="offer-tx-code-input">Transaction code</label>' +
+        '<input type="text" id="offer-tx-code-input" autocomplete="one-time-code"' +
+        (numeric ? ' inputmode="numeric" pattern="[0-9]*"' : '') +
+        (details.tx_code_length ? ' maxlength="' + details.tx_code_length + '"' : '') +
+        ' placeholder="' + escHtml(details.tx_code_hint || 'code from the issuer') + '">' +
+        (details.tx_code_description
+          ? '<p class="dialog-hint" id="offer-tx-code-description">' + escHtml(details.tx_code_description) + '</p>'
+          : '') +
+      '</div>';
     }
 
     // The offer could not be fetched, so only its origin is known.
@@ -1229,6 +1242,16 @@
     consentDialog.innerHTML = html;
 
     document.getElementById('consent-approve').addEventListener('click', async () => {
+      // A required transaction code is checked here so an empty one fails in
+      // the dialog rather than as an issuer error after the offer is spent.
+      const txCodeField = document.getElementById('offer-tx-code-input');
+      if (txCodeField && !txCodeField.value.trim()) {
+        txCodeField.classList.add('input-error');
+        txCodeField.focus();
+        return;
+      }
+      if (txCodeField) txCodeField.classList.remove('input-error');
+
       // Gather selected claims
       const selected = {};
       consentDialog.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -1250,7 +1273,10 @@
       denyBtn.disabled = true;
 
       try {
-        const approveBody = isIssuance ? {} : { selected_claims: selected };
+        const txCodeInput = document.getElementById('offer-tx-code-input');
+        const approveBody = isIssuance
+          ? (txCodeInput ? { tx_code: txCodeInput.value.trim() } : {})
+          : { selected_claims: selected };
         const resp = await fetch('/api/requests/' + req.id + '/approve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

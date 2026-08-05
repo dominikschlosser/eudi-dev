@@ -39,14 +39,19 @@ type OfferedCredential struct {
 // Everything beyond the offer itself comes from the issuer's metadata, which
 // is optional, so every field degrades to empty rather than blocking consent.
 type IssuanceOfferDetails struct {
-	Issuer        string              `json:"issuer"`
-	IssuerName    string              `json:"issuer_name,omitempty"`
-	IssuerLogo    string              `json:"issuer_logo,omitempty"`
-	Grant         string              `json:"grant,omitempty"`
-	TxCode        bool                `json:"tx_code,omitempty"`
-	TxCodeHint    string              `json:"tx_code_hint,omitempty"`
-	Credentials   []OfferedCredential `json:"credentials,omitempty"`
-	MetadataError string              `json:"metadata_error,omitempty"`
+	Issuer     string `json:"issuer"`
+	IssuerName string `json:"issuer_name,omitempty"`
+	IssuerLogo string `json:"issuer_logo,omitempty"`
+	Grant      string `json:"grant,omitempty"`
+	TxCode     bool   `json:"tx_code,omitempty"`
+	TxCodeHint string `json:"tx_code_hint,omitempty"`
+	// The three members OID4VCI 1.0 defines on tx_code, passed through so the
+	// dialog can size and type its input and repeat the issuer's own wording.
+	TxCodeInputMode   string              `json:"tx_code_input_mode,omitempty"`
+	TxCodeLength      int                 `json:"tx_code_length,omitempty"`
+	TxCodeDescription string              `json:"tx_code_description,omitempty"`
+	Credentials       []OfferedCredential `json:"credentials,omitempty"`
+	MetadataError     string              `json:"metadata_error,omitempty"`
 	// OfferURI and ResolveError are set when an offer delivered by reference
 	// could not be fetched, so the dialog can name the host and say why
 	// nothing more is known.
@@ -70,6 +75,11 @@ func describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetail
 	if len(offer.Grants.TxCode) > 0 {
 		details.TxCode = true
 		details.TxCodeHint = describeTxCode(offer.Grants.TxCode)
+		details.TxCodeInputMode, _ = offer.Grants.TxCode["input_mode"].(string)
+		details.TxCodeDescription, _ = offer.Grants.TxCode["description"].(string)
+		if length, ok := numericValue(offer.Grants.TxCode["length"]); ok {
+			details.TxCodeLength = int(length)
+		}
 	}
 
 	metadata, err := fetchIssuerMetadata(offer.CredentialIssuer)

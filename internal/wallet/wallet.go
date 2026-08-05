@@ -213,6 +213,10 @@ type CredentialMatch struct {
 type ConsentResult struct {
 	Approved       bool
 	SelectedClaims map[string][]string // credential ID → claim names
+	// TxCode is the transaction code the user typed for an issuance offer
+	// that requires one. It arrives with the approval because the offer is
+	// what says a code is needed, and the user only sees that in the dialog.
+	TxCode string
 }
 
 // SubmissionResult is the outcome of VP token submission after consent approval.

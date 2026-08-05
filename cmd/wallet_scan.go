@@ -15,14 +15,84 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/internal/qr"
 )
+
+// resolveTxCode returns the transaction code to use for an offer. A code
+// given on the command line always wins. Otherwise, when the offer says a
+// code is required and someone is there to type one, it is asked for: the
+// issuer delivers it out of band, so the person running the command is the
+// only place it can come from.
+//
+// Anything that goes wrong here (an offer that is not VCI, one that cannot be
+// fetched, no terminal attached) leaves the code empty and lets the flow
+// continue, because the issuer's own error says more than a guess would.
+func resolveTxCode(uri, given string) string {
+	if strings.TrimSpace(given) != "" {
+		return given
+	}
+	if !isCredentialOfferURI(uri) || !stdinIsTerminal() {
+		return given
+	}
+	reqType, parsed, err := oid4vc.Parse(uri)
+	if err != nil || reqType != oid4vc.TypeVCI {
+		return given
+	}
+	offer, ok := parsed.(*oid4vc.CredentialOffer)
+	if !ok || len(offer.Grants.TxCode) == 0 {
+		return given
+	}
+
+	prompt := "Transaction code"
+	if hint := describeTxCodePrompt(offer.Grants.TxCode); hint != "" {
+		prompt += " (" + hint + ")"
+	}
+	fmt.Fprintf(os.Stderr, "%s: ", prompt)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return given
+	}
+	return strings.TrimSpace(line)
+}
+
+// describeTxCodePrompt summarizes a tx_code object for the prompt.
+func describeTxCodePrompt(txCode map[string]any) string {
+	if description, _ := txCode["description"].(string); strings.TrimSpace(description) != "" {
+		return strings.TrimSpace(description)
+	}
+	mode, _ := txCode["input_mode"].(string)
+	length := 0
+	switch n := txCode["length"].(type) {
+	case float64:
+		length = int(n)
+	case int:
+		length = n
+	}
+	switch {
+	case length > 0 && mode != "":
+		return fmt.Sprintf("%d %s characters", length, mode)
+	case length > 0:
+		return fmt.Sprintf("%d characters", length)
+	default:
+		return mode
+	}
+}
+
+// stdinIsTerminal reports whether there is someone to answer a prompt.
+func stdinIsTerminal() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
 
 func walletAcceptCmd() *cobra.Command {
 	var (
@@ -49,10 +119,11 @@ stores it locally. A running wallet server reloads the same wallet store at
 request boundaries, so later presentation requests see the new credential.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			txCode = resolveTxCode(args[0], txCode)
 			if c, err := remoteClientIfConfigured(); err != nil {
 				return err
 			} else if c != nil {
-				return remoteAccept(c, args[0])
+				return remoteAccept(c, args[0], txCode)
 			}
 			return dispatchURI(args[0], dispatchOID4Opts{
 				port:              port,

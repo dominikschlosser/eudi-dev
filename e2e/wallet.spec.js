@@ -843,3 +843,88 @@ test.describe("Mobile layout", () => {
     expect(reachable).toBe(true);
   });
 });
+
+test.describe("Transaction code in the consent dialog", () => {
+  // An offer whose pre-authorized grant carries tx_code cannot be redeemed
+  // without the code, which the issuer delivers out of band. The dialog has to
+  // ask for it. The issuer here does not exist, so the offer is described from
+  // what it carries and the flow fails after approval, which is fine: what is
+  // under test is the input, not the issuance.
+  const offerWithTxCode = (txCode) => {
+    const offer = {
+      credential_issuer: "https://issuer.invalid",
+      credential_configuration_ids: ["test-config"],
+      grants: {
+        "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+          "pre-authorized_code": "test-code",
+          tx_code: txCode,
+        },
+      },
+    };
+    return (
+      "openid-credential-offer://?credential_offer=" +
+      encodeURIComponent(JSON.stringify(offer))
+    );
+  };
+
+  test.beforeEach(async () => {
+    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
+    for (const r of Array.isArray(pending.body) ? pending.body : []) {
+      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
+    }
+  });
+
+  test("dialog asks for the code and blocks an empty approval", async ({
+    page,
+  }) => {
+    // Park an offer on a consent request. The POST hangs until the decision,
+    // so it is deliberately not awaited.
+    jsonPost(`${WALLET_URL}/api/offers`, {
+      uri: offerWithTxCode({
+        input_mode: "numeric",
+        length: 6,
+        description: "The code from your letter",
+      }),
+      interactive: true,
+    }).catch(() => {});
+
+    await page.goto(WALLET_URL);
+    const input = page.locator("#offer-tx-code-input");
+    await expect(input).toBeVisible();
+
+    // The input is shaped by the offer's own tx_code members.
+    await expect(input).toHaveAttribute("inputmode", "numeric");
+    await expect(input).toHaveAttribute("maxlength", "6");
+    await expect(page.locator("#offer-tx-code-description")).toHaveText(
+      "The code from your letter"
+    );
+
+    // Approving with nothing typed stays in the dialog and marks the field.
+    await page.locator("#consent-approve").click();
+    await expect(input).toHaveClass(/input-error/);
+    await expect(page.locator("#consent-approve")).toBeEnabled();
+    await expect(input).toBeVisible();
+  });
+
+  test("no input appears for an offer that needs no code", async ({ page }) => {
+    jsonPost(`${WALLET_URL}/api/offers`, {
+      uri: "openid-credential-offer://?credential_offer=" +
+        encodeURIComponent(
+          JSON.stringify({
+            credential_issuer: "https://issuer.invalid",
+            credential_configuration_ids: ["test-config"],
+            grants: {
+              "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+                "pre-authorized_code": "test-code",
+              },
+            },
+          })
+        ),
+      interactive: true,
+    }).catch(() => {});
+
+    await page.goto(WALLET_URL);
+    await expect(page.locator("#consent-approve")).toBeVisible();
+    await expect(page.locator("#offer-tx-code-input")).toHaveCount(0);
+  });
+});

@@ -973,6 +973,35 @@ header h1 {
   margin-top: 2px;
   word-break: break-all;
 }
+
+/* Transaction code entry, for an offer that requires one. */
+.offer-tx-code {
+  margin: 10px 0 4px;
+}
+.offer-tx-code label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.offer-tx-code input[type="text"] {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+.offer-tx-code input[type="text"]::placeholder {
+  letter-spacing: normal;
+  color: var(--text-dim);
+}
+.offer-tx-code input.input-error {
+  border-color: var(--red);
+}
 .offer-description {
   font-size: 11px;
   line-height: 1.5;

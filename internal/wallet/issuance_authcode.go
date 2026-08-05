@@ -372,12 +372,6 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 	return fallback
 }
 
-// canAttestClient reports whether the wallet holds the signing material a
-// client attestation needs.
-func (w *Wallet) canAttestClient() bool {
-	return w != nil && w.IssuerKey != nil && len(w.CertChain) > 0
-}
-
 func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")

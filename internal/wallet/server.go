@@ -819,6 +819,14 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		}
 
 		s.log("  Consent:       approved")
+		// The offer is what declares a transaction code, so the user only
+		// learns one is needed from the dialog. A code typed there arrives
+		// with the approval and replaces whatever the request carried.
+		if consent.TxCode != "" {
+			s.wallet.mu.Lock()
+			s.wallet.TxCode = consent.TxCode
+			s.wallet.mu.Unlock()
+		}
 		result, err := s.wallet.ProcessCredentialOffer(consentReq.OfferURI)
 		if err != nil {
 			s.log("  ERROR: %v", err)
@@ -1195,6 +1203,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 
 	var body struct {
 		SelectedClaims map[string][]string `json:"selected_claims"`
+		TxCode         string              `json:"tx_code"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)
@@ -1203,6 +1212,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	req.ResultCh <- ConsentResult{
 		Approved:       true,
 		SelectedClaims: body.SelectedClaims,
+		TxCode:         strings.TrimSpace(body.TxCode),
 	}
 
 	// Wait for the VP submission to complete so we can return the result to the UI

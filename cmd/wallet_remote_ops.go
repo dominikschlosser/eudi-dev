@@ -134,12 +134,12 @@ func remoteGeneratePID(c *remote.Client, claims map[string]any, vct string) erro
 	return nil
 }
 
-func remoteAccept(c *remote.Client, uri string) error {
+func remoteAccept(c *remote.Client, uri, txCode string) error {
 	isVCI := isCredentialOfferURI(uri)
 	var result map[string]any
 	var err error
 	if isVCI {
-		result, err = c.AcceptOffer(uri)
+		result, err = c.AcceptOffer(uri, txCode)
 	} else {
 		result, err = c.Present(uri)
 	}
