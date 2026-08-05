@@ -268,6 +268,54 @@ def final_scenarios() -> list[PlanScenario]:
             },
             credential_kind="mdoc",
         ),
+        # The pre-authorized code grant. It is the flow a wallet meets most
+        # often in the wild (scan a QR, get a credential, no sign-in) and the
+        # one the authorization-code scenarios above never exercise. HAIP is
+        # deliberately absent: the suite refuses the combination outright
+        # (AbstractVCIWalletTest rejects PRE_AUTHORIZATION_CODE under
+        # VCI_HAIP), and pre-authorized offers are out of HAIP's scope anyway.
+        PlanScenario(
+            slug="vci-final-sdjwt-preauth",
+            kind="vci",
+            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
+            plan_name="oid4vci-1_0-wallet-test-plan",
+            variant={
+                "client_auth_type": "client_attestation",
+                "fapi_request_method": "unsigned",
+                "sender_constrain": "dpop",
+                "authorization_request_type": "simple",
+                "fapi_profile": "vci",
+                "vci_grant_type": "pre_authorization_code",
+                # Pre-authorized offers are always issuer-initiated: there is
+                # no authorization endpoint for a wallet to start from.
+                "vci_authorization_code_flow_variant": "issuer_initiated",
+                "vci_credential_offer_variant": "by_value",
+                "credential_format": "sd_jwt_vc",
+                "vci_credential_issuance_mode": "immediate",
+                "vci_credential_encryption": "plain",
+            },
+            credential_kind="sdjwt",
+        ),
+        PlanScenario(
+            slug="vci-final-mdoc-preauth",
+            kind="vci",
+            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
+            plan_name="oid4vci-1_0-wallet-test-plan",
+            variant={
+                "client_auth_type": "client_attestation",
+                "fapi_request_method": "unsigned",
+                "sender_constrain": "dpop",
+                "authorization_request_type": "simple",
+                "fapi_profile": "vci",
+                "vci_grant_type": "pre_authorization_code",
+                "vci_authorization_code_flow_variant": "issuer_initiated",
+                "vci_credential_offer_variant": "by_value",
+                "credential_format": "mdoc",
+                "vci_credential_issuance_mode": "immediate",
+                "vci_credential_encryption": "plain",
+            },
+            credential_kind="mdoc",
+        ),
     ]
     scenarios.extend(
         [
