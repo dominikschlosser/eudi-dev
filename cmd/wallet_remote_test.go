@@ -696,6 +696,7 @@ func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
 		})
 	}
 }
+
 // The validity column answers "is this still good", so it has to distinguish
 // an expired credential from one that never states a lifetime.
 func TestCredentialValidityLabel(t *testing.T) {
