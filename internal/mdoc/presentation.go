@@ -15,6 +15,7 @@
 package mdoc
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
@@ -61,7 +62,7 @@ func VerifyValueDigests(doc *Document) error {
 				return fmt.Errorf("element %q kept no encoded form to hash", item.ElementIdentifier)
 			}
 			got := hash(item.RawCBOR)
-			if len(got) != len(want) || !equalBytes(got, want) {
+			if !bytes.Equal(got, want) {
 				return fmt.Errorf("element %q does not match the digest the issuer signed", item.ElementIdentifier)
 			}
 		}
@@ -188,15 +189,6 @@ func digestHasher(alg string) (func([]byte) []byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported digest algorithm %q", alg)
 	}
-}
-
-func equalBytes(a, b []byte) bool {
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func tag24(value any) ([]byte, error) {

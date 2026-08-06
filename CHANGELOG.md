@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The mdoc digest comparison was a hand-written one that could not say no.** It walked only the computed digest and compared byte by byte, so a signed digest shorter than the hash matched on its prefix and a shorter one still would have read past the end of it. A length check at the one call site kept it correct, which is the wrong place for it: the helper is what the next caller reaches for. It is now `bytes.Equal`, and the cases the hand-written version could not tell apart (a truncated digest, an empty one, one with bytes appended) are covered
+
 - **A web page could have the wallet hand its credentials to a site of its choosing.** The API has no authentication on purpose and the answer to that has been to keep the wallet on localhost, which does not cover the browser: every page a developer visits can reach localhost too. Nothing was preflighted either, because a POST carrying `text/plain` is a CORS simple request, so a page could post a presentation request to `/api/presentations` with `auto_accept` set and the wallet would build a presentation and submit it to the `response_uri` the page named, with nobody asked and nothing shown. CORS stops the page reading the reply, and this never needed to read it. An `/api/` request arriving with an `Origin` from another site is now refused. A CLI, a curl invocation or a test harness sends no `Origin` and is unaffected, the wallet's own UI is on the same origin, and behind a reverse proxy `--base-url` counts as this wallet's own origin too. The protocol endpoints stay open, which is what they are for
 
 ## [1.19.11] - 2026-08-06
