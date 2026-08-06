@@ -1,119 +1,74 @@
 # Architecture
 
-## Package Structure
+Where things live and how a request moves through them. Why things are the way they are is in the [decision records](#decisions).
+
+For the vocabulary these documents use (and the terms this project overloads), see [CONTEXT.md](CONTEXT.md).
+
+## Layout
 
 ```
-cmd/                        CLI commands (Cobra)
-├── root.go                 Root command and global flags
-├── wallet.go               Root wallet command, helpers, simple subcommands
-├── wallet_serve.go         wallet serve (HTTP server + web UI)
-├── wallet_serve_detach.go  wallet serve --detached (background process)
-├── wallet_service.go       The management operations both backends implement
-├── wallet_present.go       OID4VP/VCI dispatch, consent flow, submission
-├── wallet_scan.go          wallet accept, wallet scan (QR + URI dispatch)
-├── wallet_generate.go      wallet generate-pid (deprecated)
-├── wallet_logs.go          wallet logs (print + follow persisted interactions)
-├── wallet_deferred.go      wallet deferred (list, check, abandon)
-├── wallet_remote.go        wallet use, instances, kill, info (remote control)
-├── wallet_remote_ops.go    Remote implementations of the management commands
-├── templates.go            Credential template management commands
-├── serve.go                Web UI server (decode + validate)
-├── proxy.go                Reverse proxy with live dashboard
-├── decode.go               Auto-detect & decode command
-├── validate.go             Signature verification & revocation check
-├── dcql.go                 DCQL query generation
-├── issue.go                Test credential generation
-├── completion.go           Shell completion command
-├── completions.go          Argument completion functions
-├── detach_unix.go          Detaching a child process (Unix)
-├── detach_windows.go       Detaching a child process (Windows)
-└── version.go              Version command
-
-internal/
-├── config/                 Centralized defaults (ports, timeouts)
-├── credtemplate/           Credential templates (pre-defined PID templates, user template files)
-├── dcql/                   DCQL query parsing, evaluation, generation
-├── demorp/                 Demo issuer and verifier served by the wallet (OID4VCI + OID4VP counterparties)
-├── format/                 Format detection, base64url, credential type constants, outbound fetch policy
-├── httpsec/                Browser security headers and the cross-origin guard every UI serves
-├── imprint/                Operator-supplied legal notice page served at /imprint
-├── jsonutil/               Type-safe accessors for map[string]any
-├── jwe/                    Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM)
-├── jws/                    ES256 JWS signing (shared signature encoding)
-├── keys/                   PEM/JWK key loading and conversion
-├── mdoc/                   mDOC/mDL parsing (CBOR) and COSE_Sign1 verification
-├── mock/                   Test credential generators (SD-JWT, JWT, mDOC)
-├── oid4vc/                 OID4VP/VCI request/response parsing
-├── output/                 Terminal output formatting (color, JSON, tables)
-├── proxy/                  HTTP reverse proxy, traffic classifier, dashboard
-├── qr/                     QR code scanning (file + screen capture)
-├── remote/                 Remote wallet management (REST client, instance discovery)
-├── sdjwt/                  SD-JWT parsing, disclosure resolution, verification
-├── statuslist/             Token Status List (RFC 9596) encoding/decoding
-├── trustlist/              ETSI TS 119 612 trust list parsing
-├── validate/               Orchestrates verification (sig, expiry, revocation)
-├── wallet/                 Wallet state, server, OID4VP/VCI protocol logic
-└── web/                    Decoder and validator web UI (HTTP handlers plus embedded static assets)
+main.go        Entry point
+cmd/           CLI commands (Cobra), one file per command or command group
+internal/      Everything else (see ADR-0007 for why nothing is importable)
+e2e/           Playwright tests against a running wallet server
+examples/      Keycloak and web-wallet integration examples
 ```
 
-## Data Flow
+### Packages
 
-### CLI Decode/Validate
+| Package | Responsibility |
+|---|---|
+| `config` | Defaults (ports, timeouts) |
+| `credtemplate` | Credential templates, pre-defined and user-supplied |
+| `dcql` | DCQL query parsing, evaluation, generation |
+| `demorp` | The demo issuer and verifier the wallet hosts |
+| `format` | Format detection, base64url, and the outbound fetch policy (ADR-0004) |
+| `httpsec` | Browser security headers and the cross-origin guard (ADR-0002) |
+| `imprint` | Operator-supplied legal notice page |
+| `jsonutil` | Type-safe accessors for `map[string]any` |
+| `jwe` | Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM) |
+| `jws` | ES256 JWS signing, shared so the signature encoding cannot drift |
+| `keys` | PEM and JWK key loading and conversion |
+| `mdoc` | mdoc parsing (CBOR) and COSE_Sign1 verification |
+| `mock` | Test credential generators |
+| `oid4vc` | OID4VP and OID4VCI request and offer parsing |
+| `output` | Terminal output formatting |
+| `proxy` | Reverse proxy, traffic classifier, dashboard |
+| `qr` | QR scanning from file or screen |
+| `remote` | Remote wallet control (REST client, instance discovery) |
+| `sdjwt` | SD-JWT parsing, disclosure resolution, verification |
+| `statuslist` | Token Status List encoding and decoding |
+| `trustlist` | ETSI TS 119 612 trust list parsing |
+| `validate` | Orchestrates verification (signature, expiry, revocation) |
+| `wallet` | Wallet state, HTTP server, OID4VP and OID4VCI protocol logic |
+| `web` | Decoder and validator web UI |
 
-```
-User input (file/URL/stdin/QR)
-  → format.Detect()
-  → sdjwt.Parse() / mdoc.Parse() / oid4vc.Parse*()
-  → output.Print*() or validate.Validate()
-```
+## Flows
 
-### Wallet OID4VP Flow
+Described in domain terms rather than function names, which go stale.
 
-```
-Authorization Request (URI or /authorize endpoint)
-  → oid4vc.ParseAuthorizationRequest()
-  → wallet.ValidateRequestObject() (JAR signature + client_id verification)
-  → wallet.ValidateHAIPCompliance() (optional, --haip flag)
-  → dcql.Evaluate() (match credentials against DCQL query)
-  → Consent UI or auto-accept
-  → wallet.BuildPresentation() (SD-JWT VP token + KB-JWT, or mDOC DeviceResponse)
-  → HTTP POST to response_uri (direct_post or direct_post.jwt)
-```
+**Decode and validate.** Input arrives from a file, URL, stdin or a QR scan. Format detection picks the parser, the parser produces a token or document, and the result is either printed or carried into verification (signature, validity period, revocation).
 
-### Wallet OID4VCI Flow
+**Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, which may itself be fetched by reference and encrypted. The request is validated (client identifier, request object, signature) under the active validation mode (ADR-0001), optionally checked against HAIP, and then matched against held credentials with DCQL. The user consents or the wallet auto-accepts, a VP token is built (SD-JWT with a key binding JWT, or an mdoc DeviceResponse), and the response goes to the verifier, encrypted when the response mode asks for it.
 
-```
-Credential Offer URI
-  → oid4vc.ParseCredentialOffer()
-  → Token endpoint (pre-authorized code + optional tx_code)
-  → Credential endpoint (proof of possession via JWT)
-  → wallet.ImportCredential()
-```
+**Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata, then runs either the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata demands). It proves possession of its holder key, receives the credential, and imports it. An issuer that defers hands back a transaction id, and collection continues in the background.
 
-### Proxy
+**Proxy.** The wallet talks to a verifier or issuer through the proxy, which classifies each exchange as an OID4VP or OID4VCI step and shows it on a dashboard.
 
-```
-Wallet ←→ Proxy (:9090) ←→ Verifier/Issuer (:target)
-               ↓
-         Dashboard (:9091) — classifies traffic as OID4VP/VCI steps
-```
+## Decisions
 
-## Key Types
+| ADR | Decision |
+|---|---|
+| [0001](docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md) | Debug-by-default validation with an opt-in strict mode |
+| [0002](docs/adr/0002-the-wallet-http-api-is-unauthenticated.md) | The wallet HTTP API is unauthenticated |
+| [0003](docs/adr/0003-keys-and-credentials-are-stored-unencrypted.md) | Keys and credentials are stored unencrypted |
+| [0004](docs/adr/0004-outbound-fetches-are-policed-at-dial-time.md) | Outbound fetches are policed at dial time, not at the URL |
+| [0005](docs/adr/0005-the-server-reloads-its-store-on-every-request.md) | The server reloads its store on every request |
+| [0006](docs/adr/0006-one-binary-plays-wallet-issuer-verifier-and-ca.md) | One binary plays wallet, issuer, verifier and CA |
+| [0007](docs/adr/0007-everything-lives-under-internal.md) | Everything lives under `internal/` |
 
-| Type | Package | Description |
-|------|---------|-------------|
-| `sdjwt.Token` | `internal/sdjwt` | Parsed SD-JWT with header, payload, disclosures, KB-JWT |
-| `mdoc.Document` | `internal/mdoc` | Parsed mDOC with IssuerAuth (COSE_Sign1), namespaces, claims |
-| `wallet.Wallet` | `internal/wallet` | Credential store, keys, configuration |
-| `wallet.AuthorizationRequestParams` | `internal/wallet` | Parsed OID4VP authorization request |
-| `oid4vc.RequestObjectJWT` | `internal/oid4vc` | Parsed JAR (JWT-secured Authorization Request) |
-| `dcql.Query` | `internal/dcql` | DCQL query with credential descriptors and credential sets |
-| `wallet.ConsentRequest` | `internal/wallet` | Data sent to consent UI (matched credentials, verifier info) |
+## Related
 
-## Credential Formats
-
-The tool handles three credential formats throughout:
-
-- **`dc+sd-jwt`**: SD-JWT with selective disclosure. Presented with a Key Binding JWT.
-- **`mso_mdoc`**: ISO 18013-5 mDOC. CBOR-encoded, COSE_Sign1 signed. Presented as DeviceResponse.
-- **`jwt_vc_json`**: Plain JWT Verifiable Credential (W3C format). Presented as-is.
+- [CONTEXT.md](CONTEXT.md) glossary
+- [docs/spec-compliance.md](docs/spec-compliance.md) feature-by-feature status against the specifications
+- [SECURITY.md](SECURITY.md) what this tool does and does not protect
