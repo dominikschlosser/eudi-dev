@@ -1,0 +1,9 @@
+# The wallet HTTP API is unauthenticated
+
+Every wallet operation is available over HTTP with no authentication of any kind, so anyone who can reach the port controls the wallet and its credentials. This is what makes the tool drivable: a CI job, a Testcontainers test or a curl one-liner manages a wallet without a credential exchange first, and the CLI's own remote mode (`--remote`) is just a client of the same API. Adding auth would put a setup step in front of the use case the API exists for.
+
+The containment is deployment shape rather than access control. The wallet is meant to run on localhost or an isolated test network and to hold only test credentials (see `SECURITY.md`). Public hosting has one supported profile, `--demo`, which closes the process and filesystem endpoints (`demoBlockedRoute` in `internal/wallet/demo.go`), blocks server-side fetches into private networks and resets state on a schedule. Everything still reachable there is public and disposable on purpose.
+
+## Consequences
+
+Localhost is not a boundary against the browser, because every page a developer visits can reach localhost too. That is a separate problem from the one above and is handled separately: `/api/` refuses requests carrying a cross-origin `Origin` (`internal/httpsec/origin.go`), which costs the intended callers nothing because a CLI or curl sends no `Origin` at all. Do not read "no authentication" as "no access checks anywhere". The protocol endpoints (`/authorize`, `/credential-offer`, `/callback`) stay open to any origin, which is what they are for.
