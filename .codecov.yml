@@ -10,13 +10,20 @@ coverage:
         target: auto
         threshold: 2%
 
-# Strip Go module prefix so ignore patterns match relative paths.
+# Strip Go module prefix so ignore patterns match relative paths. This has to
+# be the module path in go.mod: a prefix that does not match strips nothing,
+# and every pattern below is then compared against a path that still carries
+# it. The module was renamed to eudi-dev and this was left behind.
 fixes:
-  - "github.com/dominikschlosser/oid4vc-dev/::"
+  - "github.com/dominikschlosser/eudi-dev/::"
 
 ignore:
   - "main.go"
   - "cmd/.*"
+  # Sample applications that show how to use the toolkit. They ship as
+  # documentation, they are not part of what the CLI installs, and testing
+  # them measures the examples rather than the code they demonstrate.
+  - "examples/.*"
   - "internal/output/printer.go"
   - "internal/proxy/subprocess.*"
   - "internal/proxy/terminal.go"
