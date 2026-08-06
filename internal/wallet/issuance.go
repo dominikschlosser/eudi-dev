@@ -213,6 +213,15 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
+	// The Nonce Endpoint is authoritative wherever an issuer advertises one:
+	// it is the source OpenID4VCI 1.0 defines, and an issuer naming it is
+	// naming what it will accept. A c_nonce in the token response belongs to
+	// the earlier drafts and may already be stale, so it serves only as the
+	// fallback for issuers that offer no endpoint.
+	if endpointNonce := fetchNonceWithDPoP(metadata, accessToken, authScheme, dpopKey, &nonces.resource); endpointNonce != "" {
+		cNonce = endpointNonce
+	}
+
 	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
 	log.Printf("[VCI] Credential endpoint: %s", credentialEndpoint)
 	log.Printf("[VCI] c_nonce: %q", cNonce)

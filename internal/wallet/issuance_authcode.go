@@ -158,6 +158,15 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 	authScheme := accessTokenScheme(tokenResp, true)
 
+	// The Nonce Endpoint is authoritative wherever an issuer advertises one:
+	// it is the source OpenID4VCI 1.0 defines, and an issuer naming it is
+	// naming what it will accept. A c_nonce in the token response belongs to
+	// the earlier drafts and may already be stale, so it serves only as the
+	// fallback for issuers that offer no endpoint.
+	if endpointNonce := fetchNonceWithDPoP(metadata, accessToken, authScheme, w.HolderKey, &nonces.resource); endpointNonce != "" {
+		cNonce = endpointNonce
+	}
+
 	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
