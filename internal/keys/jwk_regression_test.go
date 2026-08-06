@@ -256,3 +256,39 @@ func TestParseJWKLenient_StillRefusesRealErrors(t *testing.T) {
 		}
 	}
 }
+
+// A private scalar whose leading byte is zero encodes one byte short, which
+// happens to about one key in 256. That is the operator's own key file rather
+// than a peer's document, so refusing to load it answers no conformance
+// question and just loses them their key.
+func TestParseJWKPrivate_ShortScalarStillLoads(t *testing.T) {
+	for attempt := 0; attempt < 20000; attempt++ {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.D.BitLen() > 248 { // no leading zero byte, keep looking
+			continue
+		}
+		doc, err := json.Marshal(map[string]string{
+			"kty": "EC",
+			"crv": "P-256",
+			"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
+			"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
+			"d":   base64.RawURLEncoding.EncodeToString(key.D.Bytes()), // short
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		parsed, err := ParseJWKPrivate(doc)
+		if err != nil {
+			t.Fatalf("a key file with a short scalar was refused: %v", err)
+		}
+		if parsed.(*ecdsa.PrivateKey).D.Cmp(key.D) != 0 {
+			t.Error("the loaded scalar is not the one in the file")
+		}
+		return
+	}
+	t.Fatal("no key with a short private scalar generated in 20000 attempts")
+}

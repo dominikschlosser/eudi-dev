@@ -74,12 +74,17 @@ func parsePEMPrivateBlock(block *pem.Block) (crypto.PrivateKey, error) {
 	return nil, fmt.Errorf("unable to parse PEM private key (tried PKCS#8, EC, PKCS#1)")
 }
 
-// ParseJWKPrivate parses a JWK JSON object containing a private key.
-// ParseJWKPrivate reads a private key from a JWK document. Same decoding and
-// same EC-and-RSA-only contract as ParseJWK.
+// ParseJWKPrivate reads a private key from a JWK document.
+//
+// Padding is repaired here rather than refused. A private JWK is always the
+// operator's own key file, never a document from a peer, so there is no
+// conformance question to answer: a scalar whose leading byte is zero encodes
+// one byte short, and failing to load somebody's own key over that helps
+// nobody. Public keys arrive from peers and are held to the spec instead, see
+// ParseJWK.
 func ParseJWKPrivate(data []byte) (crypto.PrivateKey, error) {
 	var jwk josev4.JSONWebKey
-	if err := jwk.UnmarshalJSON(data); err != nil {
+	if err := jwk.UnmarshalJSON(padECCoordinates(data)); err != nil {
 		return nil, fmt.Errorf("not a valid PEM or JWK: %w", err)
 	}
 	switch key := jwk.Key.(type) {
@@ -134,15 +139,16 @@ func parsePEMBlock(block *pem.Block) (crypto.PublicKey, error) {
 // is the finding worth reporting. Strict mode must call ParseJWK instead, or a
 // non-conformant document passes silently.
 func ParseJWKLenient(data []byte) (crypto.PublicKey, bool, error) {
-	if key, err := ParseJWK(data); err == nil {
+	key, err := ParseJWK(data)
+	if err == nil {
 		return key, false, nil
 	}
 	repaired := padECCoordinates(data)
 	if bytes.Equal(repaired, data) {
-		_, err := ParseJWK(data)
+		// Nothing to repair, so the refusal above stands.
 		return nil, false, err
 	}
-	key, err := ParseJWK(repaired)
+	key, err = ParseJWK(repaired)
 	if err != nil {
 		return nil, false, err
 	}
@@ -152,15 +158,14 @@ func ParseJWKLenient(data []byte) (crypto.PublicKey, bool, error) {
 // ecCurveSizes is the byte width each curve's coordinates must have in a JWK.
 var ecCurveSizes = map[string]int{"P-256": 32, "P-384": 48, "P-521": 66}
 
-// padECCoordinates left pads short EC coordinates to the curve width.
+// padECCoordinates left pads short EC coordinates to the curve width, and is
+// the repair the lenient readings above apply.
 //
-// RFC 7518 requires them at full width, and go-jose enforces that. Peers get
-// it wrong often enough to matter: a coordinate whose leading byte is zero
-// comes back one byte short from anything that encodes big.Int.Bytes()
-// directly, which P-521 keys hit routinely. Refusing those would mean this
-// toolkit could not decode a credential precisely when someone needs to find
-// out what is wrong with it, so the padding is repaired and the key is read.
-// Anything else about the document is left for go-jose to judge.
+// A coordinate whose leading byte is zero encodes one byte short from
+// anything that writes big.Int.Bytes() directly. RFC 7518 section 6.2.1.2
+// does not allow that and go-jose enforces it, so this repairs the padding
+// and nothing else. Whether repairing is the right answer is the caller's
+// decision, not this function's.
 func padECCoordinates(data []byte) []byte {
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
