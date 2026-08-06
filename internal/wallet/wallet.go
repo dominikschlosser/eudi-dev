@@ -860,6 +860,9 @@ func (w *Wallet) CredentialsJSON() ([]byte, error) {
 // stale page simply sees nothing.
 func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	creds := w.GetCredentials()
+	// Sorted before the window is taken, or paging would slice the stored
+	// order and then order each page on its own.
+	SortCredentialsNewestFirst(creds)
 	if offset > len(creds) {
 		offset = len(creds)
 	}

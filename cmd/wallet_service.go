@@ -204,6 +204,9 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 		return nil, err
 	}
 	creds := w.GetCredentials()
+	// Same order the HTTP API returns, so `wallet list` and the UI agree
+	// about which credential is the newest.
+	wallet.SortCredentialsNewestFirst(creds)
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
 		summaries[i] = w.CredentialSummaryWithStatus(c)

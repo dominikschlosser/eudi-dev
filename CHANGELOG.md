@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Credentials are listed newest first.** The order was the order they arrived, so a freshly issued credential went to the bottom of a list the UI pages ten at a time, which put it out of sight on a wallet holding more than ten. Both the API and `wallet list` now order by the issuance time the credential itself states, `iat` for an SD-JWT or JWT VC and the MSO signed time for an mdoc. Sorting happens before paging, so a page is a page of the sorted list rather than a sorted page. A credential that states no issuance time sorts last, and credentials issued in the same second keep the order they arrived in rather than being separated by anything arbitrary
+
 - **The wallet and the decoder link to each other.** Both are served by `wallet serve` and there was no way between them but the address bar. The wallet header carries a Decoder link, and the decoder header links back, reading "Demo wallet" on a shared instance and "Wallet" on somebody's own. A decoder running on its own through `eudi serve` has no wallet behind it and shows no link
 
 ### Removed

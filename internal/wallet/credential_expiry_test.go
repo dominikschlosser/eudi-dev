@@ -15,8 +15,12 @@
 package wallet
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // The two formats state their lifetime in different places. A caller deciding
@@ -70,5 +74,78 @@ func TestCredentialWithoutAStatedLifetimeNeverExpires(t *testing.T) {
 	}
 	if CredentialNeedsRenewal(StoredCredential{Format: "dc+sd-jwt", Raw: "not-a-credential"}, time.Now()) {
 		t.Error("a credential with no stated lifetime was marked for renewal")
+	}
+}
+
+// The stored order is arrival order, which put a freshly issued credential
+// at the bottom of a list that pages ten at a time. Newest first, and stable
+// so the same list does not reorder itself between two reads.
+func TestSortCredentialsNewestFirst(t *testing.T) {
+	// Signed directly rather than through mock.GenerateSDJWT, which always
+	// stamps iat with the current time and offers no way to choose it.
+	at := func(unix int64) StoredCredential {
+		key, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := jws.Sign(
+			map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"},
+			map[string]any{"vct": "urn:example:ordered", "iat": unix},
+			key,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return StoredCredential{ID: fmt.Sprintf("c%d", unix), Format: "dc+sd-jwt", Raw: raw}
+	}
+
+	oldest, middle, newest := at(1000), at(2000), at(3000)
+	creds := []StoredCredential{oldest, middle, newest}
+	SortCredentialsNewestFirst(creds)
+
+	var order []string
+	for _, c := range creds {
+		order = append(order, c.ID)
+	}
+	if order[0] != "c3000" || order[1] != "c2000" || order[2] != "c1000" {
+		t.Fatalf("order = %v, want newest first", order)
+	}
+
+	// Sorting again must not move anything: an unstable order is what makes
+	// a list look like it shuffles itself.
+	SortCredentialsNewestFirst(creds)
+	if creds[0].ID != "c3000" || creds[2].ID != "c1000" {
+		t.Error("a second sort reordered an already sorted list")
+	}
+}
+
+// A credential that states no issuance time still has to appear, after the
+// ones that do, without disturbing its neighbours.
+func TestSortCredentialsNewestFirst_UndatedGoLast(t *testing.T) {
+	key, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dated, err := jws.Sign(
+		map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"},
+		map[string]any{"vct": "urn:example:dated", "iat": int64(5000)},
+		key,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	creds := []StoredCredential{
+		{ID: "undated-a", Format: "dc+sd-jwt", Raw: "not-a-credential"},
+		{ID: "dated", Format: "dc+sd-jwt", Raw: dated},
+		{ID: "undated-b", Format: "dc+sd-jwt", Raw: "also-not-a-credential"},
+	}
+	SortCredentialsNewestFirst(creds)
+
+	if creds[0].ID != "dated" {
+		t.Errorf("first = %q, want the credential that states a time", creds[0].ID)
+	}
+	if creds[1].ID != "undated-a" || creds[2].ID != "undated-b" {
+		t.Errorf("undated order = %q, %q, want their original relative order", creds[1].ID, creds[2].ID)
 	}
 }

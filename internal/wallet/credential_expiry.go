@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"sort"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
@@ -67,4 +68,68 @@ func CredentialNeedsRenewal(cred StoredCredential, now time.Time) bool {
 		return false
 	}
 	return now.Add(renewalMargin).After(expiry)
+}
+
+// CredentialIssuedAt is when a credential says it was issued, or the zero
+// time when it says nothing.
+//
+// Same split as CredentialExpiry: an SD-JWT or JWT VC carries `iat` in its
+// payload, an mdoc carries signed in the MSO its issuer put its signature
+// over. A caller ordering a list must not have to know which it is holding.
+func CredentialIssuedAt(cred StoredCredential) time.Time {
+	switch cred.Format {
+	case "mso_mdoc":
+		doc, err := mdoc.Parse(cred.Raw)
+		if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
+			return time.Time{}
+		}
+		validity := doc.IssuerAuth.MSO.ValidityInfo
+		if validity == nil || validity.Signed == nil {
+			return time.Time{}
+		}
+		return *validity.Signed
+	default:
+		token, err := sdjwt.Parse(cred.Raw)
+		if err != nil || token == nil {
+			return time.Time{}
+		}
+		iat, ok := token.Payload["iat"].(float64)
+		if !ok || iat <= 0 {
+			return time.Time{}
+		}
+		return time.Unix(int64(iat), 0)
+	}
+}
+
+// SortCredentialsNewestFirst orders credentials by when they were issued,
+// newest first.
+//
+// The stored order is the order they arrived, so the newest credential was
+// at the bottom of a list that pages ten at a time, which put a freshly
+// issued one out of sight. Credentials that state no issuance time sort
+// last.
+//
+// Ties keep the order they arrived in. The sort is stable, so that is
+// already settled without comparing anything else, and comparing the id
+// would be worse than useless: ids are random, so two wallets holding the
+// same credentials issued in the same second would order them differently,
+// which is the arbitrariness this is meant to remove.
+func SortCredentialsNewestFirst(creds []StoredCredential) {
+	issued := make(map[string]time.Time, len(creds))
+	for _, c := range creds {
+		issued[c.ID] = CredentialIssuedAt(c)
+	}
+	sort.SliceStable(creds, func(i, j int) bool {
+		a, b := issued[creds[i].ID], issued[creds[j].ID]
+		if a.Equal(b) {
+			return false
+		}
+		if a.IsZero() {
+			return false
+		}
+		if b.IsZero() {
+			return true
+		}
+		return a.After(b)
+	})
 }
