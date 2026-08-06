@@ -16,6 +16,9 @@ package wallet
 
 import (
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -185,5 +188,50 @@ func TestIssuePIDUsesTemplateOverride(t *testing.T) {
 	}
 	if len(token.Disclosures) != 1 {
 		t.Errorf("expected 1 disclosure from overridden template, got %d", len(token.Disclosures))
+	}
+}
+
+// credtemplate.Load takes a name or a path on purpose, because the CLI
+// documents `templates show ./some-template.json`. Passing a URL segment
+// straight into it turned that into a file read over HTTP: any JSON the
+// process could open came back as a template, and the status code said
+// whether a path existed. The demo profile blocks writes to templates but not
+// reads, so this was reachable unauthenticated on a public instance.
+func TestGetTemplate_RefusesAPathInsteadOfAName(t *testing.T) {
+	srv := newTestServer(t, false)
+	dir := t.TempDir()
+	srv.wallet.TemplatesDir = filepath.Join(dir, "templates")
+
+	secret := filepath.Join(dir, "secret.json")
+	if err := os.WriteFile(secret, []byte(`{"name":"internal","format":"sdjwt","claims":{"api_key":"SECRET"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{
+		secret,           // absolute path
+		"../secret",      // relative escape
+		"../secret.json", // relative escape with extension
+		".ssh/id_rsa",    // hidden directory
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := serverRequest(t, srv, "GET", "/api/templates/"+url.PathEscape(name), "")
+			if rec.Code == http.StatusOK {
+				t.Fatalf("a path was served as a template: %s", rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "SECRET") {
+				t.Fatal("the file's contents were disclosed")
+			}
+		})
+	}
+}
+
+// The endpoint still has to serve an ordinary template.
+func TestGetTemplate_StillServesABareName(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.wallet.TemplatesDir = t.TempDir()
+
+	rec := serverRequest(t, srv, "GET", "/api/templates/german-pid-sdjwt", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 }

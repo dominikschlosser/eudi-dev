@@ -22,7 +22,9 @@ package wallet
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
@@ -41,8 +43,23 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetTemplate returns a single template by name.
+//
+// The name has to be a bare name, which is what the write and delete handlers
+// already required. credtemplate.Load takes a name *or a path*, on purpose:
+// the CLI documents `templates show ./some-template.json`. Handing it a URL
+// segment made that a file read over HTTP, and it answered with whatever the
+// file held that looked like a template, so any JSON the process could open
+// came back. A missing path answered 404 and a present one 200, which located
+// files even when their contents did not survive the decode. None of it was
+// disabled by the demo profile.
 func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
-	tpl, err := credtemplate.Load(r.PathValue("name"), s.wallet.TemplatesDir)
+	name := r.PathValue("name")
+	if name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", name)})
+		return
+	}
+
+	tpl, err := credtemplate.Load(name, s.wallet.TemplatesDir)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
