@@ -19,17 +19,16 @@ import (
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/big"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/jwe"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
 
 func EncryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, apu, apv []byte) (string, []byte, error) {
@@ -212,20 +211,45 @@ func unmarshalECDHPublicKey(pub *ecdh.PublicKey) (x, y []byte) {
 	return raw[1 : 1+coordLen], raw[1+coordLen:]
 }
 
-// ecdsaPublicKeyFromJWK constructs an *ecdsa.PublicKey from base64url-encoded x, y coordinates.
-func ecdsaPublicKeyFromJWK(xB64, yB64 string) (*ecdsa.PublicKey, error) {
-	xBytes, err := format.DecodeBase64URL(xB64)
+// ecdsaPublicKeyFromJWK reads a peer's P-256 encryption key from the x and y
+// a JWK carried.
+//
+// mode decides what happens to a coordinate narrower than the curve, which
+// RFC 7518 does not allow. Strict refuses it, because a wallet held to the
+// specification should not quietly accept a document that breaks it. Debug
+// repairs it and reports that it did, so the flow reaches the step worth
+// watching and the violation is still visible in the finding.
+func ecdsaPublicKeyFromJWK(mode ValidationMode, xB64, yB64 string) (*ecdsa.PublicKey, string, error) {
+	doc, err := json.Marshal(map[string]string{
+		"kty": "EC", "crv": "P-256", "x": xB64, "y": yB64,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("decoding x coordinate: %w", err)
-	}
-	yBytes, err := format.DecodeBase64URL(yB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding y coordinate: %w", err)
+		return nil, "", fmt.Errorf("encoding JWK: %w", err)
 	}
 
-	return &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(xBytes),
-		Y:     new(big.Int).SetBytes(yBytes),
-	}, nil
+	if mode == ValidationModeStrict {
+		parsed, err := keys.ParseJWK(doc)
+		if err != nil {
+			return nil, "", err
+		}
+		key, ok := parsed.(*ecdsa.PublicKey)
+		if !ok {
+			return nil, "", fmt.Errorf("JWK is not an EC key")
+		}
+		return key, "", nil
+	}
+
+	parsed, repaired, err := keys.ParseJWKLenient(doc)
+	if err != nil {
+		return nil, "", err
+	}
+	key, ok := parsed.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, "", fmt.Errorf("JWK is not an EC key")
+	}
+	finding := ""
+	if repaired {
+		finding = "encryption JWK has an EC coordinate narrower than P-256 requires (RFC 7518 6.2.1.2); it was left padded to read the key"
+	}
+	return key, finding, nil
 }

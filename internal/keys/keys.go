@@ -16,6 +16,7 @@
 package keys
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -78,7 +79,7 @@ func parsePEMPrivateBlock(block *pem.Block) (crypto.PrivateKey, error) {
 // same EC-and-RSA-only contract as ParseJWK.
 func ParseJWKPrivate(data []byte) (crypto.PrivateKey, error) {
 	var jwk josev4.JSONWebKey
-	if err := jwk.UnmarshalJSON(padECCoordinates(data)); err != nil {
+	if err := jwk.UnmarshalJSON(data); err != nil {
 		return nil, fmt.Errorf("not a valid PEM or JWK: %w", err)
 	}
 	switch key := jwk.Key.(type) {
@@ -123,7 +124,31 @@ func parsePEMBlock(block *pem.Block) (crypto.PublicKey, error) {
 	}
 }
 
-// ParseJWK parses a JWK JSON object into a public key.
+// ParseJWKLenient reads a public key from a JWK whose EC coordinates may be
+// shorter than the curve requires, and reports whether it had to repair one.
+//
+// RFC 7518 section 6.2.1.2 wants coordinates at full width and ParseJWK holds
+// callers to that. This exists for the debug path only: refusing to decode a
+// credential because a coordinate is a byte short tells whoever is debugging
+// the issuer nothing, so the padding is repaired and the caller is told, which
+// is the finding worth reporting. Strict mode must call ParseJWK instead, or a
+// non-conformant document passes silently.
+func ParseJWKLenient(data []byte) (crypto.PublicKey, bool, error) {
+	if key, err := ParseJWK(data); err == nil {
+		return key, false, nil
+	}
+	repaired := padECCoordinates(data)
+	if bytes.Equal(repaired, data) {
+		_, err := ParseJWK(data)
+		return nil, false, err
+	}
+	key, err := ParseJWK(repaired)
+	if err != nil {
+		return nil, false, err
+	}
+	return key, true, nil
+}
+
 // ecCurveSizes is the byte width each curve's coordinates must have in a JWK.
 var ecCurveSizes = map[string]int{"P-256": 32, "P-384": 48, "P-521": 66}
 
@@ -184,7 +209,7 @@ func padECCoordinates(data []byte) []byte {
 // type none of them are written for.
 func ParseJWK(data []byte) (crypto.PublicKey, error) {
 	var jwk josev4.JSONWebKey
-	if err := jwk.UnmarshalJSON(padECCoordinates(data)); err != nil {
+	if err := jwk.UnmarshalJSON(data); err != nil {
 		return nil, fmt.Errorf("not a valid PEM or JWK: %w", err)
 	}
 	switch key := jwk.Key.(type) {

@@ -384,7 +384,7 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 		// Build the public key from the JWK
 		xB64 := jwk["x"].(string)
 		yB64 := jwk["y"].(string)
-		pubKey, err := ecdsaPublicKeyFromJWK(xB64, yB64)
+		pubKey, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, yB64)
 		if err != nil {
 			t.Fatalf("parsing wallet encryption key: %v", err)
 		}

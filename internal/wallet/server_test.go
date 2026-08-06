@@ -2809,7 +2809,7 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 		jwks := meta["jwks"].(map[string]any)
 		keys := jwks["keys"].([]any)
 		jwk := keys[0].(map[string]any)
-		pubKey, err := ecdsaPublicKeyFromJWK(jwk["x"].(string), jwk["y"].(string))
+		pubKey, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, jwk["x"].(string), jwk["y"].(string))
 		if err != nil {
 			t.Fatalf("parsing wallet key: %v", err)
 		}

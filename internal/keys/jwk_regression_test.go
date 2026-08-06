@@ -181,3 +181,78 @@ func TestParseJWKPrivate_ECRoundTrip(t *testing.T) {
 		t.Error("public part did not survive the round trip")
 	}
 }
+
+// A coordinate shorter than the curve width violates RFC 7518 section
+// 6.2.1.2. The strict reading refuses it and the lenient one repairs it and
+// says so, which is what lets strict mode reject a sloppy document while the
+// debug path still decodes it.
+func TestParseJWK_ShortCoordinateStrictVersusLenient(t *testing.T) {
+	for attempt := 0; attempt < 20000; attempt++ {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.X.BitLen() > 248 { // no leading zero byte, keep looking
+			continue
+		}
+		doc, err := json.Marshal(map[string]string{
+			"kty": "EC",
+			"crv": "P-256",
+			"x":   base64.RawURLEncoding.EncodeToString(key.X.Bytes()), // short
+			"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := ParseJWK(doc); err == nil {
+			t.Error("ParseJWK accepted a coordinate narrower than the curve")
+		}
+
+		got, repaired, err := ParseJWKLenient(doc)
+		if err != nil {
+			t.Fatalf("ParseJWKLenient: %v", err)
+		}
+		if !repaired {
+			t.Error("ParseJWKLenient did not report repairing the padding")
+		}
+		if !got.(*ecdsa.PublicKey).Equal(&key.PublicKey) {
+			t.Error("the repaired key is not the one that was sent")
+		}
+		return
+	}
+	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
+}
+
+// A conformant document must not be reported as repaired, or every debug-mode
+// presentation grows a finding that says nothing.
+func TestParseJWKLenient_ReportsNoRepairForAConformantKey(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, repaired, err := ParseJWKLenient(ecJWK(t, &key.PublicKey, "P-256"))
+	if err != nil {
+		t.Fatalf("ParseJWKLenient: %v", err)
+	}
+	if repaired {
+		t.Error("reported a repair for a document that needed none")
+	}
+	if !got.(*ecdsa.PublicKey).Equal(&key.PublicKey) {
+		t.Error("round trip did not preserve the key")
+	}
+}
+
+// Leniency is about padding only. A document that is wrong in some other way
+// must still be refused by both readings.
+func TestParseJWKLenient_StillRefusesRealErrors(t *testing.T) {
+	for _, doc := range []string{
+		`{"kty":"EC","crv":"P-192","x":"AAAA","y":"AAAA"}`,
+		`{"kty":"OKP","crv":"Ed25519","x":"AAAA"}`,
+		`not json`,
+	} {
+		if _, _, err := ParseJWKLenient([]byte(doc)); err == nil {
+			t.Errorf("ParseJWKLenient accepted %q", doc)
+		}
+	}
+}

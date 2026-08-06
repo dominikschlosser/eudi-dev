@@ -133,11 +133,14 @@ type encryptionKeyInfo struct {
 	Key *ecdsa.PublicKey
 	Kid string
 	Alg string // JWE algorithm (e.g. "ECDH-ES") — MUST be present per OID4VP 1.0
+	// Finding records a specification violation the debug path read past.
+	// Strict mode never produces one: it refuses the document instead.
+	Finding string
 }
 
 // extractEncryptionKey extracts the EC public key, kid, and alg from
 // client_metadata.jwks per OID4VP 1.0.
-func extractEncryptionKey(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) (*encryptionKeyInfo, error) {
+func extractEncryptionKey(mode ValidationMode, reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) (*encryptionKeyInfo, error) {
 	jwk := findEncryptionJWK(reqObj, clientMetadata)
 	if jwk == nil {
 		return nil, fmt.Errorf("no encryption JWK found in client_metadata.jwks")
@@ -155,24 +158,24 @@ func extractEncryptionKey(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[st
 		return nil, fmt.Errorf("JWK missing required 'alg' parameter (OID4VP 1.0 requires alg in each JWK)")
 	}
 
-	pubKey, err := ecdsaPublicKeyFromJWK(x, y)
+	pubKey, finding, err := ecdsaPublicKeyFromJWK(mode, x, y)
 	if err != nil {
 		return nil, fmt.Errorf("constructing EC key: %w", err)
 	}
 
-	return &encryptionKeyInfo{Key: pubKey, Kid: kid, Alg: alg}, nil
+	return &encryptionKeyInfo{Key: pubKey, Kid: kid, Alg: alg, Finding: finding}, nil
 }
 
 // HasEncryptionKey checks if the request object contains a valid encryption JWK.
 func HasEncryptionKey(reqObj *oid4vc.RequestObjectJWT) bool {
-	_, err := extractEncryptionKey(reqObj, nil)
+	_, err := extractEncryptionKey(ValidationModeDebug, reqObj, nil)
 	return err == nil
 }
 
 // HasEncryptionKeyForParams checks if the verifier metadata contains a valid
 // encryption JWK, preferring Request Object metadata when present.
 func HasEncryptionKeyForParams(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) bool {
-	_, err := extractEncryptionKey(reqObj, clientMetadata)
+	_, err := extractEncryptionKey(ValidationModeDebug, reqObj, clientMetadata)
 	return err == nil
 }
 
@@ -185,7 +188,7 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 		return "", nil, fmt.Errorf("marshaling response payload: %w", err)
 	}
 
-	keyInfo, err := extractEncryptionKey(params.RequestObject, params.ClientMetadata)
+	keyInfo, err := extractEncryptionKey(w.ValidationMode, params.RequestObject, params.ClientMetadata)
 	if err != nil {
 		return "", nil, fmt.Errorf("extracting encryption key: %w", err)
 	}

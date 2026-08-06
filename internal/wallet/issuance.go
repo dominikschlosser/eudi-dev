@@ -937,7 +937,9 @@ func selectCredentialRequestEncryption(metadata map[string]any) (*credentialRequ
 		}
 		x, _ := jwk["x"].(string)
 		y, _ := jwk["y"].(string)
-		key, err := ecdsaPublicKeyFromJWK(x, y)
+		// Strict regardless of the wallet's mode: this is the issuer's own
+		// published encryption key, and no wallet is in scope here to ask.
+		key, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, x, y)
 		if err != nil {
 			continue
 		}

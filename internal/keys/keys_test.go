@@ -437,8 +437,12 @@ func TestParseJWK_EC_P521(t *testing.T) {
 	jwk := map[string]any{
 		"kty": "EC",
 		"crv": "P-521",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
+		// Padded to the curve width, which RFC 7518 requires. P-521
+		// coordinates routinely have a zero leading byte, so writing
+		// X.Bytes() here produced a short coordinate and was testing the
+		// parser's leniency by accident.
+		"x": format.EncodeBase64URL(key.PublicKey.X.FillBytes(make([]byte, 66))),
+		"y": format.EncodeBase64URL(key.PublicKey.Y.FillBytes(make([]byte, 66))),
 	}
 	data, _ := json.Marshal(jwk)
 

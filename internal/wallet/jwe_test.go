@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -227,7 +228,7 @@ func TestEcdsaPublicKeyFromJWK(t *testing.T) {
 	xB64 := format.EncodeBase64URL(key.PublicKey.X.Bytes())
 	yB64 := format.EncodeBase64URL(key.PublicKey.Y.Bytes())
 
-	pub, err := ecdsaPublicKeyFromJWK(xB64, yB64)
+	pub, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, yB64)
 	if err != nil {
 		t.Fatalf("ecdsaPublicKeyFromJWK() error: %v", err)
 	}
@@ -241,7 +242,7 @@ func TestEcdsaPublicKeyFromJWK(t *testing.T) {
 }
 
 func TestEcdsaPublicKeyFromJWK_InvalidX(t *testing.T) {
-	_, err := ecdsaPublicKeyFromJWK("not-valid-base64!!!", "dGVzdA")
+	_, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, "not-valid-base64!!!", "dGVzdA")
 	if err == nil {
 		t.Error("expected error for invalid x coordinate")
 	}
@@ -251,7 +252,7 @@ func TestEcdsaPublicKeyFromJWK_InvalidY(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	xB64 := format.EncodeBase64URL(key.PublicKey.X.Bytes())
 
-	_, err := ecdsaPublicKeyFromJWK(xB64, "not-valid-base64!!!")
+	_, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, "not-valid-base64!!!")
 	if err == nil {
 		t.Error("expected error for invalid y coordinate")
 	}
@@ -311,4 +312,40 @@ func TestEncryptJWE_ReturnsCEK(t *testing.T) {
 	if len(cek256) != 32 {
 		t.Errorf("expected 32-byte CEK for A256GCM, got %d bytes", len(cek256))
 	}
+}
+
+// A verifier's encryption key whose coordinate is narrower than P-256
+// requires breaks RFC 7518 section 6.2.1.2. Strict mode must refuse it rather
+// than quietly repair it, which is the whole point of strict mode. Debug mode
+// reads it and reports what was wrong, so the flow still reaches the step
+// worth watching.
+func TestEncryptionJWKShortCoordinate_StrictRefusesDebugReports(t *testing.T) {
+	for attempt := 0; attempt < 20000; attempt++ {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.X.BitLen() > 248 { // no leading zero byte, keep looking
+			continue
+		}
+		shortX := base64.RawURLEncoding.EncodeToString(key.X.Bytes())
+		fullY := base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32)))
+
+		if _, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, shortX, fullY); err == nil {
+			t.Error("strict mode accepted a JWK the specification does not allow")
+		}
+
+		got, finding, err := ecdsaPublicKeyFromJWK(ValidationModeDebug, shortX, fullY)
+		if err != nil {
+			t.Fatalf("debug mode refused to read the key: %v", err)
+		}
+		if !got.Equal(&key.PublicKey) {
+			t.Error("debug mode read a different key than the one sent")
+		}
+		if finding == "" {
+			t.Error("debug mode read past the violation without reporting it")
+		}
+		return
+	}
+	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
 }
