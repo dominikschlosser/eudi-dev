@@ -18,17 +18,15 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/zlib"
-	"crypto"
-	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 )
 
 // ExtractStatusRef extracts the status list reference from SD-JWT claims or mDOC MSO status.
@@ -224,50 +222,21 @@ func verifyStatusListSignature(header map[string]any, parts []string, trustCerts
 		return false, fmt.Sprintf("x5c chain not trusted: %v", err)
 	}
 
-	// Verify JWT signature using leaf's public key
+	// Verify JWT signature using leaf's public key. The accepted algorithms
+	// stay narrower than the toolkit's shared set on purpose: a status list
+	// token is spec-constrained, and widening it here would quietly start
+	// accepting lists this check used to refuse.
 	alg, _ := header["alg"].(string)
-	sigInput := []byte(parts[0] + "." + parts[1])
-	sig, err := format.DecodeBase64URL(parts[2])
-	if err != nil {
-		return false, fmt.Sprintf("decoding signature: %v", err)
-	}
-
 	switch alg {
-	case "ES256":
-		if !verifyECDSA(leaf.PublicKey, sigInput, sig, crypto.SHA256) {
-			return false, "ES256 signature verification failed"
-		}
-	case "ES384":
-		if !verifyECDSA(leaf.PublicKey, sigInput, sig, crypto.SHA384) {
-			return false, "ES384 signature verification failed"
-		}
+	case "ES256", "ES384":
 	default:
 		return false, fmt.Sprintf("unsupported algorithm: %s", alg)
 	}
+	if !jws.Valid(parts[0]+"."+parts[1]+"."+parts[2], leaf.PublicKey) {
+		return false, fmt.Sprintf("%s signature verification failed", alg)
+	}
 
 	return true, fmt.Sprintf("x5c chain valid, signed by %s", leaf.Subject.CommonName)
-}
-
-// verifyECDSA verifies a JWS ECDSA signature (r||s format).
-func verifyECDSA(pubKey crypto.PublicKey, sigInput, sig []byte, hash crypto.Hash) bool {
-	ecKey, ok := pubKey.(*ecdsa.PublicKey)
-	if !ok {
-		return false
-	}
-
-	h := hash.New()
-	h.Write(sigInput)
-	digest := h.Sum(nil)
-
-	keySize := (ecKey.Curve.Params().BitSize + 7) / 8
-	if len(sig) != 2*keySize {
-		return false
-	}
-
-	r := new(big.Int).SetBytes(sig[:keySize])
-	s := new(big.Int).SetBytes(sig[keySize:])
-
-	return ecdsa.Verify(ecKey, digest, r, s)
 }
 
 func zlibDecompress(data []byte) ([]byte, error) {

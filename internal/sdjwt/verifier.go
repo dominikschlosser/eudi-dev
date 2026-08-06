@@ -16,15 +16,12 @@ package sdjwt
 
 import (
 	"crypto"
-	"crypto/ecdsa"
-	"crypto/rsa"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 )
 
 // VerifyResult contains the result of signature and validity verification.
@@ -68,84 +65,31 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 
 	// Verify signature
 	jwtRaw := strings.SplitN(token.Raw, "~", 2)[0]
-	parts := strings.SplitN(jwtRaw, ".", 3)
-	if len(parts) != 3 {
+	if strings.Count(jwtRaw, ".") != 2 {
 		result.Errors = append(result.Errors, "invalid JWT structure")
 		return result
 	}
 
-	sigInput := []byte(parts[0] + "." + parts[1])
-	sig, err := format.DecodeBase64URL(parts[2])
-	if err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("decoding signature: %v", err))
+	if !isSupportedAlgorithm(result.Algorithm) {
+		result.Errors = append(result.Errors, fmt.Sprintf("unsupported algorithm: %s", result.Algorithm))
 		return result
 	}
 
-	alg := result.Algorithm
-	switch alg {
-	case "ES256":
-		result.SignatureValid = verifyECDSA(pubKey, sigInput, sig, crypto.SHA256)
-	case "ES384":
-		result.SignatureValid = verifyECDSA(pubKey, sigInput, sig, crypto.SHA384)
-	case "ES512":
-		result.SignatureValid = verifyECDSA(pubKey, sigInput, sig, crypto.SHA512)
-	case "RS256":
-		result.SignatureValid = verifyRSA(pubKey, sigInput, sig, crypto.SHA256)
-	case "RS384":
-		result.SignatureValid = verifyRSA(pubKey, sigInput, sig, crypto.SHA384)
-	case "RS512":
-		result.SignatureValid = verifyRSA(pubKey, sigInput, sig, crypto.SHA512)
-	case "PS256":
-		result.SignatureValid = verifyRSAPSS(pubKey, sigInput, sig, crypto.SHA256)
-	default:
-		result.Errors = append(result.Errors, fmt.Sprintf("unsupported algorithm: %s", alg))
-	}
-
-	if !result.SignatureValid && len(result.Errors) == 0 {
+	result.SignatureValid = jws.Valid(jwtRaw, pubKey)
+	if !result.SignatureValid {
 		result.Errors = append(result.Errors, "signature verification failed")
 	}
 
 	return result
 }
 
-func verifyECDSA(pubKey crypto.PublicKey, sigInput, sig []byte, hash crypto.Hash) bool {
-	ecKey, ok := pubKey.(*ecdsa.PublicKey)
-	if !ok {
-		return false
+// isSupportedAlgorithm keeps the "unsupported algorithm" report this function
+// has always made, which is more use than the parse error underneath it.
+func isSupportedAlgorithm(alg string) bool {
+	for _, supported := range jws.SupportedAlgorithms {
+		if string(supported) == alg {
+			return true
+		}
 	}
-
-	h := hash.New()
-	h.Write(sigInput)
-	digest := h.Sum(nil)
-
-	// JWS ECDSA signature is r||s (raw, not DER)
-	keySize := (ecKey.Curve.Params().BitSize + 7) / 8
-	if len(sig) != 2*keySize {
-		return false
-	}
-
-	r := new(big.Int).SetBytes(sig[:keySize])
-	s := new(big.Int).SetBytes(sig[keySize:])
-
-	return ecdsa.Verify(ecKey, digest, r, s)
-}
-
-func verifyRSA(pubKey crypto.PublicKey, sigInput, sig []byte, hash crypto.Hash) bool {
-	rsaKey, ok := pubKey.(*rsa.PublicKey)
-	if !ok {
-		return false
-	}
-	h := hash.New()
-	h.Write(sigInput)
-	return rsa.VerifyPKCS1v15(rsaKey, hash, h.Sum(nil), sig) == nil
-}
-
-func verifyRSAPSS(pubKey crypto.PublicKey, sigInput, sig []byte, hash crypto.Hash) bool {
-	rsaKey, ok := pubKey.(*rsa.PublicKey)
-	if !ok {
-		return false
-	}
-	h := hash.New()
-	h.Write(sigInput)
-	return rsa.VerifyPSS(rsaKey, hash, h.Sum(nil), sig, nil) == nil
+	return false
 }

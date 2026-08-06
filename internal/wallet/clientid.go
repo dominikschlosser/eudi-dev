@@ -15,19 +15,16 @@
 package wallet
 
 import (
-	"crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/x509"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
@@ -60,17 +57,10 @@ func VerifyRequestObjectSignature(reqObj *oid4vc.RequestObjectJWT) string {
 		return warning
 	}
 
-	parts := strings.Split(reqObj.Raw, ".")
-	if len(parts) != 3 {
+	if strings.Count(reqObj.Raw, ".") != 2 {
 		return "Request Object is not a compact JWS"
 	}
-	sigInput := []byte(parts[0] + "." + parts[1])
-	sig, err := format.DecodeBase64URL(parts[2])
-	if err != nil {
-		return fmt.Sprintf("failed to decode Request Object signature: %v", err)
-	}
-
-	if err := verifyJWSSignature(certs[0].PublicKey, alg, sigInput, sig); err != nil {
+	if _, err := jws.Verify(reqObj.Raw, certs[0].PublicKey); err != nil {
 		return fmt.Sprintf("Request Object signature verification failed: %v", err)
 	}
 
@@ -392,75 +382,4 @@ func verifySuppliedX5CChain(certs []*x509.Certificate) string {
 	}
 
 	return ""
-}
-
-func verifyJWSSignature(pubKey crypto.PublicKey, alg string, sigInput, sig []byte) error {
-	hash, err := jwsHash(alg)
-	if err != nil {
-		return err
-	}
-	digest := hashDigest(hash, sigInput)
-
-	switch key := pubKey.(type) {
-	case *ecdsa.PublicKey:
-		if !verifyECDSAJWS(key, sig, digest) {
-			return fmt.Errorf("%s signature invalid", alg)
-		}
-		return nil
-	case *rsa.PublicKey:
-		switch {
-		case strings.HasPrefix(alg, "RS"):
-			return rsa.VerifyPKCS1v15(key, hash, digest, sig)
-		case strings.HasPrefix(alg, "PS"):
-			return rsa.VerifyPSS(key, hash, digest, sig, nil)
-		default:
-			return fmt.Errorf("algorithm %s is not compatible with RSA", alg)
-		}
-	default:
-		return fmt.Errorf("unsupported public key type %T", pubKey)
-	}
-}
-
-func jwsHash(alg string) (crypto.Hash, error) {
-	switch alg {
-	case "ES256", "RS256", "PS256":
-		return crypto.SHA256, nil
-	case "ES384", "RS384", "PS384":
-		return crypto.SHA384, nil
-	case "ES512", "RS512", "PS512":
-		return crypto.SHA512, nil
-	default:
-		return 0, fmt.Errorf("unsupported JWS algorithm %q", alg)
-	}
-}
-
-func hashDigest(hash crypto.Hash, input []byte) []byte {
-	switch hash {
-	case crypto.SHA256:
-		sum := sha256.Sum256(input)
-		return sum[:]
-	case crypto.SHA384:
-		sum := sha512.Sum384(input)
-		return sum[:]
-	case crypto.SHA512:
-		sum := sha512.Sum512(input)
-		return sum[:]
-	default:
-		return nil
-	}
-}
-
-func verifyECDSAJWS(pub *ecdsa.PublicKey, sig, digest []byte) bool {
-	curveBytes := (pub.Params().BitSize + 7) / 8
-	if len(sig) != 2*curveBytes {
-		return false
-	}
-	r := new(big.Int).SetBytes(sig[:curveBytes])
-	s := new(big.Int).SetBytes(sig[curveBytes:])
-
-	if pub.Curve == elliptic.P256() || pub.Curve == elliptic.P384() || pub.Curve == elliptic.P521() {
-		return ecdsa.Verify(pub, digest, r, s)
-	}
-
-	return false
 }

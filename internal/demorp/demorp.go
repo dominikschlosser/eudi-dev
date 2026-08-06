@@ -32,17 +32,16 @@ package demorp
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -177,15 +176,14 @@ func parseCompactJWT(raw string) (*compactJWT, error) {
 	return jwt, nil
 }
 
-// verifyES256 checks a JOSE ES256 (raw r||s) signature.
+// verifyES256 checks a JOSE ES256 signature. The parsed form keeps the
+// signing input and the decoded signature rather than the string they came
+// from, so the compact form is put back together for the shared verifier.
 func verifyES256(pub *ecdsa.PublicKey, signingInput string, sig []byte) bool {
 	if len(sig) != 64 {
 		return false
 	}
-	digest := sha256.Sum256([]byte(signingInput))
-	r := new(big.Int).SetBytes(sig[:32])
-	s := new(big.Int).SetBytes(sig[32:])
-	return ecdsa.Verify(pub, digest[:], r, s)
+	return jws.Valid(signingInput+"."+base64.RawURLEncoding.EncodeToString(sig), pub)
 }
 
 // holderKeyFromJWK converts a JWK map (e.g. a proof header jwk or a cnf.jwk

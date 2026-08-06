@@ -27,7 +27,7 @@ examples/      Keycloak and web-wallet integration examples
 | `imprint` | Operator-supplied legal notice page |
 | `jsonutil` | Type-safe accessors for `map[string]any` |
 | `jwe` | Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM) |
-| `jws` | ES256 JWS signing, shared so the signature encoding cannot drift |
+| `jws` | ES256 JWS signing and verification, shared so neither can drift (ADR-0008) |
 | `keys` | PEM and JWK key loading and conversion |
 | `mdoc` | mdoc parsing (CBOR) and COSE_Sign1 verification |
 | `mock` | Test credential generators |
@@ -66,6 +66,7 @@ Described in domain terms rather than function names, which go stale.
 | [0005](docs/adr/0005-the-server-reloads-its-store-on-every-request.md) | The server reloads its store on every request |
 | [0006](docs/adr/0006-one-binary-plays-wallet-issuer-verifier-and-ca.md) | One binary plays wallet, issuer, verifier and CA |
 | [0007](docs/adr/0007-everything-lives-under-internal.md) | Everything lives under `internal/` |
+| [0008](docs/adr/0008-jws-verification-uses-go-jose-jwe-stays-hand-written.md) | JWS verification uses go-jose, JWE stays hand-written |
 
 ## Related
 
