@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.15] - 2026-08-06
 
+### Documentation
+
+- **Token Status List is no longer cited as RFC 9596.** RFC 9596 is the COSE `typ` header parameter and has nothing to do with status lists. Token Status List is still `draft-ietf-oauth-status-list`, in the RFC Editor queue with no number assigned, so nothing claims one now. The same comments also justified a 16 byte floor on the published bitstring as a requirement of that document. It sets no minimum size at all: the floor is this wallet's own choice, so that a fresh wallet does not publish a list short enough to identify the one credential reading it
+
 ### Added
 
 - **The wallet and the decoder link to each other.** Both are served by `wallet serve` and there was no way between them but the address bar. The wallet header carries a Decoder link, and the decoder header links back, reading "Demo wallet" on a shared instance and "Wallet" on somebody's own. A decoder running on its own through `eudi serve` has no wallet behind it and shows no link

@@ -100,7 +100,9 @@ This is the HAIP behavior currently exercised by the wallet and the current OIDF
 
 The implementation target for the EUDI wallet trust infrastructure is ETSI TS 119 602, which defines the EUDI trusted-entity list data model and LoTE structures. It does not implement the classic ETSI TS 119 612 XML trusted-list format used for eIDAS trust-service status lists.
 
-## Token Status List (RFC 9596)
+## Token Status List (`draft-ietf-oauth-status-list`)
+
+Still an Internet-Draft, in the RFC Editor queue at the time of writing. It has no RFC number yet, so nothing here cites one.
 
 | Feature | Status | Notes |
 |---------|--------|-------|

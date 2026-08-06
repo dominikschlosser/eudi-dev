@@ -117,7 +117,7 @@ func TestBuildStatusBitstring_MinimumSize(t *testing.T) {
 	}
 
 	bs := w.BuildStatusBitstring()
-	// Minimum 16 bytes per RFC 9596
+	// The 16-byte floor is this wallet's choice, not a spec requirement.
 	if len(bs) < 16 {
 		t.Errorf("expected minimum 16 bytes, got %d", len(bs))
 	}

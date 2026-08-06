@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package statuslist checks credential revocation status using Token Status Lists (RFC 9596).
+// Package statuslist checks credential revocation status using Token Status
+// Lists (draft-ietf-oauth-status-list).
 package statuslist
 
 // StatusRef is a reference to a status list entry in a credential.

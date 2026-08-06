@@ -50,7 +50,11 @@ func (w *Wallet) BuildStatusBitstring() []byte {
 
 	// Calculate number of bytes needed
 	numBytes := (w.StatusListCounter + 7) / 8
-	// Minimum 16 bytes as per RFC 9596
+	// A floor of 16 bytes, which is this wallet's choice rather than a
+	// requirement: the specification sets no minimum size. A list only as
+	// long as the credentials issued so far would shrink to a couple of
+	// bytes on a fresh wallet, and a one-entry list identifies the
+	// credential that reads it.
 	if numBytes < 16 {
 		numBytes = 16
 	}
