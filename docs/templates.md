@@ -62,7 +62,7 @@ Because a template is a single JSON document, sharing one is just sharing the fi
 
 ## Always disclosed claims
 
-By default every claim in an SD-JWT is selectively disclosable. Claims listed in `always_disclosed` are embedded plainly in the signed payload instead, so they are always visible to a verifier and cannot be withheld during presentation.
+By default every claim in an SD-JWT is selectively disclosable, apart from the registered claims SD-JWT VC §2.2.2.3 excludes (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts`, `status` and `iat`), which are always embedded plainly. Claims listed in `always_disclosed` are embedded plainly in the signed payload as well, so they are always visible to a verifier and cannot be withheld during presentation.
 
 Entries name top level claims (`issuing_country`) or nested subclaims with dotted paths (`address.country`). A top level entry embeds the whole claim value plainly. A dotted entry keeps the parent selectively disclosable but embeds that subclaim plainly inside the parent's disclosure. Entries that match no claim are ignored.
 

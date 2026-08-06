@@ -84,7 +84,7 @@ Marking a credential invalid on a status list. The wallet does not refuse to pre
 ### Modes
 
 **Validation mode**:
-Whether normative findings are warnings that let a flow continue (`debug`) or refusals (`strict`). Applies to what the wallet accepts from others, not to what it produces.
+Whether normative findings are warnings that let a flow continue (`debug`) or refusals (`strict`). The findings themselves are collected in both modes. Applies to what the wallet accepts from others, not to what it produces. Not to be confused with **HAIP enforcement** (`--haip`), which decides whether the counterparty is held to that profile at all and whose violations are errors in either mode.
 
 **Demo profile**:
 The hardened configuration for hosting a wallet publicly. A deployment shape, not a validation setting and not a trust profile.

@@ -37,7 +37,7 @@ docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://ex
 | `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`. Supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
 | `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
-| `/api/statuslist` | GET | Status list JWT on both HTTP and HTTPS (available when PID generation or `--status-list` is enabled) |
+| `/api/statuslist` | GET | Status List Token on both HTTP and HTTPS (available when PID generation or `--status-list` is enabled). JWT by default, CWT for a client sending `Accept: application/statuslist+cwt` |
 | `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage [credential templates](templates.md) |
 | `/api/next-error` | POST/DELETE | Set or clear a one-shot error override |
 | `/api/config/preferred-format` | PUT | Set credential format preference (`dc+sd-jwt` / `mso_mdoc` / `jwt_vc_json` / empty) |
@@ -243,7 +243,7 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 | `/api/generate-pid` | POST | Regenerate default PID credentials (deprecated, use `/api/issue` with a template) |
 | `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage credential templates |
 | `/api/certificates/ca`, `/api/certificates/tls` | GET | Export wallet CA / TLS certificate |
-| `/api/statuslist` | GET | Status list JWT |
+| `/api/statuslist` | GET | Status List Token, JWT by default and CWT under `Accept: application/statuslist+cwt` |
 | `/api/config` | GET | Instance introspection document |
 | `/api/shutdown` | POST | Stop the wallet server process |
 

@@ -35,7 +35,7 @@ sequenceDiagram
 
 | Field / setting | Why it matters in `eudi-dev` |
 |-----------------|--------------------------------|
-| `client_id` | Always required. `eudi-dev` validates the supported client ID scheme. |
+| `client_id` | Required except in an unsigned Digital Credentials API request, which OpenID4VP Appendix A.2 says must carry none. `eudi-dev` validates the Client Identifier Prefix and refuses the ones it does not support. |
 | `response_type` | Supports `vp_token`, `vp_token id_token`, and `id_token`. |
 | `response_mode` | Drives the response branch: `direct_post`, `direct_post.jwt`, `fragment`, `dc_api`, or `dc_api.jwt`. |
 | `nonce` | Bound into SD-JWT key binding JWTs and self-issued `id_token`s. |
@@ -84,7 +84,7 @@ sequenceDiagram
 | `response_mode=direct_post` | Wallet posts a form with plain `vp_token`, optional `id_token`, and `state`. |
 | `response_mode=direct_post.jwt` | Wallet requires a verifier encryption key in `client_metadata.jwks` and posts an encrypted response JWT. |
 | `response_mode=fragment` | Wallet builds a redirect URL using `redirect_uri`. |
-| `--auto-accept` | Skips the consent UI and submits the first matching credentials automatically. |
+| `--auto-accept` | Skips the consent UI and submits one credential per credential query automatically (the most recently issued one that answers it). |
 | `--preferred-format ...` | Accepts `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json` and biases selection when more than one stored credential satisfies the same query. |
 | `--session-transcript ...` | Accepts `oid4vp` or `iso` and changes how mDoc session transcript data is constructed. |
 
@@ -129,7 +129,7 @@ sequenceDiagram
     Browser->>RP: Trigger digital credentials request
     RP->>Wallet: Browser API request envelope
     Wallet->>Wallet: Parse signed or unsigned browser request
-    Wallet->>Wallet: Validate client_id and request object
+    Wallet->>Wallet: Validate caller origin, client identifier and request object
     Wallet->>Wallet: Evaluate dcql_query and build response
     alt response_mode = dc_api
         Wallet-->>RP: Plain Browser API response object
@@ -146,17 +146,19 @@ sequenceDiagram
 | Browser API protocol `openid4vp-v1-signed` | Signed Browser API request branch; request data can be a compact JWT or an object containing `request` or `request_uri`. |
 | `response_mode=dc_api` | Wallet returns plain JSON through the Browser API response envelope. |
 | `response_mode=dc_api.jwt` | Wallet encrypts the response and returns a `response` JWT in the Browser API envelope. |
-| `client_id=web-origin:...` | Supported for Browser API verifier identification. |
+| Unsigned Browser API request | Carries no `client_id` (OpenID4VP Appendix A.2). The verifier is identified by the origin the platform reports, and any `client_id` or `expected_origins` in the request data is discarded. |
 
-## Client ID Schemes and Policy Switches
+## Client Identifier Prefixes and Policy Switches
 
 | Item | Behavior in `eudi-dev` |
 |------|---------------------------|
 | `x509_hash:` | Implemented and verified. |
 | `x509_san_dns:` | Implemented and verified against the verifier certificate SAN. |
 | `redirect_uri:` | Implemented; requires unsigned request objects and must match `response_uri`. |
-| `web-origin:` | Implemented for Browser API requests. |
 | `verifier_attestation:` | Validated structurally. |
 | `decentralized_identifier:` | DID syntax and `kid` cross-check are validated; full DID resolution is not implemented. |
-| `--haip` | Tightens incoming VP validation to the currently implemented HAIP subset: encrypted response modes, supported client ID schemes, signed request objects, DCQL, and ES256 request object signatures. |
-| Wallet mode `debug` vs `strict` | `debug` logs some request findings and can keep partially matching DCQL credentials; `strict` turns the same issues into hard failures. |
+| No prefix (no `:` in the value) | Treated as a pre-registered client, per OpenID4VP §5.9.2. |
+| `origin:` | Refused. §5.9.3 reserves it and forbids a wallet to accept it in a request. |
+| `openid_federation:` | Refused. The trust chain resolution it requires is not implemented. |
+| `--haip` | Holds the counterparty to HAIP 1.0: `response_type=vp_token`, encrypted response modes, the `x509_hash` prefix with a verified request signature and certificate rules, JAR through `request_uri`, DCQL, the `mso_mdoc` and `dc+sd-jwt` formats, `A128GCM` plus `A256GCM` in the verifier's client metadata, and ES256. Violations are errors whatever the wallet mode is. |
+| Wallet mode `debug` vs `strict` | Both collect request findings. `debug` reports them, keeps partially matching DCQL credentials and continues; `strict` turns the same findings into hard failures. |

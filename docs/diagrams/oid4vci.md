@@ -35,7 +35,7 @@ sequenceDiagram
 | `credential_offer` or `credential_offer_uri` | One of these must exist for the wallet to start the issuance flow. |
 | `credential_issuer` | Used to fetch `/.well-known/openid-credential-issuer` and resolve the token and credential endpoints. |
 | `credential_configuration_ids` | The wallet uses the first configuration ID to resolve format and, in the authorization-code flow, the scope. |
-| `c_nonce` | Used to bind the credential proof JWT when the issuer or authorization server provides it. |
+| Issuer metadata `nonce_endpoint` | The source of the challenge the key proof is signed over. OpenID4VCI 1.0 §8.2 names the Nonce Endpoint of §7 as the only one, so the wallet asks it whenever the metadata advertises it. |
 | `authorization_details[].credential_identifiers` | If present in the token response, `eudi-dev` uses `credential_identifier` at the credential endpoint instead of `credential_configuration_id`. |
 | Issuer metadata `credential_response_encryption` support | When advertised, the wallet requests encrypted credential responses and decrypts compact JWE responses. |
 
@@ -52,7 +52,9 @@ sequenceDiagram
     Wallet->>Issuer: Fetch issuer metadata
     Wallet->>AS: POST token request<br/>grant_type=urn:ietf:params:oauth:grant-type:pre-authorized_code
     Note over Wallet,AS: Optional tx_code is included when the wallet was given one.
-    AS-->>Wallet: access_token, optional c_nonce,<br/>optional authorization_details
+    AS-->>Wallet: access_token,<br/>optional authorization_details
+    Wallet->>Issuer: POST nonce request
+    Issuer-->>Wallet: c_nonce
     Wallet->>Issuer: POST credential request with proofs.jwt
     alt Encrypted credential response
         Issuer-->>Wallet: compact JWE credential response
@@ -70,7 +72,7 @@ sequenceDiagram
 | `grants.urn:ietf:params:oauth:grant-type:pre-authorized_code.pre-authorized_code` | Required to choose the pre-authorized code branch. |
 | `grants...tx_code` | Optional. If present, the issuer expects an out-of-band transaction code; the wallet can send it via `wallet accept --tx-code ...`. |
 | `access_token` | Used to authorize the credential endpoint call. |
-| `c_nonce` | If returned, the wallet rebuilds the proof JWT against that nonce. If missing, it may try a nonce endpoint or a first credential request to obtain one. |
+| `c_nonce` | Taken from the Nonce Endpoint. A `c_nonce` in the token response is a pre-1.0 parameter: strict mode ignores it, debug mode uses it (naming the issuer as pre-1.0) when the issuer advertises no Nonce Endpoint. A challenge the issuer rejects with `invalid_nonce` is fetched again and the request is retried once with rebuilt proofs (§8.3.1.2). |
 | `credential_identifier` vs `credential_configuration_id` | `credential_identifier` wins when the token response exposes it; otherwise the wallet falls back to the first `credential_configuration_id` from the offer. |
 
 ## Authorization Code Flow
@@ -90,7 +92,9 @@ sequenceDiagram
     Wallet->>AS: Open authorization request<br/>client_id + request_uri + state
     AS-->>Wallet: redirect_uri?code=...&state=...
     Wallet->>AS: POST token request<br/>grant_type=authorization_code + code + PKCE
-    AS-->>Wallet: access_token, optional c_nonce,<br/>optional authorization_details
+    AS-->>Wallet: access_token,<br/>optional authorization_details
+    Wallet->>Issuer: POST nonce request
+    Issuer-->>Wallet: c_nonce
     Wallet->>Issuer: POST credential request with proofs.jwt
     alt Deferred issuance
         Issuer-->>Wallet: transaction_id

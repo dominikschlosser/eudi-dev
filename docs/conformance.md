@@ -41,8 +41,8 @@ The default run covers the Final and HAIP scenarios tracked by this wallet harne
 - VP Final: mDoc `direct_post.jwt`, signed `request_uri`, `x509_hash`
 - VP HAIP: SD-JWT `direct_post.jwt`
 - VP HAIP: mDoc `direct_post.jwt`
-- VP HAIP: SD-JWT `dc_api.jwt`, covering unsigned `web-origin`, signed `x509_hash`, and multisigned `x509_hash` Browser API modules
-- VP HAIP: mDoc `dc_api.jwt`, covering unsigned `web-origin`, signed `x509_hash`, and multisigned `x509_hash` Browser API modules
+- VP HAIP: SD-JWT `dc_api.jwt`, covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules
+- VP HAIP: mDoc `dc_api.jwt`, covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules
 - VCI Final: SD-JWT authorization-code issuer-initiated flow with client attestation and DPoP
 - VCI Final: mDoc authorization-code issuer-initiated flow with client attestation and DPoP
 - VCI HAIP: SD-JWT, covering immediate plain, deferred plain, and immediate encrypted responses

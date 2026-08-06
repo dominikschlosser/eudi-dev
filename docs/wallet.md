@@ -2,9 +2,11 @@
 
 A stateful testing wallet with file persistence, CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration. Credentials and keys are stored in `~/.eudi-dev/wallet/` (configurable via `--wallet-dir`) and persist across invocations.
 
-The wallet has two validation modes:
-- `debug` (default) keeps processing requests when possible and logs spec findings for debugging. During DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
-- `strict` rejects requests that violate the latest final specs
+The wallet has two validation modes. Both run the same checks and collect the same findings, and the mode decides what happens to them:
+- `debug` (default) reports each finding and keeps processing the request, so the failure surfaces further along where its effect is visible. During DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
+- `strict` treats the same findings as errors and refuses the request
+
+`--haip` is a separate switch and not a third mode. See [HAIP 1.0 enforcement](#haip-10-enforcement).
 
 For OpenID Foundation conformance work, see [docs/conformance.md](./conformance.md).
 For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/diagrams](./diagrams/README.md).
@@ -310,12 +312,11 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--docker`              | `false`  | Use `host.docker.internal` instead of `localhost` when deriving new HTTP and HTTPS wallet endpoint URLs |
 | `--vci-client-id`       | —        | Client ID to use for OID4VCI authorization-code flows |
 | `--vci-redirect-uri`    | —        | Redirect URI to use for OID4VCI authorization-code flows |
-| `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers |
+| `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers. Violations are errors whatever `--mode` says |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](#wallet-attestation)) |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
 | `--demo`                | `false`  | Public demo profile: implies `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
-| `--demo-reset`          | `1h`     | Interval for restoring the clean demo baseline (requires `--demo`, `0` disables) |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
 | `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet instances kill` |
 
@@ -328,7 +329,7 @@ Auto-detects the URI type and dispatches to the appropriate flow:
   - Supports `response_type=id_token` (SIOPv2 only). Generates a self-issued ID token without VP token
 - `openid-credential-offer://`, `haip-vci://` → OID4VCI credential issuance (fetches credential from issuer)
 
-In interactive mode (default), OID4VP requests start a temporary consent UI server and auto-open it in the browser. With `--auto-accept`, auto-selects and submits the first matching credentials.
+In interactive mode (default), OID4VP requests start a temporary consent UI server and auto-open it in the browser. With `--auto-accept`, selects and submits one credential per credential query (the most recently issued one that answers it) without asking.
 
 When a verifier answers a presentation with a `redirect_uri`, that URL is printed and, when a person is running the command, opened. OpenID4VP has the wallet return the user agent to the verifier so a same-device flow lands back on the site that asked. A scripted run only prints it. The CLI opens a browser only where there is a desktop to open it on, and `--no-open` turns it off everywhere.
 
@@ -347,7 +348,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--mode`                | `debug`  | Validation mode: `debug` or `strict`             |
 | `--session-transcript`  | `oid4vp` | mDoc session transcript mode: `oid4vp` or `iso`  |
 | `--tx-code`             | —        | Transaction code for OID4VCI pre-authorized code flow |
-| `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers |
+| `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers. Violations are errors whatever `--mode` says |
 
 Note: pre-authorized code offers work directly with `wallet accept`. Authorization-code offers are also supported, but they require a running `wallet serve` instance configured with `--vci-client-id` and `--vci-redirect-uri`, plus issuer metadata that supports PAR and DPoP. In that flow the wallet server answers with the issuer's authorization URL rather than holding the request open, and `wallet accept` opens it here (printing it as well, for a headless shell). The user authenticates at the issuer, the issuer redirects back to the wallet's configured callback URI, and the wallet exchanges the code. The CLI follows the flow until the credential lands or the issuance fails. This works against a remote wallet as well: the callback is matched by `state`, so the sign-in can happen in any browser that can reach the wallet. With `--haip` a pre-authorized code offer is still accepted and held only to the https transport rule. The PAR, PKCE, DPoP and client authentication requirements apply to offers that drive the authorization endpoint.
 
@@ -601,17 +602,25 @@ The override never displaces client authentication the server did ask for: an au
 
 Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) compliance on incoming OID4VP requests. `--demo` turns it on by default (see [hosting a public demo](public-demo.md)).
 
+`--haip` and `--mode` are separate switches and answer different questions. `--mode strict` versus `--mode debug` decides whether a general specification finding stops the flow or is only reported. `--haip` decides whether the counterparty is held to the profile at all, and every check below is a MUST in it, so a violation is an error whenever `--haip` is on regardless of the validation mode. Asking for HAIP is asserting that the counterparty follows HAIP, which a warning would not assert.
+
 Enforcement covers **presentations**: OID4VP `direct_post.jwt` and Browser API `dc_api.jwt`. When enabled, the wallet rejects requests that violate any of:
 
-- `response_mode` must be `direct_post.jwt` or `dc_api.jwt`
-- `client_id` must use `x509_hash:`, `x509_san_dns:`, or Browser API `web-origin:`
-- A signed request object (JAR) must be present, except for unsigned Browser API `web-origin:` `dc_api.jwt` requests
-- The query must use DCQL (not presentation definitions)
+- `response_type` must be `vp_token` (§5)
+- `response_mode` must be `direct_post.jwt` (§5.1) or `dc_api.jwt` (§5.2)
+- A signed request must use the `x509_hash:` Client Identifier Prefix (§5), and its Request Object signature must verify against a certificate whose SHA-256 is the prefix value
+- The certificate signing the request must not be self-signed, and the trust anchor must not be included in the `x5c` header (§5)
+- A request arriving over redirects must carry a signed request object (JAR) delivered through `request_uri` (§5.1). An unsigned request is accepted only over the Digital Credentials API, where §5.2 obliges the wallet to support one and it carries no `client_id` at all
+- The query must use DCQL (§5), and every credential it asks for must be `mso_mdoc` (§5.3.1) or `dc+sd-jwt` (§5.3.2)
+- The Verifier's client metadata must list both `A128GCM` and `A256GCM` in `encrypted_response_enc_values_supported` (§5)
+- A signed Digital Credentials API request must list the caller origin in `expected_origins` (OpenID4VP Appendix A.2, which §5.2 incorporates)
 - The request object signing algorithm must be `ES256`
 
 Non-compliant requests receive an HTTP 400 error with details about which checks failed.
 
-Issuance is enforced too, following the flow the offer actually drives. A credential offer is always rejected when the credential issuer is served over plain http. An offer that drives the authorization endpoint is additionally rejected unless the authorization server supports the authorization code flow, offers a pushed authorization request endpoint, and does not advertise PKCE or DPoP in a way that contradicts the profile. Only advertisement that is present and wrong counts: `require_pushed_authorization_requests` is optional in RFC 9126, `code_challenge_methods_supported` in RFC 8414 and `dpop_signing_alg_values_supported` in RFC 9449, and HAIP defers all three to FAPI 2.0, which puts the obligation on the server's behaviour rather than on its metadata. A server that says nothing is not thereby non-conformant, so it is not refused. A server that lists PKCE without `S256`, or DPoP without `ES256`, has said it cannot do what the profile requires and is. Client authentication is not checked at all, for the same reason. A pre-authorized code offer is held only to the transport rule: HAIP 1.0 §4 requires an issuer to *support* the authorization code flow rather than to use it for every credential, says nothing about the pre-authorized code flow, and scopes PAR to "when using the Authorization Endpoint". Plain http on loopback is accepted, the way OAuth treats a local development host. Presentation requests are held to the response mode, the client identifier prefix, JAR and its delivery, DCQL and the signing algorithm. The prefix rule is the profile's: §5.1 names `x509_hash` and only `x509_hash` for signed requests, so `x509_san_dns` is refused even though OID4VP defines it. An unsigned request is accepted only over the Digital Credentials API, where §5.2 allows one and the caller is identified by the origin the platform reports. A signed request object must also arrive through `request_uri`, which §5.1 requires alongside JAR itself, and must be signed with ES256, which is what §7 sets as the floor and what this wallet advertises in `request_object_signing_alg_values_supported`. The wallet's own client behavior already satisfied the profile (PAR, PKCE S256, DPoP, wallet attestation when advertised, ES256 proofs, key attestation). What is new is refusing an issuer that does not.
+Issuance is enforced too, following the flow the offer actually drives. A credential offer is always rejected when the credential issuer is served over plain http. An offer that drives the authorization endpoint is additionally rejected unless the authorization server supports the authorization code flow, offers a pushed authorization request endpoint, and does not advertise PKCE or DPoP in a way that contradicts the profile. Only advertisement that is present and wrong counts: `require_pushed_authorization_requests` is optional in RFC 9126, `code_challenge_methods_supported` in RFC 8414 and `dpop_signing_alg_values_supported` in RFC 9449, and HAIP defers all three to FAPI 2.0, which puts the obligation on the server's behaviour rather than on its metadata. A server that says nothing is not thereby non-conformant, so it is not refused. A server that lists PKCE without `S256`, or DPoP without `ES256`, has said it cannot do what the profile requires and is. Client authentication is not checked at all, for the same reason. A pre-authorized code offer is held only to the transport rule: HAIP 1.0 §4 requires an issuer to *support* the authorization code flow rather than to use it for every credential, says nothing about the pre-authorized code flow, and scopes PAR to "when using the Authorization Endpoint". Plain http on loopback is accepted, the way OAuth treats a local development host.
+
+The prefix rule in the bullets above is the profile's: §5 names `x509_hash` and only `x509_hash` for signed requests, so `x509_san_dns` is refused even though OpenID4VP defines it. An unsigned request is recognised by how it arrived (the Digital Credentials API, with no Request Object) rather than by a `client_id` value, because Appendix A.2 of OpenID4VP says such a request must carry none and a wallet must ignore one that is present. The caller is identified by the origin the platform reports. ES256 is what §7 sets as the floor and what this wallet advertises in `request_object_signing_alg_values_supported`. On the client side the wallet meets the profile itself (PAR, PKCE S256, DPoP, wallet attestation when advertised, ES256 proofs, key attestation), so `--haip` is about what it refuses from an issuer or a verifier.
 
 ```bash
 eudi wallet serve --haip --auto-accept --pid
@@ -882,11 +891,20 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 curl http://localhost:8085/api/credentials/<id>/status
 ```
 
+Any Status Type from 0 to 255 is accepted, not just 0 and 1, so a credential can be set to SUSPENDED (`2`) or to an application specific value. The published list is 1, 2, 4 or 8 bits wide depending on the largest status it holds, which is the issuer's choice to make under section 7, and it carries the value that was set rather than a flattened revoked flag.
+
 The GET response contains `status`, `managed`, `uri`, `idx`, and `source` (`wallet` for the wallet's own list, `remote` for a fetched external list). It returns 404 for credentials without any status list reference and 502 when an external status list cannot be fetched.
 
 Credential listings (`GET /api/credentials` and `GET /api/credentials/{id}`) include a `status` object for credentials that carry a status list reference: `uri` and `idx` from the credential, `managed` (true when the entry lives on this wallet's own status list), and the current `status` value for managed entries.
 
-The status list JWT is served at `GET /api/statuslist` on both the HTTP wallet port and the HTTPS wallet port.
+The Status List Token is served at `GET /api/statuslist` on both the HTTP wallet port and the HTTPS wallet port. Both representations live on that one URI and content negotiation picks between them (section 8.1): `Accept: application/statuslist+cwt` gets the CWT form, anything else gets the JWT, which is also what a client asking for both equally gets. The endpoint sends CORS headers for browser-based clients, and answers `501` to the `time` query parameter, which is what section 8.4 says a server without historical resolution should do.
+
+```bash
+curl -H 'Accept: application/statuslist+jwt' http://localhost:8085/api/statuslist
+curl -H 'Accept: application/statuslist+cwt' http://localhost:8085/api/statuslist --output statuslist.cwt
+```
+
+Reading a list works for both forms too. When the wallet or `eudi validate` resolves a credential's status reference, it asks for both media types and parses whichever comes back, so an mdoc ecosystem serving CWT lists is resolvable.
 
 ### Deferred issuance
 

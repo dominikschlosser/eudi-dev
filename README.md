@@ -130,7 +130,7 @@ eudi wallet scan --screen         # QR scan → auto-dispatch
 eudi wallet logs -f               # Follow persisted wallet interactions
 ```
 
-> **Security:** By default the wallet server has **no authentication**: anyone who can reach its port controls the wallet and its credentials. Run it on localhost or an isolated test network, and never put real credentials in it. Localhost alone does not keep a web page out (every page you visit can reach it), so the `/api/` endpoints refuse requests carrying an `Origin` from another site. Internet-facing hosting has its own profile, `--demo`, which disables the process and filesystem endpoints and blocks fetches into private networks. That is what runs on [eudi-test.dev](https://eudi-test.dev). See [public demo hosting](docs/public-demo.md).
+> **Security:** By default the wallet server has **no authentication**: anyone who can reach its port controls the wallet and its credentials. Run it on localhost or an isolated test network, and never put real credentials in it. Localhost alone does not keep a web page out (every page you visit can reach it), so the `/api/` endpoints refuse requests carrying an `Origin` from another site. The one exception is `/api/dc-api`, which a verifier's page calls from its own origin by design, and which is protected by that origin check and the consent dialog instead. Internet-facing hosting has its own profile, `--demo`, which disables the process and filesystem endpoints and blocks fetches into private networks. That is what runs on [eudi-test.dev](https://eudi-test.dev). See [public demo hosting](docs/public-demo.md).
 
 `wallet serve` starts the local wallet UI plus HTTP and HTTPS wallet endpoints for presentation, issuer metadata, trust lists, status lists, and test registrar responses. `issue ... --wallet --template german-pid-sdjwt` gives you a ready-to-use PID wallet and adds new credentials into the same wallet context (`wallet generate-pid` still works but is deprecated), and `wallet ca-cert` / `wallet tls-cert` export the trust root or exact HTTPS leaf certificate when a verifier needs them. All of these wallet operations are also available on the server's unauthenticated [HTTP API](docs/wallet.md#http-api). This lets automated tests manage and drive a hosted or containerized wallet entirely over HTTP.
 
@@ -142,6 +142,9 @@ For day-to-day use, the main commands are:
 - `wallet logs` to inspect wallet-side OID4VP/OID4VCI interactions
 - `wallet ca-cert` and `wallet tls-cert` to export certificate material
 - `wallet --mode debug|strict` and `--preferred-format ...` to control runtime behavior
+- `wallet serve --haip` to hold verifiers and issuers to HAIP 1.0
+
+`--mode` and `--haip` are separate switches. `--mode strict` versus `--mode debug` decides whether a specification finding stops the flow or is only reported, and both modes report their findings. `--haip` decides whether the counterparty is held to the HAIP 1.0 profile, and a violation of it is an error in either mode, because asking for HAIP asserts that the counterparty follows it. See [HAIP 1.0 enforcement](docs/wallet.md#haip-10-enforcement).
 
 When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you the available IDs and routes. Use the entry's relative `path` when you access the wallet through Docker port mappings or similar local indirection. The web UI lists the same trust-list URLs with copy buttons above the certificate downloads.
 
@@ -280,7 +283,7 @@ The wallet evaluates `credential_sets` constraints when processing DCQL queries,
 
 ## Spec Compliance
 
-See [docs/spec-compliance.md](docs/spec-compliance.md) for detailed compliance status against OID4VP 1.0, OID4VCI 1.0, the currently implemented HAIP subset, SD-JWT, mDoc (ISO 18013-5), ETSI trust lists, and Token Status List.
+See [docs/spec-compliance.md](docs/spec-compliance.md) for detailed compliance status against OID4VP 1.0, OID4VCI 1.0, the currently implemented HAIP 1.0 subset, SD-JWT (RFC 9901) and SD-JWT VC, mDoc (ISO 18013-5), ETSI trust lists, and Token Status List.
 For a system-level view of the implemented issuer and verifier interactions, see [docs/diagrams/README.md](docs/diagrams/README.md).
 
 ## Global Flags

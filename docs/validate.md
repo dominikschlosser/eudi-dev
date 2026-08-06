@@ -7,7 +7,7 @@ Signature keys are resolved in this order:
 1. The credential's x5c (SD-JWT/JWT) or x5chain (mDOC) certificate chain, validated against `--trust-list` when given
 2. An explicitly provided `--key`
 3. The embedded leaf certificate alone, when no trust list is given. This works fully offline and the output notes that the chain was not validated (the signature is intact, trust is not established)
-4. Issuer metadata from `https://<iss>/.well-known/jwt-vc-issuer`, for credentials without an embedded certificate
+4. JWT VC Issuer Metadata, for credentials without an embedded certificate. SD-JWT VC §3 puts `/.well-known/jwt-vc-issuer` between the host and the path of `iss`, so `https://example.com/tenant/1234` is read from `https://example.com/.well-known/jwt-vc-issuer/tenant/1234`. The document's `issuer` must be identical to `iss`, and the keys come from `jwks` or `jwks_uri` (never both)
 
 So a credential that carries its certificate chain validates without any network access, even when its issuer is not reachable. Credentials without keys or certificates fall back to expiry and status checks only.
 
@@ -29,6 +29,14 @@ eudi validate credential.txt
 | `--trust-list`    | ETSI trust list JWT (file path or URL), optional   |
 | `--status-list`   | Check revocation via status list when the credential contains a status reference (enabled by default) |
 | `--allow-expired` | Don't fail on expired credentials                  |
+
+## Revocation status
+
+When a credential carries a status reference, `validate` fetches the Status List Token and reads the entry. It asks for `application/statuslist+jwt` and `application/statuslist+cwt` and parses whichever comes back, so a CWT list resolves as well as a JWT one.
+
+The token's signature is always verified, and a check that cannot be completed is an error rather than a result. Trust in the signing key comes from `--trust-list` when the token's chain is anchored there, and otherwise from the token itself (`x5c` / `x5chain`, or a `jwk` in its header), in which case the result says the key is not trust anchored. The token's `sub` must equal the `uri` in the credential's status claim, and `typ`, `iat` and `exp` are checked too, because a list that answers for a different credential or one captured before a revocation supports no statement about the credential in front of you.
+
+The status is reported by name (VALID, INVALID, SUSPENDED, an application specific value, or unknown) with the raw value alongside it, so a two-bit or wider list is not flattened into revoked and not revoked.
 
 ## Certificate chain validation
 

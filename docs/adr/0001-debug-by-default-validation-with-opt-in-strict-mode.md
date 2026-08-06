@@ -4,6 +4,10 @@ A wallet that rejects a malformed request tells you only that it was malformed, 
 
 The split runs through the whole request path rather than sitting at the edge, because the point is to reach the later step, not to report earlier. `validatePresentationRequestCore` collects findings and only fails on them when the mode says so, and DCQL matching, JAR signature verification and `wallet_nonce` checking each behave differently per mode (see `docs/spec-compliance.md`, which states the two behaviours feature by feature).
 
+Both modes run the checks and keep what they find. A mode that ran them and threw the results away would make the debug default useless for the one job it has, since the run meant for watching what a counterparty gets wrong is the run where naming it matters most.
+
+`--haip` sits outside this split. It is not a third mode: it decides whether the counterparty is held to HAIP 1.0, and every check in that profile is a MUST, so a violation is an error whatever the validation mode says. A wallet asked for HAIP that only warned about a HAIP violation would be asserting a profile it did not enforce, which is what the flag exists to rule out.
+
 ## Consequences
 
 The default configuration is deliberately not a conformant wallet. It will present credentials against a request whose JAR signature did not verify, and it says so in the activity log rather than refusing. Conformance runs and anything checking spec behaviour must pass `--mode strict`. Reversing the default would change the observable behaviour of every existing flow, which is why this is written down rather than treated as a flag.

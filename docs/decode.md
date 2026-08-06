@@ -96,4 +96,6 @@ SD-JWT Credential
 
 `decode` is primarily an inspection tool, but it can automatically verify JWT or SD-JWT signatures when issuer metadata can be resolved from `iss` and `kid`. Use `validate` when you need explicit trust inputs such as `--key`, `--trust-list`, or status-list checking.
 
+An SD-JWT that breaks a rule RFC 9901 §7.1 says a verifier must reject on (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is still printed, with the rule that makes it invalid named above the output. That is the question a decoder is asked: the credential is already suspected of being wrong and the point is to see it. Anything that decides trust, including the wallet's import path, refuses such a credential instead.
+
 Use `-v` for x5c chains, digest IDs, and device key info. Use `--json` for machine-readable output.

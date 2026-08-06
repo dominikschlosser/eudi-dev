@@ -105,7 +105,7 @@ When no `--claims` are provided, a minimal set of PID-like claims is used (given
 
 With `--template`, the template supplies the claim set and any type, namespace, and expiry defaults for flags that were not set explicitly. `--claims` then overrides individual top level claims and `--omit` removes claims from the merged result. See [templates](templates.md) for the template file format and the `templates` management commands.
 
-By default every SD-JWT claim is selectively disclosable. `--always-disclosed` (or the template's `always_disclosed` list) embeds the named claims plainly in the signed payload instead, so they are always visible and cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). This is rejected for mdoc (every mdoc element is selectively disclosable by design) and ignored for jwt (all claims are plain there anyway).
+By default every SD-JWT claim is selectively disclosable, apart from the registered claims SD-JWT VC §2.2.2.3 says cannot be (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status`, plus `iat`, which the generator writes itself). Those are always embedded plainly. `_sd`, `_sd_alg` and `...` are reserved by RFC 9901 and rejected as claim names. `--always-disclosed` (or the template's `always_disclosed` list) embeds further named claims plainly in the signed payload, so they are always visible and cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). This is rejected for mdoc (every mdoc element is selectively disclosable by design) and ignored for jwt (all claims are plain there anyway).
 
 ## Wallet Registration Metadata
 
