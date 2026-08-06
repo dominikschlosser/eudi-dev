@@ -31,13 +31,33 @@ import (
 // BuildWalletMetadata builds the wallet_metadata JSON object per OID4VP 1.0 §10.
 func BuildWalletMetadata(w *Wallet) map[string]any {
 	meta := map[string]any{
+		// Appendix B names the members of each format profile. For dc+sd-jwt
+		// they are sd-jwt_alg_values and kb-jwt_alg_values, and for mso_mdoc
+		// they are issuerauth_alg_values and deviceauth_alg_values, whose
+		// values are COSE algorithm identifiers rather than the JOSE names
+		// used for JWTs (-7 is ECDSA with SHA-256).
 		"vp_formats_supported": map[string]any{
 			"dc+sd-jwt": map[string]any{
-				"alg_values_supported": []string{"ES256"},
+				"sd-jwt_alg_values": []string{"ES256"},
+				"kb-jwt_alg_values": []string{"ES256"},
 			},
 			"mso_mdoc": map[string]any{
-				"alg_values_supported": []int{-7},
+				"issuerauth_alg_values": []int{-7},
+				"deviceauth_alg_values": []int{-7},
 			},
+		},
+		// §10.1: "A non-empty array of strings containing the values of the
+		// Client Identifier Prefixes that the Wallet supports ... If omitted,
+		// the default value is pre-registered." A Verifier reads this to
+		// choose a prefix (§5.9.1), so a wallet that says nothing is taken to
+		// support only pre-registered clients and cannot be sent x509_hash.
+		"client_id_prefixes_supported": []string{
+			"pre-registered",
+			"redirect_uri",
+			"verifier_attestation",
+			"decentralized_identifier",
+			"x509_san_dns",
+			"x509_hash",
 		},
 		"request_object_signing_alg_values_supported": []string{"ES256"},
 	}

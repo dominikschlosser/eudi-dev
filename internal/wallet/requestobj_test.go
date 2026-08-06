@@ -44,11 +44,13 @@ func TestBuildWalletMetadata_Basic(t *testing.T) {
 		t.Error("should not include jwks without RequireEncryptedRequest")
 	}
 
+	// Appendix B names issuerauth_alg_values for mso_mdoc, and its values are
+	// COSE algorithm identifiers (-7 is ECDSA with SHA-256).
 	vpFormats := meta["vp_formats_supported"].(map[string]any)
 	mdoc := vpFormats["mso_mdoc"].(map[string]any)
-	algValues := mdoc["alg_values_supported"].([]int)
+	algValues := mdoc["issuerauth_alg_values"].([]int)
 	if len(algValues) != 1 || algValues[0] != -7 {
-		t.Fatalf("expected mso_mdoc alg_values_supported [-7], got %v", algValues)
+		t.Fatalf("expected mso_mdoc issuerauth_alg_values [-7], got %v", algValues)
 	}
 }
 
@@ -519,4 +521,66 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// OID4VP 1.0 §10.1: "client_id_prefixes_supported ... If omitted, the default
+// value is pre-registered." A Verifier reads this to choose a prefix (§5.9.1),
+// so a wallet that stays silent is understood to accept pre-registered clients
+// only and will never be sent an x509_hash request.
+func TestWalletMetadataAdvertisesTheClientIDPrefixesItAccepts(t *testing.T) {
+	meta := BuildWalletMetadata(generateTestWallet(t))
+
+	prefixes, _ := meta["client_id_prefixes_supported"].([]string)
+	if len(prefixes) == 0 {
+		t.Fatalf("wallet metadata advertises no client_id_prefixes_supported: %v", meta)
+	}
+	listed := map[string]bool{}
+	for _, p := range prefixes {
+		listed[p] = true
+	}
+	for _, want := range []string{"x509_hash", "pre-registered"} {
+		if !listed[want] {
+			t.Errorf("%s is not advertised: %v", want, prefixes)
+		}
+	}
+	// The reserved prefix of §5.9.3 is one the wallet "MUST NOT accept ... in
+	// requests", so advertising it would invite exactly that.
+	if listed["origin"] {
+		t.Error("the reserved origin prefix is advertised as supported")
+	}
+}
+
+// Appendix B names the members of each format profile. The generic
+// alg_values_supported is not one of them, so a Verifier reading it learns
+// nothing about what this wallet can verify.
+func TestWalletMetadataNamesTheFormatProfileMembers(t *testing.T) {
+	meta := BuildWalletMetadata(generateTestWallet(t))
+
+	formats, _ := meta["vp_formats_supported"].(map[string]any)
+	sdjwt, _ := formats["dc+sd-jwt"].(map[string]any)
+	if sdjwt == nil {
+		t.Fatalf("no dc+sd-jwt profile: %v", formats)
+	}
+	if _, present := sdjwt["sd-jwt_alg_values"]; !present {
+		t.Errorf("dc+sd-jwt does not name sd-jwt_alg_values: %v", sdjwt)
+	}
+	if _, present := sdjwt["kb-jwt_alg_values"]; !present {
+		t.Errorf("dc+sd-jwt does not name kb-jwt_alg_values: %v", sdjwt)
+	}
+
+	mdoc, _ := formats["mso_mdoc"].(map[string]any)
+	if mdoc == nil {
+		t.Fatalf("no mso_mdoc profile: %v", formats)
+	}
+	if _, present := mdoc["issuerauth_alg_values"]; !present {
+		t.Errorf("mso_mdoc does not name issuerauth_alg_values: %v", mdoc)
+	}
+	if _, present := mdoc["deviceauth_alg_values"]; !present {
+		t.Errorf("mso_mdoc does not name deviceauth_alg_values: %v", mdoc)
+	}
+	for _, profile := range []map[string]any{sdjwt, mdoc} {
+		if _, present := profile["alg_values_supported"]; present {
+			t.Errorf("a format profile still carries alg_values_supported, which Appendix B does not define: %v", profile)
+		}
+	}
 }
