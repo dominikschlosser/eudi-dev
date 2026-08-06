@@ -647,12 +647,13 @@ func claimValueAtPath(value any, path []any) (any, bool) {
 		if !ok {
 			return nil, false
 		}
-		if len(path) == 1 {
+		if len(path) < 2 {
 			return arr, true
 		}
+		rest := path[1:]
 		var out []any
 		for _, item := range arr {
-			if v, ok := claimValueAtPath(item, path[1:]); ok {
+			if v, ok := claimValueAtPath(item, rest); ok {
 				out = append(out, v)
 			}
 		}
