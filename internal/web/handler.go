@@ -73,6 +73,10 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 			"version": opts.Version,
 			"imprint": len(opts.ImprintHTML) > 0,
 			"demo":    opts.Demo,
+			// Whether this decoder is mounted on a wallet, which is what
+			// makes a link back to it worth showing. A standalone decoder
+			// has nothing to link to.
+			"wallet": opts.CredentialByID != nil,
 		})
 	})
 	mux.HandleFunc("GET /imprint", func(w http.ResponseWriter, r *http.Request) {

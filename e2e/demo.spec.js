@@ -550,7 +550,19 @@ test.describe("Demo mode hardening", () => {
     // The activity log is shared history and the server refuses to clear it,
     // so offering the button would only produce a 403.
     await expect(page.locator("#clear-log-btn")).toBeHidden();
+    // The wallet links to the decoder it mounts.
+    await expect(page.locator("#decoder-link")).toBeVisible();
     // The shared-instance warning has to be there.
     await expect(page.locator("#demo-banner")).toBeVisible();
+  });
+
+  test("the decoder links back to the wallet it is mounted on", async ({ page }) => {
+    await page.goto(BASE + "/decoder/");
+    const walletLink = page.locator("#wallet-link");
+    await expect(walletLink).toBeVisible();
+    // Named for what it is: a shared instance is the demo wallet.
+    await expect(walletLink).toHaveText("Demo wallet");
+    await walletLink.click();
+    await expect(page.locator("#decoder-link")).toBeVisible();
   });
 });

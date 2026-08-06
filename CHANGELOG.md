@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.15] - 2026-08-06
 
+### Added
+
+- **The wallet and the decoder link to each other.** Both are served by `wallet serve` and there was no way between them but the address bar. The wallet header carries a Decoder link, and the decoder header links back, reading "Demo wallet" on a shared instance and "Wallet" on somebody's own. A decoder running on its own through `eudi serve` has no wallet behind it and shows no link
+
 ### Removed
 
 - **Bearer secrets are no longer redacted from a demo instance's activity log.** 1.19.14 replaced `access_token` and friends with `[redacted]` there. It covered a fixed list of field names and one level of nesting, so a token carried inside a logged response body went straight through, which a demo issuance still demonstrates. A redaction that misses cases is worse than none: it suggests the log is safe to read when it is not. A public demo is public, its credentials are disposable, and it was never meant to be pointed at a production issuer. The log records what went over the wire again, everywhere

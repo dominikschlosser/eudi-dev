@@ -1383,6 +1383,13 @@
         link.href = basePath + "imprint";
         link.hidden = false;
       }
+      if (meta.wallet) {
+        const walletLink = document.getElementById("wallet-link");
+        // "Demo wallet" only where it is one. A decoder mounted on somebody's
+        // local wallet should not call it a demo.
+        walletLink.textContent = meta.demo ? "Demo wallet" : "Wallet";
+        walletLink.hidden = false;
+      }
       if (meta.demo) {
         document.getElementById("demo-note").hidden = false;
       }
