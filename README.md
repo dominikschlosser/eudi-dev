@@ -22,6 +22,24 @@ An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, is
 - **Offline Decode & Validate**: SD-JWT, JWT VC, mDOC, JWT with signature verification and trust list support
 - **DCQL Generation**: generate Digital Credentials Query Language queries from existing credentials
 
+## Compared to other EUDI tooling
+
+Most EUDI test tooling is an issuer or a verifier that you point a wallet at. This is the wallet, so the thing under test is your issuer or your verifier.
+
+| Tool | What it tests | Runs locally | Scriptable |
+|---|---|---|---|
+| **eudi-dev** | your issuer or verifier | yes | CLI and HTTP API |
+| [Animo OpenID4VC Playground](https://playground.animo.id/) | your wallet | self-hostable | no, web UI |
+| [EUDI reference issuer and verifier](https://docs.eudi.dev/latest/test/issuer/) | your wallet | issuer only | no, web UI |
+| [EUDI Web Wallet Tester](https://github.com/eu-digital-identity-wallet/eudi-app-web-wallet-tester-py) | your issuer, OID4VCI only | yes | no, web UI |
+| [EUDI reference wallet](https://github.com/eu-digital-identity-wallet/eudi-app-android-wallet-ui) (Android, iOS) | your issuer or verifier | on a device | no |
+| [Procivis One](https://github.com/procivis/one-wallet) trial apps | your issuer or wallet | on a device | no |
+| [OIDF conformance suite](https://openid.net/certification/conformance-testing-for-openid-for-verifiable-presentations/) | your wallet or verifier, for certification | yes, Docker | yes |
+| [Paradym debuggers](https://paradym.id/articles/developer-tool-sdjwtvc-debugger) | one credential, decoded | no | no |
+| SDKs: [walt.id](https://docs.walt.id/), [Sphereon](https://github.com/Sphereon-Opensource/OID4VC), [Credo](https://github.com/openwallet-foundation/credo-ts), [Procivis One](https://github.com/procivis/one-core) | whatever you build | yes | as you write it |
+
+Reach for something else when you need certification (the OIDF suite is the authority, a passing run here is not one, though this repository runs its plans: see [conformance](docs/conformance.md)), when the wallet is what you are testing (point it at the Animo or EUDI services), when you are shipping a product (use an SDK, everything here is under `internal/`), or when you just want to read one credential (a hosted decoder needs no install). Never with real credentials: see [SECURITY.md](SECURITY.md).
+
 ## Install
 
 ### Homebrew (macOS and Linux)
