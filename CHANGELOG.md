@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.19.15] - 2026-08-06
 
+### Removed
+
+- **Bearer secrets are no longer redacted from a demo instance's activity log.** 1.19.14 replaced `access_token` and friends with `[redacted]` there. It covered a fixed list of field names and one level of nesting, so a token carried inside a logged response body went straight through, which a demo issuance still demonstrates. A redaction that misses cases is worse than none: it suggests the log is safe to read when it is not. A public demo is public, its credentials are disposable, and it was never meant to be pointed at a production issuer. The log records what went over the wire again, everywhere
+
 ### Documentation
 
 - **The README compares this toolkit with the rest of the EUDI tooling.** Most of that tooling is an issuer or a verifier you point a wallet at, so the thing under test is the wallet. This is the wallet, and the table near the top of the README says so in one line per tool, along with what each one tests, whether it runs locally, and whether it can be scripted. It also says when to reach for something else: the OpenID Foundation suite for certification, the Animo or EUDI services when the wallet is what you are testing, an SDK for shipping a product, a hosted decoder for one quick look

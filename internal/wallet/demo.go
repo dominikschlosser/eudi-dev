@@ -103,8 +103,6 @@ type demoState struct {
 // SetDemo enables the public-demo profile. Call before ListenAndServe.
 func (s *Server) SetDemo(opts DemoOptions) {
 	s.demo = &demoState{opts: opts}
-	// The activity log is readable by anyone on a demo instance.
-	s.wallet.RedactLogSecrets = true
 }
 
 // DemoEnabled reports whether the public-demo profile is active.

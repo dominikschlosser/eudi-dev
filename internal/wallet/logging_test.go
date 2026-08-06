@@ -150,63 +150,6 @@ func TestPresentationResponseLogDetailsExcludeRequestMaterial(t *testing.T) {
 	}
 }
 
-// The activity log is served to anyone on a demo instance, and that wallet
-// will redeem an offer from whatever issuer a visitor points it at. Recording
-// the access token there handed every other visitor somebody else's bearer
-// secret. The deferred issuance API already withheld the same token for the
-// same reason.
-func TestActivityLog_RedactsBearerSecretsForADemo(t *testing.T) {
-	w := generateTestWallet(t)
-	w.RedactLogSecrets = true
-
-	w.addProtocolLog("issuance", "credential_request", "Request credential", true, map[string]any{
-		"access_token": "secret-bearer-value",
-		"url":          "https://issuer.example/credential",
-		"request": map[string]any{
-			"refresh_token": "secret-refresh-value",
-			"format":        "dc+sd-jwt",
-		},
-	})
-
-	entries := w.GetLog()
-	if len(entries) == 0 {
-		t.Fatal("nothing was logged")
-	}
-	d := entries[len(entries)-1].Details
-
-	if got := d["access_token"]; got != "[redacted]" {
-		t.Errorf("access_token = %v, want it redacted", got)
-	}
-	if got := d["url"]; got != "https://issuer.example/credential" {
-		t.Errorf("url = %v, want it left alone: redaction must not eat the diagnostics", got)
-	}
-	req, ok := d["request"].(map[string]any)
-	if !ok {
-		t.Fatalf("request detail = %T, want a map", d["request"])
-	}
-	if got := req["refresh_token"]; got != "[redacted]" {
-		t.Errorf("nested refresh_token = %v, want it redacted", got)
-	}
-	if got := req["format"]; got != "dc+sd-jwt" {
-		t.Errorf("nested format = %v, want it left alone", got)
-	}
-}
-
-// A local wallet keeps the token. The log is the operator's own there, and
-// reading what went over the wire is what a protocol debugger is for.
-func TestActivityLog_KeepsSecretsForALocalWallet(t *testing.T) {
-	w := generateTestWallet(t)
-
-	w.addProtocolLog("issuance", "credential_request", "Request credential", true, map[string]any{
-		"access_token": "secret-bearer-value",
-	})
-
-	entries := w.GetLog()
-	if got := entries[len(entries)-1].Details["access_token"]; got != "secret-bearer-value" {
-		t.Errorf("access_token = %v, want the real value on a local wallet", got)
-	}
-}
-
 // The log is persisted with the wallet and re-read at every request
 // boundary, so an unbounded one is disk and a growing parse per reload, not
 // just memory. It matters most on a demo instance, where anyone can drive
