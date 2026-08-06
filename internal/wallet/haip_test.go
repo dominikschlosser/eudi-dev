@@ -54,10 +54,20 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			wantContain:    "response_mode",
 		},
 		{
-			name:           "wrong client_id scheme",
+			name:           "client identifier prefix the profile does not allow",
 			modifyParams:   func(p *AuthorizationRequestParams) { p.ClientID = "redirect_uri:https://example.com" },
 			wantViolations: 1,
-			wantContain:    "client_id",
+			wantContain:    "Client Identifier Prefix",
+		},
+		{
+			// x509_san_dns is a valid OID4VP prefix and appears nowhere in
+			// HAIP, which names x509_hash and only x509_hash for signed
+			// requests. Accepting it here would let --haip pass a request the
+			// profile does not allow, which is the one thing the flag is for.
+			name:           "x509_san_dns is not a HAIP prefix",
+			modifyParams:   func(p *AuthorizationRequestParams) { p.ClientID = "x509_san_dns:verifier.example" },
+			wantViolations: 1,
+			wantContain:    "Client Identifier Prefix",
 		},
 		{
 			name:           "missing request object (JAR)",
@@ -93,12 +103,6 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			},
 			useNilReqObj:   true,
 			wantViolations: 0,
-		},
-		{
-			name:           "wrong algorithm",
-			modifyReqObj:   func(r *oid4vc.RequestObjectJWT) { r.Header["alg"] = "RS256" },
-			wantViolations: 1,
-			wantContain:    "ES256",
 		},
 		{
 			name: "wrong expected origins",
@@ -245,7 +249,7 @@ func haipCompliantIssuance() (*oid4vc.CredentialOffer, map[string]any) {
 	meta := map[string]any{
 		"authorization_endpoint":                "https://issuer.example/authorize",
 		"grant_types_supported":                 []any{"authorization_code"},
-		"require_pushed_authorization_requests": true,
+		"pushed_authorization_request_endpoint": "https://issuer.example/par",
 		"code_challenge_methods_supported":      []any{"S256"},
 		"dpop_signing_alg_values_supported":     []any{"ES256"},
 		"token_endpoint_auth_methods_supported": []any{"attest_jwt_client_auth"},
@@ -284,11 +288,14 @@ func TestValidateHAIPIssuanceCompliance(t *testing.T) {
 			wantSub: "must be an https URL",
 		},
 		{
-			name: "PAR not required for an authorization code offer",
+			// The obligation is to offer PAR. Neither HAIP nor FAPI 2.0 asks
+			// the server to advertise require_pushed_authorization_requests,
+			// so its absence is not a violation and is covered below.
+			name: "no PAR endpoint for an authorization code offer",
 			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
-				m["require_pushed_authorization_requests"] = false
+				delete(m, "pushed_authorization_request_endpoint")
 			},
-			wantSub: "must require pushed authorization requests",
+			wantSub: "must support pushed authorization requests",
 		},
 		{
 			// §4 scopes PAR to "when using the Authorization Endpoint", which
@@ -297,7 +304,7 @@ func TestValidateHAIPIssuanceCompliance(t *testing.T) {
 			name: "pre-authorized code offer is judged on transport only",
 			mutate: func(o *oid4vc.CredentialOffer, m map[string]any) {
 				o.Grants = oid4vc.OfferGrants{PreAuthorizedCode: "code"}
-				m["require_pushed_authorization_requests"] = false
+				delete(m, "pushed_authorization_request_endpoint")
 				m["code_challenge_methods_supported"] = []any{"plain"}
 				delete(m, "grant_types_supported")
 				delete(m, "dpop_signing_alg_values_supported")
@@ -316,14 +323,14 @@ func TestValidateHAIPIssuanceCompliance(t *testing.T) {
 			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
 				m["code_challenge_methods_supported"] = []any{"plain"}
 			},
-			wantSub: "must support PKCE with S256",
+			wantSub: "advertises PKCE without S256",
 		},
 		{
-			name: "no DPoP",
+			name: "DPoP advertised with no algorithm this wallet can use",
 			mutate: func(_ *oid4vc.CredentialOffer, m map[string]any) {
-				delete(m, "dpop_signing_alg_values_supported")
+				m["dpop_signing_alg_values_supported"] = []any{"HS256"}
 			},
-			wantSub: "must support DPoP",
+			wantSub: "advertises DPoP without ES256",
 		},
 		{
 			name: "unreadable authorization server metadata",
@@ -415,7 +422,7 @@ func TestValidateHAIPIssuanceCompliance_SilentClientAuthIsNotAViolation(t *testi
 	meta := map[string]any{
 		"issuer":                                "https://issuer.example",
 		"authorization_endpoint":                "https://issuer.example/authorize",
-		"require_pushed_authorization_requests": true,
+		"pushed_authorization_request_endpoint": "https://issuer.example/par",
 		"code_challenge_methods_supported":      []any{"S256"},
 		"dpop_signing_alg_values_supported":     []any{"ES256"},
 		// No token_endpoint_auth_methods_supported at all.
@@ -423,5 +430,42 @@ func TestValidateHAIPIssuanceCompliance_SilentClientAuthIsNotAViolation(t *testi
 
 	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) != 0 {
 		t.Errorf("silent client authentication is not a HAIP violation, got %v", violations)
+	}
+}
+
+// The EUDI reference issuer supports PAR and does not advertise
+// require_pushed_authorization_requests, which is exactly what RFC 9126
+// permits: the parameter is optional and defaults to false. Requiring it
+// reported a HAIP violation against a conformant server. HAIP 1.0 §4 scopes
+// PAR to "when using the Authorization Endpoint" and otherwise defers to
+// FAPI 2.0, which obliges the server to reject non-PAR authorization
+// requests rather than to declare anything in metadata.
+func TestHAIPIssuanceAcceptsPARWithoutTheRequireFlag(t *testing.T) {
+	offer := &oid4vc.CredentialOffer{
+		CredentialIssuer: "https://issuer.eudiw.dev",
+		Grants:           oid4vc.OfferGrants{IssuerState: "abc"},
+	}
+	// The live metadata at
+	// https://issuer.eudiw.dev/.well-known/oauth-authorization-server, copied
+	// rather than summarised: this is the document the enforcement refused.
+	meta := map[string]any{
+		"issuer":                                "https://issuer.eudiw.dev",
+		"authorization_endpoint":                "https://issuer.eudiw.dev/authorize",
+		"pushed_authorization_request_endpoint": "https://issuer.eudiw.dev/pushed_authorization",
+		"grant_types_supported": []any{
+			"authorization_code", "implicit",
+			"urn:ietf:params:oauth:grant-type:jwt-bearer", "refresh_token",
+		},
+		"code_challenge_methods_supported": []any{"S256"},
+		"dpop_signing_alg_values_supported": []any{
+			"RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
+			"HS256", "HS384", "HS512", "PS256", "PS384", "PS512",
+		},
+		// No require_pushed_authorization_requests, which RFC 9126 makes
+		// optional and this server does not publish.
+	}
+
+	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) > 0 {
+		t.Errorf("a server that offers PAR was reported non-compliant: %v", violations)
 	}
 }

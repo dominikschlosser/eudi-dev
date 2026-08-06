@@ -50,11 +50,16 @@ type AuthorizationRequest struct {
 	ResponseURI      string
 	Scope            string
 	RequestURIMethod string // "get" (default) or "post" per OID4VP 1.0 §5.10
-	ClientMetadata   map[string]any
-	DCQLQuery        map[string]any
-	RequestObject    *RequestObjectJWT
-	FullParams       map[string]string
-	FullJSON         map[string]any
+	// RequestURI is the request_uri the request object was fetched from, empty
+	// when the request carried its parameters directly or passed the object
+	// inline. HAIP 1.0 §5.1 requires the object to be delivered this way, so
+	// the difference has to survive parsing.
+	RequestURI     string
+	ClientMetadata map[string]any
+	DCQLQuery      map[string]any
+	RequestObject  *RequestObjectJWT
+	FullParams     map[string]string
+	FullJSON       map[string]any
 }
 
 // RequestObjectJWT holds the decoded header and payload of a JWT request object.

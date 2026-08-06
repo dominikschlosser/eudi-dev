@@ -179,6 +179,7 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 
 	// Resolve request_uri (fetch and parse JWT)
 	if requestURI := q.Get("request_uri"); requestURI != "" {
+		req.RequestURI = requestURI
 		method := req.RequestURIMethod
 		if method == "" {
 			method = "get"

@@ -52,12 +52,27 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 			"HAIP: response_mode MUST be 'direct_post.jwt' or 'dc_api.jwt', got %q", params.ResponseMode))
 	}
 
-	// Current HAIP wallet profiles use x509-bound or web-origin client identifiers.
-	if !strings.HasPrefix(params.ClientID, "x509_hash:") &&
-		!strings.HasPrefix(params.ClientID, "x509_san_dns:") &&
-		!strings.HasPrefix(params.ClientID, "web-origin:") {
+	// §5.1: "For signed requests, the Verifier MUST use, and the Wallet MUST
+	// accept the Client Identifier Prefix x509_hash". That is the only prefix
+	// the profile names. x509_san_dns appears nowhere in it, so accepting one
+	// would pass a request the profile does not allow.
+	//
+	// Unsigned requests are the exception, and only over the Digital
+	// Credentials API: §5.2 requires a wallet to support "unsigned, signed,
+	// and multi-signed requests", noting that unsigned ones "depend on the
+	// origin information provided by the platform". It leaves the mechanics to
+	// Appendix A of OID4VP, which identifies that caller by the web origin.
+	// So the prefix is not named in the profile, it is inherited from what the
+	// profile points at.
+	unsignedBrowserRequest := reqObj == nil && params.ResponseMode == "dc_api.jwt"
+	if unsignedBrowserRequest {
+		if !strings.HasPrefix(params.ClientID, "web-origin:") {
+			violations = append(violations, fmt.Sprintf(
+				"HAIP: an unsigned Digital Credentials API request must be identified by 'web-origin:', got %q", params.ClientID))
+		}
+	} else if !strings.HasPrefix(params.ClientID, "x509_hash:") {
 		violations = append(violations, fmt.Sprintf(
-			"HAIP: client_id MUST use 'x509_hash:', 'x509_san_dns:', or 'web-origin:' scheme, got %q", params.ClientID))
+			"HAIP: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
 	}
 
 	// Browser API web-origin requests may be unsigned. Other HAIP requests require JAR.
@@ -65,13 +80,29 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 	if requiresJAR && (reqObj == nil || reqObj.Header == nil) {
 		violations = append(violations, "HAIP: signed Request Object (JAR) MUST be used")
 	}
+	// §5.1 does not stop at requiring JAR: "Signed Authorization Requests MUST
+	// be used by utilizing JWT-Secured Authorization Request (JAR) [RFC9101]
+	// with the request_uri parameter". A request object handed over inline
+	// satisfies the first half and not the second, so the delivery is checked
+	// as well as the signature. Requests over the Digital Credentials API do
+	// not go through a request_uri at all and are left out.
+	if requiresJAR && reqObj != nil && params.ResponseMode != "dc_api.jwt" && params.RequestURI == "" {
+		violations = append(violations, "HAIP: the signed Request Object MUST be delivered through the request_uri parameter")
+	}
 
 	// §5.2.4: DCQL query MUST be used
 	if params.DCQLQuery == nil {
 		violations = append(violations, "HAIP: DCQL query MUST be used (not presentation_definition)")
 	}
 
-	// §7: ES256 MUST be supported. Request object alg MUST be ES256
+	// §7 puts ES256 as the floor a wallet must be able to validate a signed
+	// presentation request with, and this wallet advertises exactly that in
+	// its wallet_metadata: request_object_signing_alg_values_supported is
+	// ["ES256"]. A verifier signing with anything else has therefore ignored
+	// what the wallet told it, and its request would not be verifiable by a
+	// wallet that implements the profile and nothing more. The profile lets
+	// an ecosystem mandate further suites, so this is enforcement of the
+	// baseline rather than a claim that no other algorithm exists.
 	if reqObj != nil && reqObj.Header != nil {
 		alg := jsonutil.GetString(reqObj.Header, "alg")
 		if alg != "" && alg != "ES256" {
@@ -131,7 +162,7 @@ func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool 
 //
 //   - always: the credential issuer MUST be an https origin
 //   - authorization code offers: the authorization server MUST support the
-//     flow, require pushed authorization requests, support PKCE with S256,
+//     flow, offer pushed authorization requests, support PKCE with S256,
 //     and support DPoP
 //
 // A pre-authorized code offer never reaches the authorization endpoint, so
@@ -157,14 +188,37 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	if !supportsAuthorizationCodeFlow(oauthMeta) {
 		violations = append(violations, "HAIP: the authorization server must support the authorization code flow")
 	}
-	if required, _ := oauthMeta["require_pushed_authorization_requests"].(bool); !required {
-		violations = append(violations, "HAIP: the authorization server must require pushed authorization requests")
+	// What is checkable is that the server offers PAR at all. Neither profile
+	// asks it to advertise require_pushed_authorization_requests: HAIP 1.0 §4
+	// scopes PAR to "when using the Authorization Endpoint" and defers to
+	// FAPI 2.0, which puts the obligation on behaviour ("shall reject
+	// authorization requests sent without RFC 9126") rather than on metadata.
+	// The flag is optional in RFC 9126 and absent from conformant servers,
+	// the EUDI reference issuer among them, so requiring it reported a
+	// violation that no specification supports. The behavioural half is not
+	// observable from metadata and does not need to be: this wallet sends the
+	// authorization request through PAR or not at all.
+	if _, ok := oauthMeta["pushed_authorization_request_endpoint"].(string); !ok {
+		violations = append(violations, "HAIP: the authorization server must support pushed authorization requests")
 	}
-	if !metadataListContains(oauthMeta, "code_challenge_methods_supported", "S256") {
-		violations = append(violations, "HAIP: the authorization server must support PKCE with S256")
+	// PKCE and DPoP are behavioural requirements, and neither profile obliges
+	// a server to advertise them: code_challenge_methods_supported is
+	// optional in RFC 8414 and dpop_signing_alg_values_supported in RFC 9449.
+	// So absence is judged the same way absent client authentication already
+	// is below, as no evidence either way, while a list that is present and
+	// says the server cannot do what the profile requires is a violation the
+	// wallet can stand behind.
+	if _, declared := oauthMeta["code_challenge_methods_supported"]; declared &&
+		!metadataListContains(oauthMeta, "code_challenge_methods_supported", "S256") {
+		violations = append(violations, "HAIP: the authorization server advertises PKCE without S256")
 	}
-	if !supportsDPoP(oauthMeta) {
-		violations = append(violations, "HAIP: the authorization server must support DPoP")
+	// ES256 specifically: this wallet signs DPoP proofs with its holder key,
+	// and §7 requires every party to support that algorithm at a minimum, so
+	// a server that lists DPoP algorithms without it contradicts the profile
+	// and could not accept a proof from any conformant wallet either.
+	if _, declared := oauthMeta["dpop_signing_alg_values_supported"]; declared &&
+		!metadataListContains(oauthMeta, "dpop_signing_alg_values_supported", "ES256") {
+		violations = append(violations, "HAIP: the authorization server advertises DPoP without ES256")
 	}
 	// Client authentication is deliberately not checked here. HAIP 1.0 §4.4.1
 	// requires the issuer to require it, but nothing requires the issuer to

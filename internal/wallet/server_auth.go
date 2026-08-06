@@ -60,11 +60,14 @@ type AuthorizationRequestParams struct {
 	RedirectURI      string
 	ResponseURI      string
 	RequestURIMethod string
-	ClientMetadata   map[string]any
-	DCQLQuery        map[string]any
-	RequestObject    *oid4vc.RequestObjectJWT
-	RequestPayload   map[string]any
-	Source           string
+	// RequestURI is where the request object was fetched from, empty when it
+	// was not delivered by reference.
+	RequestURI     string
+	ClientMetadata map[string]any
+	DCQLQuery      map[string]any
+	RequestObject  *oid4vc.RequestObjectJWT
+	RequestPayload map[string]any
+	Source         string
 	// BrowserRedirect is set when the request came from a browser navigation
 	// (GET with an HTML Accept header): after submission the browser is
 	// redirected to the verifier's redirect_uri instead of receiving JSON.
@@ -581,6 +584,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		params.RedirectURI = parsed.RedirectURI
 		params.ResponseMode = parsed.ResponseMode
 		params.RequestURIMethod = parsed.RequestURIMethod
+		params.RequestURI = parsed.RequestURI
 		params.ClientMetadata = parsed.ClientMetadata
 		params.DCQLQuery = parsed.DCQLQuery
 		params.RequestObject = parsed.RequestObject
