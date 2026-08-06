@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
@@ -42,24 +43,42 @@ type presentationRequestOptions struct {
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	var authReq *AuthorizationRequestParams
 	var err error
+	var values map[string][]string
 
 	if r.Method == "GET" {
-		authReq, err = parseAuthParams(r.URL.Query(), s.parseOpts, s.wallet.ValidationMode)
+		values = r.URL.Query()
 	} else {
 		if parseErr := r.ParseForm(); parseErr != nil {
 			http.Error(w, "invalid form data", http.StatusBadRequest)
 			return
 		}
-		authReq, err = parseAuthParams(r.Form, s.parseOpts, s.wallet.ValidationMode)
+		values = r.Form
 	}
+	authReq, err = parseAuthParams(values, s.parseOpts, s.wallet.ValidationMode)
 
 	if err != nil {
+		// A request the wallet cannot parse is still a request the verifier is
+		// waiting on, so the refusal goes back over the Response Mode as well
+		// as to the local caller (§5.6).
+		target := authorizationErrorTarget(values)
+		s.reportRefusalToVerifier(target, refusalCodeForRequest(target, err), err.Error())
 		http.Error(w, fmt.Sprintf("invalid authorization request: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	authReq.BrowserRedirect = isBrowserNavigation(r)
 	s.handleAuthFlow(w, authReq)
+}
+
+// requestURIValues reads the query parameters of an authorization request URI
+// the wallet could not otherwise parse, so a refusal still knows where the
+// verifier is listening. An unparseable URI yields nothing.
+func requestURIValues(raw string) map[string][]string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	return parsed.Query()
 }
 
 // handlePresentationAPI processes a presentation request URI via API.
@@ -130,6 +149,8 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 			Detail:  err.Error(),
 		})
 		reqServer.triggerUIRequest()
+		target := authorizationErrorTarget(requestURIValues(body.URI))
+		reqServer.reportRefusalToVerifier(target, refusalCodeForRequest(target, err), err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -145,37 +166,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	if parsed.RequestURIMethod != "" {
 		reqServer.log("  Request URI Method: %s", parsed.RequestURIMethod)
-	}
-
-	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, &AuthorizationRequestParams{
-		ClientID:         parsed.ClientID,
-		ResponseType:     parsed.ResponseType,
-		ResponseMode:     parsed.ResponseMode,
-		Nonce:            parsed.Nonce,
-		State:            parsed.State,
-		RedirectURI:      parsed.RedirectURI,
-		ResponseURI:      parsed.ResponseURI,
-		Scope:            parsed.Scope,
-		RequestURIMethod: parsed.RequestURIMethod,
-		RequestURI:       parsed.RequestURI,
-		ClientMetadata:   parsed.ClientMetadata,
-		DCQLQuery:        parsed.DCQLQuery,
-		RequestObject:    parsed.RequestObject,
-		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
-	})
-	if err != nil {
-		reqServer.log("  ERROR: %v", err)
-		reqServer.wallet.AddLog("presentation", err.Error(), false)
-		reqServer.wallet.NotifyError(WalletError{
-			Message: "Authorization request validation failed",
-			Detail:  err.Error(),
-		})
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	for _, finding := range findings {
-		reqServer.log("  WARNING: %s", finding)
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
 	}
 
 	authReq := &AuthorizationRequestParams{
@@ -195,6 +185,24 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 		Source:           "api",
 	}
+
+	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, authReq)
+	if err != nil {
+		reqServer.log("  ERROR: %v", err)
+		reqServer.wallet.AddLog("presentation", err.Error(), false)
+		reqServer.wallet.NotifyError(WalletError{
+			Message: "Authorization request validation failed",
+			Detail:  err.Error(),
+		})
+		reqServer.reportRefusalToVerifier(authReq, refusalCodeForRequest(authReq, err), err.Error())
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	for _, finding := range findings {
+		reqServer.log("  WARNING: %s", finding)
+		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
+	}
+
 	if body.Interactive {
 		// A scheme dispatch or another submitter acting for a user
 		// interaction: keep the consent dialog despite the API channel.

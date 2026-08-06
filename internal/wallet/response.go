@@ -142,7 +142,29 @@ func BuildFragmentRedirect(redirectURI, state string, vpToken any, idToken strin
 		fragment.Set("state", state)
 	}
 
-	return redirectURI + "#" + fragment.Encode(), nil
+	return appendFragmentParams(redirectURI, fragment), nil
+}
+
+// appendFragmentParams adds authorization response parameters to the fragment
+// component of a redirect URI.
+//
+// RFC 6749 §4.2.2, which OID4VP 1.0 §5.6 inherits for the default fragment
+// Response Mode, has the wallet "add the following parameters to the fragment
+// component of the redirection URI". Adding means merging: a redirect_uri that
+// already carries a fragment keeps it, because concatenating a second "#"
+// would put the response parameters inside the existing fragment's value and
+// leave the verifier unable to read either. RFC 3986 §3.5 makes the fragment
+// everything after the first "#", so that is where the split goes.
+func appendFragmentParams(redirectURI string, params url.Values) string {
+	encoded := params.Encode()
+	base, existing, hadFragment := strings.Cut(redirectURI, "#")
+	if !hadFragment || existing == "" {
+		return base + "#" + encoded
+	}
+	if encoded == "" {
+		return redirectURI
+	}
+	return base + "#" + existing + "&" + encoded
 }
 
 // BuildFragmentErrorRedirect constructs a redirect URL with authorization error
@@ -156,7 +178,7 @@ func BuildFragmentErrorRedirect(redirectURI, state, errorCode, errorDescription 
 	if state != "" {
 		fragment.Set("state", state)
 	}
-	return redirectURI + "#" + fragment.Encode()
+	return appendFragmentParams(redirectURI, fragment)
 }
 
 // FormatDirectPostResult formats a direct post result for terminal output.

@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -358,5 +359,55 @@ func TestBuildFragmentRedirect_NilVPToken(t *testing.T) {
 	}
 	if !strings.Contains(got, "state=s1") {
 		t.Errorf("expected state in fragment, got: %s", got)
+	}
+}
+
+// RFC 6749 §4.2.2, which OID4VP 1.0 §5.6 inherits for the fragment Response
+// Mode, has the wallet add the response parameters to the fragment component
+// of the redirect URI. A second "#" does not add to a fragment, it buries the
+// response parameters inside the first fragment's value where no verifier can
+// read them.
+func TestFragmentResponsesMergeIntoAnExistingFragment(t *testing.T) {
+	got, err := BuildFragmentRedirect("https://verifier.example/callback#session=abc", "s1", map[string][]string{"pid": {"tok1"}}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Count(got, "#") != 1 {
+		t.Fatalf("expected exactly one fragment separator, got: %s", got)
+	}
+	fragment := got[strings.Index(got, "#")+1:]
+	values, err := url.ParseQuery(fragment)
+	if err != nil {
+		t.Fatalf("parsing fragment %q: %v", fragment, err)
+	}
+	if values.Get("session") != "abc" {
+		t.Errorf("existing fragment parameter lost, got: %s", fragment)
+	}
+	if values.Get("state") != "s1" {
+		t.Errorf("expected state in fragment, got: %s", fragment)
+	}
+	if values.Get("vp_token") == "" {
+		t.Errorf("expected vp_token in fragment, got: %s", fragment)
+	}
+}
+
+func TestFragmentErrorResponsesMergeIntoAnExistingFragment(t *testing.T) {
+	got := BuildFragmentErrorRedirect("https://verifier.example/callback#session=abc", "s1", "access_denied", "User denied presentation")
+	if strings.Count(got, "#") != 1 {
+		t.Fatalf("expected exactly one fragment separator, got: %s", got)
+	}
+	fragment := got[strings.Index(got, "#")+1:]
+	values, err := url.ParseQuery(fragment)
+	if err != nil {
+		t.Fatalf("parsing fragment %q: %v", fragment, err)
+	}
+	if values.Get("session") != "abc" {
+		t.Errorf("existing fragment parameter lost, got: %s", fragment)
+	}
+	if values.Get("error") != "access_denied" {
+		t.Errorf("expected error in fragment, got: %s", fragment)
+	}
+	if values.Get("state") != "s1" {
+		t.Errorf("expected state in fragment, got: %s", fragment)
 	}
 }

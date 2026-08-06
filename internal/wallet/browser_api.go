@@ -225,6 +225,25 @@ func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, o
 	return nil, fmt.Errorf("multisigned browser request did not contain a parseable signature")
 }
 
+// dcAPIData shapes an unencrypted authorization response for the data property
+// of a Digital Credentials API result.
+//
+// An error response is cut down to its error code. OpenID4VP 1.0 Appendix A.4:
+// "Protocol error responses are returned as an object within the data property.
+// This object has a single property with the name error and a value containing
+// the error response code as defined in Section 8.5." So the error_description
+// and state a direct_post error response carries have no place here, and state
+// is not a DC API parameter in the first place (Appendix A.2: "since the state
+// parameter is not defined for the DC API, the Verifier cannot expect it to be
+// included in the response").
+func dcAPIData(plain map[string]any) any {
+	errorCode, isError := plain["error"].(string)
+	if !isError {
+		return plain
+	}
+	return map[string]any{"error": errorCode}
+}
+
 func BuildBrowserAPIResult(protocol string, response *AuthorizationResponseEnvelope) (*BrowserAPIResult, error) {
 	if response == nil {
 		return nil, fmt.Errorf("authorization response is missing")
@@ -244,7 +263,7 @@ func BuildBrowserAPIResult(protocol string, response *AuthorizationResponseEnvel
 	case "dc_api", "":
 		return &BrowserAPIResult{
 			Protocol: protocol,
-			Data:     response.Plain,
+			Data:     dcAPIData(response.Plain),
 		}, nil
 	default:
 		return nil, fmt.Errorf("response_mode %q cannot be returned via Browser API", response.ResponseMode)

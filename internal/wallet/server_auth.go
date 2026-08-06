@@ -16,10 +16,12 @@ package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,6 +30,109 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
+
+// Authorization Error Response codes. invalid_request and access_denied are
+// the OAuth 2.0 codes OpenID4VP 1.0 §8.5 clarifies for this protocol; the
+// other three are codes §8.5 adds and Appendix E.3 registers in the IANA
+// "OAuth Extensions Error" registry.
+const (
+	errorCodeInvalidRequest          = "invalid_request"
+	errorCodeAccessDenied            = "access_denied"
+	errorCodeVPFormatsNotSupported   = "vp_formats_not_supported"
+	errorCodeInvalidRequestURIMethod = "invalid_request_uri_method"
+	errorCodeInvalidTransactionData  = "invalid_transaction_data"
+)
+
+// authorizationError is a refusal that already knows which OpenID4VP 1.0 §8.5
+// error code the Verifier should be told. Refusals that carry no code are
+// reported as invalid_request.
+type authorizationError struct {
+	Code string
+	Err  error
+}
+
+func (e *authorizationError) Error() string { return e.Err.Error() }
+func (e *authorizationError) Unwrap() error { return e.Err }
+
+// authorizationErrorCode returns the §8.5 error code err asks for, defaulting
+// to invalid_request: §8.5 lists the malformed-request cases under that code,
+// and a request the wallet could not make sense of is one of them.
+func authorizationErrorCode(err error) string {
+	var authErr *authorizationError
+	if errors.As(err, &authErr) && authErr.Code != "" {
+		return authErr.Code
+	}
+	return errorCodeInvalidRequest
+}
+
+// walletPresentationFormats are the Credential Formats this wallet can put in
+// a VP Token. A query naming only formats outside this set can never match.
+var walletPresentationFormats = map[string]bool{
+	"dc+sd-jwt":   true,
+	"mso_mdoc":    true,
+	"jwt_vc_json": true,
+}
+
+// unsatisfiableQueryError picks the §8.5 error code for a DCQL query no stored
+// credential matched, and the description that goes with it.
+//
+// §8.5 defines access_denied for "The Wallet did not have the requested
+// Credentials to satisfy the Authorization Request" and vp_formats_not_supported
+// for "The Wallet does not support any of the formats requested by the
+// Verifier". The query decides which is true: when every Credential Query names
+// a Credential Format the wallet cannot present, the holdings never came into
+// it and the format is the reason.
+func unsatisfiableQueryError(query map[string]any) (string, string) {
+	credQueries, _ := query["credentials"].([]any)
+	unsupported := map[string]bool{}
+	for _, item := range credQueries {
+		cq, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		requested, _ := cq["format"].(string)
+		if requested == "" || walletPresentationFormats[requested] {
+			return errorCodeAccessDenied, "no stored credential satisfies the requested query"
+		}
+		unsupported[requested] = true
+	}
+	if len(unsupported) == 0 {
+		return errorCodeAccessDenied, "no stored credential satisfies the requested query"
+	}
+	formats := make([]string, 0, len(unsupported))
+	for format := range unsupported {
+		formats = append(formats, format)
+	}
+	sort.Strings(formats)
+	return errorCodeVPFormatsNotSupported, "unsupported credential format(s): " + strings.Join(formats, ", ")
+}
+
+// refusalCodeForRequest maps a rejected request to its OpenID4VP 1.0 §8.5
+// error code. A code the error already carries wins; otherwise the request
+// itself is inspected for the two cases §8.5 singles out by parameter.
+func refusalCodeForRequest(authReq *AuthorizationRequestParams, err error) string {
+	if code := authorizationErrorCode(err); code != errorCodeInvalidRequest {
+		return code
+	}
+	if authReq == nil {
+		return errorCodeInvalidRequest
+	}
+	// §8.5 invalid_request_uri_method: "The value of the request_uri_method
+	// request parameter is neither get nor post (case-sensitive)."
+	switch authReq.RequestURIMethod {
+	case "", "get", "post":
+	default:
+		return errorCodeInvalidRequestURIMethod
+	}
+	// §8.5 invalid_transaction_data covers a transaction_data object that
+	// "contains an unknown or unsupported transaction data type value". This
+	// wallet supports no transaction data type at all, so any object in the
+	// structure is of an unsupported type.
+	if payloadHasKey(authReq.RequestPayload, "transaction_data") {
+		return errorCodeInvalidTransactionData
+	}
+	return errorCodeInvalidRequest
+}
 
 func newConsentID() string {
 	return uuid.New().String()
@@ -118,8 +223,10 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 			Detail:  err.Error(),
 		})
 		s.triggerUIRequest()
+		errorCode := refusalCodeForRequest(authReq, err)
+		s.reportRefusalToVerifier(authReq, errorCode, err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error":             "invalid_request",
+			"error":             errorCode,
 			"error_description": err.Error(),
 		})
 		return
@@ -141,9 +248,13 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 				Detail:  strings.Join(violations, "; "),
 			})
 			s.triggerUIRequest()
+			// A profile violation is a request the wallet will not act on, so
+			// §8.5's invalid_request is what the verifier is owed.
+			description := "HAIP 1.0 compliance check failed: " + strings.Join(violations, "; ")
+			s.reportRefusalToVerifier(authReq, errorCodeInvalidRequest, description)
 			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error":             "invalid_request",
-				"error_description": "HAIP 1.0 compliance check failed: " + strings.Join(violations, "; "),
+				"error":             errorCodeInvalidRequest,
+				"error_description": description,
 			})
 			return
 		}
@@ -177,9 +288,15 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 			Detail:  fmt.Sprintf("Verifier %s requested credentials but none matched the query", authReq.ClientID),
 		})
 		s.triggerUIRequest()
+		// §8.5 access_denied: "The Wallet did not have the requested
+		// Credentials to satisfy the Authorization Request."
+		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
+		s.reportRefusalToVerifier(authReq, errorCode, description)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "no_match",
-			"error":  "no matching credentials found",
+			"status":            "no_match",
+			"error":             "no matching credentials found",
+			"error_code":        errorCode,
+			"error_description": description,
 		})
 		return
 	}
@@ -383,8 +500,28 @@ func (s *Server) buildBrowserAuthorizationErrorResult(authReq *AuthorizationRequ
 	return BuildBrowserAPIResult(protocol, response)
 }
 
-// submitAuthorizationError builds and submits an authorization error response to the verifier.
-func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *AuthorizationRequestParams, status, errorCode, errorDescription string) SubmissionResult {
+// canDeliverAuthorizationError reports whether an Authorization Error Response
+// has anywhere to go.
+//
+// A Digital Credentials API Response Mode hands its response back through the
+// API call rather than to a URL (Appendix A.4: "Protocol error responses are
+// returned as an object within the data property"), and a request carrying
+// neither response_uri nor redirect_uri named no destination at all.
+func canDeliverAuthorizationError(authReq *AuthorizationRequestParams) bool {
+	if authReq == nil || isDCAPIResponseMode(authReq.ResponseMode) {
+		return false
+	}
+	return authReq.ResponseURI != "" || authReq.RedirectURI != ""
+}
+
+// deliverAuthorizationError returns an OpenID4VP 1.0 §8.5 Authorization Error
+// Response to the verifier over the Response Mode of the request.
+//
+// §5.6: "Both successful and error responses SHOULD be returned using the
+// supplied Response Mode, or if none is supplied, using the default Response
+// Mode." A verifier that hears nothing is left waiting on its Response URI
+// until it times out, with no way to tell a refusal from a broken wallet.
+func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, errorCode, errorDescription string) (*DirectPostResult, error) {
 	responseURI := authReq.ResponseURI
 	if responseURI == "" {
 		responseURI = authReq.RedirectURI
@@ -420,8 +557,7 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 	if err != nil {
 		s.log("  ERROR: Error submission failed: %v", err)
 		s.wallet.AddLog("presentation", fmt.Sprintf("Error submission failed: %v", err), false)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
-		return SubmissionResult{Error: err.Error()}
+		return nil, err
 	}
 
 	s.log("  Response:      HTTP %d", result.StatusCode)
@@ -430,6 +566,31 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 	}
 
 	s.wallet.addProtocolLog("presentation", "verifier_response", fmt.Sprintf("Verifier result from %s: %s", authReq.ClientID, FormatDirectPostResult(result)), result.StatusCode < 400, verifierResponseLogDetails(authReq, &preparedPresentation{ResponseURI: responseURI}, result))
+
+	return result, nil
+}
+
+// reportRefusalToVerifier tells the verifier why the wallet is not answering
+// its request. The local HTTP caller gets its own answer separately; this is
+// the copy §5.6 owes the verifier, so a refusal the wallet decided on its own
+// (a malformed request, a profile violation, nothing to present) ends the
+// verifier's wait instead of hanging it. A delivery failure is logged and
+// swallowed: the wallet's refusal stands either way.
+func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) {
+	if !canDeliverAuthorizationError(authReq) {
+		return
+	}
+	_, _ = s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+}
+
+// submitAuthorizationError submits an authorization error response to the
+// verifier and answers the local caller with the outcome.
+func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *AuthorizationRequestParams, status, errorCode, errorDescription string) SubmissionResult {
+	result, err := s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return SubmissionResult{Error: err.Error()}
+	}
 
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
@@ -557,7 +718,14 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 
 	if td := get("transaction_data"); td != "" {
 		if mode == ValidationModeStrict {
-			return nil, fmt.Errorf("transaction_data is not supported by this wallet")
+			// §8.5 invalid_transaction_data applies when an object in the
+			// transaction_data structure "contains an unknown or unsupported
+			// transaction data type value". This wallet supports no type, so
+			// every object in it is of an unsupported type.
+			return nil, &authorizationError{
+				Code: errorCodeInvalidTransactionData,
+				Err:  fmt.Errorf("transaction_data is not supported by this wallet"),
+			}
 		}
 		log.Printf("[Wallet] WARNING: request contains transaction_data which is not processed (OID4VP §7.2)")
 	}
@@ -565,7 +733,13 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		return nil, fmt.Errorf("request_uri_method requires request_uri")
 	}
 	if method := get("request_uri_method"); method != "" && method != "get" && method != "post" {
-		return nil, fmt.Errorf("unsupported request_uri_method %q", method)
+		// §8.5 invalid_request_uri_method: "The value of the
+		// request_uri_method request parameter is neither get nor post
+		// (case-sensitive)."
+		return nil, &authorizationError{
+			Code: errorCodeInvalidRequestURIMethod,
+			Err:  fmt.Errorf("unsupported request_uri_method %q", method),
+		}
 	}
 
 	// Parse dcql_query if present
@@ -632,6 +806,31 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 	}
 
 	return params, nil
+}
+
+// authorizationErrorTarget rebuilds just enough of a request the wallet failed
+// to parse to still return an Authorization Error Response for it. §5.6 wants
+// the error returned over the supplied Response Mode, and the parameters that
+// decide where it goes (response_mode, response_uri, redirect_uri, state) are
+// readable even when the request as a whole is not. A request delivered by
+// reference may carry none of them, in which case there is no destination and
+// nothing is sent.
+func authorizationErrorTarget(values map[string][]string) *AuthorizationRequestParams {
+	get := func(key string) string {
+		if vs, ok := values[key]; ok && len(vs) > 0 {
+			return vs[0]
+		}
+		return ""
+	}
+	return &AuthorizationRequestParams{
+		ClientID:         get("client_id"),
+		ResponseMode:     get("response_mode"),
+		State:            get("state"),
+		Nonce:            get("nonce"),
+		RedirectURI:      get("redirect_uri"),
+		ResponseURI:      get("response_uri"),
+		RequestURIMethod: get("request_uri_method"),
+	}
 }
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
