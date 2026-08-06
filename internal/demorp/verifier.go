@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
@@ -99,7 +100,9 @@ func (d *DemoRP) VerifierHandler() http.Handler {
 	mux.HandleFunc("GET /api/requests/{id}", d.handleRequestStatus)
 	mux.HandleFunc("GET /request/{id}", d.handleRequestObject)
 	mux.HandleFunc("POST /response/{id}", d.handlePresentationResponse)
-	return mux
+	// Only /api/ is guarded, which is what the page itself calls. The
+	// protocol endpoints below it are for wallets on other origins.
+	return httpsec.GuardAPI(mux, d.baseURL())
 }
 
 // handleRequestObject serves the signed authorization request object that the

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
@@ -98,7 +99,9 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("GET /authorize", d.handleAuthorize)
 	mux.HandleFunc("POST /authorize", d.handleAuthorizeSubmit)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", d.AuthorizationServerMetadataHandler())
-	return mux
+	// Only /api/ is guarded, which is what the page itself calls. The
+	// protocol endpoints above it are for wallets on other origins.
+	return httpsec.GuardAPI(mux, d.baseURL())
 }
 
 // IssuerMetadataHandler serves the issuer metadata. It must additionally be

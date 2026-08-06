@@ -92,8 +92,10 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux.Handle("/", noStaleCache(http.FileServer(http.FS(sub))))
 
 	// This UI decodes whatever it is handed, including a credential someone
-	// else chose and sent as a ?credential= link.
-	return httpsec.Headers(mux)
+	// else chose and sent as a ?credential= link. The guard sits inside the
+	// returned handler, so a decoder mounted under a prefix on the wallet
+	// still sees its own /api/ paths after the prefix is stripped.
+	return httpsec.Headers(httpsec.GuardAPI(mux))
 }
 
 func noStaleCache(h http.Handler) http.Handler {

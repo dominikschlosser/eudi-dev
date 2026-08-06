@@ -115,13 +115,13 @@ func (s *Server) DemoEnabled() bool {
 const demoMaxBodyBytes = 1 << 20
 
 // Handler returns the server's root handler: the mux, wrapped with the
-// browser security headers and, when the demo profile is enabled, the demo
-// guard.
+// browser security headers, the cross-origin guard and, when the demo
+// profile is enabled, the demo guard.
 func (s *Server) Handler() http.Handler {
 	if s.demo == nil {
-		return httpsec.Headers(s.mux)
+		return httpsec.Headers(s.guardAPI(s.mux))
 	}
-	return httpsec.Headers(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpsec.Headers(s.guardAPI(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if demoBlockedRoute(r) {
 			writeJSON(w, http.StatusForbidden, map[string]string{
 				"error": "endpoint disabled in public demo mode",
@@ -130,7 +130,14 @@ func (s *Server) Handler() http.Handler {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, demoMaxBodyBytes)
 		s.mux.ServeHTTP(w, r)
-	}))
+	})))
+}
+
+// guardAPI wraps a handler with the cross-origin guard, naming the URLs this
+// wallet is served under so a deployment behind a reverse proxy keeps
+// working when the proxy does not pass the public Host through.
+func (s *Server) guardAPI(next http.Handler) http.Handler {
+	return httpsec.GuardAPI(next, s.wallet.BaseURL, s.wallet.IssuerURL)
 }
 
 // demoBlockedRoute reports whether the request targets an endpoint that must
