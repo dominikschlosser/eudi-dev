@@ -548,6 +548,15 @@ func TestWalletMetadataAdvertisesTheClientIDPrefixesItAccepts(t *testing.T) {
 	if listed["origin"] {
 		t.Error("the reserved origin prefix is advertised as supported")
 	}
+	// A Verifier picks a prefix from this list (§5.9.1), so it may only name
+	// prefixes whose Request Object signature this wallet can verify. Its
+	// signature check reads the leaf of an x5c chain, which these three do
+	// not carry.
+	for _, unverifiable := range []string{"verifier_attestation", "decentralized_identifier", "openid_federation"} {
+		if listed[unverifiable] {
+			t.Errorf("%s is advertised, but a request using it cannot be verified by this wallet", unverifiable)
+		}
+	}
 }
 
 // Appendix B names the members of each format profile. The generic

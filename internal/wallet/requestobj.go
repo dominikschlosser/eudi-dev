@@ -51,11 +51,17 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 		// the default value is pre-registered." A Verifier reads this to
 		// choose a prefix (§5.9.1), so a wallet that says nothing is taken to
 		// support only pre-registered clients and cannot be sent x509_hash.
+		//
+		// Only the prefixes whose requests this wallet can actually verify
+		// are listed. Request Object signatures are checked against the leaf
+		// of an x5c chain, so verifier_attestation and
+		// decentralized_identifier, which carry their key elsewhere, would
+		// name a prefix whose signature nothing here can confirm. Naming one
+		// invites a Verifier to choose it and have its request refused in
+		// strict mode, or accepted unverified in debug mode.
 		"client_id_prefixes_supported": []string{
 			"pre-registered",
 			"redirect_uri",
-			"verifier_attestation",
-			"decentralized_identifier",
 			"x509_san_dns",
 			"x509_hash",
 		},
