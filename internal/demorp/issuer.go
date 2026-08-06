@@ -95,6 +95,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	// Authorization code flow, with this issuer as its own authorization
 	// server. The user signs in at /authorize, during redemption, not before
 	// the offer is created.
+	mux.HandleFunc("POST /nonce", d.handleNonce)
 	mux.HandleFunc("POST /par", d.handlePushedAuthorizationRequest)
 	mux.HandleFunc("GET /authorize", d.handleAuthorize)
 	mux.HandleFunc("POST /authorize", d.handleAuthorizeSubmit)
@@ -139,6 +140,11 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		"credential_issuer":   issuer,
 		"credential_endpoint": issuer + "/credential",
 		"token_endpoint":      issuer + "/token",
+		// The Nonce Endpoint of OpenID4VCI 1.0 §7, which is the only place a
+		// wallet built to that specification looks for the challenge its key
+		// proof must carry. A wallet that finds none sends a proof with no
+		// nonce, and every credential request it makes is refused.
+		"nonce_endpoint": issuer + "/nonce",
 		"display": []map[string]any{
 			{"name": "EUDI Test Demo Issuer", "locale": "en-US"},
 		},
@@ -358,7 +364,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	holderKey, err := verifyProofJWT(proofJWT, cNonce)
+	holderKey, err := verifyProofJWT(proofJWT, cNonce, d.nonceIssued)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_proof", "error_description": err.Error()})
 		return
@@ -374,10 +380,63 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleNonce is the Nonce Endpoint of OpenID4VCI 1.0 §7. A wallet posts here
+// to obtain the challenge it signs into its key proof.
+//
+// This is the only source of that challenge for a wallet built to 1.0: the
+// c_nonce a token response may also carry belongs to the earlier drafts, and
+// such a wallet does not read it.
+func (d *DemoRP) handleNonce(w http.ResponseWriter, r *http.Request) {
+	nonce := randToken()
+
+	d.mu.Lock()
+	d.pruneLocked()
+	if len(d.nonces) >= maxEntries {
+		d.mu.Unlock()
+		writeJSON(w, http.StatusTooManyRequests, oauthError("temporarily_unavailable", "too many outstanding nonces"))
+		return
+	}
+	d.nonces[nonce] = time.Now().Add(entryTTL)
+	d.mu.Unlock()
+
+	// A challenge that a cache could hand to somebody else is not one.
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"c_nonce":            nonce,
+		"c_nonce_expires_in": int(entryTTL.Seconds()),
+	})
+}
+
+// nonceIssued reports whether the nonce came from the Nonce Endpoint and has
+// not expired. Nonces are left in place until they expire rather than being
+// consumed on first use, which matches how the c_nonce carried with a token
+// behaves and keeps a batch of proofs signed over one nonce working.
+func (d *DemoRP) nonceIssued(nonce string) bool {
+	if nonce == "" {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	expires, ok := d.nonces[nonce]
+	if !ok {
+		return false
+	}
+	if time.Now().After(expires) {
+		delete(d.nonces, nonce)
+		return false
+	}
+	return true
+}
+
 // verifyProofJWT validates an openid4vci-proof+jwt: the signature must
-// verify with the embedded holder JWK, and the nonce must match the c_nonce
-// handed out with the token.
-func verifyProofJWT(raw, cNonce string) (*ecdsa.PublicKey, error) {
+// verify with the embedded holder JWK, and the nonce must be one this issuer
+// handed out.
+//
+// Two nonces are accepted. cNonce is the one returned with the access token,
+// which the drafts specified and older wallets still use. isIssued covers the
+// Nonce Endpoint of OpenID4VCI 1.0, which is where a wallet built to the
+// final specification gets its challenge.
+func verifyProofJWT(raw, cNonce string, isIssued func(string) bool) (*ecdsa.PublicKey, error) {
 	proof, err := parseCompactJWT(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing proof JWT: %w", err)
@@ -393,8 +452,12 @@ func verifyProofJWT(raw, cNonce string) (*ecdsa.PublicKey, error) {
 	if !verifyES256(holderKey, proof.signingInput, proof.signature) {
 		return nil, fmt.Errorf("proof JWT signature does not verify with the embedded jwk")
 	}
-	if nonce, _ := proof.payload["nonce"].(string); nonce != cNonce {
-		return nil, fmt.Errorf("proof JWT nonce does not match the issued c_nonce")
+	nonce, _ := proof.payload["nonce"].(string)
+	if nonce != cNonce && !(isIssued != nil && isIssued(nonce)) {
+		if nonce == "" {
+			return nil, fmt.Errorf("proof JWT carries no nonce: request one from the nonce endpoint")
+		}
+		return nil, fmt.Errorf("proof JWT nonce is not one this issuer handed out")
 	}
 	return holderKey, nil
 }

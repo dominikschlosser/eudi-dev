@@ -73,6 +73,10 @@ type DemoRP struct {
 	// request_uri, and the codes issued from them once the user signed in.
 	authRequests map[string]*authRequestState
 	codes        map[string]*authRequestState
+	// nonces are the challenges handed out by the Nonce Endpoint, each held
+	// until it expires. It is where a wallet built to OpenID4VCI 1.0 asks for
+	// the challenge it signs into a key proof.
+	nonces map[string]time.Time
 }
 
 // New creates the demo issuer/verifier pair. baseURL returns the public
@@ -87,6 +91,7 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		requests:     make(map[string]*requestState),
 		authRequests: make(map[string]*authRequestState),
 		codes:        make(map[string]*authRequestState),
+		nonces:       make(map[string]time.Time),
 	}
 }
 
@@ -136,6 +141,11 @@ func (d *DemoRP) pruneLocked() {
 	for code, a := range d.codes {
 		if now.After(a.expires) || a.codeUsed {
 			delete(d.codes, code)
+		}
+	}
+	for nonce, expires := range d.nonces {
+		if now.After(expires) {
+			delete(d.nonces, nonce)
 		}
 	}
 }
