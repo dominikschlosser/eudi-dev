@@ -1,12 +1,12 @@
 .gopath/
 .gocache/
-scripts/__pycache__/
+__pycache__/
 .idea/
 oid4vc-dev
 dist/
 .playwright-mcp/
 e2e/node_modules/
-e2e/test-results/
+test-results/
 coverage.out
 .env
 sandbox/

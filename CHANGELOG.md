@@ -10,24 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **The two metadata fetches in a credential offer log themselves through one helper.** Each wrote out the same three log calls inline, with the details map spelled out separately per branch, which is how a field ends up recorded on one fetch and not the other. They now describe what they are fetching and share the logging. The entries a wallet writes are unchanged, which an issuance flow through the demo issuer confirms field by field
-
 - **`wallet serve` runs from a function rather than from inside its flag builder.** Twenty-two flags were declared in a var block that the `RunE` closure read straight out of, so the builder was 466 lines of which the closure was 370, and every other command in the package (`runValidate`, `runDecode`, `runProxy`) already reads the other way round. The flags are a struct now and the work is `runWalletServe`, leaving the builder at 52 lines. It also removes a shadowing that was easy to miss: `--pid` and the local process id were both called `pid` in the same closure, the second one hiding the first from its declaration onward
+- **Build output is no longer tracked.** Two Python bytecode caches under `examples/` and a Playwright run summary had been committed, because the ignore rules named one directory each (`scripts/__pycache__/`, `e2e/test-results/`) while the tools write them wherever they happen to run. Both rules now match at any depth
 
 ### Documentation
 
-- The architecture overview lists the packages and command files that were added since it was written. Five packages were missing from it (`demorp`, `jws`, `jwe`, `httpsec`, `imprint`), and `web/` was described as embedded static assets when it is a server with its own handlers. Both trees are now checked against the tree rather than kept by hand
+- The architecture overview lists the packages and command files that were added since it was written. Five packages were missing from it (`demorp`, `jws`, `jwe`, `httpsec`, `imprint`), and `web/` was described as embedded static assets when it is a server with its own handlers. Both trees now match what is on disk
 - The wallet's HTTP API reference covers deferred issuance, the activity log and the last error, which back `wallet deferred` and `wallet logs` and were the endpoints missing from a page that says everything the CLI does is available over HTTP
 
 ### Fixed
 
 - **Only a demo wallet capped the size of a request it would read.** Everywhere else the server read whatever it was sent fully into memory, so how much of it a caller could occupy was the caller's choice. The same one megabyte cap now applies to every wallet server, which every legitimate payload (credentials, offers, presentations, templates) is far below
-
 - **The mdoc verifier was the one entry point that would panic on a nil document.** Everything else in that package reports it and returns, and callers reach all of them from the same parse results, so the odd one out was a crash waiting for whichever caller passed a parse that produced nothing. It now reports it like its neighbours
-
 - **The imprint page's back link did nothing.** It was written as a scripted URL, and every server that mounts the page sends `script-src 'self'` without `'unsafe-inline'`, which blocks exactly that. The link rendered normally and swallowed the click, so nothing about the page said it was broken (this is live on the public demo). It is now a link to the site root, and the page is checked for carrying no script at all
-
 - **The mdoc digest comparison was a hand-written one that could not say no.** It walked only the computed digest and compared byte by byte, so a signed digest shorter than the hash matched on its prefix and a shorter one still would have read past the end of it. A length check at the one call site kept it correct, which is the wrong place for it: the helper is what the next caller reaches for. It is now `bytes.Equal`, and the cases the hand-written version could not tell apart (a truncated digest, an empty one, one with bytes appended) are covered
-
 - **A web page could have the wallet hand its credentials to a site of its choosing.** The API has no authentication on purpose and the answer to that has been to keep the wallet on localhost, which does not cover the browser: every page a developer visits can reach localhost too. Nothing was preflighted either, because a POST carrying `text/plain` is a CORS simple request, so a page could post a presentation request to `/api/presentations` with `auto_accept` set and the wallet would build a presentation and submit it to the `response_uri` the page named, with nobody asked and nothing shown. CORS stops the page reading the reply, and this never needed to read it. An `/api/` request arriving with an `Origin` from another site is now refused. A CLI, a curl invocation or a test harness sends no `Origin` and is unaffected, the wallet's own UI is on the same origin, and behind a reverse proxy `--base-url` counts as this wallet's own origin too. The protocol endpoints stay open, which is what they are for
 
 ## [1.19.11] - 2026-08-06
