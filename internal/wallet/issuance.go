@@ -279,6 +279,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
 		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 		nonceResp, nonceErr := requestCredentialWithDPoP(
+			w.ValidationMode,
 			metadata,
 			credentialEndpoint,
 			accessToken,
@@ -345,6 +346,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 
 	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
+		w.ValidationMode,
 		metadata,
 		credentialEndpoint,
 		accessToken,
@@ -874,12 +876,12 @@ type credentialRequestEncryptionParams struct {
 	enc string
 }
 
-func prepareCredentialRequestBody(metadata map[string]any, reqBody map[string]any) ([]byte, string, error) {
+func prepareCredentialRequestBody(mode ValidationMode, metadata map[string]any, reqBody map[string]any) ([]byte, string, error) {
 	bodyJSON, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, "", fmt.Errorf("marshaling request: %w", err)
 	}
-	encryption, err := selectCredentialRequestEncryption(metadata)
+	encryption, err := selectCredentialRequestEncryption(mode, metadata)
 	if err != nil {
 		return nil, "", err
 	}
@@ -893,7 +895,7 @@ func prepareCredentialRequestBody(metadata map[string]any, reqBody map[string]an
 	return []byte(jwe), "application/jwt", nil
 }
 
-func selectCredentialRequestEncryption(metadata map[string]any) (*credentialRequestEncryptionParams, error) {
+func selectCredentialRequestEncryption(mode ValidationMode, metadata map[string]any) (*credentialRequestEncryptionParams, error) {
 	raw, ok := metadata["credential_request_encryption"].(map[string]any)
 	if !ok {
 		return nil, nil
@@ -937,11 +939,15 @@ func selectCredentialRequestEncryption(metadata map[string]any) (*credentialRequ
 		}
 		x, _ := jwk["x"].(string)
 		y, _ := jwk["y"].(string)
-		// Strict regardless of the wallet's mode: this is the issuer's own
-		// published encryption key, and no wallet is in scope here to ask.
-		key, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, x, y)
+		key, finding, err := ecdsaPublicKeyFromJWK(mode, x, y)
 		if err != nil {
 			continue
+		}
+		// Debug mode read past a specification violation to get here. No
+		// wallet is in scope this deep to reach the activity log, so it goes
+		// where the rest of this flow's diagnostics go.
+		if finding != "" {
+			log.Printf("[VCI] WARNING: %s", finding)
 		}
 		return &credentialRequestEncryptionParams{
 			key: key,

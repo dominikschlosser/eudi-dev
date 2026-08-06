@@ -211,6 +211,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
+		w.ValidationMode,
 		metadata,
 		credentialEndpoint,
 		accessToken,
@@ -768,7 +769,7 @@ func oauthErrorMessage(body []byte) string {
 	return doc.Error + ": " + doc.Description
 }
 
-func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	reqBody := map[string]any{
 		"proofs": map[string]any{
 			"jwt": proofJWTs,
@@ -782,7 +783,7 @@ func requestCredentialWithDPoP(metadata map[string]any, endpoint, accessToken, a
 	if credentialResponseEncryption != nil {
 		reqBody["credential_response_encryption"] = credentialResponseEncryption
 	}
-	body, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
+	body, contentType, err := prepareCredentialRequestBody(mode, metadata, reqBody)
 	if err != nil {
 		return nil, err
 	}

@@ -200,7 +200,7 @@ func TestPrepareCredentialRequestBody_EncryptsWhenIssuerAdvertisesRequestEncrypt
 		},
 	}
 
-	body, contentType, err := prepareCredentialRequestBody(metadata, reqBody)
+	body, contentType, err := prepareCredentialRequestBody(ValidationModeStrict, metadata, reqBody)
 	if err != nil {
 		t.Fatalf("prepareCredentialRequestBody: %v", err)
 	}

@@ -192,6 +192,13 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 	if err != nil {
 		return "", nil, fmt.Errorf("extracting encryption key: %w", err)
 	}
+	// Debug mode read past a specification violation to get here. Recording it
+	// is the whole reason the repair is allowed: an unreported repair leaves
+	// strict mode rejecting what debug mode accepts with nothing said either
+	// way.
+	if keyInfo.Finding != "" {
+		w.AddLog("presentation", keyInfo.Finding, false)
+	}
 
 	// Determine enc algorithm from client_metadata
 	// OID4VP 1.0: encrypted_response_enc_values_supported (array)

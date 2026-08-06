@@ -349,3 +349,56 @@ func TestEncryptionJWKShortCoordinate_StrictRefusesDebugReports(t *testing.T) {
 	}
 	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
 }
+
+// Debug mode is allowed to read past a short coordinate only because it says
+// so afterwards. An unreported repair is the worst outcome available: strict
+// mode rejects the document, debug mode accepts it, and nothing tells anyone
+// the two disagreed or why.
+func TestShortCoordinateIsReportedInTheActivityLog(t *testing.T) {
+	var shortX, fullY string
+	var holder *ecdsa.PublicKey
+	for attempt := 0; attempt < 20000 && shortX == ""; attempt++ {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key.X.BitLen() > 248 {
+			continue
+		}
+		shortX = base64.RawURLEncoding.EncodeToString(key.X.Bytes())
+		fullY = base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32)))
+		holder = &key.PublicKey
+	}
+	if shortX == "" {
+		t.Fatal("no key with a short X coordinate generated in 20000 attempts")
+	}
+
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeDebug
+
+	params := PresentationParams{
+		ClientMetadata: map[string]any{
+			"jwks": map[string]any{
+				"keys": []any{map[string]any{
+					"kty": "EC", "crv": "P-256", "use": "enc", "alg": "ECDH-ES",
+					"kid": "verifier-key", "x": shortX, "y": fullY,
+				}},
+			},
+		},
+	}
+
+	if _, _, err := w.encryptDirectPostJWTPayload(map[string]any{"vp_token": "x"}, "", params); err != nil {
+		t.Fatalf("debug mode refused to encrypt to a repairable key: %v", err)
+	}
+	_ = holder
+
+	var reported bool
+	for _, entry := range w.GetLog() {
+		if strings.Contains(entry.Detail, "narrower than P-256") {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Error("the repair never reached the activity log, so nothing tells the user their verifier is non-conformant")
+	}
+}

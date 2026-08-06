@@ -74,7 +74,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		return nil, fmt.Errorf("building the proof: %w", err)
 	}
 
-	credResp, err := requestCredentialWithDPoP(nil, renewal.CredentialEndpoint, accessToken, authScheme,
+	credResp, err := requestCredentialWithDPoP(w.ValidationMode, nil, renewal.CredentialEndpoint, accessToken, authScheme,
 		proofJWTs, "", renewal.ConfigurationID, nil, dpopKey, w.HolderKey, &nonce)
 	if err != nil {
 		return nil, fmt.Errorf("requesting the credential: %w", err)
