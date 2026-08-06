@@ -35,7 +35,49 @@ func (s *Server) addPresentationRequestLog(authReq *AuthorizationRequestParams, 
 }
 
 func (w *Wallet) addProtocolLog(action, event, detail string, success bool, details map[string]any) {
-	w.AddLogDetails(action, detail, success, protocolLogDetails(event, details))
+	entry := protocolLogDetails(event, details)
+	if w != nil && w.RedactLogSecrets {
+		redactSecretDetails(entry)
+	}
+	w.AddLogDetails(action, detail, success, entry)
+}
+
+// secretDetailKeys are the log fields that carry a bearer secret: something
+// that grants access on presentation rather than merely describing the
+// exchange.
+var secretDetailKeys = []string{
+	"access_token",
+	"refresh_token",
+	"tx_code",
+	"pre-authorized_code",
+	"authorization_code",
+	"client_secret",
+}
+
+// redactSecretDetails replaces bearer secrets in place, keeping the field so
+// the reader can still see that one was sent.
+//
+// The deferred issuance API already withheld the access token on the grounds
+// that it is a bearer secret and nothing outside the wallet needs it. The
+// activity log recorded the same token and is served to anyone on a demo
+// instance, where the wallet will happily redeem an offer from somebody's own
+// issuer. That token then belonged to every visitor.
+func redactSecretDetails(details map[string]any) {
+	for _, key := range secretDetailKeys {
+		if v, ok := details[key]; ok {
+			if s, isString := v.(string); !isString || s != "" {
+				details[key] = "[redacted]"
+			}
+		}
+	}
+	if req, ok := details["request"].(map[string]any); ok {
+		clone := make(map[string]any, len(req))
+		for k, v := range req {
+			clone[k] = v
+		}
+		redactSecretDetails(clone)
+		details["request"] = clone
+	}
 }
 
 func protocolLogDetails(event string, details map[string]any) map[string]any {

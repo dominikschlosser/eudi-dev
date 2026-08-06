@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // Client calls the management REST API of a running wallet server.
@@ -91,7 +92,7 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := format.ReadRemoteBody(resp.Body, "wallet response")
 	if err != nil {
 		return fmt.Errorf("reading response: %w", err)
 	}

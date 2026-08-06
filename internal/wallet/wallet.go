@@ -73,6 +73,12 @@ type Wallet struct {
 	RequireEncryptedRequest bool                  // when true, sends encryption keys in wallet_metadata
 	RequestEncryptionKey    *ecdsa.PrivateKey     // key for decrypting encrypted request objects
 	RequireHAIP             bool                  // when true, enforce HAIP 1.0 compliance checks
+	// RedactLogSecrets removes bearer secrets from the activity log. Set for
+	// the public demo, where the log is readable by anyone and the wallet can
+	// be pointed at somebody's real issuer. A local wallet leaves it off: the
+	// log is the operator's own and reading the token is half the point of a
+	// protocol debugger.
+	RedactLogSecrets bool `json:"-"`
 	// ForceClientAttestation sends the wallet attestation on OID4VCI token
 	// requests even when the authorization server does not advertise
 	// attest_jwt_client_auth. Advertising it is only a SHOULD, so its absence

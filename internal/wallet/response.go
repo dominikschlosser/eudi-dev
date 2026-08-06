@@ -18,7 +18,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -51,7 +50,7 @@ func SubmitDirectPostObject(responseURI string, payload map[string]any) (*Direct
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := format.ReadRemoteBody(resp.Body, "verifier response")
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
@@ -109,7 +108,7 @@ func SubmitDirectPostJWT(responseURI string, responseJWT string, cek []byte) (*D
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := format.ReadRemoteBody(resp.Body, "verifier response")
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}

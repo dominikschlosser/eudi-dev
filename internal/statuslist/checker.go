@@ -90,7 +90,7 @@ func CheckWithOptions(ref *StatusRef, opts CheckOptions) (*StatusResult, error) 
 		return nil, fmt.Errorf("status list returned HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := format.ReadRemoteBody(resp.Body, "status list")
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
@@ -239,18 +239,40 @@ func verifyStatusListSignature(header map[string]any, parts []string, trustCerts
 	return true, fmt.Sprintf("x5c chain valid, signed by %s", leaf.Subject.CommonName)
 }
 
+// maxBitstringBytes caps the decompressed status list. At one bit per entry
+// this is over a billion credentials, so no honest list comes near it.
+const maxBitstringBytes = 16 << 20
+
+// zlibDecompress inflates the status list bitstring under a cap.
+//
+// The compressed bytes come from a URL in the credential's own status claim,
+// so whoever minted the credential chooses them, and deflate happily turns a
+// few hundred kilobytes into hundreds of megabytes. Reading that without a
+// limit let a credential decide how much memory the party checking it would
+// allocate, which the demo verifier does for every presentation it is shown.
 func zlibDecompress(data []byte) ([]byte, error) {
 	// Try zlib first (with header)
 	r, err := zlib.NewReader(bytes.NewReader(data))
 	if err == nil {
 		defer r.Close()
-		return io.ReadAll(r)
+		return readBounded(r)
 	}
 
 	// Fall back to raw DEFLATE
 	fr := flate.NewReader(bytes.NewReader(data))
 	defer fr.Close()
-	return io.ReadAll(fr)
+	return readBounded(fr)
+}
+
+func readBounded(r io.Reader) ([]byte, error) {
+	out, err := io.ReadAll(io.LimitReader(r, maxBitstringBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > maxBitstringBytes {
+		return nil, fmt.Errorf("status list decompresses to more than %d bytes", maxBitstringBytes)
+	}
+	return out, nil
 }
 
 // extractStatus reads one entry out of the decompressed bitstring.

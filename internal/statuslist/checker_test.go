@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -485,5 +486,54 @@ func TestExtractStatus_ReadsEveryAllowedWidth(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("bits=%d idx=%d = %d, want %d", tc.bits, tc.idx, got, tc.want)
 		}
+	}
+}
+
+// The status list is fetched from a URL in the credential's own status claim
+// and inflated before anything is read out of it. Deflate turns a few hundred
+// kilobytes into hundreds of megabytes, so an unbounded inflate let a
+// credential choose how much memory the party checking it allocated. The demo
+// verifier resolves this for every presentation it is shown.
+func TestZlibDecompress_RefusesABomb(t *testing.T) {
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	chunk := make([]byte, 1<<20)
+	for i := 0; i < 64; i++ { // 64 MiB, past the 16 MiB cap
+		if _, err := w.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() > 1<<20 {
+		t.Fatalf("the compressed payload is %d bytes, too large to prove amplification", buf.Len())
+	}
+
+	out, err := zlibDecompress(buf.Bytes())
+	if err == nil {
+		t.Fatalf("inflated %d bytes from %d without complaint", len(out), buf.Len())
+	}
+	if !strings.Contains(err.Error(), "decompresses to more than") {
+		t.Errorf("error = %v, want it to name the limit", err)
+	}
+}
+
+// An ordinary list still has to inflate.
+func TestZlibDecompress_ReadsAnHonestList(t *testing.T) {
+	var buf bytes.Buffer
+	w := zlib.NewWriter(&buf)
+	if _, err := w.Write([]byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := zlibDecompress(buf.Bytes())
+	if err != nil {
+		t.Fatalf("zlibDecompress: %v", err)
+	}
+	if !bytes.Equal(out, []byte{0x01, 0x02, 0x03}) {
+		t.Errorf("out = %v, want the three bytes written", out)
 	}
 }

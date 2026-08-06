@@ -19,7 +19,6 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -104,7 +103,7 @@ func fetchRequestURIGET(w *Wallet, requestURI string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, readErr := io.ReadAll(resp.Body)
+	body, readErr := format.ReadRemoteBody(resp.Body, "request object")
 	details := map[string]any{
 		"content_type": resp.Header.Get("Content-Type"),
 	}
@@ -167,7 +166,7 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := format.ReadRemoteBody(resp.Body, "request object")
 	if err != nil {
 		logRequestObjectFetchResponse(w, "POST", requestURI, responseLogResult(resp.StatusCode, map[string]any{
 			"content_type": resp.Header.Get("Content-Type"),

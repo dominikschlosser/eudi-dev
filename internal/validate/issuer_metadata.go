@@ -19,7 +19,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -164,7 +163,7 @@ func fetchIssuerMetadataDocument(metadataURL string) (map[string]any, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := format.ReadRemoteBody(resp.Body, "issuer metadata")
 		return nil, fmt.Errorf("issuer metadata request failed (%d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -527,7 +526,7 @@ func fetchAttestationChallenge(endpoint string) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := format.ReadRemoteBody(resp.Body, "issuer response")
 		return "", fmt.Errorf("challenge endpoint returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	var payload map[string]any
@@ -1014,7 +1013,7 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 		if err != nil {
 			return nil, 0, fmt.Errorf("request: %w", err)
 		}
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := format.ReadRemoteBody(resp.Body, "issuer response")
 		resp.Body.Close()
 		if readErr != nil {
 			return nil, resp.StatusCode, fmt.Errorf("reading response: %w", readErr)
@@ -1186,7 +1185,7 @@ func callAuthorizationEndpoint(endpoint, clientID, requestURI string) (string, s
 		return "", "", fmt.Errorf("authorization request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := format.ReadRemoteBody(resp.Body, "issuer response")
 	if resp.StatusCode == http.StatusOK {
 		return "", string(body), nil
 	}

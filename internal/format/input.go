@@ -180,6 +180,26 @@ func ReadInputRaw(input string) (string, error) {
 	return input, nil
 }
 
+// MaxRemoteBytes is the cap every remote response in this toolkit is read
+// under. Exported so the packages that fetch on their own account (status
+// lists, issuer metadata, token and credential endpoints) hold to the same
+// limit rather than reading whatever a peer decides to send.
+const MaxRemoteBytes = maxFetchBytes
+
+// ReadRemoteBody reads a response body under MaxRemoteBytes and reports what
+// was being read when the limit is hit. An unbounded io.ReadAll on a peer's
+// response lets that peer decide how much memory this process uses.
+func ReadRemoteBody(r io.Reader, what string) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, MaxRemoteBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > MaxRemoteBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", what, MaxRemoteBytes)
+	}
+	return b, nil
+}
+
 // maxFetchBytes caps remote responses. Credentials, trust lists and status
 // lists are all far smaller, so anything larger is a misdirected fetch.
 const maxFetchBytes = 10 << 20
