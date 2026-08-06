@@ -15,8 +15,6 @@
 package statuslist
 
 import (
-	"bytes"
-	"compress/zlib"
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -28,60 +26,99 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
-// StatusListConfig holds parameters for generating a status list JWT.
+// tokenLifetime is how long a generated Status List Token stays valid. The
+// checker rejects an expired token, so a Status Provider that regenerates on
+// every request (which this one does) still has to say when the copy a client
+// cached stops answering.
+const tokenLifetime = 24 * time.Hour
+
+// defaultTTL is the RECOMMENDED caching hint from Section 5.1, in seconds.
+const defaultTTL = 43200
+
+// StatusListConfig holds parameters for generating a Status List Token.
 type StatusListConfig struct {
-	// URI is the status list token URI, used as the "sub" claim (REQUIRED per draft-ietf-oauth-status-list).
+	// URI is the status list token URI, used as the "sub" claim. Section 5.1:
+	// "The sub (subject) claim MUST specify the URI of the Status List Token.
+	// The value MUST be equal to that of the uri claim contained in the
+	// status_list claim of the Referenced Token."
 	URI string
 	// Issuer is the "iss" claim value.
 	Issuer string
-	// TTL is the time-to-live in seconds for caching (RECOMMENDED per spec). Defaults to 43200 (12h).
+	// Bits is the number of bits per entry. Section 4.1 allows 1, 2, 4 and 8.
+	// Zero means 1.
+	Bits int
+	// TTL is the time-to-live in seconds for caching (RECOMMENDED per spec).
+	// Defaults to 43200 (12h).
 	TTL int
-	// CertChain, if provided, is included as x5c header for certificate chain validation.
+	// CertChain, if provided, is included as x5c (JWT) or x5chain (CWT) for
+	// certificate chain validation.
 	CertChain []*x509.Certificate
+	// IssuedAt overrides the iat claim. The zero value means time.Now().
+	IssuedAt time.Time
 }
 
-// GenerateStatusListJWT creates a signed status list JWT (draft-ietf-oauth-status-list) from a bitstring.
+func (c StatusListConfig) issuer() string {
+	if c.Issuer == "" {
+		return "https://issuer.example"
+	}
+	return c.Issuer
+}
+
+func (c StatusListConfig) ttl() int {
+	if c.TTL <= 0 {
+		return defaultTTL
+	}
+	return c.TTL
+}
+
+func (c StatusListConfig) issuedAt() time.Time {
+	if c.IssuedAt.IsZero() {
+		return time.Now()
+	}
+	return c.IssuedAt
+}
+
+// normalizeBits maps the configured width onto one of the four Section 4.1
+// allows.
+func normalizeBits(bits int) (int, error) {
+	switch bits {
+	case 0, 1:
+		return 1, nil
+	case 2, 4, 8:
+		return bits, nil
+	default:
+		return 0, fmt.Errorf("a status list cannot use %d bits per entry, section 4.1 allows 1, 2, 4 and 8", bits)
+	}
+}
+
+// GenerateStatusListJWT creates a signed Status List Token in JWT format
+// (Section 5.1) from a bitstring.
 func GenerateStatusListJWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg StatusListConfig) (string, error) {
-	// zlib-compress the bitstring
-	var buf bytes.Buffer
-	w, err := zlib.NewWriterLevel(&buf, zlib.BestCompression)
+	compressed, err := compressBitstring(bitstring)
 	if err != nil {
-		return "", fmt.Errorf("creating zlib writer: %w", err)
+		return "", err
 	}
-	if _, err := w.Write(bitstring); err != nil {
-		return "", fmt.Errorf("compressing bitstring: %w", err)
-	}
-	if err := w.Close(); err != nil {
-		return "", fmt.Errorf("closing zlib writer: %w", err)
+	bits, err := normalizeBits(cfg.Bits)
+	if err != nil {
+		return "", err
 	}
 
-	lst := format.EncodeBase64URL(buf.Bytes())
-
-	ttl := cfg.TTL
-	if ttl <= 0 {
-		ttl = 43200 // 12 hours default
-	}
-	issuer := cfg.Issuer
-	if issuer == "" {
-		issuer = "https://issuer.example"
-	}
-
-	now := time.Now()
+	now := cfg.issuedAt()
 	payload := map[string]any{
 		"sub": cfg.URI,
-		"iss": issuer,
+		"iss": cfg.issuer(),
 		"iat": now.Unix(),
-		"exp": now.Add(24 * time.Hour).Unix(),
-		"ttl": ttl,
+		"exp": now.Add(tokenLifetime).Unix(),
+		"ttl": cfg.ttl(),
 		"status_list": map[string]any{
-			"bits": 1,
-			"lst":  lst,
+			"bits": bits,
+			"lst":  format.EncodeBase64URL(compressed),
 		},
 	}
 
 	header := map[string]any{
 		"alg": "ES256",
-		"typ": "statuslist+jwt",
+		"typ": TypJWT,
 	}
 
 	// The public half of the signing key, so a relying party that resolves

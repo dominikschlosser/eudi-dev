@@ -19,8 +19,6 @@ import (
 	"compress/zlib"
 	"crypto/ecdsa"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,15 +27,75 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
+func mustGenerateKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	return key
+}
+
+// testChain returns an issuer key with a leaf and CA certificate for it.
+func testChain(t *testing.T) (*ecdsa.PrivateKey, *x509.Certificate, *x509.Certificate) {
+	t.Helper()
+	issuerKey := mustGenerateKey(t)
+	caKey := mustGenerateKey(t)
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatalf("GenerateCACert: %v", err)
+	}
+	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
+	if err != nil {
+		t.Fatalf("GenerateLeafCert: %v", err)
+	}
+	return issuerKey, leafCert, caCert
+}
+
+// statusListServer serves whatever gen produces for its own URL. The token's
+// sub claim has to be the URL it is served from, which is only known once the
+// server is listening.
+func statusListServer(t *testing.T, gen func(uri string) (string, []byte)) *httptest.Server {
+	t.Helper()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType, body := gen(srv.URL)
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// jwtServer serves a signed JWT status list token over the given bitstring.
+func jwtServer(t *testing.T, key *ecdsa.PrivateKey, bits int, bitstring []byte, chain []*x509.Certificate) *httptest.Server {
+	t.Helper()
+	return statusListServer(t, func(uri string) (string, []byte) {
+		token, err := GenerateStatusListJWT(bitstring, key, StatusListConfig{
+			URI:       uri,
+			Bits:      bits,
+			CertChain: chain,
+		})
+		if err != nil {
+			t.Errorf("GenerateStatusListJWT: %v", err)
+			return "", nil
+		}
+		return MediaTypeJWT, []byte(token)
+	})
+}
+
 func TestExtractStatusRef(t *testing.T) {
 	tests := []struct {
-		name   string
-		claims map[string]any
-		want   *StatusRef
+		name        string
+		claims      map[string]any
+		want        *StatusRef
+		wantInvalid bool
 	}{
 		{
-			"valid ref",
-			map[string]any{
+			name: "valid ref",
+			claims: map[string]any{
 				"status": map[string]any{
 					"status_list": map[string]any{
 						"uri": "https://example.com/status",
@@ -45,35 +103,30 @@ func TestExtractStatusRef(t *testing.T) {
 					},
 				},
 			},
-			&StatusRef{URI: "https://example.com/status", Idx: 42},
+			want: &StatusRef{URI: "https://example.com/status", Idx: 42},
 		},
 		{
-			"no status field",
-			map[string]any{"iss": "test"},
-			nil,
+			name:   "no status field",
+			claims: map[string]any{"iss": "test"},
 		},
 		{
-			"no status_list",
-			map[string]any{
+			name: "no status_list",
+			claims: map[string]any{
 				"status": map[string]any{"other": "value"},
 			},
-			nil,
 		},
 		{
-			"empty uri",
-			map[string]any{
+			name: "empty uri",
+			claims: map[string]any{
 				"status": map[string]any{
-					"status_list": map[string]any{
-						"uri": "",
-						"idx": float64(0),
-					},
+					"status_list": map[string]any{"uri": "", "idx": float64(0)},
 				},
 			},
-			nil,
+			wantInvalid: true,
 		},
 		{
-			"int64 idx",
-			map[string]any{
+			name: "int64 idx",
+			claims: map[string]any{
 				"status": map[string]any{
 					"status_list": map[string]any{
 						"uri": "https://example.com/status",
@@ -81,12 +134,30 @@ func TestExtractStatusRef(t *testing.T) {
 					},
 				},
 			},
-			&StatusRef{URI: "https://example.com/status", Idx: 7},
+			want: &StatusRef{URI: "https://example.com/status", Idx: 7},
+		},
+		{
+			name: "uint64 idx, as an mdoc status decodes",
+			claims: map[string]any{
+				"status": map[string]any{
+					"status_list": map[string]any{
+						"uri": "https://example.com/status",
+						"idx": uint64(9),
+					},
+				},
+			},
+			want: &StatusRef{URI: "https://example.com/status", Idx: 9},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := ExtractStatusRef(tt.claims)
+			if tt.wantInvalid {
+				if got == nil || got.Invalid == "" {
+					t.Fatalf("expected an invalid reference, got %+v", got)
+				}
+				return
+			}
 			if tt.want == nil {
 				if got != nil {
 					t.Errorf("expected nil, got %+v", got)
@@ -95,6 +166,9 @@ func TestExtractStatusRef(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatal("expected non-nil result")
+			}
+			if got.Invalid != "" {
+				t.Fatalf("expected a usable reference, got %q", got.Invalid)
 			}
 			if got.URI != tt.want.URI || got.Idx != tt.want.Idx {
 				t.Errorf("got {URI:%q, Idx:%d}, want {URI:%q, Idx:%d}", got.URI, got.Idx, tt.want.URI, tt.want.Idx)
@@ -164,74 +238,52 @@ func TestExtractStatus_OutOfRange(t *testing.T) {
 }
 
 func TestCheck_WithMockServer(t *testing.T) {
-	// Create a status list bitstring: all zeros (all valid)
+	key := mustGenerateKey(t)
 	bitstring := make([]byte, 16)
-	// Set index 5 to revoked (bit 5 = 1)
-	bitstring[0] = 1 << 5
+	bitstring[0] = 1 << 5 // index 5 is revoked
+	srv := jwtServer(t, key, 1, bitstring, nil)
 
-	// Compress with zlib
-	var buf bytes.Buffer
-	w := zlib.NewWriter(&buf)
-	w.Write(bitstring)
-	w.Close()
-
-	lst := base64.RawURLEncoding.EncodeToString(buf.Bytes())
-
-	payload := map[string]any{
-		"status_list": map[string]any{
-			"bits": float64(1),
-			"lst":  lst,
-		},
-	}
-	payloadJSON, _ := json.Marshal(payload)
-	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
-	statusJWT := "eyJhbGciOiJub25lIn0." + payloadB64 + "."
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/statuslist+jwt")
-		w.Write([]byte(statusJWT))
-	}))
-	defer server.Close()
-
-	// Test valid credential (index 0)
-	result, err := Check(&StatusRef{URI: server.URL, Idx: 0})
+	result, err := Check(&StatusRef{URI: srv.URL, Idx: 0})
 	if err != nil {
 		t.Fatalf("Check() error: %v", err)
 	}
 	if !result.IsValid {
 		t.Errorf("index 0: expected valid, got status=%d", result.Status)
 	}
+	if result.StatusName != "VALID" {
+		t.Errorf("index 0: name = %q, want VALID", result.StatusName)
+	}
 
-	// Test revoked credential (index 5)
-	result, err = Check(&StatusRef{URI: server.URL, Idx: 5})
+	result, err = Check(&StatusRef{URI: srv.URL, Idx: 5})
 	if err != nil {
 		t.Fatalf("Check() error: %v", err)
 	}
-	if result.IsValid {
-		t.Errorf("index 5: expected revoked, got status=%d", result.Status)
+	if result.IsValid || result.Status != 1 {
+		t.Errorf("index 5: status = %d, want 1 and not valid", result.Status)
 	}
-	if result.Status != 1 {
-		t.Errorf("index 5: status = %d, want 1", result.Status)
+	if result.StatusName != "INVALID" {
+		t.Errorf("index 5: name = %q, want INVALID", result.StatusName)
+	}
+	if result.Format != FormatJWT {
+		t.Errorf("format = %q, want %q", result.Format, FormatJWT)
 	}
 }
 
 func TestCheck_WithLocalTLSServer(t *testing.T) {
-	bitstring := make([]byte, 16)
-
-	jwt, err := GenerateStatusListJWT(bitstring, mustGenerateKey(t), StatusListConfig{
-		URI: "https://127.0.0.1/status",
-	})
-	if err != nil {
-		t.Fatalf("GenerateStatusListJWT: %v", err)
-	}
-
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/statuslist+jwt")
-		_, _ = w.Write([]byte(jwt))
+	key := mustGenerateKey(t)
+	var srv *httptest.Server
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token, err := GenerateStatusListJWT(make([]byte, 16), key, StatusListConfig{URI: srv.URL})
+		if err != nil {
+			t.Errorf("GenerateStatusListJWT: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", MediaTypeJWT)
+		_, _ = w.Write([]byte(token))
 	}))
-	defer server.Close()
+	defer srv.Close()
 
-	result, err := Check(&StatusRef{URI: server.URL, Idx: 0})
+	result, err := Check(&StatusRef{URI: srv.URL, Idx: 0})
 	if err != nil {
 		t.Fatalf("Check() against local TLS server: %v", err)
 	}
@@ -252,167 +304,64 @@ func TestCheck_HTTPError(t *testing.T) {
 	}
 }
 
-func mustGenerateKey(t *testing.T) *ecdsa.PrivateKey {
-	t.Helper()
-	key, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
-	}
-	return key
-}
-
 func TestCheckWithOptions_SignatureVerification(t *testing.T) {
-	// Generate issuer key and cert chain (like the wallet does)
-	issuerKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	caKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	caCert, err := mock.GenerateCACert(caKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
+	issuerKey, leafCert, caCert := testChain(t)
+	srv := jwtServer(t, issuerKey, 1, make([]byte, 16), []*x509.Certificate{leafCert, caCert})
 
-	// Generate a status list JWT with x5c chain
-	bitstring := make([]byte, 16)
-	statusJWT, err := GenerateStatusListJWT(bitstring, issuerKey, StatusListConfig{
-		URI:       "https://example.com/statuslists/1",
-		CertChain: []*x509.Certificate{leafCert, caCert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Serve it
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/statuslist+jwt")
-		w.Write([]byte(statusJWT))
-	}))
-	defer server.Close()
-
-	// Check with trust list containing the CA cert
-	opts := CheckOptions{
+	result, err := CheckWithOptions(&StatusRef{URI: srv.URL, Idx: 0}, CheckOptions{
 		TrustListCerts: []TrustCert{{Raw: caCert.Raw}},
-	}
-	result, err := CheckWithOptions(&StatusRef{URI: server.URL, Idx: 0}, opts)
+	})
 	if err != nil {
 		t.Fatalf("CheckWithOptions error: %v", err)
 	}
-	if result.SignatureValid == nil {
-		t.Fatal("expected SignatureValid to be set")
+	if result.SignatureValid == nil || !*result.SignatureValid {
+		t.Fatalf("expected a verified signature, got info %q", result.SignatureInfo)
 	}
-	if !*result.SignatureValid {
-		t.Errorf("expected valid signature, got info: %s", result.SignatureInfo)
+	if !result.TrustAnchored {
+		t.Error("a chain that validates against the trust list must be reported as anchored")
 	}
-	if result.IsValid != true {
+	if !result.IsValid {
 		t.Errorf("expected status valid, got %d", result.Status)
 	}
 }
 
 func TestCheckWithOptions_UntrustedCert(t *testing.T) {
-	// Generate issuer key and cert chain
-	issuerKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	caKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	caCert, err := mock.GenerateCACert(caKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Generate a DIFFERENT CA (not in trust list)
-	otherCAKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	issuerKey, leafCert, caCert := testChain(t)
+	otherCAKey := mustGenerateKey(t)
 	otherCACert, err := mock.GenerateCACert(otherCAKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv := jwtServer(t, issuerKey, 1, make([]byte, 16), []*x509.Certificate{leafCert, caCert})
 
-	bitstring := make([]byte, 16)
-	statusJWT, err := GenerateStatusListJWT(bitstring, issuerKey, StatusListConfig{
-		URI:       "https://example.com/statuslists/1",
-		CertChain: []*x509.Certificate{leafCert, caCert},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(statusJWT))
-	}))
-	defer server.Close()
-
-	// Check with a trust list that does NOT contain the signing CA
-	opts := CheckOptions{
+	_, err = CheckWithOptions(&StatusRef{URI: srv.URL, Idx: 0}, CheckOptions{
 		TrustListCerts: []TrustCert{{Raw: otherCACert.Raw}},
+	})
+	if err == nil {
+		t.Fatal("a chain that does not reach the trust list must fail the check")
 	}
-	result, err := CheckWithOptions(&StatusRef{URI: server.URL, Idx: 0}, opts)
-	if err != nil {
-		t.Fatalf("CheckWithOptions error: %v", err)
-	}
-	if result.SignatureValid == nil {
-		t.Fatal("expected SignatureValid to be set")
-	}
-	if *result.SignatureValid {
-		t.Error("expected signature validation to fail with untrusted CA")
+	if !strings.Contains(err.Error(), "not trusted") {
+		t.Errorf("error = %v, want it to name the untrusted chain", err)
 	}
 }
 
 func TestCheckWithOptions_NoX5C(t *testing.T) {
-	// Status list JWT without x5c should report signature invalid when trust list provided
-	bitstring := make([]byte, 16)
-	key := generateTestKey(t)
-	statusJWT, err := GenerateStatusListJWT(bitstring, key, StatusListConfig{URI: "https://example.com/statuslists/1"}) // no cert chain
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(statusJWT))
-	}))
-	defer server.Close()
-
-	caKey, err := mock.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	key := mustGenerateKey(t)
+	caKey := mustGenerateKey(t)
 	caCert, err := mock.GenerateCACert(caKey)
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv := jwtServer(t, key, 1, make([]byte, 16), nil)
 
-	opts := CheckOptions{
+	_, err = CheckWithOptions(&StatusRef{URI: srv.URL, Idx: 0}, CheckOptions{
 		TrustListCerts: []TrustCert{{Raw: caCert.Raw}},
+	})
+	if err == nil {
+		t.Fatal("a token with no chain cannot be anchored in a trust list and must fail")
 	}
-	result, err := CheckWithOptions(&StatusRef{URI: server.URL, Idx: 0}, opts)
-	if err != nil {
-		t.Fatalf("CheckWithOptions error: %v", err)
-	}
-	if result.SignatureValid == nil {
-		t.Fatal("expected SignatureValid to be set")
-	}
-	if *result.SignatureValid {
-		t.Error("expected signature invalid when no x5c in status list JWT")
-	}
-	if result.SignatureInfo != "no x5c header in status list JWT" {
-		t.Errorf("unexpected info: %s", result.SignatureInfo)
+	if !strings.Contains(err.Error(), "no certificate chain") {
+		t.Errorf("error = %v, want it to name the missing chain", err)
 	}
 }
 
@@ -424,9 +373,12 @@ func TestZlibDecompress(t *testing.T) {
 	w.Write(data)
 	w.Close()
 
-	got, err := zlibDecompress(buf.Bytes())
+	got, rawDeflate, err := zlibDecompress(buf.Bytes())
 	if err != nil {
 		t.Fatalf("zlibDecompress() error: %v", err)
+	}
+	if rawDeflate {
+		t.Error("a ZLIB stream must not be reported as raw DEFLATE")
 	}
 	if !bytes.Equal(got, data) {
 		t.Errorf("got %q, want %q", got, data)
@@ -510,7 +462,7 @@ func TestZlibDecompress_RefusesABomb(t *testing.T) {
 		t.Fatalf("the compressed payload is %d bytes, too large to prove amplification", buf.Len())
 	}
 
-	out, err := zlibDecompress(buf.Bytes())
+	out, _, err := zlibDecompress(buf.Bytes())
 	if err == nil {
 		t.Fatalf("inflated %d bytes from %d without complaint", len(out), buf.Len())
 	}
@@ -529,7 +481,7 @@ func TestZlibDecompress_ReadsAnHonestList(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	out, err := zlibDecompress(buf.Bytes())
+	out, _, err := zlibDecompress(buf.Bytes())
 	if err != nil {
 		t.Fatalf("zlibDecompress: %v", err)
 	}

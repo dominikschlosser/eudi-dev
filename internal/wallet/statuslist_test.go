@@ -74,10 +74,10 @@ func TestSetCredentialStatus_Unrevoke(t *testing.T) {
 	}
 }
 
-func TestBuildStatusBitstring_Empty(t *testing.T) {
+func TestBuildStatusList_Empty(t *testing.T) {
 	w := generateTestWallet(t)
 
-	bs := w.BuildStatusBitstring()
+	_, bs := w.BuildStatusList()
 	if len(bs) < 1 {
 		t.Fatal("expected at least 1 byte")
 	}
@@ -89,7 +89,7 @@ func TestBuildStatusBitstring_Empty(t *testing.T) {
 	}
 }
 
-func TestBuildStatusBitstring_WithEntries(t *testing.T) {
+func TestBuildStatusList_WithEntries(t *testing.T) {
 	w := generateTestWallet(t)
 	w.StatusListCounter = 4
 	w.StatusEntries = map[string]StatusEntry{
@@ -99,7 +99,7 @@ func TestBuildStatusBitstring_WithEntries(t *testing.T) {
 		"cred-3": {Index: 3, Status: 1}, // revoked
 	}
 
-	bs := w.BuildStatusBitstring()
+	_, bs := w.BuildStatusList()
 
 	// Index 1: bit 1 = 0b00000010
 	// Index 3: bit 3 = 0b00001000
@@ -109,14 +109,14 @@ func TestBuildStatusBitstring_WithEntries(t *testing.T) {
 	}
 }
 
-func TestBuildStatusBitstring_MinimumSize(t *testing.T) {
+func TestBuildStatusList_MinimumSize(t *testing.T) {
 	w := generateTestWallet(t)
 	w.StatusListCounter = 1
 	w.StatusEntries = map[string]StatusEntry{
 		"cred-0": {Index: 0, Status: 0},
 	}
 
-	bs := w.BuildStatusBitstring()
+	_, bs := w.BuildStatusList()
 	// The 16-byte floor is this wallet's choice, not a spec requirement.
 	if len(bs) < 16 {
 		t.Errorf("expected minimum 16 bytes, got %d", len(bs))
@@ -570,7 +570,7 @@ func TestStatusBitstring_SurvivesANegativeAdoptedIndex(t *testing.T) {
 	w.SetCredentialStatus("hostile", 1)
 	w.SetCredentialStatus("honest", 1)
 
-	bitstring := w.BuildStatusBitstring()
+	_, bitstring := w.BuildStatusList()
 	if len(bitstring) == 0 {
 		t.Fatal("no bitstring was produced")
 	}

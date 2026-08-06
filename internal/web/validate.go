@@ -17,6 +17,7 @@ package web
 import (
 	"crypto"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -452,6 +453,13 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) Che
 			Detail: "No status list reference in credential",
 		}
 	}
+	if ref.Invalid != "" {
+		return CheckResult{
+			Name:   "status",
+			Status: "fail",
+			Detail: fmt.Sprintf("Malformed status list reference: %s", ref.Invalid),
+		}
+	}
 
 	checkOpts := statuslist.CheckOptions{}
 	for _, ci := range tlCerts {
@@ -460,6 +468,10 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) Che
 		}
 	}
 
+	// A failed check is an error, not a result with a flag on it. Nothing
+	// here can report a status that was fetched but not verified: the
+	// specification says an unverifiable status list supports no statement
+	// about the credential at all (section 8.3).
 	result, err := statuslist.CheckWithOptions(ref, checkOpts)
 	if err != nil {
 		return CheckResult{
@@ -469,34 +481,24 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) Che
 		}
 	}
 
-	signatureDetail := ""
-	if result.SignatureValid != nil {
-		if *result.SignatureValid {
-			signatureDetail = fmt.Sprintf(", signature: %s", result.SignatureInfo)
-		} else {
-			signatureDetail = fmt.Sprintf(", signature invalid: %s", result.SignatureInfo)
-		}
-	}
-	if result.SignatureValid != nil && !*result.SignatureValid {
-		return CheckResult{
-			Name:   "status",
-			Status: "fail",
-			Detail: fmt.Sprintf("Status list signature invalid (index %d, status=%d%s)", result.Index, result.Status, signatureDetail),
-		}
+	detail := fmt.Sprintf("index %d, status=%d %s, %s, signature: %s",
+		result.Index, result.Status, result.StatusName, strings.ToUpper(result.Format), result.SignatureInfo)
+	for _, warning := range result.Warnings {
+		detail += ", warning: " + warning
 	}
 
 	if result.IsValid {
 		return CheckResult{
 			Name:   "status",
 			Status: "pass",
-			Detail: fmt.Sprintf("Valid (index %d, status=%d%s)", result.Index, result.Status, signatureDetail),
+			Detail: fmt.Sprintf("Valid (%s)", detail),
 		}
 	}
 
 	return CheckResult{
 		Name:   "status",
 		Status: "fail",
-		Detail: fmt.Sprintf("Revoked (index %d, status=%d%s)", result.Index, result.Status, signatureDetail),
+		Detail: fmt.Sprintf("%s (%s)", result.StatusName, detail),
 	}
 }
 

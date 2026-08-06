@@ -20,7 +20,16 @@ import (
 )
 
 // SetCredentialStatus sets the status value for a credential.
+//
+// Section 7 of draft-ietf-oauth-status-list bounds a Status Type: "Status
+// Types MUST have a numeric value between 0 and 255 for their representation
+// in the Status List." A value outside that range has no encoding in any of
+// the four widths the specification allows, so it is refused here rather than
+// stored and then silently truncated when the list is published.
 func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bool) {
+	if status < 0 || status > 255 {
+		return StatusEntry{}, false
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	for _, c := range w.Credentials {
@@ -38,18 +47,37 @@ func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bo
 	return entry, true
 }
 
-// BuildStatusBitstring builds a bitstring from status entries (1 bit per entry).
-func (w *Wallet) BuildStatusBitstring() []byte {
+// BuildStatusList builds the published status list: the number of bits each
+// entry occupies and the packed bitstring.
+//
+// The width follows the largest status value the wallet actually holds. A
+// list fixed at one bit per entry can only say VALID or INVALID, so a
+// credential the wallet marked SUSPENDED (0x02, "temporarily invalid ...
+// usually temporary" per section 7.1) was published as INVALID and every
+// external verifier read a different status than this wallet's own API
+// reported. Section 4.1 requires the Status Issuer to pick a width that fits
+// ("The Status Issuer MUST choose an adequate bits value (bit size) to be
+// able to describe the required Status Types for its application", section 7).
+func (w *Wallet) BuildStatusList() (int, []byte) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
-	if w.StatusListCounter == 0 {
-		// Minimum 1 byte
-		return make([]byte, 1)
+	maxStatus := 0
+	for _, entry := range w.StatusEntries {
+		if entry.Index >= 0 && entry.Status > maxStatus {
+			maxStatus = entry.Status
+		}
+	}
+	bits, err := statuslist.BitsForStatus(maxStatus)
+	if err != nil {
+		// SetCredentialStatus refuses anything outside 0..255, so a stored
+		// value that does not fit came from a hand-edited wallet file. The
+		// widest list the specification allows is the honest answer.
+		bits = 8
 	}
 
-	// Calculate number of bytes needed
-	numBytes := (w.StatusListCounter + 7) / 8
+	entries := w.StatusListCounter
+	numBytes := (entries*bits + 7) / 8
 	// A floor of 16 bytes, which is this wallet's choice rather than a
 	// requirement: the specification sets no minimum size. A list only as
 	// long as the credentials issued so far would shrink to a couple of
@@ -59,26 +87,26 @@ func (w *Wallet) BuildStatusBitstring() []byte {
 		numBytes = 16
 	}
 	bitstring := make([]byte, numBytes)
+	capacity := len(bitstring) * 8 / bits
 
 	for _, entry := range w.StatusEntries {
-		if entry.Status != 0 {
-			// A negative index used to pass the bounds check below (anything
-			// is less than the length) and then raise "negative shift
-			// amount". The index is adopted from an imported credential's own
-			// status claim, so the number is whoever minted it, and this
-			// bitstring is served to anyone who asks for the status list.
-			if entry.Index < 0 {
-				continue
-			}
-			byteIdx := entry.Index / 8
-			bitOffset := entry.Index % 8
-			if byteIdx < len(bitstring) {
-				bitstring[byteIdx] |= byte(1 << bitOffset)
-			}
+		if entry.Status == 0 {
+			continue
 		}
+		// A negative index passes a bounds check written as "less than the
+		// length" and then raises "negative shift amount". The index is
+		// adopted from an imported credential's own status claim, so the
+		// number is whoever minted it, and this bitstring is served to anyone
+		// who asks for the status list.
+		if entry.Index < 0 || entry.Index >= capacity {
+			continue
+		}
+		bitPos := entry.Index * bits
+		mask := (1 << bits) - 1
+		bitstring[bitPos/8] |= byte((entry.Status & mask) << (bitPos % 8))
 	}
 
-	return bitstring
+	return bits, bitstring
 }
 
 // nextStatusIndex returns the next status list index and increments the counter.
@@ -154,11 +182,19 @@ func (w *Wallet) CredentialStatusInfo(c StoredCredential) map[string]any {
 	}
 	info := map[string]any{"managed": managed}
 	if ref != nil {
-		info["uri"] = ref.URI
-		info["idx"] = ref.Idx
+		if ref.Invalid != "" {
+			// A status_list object that does not meet section 6.2 is a broken
+			// credential. Reporting the parts of it that happened to parse
+			// would read like a working reference.
+			info["error"] = ref.Invalid
+		} else {
+			info["uri"] = ref.URI
+			info["idx"] = ref.Idx
+		}
 	}
 	if managed {
 		info["status"] = entry.Status
+		info["statusName"] = statuslist.StatusName(entry.Status)
 	}
 	return info
 }

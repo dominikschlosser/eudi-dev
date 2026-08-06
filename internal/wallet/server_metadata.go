@@ -91,10 +91,24 @@ func (s *Server) handleJWTVCIssuerMetadata(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// handleOpenIDCredentialIssuerMetadata serves the Credential Issuer Metadata of
+// OpenID4VCI 1.0 §12.2.2 in whichever of the two forms the client asked for.
+//
+// The unsigned form is the one that must always be there: "The Credential
+// Issuer MUST support returning metadata in an unsigned form 'application/json'
+// and MAY support returning it in a signed form 'application/jwt'." Signed
+// metadata is served to a client whose Accept header asks for application/jwt
+// and nothing else, following the same section: "It is RECOMMENDED for
+// Credential Issuers to respond with a Content-Type matching to the Wallet's
+// requested Accept header when the requested content type is supported."
 func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
 	if issuer == "" {
 		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
+		return
+	}
+	if !acceptsOnlySignedIssuerMetadata(r.Header.Get("Accept")) {
+		writeJSON(w, http.StatusOK, buildOpenIDCredentialIssuerMetadata(s.wallet, issuer))
 		return
 	}
 	if len(s.wallet.CertChain) == 0 {
@@ -106,8 +120,30 @@ func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *
 		http.Error(w, fmt.Sprintf("signing issuer metadata: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/openidvci-issuer-metadata+jwt")
+	// §12.2.2 names application/jwt as the media type of the signed form.
+	// openidvci-issuer-metadata+jwt is the typ header value inside it (§12.2.3),
+	// not something that belongs in Content-Type.
+	w.Header().Set("Content-Type", "application/jwt")
 	w.Write([]byte(jwt))
+}
+
+// acceptsOnlySignedIssuerMetadata reports whether the client asked for the
+// signed form and no other. A client that accepts application/json, or anything
+// at all, gets the unsigned document: it is the form every issuer must serve
+// and every wallet must understand.
+func acceptsOnlySignedIssuerMetadata(accept string) bool {
+	wantsJWT := false
+	for _, entry := range strings.Split(accept, ",") {
+		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(entry, ";")[0]))
+		switch mediaType {
+		case "":
+		case "application/jwt":
+			wantsJWT = true
+		default:
+			return false
+		}
+	}
+	return wantsJWT
 }
 
 func (s *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) {
@@ -165,24 +201,57 @@ func (s *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.R
 	w.Write([]byte(recordJWT))
 }
 
-// handleStatusList generates and serves a status list JWT.
+// handleStatusList generates and serves the wallet's Status List Token, in
+// the JWT or the CWT representation depending on what the client asks for.
 func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
-	bitstring := s.wallet.BuildStatusBitstring()
-	statusListURI := s.wallet.StatusListURL()
+	// draft-ietf-oauth-status-list section 8.1: "The HTTP endpoint SHOULD
+	// support the use of Cross-Origin Resource Sharing (CORS) [CORS] and/or
+	// other methods as appropriate to enable Browser-based clients to access
+	// it". The validate UI in this toolkit is exactly such a client. Only GET
+	// is routed here and Accept is a CORS-safelisted request header, so a
+	// browser never sends a preflight and the response header is enough.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Section 8.4 defines the time query parameter for historical resolution
+	// and says "If the Server does not support the additional query
+	// parameter, it SHOULD return a status code of 501 (Not Implemented)".
+	// This wallet rebuilds its list from current state on every request and
+	// keeps no history, so answering with the current list would hand back a
+	// token for a moment the client did not ask about.
+	if r.URL.Query().Has("time") {
+		http.Error(w, "historical status list resolution (the time query parameter) is not implemented", http.StatusNotImplemented)
+		return
+	}
+
+	bits, bitstring := s.wallet.BuildStatusList()
 	certChain := s.wallet.CertChain
 	if derived, err := s.wallet.DefaultSigningCertChain(); err == nil && len(derived) > 0 {
 		certChain = derived
 	}
-	jwt, err := statuslist.GenerateStatusListJWT(bitstring, s.wallet.IssuerKey, statuslist.StatusListConfig{
-		URI:       statusListURI,
+	cfg := statuslist.StatusListConfig{
+		URI:       s.wallet.StatusListURL(),
 		Issuer:    s.wallet.StatusListIssuer(),
+		Bits:      bits,
 		CertChain: certChain,
-	})
+	}
+
+	if statuslist.NegotiateMediaType(r.Header.Get("Accept")) == statuslist.MediaTypeCWT {
+		token, err := statuslist.GenerateStatusListCWT(bitstring, s.wallet.IssuerKey, cfg)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("generating status list: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", statuslist.MediaTypeCWT)
+		w.Write(token)
+		return
+	}
+
+	jwt, err := statuslist.GenerateStatusListJWT(bitstring, s.wallet.IssuerKey, cfg)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("generating status list: %v", err), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/statuslist+jwt")
+	w.Header().Set("Content-Type", statuslist.MediaTypeJWT)
 	w.Write([]byte(jwt))
 }
 

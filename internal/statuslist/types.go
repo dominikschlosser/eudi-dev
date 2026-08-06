@@ -13,35 +13,165 @@
 // limitations under the License.
 
 // Package statuslist checks credential revocation status using Token Status
-// Lists (draft-ietf-oauth-status-list).
+// Lists (draft-ietf-oauth-status-list), in both the JWT and the CWT
+// representation of a Status List Token.
 package statuslist
 
+import (
+	"crypto"
+	"fmt"
+	"time"
+)
+
+// Media types for the two Status List Token representations. Section 8.1:
+// "application/statuslist+jwt" for Status List Token in JWT format,
+// "application/statuslist+cwt" for Status List Token in CWT format.
+const (
+	MediaTypeJWT = "application/statuslist+jwt"
+	MediaTypeCWT = "application/statuslist+cwt"
+)
+
+// TypJWT is the value the JWT header must carry. Section 5.1: "typ: REQUIRED.
+// The JWT type MUST be statuslist+jwt."
+const TypJWT = "statuslist+jwt"
+
+// Format names reported in a StatusResult.
+const (
+	FormatJWT = "jwt"
+	FormatCWT = "cwt"
+)
+
+// CWT claim keys from Section 5.2. The Status List Token in CWT format keys
+// its claims by integer, so nothing here can be looked up by name.
+const (
+	cwtClaimIssuer     = 1
+	cwtClaimSubject    = 2
+	cwtClaimExpiration = 4
+	cwtClaimIssuedAt   = 6
+	cwtClaimStatusList = 65533
+	cwtClaimTTL        = 65534
+)
+
+// COSE header labels used by a Status List Token in CWT format: 1 (alg) and
+// 16 (type) from RFC 9052 and RFC 9596, 33 (x5chain) from RFC 9360.
+const (
+	coseHeaderAlg     = 1
+	coseHeaderType    = 16
+	coseHeaderX5Chain = 33
+)
+
 // StatusRef is a reference to a status list entry in a credential.
+//
+// Invalid is set when the credential carries a status_list object that cannot
+// be used. Section 6.2 makes both members REQUIRED ("idx: REQUIRED", "uri:
+// REQUIRED"), so a reference missing either one is a broken credential rather
+// than a credential without status information. Reporting it as absent would
+// turn a malformed reference into a silent pass at every call site that only
+// branches on a nil reference.
 type StatusRef struct {
-	URI string `json:"uri"`
-	Idx int    `json:"idx"`
+	URI     string `json:"uri"`
+	Idx     int    `json:"idx"`
+	Invalid string `json:"invalid,omitempty"`
 }
 
 // StatusResult contains the revocation check result.
 type StatusResult struct {
-	URI            string `json:"uri"`
-	Index          int    `json:"index"`
-	Status         int    `json:"status"`
-	IsValid        bool   `json:"isValid"`
-	BitsPerEntry   int    `json:"bitsPerEntry"`
-	SignatureValid *bool  `json:"signatureValid,omitempty"`
-	SignatureInfo  string `json:"signatureInfo,omitempty"`
-	Error          string `json:"error,omitempty"`
+	URI          string `json:"uri"`
+	Index        int    `json:"index"`
+	Status       int    `json:"status"`
+	StatusName   string `json:"statusName"`
+	IsValid      bool   `json:"isValid"`
+	BitsPerEntry int    `json:"bitsPerEntry"`
+	// Format is "jwt" or "cwt", the representation the Status Provider served.
+	Format string `json:"format"`
+	// Subject is the sub (or CWT claim 2) of the Status List Token.
+	Subject string `json:"subject,omitempty"`
+	// SignatureValid is always set on a returned result: a Status List Token
+	// whose signature does not verify is reported as an error instead, so a
+	// caller never sees a status that was not signed by a resolvable key.
+	SignatureValid *bool `json:"signatureValid,omitempty"`
+	SignatureInfo  string
+	// TrustAnchored reports whether the signing key was chained to a
+	// caller-supplied trust anchor rather than taken from the token itself.
+	TrustAnchored bool `json:"trustAnchored"`
+	// Warnings collect conformance problems that did not stop the check.
+	Warnings []string `json:"warnings,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
-// CheckOptions configures optional validation behavior for status list checks.
+// CheckOptions configures validation behavior for status list checks.
 type CheckOptions struct {
-	// TrustListCerts are the trust list CA certificates used to validate the
-	// status list JWT's x5c chain. If empty, signature validation is skipped.
+	// TrustListCerts are the trust list CA certificates the Status List
+	// Token's certificate chain must validate against. When empty, the key is
+	// resolved from the token itself and the result is marked as not trust
+	// anchored, but the signature is still verified: Section 5.1 and Section
+	// 5.2 both say "Relying Parties MUST reject JWTs with an invalid
+	// signature" with no opt-out.
 	TrustListCerts []TrustCert
+
+	// Keys are public keys resolved out of band. Section 11.3 leaves key
+	// resolution to the ecosystem, so a caller that already knows the Status
+	// Issuer's key can supply it for a token that carries no key material.
+	Keys []crypto.PublicKey
+
+	// Now overrides the current time used for the exp check. The zero value
+	// means time.Now().
+	Now time.Time
+}
+
+func (o CheckOptions) now() time.Time {
+	if o.Now.IsZero() {
+		return time.Now()
+	}
+	return o.Now
 }
 
 // TrustCert holds a raw trust list certificate for chain validation.
 type TrustCert struct {
 	Raw []byte
+}
+
+// StatusName names a Status Type value from Section 7.1.
+//
+// Reporting every non-zero value as "revoked" is wrong for a list wider than
+// one bit: 0x02 is SUSPENDED ("temporarily invalid ... This status is usually
+// temporary"), which is a different statement about the credential than 0x01
+// INVALID, and an unregistered value is no statement at all.
+func StatusName(value int) string {
+	switch {
+	case value == 0:
+		return "VALID"
+	case value == 1:
+		return "INVALID"
+	case value == 2:
+		return "SUSPENDED"
+	case value == 3, value >= 0x0C && value <= 0x0F:
+		// Section 7.1: "The Status Type value 0x03 and Status Type values in
+		// the range 0x0C until 0x0F are permanently reserved as application
+		// specific."
+		return fmt.Sprintf("APPLICATION_SPECIFIC(0x%02X)", value)
+	default:
+		return fmt.Sprintf("UNKNOWN(0x%02X)", value)
+	}
+}
+
+// BitsForStatus returns the smallest allowed bits value that can represent
+// every status value up to max. Section 4.1: "The Status Issuer MUST define a
+// number of bits (bits) of either 1,2,4 or 8".
+func BitsForStatus(max int) (int, error) {
+	switch {
+	case max < 0:
+		return 0, fmt.Errorf("status value %d is negative", max)
+	case max <= 1:
+		return 1, nil
+	case max <= 3:
+		return 2, nil
+	case max <= 15:
+		return 4, nil
+	case max <= 255:
+		return 8, nil
+	default:
+		// Section 7: "Status Types MUST have a numeric value between 0 and 255".
+		return 0, fmt.Errorf("status value %d is above 255", max)
+	}
 }

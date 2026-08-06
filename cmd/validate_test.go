@@ -404,9 +404,12 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 	bitstring := make([]byte, 16)
 	bitstring[0] = 1
 
-	statusSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var statusSrv *httptest.Server
+	statusSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The sub claim has to be the URI the credential references, so the
+		// token is minted for the URL this server is actually reachable at.
 		jwt, err := statuslist.GenerateStatusListJWT(bitstring, key, statuslist.StatusListConfig{
-			URI: r.URL.String(),
+			URI: statusSrv.URL,
 		})
 		if err != nil {
 			t.Fatalf("GenerateStatusListJWT: %v", err)
@@ -427,8 +430,8 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected revoked status list to fail validation")
 	}
-	if !strings.Contains(err.Error(), "credential revoked") {
-		t.Fatalf("expected revoked error, got %v", err)
+	if !strings.Contains(err.Error(), "INVALID") {
+		t.Fatalf("expected the error to name the status type, got %v", err)
 	}
 }
 

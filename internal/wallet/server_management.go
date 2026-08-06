@@ -59,8 +59,13 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 
 	ref := CredentialStatusRef(cred)
 	if entry, managed := s.wallet.StatusEntryFor(cred.ID); managed {
-		info := map[string]any{"managed": true, "status": entry.Status, "source": "wallet"}
-		if ref != nil {
+		info := map[string]any{
+			"managed":    true,
+			"status":     entry.Status,
+			"statusName": statuslist.StatusName(entry.Status),
+			"source":     "wallet",
+		}
+		if ref != nil && ref.Invalid == "" {
 			info["uri"] = ref.URI
 			info["idx"] = ref.Idx
 		}
@@ -71,7 +76,21 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential has no status list reference"})
 		return
 	}
+	if ref.Invalid != "" {
+		// The credential carries a status_list object that does not meet
+		// section 6.2, which is a broken credential rather than an
+		// unreachable Status Provider.
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": ref.Invalid})
+		return
+	}
 
+	// This path runs for credentials the wallet did not issue, so there is no
+	// trust anchor to hold their Status Issuer to: the wallet's own CA would
+	// reject every honest external list. The check still verifies the
+	// token's signature against the key the token resolves to, and reports
+	// whether that key was anchored anywhere, so a caller can tell a
+	// self-asserted list from a trusted one instead of reading an unverified
+	// status as authoritative.
 	result, err := statuslist.Check(ref)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
@@ -82,11 +101,15 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"managed": false,
-		"status":  result.Status,
-		"source":  "remote",
-		"uri":     ref.URI,
-		"idx":     ref.Idx,
+		"managed":       false,
+		"status":        result.Status,
+		"statusName":    result.StatusName,
+		"source":        "remote",
+		"format":        result.Format,
+		"uri":           ref.URI,
+		"idx":           ref.Idx,
+		"trustAnchored": result.TrustAnchored,
+		"warnings":      result.Warnings,
 	})
 }
 

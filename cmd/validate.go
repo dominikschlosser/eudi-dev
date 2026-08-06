@@ -17,6 +17,7 @@ package cmd
 import (
 	"crypto"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -295,6 +296,9 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 	if ref == nil {
 		return nil
 	}
+	if ref.Invalid != "" {
+		return fmt.Errorf("status check: %s", ref.Invalid)
+	}
 
 	// Build check options with trust list certs for signature validation
 	checkOpts := statuslist.CheckOptions{}
@@ -304,6 +308,8 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 		}
 	}
 
+	// Any failure of the section 8.3 steps comes back as an error, so there
+	// is no path here that prints a status the signature did not cover.
 	result, err := statuslist.CheckWithOptions(ref, checkOpts)
 	if err != nil {
 		return fmt.Errorf("status check: %w", err)
@@ -311,24 +317,18 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 	if opts.JSON {
 		output.PrintJSON(result)
 	} else {
+		mark := "✗"
 		if result.IsValid {
-			fmt.Printf("\n  ✓ Status: valid (index %d, status=%d)\n", result.Index, result.Status)
-		} else {
-			fmt.Printf("\n  ✗ Status: revoked (index %d, status=%d)\n", result.Index, result.Status)
+			mark = "✓"
 		}
-		if result.SignatureValid != nil {
-			if *result.SignatureValid {
-				fmt.Printf("  ✓ Status list signature: %s\n", result.SignatureInfo)
-			} else {
-				fmt.Printf("  ✗ Status list signature: %s\n", result.SignatureInfo)
-			}
+		fmt.Printf("\n  %s Status: %s (index %d, status=%d, %s)\n", mark, result.StatusName, result.Index, result.Status, strings.ToUpper(result.Format))
+		fmt.Printf("  ✓ Status list signature: %s\n", result.SignatureInfo)
+		for _, warning := range result.Warnings {
+			fmt.Printf("  ! Status list: %s\n", warning)
 		}
 	}
 	if !result.IsValid {
-		return fmt.Errorf("credential revoked")
-	}
-	if result.SignatureValid != nil && !*result.SignatureValid {
-		return fmt.Errorf("status list signature invalid")
+		return fmt.Errorf("credential status is %s", result.StatusName)
 	}
 	return nil
 }
