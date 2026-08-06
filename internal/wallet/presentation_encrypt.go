@@ -220,8 +220,13 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 // Returns the JWE string and the derived content encryption key (CEK) for debugging.
 func (w *Wallet) EncryptResponse(vpToken any, idToken, state string, mdocNonce string, params PresentationParams) (string, []byte, error) {
 	log.Printf("[VP] Encrypting response: response_mode=direct_post.jwt")
-	payload := map[string]any{
-		"state": state,
+	payload := map[string]any{}
+	// OID4VP 1.0 Appendix A.2: "since the state parameter is not defined for
+	// the DC API, the Verifier cannot expect it to be included in the
+	// response". Over the redirect flows it binds the response to the request
+	// and is carried whenever the request supplied one.
+	if state != "" && !isDCAPIResponseMode(params.ResponseMode) {
+		payload["state"] = state
 	}
 	if vpToken != nil {
 		payload["vp_token"] = vpToken
@@ -243,7 +248,7 @@ func (w *Wallet) EncryptErrorResponse(errorCode, errorDescription, state string,
 	if errorDescription != "" {
 		payload["error_description"] = errorDescription
 	}
-	if state != "" {
+	if state != "" && !isDCAPIResponseMode(params.ResponseMode) {
 		payload["state"] = state
 	}
 	return w.encryptDirectPostJWTPayload(payload, "", params)

@@ -826,7 +826,10 @@ func TestClaimKeyFromPath(t *testing.T) {
 		{"sd-jwt unknown second type", sdCred, []any{"given_name", true}, ""},
 		{"mdoc valid", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "given_name"}, "eu.europa.ec.eudi.pid.1:given_name"},
 		{"mdoc missing", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "missing"}, ""},
-		{"mdoc alias", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}, "eu.europa.ec.eudi.pid.1:birth_place"},
+		// §7.2.1 selects the data element the second component names and
+		// errors out when it does not exist, so the SD-JWT name of the same
+		// idea does not reach the mdoc element that carries it.
+		{"mdoc no aliasing", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}, ""},
 		{"mdoc native", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place"}, "eu.europa.ec.eudi.pid.1:birth_place"},
 		{"mdoc nested alias unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth", "locality"}, ""},
 		{"mdoc nested native unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place", "locality"}, ""},

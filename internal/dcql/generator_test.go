@@ -15,6 +15,8 @@
 package dcql
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
@@ -45,7 +47,7 @@ func TestFromSDJWT(t *testing.T) {
 	if cq.Format != "dc+sd-jwt" {
 		t.Errorf("format = %q, want dc+sd-jwt", cq.Format)
 	}
-	if cq.Meta == nil || len(cq.Meta.VCTValues) != 1 || cq.Meta.VCTValues[0] != "urn:eudi:pid:1" {
+	if len(cq.Meta.VCTValues) != 1 || cq.Meta.VCTValues[0] != "urn:eudi:pid:1" {
 		t.Errorf("meta.vct_values = %v, want [urn:eudi:pid:1]", cq.Meta)
 	}
 
@@ -142,8 +144,17 @@ func TestFromSDJWT_NoVCT(t *testing.T) {
 	if cq.ID != "credential_0" {
 		t.Errorf("ID = %q, want credential_0", cq.ID)
 	}
-	if cq.Meta != nil {
-		t.Errorf("meta should be nil when no VCT, got %v", cq.Meta)
+	// Section 6.1 makes meta REQUIRED, and an empty object is how a query
+	// places no constraints on the metadata of the requested Credential.
+	if len(cq.Meta.VCTValues) != 0 || cq.Meta.DoctypeValue != "" {
+		t.Errorf("meta should be empty when no VCT, got %v", cq.Meta)
+	}
+	encoded, err := json.Marshal(q)
+	if err != nil {
+		t.Fatalf("marshalling query: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"meta":{}`) {
+		t.Errorf("expected the required meta member in %s", encoded)
 	}
 }
 
@@ -169,7 +180,7 @@ func TestFromJWT(t *testing.T) {
 	if cq.Format != "jwt_vc_json" {
 		t.Errorf("format = %q, want jwt_vc_json", cq.Format)
 	}
-	if cq.Meta == nil || len(cq.Meta.VCTValues) != 1 || cq.Meta.VCTValues[0] != "urn:eudi:pid:1" {
+	if len(cq.Meta.VCTValues) != 1 || cq.Meta.VCTValues[0] != "urn:eudi:pid:1" {
 		t.Errorf("meta.vct_values = %v, want [urn:eudi:pid:1]", cq.Meta)
 	}
 
@@ -214,7 +225,7 @@ func TestFromMDOC(t *testing.T) {
 	if cq.Format != "mso_mdoc" {
 		t.Errorf("format = %q, want mso_mdoc", cq.Format)
 	}
-	if cq.Meta == nil || cq.Meta.DoctypeValue != "org.iso.18013.5.1.mDL" {
+	if cq.Meta.DoctypeValue != "org.iso.18013.5.1.mDL" {
 		t.Errorf("meta.doctype_value = %v, want org.iso.18013.5.1.mDL", cq.Meta)
 	}
 
@@ -242,11 +253,24 @@ func TestSanitizeID(t *testing.T) {
 		{"urn:eudi:pid:1", "urn_eudi_pid_1"},
 		{"org.iso.18013.5.1.mDL", "org_iso_18013_5_1_mDL"},
 		{"", ""},
+		// Section 6.1 allows alphanumeric, underscore and hyphen only, so
+		// everything else a vct can carry becomes an underscore.
+		{"https://issuer.example/pid#1", "https___issuer_example_pid_1"},
+		{"vct with spaces", "vct_with_spaces"},
+		{"keep-hyphens_and_1", "keep-hyphens_and_1"},
+		{"grüße", "gr__e"},
 	}
 	for _, tt := range tests {
 		got := sanitizeID(tt.input)
 		if got != tt.want {
 			t.Errorf("sanitizeID(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+		for _, r := range got {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			default:
+				t.Errorf("sanitizeID(%q) = %q contains %q, which Section 6.1 does not allow in an id", tt.input, got, r)
+			}
 		}
 	}
 }

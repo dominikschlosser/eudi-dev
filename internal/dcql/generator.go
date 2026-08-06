@@ -53,9 +53,7 @@ func fromJWTToken(token *sdjwt.Token, credFormat string) *Query {
 	}
 
 	if vct != "" {
-		cq.Meta = &CredentialMeta{
-			VCTValues: []string{vct},
-		}
+		cq.Meta.VCTValues = []string{vct}
 	}
 
 	return &Query{Credentials: []CredentialQuery{cq}}
@@ -90,9 +88,7 @@ func FromMDOC(doc *mdoc.Document) *Query {
 	}
 
 	if doc.DocType != "" {
-		cq.Meta = &CredentialMeta{
-			DoctypeValue: doc.DocType,
-		}
+		cq.Meta.DoctypeValue = doc.DocType
 	}
 
 	return &Query{Credentials: []CredentialQuery{cq}}
@@ -151,15 +147,27 @@ func extractPaths(prefix []any, v any) []ClaimQuery {
 	}
 }
 
+// sanitizeID turns a credential type into a Credential Query id.
+//
+// OID4VP 1.0 Section 6.1: the id "MUST be a non-empty string consisting of
+// alphanumeric, underscore (_), or hyphen (-) characters", so every other
+// character becomes an underscore. A vct is a URN and a doctype is a reverse
+// domain name, and both carry separators no id may contain.
 func sanitizeID(s string) string {
-	s = strings.ReplaceAll(s, ":", "_")
-	s = strings.ReplaceAll(s, ".", "_")
-	s = strings.ReplaceAll(s, "/", "_")
-	s = strings.TrimLeft(s, "_")
-	if len(s) > 50 {
-		s = s[:50]
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
 	}
-	return s
+	out := strings.TrimLeft(b.String(), "_")
+	if len(out) > 50 {
+		out = out[:50]
+	}
+	return out
 }
 
 func sortedKeys[V any](m map[string]V) []string {

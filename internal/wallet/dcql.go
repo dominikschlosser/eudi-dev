@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"crypto/x509"
+	"fmt"
 	"log"
 	"sort"
 	"strconv"
@@ -36,6 +37,16 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 	credQueries, _ := query["credentials"].([]any)
 
 	log.Printf("[DCQL] Evaluating query: %d credential queries against %d stored credentials", len(credQueries), len(credentials))
+
+	if findings := DCQLQueryFindings(query); len(findings) > 0 {
+		for _, finding := range findings {
+			log.Printf("[DCQL] Warning: %s", finding)
+		}
+		if w.ValidationMode == ValidationModeStrict {
+			log.Printf("[DCQL] Result: 0 matches (strict mode treats a malformed query as an error)")
+			return nil
+		}
+	}
 
 	var matches []CredentialMatch
 
@@ -107,19 +118,147 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 
 	matches = keepOnePresentationPerQuery(matches)
 
-	// Apply credential_sets constraints
-	if credSets, ok := query["credential_sets"].([]any); ok {
+	// OID4VP 1.0 §6.4.2: "If credential_sets is not provided, the Verifier
+	// requests presentations for all Credentials in credentials to be
+	// returned." Otherwise the sets decide what is required and what is
+	// optional, and only credentials referenced by a satisfied option are
+	// returned.
+	if credSets, ok := query["credential_sets"].([]any); ok && len(credSets) > 0 {
 		log.Printf("[DCQL] Applying credential_sets constraints: %d sets, %d matches before", len(credSets), len(matches))
 		matches = applyCredentialSets(matches, credSets, w.PreferredFormat)
 		if matches == nil {
-			log.Printf("[DCQL] credential_sets: unsatisfiable required set")
+			log.Printf("[DCQL] credential_sets: no option of any set can be satisfied, returning no credentials")
 		} else {
 			log.Printf("[DCQL] credential_sets: %d matches after filtering", len(matches))
 		}
+	} else if missing := unmatchedCredentialQueries(credQueries, matches); len(missing) > 0 {
+		// §6.4.2: "If the Wallet cannot deliver all non-optional Credentials
+		// requested by the Verifier according to these rules, it MUST NOT
+		// return any Credential(s)." Without credential_sets every entry in
+		// credentials is non-optional, so answering with the subset the wallet
+		// happens to hold discloses credentials the Verifier cannot use.
+		log.Printf("[DCQL] Result: 0 matches (no credential answers %v, and every credential query is required without credential_sets)", missing)
+		return nil
 	}
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
 	return matches
+}
+
+// unmatchedCredentialQueries lists the credential query ids that no stored
+// credential answers.
+//
+// A credential query that is not an object, or that carries no id, can never
+// be answered either, and is reported under the position it holds in the
+// credentials array.
+func unmatchedCredentialQueries(credQueries []any, matches []CredentialMatch) []string {
+	matched := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		matched[m.QueryID] = true
+	}
+
+	var missing []string
+	for i, cq := range credQueries {
+		cqMap, ok := cq.(map[string]any)
+		if !ok {
+			missing = append(missing, fmt.Sprintf("credentials[%d]", i))
+			continue
+		}
+		id, _ := cqMap["id"].(string)
+		if id == "" {
+			missing = append(missing, fmt.Sprintf("credentials[%d]", i))
+			continue
+		}
+		if !matched[id] {
+			missing = append(missing, id)
+		}
+	}
+	return missing
+}
+
+// DCQLQueryFindings reports where a DCQL query departs from what OID4VP 1.0 §6
+// requires of it. Findings are collected in every validation mode. What the
+// mode decides is what happens to them: strict refuses to answer the query,
+// debug logs them and evaluates the query as far as it can so a developer can
+// watch the rest of the exchange.
+func DCQLQueryFindings(query map[string]any) []string {
+	if query == nil {
+		return nil
+	}
+
+	// §6: "credentials: REQUIRED. A non-empty array of Credential Queries as
+	// defined in Section 6.1 that specify the requested Credentials."
+	credQueries, ok := query["credentials"].([]any)
+	if !ok || len(credQueries) == 0 {
+		return []string{"dcql_query: credentials is required and must be a non-empty array"}
+	}
+
+	var findings []string
+	seen := make(map[string]bool, len(credQueries))
+	for i, cq := range credQueries {
+		cqMap, ok := cq.(map[string]any)
+		if !ok {
+			findings = append(findings, fmt.Sprintf("dcql_query: credentials[%d] must be an object", i))
+			continue
+		}
+
+		// §6.1: "id: REQUIRED. [...] The value MUST be a non-empty string
+		// consisting of alphanumeric, underscore (_), or hyphen (-)
+		// characters. Within the Authorization Request, the same id MUST NOT
+		// be present more than once."
+		id, _ := cqMap["id"].(string)
+		switch {
+		case !isDCQLIdentifier(id):
+			findings = append(findings, fmt.Sprintf(
+				"dcql_query: credentials[%d].id must be a non-empty string of alphanumeric, underscore or hyphen characters, got %q", i, id))
+		case seen[id]:
+			findings = append(findings, fmt.Sprintf("dcql_query: credential query id %q is present more than once", id))
+		default:
+			seen[id] = true
+		}
+
+		label := id
+		if label == "" {
+			label = fmt.Sprintf("credentials[%d]", i)
+		}
+
+		// §6.1: "format: REQUIRED. A string that specifies the format of the
+		// requested Credential."
+		if f, _ := cqMap["format"].(string); f == "" {
+			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q is missing the required format", label))
+		}
+
+		// §6.1: "meta: REQUIRED. An object defining additional properties
+		// requested by the Verifier that apply to the metadata and validity
+		// data of the Credential. [...] If empty, no specific constraints are
+		// placed on the metadata or validity of the requested Credential." An
+		// empty object is therefore the way to place no constraints, and
+		// leaving the member out is not.
+		meta, present := cqMap["meta"]
+		if !present {
+			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q is missing the required meta (use an empty object to place no constraints)", label))
+		} else if _, ok := meta.(map[string]any); !ok {
+			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q has a meta that is not an object", label))
+		}
+	}
+	return findings
+}
+
+// isDCQLIdentifier reports whether an id has the syntax OID4VP 1.0 §6.1 gives
+// it: "a non-empty string consisting of alphanumeric, underscore (_), or
+// hyphen (-) characters".
+func isDCQLIdentifier(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // sortMatchesNewestFirst orders the candidates for each query id by when the
@@ -204,6 +343,11 @@ type claimSelection struct {
 }
 
 // matchesFormat checks if a credential matches the requested format.
+//
+// OID4VP 1.0 §6.1 makes format REQUIRED, so an absent one is a malformed
+// query rather than a wildcard. DCQLQueryFindings reports it, and strict mode
+// refuses the query outright. What is left here is the debug-mode reading,
+// where the flow carries on so a developer can see the rest of the exchange.
 func matchesFormat(cred StoredCredential, queryFormat string) bool {
 	if queryFormat == "" {
 		return true
@@ -212,6 +356,10 @@ func matchesFormat(cred StoredCredential, queryFormat string) bool {
 }
 
 // matchesMeta checks format-specific metadata (vct_values, doctype_value).
+//
+// meta is REQUIRED by §6.1 and an empty object is how a Verifier places no
+// constraints, so an absent meta is reported by DCQLQueryFindings. As with
+// format, treating it as unconstrained here is the debug-mode reading.
 func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 	meta, ok := cqMap["meta"].(map[string]any)
 	if !ok {
@@ -268,7 +416,7 @@ func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claim
 // selectFromClaimSets picks the first satisfiable claim_set (preference order).
 // claim_sets entries reference claims by their "id" property (string).
 func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []any) []string {
-	// Build index: claim id → claim path
+	// Build index: claim id → Claims Query
 	claimByID := buildClaimByID(claimsQuery)
 
 	for _, cs := range claimSets {
@@ -287,13 +435,13 @@ func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []a
 				break
 			}
 
-			path := claimByID[id]
-			if path == nil {
+			claimQuery := claimByID[id]
+			if claimQuery == nil {
 				satisfiable = false
 				break
 			}
 
-			selector := claimSelectorFromPath(cred, path)
+			selector := claimSelectorFor(cred, claimQuery)
 			if selector == "" {
 				satisfiable = false
 				break
@@ -309,9 +457,9 @@ func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []a
 	return nil
 }
 
-// buildClaimByID builds a map of claim id → path from claims query entries.
-func buildClaimByID(claimsQuery []any) map[string][]any {
-	byID := make(map[string][]any)
+// buildClaimByID builds a map of claim id → Claims Query from claims query entries.
+func buildClaimByID(claimsQuery []any) map[string]map[string]any {
+	byID := make(map[string]map[string]any)
 	for _, cq := range claimsQuery {
 		cqMap, ok := cq.(map[string]any)
 		if !ok {
@@ -321,19 +469,48 @@ func buildClaimByID(claimsQuery []any) map[string][]any {
 		if id == "" {
 			continue
 		}
-		path, ok := cqMap["path"].([]any)
-		if !ok {
+		if _, ok := cqMap["path"].([]any); !ok {
 			continue
 		}
-		byID[id] = path
+		byID[id] = cqMap
 	}
 	return byID
 }
 
+// claimSelectorFor resolves one Claims Query against a credential and returns
+// the selector to disclose, or "" when the credential does not answer it.
+//
+// §6.4.1: "When a Claims Query contains a restriction on the values of a
+// claim, the Wallet SHOULD NOT return the claim if its value does not match
+// according to the rules for values defined in Section 6.3, i.e., the claim
+// should be treated the same as if it did not exist in the Credential." A
+// value mismatch is therefore reported exactly the way a missing claim is.
+func claimSelectorFor(cred StoredCredential, cqMap map[string]any) string {
+	path, ok := cqMap["path"].([]any)
+	if !ok {
+		return ""
+	}
+
+	selector := claimSelectorFromPath(cred, path)
+	if selector == "" {
+		return ""
+	}
+
+	if values, ok := cqMap["values"].([]any); ok && len(values) > 0 {
+		if !valuesConstraintSatisfied(claimValuesAtPath(cred, path), values) {
+			return ""
+		}
+	}
+	return selector
+}
+
 // selectAllRequestedClaims returns all requested claims that exist in the credential.
-// Per DCQL (OID4VP 1.0 Section 6), claims without claim_sets are required by default
-// unless the individual claim entry has "required": false.
-// Returns the selected claims plus any missing required claim paths.
+//
+// §6.4.1: "If claims is present, but claim_sets is absent, the Verifier
+// requests all claims listed in claims." Every listed claim is therefore
+// required, and §6.3 defines no member by which a Verifier could mark one
+// optional. Returns the selected claims plus the paths of the ones the
+// credential cannot answer.
 func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSelection {
 	var selected []string
 	var missingRequired []string
@@ -347,16 +524,9 @@ func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSel
 			continue
 		}
 
-		// Per DCQL spec: claims are required by default.
-		required := true
-		if r, ok := cqMap["required"].(bool); ok {
-			required = r
-		}
-
-		selector := claimSelectorFromPath(cred, path)
-		if selector != "" {
+		if selector := claimSelectorFor(cred, cqMap); selector != "" {
 			selected = append(selected, selector)
-		} else if required {
+		} else {
 			missingRequired = append(missingRequired, claimPathString(path))
 		}
 	}
@@ -451,33 +621,217 @@ func claimKeyFromPath(cred StoredCredential, path []any) string {
 	return ""
 }
 
+// mdocClaimKeyFromPath applies a claims path pointer to an mdoc, per §7.2.1.
+//
+// The data element identifier is matched exactly. §7.2.1: "Select the data
+// element referenced by the second component. If the data element does not
+// exist in the Credential then abort processing and return an error." An
+// identifier a Verifier did not ask for is a different data element, however
+// close its meaning, and answering with it discloses something the request
+// does not cover.
 func mdocClaimKeyFromPath(cred StoredCredential, path []any) string {
-	first, ok := path[0].(string)
+	// §7.2.1: "If the claims path pointer does not contain exactly two
+	// components or one of the components is not a string then abort
+	// processing and return an error."
+	if len(path) != 2 {
+		return ""
+	}
+	namespace, ok := path[0].(string)
+	if !ok {
+		return ""
+	}
+	element, ok := path[1].(string)
 	if !ok {
 		return ""
 	}
 
-	// mDoc claims are flat elements in a namespace: ["namespace", "element"]
-	if len(path) >= 2 {
-		if elem, ok := path[1].(string); ok {
-			for _, candidate := range mdocElementCandidates(elem) {
-				key := first + ":" + candidate
-				if _, exists := cred.Claims[key]; exists && len(path) == 2 {
-					return key
+	key := namespace + ":" + element
+	if _, exists := cred.Claims[key]; !exists {
+		return ""
+	}
+	return key
+}
+
+// claimValuesAtPath returns the claims a claims path pointer selects (§7).
+// Processing a pointer yields a set of claims, so an array wildcard
+// contributes one entry per element.
+func claimValuesAtPath(cred StoredCredential, path []any) []any {
+	if len(path) == 0 {
+		return nil
+	}
+
+	if cred.Format == "mso_mdoc" {
+		key := mdocClaimKeyFromPath(cred, path)
+		if key == "" {
+			return nil
+		}
+		return []any{mdocValueAsJSON(cred.Claims[key])}
+	}
+
+	return selectJSONClaims(cred.Claims, path)
+}
+
+// selectJSONClaims applies a claims path pointer to a JSON-based credential,
+// per §7.1: "A string value indicates that the respective key is to be
+// selected, a null value indicates that all elements of the currently selected
+// array(s) are to be selected; and a non-negative integer indicates that the
+// respective index in an array is to be selected."
+func selectJSONClaims(root map[string]any, path []any) []any {
+	selection := []any{any(root)}
+
+	for _, segment := range path {
+		var next []any
+		for _, value := range selection {
+			switch seg := segment.(type) {
+			case string:
+				obj, ok := value.(map[string]any)
+				if !ok {
+					continue
 				}
+				if v, exists := obj[seg]; exists {
+					next = append(next, v)
+				}
+			case nil:
+				arr, ok := value.([]any)
+				if !ok {
+					continue
+				}
+				next = append(next, arr...)
+			default:
+				idx, ok := claimPathIndex(seg)
+				if !ok {
+					return nil
+				}
+				arr, isArr := value.([]any)
+				if !isArr || idx >= len(arr) {
+					continue
+				}
+				next = append(next, arr[idx])
+			}
+		}
+		// §7.1: "If the set of elements currently selected is empty, abort
+		// processing and return an error."
+		if len(next) == 0 {
+			return nil
+		}
+		selection = next
+	}
+
+	return selection
+}
+
+// claimPathIndex reads an array index segment. §7: "A claims path pointer MUST
+// be a non-empty array of strings, nulls and non-negative integers", and JSON
+// decoding hands those integers over as float64.
+func claimPathIndex(segment any) (int, bool) {
+	switch v := segment.(type) {
+	case float64:
+		if v < 0 || v != float64(int(v)) {
+			return 0, false
+		}
+		return int(v), true
+	case int:
+		if v < 0 {
+			return 0, false
+		}
+		return v, true
+	default:
+		return 0, false
+	}
+}
+
+// mdocValueAsJSON converts an mdoc data element value to the JSON value that
+// value matching compares against.
+//
+// §6.3: "If a Wallet implements value matching and the Credential being
+// matched is an ISO mdoc-based credential, the CBOR value used for matching
+// MUST first be converted to JSON, following the advice given in Section 6.1
+// of [RFC8949]." That advice encodes a byte string as base64url and every CBOR
+// integer as a JSON number.
+func mdocValueAsJSON(value any) any {
+	switch v := value.(type) {
+	case []byte:
+		return format.EncodeBase64URL(v)
+	case time.Time:
+		return v.UTC().Format(time.RFC3339)
+	default:
+		if n, ok := numericClaimValue(value); ok {
+			return n
+		}
+		return value
+	}
+}
+
+// valuesConstraintSatisfied reports whether a claim answers a values
+// restriction.
+//
+// §6.3: "If the values property is present, the Wallet SHOULD return the claim
+// only if the type and value of the claim both match exactly for at least one
+// of the elements in the array."
+func valuesConstraintSatisfied(selected []any, values []any) bool {
+	for _, claim := range selected {
+		for _, want := range values {
+			if claimValueEquals(claim, want) {
+				return true
 			}
 		}
 	}
-
-	return ""
+	return false
 }
 
-func mdocElementCandidates(name string) []string {
-	switch name {
-	case "place_of_birth":
-		return []string{"place_of_birth", "birth_place"}
+// claimValueEquals compares a claim against one entry of a values array. §6.3
+// allows "strings, integers or boolean values" there, and demands that type and
+// value both match, so a string never answers a number and a boolean never
+// answers the integer 1.
+func claimValueEquals(claim, want any) bool {
+	switch expected := want.(type) {
+	case string:
+		got, ok := claim.(string)
+		return ok && got == expected
+	case bool:
+		got, ok := claim.(bool)
+		return ok && got == expected
 	default:
-		return []string{name}
+		wantNum, ok := numericClaimValue(want)
+		if !ok {
+			return false
+		}
+		gotNum, ok := numericClaimValue(claim)
+		return ok && gotNum == wantNum
+	}
+}
+
+// numericClaimValue reports the numeric value of a claim or of a values entry.
+// A JSON decoder hands over float64, while a CBOR decoder hands over the
+// signed and unsigned integer types an mdoc data element carries.
+func numericClaimValue(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint8:
+		return float64(v), true
+	case uint16:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	default:
+		return 0, false
 	}
 }
 
@@ -665,6 +1019,16 @@ func claimValueAtPath(value any, path []any) (any, bool) {
 
 // applyCredentialSets filters matches to satisfy credential_sets constraints.
 // When preferredFormat is set, options containing credentials of that format are tried first.
+//
+// It returns nil when nothing may be returned. §6.4.2: "To satisfy a
+// Credential Set Query, the Wallet MUST return presentations of a set of
+// Credentials that match to one of the options inside the Credential Set
+// Query", and "If the Wallet cannot deliver all non-optional Credentials
+// requested by the Verifier according to these rules, it MUST NOT return any
+// Credential(s)." So a required set with no satisfiable option means no
+// credentials, and sets that are all optional with no satisfiable option mean
+// nothing was asked for that the wallet can answer, which is also no
+// credentials rather than everything that happened to match.
 func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFormat string) []CredentialMatch {
 	// Group matches by query ID
 	byQuery := make(map[string][]CredentialMatch)
@@ -747,9 +1111,10 @@ func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFor
 		}
 	}
 
-	// If no credential_sets were defined or all optional, include everything
+	// No option of any set could be satisfied, so there is no set of
+	// credentials to return.
 	if len(needed) == 0 {
-		return matches
+		return nil
 	}
 
 	// Filter to only needed matches (first match per query ID)

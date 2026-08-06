@@ -126,6 +126,10 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 			findings = append(findings, "a vp_token request must carry either dcql_query or scope")
 		}
 	}
+	// §6.1 makes format, meta and the syntax of a credential query id
+	// normative, and a query that breaks them is a request the Verifier got
+	// wrong rather than a credential the wallet lacks.
+	findings = append(findings, DCQLQueryFindings(params.DCQLQuery)...)
 	// §5: "Wallets that do not support this parameter MUST reject requests
 	// that contain it." Answering without transaction_data_hashes instead
 	// produces a presentation the Verifier has to refuse, for a reason it

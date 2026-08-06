@@ -805,8 +805,12 @@ func TestBrowserPresentationAPI_DCAPISignedJWT(t *testing.T) {
 	if err := json.Unmarshal([]byte(plaintext), &decrypted); err != nil {
 		t.Fatalf("parsing decrypted response: %v", err)
 	}
-	if decrypted["state"] != "browser-state" {
-		t.Fatalf("expected state in encrypted response, got %v", decrypted["state"])
+	// OID4VP 1.0 Appendix A.2: "since the state parameter is not defined for
+	// the DC API, the Verifier cannot expect it to be included in the
+	// response". A Verifier over this channel correlates by the request it
+	// made, not by a parameter the appendix does not define.
+	if _, present := decrypted["state"]; present {
+		t.Errorf("the encrypted Digital Credentials API response carries state: %v", decrypted["state"])
 	}
 	vpToken, ok := decrypted["vp_token"].(map[string]any)
 	if !ok {
