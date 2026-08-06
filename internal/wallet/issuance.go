@@ -101,51 +101,30 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		"grants":                       offer.Grants,
 	})
 
-	// Fetch issuer metadata
-	metadataURL, _ := wellKnownURL(offer.CredentialIssuer, "openid-credential-issuer")
-	w.addProtocolLog("issuance", "issuer_metadata_request", fmt.Sprintf("Fetch issuer metadata from %s", offer.CredentialIssuer), true, map[string]any{
-		"direction": "outbound",
-		"method":    "GET",
-		"url":       metadataURL,
-		"issuer":    offer.CredentialIssuer,
+	metadata, err := w.fetchLoggedMetadata(metadataFetch{
+		event:         "issuer_metadata",
+		fetchLabel:    "issuer metadata",
+		responseLabel: "Issuer metadata",
+		wellKnown:     "openid-credential-issuer",
+		issuer:        offer.CredentialIssuer,
+		fetch:         fetchIssuerMetadata,
 	})
-	metadata, err := fetchIssuerMetadata(offer.CredentialIssuer)
 	if err != nil {
-		w.addProtocolLog("issuance", "issuer_metadata_response", fmt.Sprintf("Issuer metadata response from %s", offer.CredentialIssuer), false, map[string]any{
-			"direction": "inbound",
-			"url":       metadataURL,
-			"issuer":    offer.CredentialIssuer,
-			"error":     err.Error(),
-		})
 		return nil, fmt.Errorf("fetching issuer metadata: %w", err)
 	}
-	w.addProtocolLog("issuance", "issuer_metadata_response", fmt.Sprintf("Issuer metadata response from %s", offer.CredentialIssuer), true, map[string]any{
-		"direction": "inbound",
-		"url":       metadataURL,
-		"issuer":    offer.CredentialIssuer,
-		"metadata":  metadata,
-	})
 
+	// A missing authorization server document is not fatal here: the
+	// endpoints fall back to the issuer's own metadata below, so the error is
+	// carried rather than returned.
 	authServer := getAuthorizationServer(metadata, offer.CredentialIssuer)
-	oauthURL, _ := wellKnownURL(authServer, "oauth-authorization-server")
-	w.addProtocolLog("issuance", "oauth_metadata_request", fmt.Sprintf("Fetch OAuth metadata from %s", authServer), true, map[string]any{
-		"direction": "outbound",
-		"method":    "GET",
-		"url":       oauthURL,
-		"issuer":    authServer,
+	oauthMeta, oauthErr := w.fetchLoggedMetadata(metadataFetch{
+		event:         "oauth_metadata",
+		fetchLabel:    "OAuth metadata",
+		responseLabel: "OAuth metadata",
+		wellKnown:     "oauth-authorization-server",
+		issuer:        authServer,
+		fetch:         fetchOAuthMetadata,
 	})
-	oauthMeta, oauthErr := fetchOAuthMetadata(authServer)
-	oauthResponseDetails := map[string]any{
-		"direction": "inbound",
-		"url":       oauthURL,
-		"issuer":    authServer,
-	}
-	if oauthErr != nil {
-		oauthResponseDetails["error"] = oauthErr.Error()
-	} else {
-		oauthResponseDetails["metadata"] = oauthMeta
-	}
-	w.addProtocolLog("issuance", "oauth_metadata_response", fmt.Sprintf("OAuth metadata response from %s", authServer), oauthErr == nil, oauthResponseDetails)
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
 
@@ -467,6 +446,51 @@ func verifyImportedJWTMetadataSignature(raw string) (string, string) {
 		return "fail", fmt.Sprintf("Signature invalid via %s", source)
 	}
 	return "fail", "Signature invalid"
+}
+
+// metadataFetch describes one well-known metadata document to fetch and how
+// to name it in the activity log.
+type metadataFetch struct {
+	event         string // log event prefix, e.g. "issuer_metadata"
+	fetchLabel    string // reads as "Fetch <fetchLabel> from <issuer>"
+	responseLabel string // reads as "<responseLabel> response from <issuer>"
+	wellKnown     string // the .well-known suffix, for the logged URL
+	issuer        string
+	fetch         func(string) (map[string]any, error)
+}
+
+// fetchLoggedMetadata fetches a metadata document and records the request and
+// whichever response it produced.
+//
+// Both callers wrote this out inline, twenty lines each of the same three
+// log calls with the details map spelled out per branch, which is how a field
+// comes to be recorded on one fetch and not the other. The error is returned
+// rather than acted on: one caller gives up on it and the other carries on
+// with what the issuer's own metadata says.
+func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
+	url, _ := wellKnownURL(f.issuer, f.wellKnown)
+	w.addProtocolLog("issuance", f.event+"_request", fmt.Sprintf("Fetch %s from %s", f.fetchLabel, f.issuer), true, map[string]any{
+		"direction": "outbound",
+		"method":    "GET",
+		"url":       url,
+		"issuer":    f.issuer,
+	})
+
+	metadata, err := f.fetch(f.issuer)
+
+	details := map[string]any{
+		"direction": "inbound",
+		"url":       url,
+		"issuer":    f.issuer,
+	}
+	if err != nil {
+		details["error"] = err.Error()
+	} else {
+		details["metadata"] = metadata
+	}
+	w.addProtocolLog("issuance", f.event+"_response", fmt.Sprintf("%s response from %s", f.responseLabel, f.issuer), err == nil, details)
+
+	return metadata, err
 }
 
 // fetchIssuerMetadata fetches the OpenID Credential Issuer metadata.

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The two metadata fetches in a credential offer log themselves through one helper.** Each wrote out the same three log calls inline, with the details map spelled out separately per branch, which is how a field ends up recorded on one fetch and not the other. They now describe what they are fetching and share the logging. The entries a wallet writes are unchanged, which an issuance flow through the demo issuer confirms field by field
+
 - **`wallet serve` runs from a function rather than from inside its flag builder.** Twenty-two flags were declared in a var block that the `RunE` closure read straight out of, so the builder was 466 lines of which the closure was 370, and every other command in the package (`runValidate`, `runDecode`, `runProxy`) already reads the other way round. The flags are a struct now and the work is `runWalletServe`, leaving the builder at 52 lines. It also removes a shadowing that was easy to miss: `--pid` and the local process id were both called `pid` in the same closure, the second one hiding the first from its declaration onward
 
 ### Fixed
