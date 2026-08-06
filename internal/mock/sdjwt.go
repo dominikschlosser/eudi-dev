@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -75,7 +76,10 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 	plain := make(map[string]any)
 
 	for name, value := range cfg.Claims {
-		if always[name] {
+		if err := checkClaimName(name); err != nil {
+			return "", err
+		}
+		if always[name] || forcePlainClaims[name] {
 			plain[name] = value
 			continue
 		}
@@ -102,7 +106,13 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		"exp":     now.Add(cfg.ExpiresIn).Unix(),
 		"vct":     cfg.VCT,
 		"_sd_alg": "sha-256",
-		"_sd":     digests,
+	}
+	// RFC 9901 §4.2.4.1 allows an empty _sd array but recommends omitting the
+	// key, and SD-JWT VC §2.2.2.5 requires it: "An SD-JWT VC MAY have no
+	// selectively disclosable claims. In that case, the SD-JWT VC MUST NOT
+	// contain the _sd claim in the JWT body."
+	if len(digests) > 0 {
+		payload["_sd"] = hideDigestOrder(digests)
 	}
 	for name, value := range plain {
 		payload[name] = value
@@ -129,7 +139,8 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 	}
 
-	// Build header
+	// Build header. SD-JWT VC §2.2.1: "The Issuer MUST include the typ header
+	// parameter in the SD-JWT. The typ value MUST use dc+sd-jwt."
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "dc+sd-jwt",
@@ -152,8 +163,69 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		return "", err
 	}
 
-	// Assemble: header.payload.sig~disc1~disc2~
-	return jwt + "~" + strings.Join(disclosures, "~") + "~", nil
+	// RFC 9901 §4: "The order of the concatenated parts MUST be the
+	// Issuer-signed JWT, a tilde character, zero or more Disclosures each
+	// followed by a tilde character, and lastly the optional Key Binding
+	// JWT." Its ABNF (DISCLOSURE = 1*(ALPHA / DIGIT / "-" / "_")) permits no
+	// empty component, so a credential with no Disclosures is jwt~ and not
+	// jwt~~.
+	var serialized strings.Builder
+	serialized.WriteString(jwt)
+	serialized.WriteString("~")
+	for _, d := range disclosures {
+		serialized.WriteString(d)
+		serialized.WriteString("~")
+	}
+	return serialized.String(), nil
+}
+
+// forcePlainClaims are the claim names that go into the payload plainly even
+// when the caller asks for everything to be selectively disclosable.
+//
+// SD-JWT VC §2.2.2.3 lists most of them: "The following registered JWT claims
+// are used within the SD-JWT component of the SD-JWT VC and MUST NOT be
+// included in the Disclosures, i.e., cannot be selectively disclosed: iss,
+// nbf, exp, cnf, vct, vct#integrity, aka_vcts, status". iat joins them
+// because this generator writes one into the payload itself, and a Disclosure
+// for a claim name that already exists at the level of the _sd key makes the
+// credential rejectable under RFC 9901 §7.1 step 3.c.ii.3.
+var forcePlainClaims = map[string]bool{
+	"iss":           true,
+	"nbf":           true,
+	"exp":           true,
+	"cnf":           true,
+	"vct":           true,
+	"vct#integrity": true,
+	"aka_vcts":      true,
+	"status":        true,
+	"iat":           true,
+}
+
+// checkClaimName refuses the keys RFC 9901 reserves for the selective
+// disclosure machinery. §4.2.1 says of a Disclosure's claim name: "It MUST be
+// a string and MUST NOT be _sd, ..., or a claim name existing in the object
+// as a permanently disclosed claim." §4.1 adds that the payload "MUST NOT
+// contain the claims _sd or ... except for the purpose of conveying digests",
+// and §4.1.1 reserves _sd_alg for the top level of the payload.
+func checkClaimName(name string) error {
+	switch name {
+	case "_sd", "_sd_alg", "...":
+		return fmt.Errorf("claim name %q is reserved by RFC 9901 and cannot be used as a credential claim", name)
+	}
+	return nil
+}
+
+// hideDigestOrder returns the digests in an order that does not depend on the
+// order the claims were given in. RFC 9901 §4.2.4.1: "The Issuer MUST hide the
+// original order of the claims in the array. To ensure this, it is RECOMMENDED
+// to shuffle the array of hashes, e.g., by sorting it alphanumerically or
+// randomly". Sorting is the deterministic half of that recommendation, and a
+// digest carries no trace of its claim.
+func hideDigestOrder(digests []string) []string {
+	sorted := make([]string, len(digests))
+	copy(sorted, digests)
+	sort.Strings(sorted)
+	return sorted
 }
 
 // makeDisclosure handles nested structures. It returns any sub-disclosures and
@@ -170,6 +242,9 @@ func makeDisclosure(name string, value any, path string, always map[string]bool)
 		var subDigests []string
 		obj := make(map[string]any)
 		for subName, subValue := range v {
+			if err := checkClaimName(subName); err != nil {
+				return nil, nil, err
+			}
 			subPath := path + "." + subName
 			if always[subPath] {
 				obj[subName] = subValue
@@ -188,7 +263,7 @@ func makeDisclosure(name string, value any, path string, always map[string]bool)
 			subDigests = append(subDigests, digest)
 		}
 		if len(subDigests) > 0 {
-			obj["_sd"] = subDigests
+			obj["_sd"] = hideDigestOrder(subDigests)
 		}
 		return subDisclosures, obj, nil
 

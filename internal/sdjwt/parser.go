@@ -25,67 +25,84 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
-// Parse splits and decodes an SD-JWT token.
+// Parse splits and decodes an SD-JWT token and processes its Disclosures
+// according to RFC 9901 §7.1. Every MUST-reject condition listed there is an
+// error here: "If any step fails, the SD-JWT is not valid, and processing
+// MUST be aborted." Callers therefore either get a Token whose ResolvedClaims
+// are the Processed SD-JWT Payload, or an error naming the rule that failed.
+//
+// The Issuer-signed JWT signature is not checked here (see Verify). Parse
+// covers steps 3 to 5, the part that turns Disclosures into claims.
 func Parse(raw string) (*Token, error) {
-	raw = strings.TrimSpace(raw)
-	parts := strings.Split(raw, "~")
-
-	if len(parts) < 1 || parts[0] == "" {
-		return nil, fmt.Errorf("invalid SD-JWT: no JWT part found")
-	}
-
-	jwt, err := parseJWT(parts[0])
+	token, err := parseStructure(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing JWT: %w", err)
+		return nil, err
 	}
 
-	token := &Token{
-		Raw:       raw,
-		Header:    jwt.Header,
-		Payload:   jwt.Payload,
-		Signature: jwt.Signature,
+	// RFC 9901 §7.1 steps 3 to 5.
+	resolved, err := processPayload(token.Payload, token.Disclosures)
+	if err != nil {
+		return nil, err
 	}
-
-	// Parse disclosures (everything between first and last ~)
-	sdAlg := "sha-256"
-	if alg, ok := token.Payload["_sd_alg"].(string); ok {
-		sdAlg = strings.ToLower(alg)
-	}
-
-	for i := 1; i < len(parts); i++ {
-		d := strings.TrimSpace(parts[i])
-		if d == "" {
-			continue
-		}
-
-		// Last non-empty part could be a key binding JWT
-		if i == len(parts)-1 || (i == len(parts)-2 && parts[len(parts)-1] == "") {
-			if strings.Count(d, ".") == 2 {
-				// Check if it's a KB-JWT by trying to parse it
-				kbJWT, kbErr := parseJWT(d)
-				if kbErr == nil {
-					if typ, ok := kbJWT.Header["typ"].(string); ok && typ == "kb+jwt" {
-						token.KeyBindingJWT = kbJWT
-						continue
-					}
-				}
-			}
-		}
-
-		disc, err := parseDisclosure(d, sdAlg)
-		if err != nil {
-			return nil, fmt.Errorf("parsing disclosure %d: %w", i, err)
-		}
-		token.Disclosures = append(token.Disclosures, *disc)
-	}
-
-	// Resolve claims by matching _sd digests
-	token.ResolvedClaims = resolveClaims(token.Payload, token.Disclosures)
+	token.ResolvedClaims = resolved
 
 	// Generate warnings for disclosed claims whose children are all undisclosed
 	token.Warnings = checkFullyUndisclosedChildren(token.Disclosures)
 
 	return token, nil
+}
+
+// splitComponents assigns the tilde-separated components after the
+// Issuer-signed JWT to Disclosures and to the optional Key Binding JWT.
+//
+// RFC 9901 §4 gives the ABNF as SD-JWT = JWT "~" *(DISCLOSURE "~") with
+// DISCLOSURE = 1*(ALPHA / DIGIT / "-" / "_"), so no component that a tilde
+// follows may be empty. The component after the final tilde is the Key
+// Binding JWT slot: "In the case that there is no Key Binding JWT, the last
+// element MUST be an empty string and the last separating tilde character
+// MUST NOT be omitted."
+//
+// A single non-empty trailing component that is not a KB-JWT is read as a
+// Disclosure whose trailing tilde was dropped, which keeps this decoder
+// useful against issuers that emit that form.
+func splitComponents(components []string) ([]string, *JWT, error) {
+	if len(components) == 0 {
+		return nil, nil, nil
+	}
+
+	discParts := components
+	var kbJWT *JWT
+	last := strings.TrimSpace(components[len(components)-1])
+	if last == "" {
+		discParts = components[:len(components)-1]
+	} else if jwt := parseKeyBindingJWT(last); jwt != nil {
+		discParts = components[:len(components)-1]
+		kbJWT = jwt
+	}
+
+	for i, d := range discParts {
+		if strings.TrimSpace(d) == "" {
+			return nil, nil, fmt.Errorf("invalid SD-JWT: component %d between two tildes is empty", i+1)
+		}
+	}
+	return discParts, kbJWT, nil
+}
+
+// parseKeyBindingJWT decodes a trailing component as a Key Binding JWT.
+// RFC 9901 §4.3 requires the typ header parameter of a KB-JWT to be kb+jwt,
+// which is what tells a KB-JWT apart from a Disclosure here.
+func parseKeyBindingJWT(component string) *JWT {
+	if strings.Count(component, ".") != 2 {
+		return nil
+	}
+	jwt, err := parseJWT(component)
+	if err != nil {
+		return nil
+	}
+	if typ, ok := jwt.Header["typ"].(string); !ok || typ != "kb+jwt" {
+		return nil
+	}
+	return jwt
 }
 
 // checkFullyUndisclosedChildren warns when a disclosure's value has children
@@ -109,13 +126,8 @@ func checkFullyUndisclosedChildren(disclosures []Disclosure) []string {
 			}
 			allUndisclosed := true
 			for _, item := range val {
-				obj, ok := item.(map[string]any)
-				if !ok {
-					allUndisclosed = false
-					break
-				}
-				ds, ok := obj["..."].(string)
-				if !ok || digestMap[ds] {
+				ds, isPlaceholder, err := arrayElementDigest(item)
+				if err != nil || !isPlaceholder || digestMap[ds] {
 					allUndisclosed = false
 					break
 				}
@@ -190,15 +202,31 @@ func parseDisclosure(raw string, sdAlg string) (*Disclosure, error) {
 	}
 	disc.Digest = digest
 
+	// RFC 9901 §4.2.1 requires the salt to be a string and says of the claim
+	// name: "It MUST be a string and MUST NOT be _sd, ..., or a claim name
+	// existing in the object as a permanently disclosed claim." §4.2.2
+	// requires the same salt type for an array element Disclosure.
 	switch len(arr) {
 	case 3:
 		// [salt, name, value]
-		disc.Salt, _ = arr[0].(string)
-		disc.Name, _ = arr[1].(string)
+		salt, ok := arr[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("salt is not a string")
+		}
+		name, ok := arr[1].(string)
+		if !ok {
+			return nil, fmt.Errorf("claim name is not a string")
+		}
+		disc.Salt = salt
+		disc.Name = name
 		disc.Value = arr[2]
 	case 2:
 		// [salt, value]. Array element disclosure
-		disc.Salt, _ = arr[0].(string)
+		salt, ok := arr[0].(string)
+		if !ok {
+			return nil, fmt.Errorf("salt is not a string")
+		}
+		disc.Salt = salt
 		disc.Value = arr[1]
 		disc.IsArrayEntry = true
 	default:
@@ -208,81 +236,37 @@ func parseDisclosure(raw string, sdAlg string) (*Disclosure, error) {
 	return disc, nil
 }
 
-func computeDigest(raw string, sdAlg string) (string, error) {
-	var h hash.Hash
+// defaultSDAlg is the hash algorithm RFC 9901 §4.1.1 prescribes when the
+// payload carries no _sd_alg: "If the _sd_alg claim is not present at the top
+// level, a default value of sha-256 MUST be used."
+const defaultSDAlg = "sha-256"
+
+// hashForSDAlg maps an _sd_alg value to its hash. The comparison is
+// case-sensitive because RFC 9901 §4.1.1 states "This claim value is a
+// case-sensitive string with the hash algorithm identifier", and the
+// identifiers come from the "Hash Name String" column of the Named
+// Information Hash Algorithm Registry, which spells them in lower case.
+func hashForSDAlg(sdAlg string) (func() hash.Hash, error) {
 	switch sdAlg {
 	case "sha-256":
-		h = sha256.New()
+		return sha256.New, nil
 	case "sha-384":
-		h = sha512.New384()
+		return sha512.New384, nil
 	case "sha-512":
-		h = sha512.New()
+		return sha512.New, nil
 	default:
-		return "", fmt.Errorf("unsupported _sd_alg: %q", sdAlg)
+		return nil, fmt.Errorf("unsupported _sd_alg: %q", sdAlg)
 	}
+}
+
+func computeDigest(raw string, sdAlg string) (string, error) {
+	newHash, err := hashForSDAlg(sdAlg)
+	if err != nil {
+		return "", err
+	}
+	h := newHash()
 	h.Write([]byte(raw))
 	return format.EncodeBase64URL(h.Sum(nil)), nil
-}
-
-// resolveClaims merges disclosures into the payload by matching _sd digests.
-func resolveClaims(payload map[string]any, disclosures []Disclosure) map[string]any {
-	digestMap := make(map[string]*Disclosure)
-	for i := range disclosures {
-		digestMap[disclosures[i].Digest] = &disclosures[i]
-	}
-	return resolveObject(payload, digestMap)
-}
-
-func resolveObject(obj map[string]any, digestMap map[string]*Disclosure) map[string]any {
-	result := make(map[string]any)
-
-	for k, v := range obj {
-		if k == "_sd" || k == "_sd_alg" {
-			continue
-		}
-		result[k] = resolveValue(v, digestMap)
-	}
-
-	if sdArr, ok := obj["_sd"].([]any); ok {
-		for _, d := range sdArr {
-			digest, ok := d.(string)
-			if !ok {
-				continue
-			}
-			if disc, found := digestMap[digest]; found && !disc.IsArrayEntry {
-				result[disc.Name] = resolveValue(disc.Value, digestMap)
-			}
-		}
-	}
-
-	return result
-}
-
-func resolveArray(arr []any, digestMap map[string]*Disclosure) []any {
-	var result []any
-	for _, item := range arr {
-		if obj, ok := item.(map[string]any); ok {
-			if digest, ok := obj["..."].(string); ok {
-				if disc, found := digestMap[digest]; found && disc.IsArrayEntry {
-					result = append(result, resolveValue(disc.Value, digestMap))
-					continue
-				}
-			}
-		}
-		result = append(result, resolveValue(item, digestMap))
-	}
-	return result
-}
-
-func resolveValue(v any, digestMap map[string]*Disclosure) any {
-	switch val := v.(type) {
-	case map[string]any:
-		return resolveObject(val, digestMap)
-	case []any:
-		return resolveArray(val, digestMap)
-	default:
-		return v
-	}
 }
 
 // ReferencedDigests returns every digest the credential refers to: the entries
@@ -305,9 +289,12 @@ func ReferencedDigests(token *Token) map[string]bool {
 func collectDigests(value any, out map[string]bool) {
 	switch v := value.(type) {
 	case map[string]any:
+		if digest, isPlaceholder, err := arrayElementDigest(v); err == nil && isPlaceholder {
+			out[digest] = true
+			return
+		}
 		for key, val := range v {
-			switch key {
-			case "_sd":
+			if key == "_sd" {
 				if arr, ok := val.([]any); ok {
 					for _, entry := range arr {
 						if digest, ok := entry.(string); ok {
@@ -315,17 +302,96 @@ func collectDigests(value any, out map[string]bool) {
 						}
 					}
 				}
-			case "...":
-				if digest, ok := val.(string); ok {
-					out[digest] = true
-				}
-			default:
-				collectDigests(val, out)
+				continue
 			}
+			collectDigests(val, out)
 		}
 	case []any:
 		for _, item := range v {
 			collectDigests(item, out)
 		}
 	}
+}
+
+// Inspect decodes an SD-JWT for display without applying the rejection rules
+// of RFC 9901 §7.1.
+//
+// Parse refuses a credential that breaks a MUST, which is what a wallet
+// deciding whether to hold or present one needs. A decoder is asked the
+// opposite question: the credential is already suspected of being wrong, and
+// the point is to see what it contains and be told why it is wrong. Inspect
+// returns whatever it could decode, with Violation naming the rule that would
+// have rejected it and ResolvedClaims left empty, because resolving claims
+// under those conditions is exactly what produces a misleading reading.
+//
+// Nothing that decides trust may use this. It exists for the decoder.
+func Inspect(raw string) (*Token, error) {
+	token, err := Parse(raw)
+	if err == nil {
+		return token, nil
+	}
+
+	structural, structuralErr := parseStructure(raw)
+	if structuralErr != nil {
+		return nil, structuralErr
+	}
+	structural.Violation = err.Error()
+	return structural, nil
+}
+
+// parseStructure decodes the parts of an SD-JWT without applying the
+// rejection rules that turn a decoded credential into a valid one. It is what
+// Parse and Inspect share: the split, the Issuer-signed JWT, the Disclosures
+// and the Key Binding JWT.
+func parseStructure(raw string) (*Token, error) {
+	raw = strings.TrimSpace(raw)
+	parts := strings.Split(raw, "~")
+
+	if len(parts) < 1 || parts[0] == "" {
+		return nil, fmt.Errorf("invalid SD-JWT: no JWT part found")
+	}
+
+	jwt, err := parseJWT(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("parsing JWT: %w", err)
+	}
+
+	token := &Token{
+		Raw:       raw,
+		Header:    jwt.Header,
+		Payload:   jwt.Payload,
+		Signature: jwt.Signature,
+	}
+
+	// RFC 9901 §4.1.1: "This claim value is a case-sensitive string with the
+	// hash algorithm identifier." A value that is not a string, or names an
+	// algorithm this build cannot compute, fails §7.1 step 2.d ("Check that
+	// the _sd_alg claim value is understood").
+	sdAlg := defaultSDAlg
+	if rawAlg, present := token.Payload["_sd_alg"]; present {
+		alg, ok := rawAlg.(string)
+		if !ok {
+			return nil, fmt.Errorf("_sd_alg is not a string")
+		}
+		sdAlg = alg
+	}
+	if _, err := hashForSDAlg(sdAlg); err != nil {
+		return nil, err
+	}
+
+	discParts, kbJWT, err := splitComponents(parts[1:])
+	if err != nil {
+		return nil, err
+	}
+	token.KeyBindingJWT = kbJWT
+
+	for i, d := range discParts {
+		disc, err := parseDisclosure(d, sdAlg)
+		if err != nil {
+			return nil, fmt.Errorf("parsing disclosure %d: %w", i+1, err)
+		}
+		token.Disclosures = append(token.Disclosures, *disc)
+	}
+
+	return token, nil
 }

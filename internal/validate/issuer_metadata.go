@@ -20,9 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
@@ -34,8 +36,11 @@ func CanResolveJWTIssuerMetadata(token *sdjwt.Token) bool {
 	if token == nil {
 		return false
 	}
-	iss, _ := token.Payload["iss"].(string)
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(iss)), "https://") {
+	// SD-JWT VC §3 only defines this mechanism for an iss that is "a
+	// case-sensitive URL using the HTTPS scheme that contains scheme, host
+	// and, optionally, port number and path components, but no query or
+	// fragment components".
+	if _, err := JWTVCIssuerMetadataURL(jsonutil.GetString(token.Payload, "iss")); err != nil {
 		return false
 	}
 	kid, _ := token.Header["kid"].(string)
@@ -56,15 +61,27 @@ func ResolveJWTIssuerMetadataKey(token *sdjwt.Token, tlCerts []trustlist.CertInf
 		return nil, "", nil
 	}
 
-	iss, _ := token.Payload["iss"].(string)
+	iss := strings.TrimSpace(jsonutil.GetString(token.Payload, "iss"))
 	kid, _ := token.Header["kid"].(string)
-	metadataURL := strings.TrimRight(strings.TrimSpace(iss), "/") + "/.well-known/jwt-vc-issuer"
+	metadataURL, err := JWTVCIssuerMetadataURL(iss)
+	if err != nil {
+		return nil, "", err
+	}
 
 	doc, err := fetchIssuerMetadataDocument(metadataURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching issuer metadata: %w", err)
 	}
-	if issuer, _ := doc["issuer"].(string); issuer != "" && strings.TrimRight(issuer, "/") != strings.TrimRight(iss, "/") {
+	// SD-JWT VC §3.2 makes the issuer member REQUIRED, and §3.3 says "The
+	// issuer value returned MUST be identical to the iss value of the
+	// Issuer-signed JWT. If these values are not identical, the data
+	// contained in the response MUST NOT be used." Identical leaves no room
+	// for a difference in trailing slashes.
+	issuer, ok := doc["issuer"].(string)
+	if !ok {
+		return nil, "", fmt.Errorf("issuer metadata does not contain issuer")
+	}
+	if issuer != iss {
 		return nil, "", fmt.Errorf("issuer metadata issuer mismatch: got %s want %s", issuer, iss)
 	}
 
@@ -174,14 +191,93 @@ func fetchIssuerMetadataDocument(metadataURL string) (map[string]any, error) {
 	return doc, nil
 }
 
-func findIssuerMetadataJWK(doc map[string]any, kid string) (map[string]any, error) {
-	jwks, ok := doc["jwks"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("issuer metadata does not contain jwks")
+// wellKnownJWTVCIssuer is the well-known string SD-JWT VC §3 defines for the
+// JWT VC Issuer Metadata configuration.
+const wellKnownJWTVCIssuer = "/.well-known/jwt-vc-issuer"
+
+// JWTVCIssuerMetadataURL builds the location of an issuer's JWT VC Issuer
+// Metadata configuration.
+//
+// SD-JWT VC §3: "Issuers publishing JWT VC Issuer Metadata MUST make a JWT VC
+// Issuer Metadata configuration available at the location formed by inserting
+// the well-known string /.well-known/jwt-vc-issuer between the host component
+// and the path component (if any) of the iss claim value in the JWT. The iss
+// MUST be a case-sensitive URL using the HTTPS scheme that contains scheme,
+// host and, optionally, port number and path components, but no query or
+// fragment components." §3.1 adds: "If the iss value contains a path
+// component, any terminating / MUST be removed before inserting /.well-known/
+// and the well-known URI suffix between the host component and the path
+// component."
+//
+// So iss https://example.com/tenant/1234 is queried at
+// https://example.com/.well-known/jwt-vc-issuer/tenant/1234, and appending
+// instead of inserting would miss every tenant-scoped issuer.
+func JWTVCIssuerMetadataURL(iss string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(iss))
+	if err != nil {
+		return "", fmt.Errorf("parsing iss %q: %w", iss, err)
 	}
-	keysRaw, ok := jwks["keys"].([]any)
+	if parsed.Scheme != "https" {
+		return "", fmt.Errorf("iss %q does not use the https scheme", iss)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("iss %q has no host component", iss)
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return "", fmt.Errorf("iss %q carries a query or fragment component", iss)
+	}
+
+	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	return parsed.Scheme + "://" + parsed.Host + wellKnownJWTVCIssuer + path, nil
+}
+
+// issuerMetadataJWKSet returns the Issuer's JWK Set, whether the metadata
+// carries it by value or by reference.
+//
+// SD-JWT VC §3.2: "JWT VC Issuer Metadata MUST include either jwks_uri or
+// jwks in their JWT VC Issuer Metadata, but not both." jwks_uri is a "URL
+// string referencing the Issuer's JSON Web Key (JWK) Set [RFC7517] document
+// which contains the Issuer's public keys".
+func issuerMetadataJWKSet(doc map[string]any) ([]any, error) {
+	rawURI, hasURI := doc["jwks_uri"]
+	rawJWKS, hasJWKS := doc["jwks"]
+
+	switch {
+	case hasURI && hasJWKS:
+		return nil, fmt.Errorf("issuer metadata contains both jwks_uri and jwks")
+	case hasURI:
+		uri, ok := rawURI.(string)
+		if !ok || strings.TrimSpace(uri) == "" {
+			return nil, fmt.Errorf("issuer metadata jwks_uri is not a URL string")
+		}
+		set, err := fetchIssuerMetadataDocument(strings.TrimSpace(uri))
+		if err != nil {
+			return nil, fmt.Errorf("fetching jwks_uri: %w", err)
+		}
+		return jwkSetKeys(set)
+	case hasJWKS:
+		set, ok := rawJWKS.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("issuer metadata jwks is not a JSON object")
+		}
+		return jwkSetKeys(set)
+	default:
+		return nil, fmt.Errorf("issuer metadata contains neither jwks_uri nor jwks")
+	}
+}
+
+func jwkSetKeys(set map[string]any) ([]any, error) {
+	keysRaw, ok := set["keys"].([]any)
 	if !ok || len(keysRaw) == 0 {
-		return nil, fmt.Errorf("issuer metadata does not contain jwks.keys")
+		return nil, fmt.Errorf("issuer JWK Set does not contain keys")
+	}
+	return keysRaw, nil
+}
+
+func findIssuerMetadataJWK(doc map[string]any, kid string) (map[string]any, error) {
+	keysRaw, err := issuerMetadataJWKSet(doc)
+	if err != nil {
+		return nil, err
 	}
 
 	var first map[string]any

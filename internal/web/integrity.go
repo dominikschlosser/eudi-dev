@@ -75,6 +75,34 @@ func CheckSDJWTIntegrity(token *sdjwt.Token) CheckResult {
 	}
 }
 
+// CheckSDJWTType verifies the typ header parameter of the Issuer-signed JWT.
+// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
+// header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt", with
+// vc+sd-jwt accepted alongside it for the transitional period the same
+// section describes.
+func CheckSDJWTType(token *sdjwt.Token) CheckResult {
+	if err := sdjwt.ValidateVCType(token.Header); err != nil {
+		return CheckResult{
+			Name:   "type",
+			Status: "fail",
+			Detail: err.Error(),
+		}
+	}
+	typ, _ := token.Header["typ"].(string)
+	if typ == sdjwt.TypeSDJWTVCLegacy {
+		return CheckResult{
+			Name:   "type",
+			Status: "pass",
+			Detail: fmt.Sprintf("%s (superseded by %s)", typ, sdjwt.TypeSDJWTVC),
+		}
+	}
+	return CheckResult{
+		Name:   "type",
+		Status: "pass",
+		Detail: typ,
+	}
+}
+
 // collectDigests walks the payload recursively and collects all _sd array
 // values and "..." object references.
 func collectDigests(obj map[string]any) map[string]bool {
@@ -94,8 +122,12 @@ func collectDigestsRecursive(val any, result map[string]bool) {
 				}
 			}
 		}
-		// Collect "..." references
-		if dots, ok := v["..."].(string); ok {
+		// Collect "..." references. RFC 9901 §4.2.4.2 admits exactly one key
+		// in a digest placeholder: "The key MUST always be the string ...
+		// (three dots). The value MUST be the digest of the Disclosure ...
+		// There MUST NOT be any other keys in the object." An object holding
+		// anything else alongside it references no disclosure.
+		if dots, ok := v["..."].(string); ok && len(v) == 1 {
 			result[dots] = true
 		}
 		// Recurse into all values

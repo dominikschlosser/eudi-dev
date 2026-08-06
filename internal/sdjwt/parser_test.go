@@ -201,19 +201,13 @@ func TestComputeDigest_Unsupported(t *testing.T) {
 
 func TestParse_ArrayDisclosure(t *testing.T) {
 	// Array element disclosure: [salt, value] (2 elements)
-	headerJSON, _ := json.Marshal(map[string]any{"alg": "ES256"})
-	payloadJSON, _ := json.Marshal(map[string]any{"iss": "test"})
+	arrDisc, digest := disclosureOf(t, "saltyy", "array-value")
+	raw := assembleSDJWT(t, map[string]any{
+		"iss":    "test",
+		"values": []any{map[string]any{"...": digest}},
+	}, arrDisc)
 
-	arrDisc, _ := json.Marshal([]any{"saltyy", "array-value"})
-	arrDiscB64 := base64.RawURLEncoding.EncodeToString(arrDisc)
-
-	raw := base64.RawURLEncoding.EncodeToString(headerJSON) + "." +
-		base64.RawURLEncoding.EncodeToString(payloadJSON) + ".sig~" + arrDiscB64 + "~"
-
-	token, err := Parse(raw)
-	if err != nil {
-		t.Fatalf("Parse() error: %v", err)
-	}
+	token := mustParse(t, raw)
 
 	if len(token.Disclosures) != 1 {
 		t.Fatalf("got %d disclosures, want 1", len(token.Disclosures))
@@ -229,68 +223,10 @@ func TestParse_ArrayDisclosure(t *testing.T) {
 	if d.Name != "" {
 		t.Errorf("Name = %q, want empty", d.Name)
 	}
-}
 
-func TestResolveArray(t *testing.T) {
-	disc := &Disclosure{
-		Name:         "",
-		Value:        "resolved-value",
-		IsArrayEntry: true,
-		Digest:       "abc123",
-	}
-	digestMap := map[string]*Disclosure{
-		"abc123": disc,
-	}
-
-	// Array with a matching digest reference
-	arr := []any{
-		map[string]any{"...": "abc123"},
-		"plain-value",
-	}
-	result := resolveArray(arr, digestMap)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(result))
-	}
-	if result[0] != "resolved-value" {
-		t.Errorf("expected resolved-value, got %v", result[0])
-	}
-	if result[1] != "plain-value" {
-		t.Errorf("expected plain-value, got %v", result[1])
-	}
-
-	// Unresolved digest reference (not in map)
-	arr2 := []any{
-		map[string]any{"...": "unknown"},
-	}
-	result2 := resolveArray(arr2, digestMap)
-	if len(result2) != 1 {
-		t.Fatalf("expected 1 item, got %d", len(result2))
-	}
-	// Should be passed through as-is (map)
-	if _, ok := result2[0].(map[string]any); !ok {
-		t.Errorf("expected map passthrough, got %T", result2[0])
-	}
-
-	// Non-array-entry digest (IsArrayEntry=false). Not resolved as array element
-	nonArrayDisc := &Disclosure{
-		Name:         "test",
-		Value:        "val",
-		IsArrayEntry: false,
-		Digest:       "def456",
-	}
-	digestMap2 := map[string]*Disclosure{
-		"def456": nonArrayDisc,
-	}
-	arr3 := []any{map[string]any{"...": "def456"}}
-	result3 := resolveArray(arr3, digestMap2)
-	if _, ok := result3[0].(map[string]any); !ok {
-		t.Errorf("expected map passthrough for non-array disclosure, got %T", result3[0])
-	}
-
-	// Empty array
-	result4 := resolveArray([]any{}, digestMap)
-	if len(result4) != 0 {
-		t.Errorf("expected empty result, got %d items", len(result4))
+	values, ok := token.ResolvedClaims["values"].([]any)
+	if !ok || len(values) != 1 || values[0] != "array-value" {
+		t.Errorf("resolved values = %v, want [array-value]", token.ResolvedClaims["values"])
 	}
 }
 

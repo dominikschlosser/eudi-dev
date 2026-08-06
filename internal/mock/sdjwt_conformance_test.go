@@ -1,0 +1,197 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package mock
+
+import (
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+)
+
+func generateForTest(t *testing.T, cfg SDJWTConfig) string {
+	t.Helper()
+	key, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	cfg.Key = key
+	if cfg.VCT == "" {
+		cfg.VCT = "urn:eudi:pid:1"
+	}
+	if cfg.Issuer == "" {
+		cfg.Issuer = "https://issuer.example"
+	}
+	if cfg.ExpiresIn == 0 {
+		cfg.ExpiresIn = time.Hour
+	}
+	raw, err := GenerateSDJWT(cfg)
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	return raw
+}
+
+// SD-JWT VC §2.2.2.5: "An SD-JWT VC MAY have no selectively disclosable
+// claims. In that case, the SD-JWT VC MUST NOT contain the _sd claim in the
+// JWT body. It also MUST NOT have any Disclosures." RFC 9901 §4's ABNF also
+// permits no empty component, so the serialization ends in a single tilde.
+func TestGenerateSDJWT_WithoutDisclosures(t *testing.T) {
+	raw := generateForTest(t, SDJWTConfig{
+		Claims:          map[string]any{"given_name": "Erika", "family_name": "Mustermann"},
+		AlwaysDisclosed: []string{"given_name", "family_name"},
+	})
+
+	if strings.Contains(raw, "~~") {
+		t.Errorf("serialization carries an empty component: %s", raw)
+	}
+	if !strings.HasSuffix(raw, "~") {
+		t.Errorf("serialization does not end in a tilde: %s", raw)
+	}
+
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+	if len(token.Disclosures) != 0 {
+		t.Errorf("got %d disclosures, want 0", len(token.Disclosures))
+	}
+	if _, present := token.Payload["_sd"]; present {
+		t.Errorf("payload carries _sd = %#v, want the key omitted", token.Payload["_sd"])
+	}
+	if token.ResolvedClaims["given_name"] != "Erika" {
+		t.Errorf("resolved given_name = %v, want Erika", token.ResolvedClaims["given_name"])
+	}
+}
+
+// SD-JWT VC §2.2.2.3: iss, nbf, exp, cnf, vct, vct#integrity, aka_vcts and
+// status "MUST NOT be included in the Disclosures, i.e., cannot be
+// selectively disclosed". A Disclosure named vct would also shadow the signed
+// vct, which RFC 9901 §7.1 step 3.c.ii.3 rejects.
+func TestGenerateSDJWT_ReservedClaimsStayInThePayload(t *testing.T) {
+	raw := generateForTest(t, SDJWTConfig{
+		VCT: "urn:eudi:pid:1",
+		Claims: map[string]any{
+			"given_name": "Erika",
+			"vct":        "urn:attacker:admin",
+			"status":     map[string]any{"note": "not disclosable"},
+			"iat":        1700000000,
+		},
+	})
+
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+	for _, d := range token.Disclosures {
+		switch d.Name {
+		case "vct", "status", "iat":
+			t.Errorf("claim %q became a disclosure", d.Name)
+		}
+	}
+	if token.Payload["vct"] != "urn:attacker:admin" {
+		t.Errorf("payload vct = %v, want the claim to be embedded plainly", token.Payload["vct"])
+	}
+	if token.ResolvedClaims["given_name"] != "Erika" {
+		t.Errorf("resolved given_name = %v, want Erika", token.ResolvedClaims["given_name"])
+	}
+}
+
+// RFC 9901 §4.2.1: a claim name "MUST NOT be _sd, ..., or a claim name
+// existing in the object as a permanently disclosed claim", and §4.1.1
+// reserves _sd_alg for the top level of the payload.
+func TestGenerateSDJWT_RejectsReservedClaimNames(t *testing.T) {
+	key, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	for _, name := range []string{"_sd", "_sd_alg", "..."} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := GenerateSDJWT(SDJWTConfig{
+				Issuer:    "https://issuer.example",
+				VCT:       "urn:eudi:pid:1",
+				ExpiresIn: time.Hour,
+				Claims:    map[string]any{name: "value"},
+				Key:       key,
+			}); err == nil {
+				t.Fatalf("GenerateSDJWT accepted a claim named %q", name)
+			}
+		})
+
+		t.Run("nested "+name, func(t *testing.T) {
+			if _, err := GenerateSDJWT(SDJWTConfig{
+				Issuer:    "https://issuer.example",
+				VCT:       "urn:eudi:pid:1",
+				ExpiresIn: time.Hour,
+				Claims:    map[string]any{"address": map[string]any{name: "value"}},
+				Key:       key,
+			}); err == nil {
+				t.Fatalf("GenerateSDJWT accepted a nested claim named %q", name)
+			}
+		})
+	}
+}
+
+// RFC 9901 §4.2.4.1: "The Issuer MUST hide the original order of the claims in
+// the array. To ensure this, it is RECOMMENDED to shuffle the array of hashes,
+// e.g., by sorting it alphanumerically or randomly, after potentially adding
+// decoy digests". Go's map iteration order is not that guarantee.
+func TestGenerateSDJWT_SDArrayHidesClaimOrder(t *testing.T) {
+	raw := generateForTest(t, SDJWTConfig{
+		Claims: map[string]any{
+			"given_name":  "Erika",
+			"family_name": "Mustermann",
+			"birthdate":   "1964-08-12",
+			"nationality": "DE",
+			"address":     map[string]any{"locality": "Berlin", "country": "DE", "street": "Schulstr. 12"},
+		},
+	})
+
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+
+	assertSorted(t, "payload", token.Payload["_sd"])
+	for _, d := range token.Disclosures {
+		if obj, ok := d.Value.(map[string]any); ok {
+			if _, present := obj["_sd"]; present {
+				assertSorted(t, "disclosure "+d.Name, obj["_sd"])
+			}
+		}
+	}
+}
+
+func assertSorted(t *testing.T, where string, raw any) {
+	t.Helper()
+	entries, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("%s: _sd = %T, want an array", where, raw)
+	}
+	digests := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		digest, ok := entry.(string)
+		if !ok {
+			t.Fatalf("%s: _sd entry = %T, want a string", where, entry)
+		}
+		digests = append(digests, digest)
+	}
+	if !sort.StringsAreSorted(digests) {
+		t.Errorf("%s: _sd digests are in claim order rather than hidden: %v", where, digests)
+	}
+}

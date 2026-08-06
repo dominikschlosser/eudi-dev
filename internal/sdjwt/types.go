@@ -23,10 +23,16 @@ type Token struct {
 	Signature     []byte
 	Disclosures   []Disclosure
 	KeyBindingJWT *JWT
-	// ResolvedClaims contains all claims after resolving _sd digests.
+	// ResolvedClaims is the Processed SD-JWT Payload of RFC 9901 §7.1: the
+	// payload with every disclosed claim inserted, every undisclosed array
+	// element removed, and the _sd and _sd_alg keys gone.
 	ResolvedClaims map[string]any
 	// Warnings contains informational warnings about the credential structure.
 	Warnings []string
+	// Violation names the RFC 9901 §7.1 rule that makes this credential
+	// invalid, set only by Inspect. Parse returns an error instead, so a
+	// token from Parse never carries one.
+	Violation string
 }
 
 // JWT represents a decoded JWT (header.payload.signature).
@@ -44,6 +50,6 @@ type Disclosure struct {
 	Salt         string
 	Name         string // empty for array element disclosures
 	Value        any
-	Digest       string // SHA-256 digest (base64url)
+	Digest       string // base64url digest under the payload's _sd_alg
 	IsArrayEntry bool
 }
