@@ -17,6 +17,7 @@ package wallet
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -581,5 +582,32 @@ func TestStatusBitstring_SurvivesANegativeAdoptedIndex(t *testing.T) {
 	}
 	if bitstring[0]&(1<<2) == 0 {
 		t.Error("the valid entry did not reach the bitstring")
+	}
+}
+
+// A status outside the range a status type may take cannot be published, and
+// the answer has to say that rather than report the credential as unknown.
+func TestSetCredentialStatusRejectsAnOutOfRangeValueClearly(t *testing.T) {
+	srv := newTestServer(t, true)
+
+	creds := srv.wallet.GetCredentials()
+	if len(creds) == 0 {
+		t.Fatal("test wallet holds no credentials")
+	}
+	// Registered here rather than searched for, so the case under test always
+	// exists: a skipped test proves nothing about the range check.
+	id := creds[0].ID
+	srv.wallet.RegisterStatusEntry(id, srv.wallet.NextStatusIndex())
+
+	req := httptest.NewRequest("POST", "/api/credentials/"+id+"/status", strings.NewReader(`{"status":256}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "0 to 255") {
+		t.Errorf("body = %s, want it to name the permitted range", rec.Body.String())
 	}
 }

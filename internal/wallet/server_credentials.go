@@ -140,6 +140,15 @@ func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
+	// draft-ietf-oauth-status-list §7: "Status Types MUST have a numeric value
+	// between 0 and 255." A value outside it cannot be published, and saying
+	// so is a different answer from not knowing the credential.
+	if body.Status < 0 || body.Status > 255 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("status %d is outside the range 0 to 255 that a status type may take", body.Status),
+		})
+		return
+	}
 	entry, ok := s.wallet.SetCredentialStatus(id, body.Status)
 	if !ok {
 		http.Error(w, "credential has no status entry", http.StatusNotFound)
