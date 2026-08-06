@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.18] - 2026-08-06
+
+### Fixed
+
+- **The cross-origin guard refused the Digital Credentials API.** The guard added in 1.19.13 covers every endpoint under `/api/`, and `/api/dc-api` is the one that is cross-origin by contract rather than by accident: a verifier's web page invokes it from that page's own origin, which is the whole mechanism of the browser API. Guarding it by origin refused the only kind of caller it has, and the wallet answered `403` with "cross-origin API requests are not allowed" to a request it was built to serve. The OIDF conformance suite caught it, where every `dc_api` plan failed. That endpoint is now exempt, and what protects it is what always did: the `web-origin` client identifier, matched against the origin the request arrived with, plus the consent dialog. The exemption names that one path, so the rest of `/api/` is guarded as before
+
 ## [1.19.17] - 2026-08-06
 
 ### Fixed

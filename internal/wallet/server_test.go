@@ -3098,3 +3098,44 @@ func TestSameOriginAndOriginlessAPICallsAreAllowed(t *testing.T) {
 		})
 	}
 }
+
+// The Digital Credentials API is invoked by a verifier's web page from that
+// page's own origin. That is the mechanism, not an attack, so the
+// cross-origin guard must not cover it: guarding it refuses the only kind of
+// caller it has, which is how the OIDF conformance suite's dc_api plans
+// started failing. What protects it instead is the web-origin client
+// identifier, matched against the origin the request arrived with, and the
+// consent dialog.
+func TestBrowserAPIAcceptsACrossOriginCaller(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(`{}`))
+	req.Host = "localhost:8085"
+	req.Header.Set("Origin", "https://verifier.example")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("the guard refused a Digital Credentials API caller: %s", rec.Body.String())
+	}
+}
+
+// The exemption is for that endpoint alone. Everything else the guard covers
+// still refuses a page on another site.
+func TestTheDCAPIExemptionDoesNotLeakToOtherEndpoints(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	for _, path := range []string{"/api/presentations", "/api/credentials", "/api/issue"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+			req.Host = "localhost:8085"
+			req.Header.Set("Origin", "https://evil.example")
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+			}
+		})
+	}
+}

@@ -41,9 +41,26 @@ import (
 // deployment whose public URL is not the Host it receives (a reverse proxy
 // that rewrites it).
 func GuardAPI(next http.Handler, ownOrigins ...string) http.Handler {
+	return GuardAPIExcept(next, nil, ownOrigins...)
+}
+
+// GuardAPIExcept is GuardAPI with a list of paths that are cross-origin by
+// contract rather than by accident.
+//
+// One endpoint genuinely is: the Digital Credentials API. A verifier's web
+// page calls it from its own origin, which is the whole mechanism, and the
+// wallet identifies that caller by the `web-origin` client identifier matched
+// against the origin the request arrived with. Guarding it by origin refuses
+// the only kind of caller it has. The protection there is that check plus the
+// consent dialog, not this one.
+func GuardAPIExcept(next http.Handler, crossOriginByContract []string, ownOrigins ...string) http.Handler {
 	allowed := hostSet(ownOrigins)
+	exempt := make(map[string]bool, len(crossOriginByContract))
+	for _, p := range crossOriginByContract {
+		exempt[p] = true
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") && isCrossOrigin(r, allowed) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && !exempt[r.URL.Path] && isCrossOrigin(r, allowed) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte(`{"error":"cross-origin API requests are not allowed"}` + "\n"))

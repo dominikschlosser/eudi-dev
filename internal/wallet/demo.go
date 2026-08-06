@@ -137,7 +137,10 @@ func (s *Server) Handler() http.Handler {
 // wallet is served under so a deployment behind a reverse proxy keeps
 // working when the proxy does not pass the public Host through.
 func (s *Server) guardAPI(next http.Handler) http.Handler {
-	return httpsec.GuardAPI(next, s.wallet.BaseURL, s.wallet.IssuerURL)
+	// /api/dc-api is the Digital Credentials API endpoint. A verifier's page
+	// invokes it from its own origin by design, so it is exempt and relies on
+	// the web-origin client identifier check and consent instead.
+	return httpsec.GuardAPIExcept(next, []string{"/api/dc-api"}, s.wallet.BaseURL, s.wallet.IssuerURL)
 }
 
 // demoBlockedRoute reports whether the request targets an endpoint that must
