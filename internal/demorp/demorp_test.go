@@ -130,7 +130,17 @@ func TestIssuerPreAuthFlow(t *testing.T) {
 		t.Fatalf("token request: %d %v", code, tokenDoc)
 	}
 	accessToken := tokenDoc["access_token"].(string)
-	cNonce := tokenDoc["c_nonce"].(string)
+	// OpenID4VCI 1.0 §6.2 defines no c_nonce in the token response, and §8.2
+	// says "The c_nonce value is retrieved from the Nonce Endpoint as defined in
+	// Section 7".
+	if _, present := tokenDoc["c_nonce"]; present {
+		t.Errorf("token response carries a c_nonce, which OpenID4VCI 1.0 does not define: %v", tokenDoc)
+	}
+	code, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("nonce request: %d %v", code, nonceDoc)
+	}
+	cNonce := nonceDoc["c_nonce"].(string)
 
 	proof := signES256(t, holderKey,
 		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
@@ -178,13 +188,106 @@ func TestIssuerRejectsWrongNonce(t *testing.T) {
 		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
 		map[string]any{"aud": "http://demo.example/issuer", "iat": time.Now().Unix(), "nonce": "wrong"},
 	)
-	body := fmt.Sprintf(`{"proofs":{"jwt":[%q]}}`, proof)
+	body := fmt.Sprintf(`{"credential_configuration_id":%q,"proofs":{"jwt":[%q]}}`, ticketConfigurationID, proof)
 	code, doc := doJSON(t, h, "POST", "/credential", body, map[string]string{
 		"Authorization": "Bearer " + tokenDoc["access_token"].(string),
 		"Content-Type":  "application/json",
 	})
 	if code != http.StatusBadRequest {
 		t.Fatalf("credential request with wrong nonce: %d %v, want 400", code, doc)
+	}
+	// §8.3.1.2 reserves invalid_nonce for exactly this, and a wallet reading it
+	// fetches a fresh challenge and tries again. invalid_proof would end the
+	// flow instead.
+	if doc["error"] != "invalid_nonce" {
+		t.Errorf("error = %v, want invalid_nonce", doc["error"])
+	}
+}
+
+// §8.2 requires one of credential_identifier and credential_configuration_id
+// and forbids both, and §8.3.1.2 names the codes for a request that gets it
+// wrong. An issuer that ignores the members hands out its one credential to
+// any request at all.
+func TestIssuerChecksTheRequestedCredential(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+
+	_, offerDoc := doJSON(t, h, "POST", "/api/offers", "", nil)
+	offerURI := offerDoc["offer_uri"].(string)
+	id := offerURI[strings.LastIndex(offerURI, "/")+1:]
+	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
+	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
+	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	accessToken := tokenDoc["access_token"].(string)
+
+	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
+	proof := signES256(t, holderKey,
+		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
+		map[string]any{"aud": "http://demo.example/issuer", "iat": time.Now().Unix(), "nonce": nonceDoc["c_nonce"]},
+	)
+
+	request := func(members string) (int, map[string]any) {
+		t.Helper()
+		body := fmt.Sprintf(`{%s"proofs":{"jwt":[%q]}}`, members, proof)
+		return doJSON(t, h, "POST", "/credential", body, map[string]string{
+			"Authorization": "Bearer " + accessToken,
+			"Content-Type":  "application/json",
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		members string
+		want    string
+	}{
+		{"neither member", "", "invalid_credential_request"},
+		{"both members", `"credential_configuration_id":"demo-ticket","credential_identifier":"whatever",`, "invalid_credential_request"},
+		{"an unknown configuration", `"credential_configuration_id":"not-a-configuration",`, "unknown_credential_configuration"},
+		{"an identifier this issuer never handed out", `"credential_identifier":"whatever",`, "unknown_credential_identifier"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, doc := request(tc.members)
+			if code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (%v)", code, doc)
+			}
+			if doc["error"] != tc.want {
+				t.Errorf("error = %v, want %s", doc["error"], tc.want)
+			}
+		})
+	}
+}
+
+// OpenID4VCI 1.0 §8.2 defines proofs only. The singular proof member is a
+// draft shape, and accepting it lets a request the rest of this issuer was not
+// written for through.
+func TestIssuerRejectsTheSingularProofMember(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+
+	_, offerDoc := doJSON(t, h, "POST", "/api/offers", "", nil)
+	offerURI := offerDoc["offer_uri"].(string)
+	id := offerURI[strings.LastIndex(offerURI, "/")+1:]
+	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
+	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
+	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+
+	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
+	proof := signES256(t, holderKey,
+		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
+		map[string]any{"aud": "http://demo.example/issuer", "iat": time.Now().Unix(), "nonce": nonceDoc["c_nonce"]},
+	)
+	body := fmt.Sprintf(`{"credential_configuration_id":%q,"proof":{"proof_type":"jwt","jwt":%q}}`, ticketConfigurationID, proof)
+	code, doc := doJSON(t, h, "POST", "/credential", body, map[string]string{
+		"Authorization": "Bearer " + tokenDoc["access_token"].(string),
+		"Content-Type":  "application/json",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%v)", code, doc)
+	}
+	if doc["error"] != "invalid_proof" {
+		t.Errorf("error = %v, want invalid_proof", doc["error"])
 	}
 }
 
@@ -648,10 +751,18 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 	if status["status"] != "failed" {
 		t.Fatalf("status = %v, want failed for an injected disclosure (checks: %v)", status["status"], status["checks"])
 	}
+	// RFC 9901 §7.1 step 5 makes an unreferenced disclosure a reason to reject
+	// the credential outright, so parsing refuses it and the verifier never
+	// reaches its own reference check. What matters is that the failure names
+	// the injected disclosure rather than something vague.
 	checks := status["checks"].([]any)
 	last := checks[len(checks)-1].(map[string]any)
-	if last["ok"] != false || !strings.Contains(last["name"].(string), "referenced") {
-		t.Fatalf("expected the disclosure reference check to fail, got %v", last)
+	if last["ok"] != false {
+		t.Fatalf("expected a failing check, got %v", last)
+	}
+	detail, _ := last["error"].(string)
+	if !strings.Contains(detail, "not referenced") {
+		t.Fatalf("expected the failure to name the unreferenced disclosure, got %v", last)
 	}
 }
 
@@ -1439,5 +1550,45 @@ func TestVerifierReportsTheReceivedMDOCPresentation(t *testing.T) {
 	}
 	if doc.DeviceSigned == nil {
 		t.Error("the reported presentation carries no device auth")
+	}
+}
+
+// A signing failure is this issuer being broken, not something wrong with the
+// request. §8.3.1.2 codes describe the request and are answered with 400, and
+// credential_request_denied in particular says "The Wallet SHOULD treat this
+// error as unrecoverable, meaning if received from a Credential Issuer the
+// Credential cannot be issued" — which sends the wallet away for good over a
+// fault the next attempt may not hit.
+func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
+	d, w, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+
+	_, offerDoc := doJSON(t, h, "POST", "/api/offers", "", nil)
+	offerURI := offerDoc["offer_uri"].(string)
+	id := offerURI[strings.LastIndex(offerURI, "/")+1:]
+	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
+	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
+	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+
+	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
+	proof := signES256(t, holderKey,
+		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
+		map[string]any{"aud": "http://demo.example/issuer", "iat": time.Now().Unix(), "nonce": nonceDoc["c_nonce"]},
+	)
+
+	// With no certificate chain the ticket cannot be signed.
+	w.CertChain = nil
+
+	body := fmt.Sprintf(`{"credential_configuration_id":%q,"proofs":{"jwt":[%q]}}`, ticketConfigurationID, proof)
+	code, doc := doJSON(t, h, "POST", "/credential", body, map[string]string{
+		"Authorization": "Bearer " + tokenDoc["access_token"].(string),
+		"Content-Type":  "application/json",
+	})
+	if code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (%v)", code, doc)
+	}
+	if doc["error"] == "credential_request_denied" {
+		t.Errorf("a signing failure was reported as %v, which tells the wallet to give up for good", doc["error"])
 	}
 }

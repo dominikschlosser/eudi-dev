@@ -499,16 +499,41 @@ func TestVerifyClientID_RedirectURIAllowsUnsignedRequestObject(t *testing.T) {
 	}
 }
 
-func TestVerifyClientID_WebOrigin(t *testing.T) {
-	clientID := "web-origin:https://rp.example"
+// OID4VP 1.0 §5.9.3 reserves the origin prefix: "The Wallet MUST NOT accept
+// this Client Identifier Prefix in requests." It names the audience of a
+// Digital Credentials API presentation, so a request carrying it is asking to
+// be audienced somewhere the wallet did not derive from the platform origin.
+func TestVerifyClientIDRejectsReservedAndUnsupportedPrefixes(t *testing.T) {
+	tests := []struct {
+		name     string
+		clientID string
+		want     string
+	}{
+		{"reserved origin prefix", "origin:https://verifier.example", "reserved"},
+		{"openid_federation is not implemented", "openid_federation:https://verifier.example", "not supported"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warning := VerifyClientID(tt.clientID, nil, "", "https://verifier.example")
+			if warning == "" {
+				t.Fatal("expected the prefix to be refused")
+			}
+			if !strings.Contains(warning, tt.want) {
+				t.Errorf("warning = %q, want it to mention %q", warning, tt.want)
+			}
+		})
+	}
+}
 
-	if warning := VerifyClientID(clientID, nil, "", "https://rp.example"); warning != "" {
-		t.Fatalf("expected matching web-origin to pass, got %s", warning)
+// A Client Identifier with no colon references a pre-registered client, which
+// §5.9.2 makes explicit: "If a : character is not present in the Client
+// Identifier, the Wallet MUST treat the Client Identifier as referencing a
+// pre-registered client."
+func TestBareClientIDIsPreRegisteredRatherThanUnknown(t *testing.T) {
+	if !hasKnownClientIDPrefix("example-client") {
+		t.Error("a bare client_id was reported as an unsupported prefix")
 	}
-	if warning := VerifyClientID(clientID, nil, "", "https://other.example"); !strings.Contains(warning, "does not match") {
-		t.Fatalf("expected mismatch warning, got %q", warning)
-	}
-	if warning := VerifyClientID(clientID, nil, "", ""); !strings.Contains(warning, "requires the caller origin") {
-		t.Fatalf("expected missing origin warning, got %q", warning)
+	if hasKnownClientIDPrefix("nonsense:value") {
+		t.Error("an unrecognised prefix was accepted")
 	}
 }

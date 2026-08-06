@@ -32,7 +32,7 @@ import (
 
 // authorityChain returns a CA and a leaf it signed. The leaf carries an
 // authority key identifier, which is what an "aki" trusted authority names.
-func authorityChain(t *testing.T) (ca, leaf *x509.Certificate, aki []byte) {
+func authorityChain(t *testing.T) (ca, leaf *x509.Certificate, leafKey *ecdsa.PrivateKey, aki []byte) {
 	t.Helper()
 
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -59,7 +59,7 @@ func authorityChain(t *testing.T) (ca, leaf *x509.Certificate, aki []byte) {
 		t.Fatal(err)
 	}
 
-	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	leafKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func authorityChain(t *testing.T) (ca, leaf *x509.Certificate, aki []byte) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ca, leaf, subjectKeyID
+	return ca, leaf, leafKey, subjectKeyID
 }
 
 // mdocWithChain issues an mdoc carrying the given chain in its x5chain
@@ -102,7 +102,7 @@ func mdocWithChain(t *testing.T, chain ...*x509.Certificate) StoredCredential {
 }
 
 func TestExtractX5CCertificates(t *testing.T) {
-	caCert, leafCert, _ := authorityChain(t)
+	caCert, leafCert, _, _ := authorityChain(t)
 	b64 := base64.StdEncoding.EncodeToString
 
 	t.Run("a chain", func(t *testing.T) {
@@ -155,7 +155,7 @@ func TestExtractX5CCertificates(t *testing.T) {
 // COSE decoders hand back the x5chain label as int64 or uint64 depending on
 // the encoder, and a lone certificate is a bare byte string.
 func TestExtractMDOCX5Chain(t *testing.T) {
-	caCert, leafCert, _ := authorityChain(t)
+	caCert, leafCert, _, _ := authorityChain(t)
 	withHeader := func(h map[any]any) *mdoc.Document {
 		return &mdoc.Document{IssuerAuth: &mdoc.IssuerAuth{UnprotectedHeader: h}}
 	}
@@ -226,7 +226,7 @@ func TestExtractCredentialCertificatesReportsUnparseableCredentials(t *testing.T
 }
 
 func TestCheckAuthorityKeyIdentifiers(t *testing.T) {
-	caCert, leafCert, aki := authorityChain(t)
+	caCert, leafCert, _, aki := authorityChain(t)
 	wanted := format.EncodeBase64URL(aki)
 
 	withChain := mdocWithChain(t, leafCert, caCert)
@@ -257,7 +257,7 @@ func TestCheckAuthorityKeyIdentifiers(t *testing.T) {
 }
 
 func TestCheckTrustedAuthorities(t *testing.T) {
-	caCert, leafCert, aki := authorityChain(t)
+	caCert, leafCert, _, aki := authorityChain(t)
 	cred := mdocWithChain(t, leafCert, caCert)
 	wanted := format.EncodeBase64URL(aki)
 
@@ -320,7 +320,7 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 // An etsi_tl entry pointing nowhere must refuse the credential rather than
 // treat an unreachable trust list as satisfied.
 func TestCheckETSITrustListWithAnUnreachableList(t *testing.T) {
-	caCert, leafCert, _ := authorityChain(t)
+	caCert, leafCert, _, _ := authorityChain(t)
 	cred := mdocWithChain(t, leafCert, caCert)
 
 	if checkETSITrustList(cred, "http://127.0.0.1:1/trustlist") {

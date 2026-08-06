@@ -78,7 +78,7 @@ func validatePresentationRequestCore(mode ValidationMode, clientID string, reqOb
 	if finding := VerifyRequestObjectSignature(reqObj); finding != "" {
 		findings = append(findings, finding)
 	}
-	findings = append(findings, strictAuthorizationFindings(mode, params, payload)...)
+	findings = append(findings, authorizationFindings(params, payload)...)
 
 	if mode == ValidationModeStrict && len(findings) > 0 {
 		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, "; "))
@@ -87,23 +87,60 @@ func validatePresentationRequestCore(mode ValidationMode, clientID string, reqOb
 	return findings, nil
 }
 
-func strictAuthorizationFindings(mode ValidationMode, params *AuthorizationRequestParams, payload map[string]any) []string {
-	if mode != ValidationModeStrict || params == nil {
+// authorizationFindings collects what an authorization request gets wrong
+// against OpenID4VP 1.0.
+//
+// Findings are gathered in every mode. What the mode decides is what happens
+// to them: strict stops the flow, debug reports them and carries on so a
+// developer can watch the rest of the exchange. Collecting them only in strict
+// mode meant a debug run said nothing at all about a malformed request, which
+// is the run where saying something matters most.
+func authorizationFindings(params *AuthorizationRequestParams, payload map[string]any) []string {
+	if params == nil {
 		return nil
 	}
 
 	var findings []string
 	if !hasKnownClientIDPrefix(params.ClientID) {
-		findings = append(findings, fmt.Sprintf("client_id uses unsupported prefix or no prefix: %q", params.ClientID))
+		findings = append(findings, fmt.Sprintf("client_id uses an unsupported prefix: %q", params.ClientID))
 	}
+	// §5.2 marks nonce REQUIRED. It is what binds the presentation to this
+	// request, so a missing one is not a formality.
 	if requestRequiresNonce(params.ResponseType) && params.Nonce == "" {
-		findings = append(findings, "nonce is required in strict mode")
+		findings = append(findings, "nonce is required")
 	}
+	// §8.2: "When the response_uri parameter is present, the redirect_uri
+	// Authorization Request parameter MUST NOT be present."
 	if responseModeUsesDirectPost(params.ResponseMode) && params.RedirectURI != "" {
 		findings = append(findings, fmt.Sprintf("redirect_uri must not be used with response_mode %q", params.ResponseMode))
 	}
+	// §5.1: "Either a dcql_query or a scope parameter representing a DCQL
+	// Query MUST be present in the Authorization Request, but not both."
+	if ResponseTypeRequiresVP(params.ResponseType) {
+		hasDCQL := params.DCQLQuery != nil
+		hasScope := strings.TrimSpace(params.Scope) != ""
+		switch {
+		case hasDCQL && hasScope:
+			findings = append(findings, "dcql_query and scope must not both be present")
+		case !hasDCQL && !hasScope:
+			findings = append(findings, "a vp_token request must carry either dcql_query or scope")
+		}
+	}
+	// §5: "Wallets that do not support this parameter MUST reject requests
+	// that contain it." Answering without transaction_data_hashes instead
+	// produces a presentation the Verifier has to refuse, for a reason it
+	// cannot see.
 	if payloadHasKey(payload, "transaction_data") {
 		findings = append(findings, "transaction_data is not supported by this wallet")
+	}
+	// Appendix A.2: for a signed Digital Credentials API request
+	// expected_origins is REQUIRED, and "If the Origin does not match any of
+	// the entries in expected_origins, the Wallet MUST return an error."
+	if !params.UnsignedDCAPI && isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
+		if !originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
+			findings = append(findings, fmt.Sprintf(
+				"expected_origins must include the caller origin %q", params.RequestOrigin))
+		}
 	}
 	return findings
 }
@@ -116,11 +153,20 @@ func responseModeUsesDirectPost(responseMode string) bool {
 	return responseMode == "direct_post" || responseMode == "direct_post.jwt"
 }
 
+// hasKnownClientIDPrefix reports whether a Client Identifier is one this
+// wallet can make sense of.
+//
+// OID4VP 1.0 §5.9.2: "If a : character is not present in the Client
+// Identifier, the Wallet MUST treat the Client Identifier as referencing a
+// pre-registered client." So a bare identifier is legal rather than
+// prefix-less, and only an unrecognised prefix is worth reporting.
 func hasKnownClientIDPrefix(clientID string) bool {
+	if !strings.Contains(clientID, ":") {
+		return true
+	}
 	for _, prefix := range []string{
 		"x509_san_dns:",
 		"x509_hash:",
-		"web-origin:",
 		"redirect_uri:",
 		"verifier_attestation:",
 		"decentralized_identifier:",
@@ -144,7 +190,12 @@ func validateAuthorizationRequestSyntax(params *AuthorizationRequestParams) erro
 	if params == nil {
 		return fmt.Errorf("authorization request is missing")
 	}
-	if params.ClientID == "" {
+	// An unsigned request over the Digital Credentials API is the one shape
+	// that carries no client_id. OID4VP 1.0 Appendix A.2: "The client_id
+	// parameter MUST be omitted in unsigned requests defined in Appendix
+	// A.3.1." Demanding one there refuses the only kind of caller that
+	// endpoint has.
+	if params.ClientID == "" && !params.UnsignedDCAPI {
 		return fmt.Errorf("missing client_id")
 	}
 	if err := validateResponseType(params.ResponseType); err != nil {

@@ -59,6 +59,7 @@ type AuthorizationRequestParams struct {
 	RequestOrigin    string
 	RedirectURI      string
 	ResponseURI      string
+	Scope            string
 	RequestURIMethod string
 	// RequestURI is where the request object was fetched from, empty when it
 	// was not delivered by reference.
@@ -68,6 +69,16 @@ type AuthorizationRequestParams struct {
 	RequestObject  *oid4vc.RequestObjectJWT
 	RequestPayload map[string]any
 	Source         string
+	// UnsignedDCAPI marks a request that arrived unsigned over the Digital
+	// Credentials API (OpenID4VP 1.0 Appendix A.3.1).
+	//
+	// Such a request carries no client_id: "The client_id parameter MUST be
+	// omitted in unsigned requests defined in Appendix A.3.1. The Wallet MUST
+	// ignore any client_id parameter that is present in an unsigned request"
+	// (Appendix A.2). What identifies the caller is the origin the platform
+	// reports, which no web page can forge, so the flag records what the
+	// absent client_id cannot.
+	UnsignedDCAPI bool
 	// BrowserRedirect is set when the request came from a browser navigation
 	// (GET with an HTML Accept header): after submission the browser is
 	// redirected to the verifier's redirect_uri instead of receiving JSON.
@@ -323,7 +334,12 @@ func (s *Server) preparePresentation(authReq *AuthorizationRequestParams, matche
 	}
 
 	if ResponseTypeContains(authReq.ResponseType, "id_token") {
-		idToken, err := s.wallet.CreateSelfIssuedIDToken(authReq.Nonce, authReq.ClientID)
+		// The audience is what identifies the recipient, and over the Digital
+		// Credentials API that is the origin the platform reported rather
+		// than a client_id the request need not carry (OID4VP 1.0 §5.9.3:
+		// "the audience of the Credential Presentation is always the origin
+		// value prefixed by origin:").
+		idToken, err := s.wallet.CreateSelfIssuedIDToken(authReq.Nonce, presentationAudience(authReq))
 		if err != nil {
 			return nil, fmt.Errorf("creating id_token: %w", err)
 		}

@@ -15,22 +15,67 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"math/big"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
-func haipCompliantParams() (*AuthorizationRequestParams, *oid4vc.RequestObjectJWT) {
+// haipCompliantParams builds a request that satisfies HAIP 1.0: response type
+// vp_token, an encrypted response mode, a DCQL query for a profile format, and
+// a Request Object genuinely signed by a certificate that is neither
+// self-signed nor accompanied by its trust anchor.
+//
+// The signature has to be real. HAIP requires the x509_hash prefix, whose
+// value is a hash of the signing certificate, so a fixture that only looks
+// like one would let the checks pass without ever exercising them.
+func haipCompliantParams(t *testing.T) (*AuthorizationRequestParams, *oid4vc.RequestObjectJWT) {
+	t.Helper()
+
+	_, leafCert, leafKey, _ := authorityChain(t)
+
+	clientID := X509HashClientID(leafCert)
+	claims := map[string]any{
+		"client_id":        clientID,
+		"response_type":    "vp_token",
+		"response_mode":    "dc_api.jwt",
+		"nonce":            "n-haip",
+		"expected_origins": []any{"https://verifier.example"},
+	}
+	raw, err := SignRequestObjectJWT(claims, leafKey, []*x509.Certificate{leafCert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	header, payload, _, err := format.ParseJWTParts(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	params := &AuthorizationRequestParams{
-		ClientID:     "x509_hash:abc123",
-		ResponseMode: "dc_api.jwt",
-		DCQLQuery:    map[string]any{"credentials": []any{}},
+		ClientID:      clientID,
+		ResponseType:  "vp_token",
+		ResponseMode:  "dc_api.jwt",
+		RequestOrigin: "https://verifier.example",
+		DCQLQuery: map[string]any{"credentials": []any{
+			map[string]any{"id": "pid", "format": "dc+sd-jwt"},
+		}},
+		ClientMetadata: map[string]any{
+			"encrypted_response_enc_values_supported": []any{"A128GCM", "A256GCM"},
+		},
+		RequestPayload: payload,
 	}
-	reqObj := &oid4vc.RequestObjectJWT{
-		Header:  map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"},
-		Payload: map[string]any{},
-	}
+	reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
 	return params, reqObj
 }
 
@@ -70,7 +115,14 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			wantContain:    "Client Identifier Prefix",
 		},
 		{
-			name:           "missing request object (JAR)",
+			// Over the redirect flow a missing Request Object is a violation.
+			// Over the Digital Credentials API it is a legitimate unsigned
+			// request, which is a separate case below.
+			name: "missing request object (JAR) on the redirect flow",
+			modifyParams: func(p *AuthorizationRequestParams) {
+				p.ResponseMode = "direct_post.jwt"
+				p.RequestOrigin = ""
+			},
 			useNilReqObj:   true,
 			wantViolations: 1,
 			wantContain:    "JAR",
@@ -82,32 +134,29 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			wantContain:    "DCQL",
 		},
 		{
-			name: "web-origin unsigned browser flow",
+			// HAIP §5.2: "The Wallet MUST support unsigned, signed, and
+			// multi-signed requests." An unsigned one carries no client_id,
+			// and the origin the platform reports identifies the caller.
+			name: "unsigned Digital Credentials API request",
 			modifyParams: func(p *AuthorizationRequestParams) {
-				p.ClientID = "web-origin:https://wallet.example"
+				p.ClientID = ""
+				p.UnsignedDCAPI = true
 				p.ResponseMode = "dc_api.jwt"
 				p.RequestOrigin = "https://wallet.example"
+				p.RequestPayload = nil
 			},
 			useNilReqObj:   true,
 			wantViolations: 0,
 		},
 		{
-			name: "web-origin unsigned browser flow with matching expected origins",
+			// Appendix A.2 of OID4VP: expected_origins "is not for use in
+			// unsigned requests and therefore a Wallet MUST ignore this
+			// parameter if it is present in an unsigned request", so one that
+			// names somebody else must not turn into a violation.
+			name: "unsigned request carrying expected_origins it does not match",
 			modifyParams: func(p *AuthorizationRequestParams) {
-				p.ClientID = "web-origin:https://wallet.example"
-				p.ResponseMode = "dc_api.jwt"
-				p.RequestOrigin = "https://wallet.example"
-				p.RequestPayload = map[string]any{
-					"expected_origins": []any{"https://wallet.example"},
-				}
-			},
-			useNilReqObj:   true,
-			wantViolations: 0,
-		},
-		{
-			name: "wrong expected origins",
-			modifyParams: func(p *AuthorizationRequestParams) {
-				p.ClientID = "web-origin:https://wallet.example"
+				p.ClientID = ""
+				p.UnsignedDCAPI = true
 				p.ResponseMode = "dc_api.jwt"
 				p.RequestOrigin = "https://wallet.example"
 				p.RequestPayload = map[string]any{
@@ -115,6 +164,15 @@ func TestValidateHAIPCompliance(t *testing.T) {
 				}
 			},
 			useNilReqObj:   true,
+			wantViolations: 0,
+		},
+		{
+			// For a signed Digital Credentials API request the same parameter
+			// is REQUIRED and must name the caller.
+			name: "signed request whose expected_origins excludes the caller",
+			modifyParams: func(p *AuthorizationRequestParams) {
+				p.RequestOrigin = "https://wallet.example"
+			},
 			wantViolations: 1,
 			wantContain:    "expected_origins",
 		},
@@ -132,7 +190,7 @@ func TestValidateHAIPCompliance(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			params, reqObj := haipCompliantParams()
+			params, reqObj := haipCompliantParams(t)
 			if tt.modifyParams != nil {
 				tt.modifyParams(params)
 			}
@@ -468,4 +526,181 @@ func TestHAIPIssuanceAcceptsPARWithoutTheRequireFlag(t *testing.T) {
 	if violations := ValidateHAIPIssuanceCompliance(offer, meta); len(violations) > 0 {
 		t.Errorf("a server that offers PAR was reported non-compliant: %v", violations)
 	}
+}
+
+// --haip asserts that a counterparty follows the profile, so every finding is
+// an error regardless of the validation mode. Requiring the x509_hash prefix
+// and then not checking the signature it names would make the flag prove
+// nothing: the prefix value is a hash of the certificate that signed the
+// request.
+func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
+	t.Run("a signature that does not verify", func(t *testing.T) {
+		params, reqObj := haipCompliantParams(t)
+		// Keep the header and client_id, swap the payload for another one, so
+		// the signature no longer covers what is presented.
+		parts := strings.Split(reqObj.Raw, ".")
+		parts[1] = base64.RawURLEncoding.EncodeToString([]byte(`{"client_id":"x509_hash:tampered"}`))
+		reqObj.Raw = strings.Join(parts, ".")
+
+		violations := ValidateHAIPCompliance(params, reqObj)
+		if !containsSubstring(violations, "signature") {
+			t.Errorf("violations = %v, want the signature refused", violations)
+		}
+	})
+
+	t.Run("a client_id naming another certificate", func(t *testing.T) {
+		params, reqObj := haipCompliantParams(t)
+		params.ClientID = "x509_hash:" + format.EncodeBase64URL([]byte("not the certificate"))
+
+		violations := ValidateHAIPCompliance(params, reqObj)
+		if !containsSubstring(violations, "x509_hash") {
+			t.Errorf("violations = %v, want the hash mismatch refused", violations)
+		}
+	})
+}
+
+// HAIP §5: "The X.509 certificate of the trust anchor MUST NOT be included in
+// the x5c JOSE header of the signed request. The X.509 certificate signing the
+// request MUST NOT be self-signed."
+func TestHAIPRejectsSelfSignedAndAnchoredChains(t *testing.T) {
+	t.Run("a self-signed signing certificate", func(t *testing.T) {
+		caCert, caKey := selfSignedCert(t)
+		claims := map[string]any{
+			"client_id":     X509HashClientID(caCert),
+			"response_type": "vp_token",
+			"response_mode": "dc_api.jwt",
+			"nonce":         "n",
+		}
+		raw, err := SignRequestObjectJWT(claims, caKey, []*x509.Certificate{caCert})
+		if err != nil {
+			t.Fatal(err)
+		}
+		header, payload, _, err := format.ParseJWTParts(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		params, _ := haipCompliantParams(t)
+		params.ClientID = X509HashClientID(caCert)
+		params.RequestOrigin = ""
+		reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
+
+		violations := ValidateHAIPCompliance(params, reqObj)
+		if !containsSubstring(violations, "self-signed") {
+			t.Errorf("violations = %v, want the self-signed certificate refused", violations)
+		}
+	})
+
+	t.Run("the trust anchor shipped in the chain", func(t *testing.T) {
+		caCert, leafCert, leafKey, _ := authorityChain(t)
+		claims := map[string]any{
+			"client_id":     X509HashClientID(leafCert),
+			"response_type": "vp_token",
+			"response_mode": "dc_api.jwt",
+			"nonce":         "n",
+		}
+		// Built by hand: SignRequestObjectJWT strips a self-signed anchor from
+		// the chain it builds, which is the behaviour HAIP asks for, so the
+		// forbidden shape has to be assembled directly to test the check.
+		raw, err := jws.Sign(map[string]any{
+			"alg": "ES256",
+			"typ": "oauth-authz-req+jwt",
+			"x5c": []any{
+				base64.StdEncoding.EncodeToString(leafCert.Raw),
+				base64.StdEncoding.EncodeToString(caCert.Raw),
+			},
+		}, claims, leafKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		header, payload, _, err := format.ParseJWTParts(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		params, _ := haipCompliantParams(t)
+		params.ClientID = X509HashClientID(leafCert)
+		params.RequestOrigin = ""
+		reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
+
+		violations := ValidateHAIPCompliance(params, reqObj)
+		if !containsSubstring(violations, "trust anchor") {
+			t.Errorf("violations = %v, want the anchor refused", violations)
+		}
+	})
+}
+
+// HAIP §5.3.1 and §5.3.2 name mso_mdoc and dc+sd-jwt. The profile covers those
+// two formats and no others.
+func TestHAIPRejectsCredentialFormatsOutsideTheProfile(t *testing.T) {
+	params, reqObj := haipCompliantParams(t)
+	params.DCQLQuery = map[string]any{"credentials": []any{
+		map[string]any{"id": "vc", "format": "jwt_vc_json"},
+	}}
+
+	violations := ValidateHAIPCompliance(params, reqObj)
+	if !containsSubstring(violations, "credential format") {
+		t.Errorf("violations = %v, want the format refused", violations)
+	}
+}
+
+// HAIP §5: "Verifiers MUST list both A128GCM and A256GCM in
+// encrypted_response_enc_values_supported in their client metadata."
+func TestHAIPRequiresBothContentEncryptionAlgorithms(t *testing.T) {
+	for _, listed := range []any{[]any{"A128GCM"}, []any{"A256GCM"}, []any{}} {
+		params, reqObj := haipCompliantParams(t)
+		params.ClientMetadata = map[string]any{"encrypted_response_enc_values_supported": listed}
+
+		violations := ValidateHAIPCompliance(params, reqObj)
+		if !containsSubstring(violations, "encrypted_response_enc_values_supported") {
+			t.Errorf("listing %v: violations = %v, want both algorithms required", listed, violations)
+		}
+	}
+}
+
+// HAIP §5: "The Response type MUST be vp_token."
+func TestHAIPRequiresVPTokenResponseType(t *testing.T) {
+	params, reqObj := haipCompliantParams(t)
+	params.ResponseType = "id_token"
+
+	violations := ValidateHAIPCompliance(params, reqObj)
+	if !containsSubstring(violations, "response_type") {
+		t.Errorf("violations = %v, want the response type refused", violations)
+	}
+}
+
+func containsSubstring(values []string, want string) bool {
+	for _, value := range values {
+		if strings.Contains(value, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// selfSignedCert builds a certificate that is its own issuer, which is what a
+// trust anchor looks like and what HAIP forbids a request from being signed
+// with.
+func selfSignedCert(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(99),
+		Subject:               pkix.Name{CommonName: "Self Signed Verifier"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert, key
 }

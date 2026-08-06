@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/x509"
 	"fmt"
 	"net/netip"
 	"net/url"
@@ -24,15 +25,14 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
-// ValidateHAIPCompliance checks an authorization request against HAIP 1.0 requirements.
-// Returns a list of violation messages. Empty list means compliant.
+// ValidateHAIPCompliance checks an authorization request against HAIP 1.0.
+// It returns a list of violations, empty when the request conforms.
 //
-// HAIP requires:
-//   - response_mode MUST be an encrypted mode: direct_post.jwt or dc_api.jwt
-//   - client_id MUST use an allowed HAIP scheme
-//   - Signed Request Objects (JAR) MUST be used except for web-origin Browser API requests
-//   - DCQL query MUST be used (not presentation_definition)
-//   - Request Object alg MUST be ES256 when a Request Object is present
+// Every finding here is a violation of a MUST in the profile, so all of them
+// are errors whenever --haip is on. That is what separates this from the
+// validation mode: strict and debug decide whether a general specification
+// finding stops the flow or is only reported, while asking for HAIP is
+// asserting that the counterparty follows this profile.
 func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
 	var violations []string
 	if params == nil {
@@ -42,93 +42,171 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 	if reqObj != nil {
 		payload = reqObj.Payload
 	}
-	if payload == nil && params != nil {
+	if payload == nil {
 		payload = params.RequestPayload
 	}
 
-	// Encrypted response modes are required.
+	// An unsigned request is one that arrived over the Digital Credentials
+	// API without a Request Object. §5.2 obliges a wallet to take them: "The
+	// Wallet MUST support unsigned, signed, and multi-signed requests as
+	// defined in Appendices A.3.1 and A.3.2 of [OIDF.OID4VP]." Such a request
+	// carries no client_id at all, so nothing about the caller can be read
+	// from one, and the origin the platform reports identifies it instead.
+	unsigned := params.UnsignedDCAPI || (reqObj == nil && isDCAPIResponseMode(params.ResponseMode))
+
+	// §5: "The Response type MUST be vp_token."
+	if params.ResponseType != "vp_token" {
+		violations = append(violations, fmt.Sprintf(
+			"HAIP: response_type MUST be 'vp_token', got %q", params.ResponseType))
+	}
+
+	// §5.1: "Response encryption MUST be used by utilizing response mode
+	// direct_post.jwt." §5.2: "The Verifier MUST use the Response Mode
+	// dc_api.jwt." Those are the only two the profile permits.
 	if params.ResponseMode != "direct_post.jwt" && params.ResponseMode != "dc_api.jwt" {
 		violations = append(violations, fmt.Sprintf(
 			"HAIP: response_mode MUST be 'direct_post.jwt' or 'dc_api.jwt', got %q", params.ResponseMode))
 	}
 
-	// §5.1: "For signed requests, the Verifier MUST use, and the Wallet MUST
-	// accept the Client Identifier Prefix x509_hash". That is the only prefix
-	// the profile names. x509_san_dns appears nowhere in it, so accepting one
-	// would pass a request the profile does not allow.
-	//
-	// Unsigned requests are the exception, and only over the Digital
-	// Credentials API: §5.2 requires a wallet to support "unsigned, signed,
-	// and multi-signed requests", noting that unsigned ones "depend on the
-	// origin information provided by the platform". It leaves the mechanics to
-	// Appendix A of OID4VP, which identifies that caller by the web origin.
-	// So the prefix is not named in the profile, it is inherited from what the
-	// profile points at.
-	unsignedBrowserRequest := reqObj == nil && params.ResponseMode == "dc_api.jwt"
-	if unsignedBrowserRequest {
-		if !strings.HasPrefix(params.ClientID, "web-origin:") {
+	if !unsigned {
+		// §5: "For signed requests, the Verifier MUST use, and the Wallet
+		// MUST accept the Client Identifier Prefix x509_hash." It is the only
+		// prefix the profile names, so anything else is a request the profile
+		// does not allow.
+		if !strings.HasPrefix(params.ClientID, "x509_hash:") {
 			violations = append(violations, fmt.Sprintf(
-				"HAIP: an unsigned Digital Credentials API request must be identified by 'web-origin:', got %q", params.ClientID))
+				"HAIP: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
 		}
-	} else if !strings.HasPrefix(params.ClientID, "x509_hash:") {
-		violations = append(violations, fmt.Sprintf(
-			"HAIP: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
+		if reqObj == nil || reqObj.Header == nil {
+			violations = append(violations, "HAIP: signed Request Object (JAR) MUST be used")
+		}
+		// §5.1 asks for more than a signature: "Signed Authorization Requests
+		// MUST be used by utilizing JWT-Secured Authorization Request (JAR)
+		// [RFC9101] with the request_uri parameter." A request object handed
+		// over inline meets the first half only. The Digital Credentials API
+		// has no request_uri and is left out.
+		if reqObj != nil && !isDCAPIResponseMode(params.ResponseMode) && params.RequestURI == "" {
+			violations = append(violations, "HAIP: the signed Request Object MUST be delivered through the request_uri parameter")
+		}
+		violations = append(violations, haipSignedRequestViolations(params, reqObj)...)
 	}
 
-	// Browser API web-origin requests may be unsigned. Other HAIP requests require JAR.
-	requiresJAR := !(params.ResponseMode == "dc_api.jwt" && strings.HasPrefix(params.ClientID, "web-origin:"))
-	if requiresJAR && (reqObj == nil || reqObj.Header == nil) {
-		violations = append(violations, "HAIP: signed Request Object (JAR) MUST be used")
-	}
-	// §5.1 does not stop at requiring JAR: "Signed Authorization Requests MUST
-	// be used by utilizing JWT-Secured Authorization Request (JAR) [RFC9101]
-	// with the request_uri parameter". A request object handed over inline
-	// satisfies the first half and not the second, so the delivery is checked
-	// as well as the signature. Requests over the Digital Credentials API do
-	// not go through a request_uri at all and are left out.
-	if requiresJAR && reqObj != nil && params.ResponseMode != "dc_api.jwt" && params.RequestURI == "" {
-		violations = append(violations, "HAIP: the signed Request Object MUST be delivered through the request_uri parameter")
-	}
-
-	// §5.2.4: DCQL query MUST be used
+	// §5: "The DCQL query and response MUST be used as defined in Section 6
+	// of [OIDF.OID4VP]."
 	if params.DCQLQuery == nil {
 		violations = append(violations, "HAIP: DCQL query MUST be used (not presentation_definition)")
 	}
+	violations = append(violations, haipCredentialFormatViolations(params.DCQLQuery)...)
 
-	// §7 puts ES256 as the floor a wallet must be able to validate a signed
-	// presentation request with, and this wallet advertises exactly that in
-	// its wallet_metadata: request_object_signing_alg_values_supported is
-	// ["ES256"]. A verifier signing with anything else has therefore ignored
-	// what the wallet told it, and its request would not be verifiable by a
-	// wallet that implements the profile and nothing more. The profile lets
-	// an ecosystem mandate further suites, so this is enforcement of the
-	// baseline rather than a claim that no other algorithm exists.
-	if reqObj != nil && reqObj.Header != nil {
-		alg := jsonutil.GetString(reqObj.Header, "alg")
-		if alg != "" && alg != "ES256" {
+	// OID4VP 1.0 Appendix A.2, which §5.2 incorporates: expected_origins is
+	// "REQUIRED when signed requests defined in Appendix A.3.2 are used with
+	// the Digital Credentials API", and for unsigned ones "a Wallet MUST
+	// ignore this parameter if it is present".
+	if !unsigned && isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
+		if !originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
 			violations = append(violations, fmt.Sprintf(
-				"HAIP: Request Object algorithm MUST be ES256, got %q", alg))
+				"HAIP: expected_origins MUST include caller origin %q", params.RequestOrigin))
 		}
 	}
 
-	if params.ResponseMode == "dc_api.jwt" && params.RequestOrigin != "" {
-		unsignedWebOrigin := reqObj == nil && strings.HasPrefix(params.ClientID, "web-origin:")
-		if (!unsignedWebOrigin || expectedOriginsProvided(payload)) &&
-			!originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
-			violations = append(violations, fmt.Sprintf(
-				"HAIP: expected_origins MUST include caller origin %q", params.RequestOrigin))
+	violations = append(violations, haipClientMetadataViolations(params.ClientMetadata)...)
+
+	return violations
+}
+
+// isDCAPIResponseMode reports whether a response mode belongs to the Digital
+// Credentials API.
+func isDCAPIResponseMode(mode string) bool {
+	return mode == "dc_api" || mode == "dc_api.jwt"
+}
+
+// haipSignedRequestViolations checks what the profile requires of the request
+// signature itself.
+//
+// Requiring the x509_hash prefix and then not checking what it names would be
+// enforcement in name only: the prefix value is a hash of the certificate that
+// signed the request, and OID4VP §5.9.3 obliges the wallet to "validate the
+// signature and the trust chain of the X.509 leaf certificate".
+func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
+	if reqObj == nil || reqObj.Header == nil {
+		return nil
+	}
+	var violations []string
+
+	if finding := VerifyRequestObjectSignature(reqObj); finding != "" {
+		violations = append(violations, "HAIP: "+finding)
+	}
+	if strings.HasPrefix(params.ClientID, "x509_hash:") {
+		if finding := verifyX509Hash(params.ClientID, reqObj); finding != "" {
+			violations = append(violations, "HAIP: "+finding)
+		}
+	}
+
+	// §5: "The X.509 certificate of the trust anchor MUST NOT be included in
+	// the x5c JOSE header of the signed request. The X.509 certificate
+	// signing the request MUST NOT be self-signed."
+	certs, _ := extractCertChain(reqObj)
+	if len(certs) > 0 {
+		leaf := certs[0]
+		if isSelfSignedCert(leaf) {
+			violations = append(violations, "HAIP: the certificate signing the request MUST NOT be self-signed")
+		}
+		for _, cert := range certs[1:] {
+			if isSelfSignedCert(cert) {
+				violations = append(violations,
+					"HAIP: the trust anchor MUST NOT be included in the x5c header of the signed request")
+				break
+			}
 		}
 	}
 
 	return violations
 }
 
-func expectedOriginsProvided(payload map[string]any) bool {
-	if payload == nil {
-		return false
+// haipCredentialFormatViolations checks the credential formats a DCQL query
+// asks for. §5.3.1: "The Credential Format identifier MUST be mso_mdoc."
+// §5.3.2: "The Credential Format identifier MUST be dc+sd-jwt." The profile
+// covers those two and no others.
+func haipCredentialFormatViolations(query map[string]any) []string {
+	credentials, _ := query["credentials"].([]any)
+	var violations []string
+	for _, entry := range credentials {
+		credential, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		format := jsonutil.GetString(credential, "format")
+		if format != "mso_mdoc" && format != "dc+sd-jwt" {
+			violations = append(violations, fmt.Sprintf(
+				"HAIP: credential format MUST be 'mso_mdoc' or 'dc+sd-jwt', got %q", format))
+		}
 	}
-	_, ok := payload["expected_origins"]
-	return ok
+	return violations
+}
+
+// haipClientMetadataViolations checks what §5 requires a Verifier to publish
+// about response encryption.
+func haipClientMetadataViolations(metadata map[string]any) []string {
+	if metadata == nil {
+		return nil
+	}
+	var violations []string
+
+	// §5: "Verifiers MUST list both A128GCM and A256GCM in
+	// encrypted_response_enc_values_supported in their client metadata."
+	values, _ := metadata["encrypted_response_enc_values_supported"].([]any)
+	listed := make(map[string]bool, len(values))
+	for _, value := range values {
+		if text, ok := value.(string); ok {
+			listed[text] = true
+		}
+	}
+	if !listed["A128GCM"] || !listed["A256GCM"] {
+		violations = append(violations,
+			"HAIP: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported")
+	}
+
+	return violations
 }
 
 func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool {
@@ -287,4 +365,16 @@ func metadataListContains(meta map[string]any, key, want string) bool {
 		}
 	}
 	return false
+}
+
+// isSelfSignedCert reports whether a certificate is its own issuer, which is
+// what a trust anchor looks like inside a chain that must not carry one.
+func isSelfSignedCert(cert *x509.Certificate) bool {
+	if cert == nil {
+		return false
+	}
+	if cert.Subject.String() != cert.Issuer.String() {
+		return false
+	}
+	return cert.CheckSignatureFrom(cert) == nil
 }

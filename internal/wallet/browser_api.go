@@ -71,6 +71,7 @@ func ParseBrowserAPIRequest(body BrowserAPIRequestEnvelope, opts oid4vc.ParseOpt
 
 func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.ParseOptions, requestOrigin string) (*AuthorizationRequestParams, error) {
 	var raw string
+	var unsignedDCAPI bool
 
 	switch protocol {
 	case BrowserAPIProtocolOpenID4VPSigned:
@@ -108,18 +109,25 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		return parseMultiSignedBrowserAuthorizationRequest(requestObject, opts, requestOrigin)
 	case BrowserAPIProtocolOpenID4VPUnsigned:
 		payload := data
+		// OpenID4VP 1.0 Appendix A.2: "The client_id parameter MUST be
+		// omitted in unsigned requests defined in Appendix A.3.1. The Wallet
+		// MUST ignore any client_id parameter that is present in an unsigned
+		// request." The same paragraph says expected_origins "is not for use
+		// in unsigned requests and therefore a Wallet MUST ignore this
+		// parameter if it is present". Both are dropped here rather than
+		// further in, so nothing downstream can be steered by a value a page
+		// put in a request it does not sign.
 		if requestMap, ok := data.(map[string]any); ok {
-			if _, ok := requestMap["client_id"].(string); !ok || requestMap["client_id"] == "" {
-				if requestOrigin != "" {
-					cloned := make(map[string]any, len(requestMap)+1)
-					for key, value := range requestMap {
-						cloned[key] = value
-					}
-					cloned["client_id"] = "web-origin:" + requestOrigin
-					payload = cloned
+			cloned := make(map[string]any, len(requestMap))
+			for key, value := range requestMap {
+				if key == "client_id" || key == "expected_origins" {
+					continue
 				}
+				cloned[key] = value
 			}
+			payload = cloned
 		}
+		unsignedDCAPI = true
 
 		bytes, err := json.Marshal(payload)
 		if err != nil {
@@ -144,12 +152,14 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		RequestOrigin:    requestOrigin,
 		RedirectURI:      parsed.RedirectURI,
 		ResponseURI:      parsed.ResponseURI,
+		Scope:            parsed.Scope,
 		RequestURIMethod: parsed.RequestURIMethod,
 		RequestURI:       parsed.RequestURI,
 		ClientMetadata:   parsed.ClientMetadata,
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
+		UnsignedDCAPI:    unsignedDCAPI,
 	}, nil
 }
 
@@ -192,6 +202,7 @@ func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, o
 			RequestOrigin:    requestOrigin,
 			RedirectURI:      parsed.RedirectURI,
 			ResponseURI:      parsed.ResponseURI,
+			Scope:            parsed.Scope,
 			RequestURIMethod: parsed.RequestURIMethod,
 			RequestURI:       parsed.RequestURI,
 			ClientMetadata:   parsed.ClientMetadata,

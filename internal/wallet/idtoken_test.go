@@ -393,7 +393,6 @@ func TestBrowserIDTokenOnlyFlowWithoutCredentialMatch(t *testing.T) {
 				{
 					"protocol": "openid4vp-v1-unsigned",
 					"data": {
-						"client_id": "web-origin:https://rp.example",
 						"response_type": "id_token",
 						"response_mode": "dc_api",
 						"nonce": "browser-nonce",
@@ -434,8 +433,8 @@ func TestBrowserIDTokenOnlyFlowWithoutCredentialMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing id_token: %v", err)
 	}
-	if payload["aud"] != "web-origin:https://rp.example" {
-		t.Errorf("expected aud=web-origin:https://rp.example, got %v", payload["aud"])
+	if payload["aud"] != "origin:https://rp.example" {
+		t.Errorf("expected aud=origin:https://rp.example, got %v", payload["aud"])
 	}
 	if payload["nonce"] != "browser-nonce" {
 		t.Errorf("expected nonce=browser-nonce, got %v", payload["nonce"])

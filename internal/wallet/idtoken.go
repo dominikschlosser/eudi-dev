@@ -82,3 +82,21 @@ func ResponseTypeContains(responseType, target string) bool {
 func ResponseTypeRequiresVP(responseType string) bool {
 	return responseType == "" || ResponseTypeContains(responseType, "vp_token")
 }
+
+// presentationAudience returns the value a presentation or self-issued token
+// is audienced to.
+//
+// Over the Digital Credentials API that is the caller's origin, prefixed as
+// OID4VP 1.0 §5.9.3 describes: "the audience of the Credential Presentation is
+// always the origin value prefixed by origin:". An unsigned request carries no
+// client_id at all, so the origin is the only thing there is to bind to.
+// Everywhere else the Client Identifier is the audience, prefix included.
+func presentationAudience(params *AuthorizationRequestParams) string {
+	if params == nil {
+		return ""
+	}
+	if isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
+		return "origin:" + params.RequestOrigin
+	}
+	return params.ClientID
+}

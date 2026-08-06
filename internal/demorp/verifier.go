@@ -340,14 +340,20 @@ func responseEncryptionMetadata(key *ecdsa.PrivateKey) map[string]any {
 				"y":   base64.RawURLEncoding.EncodeToString(key.PublicKey.Y.FillBytes(make([]byte, 32))),
 			}},
 		},
-		"encrypted_response_enc_values_supported": []string{"A128GCM"},
+		// HAIP 1.0 §5: "Verifiers MUST list both A128GCM and A256GCM in
+		// encrypted_response_enc_values_supported in their client metadata."
+		"encrypted_response_enc_values_supported": []string{"A128GCM", "A256GCM"},
 		"vp_formats_supported": map[string]any{
 			"dc+sd-jwt": map[string]any{
 				"sd-jwt_alg_values": []string{"ES256"},
 				"kb-jwt_alg_values": []string{"ES256"},
 			},
+			// OID4VP 1.0 Appendix B.2.2 names these two members for mso_mdoc,
+			// and their values are COSE algorithm identifiers rather than the
+			// JOSE names used for JWTs (-7 is ES256).
 			"mso_mdoc": map[string]any{
-				"alg": []string{"ES256"},
+				"issuerauth_alg_values": []int{-7},
+				"deviceauth_alg_values": []int{-7},
 			},
 		},
 	}

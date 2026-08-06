@@ -76,8 +76,20 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 		return verifyX509SAN(clientID, "x509_san_dns:", "dns", reqObj)
 	case strings.HasPrefix(clientID, "x509_hash:"):
 		return verifyX509Hash(clientID, reqObj)
-	case strings.HasPrefix(clientID, "web-origin:"):
-		return verifyWebOrigin(clientID, requestOrigin)
+	case strings.HasPrefix(clientID, "origin:"):
+		// OID4VP 1.0 §5.9.3 reserves this prefix: "The Wallet MUST NOT accept
+		// this Client Identifier Prefix in requests." It names the audience a
+		// Digital Credentials API presentation is bound to, which the wallet
+		// derives from the origin the platform reports. Accepting it in a
+		// request would let a verifier on one channel ask for a presentation
+		// audienced to another.
+		return "origin: is a reserved Client Identifier Prefix and MUST NOT be accepted in a request"
+	case strings.HasPrefix(clientID, "openid_federation:"):
+		// §5.9.3 defers to OpenID Federation for this prefix, and its
+		// processing rules are not implemented here. Accepting it without
+		// resolving the trust chain would assert a verification that never
+		// happened.
+		return "openid_federation: client_id is not supported by this wallet"
 	case strings.HasPrefix(clientID, "redirect_uri:"):
 		return verifyRedirectURI(clientID, reqObj, responseURI)
 	case strings.HasPrefix(clientID, "verifier_attestation:"):
@@ -87,20 +99,6 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 	default:
 		return ""
 	}
-}
-
-func verifyWebOrigin(clientID, requestOrigin string) string {
-	expected := strings.TrimPrefix(clientID, "web-origin:")
-	if expected == "" {
-		return "web-origin: client_id value is empty"
-	}
-	if requestOrigin == "" {
-		return "web-origin: client_id requires the caller origin but none was provided"
-	}
-	if expected != requestOrigin {
-		return fmt.Sprintf("web-origin: client_id origin %q does not match caller origin %q", expected, requestOrigin)
-	}
-	return ""
 }
 
 // verifyX509SAN checks that the leaf certificate SAN contains the expected DNS name.

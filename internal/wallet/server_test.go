@@ -71,6 +71,18 @@ func serverRequest(t *testing.T, srv *Server, method, path string, body string) 
 	return w
 }
 
+// signedIssuerMetadataRequest asks for the signed form of the Credential Issuer
+// Metadata. §12.2.2 makes the unsigned JSON document the default and serves the
+// signed one to a client that asks for application/jwt.
+func signedIssuerMetadataRequest(t *testing.T, srv *Server) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/.well-known/openid-credential-issuer", nil)
+	req.Header.Set("Accept", "application/jwt")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+	return w
+}
+
 func decodeJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var result map[string]any
@@ -611,7 +623,6 @@ func TestBrowserPresentationAPI_DCAPIUnsigned(t *testing.T) {
 				{
 					"protocol": "openid4vp-v1-unsigned",
 					"data": {
-						"client_id": "web-origin:https://rp.example",
 						"response_type": "vp_token",
 						"response_mode": "dc_api",
 						"nonce": "browser-nonce",
@@ -807,7 +818,13 @@ func TestBrowserPresentationAPI_DCAPISignedJWT(t *testing.T) {
 	}
 }
 
-func TestBrowserPresentationAPI_RequestScopedHAIPRejectsWrongExpectedOrigins(t *testing.T) {
+// OID4VP 1.0 Appendix A.2 on expected_origins: "This parameter is not for use
+// in unsigned requests and therefore a Wallet MUST ignore this parameter if it
+// is present in an unsigned request." An unsigned Digital Credentials API
+// request is authenticated by the origin the platform reports, so one that
+// names somebody else in a parameter it does not sign must not be refused for
+// it, even under HAIP.
+func TestBrowserPresentationAPI_UnsignedRequestIgnoresExpectedOrigins(t *testing.T) {
 	srv := newTestServer(t, true)
 
 	payload := map[string]any{
@@ -816,12 +833,12 @@ func TestBrowserPresentationAPI_RequestScopedHAIPRejectsWrongExpectedOrigins(t *
 				map[string]any{
 					"protocol": BrowserAPIProtocolOpenID4VPUnsigned,
 					"data": map[string]any{
-						"client_id":        "web-origin:https://wallet.example",
 						"response_type":    "vp_token",
 						"response_mode":    "dc_api.jwt",
 						"nonce":            "browser-nonce",
 						"expected_origins": []any{"https://other.example"},
 						"dcql_query":       pidDCQLQuery(),
+						"client_metadata":  encryptionClientMetadata(t),
 					},
 				},
 			},
@@ -840,11 +857,11 @@ func TestBrowserPresentationAPI_RequestScopedHAIPRejectsWrongExpectedOrigins(t *
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	if strings.Contains(rec.Body.String(), "expected_origins") {
+		t.Fatalf("an unsigned request was refused over expected_origins: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "expected_origins") {
-		t.Fatalf("expected expected_origins error, got %s", rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -1941,7 +1958,11 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 	}
 }
 
-func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T) {
+// §12.2.2: "The Credential Issuer MUST support returning metadata in an
+// unsigned form 'application/json' and MAY support returning it in a signed
+// form 'application/jwt'." Serving only the signed form leaves every wallet
+// that does not implement signed metadata with no metadata at all.
+func TestOpenIDCredentialIssuerMetadata_ServesUnsignedJSONByDefault(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
@@ -1953,7 +1974,33 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
 	}
-	if ct := resp.Header().Get("Content-Type"); ct != "application/openidvci-issuer-metadata+jwt" {
+	if ct := resp.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("Content-Type = %s, want application/json", ct)
+	}
+	metadata := decodeJSON(t, resp)
+	if metadata["credential_issuer"] != w.IssuerURL {
+		t.Fatalf("credential_issuer = %v, want %s", metadata["credential_issuer"], w.IssuerURL)
+	}
+	if _, ok := metadata["credential_configurations_supported"].(map[string]any); !ok {
+		t.Fatalf("unsigned metadata has no credential_configurations_supported: %v", metadata)
+	}
+}
+
+func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://localhost:8443"
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating credentials: %v", err)
+	}
+	srv := NewServer(w, 0, nil)
+
+	resp := signedIssuerMetadataRequest(t, srv)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
+	}
+	// §12.2.2 names application/jwt as the media type of the signed form.
+	// openidvci-issuer-metadata+jwt is the typ inside it, not a media type.
+	if ct := resp.Header().Get("Content-Type"); ct != "application/jwt" {
 		t.Fatalf("expected signed issuer metadata content type, got %s", ct)
 	}
 
@@ -2078,7 +2125,7 @@ func TestNonPIDMetadataAndTrustList_DoNotPretendToBePID(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	metaResp := serverRequest(t, srv, "GET", "/.well-known/openid-credential-issuer", "")
+	metaResp := signedIssuerMetadataRequest(t, srv)
 	if metaResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", metaResp.Code, metaResp.Body.String())
 	}
@@ -3103,9 +3150,9 @@ func TestSameOriginAndOriginlessAPICallsAreAllowed(t *testing.T) {
 // page's own origin. That is the mechanism, not an attack, so the
 // cross-origin guard must not cover it: guarding it refuses the only kind of
 // caller it has, which is how the OIDF conformance suite's dc_api plans
-// started failing. What protects it instead is the web-origin client
-// identifier, matched against the origin the request arrived with, and the
-// consent dialog.
+// started failing. What protects it instead is the origin the platform
+// reports, which an unsigned Digital Credentials API request is authenticated
+// by, and the consent dialog.
 func TestBrowserAPIAcceptsACrossOriginCaller(t *testing.T) {
 	srv := newTestServer(t, false)
 
@@ -3137,5 +3184,20 @@ func TestTheDCAPIExemptionDoesNotLeakToOtherEndpoints(t *testing.T) {
 				t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
 			}
 		})
+	}
+}
+
+// encryptionClientMetadata is the verifier metadata an encrypted response mode
+// needs: an ephemeral key to encrypt to, and both content encryption
+// algorithms HAIP §5 obliges a Verifier to list.
+func encryptionClientMetadata(t *testing.T) map[string]any {
+	t.Helper()
+	encKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating encryption key: %v", err)
+	}
+	return map[string]any{
+		"jwks": map[string]any{"keys": []any{testEncJWK(t, &encKey.PublicKey)}},
+		"encrypted_response_enc_values_supported": []any{"A128GCM", "A256GCM"},
 	}
 }

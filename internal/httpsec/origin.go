@@ -49,10 +49,11 @@ func GuardAPI(next http.Handler, ownOrigins ...string) http.Handler {
 //
 // One endpoint genuinely is: the Digital Credentials API. A verifier's web
 // page calls it from its own origin, which is the whole mechanism, and the
-// wallet identifies that caller by the `web-origin` client identifier matched
-// against the origin the request arrived with. Guarding it by origin refuses
-// the only kind of caller it has. The protection there is that check plus the
-// consent dialog, not this one.
+// wallet identifies that caller by the origin the request arrived with, which
+// is what OpenID4VP over the Digital Credentials API authenticates an
+// unsigned request by. Guarding it by origin refuses the only kind of caller
+// it has. The protection there is that check plus the consent dialog, not
+// this one.
 func GuardAPIExcept(next http.Handler, crossOriginByContract []string, ownOrigins ...string) http.Handler {
 	allowed := hostSet(ownOrigins)
 	exempt := make(map[string]bool, len(crossOriginByContract))

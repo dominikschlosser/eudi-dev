@@ -139,7 +139,7 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) guardAPI(next http.Handler) http.Handler {
 	// /api/dc-api is the Digital Credentials API endpoint. A verifier's page
 	// invokes it from its own origin by design, so it is exempt and relies on
-	// the web-origin client identifier check and consent instead.
+	// the origin the platform reports and the consent dialog instead.
 	return httpsec.GuardAPIExcept(next, []string{"/api/dc-api"}, s.wallet.BaseURL, s.wallet.IssuerURL)
 }
 
