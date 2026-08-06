@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -510,5 +511,37 @@ func TestRenewIssuerTLSCertificateIfNeeded(t *testing.T) {
 	}
 	if renewed.NotAfter.Before(time.Now().Add(300 * 24 * time.Hour)) {
 		t.Errorf("renewed HTTPS certificate expires %s, want roughly a year out", renewed.NotAfter)
+	}
+}
+
+// The cap used to apply in demo mode alone, so a plain wallet server read
+// whatever it was sent into memory. It is a testing wallet either way, but
+// the size of a request it will read should not be the caller's choice.
+func TestRequestBodyIsCapped(t *testing.T) {
+	for _, demo := range []bool{false, true} {
+		name := "plain"
+		if demo {
+			name = "demo"
+		}
+		t.Run(name, func(t *testing.T) {
+			srv := newTestServer(t, false)
+			if demo {
+				srv.SetDemo(DemoOptions{})
+			}
+
+			// An oversized credential is refused either way, so the status
+			// alone proves nothing. The import handler answers "reading
+			// body" only when the read itself failed, which is the cap
+			// firing rather than the credential being rejected.
+			oversized := strings.Repeat("a", maxRequestBodyBytes+1)
+			req := httptest.NewRequest("POST", "/api/credentials", strings.NewReader(oversized))
+			req.Host = "localhost:8085"
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+
+			if !strings.Contains(rec.Body.String(), "reading body") {
+				t.Errorf("body over the cap was read anyway: status %d, body %q", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

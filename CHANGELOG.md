@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Only a demo wallet capped the size of a request it would read.** Everywhere else the server read whatever it was sent fully into memory, so how much of it a caller could occupy was the caller's choice. The same one megabyte cap now applies to every wallet server, which every legitimate payload (credentials, offers, presentations, templates) is far below
+
 - **The mdoc verifier was the one entry point that would panic on a nil document.** Everything else in that package reports it and returns, and callers reach all of them from the same parse results, so the odd one out was a crash waiting for whichever caller passed a parse that produced nothing. It now reports it like its neighbours
 
 - **The imprint page's back link did nothing.** It was written as a scripted URL, and every server that mounts the page sends `script-src 'self'` without `'unsafe-inline'`, which blocks exactly that. The link rendered normally and swallowed the click, so nothing about the page said it was broken (this is live on the public demo). It is now a link to the site root, and the page is checked for carrying no script at all

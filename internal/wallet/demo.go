@@ -110,25 +110,25 @@ func (s *Server) DemoEnabled() bool {
 	return s.demo != nil
 }
 
-// demoMaxBodyBytes caps request bodies in demo mode. Every legitimate
-// payload (credentials, offers, presentations) is far smaller.
-const demoMaxBodyBytes = 1 << 20
+// maxRequestBodyBytes caps request bodies. Every legitimate payload
+// (credentials, offers, presentations, templates) is far smaller. The cap
+// used to apply in demo mode alone, which left the size of a request the
+// server will read up to whoever sent it everywhere else, on a server that
+// reads several of them fully into memory.
+const maxRequestBodyBytes = 1 << 20
 
 // Handler returns the server's root handler: the mux, wrapped with the
-// browser security headers, the cross-origin guard and, when the demo
-// profile is enabled, the demo guard.
+// browser security headers, the cross-origin guard, the request body cap
+// and, when the demo profile is enabled, the demo guard.
 func (s *Server) Handler() http.Handler {
-	if s.demo == nil {
-		return httpsec.Headers(s.guardAPI(s.mux))
-	}
 	return httpsec.Headers(s.guardAPI(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if demoBlockedRoute(r) {
+		if s.demo != nil && demoBlockedRoute(r) {
 			writeJSON(w, http.StatusForbidden, map[string]string{
 				"error": "endpoint disabled in public demo mode",
 			})
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, demoMaxBodyBytes)
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 		s.mux.ServeHTTP(w, r)
 	})))
 }
