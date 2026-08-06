@@ -116,6 +116,19 @@ current_wallet_tag() {
   remote "sed -n 's/^WALLET_TAG=//p' .env 2>/dev/null" || true
 }
 
+# The pin only does something if the compose file on the host reads
+# WALLET_TAG. A host deployed before rollback existed still has one with a
+# fixed tag, where writing the pin changes nothing and the demo quietly stays
+# where it is. Only the image line differs, so the file can be brought up to
+# date without touching how the wallet is run.
+ensure_pinnable_compose() {
+  if remote "grep -q WALLET_TAG docker-compose.yml 2>/dev/null"; then
+    return 0
+  fi
+  echo "  the compose file on the host cannot pin a release, copying the current one..."
+  scp -q docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
+}
+
 case "${COMMAND}" in
   setup)
     require_host
@@ -163,6 +176,7 @@ case "${COMMAND}" in
     fi
     echo "Rolling back${current:+ from ${current}} to ${target}..."
     record_running_version
+    ensure_pinnable_compose
     previous_tag="$(current_wallet_tag)"
     set_wallet_tag "${target}"
     # Pulling after the pin is set is what tests the release being asked for.
@@ -175,7 +189,7 @@ case "${COMMAND}" in
     apply_stack
     live="$(deployed_version)"
     if [[ -n "${live}" && "${live}" != "${target}" ]]; then
-      die "asked for ${target} but ${live} is live. ./deploy.sh logs shows why."
+      die "asked for ${target} but ${live} is live. Check that the tag names a published release (the image is ghcr.io/dominikschlosser/eudi-dev:${target}), then ./deploy.sh logs."
     fi
     echo "Rolled back to ${target}. ./deploy.sh update returns to the newest release."
     ;;
