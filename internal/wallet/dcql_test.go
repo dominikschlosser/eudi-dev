@@ -1183,3 +1183,32 @@ func TestEvaluateDCQL_CredentialSets_OptionalSetIsSkipped(t *testing.T) {
 		t.Fatalf("expected only pid_sdjwt, got %d matches: %+v", len(matches), matches)
 	}
 }
+
+// Preferred-format sorting has to group without disturbing what it does not
+// need to move. A comparator that only asks whether the left side is the
+// preferred format claims i before j and j before i when both are, which sort
+// is entitled to resolve any way it likes: it reversed equally preferred
+// matches, so which credential a caller took first was arbitrary.
+func TestEvaluateDCQL_PreferredFormatSortIsStable(t *testing.T) {
+	w := generateTestWallet(t)
+	w.PreferredFormat = "dc+sd-jwt"
+
+	matches := []CredentialMatch{
+		{QueryID: "q", Format: "mso_mdoc", CredentialID: "m1"},
+		{QueryID: "q", Format: "dc+sd-jwt", CredentialID: "s1"},
+		{QueryID: "q", Format: "mso_mdoc", CredentialID: "m2"},
+		{QueryID: "q", Format: "dc+sd-jwt", CredentialID: "s2"},
+	}
+	sortMatchesByPreferredFormat(matches, w.PreferredFormat)
+
+	var order []string
+	for _, m := range matches {
+		order = append(order, m.CredentialID)
+	}
+	want := []string{"s1", "s2", "m1", "m2"}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("order = %v, want %v (preferred first, input order kept within each group)", order, want)
+		}
+	}
+}

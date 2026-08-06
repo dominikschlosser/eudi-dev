@@ -98,14 +98,8 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 		}
 	}
 
-	// Sort matches so preferred format appears first per query ID
 	if w.PreferredFormat != "" {
-		sort.SliceStable(matches, func(i, j int) bool {
-			if matches[i].QueryID == matches[j].QueryID {
-				return matches[i].Format == w.PreferredFormat
-			}
-			return false
-		})
+		sortMatchesByPreferredFormat(matches, w.PreferredFormat)
 	}
 
 	// Apply credential_sets constraints
@@ -121,6 +115,23 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
 	return matches
+}
+
+// sortMatchesByPreferredFormat moves the preferred format to the front within
+// each query id, leaving everything else where it was.
+//
+// Both halves of the comparison are needed. Asking only whether i is the
+// preferred format reports i before j and j before i when both are, which is
+// not an ordering sort can work with: it reversed equally preferred matches
+// instead of leaving them alone, so which credential a caller took first came
+// down to how the sort happened to run.
+func sortMatchesByPreferredFormat(matches []CredentialMatch, preferred string) {
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].QueryID != matches[j].QueryID {
+			return false
+		}
+		return matches[i].Format == preferred && matches[j].Format != preferred
+	})
 }
 
 type claimSelection struct {
