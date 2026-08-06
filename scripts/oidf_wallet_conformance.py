@@ -553,6 +553,45 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
     )
 
 
+def baseline_credential_ids(wallet_url: str) -> set[str]:
+    """Credential ids the wallet was started with (the --pid baseline)."""
+    credentials = wallet_request(wallet_url, "GET", "/api/credentials")
+    return {c["id"] for c in credentials if c.get("id")}
+
+
+def purge_issued_credentials(wallet_url: str, baseline_ids: set[str]) -> int:
+    """Drop everything the suite has issued, keeping only the baseline.
+
+    One wallet serves every plan, so the credentials an issuance plan
+    deposits are still there when a presentation plan runs. They match the
+    same DCQL query as the baseline PID (same vct), and they are signed by
+    the suite's own issuer, which nothing chains to the wallet CA the plan
+    configures as its trust anchor. A presentation plan that picks one of
+    them fails certificate validation for a reason that has nothing to do
+    with the wallet. Each module starts from the baseline instead.
+    """
+    try:
+        credentials = wallet_request(wallet_url, "GET", "/api/credentials")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[monitor] could not list credentials to purge: {exc}", flush=True)
+        return 0
+    removed = 0
+    for credential in credentials:
+        cred_id = credential.get("id")
+        if not cred_id or cred_id in baseline_ids:
+            continue
+        # Not wallet_request: a successful delete answers 204 with no body,
+        # which json.loads would reject.
+        url = wallet_url.rstrip("/") + f"/api/credentials/{cred_id}"
+        try:
+            req = urllib.request.Request(url, method="DELETE")
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT):
+                removed += 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"[monitor] could not delete credential {cred_id}: {exc}", flush=True)
+    return removed
+
+
 def create_vp_config(suite_dir: Path, scenario: PlanScenario, materials: WalletMaterials, output: Path) -> None:
     config = load_config_template(suite_dir / scenario.template_relpath)
     config["alias"] = f"oid4vc-dev-{scenario.slug}"
@@ -1124,6 +1163,7 @@ def main() -> int:
     verify_suite_support(suite_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
     materials = fetch_wallet_materials(args.wallet_url, args.wallet_issuer_url, Path(args.wallet_ca_cert))
+    baseline_ids = baseline_credential_ids(args.wallet_url)
     scenarios = final_scenarios()
     config_jobs = [(scenario, create_config(args, suite_dir, results_dir, scenario, materials)) for scenario in scenarios]
     config_variants = {config_path.name: scenario.variant for scenario, config_path in config_jobs}
@@ -1179,6 +1219,14 @@ def main() -> int:
                     match = MODULE_ID_RE.search(line)
                     if match:
                         module_id = match.group(1)
+                        if module_id not in module_state:
+                            removed = purge_issued_credentials(args.wallet_url, baseline_ids)
+                            if removed:
+                                print(
+                                    f"[monitor] cleared {removed} credential(s) issued by earlier "
+                                    f"modules before {module_id}",
+                                    flush=True,
+                                )
                         module_state.setdefault(
                             module_id,
                             {

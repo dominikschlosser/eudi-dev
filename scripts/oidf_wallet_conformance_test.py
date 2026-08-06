@@ -1,5 +1,7 @@
 import unittest
+from unittest import mock
 
+import oidf_wallet_conformance as oidf
 from oidf_wallet_conformance import PlanScenario, scenario_plan_arg
 
 
@@ -99,3 +101,50 @@ class ScenarioPlanArgTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PurgeIssuedCredentialsTests(unittest.TestCase):
+    """One wallet serves every plan, so credentials an issuance plan deposits
+    are still present when a presentation plan runs. Only the baseline the
+    wallet was started with chains to the CA the plans trust."""
+
+    def _run(self, listed, baseline):
+        deleted = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_list(wallet_url, method, path, *args, **kwargs):
+            self.assertEqual((method, path), ("GET", "/api/credentials"))
+            return listed
+
+        def fake_urlopen(req, timeout=None):
+            self.assertEqual(req.get_method(), "DELETE")
+            deleted.append(req.full_url.rsplit("/", 1)[-1])
+            return FakeResponse()
+
+        with mock.patch.object(oidf, "wallet_request", fake_list), mock.patch.object(
+            oidf.urllib.request, "urlopen", fake_urlopen
+        ):
+            removed = oidf.purge_issued_credentials("http://wallet.test", baseline)
+        return removed, deleted
+
+    def test_keeps_the_baseline_and_removes_what_the_suite_issued(self):
+        listed = [{"id": "base-sdjwt"}, {"id": "base-mdoc"}, {"id": "suite-1"}, {"id": "suite-2"}]
+
+        removed, deleted = self._run(listed, {"base-sdjwt", "base-mdoc"})
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(sorted(deleted), ["suite-1", "suite-2"])
+
+    def test_a_clean_wallet_is_left_alone(self):
+        listed = [{"id": "base-sdjwt"}]
+
+        removed, deleted = self._run(listed, {"base-sdjwt"})
+
+        self.assertEqual(removed, 0)
+        self.assertEqual(deleted, [])
