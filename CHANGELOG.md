@@ -5,15 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.19.15] - 2026-08-06
+## [1.19.17] - 2026-08-06
+
+### Changed
+
+- **Credentials and the activity log each scroll on their own.** Everything sat in one scrolling column, so paging through credentials pushed the activity log out of view and reading the log pushed the credentials away. Both are panels now, sharing the height below the actions bar and keeping their own scrollbar, so the page itself no longer scrolls. Phones are left alone: two short scrolling panels stacked in a small viewport is harder to use than scrolling the page, so below 768 pixels the whole page scrolls as before
+
+## [1.19.16] - 2026-08-06
+
+### Added
+
+- **Credentials are listed newest first.** The order was the order they arrived, so a freshly issued credential went to the bottom of a list the UI pages ten at a time, which put it out of sight on a wallet holding more than ten. Both the API and `wallet list` now order by the issuance time the credential itself states, `iat` for an SD-JWT or JWT VC and the MSO signed time for an mdoc. Sorting happens before paging, so a page is a page of the sorted list rather than a sorted page. A credential that states no issuance time sorts last, and credentials issued in the same second keep the order they arrived in rather than being separated by anything arbitrary
 
 ### Documentation
 
 - **Token Status List is no longer cited as RFC 9596.** RFC 9596 is the COSE `typ` header parameter and has nothing to do with status lists. Token Status List is still `draft-ietf-oauth-status-list`, in the RFC Editor queue with no number assigned, so nothing claims one now. The same comments also justified a 16 byte floor on the published bitstring as a requirement of that document. It sets no minimum size at all: the floor is this wallet's own choice, so that a fresh wallet does not publish a list short enough to identify the one credential reading it
 
-### Added
+## [1.19.15] - 2026-08-06
 
-- **Credentials are listed newest first.** The order was the order they arrived, so a freshly issued credential went to the bottom of a list the UI pages ten at a time, which put it out of sight on a wallet holding more than ten. Both the API and `wallet list` now order by the issuance time the credential itself states, `iat` for an SD-JWT or JWT VC and the MSO signed time for an mdoc. Sorting happens before paging, so a page is a page of the sorted list rather than a sorted page. A credential that states no issuance time sorts last, and credentials issued in the same second keep the order they arrived in rather than being separated by anything arbitrary
+### Added
 
 - **The wallet and the decoder link to each other.** Both are served by `wallet serve` and there was no way between them but the address bar. The wallet header carries a Decoder link, and the decoder header links back, reading "Demo wallet" on a shared instance and "Wallet" on somebody's own. A decoder running on its own through `eudi serve` has no wallet behind it and shows no link
 

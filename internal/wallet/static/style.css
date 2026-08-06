@@ -155,11 +155,46 @@ header h1 {
 
 .main {
   flex: 1;
-  overflow-y: auto;
+  /* The page itself does not scroll. Credentials and Activity each own a
+     scrollbar below, so paging through credentials no longer moves the
+     activity log out of view and the reverse. */
+  overflow: hidden;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+}
+
+/* Actions and the deferred list keep their natural height, so the two
+   panels share whatever is left. */
+.main > div:not(.panel) {
+  flex-shrink: 0;
+}
+
+/* A panel is a titled block whose body scrolls on its own. min-height: 0 is
+   what lets it shrink below its content: without it a flex item floors at
+   its content size and the inner scrollbar never appears. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.panel > .section-title,
+.panel > .section-title-row,
+.panel > .pager {
+  flex-shrink: 0;
+}
+
+.panel > .credentials,
+.panel > .log-entries {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the scrollbar so it does not sit on top of the cards. */
+  padding-right: 4px;
 }
 
 /* Credential Cards */
@@ -906,6 +941,20 @@ header h1 {
   .main {
     overflow: visible;
     flex: none;
+  }
+
+  /* One scroll on a phone. Two short scrolling panels stacked in a small
+     viewport is harder to use than scrolling the page, so the panels go back
+     to their natural height here. */
+  .panel {
+    flex: none;
+  }
+
+  .panel > .credentials,
+  .panel > .log-entries {
+    flex: none;
+    overflow-y: visible;
+    padding-right: 0;
   }
 
   header {

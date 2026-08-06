@@ -850,6 +850,62 @@ test.describe("Mobile layout", () => {
     });
     expect(reachable).toBe(true);
   });
+
+  test("the page scrolls as one on a phone", async ({ page }) => {
+    // The desktop layout gives Credentials and Activity a scrollbar each.
+    // Two short scrolling panels stacked in a phone viewport is harder to
+    // use than scrolling the page, so that is turned off here.
+    await page.setViewportSize({ width: 390, height: 700 });
+    await page.goto(WALLET_URL);
+    await page.waitForSelector(".credential-card");
+
+    const inner = await page.evaluate(() => {
+      const el = document.querySelector("#credentials");
+      return el.scrollHeight > el.clientHeight + 1;
+    });
+    expect(inner, "credentials must not scroll on its own here").toBe(false);
+  });
+});
+
+test.describe("Panel scrolling", () => {
+  test("credentials and activity scroll separately, the page does not", async ({
+    page,
+  }) => {
+    // Regression: everything lived in one scrolling column, so paging
+    // through credentials moved the activity log out of view and reading
+    // the log pushed the credentials away. A short viewport is what forces
+    // both panels past their height.
+    await page.setViewportSize({ width: 1280, height: 520 });
+    await page.goto(WALLET_URL);
+    await page.waitForSelector(".credential-card");
+
+    const measured = await page.evaluate(() => {
+      const scrolls = (sel) => {
+        const el = document.querySelector(sel);
+        return el.scrollHeight > el.clientHeight + 1;
+      };
+      return {
+        page: scrolls(".main"),
+        credentials: scrolls("#credentials"),
+      };
+    });
+    expect(measured.page, "the page column must not scroll").toBe(false);
+    expect(measured.credentials, "credentials owns its scrollbar").toBe(true);
+
+    // Moving one must leave the other where it was.
+    const logBefore = await page.evaluate(
+      () => document.querySelector("#log").scrollTop
+    );
+    await page.evaluate(() => {
+      document.querySelector("#credentials").scrollTop = 150;
+    });
+    const after = await page.evaluate(() => ({
+      credentials: document.querySelector("#credentials").scrollTop,
+      log: document.querySelector("#log").scrollTop,
+    }));
+    expect(after.credentials).toBeGreaterThan(0);
+    expect(after.log, "activity must not move with credentials").toBe(logBefore);
+  });
 });
 
 test.describe("Transaction code in the consent dialog", () => {
