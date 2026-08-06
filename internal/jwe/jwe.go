@@ -27,6 +27,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -36,6 +37,7 @@ import (
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
 
 // Header is the parsed protected header of a compact JWE.
@@ -209,39 +211,32 @@ func EncKeyBitLen(enc string) (int, error) {
 
 // ParsePublicKeyJWK reads a P-256 public key from a JWK map, as carried in an
 // epk header.
+//
+// The decoding is shared with the rest of the toolkit rather than rebuilding
+// the coordinates into an uncompressed point here. The off-curve check is
+// unchanged: crypto/ecdh made it before and go-jose makes it now, so this is
+// one less copy of the same reading, not a new guarantee.
 func ParsePublicKeyJWK(m map[string]any) (*ecdh.PublicKey, error) {
-	crv, _ := m["crv"].(string)
-	if crv != "P-256" {
+	if crv, _ := m["crv"].(string); crv != "P-256" {
 		return nil, fmt.Errorf("unsupported curve: %s", crv)
 	}
-	xB64, _ := m["x"].(string)
-	yB64, _ := m["y"].(string)
-	if xB64 == "" || yB64 == "" {
+	if x, _ := m["x"].(string); x == "" {
 		return nil, fmt.Errorf("missing x or y coordinate")
 	}
-	x, err := format.DecodeBase64URL(xB64)
+	if y, _ := m["y"].(string); y == "" {
+		return nil, fmt.Errorf("missing x or y coordinate")
+	}
+	doc, err := json.Marshal(m)
 	if err != nil {
-		return nil, fmt.Errorf("decoding x: %w", err)
+		return nil, fmt.Errorf("re-encoding epk: %w", err)
 	}
-	y, err := format.DecodeBase64URL(yB64)
+	parsed, err := keys.ParseJWK(doc)
 	if err != nil {
-		return nil, fmt.Errorf("decoding y: %w", err)
+		return nil, err
 	}
-	// Uncompressed point: 0x04 || x || y, each coordinate at the curve size.
-	point := make([]byte, 0, 65)
-	point = append(point, 0x04)
-	point = append(point, padTo32(x)...)
-	point = append(point, padTo32(y)...)
-	return ecdh.P256().NewPublicKey(point)
-}
-
-// padTo32 left pads a coordinate to the P-256 size. A JWK may drop leading
-// zero bytes, and a short coordinate is not a valid point encoding.
-func padTo32(b []byte) []byte {
-	if len(b) >= 32 {
-		return b
+	ecKey, ok := parsed.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("epk is not an EC key")
 	}
-	padded := make([]byte, 32)
-	copy(padded[32-len(b):], b)
-	return padded
+	return ecKey.ECDH()
 }

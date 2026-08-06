@@ -16,11 +16,11 @@ package proxy
 
 import (
 	"crypto/ecdh"
-	"encoding/json"
+	"crypto/ecdsa"
 	"fmt"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/jwe"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
 
 // DecryptJWEWithCEK decrypts a JWE compact serialization using the provided
@@ -45,28 +45,16 @@ func DecryptJWEWithJWK(compact string, jwkJSON string) ([]byte, error) {
 }
 
 // parseECPrivateKeyJWK parses an EC private key from a JWK JSON string.
+// The decoding is shared with the rest of the toolkit, which is what keeps
+// this from being a fourth opinion on what a JWK looks like.
 func parseECPrivateKeyJWK(jwkJSON string) (*ecdh.PrivateKey, error) {
-	var jwk struct {
-		Kty string `json:"kty"`
-		Crv string `json:"crv"`
-		D   string `json:"d"`
-		X   string `json:"x"`
-		Y   string `json:"y"`
-	}
-	if err := json.Unmarshal([]byte(jwkJSON), &jwk); err != nil {
+	parsed, err := keys.ParseJWKPrivate([]byte(jwkJSON))
+	if err != nil {
 		return nil, err
 	}
-	if jwk.Kty != "EC" {
-		return nil, fmt.Errorf("unsupported key type: %s", jwk.Kty)
+	ecKey, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("unsupported key type: %T", parsed)
 	}
-	if jwk.Crv != "P-256" {
-		return nil, fmt.Errorf("unsupported curve: %s", jwk.Crv)
-	}
-
-	dBytes, err := format.DecodeBase64URL(jwk.D)
-	if err != nil {
-		return nil, fmt.Errorf("decoding d: %w", err)
-	}
-
-	return ecdh.P256().NewPrivateKey(dBytes)
+	return ecKey.ECDH()
 }

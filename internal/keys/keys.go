@@ -18,14 +18,14 @@ package keys
 import (
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"math/big"
 	"os"
+
+	josev4 "github.com/go-jose/go-jose/v4"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
@@ -74,72 +74,23 @@ func parsePEMPrivateBlock(block *pem.Block) (crypto.PrivateKey, error) {
 }
 
 // ParseJWKPrivate parses a JWK JSON object containing a private key.
+// ParseJWKPrivate reads a private key from a JWK document. Same decoding and
+// same EC-and-RSA-only contract as ParseJWK.
 func ParseJWKPrivate(data []byte) (crypto.PrivateKey, error) {
-	var jwk map[string]any
-	if err := json.Unmarshal(data, &jwk); err != nil {
+	var jwk josev4.JSONWebKey
+	if err := jwk.UnmarshalJSON(padECCoordinates(data)); err != nil {
 		return nil, fmt.Errorf("not a valid PEM or JWK: %w", err)
 	}
-
-	kty, _ := jwk["kty"].(string)
-	switch kty {
-	case "EC":
-		return parseECJWKPrivate(jwk)
-	case "RSA":
-		return parseRSAJWKPrivate(jwk)
+	switch key := jwk.Key.(type) {
+	case *ecdsa.PrivateKey:
+		return key, nil
+	case *rsa.PrivateKey:
+		return key, nil
+	case *ecdsa.PublicKey, *rsa.PublicKey:
+		return nil, fmt.Errorf("JWK carries no private key parameters")
 	default:
-		return nil, fmt.Errorf("unsupported JWK key type: %s", kty)
+		return nil, fmt.Errorf("unsupported JWK key type: %T", jwk.Key)
 	}
-}
-
-func parseECJWKPrivate(jwk map[string]any) (*ecdsa.PrivateKey, error) {
-	pub, err := parseECJWK(jwk)
-	if err != nil {
-		return nil, err
-	}
-	dB64, _ := jwk["d"].(string)
-	if dB64 == "" {
-		return nil, fmt.Errorf("EC JWK missing private key parameter 'd'")
-	}
-	dBytes, err := format.DecodeBase64URL(dB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding d: %w", err)
-	}
-	return &ecdsa.PrivateKey{
-		PublicKey: *pub,
-		D:         new(big.Int).SetBytes(dBytes),
-	}, nil
-}
-
-func parseRSAJWKPrivate(jwk map[string]any) (*rsa.PrivateKey, error) {
-	pub, err := parseRSAJWK(jwk)
-	if err != nil {
-		return nil, err
-	}
-	dB64, _ := jwk["d"].(string)
-	if dB64 == "" {
-		return nil, fmt.Errorf("RSA JWK missing private key parameter 'd'")
-	}
-	dBytes, err := format.DecodeBase64URL(dB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding d: %w", err)
-	}
-	key := &rsa.PrivateKey{
-		PublicKey: *pub,
-		D:         new(big.Int).SetBytes(dBytes),
-	}
-	// Parse optional CRT parameters
-	if pB64, ok := jwk["p"].(string); ok {
-		if pBytes, err := format.DecodeBase64URL(pB64); err == nil {
-			key.Primes = append(key.Primes, new(big.Int).SetBytes(pBytes))
-		}
-	}
-	if qB64, ok := jwk["q"].(string); ok {
-		if qBytes, err := format.DecodeBase64URL(qB64); err == nil {
-			key.Primes = append(key.Primes, new(big.Int).SetBytes(qBytes))
-		}
-	}
-	key.Precompute()
-	return key, nil
 }
 
 // ParsePublicKey parses a public key from PEM or JWK bytes.
@@ -173,71 +124,79 @@ func parsePEMBlock(block *pem.Block) (crypto.PublicKey, error) {
 }
 
 // ParseJWK parses a JWK JSON object into a public key.
+// ecCurveSizes is the byte width each curve's coordinates must have in a JWK.
+var ecCurveSizes = map[string]int{"P-256": 32, "P-384": 48, "P-521": 66}
+
+// padECCoordinates left pads short EC coordinates to the curve width.
+//
+// RFC 7518 requires them at full width, and go-jose enforces that. Peers get
+// it wrong often enough to matter: a coordinate whose leading byte is zero
+// comes back one byte short from anything that encodes big.Int.Bytes()
+// directly, which P-521 keys hit routinely. Refusing those would mean this
+// toolkit could not decode a credential precisely when someone needs to find
+// out what is wrong with it, so the padding is repaired and the key is read.
+// Anything else about the document is left for go-jose to judge.
+func padECCoordinates(data []byte) []byte {
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return data
+	}
+	if kty, _ := doc["kty"].(string); kty != "EC" {
+		return data
+	}
+	crv, _ := doc["crv"].(string)
+	size, ok := ecCurveSizes[crv]
+	if !ok {
+		return data
+	}
+	changed := false
+	for _, field := range []string{"x", "y", "d"} {
+		encoded, ok := doc[field].(string)
+		if !ok {
+			continue
+		}
+		raw, err := format.DecodeBase64URL(encoded)
+		if err != nil || len(raw) >= size {
+			continue
+		}
+		padded := make([]byte, size)
+		copy(padded[size-len(raw):], raw)
+		doc[field] = format.EncodeBase64URL(padded)
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	repaired, err := json.Marshal(doc)
+	if err != nil {
+		return data
+	}
+	return repaired
+}
+
+// ParseJWK reads a public key from a JWK document.
+//
+// go-jose does the decoding. Four hand-written parsers used to split this by
+// key type and rebuild the big integers by hand, each with its own idea of
+// which curves counted. The type switch afterwards keeps the contract this
+// function always had: EC and RSA only. go-jose also understands OKP and
+// symmetric keys, and letting those through here would hand callers a key
+// type none of them are written for.
 func ParseJWK(data []byte) (crypto.PublicKey, error) {
-	var jwk map[string]any
-	if err := json.Unmarshal(data, &jwk); err != nil {
+	var jwk josev4.JSONWebKey
+	if err := jwk.UnmarshalJSON(padECCoordinates(data)); err != nil {
 		return nil, fmt.Errorf("not a valid PEM or JWK: %w", err)
 	}
-
-	kty, _ := jwk["kty"].(string)
-	switch kty {
-	case "EC":
-		return parseECJWK(jwk)
-	case "RSA":
-		return parseRSAJWK(jwk)
+	switch key := jwk.Key.(type) {
+	case *ecdsa.PublicKey:
+		return key, nil
+	case *rsa.PublicKey:
+		return key, nil
+	case *ecdsa.PrivateKey:
+		return &key.PublicKey, nil
+	case *rsa.PrivateKey:
+		return &key.PublicKey, nil
 	default:
-		return nil, fmt.Errorf("unsupported JWK key type: %s", kty)
+		return nil, fmt.Errorf("unsupported JWK key type: %T", jwk.Key)
 	}
-}
-
-func parseECJWK(jwk map[string]any) (*ecdsa.PublicKey, error) {
-	crv, _ := jwk["crv"].(string)
-	xB64, _ := jwk["x"].(string)
-	yB64, _ := jwk["y"].(string)
-
-	xBytes, err := format.DecodeBase64URL(xB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding x: %w", err)
-	}
-	yBytes, err := format.DecodeBase64URL(yB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding y: %w", err)
-	}
-
-	var curve elliptic.Curve
-	switch crv {
-	case "P-256":
-		curve = elliptic.P256()
-	case "P-384":
-		curve = elliptic.P384()
-	case "P-521":
-		curve = elliptic.P521()
-	default:
-		return nil, fmt.Errorf("unsupported curve: %s", crv)
-	}
-
-	return &ecdsa.PublicKey{
-		Curve: curve,
-		X:     new(big.Int).SetBytes(xBytes),
-		Y:     new(big.Int).SetBytes(yBytes),
-	}, nil
-}
-
-func parseRSAJWK(jwk map[string]any) (*rsa.PublicKey, error) {
-	nB64, _ := jwk["n"].(string)
-	eB64, _ := jwk["e"].(string)
-
-	nBytes, err := format.DecodeBase64URL(nB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding n: %w", err)
-	}
-	eBytes, err := format.DecodeBase64URL(eB64)
-	if err != nil {
-		return nil, fmt.Errorf("decoding e: %w", err)
-	}
-
-	return &rsa.PublicKey{
-		N: new(big.Int).SetBytes(nBytes),
-		E: int(new(big.Int).SetBytes(eBytes).Int64()),
-	}, nil
 }
