@@ -153,12 +153,12 @@ func (s *Server) renewSigningCertificate(now time.Time) error {
 // collectDueDeferredCredentials makes one attempt for every pending issuance
 // whose next attempt is due.
 func (s *Server) collectDueDeferredCredentials(now time.Time) error {
-	for _, pending := range s.wallet.PendingIssuanceList() {
+	for _, pending := range s.wallet.DeferredIssuanceList() {
 		if pending.NextAttemptAt.After(now) {
 			continue
 		}
 		if pending.Expired(now) {
-			s.abandonDeferred(pending, fmt.Sprintf("the issuer did not produce it within %s", pendingIssuanceMaxAge))
+			s.abandonDeferred(pending, fmt.Sprintf("the issuer did not produce it within %s", deferredIssuanceMaxAge))
 			continue
 		}
 		s.attemptDeferredCollection(pending)
@@ -187,7 +187,7 @@ type DeferredAttempt struct {
 // credential is imported when it arrives, the attempt is rescheduled while the
 // issuer still wants more time, and the record is dropped when the issuer says
 // something that will not improve by asking again.
-func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAttempt {
+func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAttempt {
 	proofKeys, err := pending.ProofKeys()
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("its proof keys could not be read back: %v", err))
@@ -242,7 +242,7 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))
 	}
 
-	s.wallet.RemovePendingIssuance(pending.ID)
+	s.wallet.RemoveDeferredIssuance(pending.ID)
 	details := credentialImportLogDetails(imported, credential)
 	details["issuer"] = pending.Issuer
 	details["transaction_id"] = pending.TransactionID
@@ -259,7 +259,7 @@ func (s *Server) attemptDeferredCollection(pending PendingIssuance) DeferredAtte
 // handleDeferredAttemptError decides what a failed attempt means. Being told
 // to wait longer reschedules. Anything else ends it, because a rejected token
 // or an unknown transaction will not recover on a timer.
-func (s *Server) handleDeferredAttemptError(pending PendingIssuance, err error) DeferredAttempt {
+func (s *Server) handleDeferredAttemptError(pending DeferredIssuance, err error) DeferredAttempt {
 	var stillPending stillPendingError
 	if errors.As(err, &stillPending) {
 		return s.rescheduleDeferred(pending, stillPending.interval, "")
@@ -303,9 +303,9 @@ func isRetryableDeferredError(err error) bool {
 	return true
 }
 
-func (s *Server) rescheduleDeferred(pending PendingIssuance, interval time.Duration, lastErr string) DeferredAttempt {
+func (s *Server) rescheduleDeferred(pending DeferredIssuance, interval time.Duration, lastErr string) DeferredAttempt {
 	next := time.Now().Add(interval)
-	s.wallet.UpdatePendingIssuance(pending.ID, func(p *PendingIssuance) {
+	s.wallet.UpdateDeferredIssuance(pending.ID, func(p *DeferredIssuance) {
 		p.Attempts++
 		p.NextAttemptAt = next
 		p.LastError = lastErr
@@ -322,8 +322,8 @@ func (s *Server) rescheduleDeferred(pending PendingIssuance, interval time.Durat
 	}
 }
 
-func (s *Server) abandonDeferred(pending PendingIssuance, reason string) DeferredAttempt {
-	s.wallet.RemovePendingIssuance(pending.ID)
+func (s *Server) abandonDeferred(pending DeferredIssuance, reason string) DeferredAttempt {
+	s.wallet.RemoveDeferredIssuance(pending.ID)
 	s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
 		fmt.Sprintf("Gave up on the deferred credential from %s: %s", pending.Issuer, reason), false, map[string]any{
 			"issuer":         pending.Issuer,
@@ -344,7 +344,7 @@ func (s *Server) abandonDeferred(pending PendingIssuance, reason string) Deferre
 // CollectDeferredNow asks the issuer for a deferred credential right away,
 // ahead of its next scheduled attempt.
 func (s *Server) CollectDeferredNow(id string) (DeferredAttempt, bool) {
-	for _, pending := range s.wallet.PendingIssuanceList() {
+	for _, pending := range s.wallet.DeferredIssuanceList() {
 		if pending.ID == id {
 			return s.attemptDeferredCollection(pending), true
 		}
@@ -354,12 +354,12 @@ func (s *Server) CollectDeferredNow(id string) (DeferredAttempt, bool) {
 
 // AbandonDeferredNow drops a deferred issuance on request. The transaction
 // stays valid at the issuer, the wallet just stops asking for it.
-func (s *Server) AbandonDeferredNow(id string) (PendingIssuance, bool) {
-	for _, pending := range s.wallet.PendingIssuanceList() {
+func (s *Server) AbandonDeferredNow(id string) (DeferredIssuance, bool) {
+	for _, pending := range s.wallet.DeferredIssuanceList() {
 		if pending.ID != id {
 			continue
 		}
-		s.wallet.RemovePendingIssuance(pending.ID)
+		s.wallet.RemoveDeferredIssuance(pending.ID)
 		s.wallet.addProtocolLog("issuance", "issuance_deferred_abandoned",
 			fmt.Sprintf("Stopped collecting the deferred credential from %s", pending.Issuer), true, map[string]any{
 				"issuer":         pending.Issuer,
@@ -372,7 +372,7 @@ func (s *Server) AbandonDeferredNow(id string) (PendingIssuance, bool) {
 		s.wallet.NotifyStateChanged()
 		return pending, true
 	}
-	return PendingIssuance{}, false
+	return DeferredIssuance{}, false
 }
 
 // persistWallet saves the wallet, so a pending issuance and its schedule
@@ -386,7 +386,7 @@ func (s *Server) persistWallet() {
 // refreshDeferredAccessToken exchanges the stored refresh token for a new
 // access token and records it, so the next collection uses an authorization
 // the issuer still accepts.
-func (s *Server) refreshDeferredAccessToken(pending PendingIssuance, dpopKey *ecdsa.PrivateKey) (PendingIssuance, error) {
+func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *ecdsa.PrivateKey) (DeferredIssuance, error) {
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", pending.RefreshToken)
@@ -423,7 +423,7 @@ func (s *Server) refreshDeferredAccessToken(pending PendingIssuance, dpopKey *ec
 		updated.AccessTokenExpiresAt = time.Now().Add(time.Duration(seconds) * time.Second)
 	}
 
-	s.wallet.UpdatePendingIssuance(updated.ID, func(p *PendingIssuance) {
+	s.wallet.UpdateDeferredIssuance(updated.ID, func(p *DeferredIssuance) {
 		p.AccessToken = updated.AccessToken
 		p.AuthScheme = updated.AuthScheme
 		p.RefreshToken = updated.RefreshToken

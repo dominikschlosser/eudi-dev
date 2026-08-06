@@ -110,7 +110,7 @@ func keysOf(doc map[string]any) []string {
 func TestDeferredDocumentsCarryTheCredentialType(t *testing.T) {
 	resetRemoteTestState(t)
 	localSvc, remoteSvc := parityWallets(t, func(w *wallet.Wallet) {
-		w.AddPendingIssuance(&wallet.PendingIssuance{
+		w.AddDeferredIssuance(&wallet.DeferredIssuance{
 			ID: "pending-1", TransactionID: "tx-1", Issuer: "https://issuer.example",
 			ConfigurationID: "msisdn-sd-jwt-key-attestations", Format: "dc+sd-jwt",
 			VCT: "eu.europa.ec.eudi.msisdn.1", IntervalSeconds: 60,

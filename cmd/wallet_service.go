@@ -233,10 +233,10 @@ func (l *localWallet) DeferredIssuances() ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	pending := w.PendingIssuanceList()
+	pending := w.DeferredIssuanceList()
 	out := make([]map[string]any, 0, len(pending))
 	for _, p := range pending {
-		out = append(out, wallet.PendingIssuanceSummary(p))
+		out = append(out, wallet.DeferredIssuanceSummary(p))
 	}
 	return out, nil
 }

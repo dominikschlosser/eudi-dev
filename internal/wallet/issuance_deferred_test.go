@@ -258,11 +258,11 @@ func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
 	if got := polls(); got != 0 {
 		t.Errorf("deferred endpoint was called %d times during the offer flow, want 0", got)
 	}
-	if got := len(w.PendingIssuanceList()); got != 1 {
+	if got := len(w.DeferredIssuanceList()); got != 1 {
 		t.Fatalf("wallet holds %d pending issuances, want 1", got)
 	}
-	if w.PendingIssuanceList()[0].Interval() != time.Hour {
-		t.Errorf("interval = %s, want the issuer's 1h", w.PendingIssuanceList()[0].Interval())
+	if w.DeferredIssuanceList()[0].Interval() != time.Hour {
+		t.Errorf("interval = %s, want the issuer's 1h", w.DeferredIssuanceList()[0].Interval())
 	}
 }
 

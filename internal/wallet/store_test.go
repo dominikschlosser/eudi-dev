@@ -500,3 +500,47 @@ func TestWalletStore_LoadOrCreate_UsesSharedCA(t *testing.T) {
 		t.Fatal("expected both wallets to use the same shared CA certificate")
 	}
 }
+
+// A wallet written before the rename holds its deferred credentials under
+// "pending_issuances". Dropping them on load would abandon collections
+// already in flight, silently, on upgrade.
+func TestLoadReadsTheLegacyPendingIssuancesField(t *testing.T) {
+	dir := t.TempDir()
+	legacy := `{
+	  "credentials": [],
+	  "pending_issuances": [
+	    {"id": "def-1", "transaction_id": "tx-1", "deferred_endpoint": "https://issuer.example/deferred"}
+	  ]
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "wallet.json"), []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewWalletStore(dir)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("LoadOrCreate: %v", err)
+	}
+	got := w.DeferredIssuanceList()
+	if len(got) != 1 {
+		t.Fatalf("deferred issuances = %d, want 1 (the legacy field was dropped)", len(got))
+	}
+	if got[0].TransactionID != "tx-1" {
+		t.Errorf("transaction id = %q, want tx-1", got[0].TransactionID)
+	}
+
+	// Saving migrates the file: the new name is written and the old one goes.
+	if err := store.Save(w); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, "wallet.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), `"deferred_issuances"`) {
+		t.Error("save did not write deferred_issuances")
+	}
+	if strings.Contains(string(saved), `"pending_issuances"`) {
+		t.Error("save kept the legacy pending_issuances field")
+	}
+}

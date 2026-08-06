@@ -112,7 +112,7 @@ func TestDeferredIssuanceSurvivesAProfileOverride(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("offer response = %d, want 202 for a deferred credential (body %s)", rec.Code, rec.Body.String())
 	}
-	if got := len(w.PendingIssuanceList()); got != 1 {
+	if got := len(w.DeferredIssuanceList()); got != 1 {
 		t.Fatalf("the server's own wallet holds %d deferred records, want 1: the poller only reads this one", got)
 	}
 }

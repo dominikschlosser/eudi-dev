@@ -42,12 +42,18 @@ type walletJSON struct {
 	Credentials        []StoredCredential      `json:"credentials"`
 	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
 	Log                []LogEntry              `json:"log,omitempty"`
-	PendingIssuances   []PendingIssuance       `json:"pending_issuances,omitempty"`
+	DeferredIssuances  []DeferredIssuance      `json:"deferred_issuances,omitempty"`
 	StatusEntries      map[string]StatusEntry  `json:"status_entries,omitempty"`
 	StatusListCounter  int                     `json:"status_list_counter,omitempty"`
 	BaseURL            string                  `json:"base_url,omitempty"`
 	IssuerURL          string                  `json:"issuer_url,omitempty"`
 	Port               int                     `json:"port,omitempty"`
+
+	// LegacyPendingIssuances reads the field's former name. A wallet written
+	// before the rename still has deferred credentials under it, and dropping
+	// them would abandon collections already in flight. Write-only-the-new-name
+	// plus read-both means one save migrates the file.
+	LegacyPendingIssuances []DeferredIssuance `json:"pending_issuances,omitempty"`
 }
 
 // DefaultWalletDir returns the default wallet storage directory inside the
@@ -174,7 +180,10 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 	}
 
 	w.Credentials = wj.Credentials
-	w.PendingIssuances = wj.PendingIssuances
+	w.DeferredIssuances = wj.DeferredIssuances
+	if len(w.DeferredIssuances) == 0 {
+		w.DeferredIssuances = wj.LegacyPendingIssuances
+	}
 	w.IssuedAttestations = dedupeIssuedAttestations(wj.IssuedAttestations)
 	w.Log = s.filterLogEntries(wj.Log)
 	w.StatusEntries = wj.StatusEntries
@@ -201,7 +210,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	creds := w.GetCredentials()
 	w.mu.RLock()
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
-	pendingIssuances := append([]PendingIssuance(nil), w.PendingIssuances...)
+	deferredIssuances := append([]DeferredIssuance(nil), w.DeferredIssuances...)
 	logEntries := s.filterLogEntries(w.Log)
 	statusEntries := w.StatusEntries
 	statusListCounter := w.StatusListCounter
@@ -210,7 +219,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	w.mu.RUnlock()
 	wj := walletJSON{
 		Credentials:        creds,
-		PendingIssuances:   pendingIssuances,
+		DeferredIssuances:  deferredIssuances,
 		IssuedAttestations: issuedAttestations,
 		Log:                logEntries,
 		StatusEntries:      statusEntries,

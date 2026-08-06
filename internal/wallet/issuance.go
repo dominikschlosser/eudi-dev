@@ -386,7 +386,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		return nil, err
 	}
 	if pending != nil {
-		return w.recordPendingIssuance(pending), nil
+		return w.recordDeferredIssuance(pending), nil
 	}
 
 	credential, err := selectHolderBoundCredential(credResp, proofKeys)

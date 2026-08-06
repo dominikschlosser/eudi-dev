@@ -25,10 +25,10 @@ import (
 // is still collecting. The access token is left out: it is a bearer secret,
 // and nothing outside the wallet needs it.
 func (s *Server) handleListDeferred(w http.ResponseWriter, r *http.Request) {
-	pending := s.wallet.PendingIssuanceList()
+	pending := s.wallet.DeferredIssuanceList()
 	out := make([]map[string]any, 0, len(pending))
 	for _, p := range pending {
-		out = append(out, PendingIssuanceSummary(p))
+		out = append(out, DeferredIssuanceSummary(p))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -46,11 +46,11 @@ type Server struct {
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
 	demo             *demoState
-	// pendingIssuanceOwner is the wallet whose deferred credentials the
+	// deferredIssuanceOwner is the wallet whose deferred credentials the
 	// poller collects. Set on the per-request clone a profile override
 	// creates, so a deferral recorded there is handed back rather than
 	// thrown away with the clone.
-	pendingIssuanceOwner *Wallet
+	deferredIssuanceOwner *Wallet
 	// renewalBackoff holds off retrying a credential whose renewal failed.
 	renewalBackoff map[string]time.Time
 	renewalMu      sync.Mutex
@@ -318,7 +318,7 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
 	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
-	s.wallet.PendingIssuances = append([]PendingIssuance(nil), reloaded.PendingIssuances...)
+	s.wallet.DeferredIssuances = append([]DeferredIssuance(nil), reloaded.DeferredIssuances...)
 	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
 	s.wallet.StatusListCounter = reloaded.StatusListCounter
 	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)

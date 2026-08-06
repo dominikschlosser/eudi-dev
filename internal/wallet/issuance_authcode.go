@@ -249,7 +249,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, err
 	}
 	if pending != nil {
-		return w.recordPendingIssuance(pending), nil
+		return w.recordDeferredIssuance(pending), nil
 	}
 
 	credential, err := selectHolderBoundCredential(credResp, proofKeys)
@@ -832,9 +832,9 @@ type deferredContext struct {
 // issuance flows can call this unconditionally.
 //
 // A short deferral is waited out here, so the caller gets its credential from
-// the call it made. A longer one returns a PendingIssuance for the background
+// the call it made. A longer one returns a DeferredIssuance for the background
 // poller: not finished, but not failed either.
-func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *PendingIssuance, error) {
+func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *DeferredIssuance, error) {
 	txID, _ := credResp["transaction_id"].(string)
 	if txID == "" {
 		return credResp, nil, nil
@@ -852,7 +852,7 @@ func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferred
 	if seconds, ok := numericValue(credResp["interval"]); ok && seconds >= 1 {
 		interval = time.Duration(seconds) * time.Second
 	}
-	pending, err := newPendingIssuance(ctx, txID, interval)
+	pending, err := newDeferredIssuance(ctx, txID, interval)
 	if err != nil {
 		return nil, nil, err
 	}

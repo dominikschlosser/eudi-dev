@@ -24,12 +24,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// PendingIssuance is a credential the issuer deferred, kept until the wallet
+// DeferredIssuance is a credential the issuer deferred, kept until the wallet
 // manages to collect it. The issuer's interval can be hours, too long to hold
 // the request that started the issuance, so the ticket is persisted and a
 // poller works through it. It carries everything the deferred request needs:
 // the flow that created it is gone by the time it runs.
-type PendingIssuance struct {
+type DeferredIssuance struct {
 	ID               string `json:"id"`
 	TransactionID    string `json:"transaction_id"`
 	Issuer           string `json:"issuer"`
@@ -71,7 +71,7 @@ type PendingIssuance struct {
 }
 
 // Interval is how long to wait between attempts, as the issuer asked.
-func (p *PendingIssuance) Interval() time.Duration {
+func (p *DeferredIssuance) Interval() time.Duration {
 	if p == nil || p.IntervalSeconds < 1 {
 		return deferredPollInterval
 	}
@@ -81,16 +81,16 @@ func (p *PendingIssuance) Interval() time.Duration {
 // Expired reports whether a pending issuance is past being worth keeping. An
 // issuer that has not produced the credential within a day is unlikely to, and
 // the access token to collect it has probably expired.
-func (p *PendingIssuance) Expired(now time.Time) bool {
-	return p != nil && now.Sub(p.CreatedAt) > pendingIssuanceMaxAge
+func (p *DeferredIssuance) Expired(now time.Time) bool {
+	return p != nil && now.Sub(p.CreatedAt) > deferredIssuanceMaxAge
 }
 
-// pendingIssuanceMaxAge is how long a deferred issuance is carried before the
+// deferredIssuanceMaxAge is how long a deferred issuance is carried before the
 // wallet gives up on it.
-const pendingIssuanceMaxAge = 24 * time.Hour
+const deferredIssuanceMaxAge = 24 * time.Hour
 
-// newPendingIssuance builds a record from a deferred issuance in flight.
-func newPendingIssuance(ctx deferredContext, transactionID string, interval time.Duration) (*PendingIssuance, error) {
+// newDeferredIssuance builds a record from a deferred issuance in flight.
+func newDeferredIssuance(ctx deferredContext, transactionID string, interval time.Duration) (*DeferredIssuance, error) {
 	pems := make([]string, 0, len(ctx.proofKeys))
 	for _, key := range ctx.proofKeys {
 		encoded, err := encodeECPrivateKeyPEM(key)
@@ -109,7 +109,7 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 	if ctx.expiresIn > 0 {
 		accessTokenExpiry = now.Add(time.Duration(ctx.expiresIn) * time.Second)
 	}
-	return &PendingIssuance{
+	return &DeferredIssuance{
 		ID:                   uuid.NewString(),
 		TransactionID:        transactionID,
 		Issuer:               ctx.issuer,
@@ -134,7 +134,7 @@ func newPendingIssuance(ctx deferredContext, transactionID string, interval time
 }
 
 // ProofKeys decodes the keys the credential request was bound to.
-func (p *PendingIssuance) ProofKeys() ([]*ecdsa.PrivateKey, error) {
+func (p *DeferredIssuance) ProofKeys() ([]*ecdsa.PrivateKey, error) {
 	keys := make([]*ecdsa.PrivateKey, 0, len(p.ProofKeyPEMs))
 	for _, encoded := range p.ProofKeyPEMs {
 		key, err := decodeECPrivateKeyPEM(encoded)
@@ -162,64 +162,64 @@ func decodeECPrivateKeyPEM(encoded string) (*ecdsa.PrivateKey, error) {
 	return x509.ParseECPrivateKey(block.Bytes)
 }
 
-// AddPendingIssuance records a deferred credential to collect later.
-func (w *Wallet) AddPendingIssuance(pending *PendingIssuance) {
+// AddDeferredIssuance records a deferred credential to collect later.
+func (w *Wallet) AddDeferredIssuance(pending *DeferredIssuance) {
 	if w == nil || pending == nil {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.PendingIssuances = append(w.PendingIssuances, *pending)
+	w.DeferredIssuances = append(w.DeferredIssuances, *pending)
 }
 
-// PendingIssuanceList returns a copy of the deferred credentials waiting to be
+// DeferredIssuanceList returns a copy of the deferred credentials waiting to be
 // collected.
-func (w *Wallet) PendingIssuanceList() []PendingIssuance {
+func (w *Wallet) DeferredIssuanceList() []DeferredIssuance {
 	if w == nil {
 		return nil
 	}
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-	return append([]PendingIssuance(nil), w.PendingIssuances...)
+	return append([]DeferredIssuance(nil), w.DeferredIssuances...)
 }
 
-// RemovePendingIssuance drops a deferred credential by ID and reports whether
+// RemoveDeferredIssuance drops a deferred credential by ID and reports whether
 // it was there.
-func (w *Wallet) RemovePendingIssuance(id string) bool {
+func (w *Wallet) RemoveDeferredIssuance(id string) bool {
 	if w == nil {
 		return false
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for i, pending := range w.PendingIssuances {
+	for i, pending := range w.DeferredIssuances {
 		if pending.ID == id {
-			w.PendingIssuances = append(w.PendingIssuances[:i], w.PendingIssuances[i+1:]...)
+			w.DeferredIssuances = append(w.DeferredIssuances[:i], w.DeferredIssuances[i+1:]...)
 			return true
 		}
 	}
 	return false
 }
 
-// UpdatePendingIssuance applies a change to one record by ID.
-func (w *Wallet) UpdatePendingIssuance(id string, apply func(*PendingIssuance)) {
+// UpdateDeferredIssuance applies a change to one record by ID.
+func (w *Wallet) UpdateDeferredIssuance(id string, apply func(*DeferredIssuance)) {
 	if w == nil || apply == nil {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for i := range w.PendingIssuances {
-		if w.PendingIssuances[i].ID == id {
-			apply(&w.PendingIssuances[i])
+	for i := range w.DeferredIssuances {
+		if w.DeferredIssuances[i].ID == id {
+			apply(&w.DeferredIssuances[i])
 			return
 		}
 	}
 }
 
-// recordPendingIssuance stores a deferred credential and reports it as the
+// recordDeferredIssuance stores a deferred credential and reports it as the
 // outcome. Nothing failed: the issuer took the request and named a time to
 // come back.
-func (w *Wallet) recordPendingIssuance(pending *PendingIssuance) *IssuanceResult {
-	w.AddPendingIssuance(pending)
+func (w *Wallet) recordDeferredIssuance(pending *DeferredIssuance) *IssuanceResult {
+	w.AddDeferredIssuance(pending)
 	w.addProtocolLog("issuance", "issuance_deferred",
 		fmt.Sprintf("Issuer deferred the credential, collecting it every %s", pending.Interval()), true, map[string]any{
 			"issuer":         pending.Issuer,
@@ -236,7 +236,7 @@ func (w *Wallet) recordPendingIssuance(pending *PendingIssuance) *IssuanceResult
 	}
 }
 
-// AdoptPendingIssuances takes over deferred credentials recorded on another
+// AdoptDeferredIssuances takes over deferred credentials recorded on another
 // wallet, skipping any this one already tracks.
 //
 // A request that overrides the profile (haip, mode) runs on a clone of the
@@ -245,19 +245,19 @@ func (w *Wallet) recordPendingIssuance(pending *PendingIssuance) *IssuanceResult
 // issuance is a promise to come back later, and only the server's own wallet
 // is polled. Left on the clone it was recorded, reported to the caller, and
 // then never collected.
-func (w *Wallet) AdoptPendingIssuances(from *Wallet) int {
+func (w *Wallet) AdoptDeferredIssuances(from *Wallet) int {
 	if w == nil || from == nil || w == from {
 		return 0
 	}
-	incoming := from.PendingIssuanceList()
+	incoming := from.DeferredIssuanceList()
 	if len(incoming) == 0 {
 		return 0
 	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	known := make(map[string]bool, len(w.PendingIssuances))
-	for _, existing := range w.PendingIssuances {
+	known := make(map[string]bool, len(w.DeferredIssuances))
+	for _, existing := range w.DeferredIssuances {
 		known[existing.Issuer+"|"+existing.TransactionID] = true
 	}
 	adopted := 0
@@ -265,7 +265,7 @@ func (w *Wallet) AdoptPendingIssuances(from *Wallet) int {
 		if known[pending.Issuer+"|"+pending.TransactionID] {
 			continue
 		}
-		w.PendingIssuances = append(w.PendingIssuances, pending)
+		w.DeferredIssuances = append(w.DeferredIssuances, pending)
 		adopted++
 	}
 	return adopted
@@ -291,7 +291,7 @@ func credentialTypeForConfiguration(metadata map[string]any, configID string) (v
 // AccessTokenExpired reports whether the stored access token is past use. A
 // small margin covers the round trip: a token expiring while the request is in
 // flight is refused just the same.
-func (p *PendingIssuance) AccessTokenExpired(now time.Time) bool {
+func (p *DeferredIssuance) AccessTokenExpired(now time.Time) bool {
 	if p == nil || p.AccessTokenExpiresAt.IsZero() {
 		return false
 	}
@@ -300,15 +300,15 @@ func (p *PendingIssuance) AccessTokenExpired(now time.Time) bool {
 
 // CanRefresh reports whether the record carries what obtaining a new access
 // token needs.
-func (p *PendingIssuance) CanRefresh() bool {
+func (p *DeferredIssuance) CanRefresh() bool {
 	return p != nil && p.RefreshToken != "" && p.TokenEndpoint != ""
 }
 
-// PendingIssuanceSummary is the document a caller reads a deferred credential
+// DeferredIssuanceSummary is the document a caller reads a deferred credential
 // from, wherever it asked. Built once here rather than in each backend: two
 // hand-written maps that have to agree is how the credential type reached the
 // API and not the local store.
-func PendingIssuanceSummary(p PendingIssuance) map[string]any {
+func DeferredIssuanceSummary(p DeferredIssuance) map[string]any {
 	return map[string]any{
 		"id":                          p.ID,
 		"transaction_id":              p.TransactionID,

@@ -66,9 +66,9 @@ func deferredCollectionIssuer(t *testing.T, credRaw string, pendingRounds, inter
 	}
 }
 
-func pendingFor(t *testing.T, w *Wallet, endpoint string, intervalSeconds int) *PendingIssuance {
+func pendingFor(t *testing.T, w *Wallet, endpoint string, intervalSeconds int) *DeferredIssuance {
 	t.Helper()
-	pending, err := newPendingIssuance(deferredContext{
+	pending, err := newDeferredIssuance(deferredContext{
 		issuer:           "https://issuer.example",
 		configID:         "test-config",
 		format:           "dc+sd-jwt",
@@ -78,7 +78,7 @@ func pendingFor(t *testing.T, w *Wallet, endpoint string, intervalSeconds int) *
 		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
 	}, "test-transaction", time.Duration(intervalSeconds)*time.Second)
 	if err != nil {
-		t.Fatalf("newPendingIssuance: %v", err)
+		t.Fatalf("newDeferredIssuance: %v", err)
 	}
 	return pending
 }
@@ -100,18 +100,18 @@ func TestDeferredPoller_CollectsWhenReady(t *testing.T) {
 	server := NewServer(w, 0, func() { saves++ })
 	pending := pendingFor(t, w, srv.URL, 1)
 	pending.NextAttemptAt = time.Now().Add(-time.Second) // due now
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	// First sweep: the issuer is still working, so the record stays and is
 	// rescheduled rather than dropped.
 	server.collectDueDeferredCredentials(time.Now())
-	if got := len(w.PendingIssuanceList()); got != 1 {
+	if got := len(w.DeferredIssuanceList()); got != 1 {
 		t.Fatalf("after a pending answer the wallet holds %d records, want 1", got)
 	}
 	if got := len(w.GetCredentials()); got != 0 {
 		t.Fatalf("wallet holds %d credentials, want none yet", got)
 	}
-	rescheduled := w.PendingIssuanceList()[0]
+	rescheduled := w.DeferredIssuanceList()[0]
 	if rescheduled.Attempts != 1 {
 		t.Errorf("attempts = %d, want 1", rescheduled.Attempts)
 	}
@@ -127,7 +127,7 @@ func TestDeferredPoller_CollectsWhenReady(t *testing.T) {
 
 	// Due again: the credential arrives and the record is gone.
 	server.collectDueDeferredCredentials(time.Now().Add(2 * time.Second))
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 	creds := w.GetCredentials()
@@ -166,10 +166,10 @@ func TestDeferredPoller_GivesUpOnFatalAnswers(t *testing.T) {
 			server := NewServer(w, 0, func() {})
 			pending := pendingFor(t, w, srv.URL, 1)
 			pending.NextAttemptAt = time.Now().Add(-time.Second)
-			w.AddPendingIssuance(pending)
+			w.AddDeferredIssuance(pending)
 
 			server.collectDueDeferredCredentials(time.Now())
-			if got := len(w.PendingIssuanceList()); got != 0 {
+			if got := len(w.DeferredIssuanceList()); got != 0 {
 				t.Errorf("wallet still holds %d pending records, want it dropped", got)
 			}
 			assertWalletLogEvent(t, w.GetLog(), "issuance_deferred_abandoned")
@@ -194,12 +194,12 @@ func TestDeferredPoller_DropsExpiredRecords(t *testing.T) {
 
 	server := NewServer(w, 0, func() {})
 	pending := pendingFor(t, w, srv.URL, 1)
-	pending.CreatedAt = time.Now().Add(-2 * pendingIssuanceMaxAge)
+	pending.CreatedAt = time.Now().Add(-2 * deferredIssuanceMaxAge)
 	pending.NextAttemptAt = time.Now().Add(-time.Second)
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	server.collectDueDeferredCredentials(time.Now())
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d expired records, want 0", got)
 	}
 	if polled {
@@ -207,10 +207,10 @@ func TestDeferredPoller_DropsExpiredRecords(t *testing.T) {
 	}
 }
 
-// TestPendingIssuance_SurvivesAStoreRoundTrip covers the persistence a long
+// TestDeferredIssuance_SurvivesAStoreRoundTrip covers the persistence a long
 // deferral depends on: a wallet that restarts has to be able to finish
 // collecting, which means the ticket and the keys it was bound to come back.
-func TestPendingIssuance_SurvivesAStoreRoundTrip(t *testing.T) {
+func TestDeferredIssuance_SurvivesAStoreRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	store := NewWalletStore(dir)
 	w, err := store.LoadOrCreate()
@@ -219,7 +219,7 @@ func TestPendingIssuance_SurvivesAStoreRoundTrip(t *testing.T) {
 	}
 
 	pending := pendingFor(t, w, "https://issuer.example/deferred", 42)
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 	if err := store.Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestPendingIssuance_SurvivesAStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadOrCreate after save: %v", err)
 	}
-	restored := reloaded.PendingIssuanceList()
+	restored := reloaded.DeferredIssuanceList()
 	if len(restored) != 1 {
 		t.Fatalf("reloaded wallet holds %d pending issuances, want 1", len(restored))
 	}
@@ -288,7 +288,7 @@ func TestCollectDeferredNow(t *testing.T) {
 	pending := pendingFor(t, w, srv.URL, 30)
 	// Far in the future: the poller would not touch this for half a minute.
 	pending.NextAttemptAt = time.Now().Add(30 * time.Second)
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	// First check: the issuer is still working, so the caller is told so.
 	attempt, ok := server.CollectDeferredNow(pending.ID)
@@ -320,7 +320,7 @@ func TestCollectDeferredNow(t *testing.T) {
 	if got := len(w.GetCredentials()); got != 1 {
 		t.Errorf("wallet holds %d credentials, want the collected one", got)
 	}
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 
@@ -347,7 +347,7 @@ func TestAbandonDeferredNow(t *testing.T) {
 	saves := 0
 	server := NewServer(w, 0, func() { saves++ })
 	pending := pendingFor(t, w, srv.URL, 10)
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	dropped, ok := server.AbandonDeferredNow(pending.ID)
 	if !ok {
@@ -356,7 +356,7 @@ func TestAbandonDeferredNow(t *testing.T) {
 	if dropped.TransactionID != "test-transaction" {
 		t.Errorf("dropped transaction = %q, want it reported back", dropped.TransactionID)
 	}
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 	if polled {
@@ -389,7 +389,7 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 	server := NewServer(w, 0, nil)
 	pending := pendingFor(t, w, srv.URL, 1)
 	pending.NextAttemptAt = time.Now().Add(-time.Second)
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	stop := server.StartBackgroundTasks()
 	defer stop()
@@ -402,7 +402,7 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 	if got := len(w.GetCredentials()); got != 1 {
 		t.Fatalf("the running poller collected %d credentials after %d polls, want 1", got, polls())
 	}
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 }
@@ -411,7 +411,7 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 // row used to be labelled with an issuer's internal id ("eudi-pid-sd-jwt-bdr-
 // key-attestations") while the same credential became "urn:eudi:pid:1" the
 // moment it arrived. The type is in the issuer's metadata all along.
-func TestPendingIssuanceRecordsTheCredentialType(t *testing.T) {
+func TestDeferredIssuanceRecordsTheCredentialType(t *testing.T) {
 	metadata := map[string]any{
 		"credential_configurations_supported": map[string]any{
 			"eudi-pid-sd-jwt-bdr-key-attestations": map[string]any{
@@ -513,7 +513,7 @@ func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
 	pending.RefreshToken = "refresh-1"
 	pending.TokenEndpoint = srvURL + "/token"
 	pending.AccessTokenExpiresAt = time.Now().Add(-time.Minute) // already expired
-	w.AddPendingIssuance(pending)
+	w.AddDeferredIssuance(pending)
 
 	server.collectDueDeferredCredentials(time.Now())
 
@@ -526,7 +526,7 @@ func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
 	if got := len(w.GetCredentials()); got != 1 {
 		t.Fatalf("wallet holds %d credentials, want the collected one", got)
 	}
-	if got := len(w.PendingIssuanceList()); got != 0 {
+	if got := len(w.DeferredIssuanceList()); got != 0 {
 		t.Errorf("wallet still holds %d pending records, want 0", got)
 	}
 }

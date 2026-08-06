@@ -82,9 +82,9 @@ type Wallet struct {
 	ForceClientAttestation bool
 	ValidationMode         ValidationMode `json:"-"`
 	Credentials            []StoredCredential
-	// PendingIssuances are credentials an issuer deferred, kept until the
+	// DeferredIssuances are credentials an issuer deferred, kept until the
 	// wallet manages to collect them.
-	PendingIssuances  []PendingIssuance
+	DeferredIssuances []DeferredIssuance
 	StatusEntries     map[string]StatusEntry // credential ID → status entry
 	StatusListCounter int                    // next available status list index
 	BaseURL           string                 // base URL for status list endpoint
