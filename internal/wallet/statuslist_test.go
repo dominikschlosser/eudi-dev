@@ -550,3 +550,36 @@ func TestImportAdoptsNothingWithoutAStatusList(t *testing.T) {
 		t.Error("a wallet with no status list URL adopted a status entry")
 	}
 }
+
+// A credential that points at this wallet's status list has its index adopted
+// on import, so the number is whoever minted the credential. A negative one
+// used to be stored and then panic with "negative shift amount" every time
+// the bitstring was built, which is on every request for the status list.
+// On a demo instance both importing and reading the list are open.
+func TestStatusBitstring_SurvivesANegativeAdoptedIndex(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("building the status bitstring panicked: %v", r)
+		}
+	}()
+
+	w := generateTestWallet(t)
+	w.StatusListCounter = 4
+	w.RegisterStatusEntry("hostile", -3)
+	w.RegisterStatusEntry("honest", 2)
+	w.SetCredentialStatus("hostile", 1)
+	w.SetCredentialStatus("honest", 1)
+
+	bitstring := w.BuildStatusBitstring()
+	if len(bitstring) == 0 {
+		t.Fatal("no bitstring was produced")
+	}
+
+	// The negative entry is dropped outright, and the honest one still lands.
+	if _, ok := w.StatusEntries["hostile"]; ok {
+		t.Error("a negative index was stored")
+	}
+	if bitstring[0]&(1<<2) == 0 {
+		t.Error("the valid entry did not reach the bitstring")
+	}
+}

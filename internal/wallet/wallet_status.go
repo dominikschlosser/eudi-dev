@@ -58,6 +58,14 @@ func (w *Wallet) BuildStatusBitstring() []byte {
 
 	for _, entry := range w.StatusEntries {
 		if entry.Status != 0 {
+			// A negative index used to pass the bounds check below (anything
+			// is less than the length) and then raise "negative shift
+			// amount". The index is adopted from an imported credential's own
+			// status claim, so the number is whoever minted it, and this
+			// bitstring is served to anyone who asks for the status list.
+			if entry.Index < 0 {
+				continue
+			}
 			byteIdx := entry.Index / 8
 			bitOffset := entry.Index % 8
 			if byteIdx < len(bitstring) {
@@ -84,7 +92,15 @@ func (w *Wallet) NextStatusIndex() int {
 }
 
 // registerStatusEntry records a status entry for a credential.
+//
+// A negative index is dropped rather than stored. Import adopts the index out
+// of the credential's own status claim when it points at this wallet's list,
+// so the number is whoever minted the credential, and a stored negative one
+// would be read back by everything that builds or serves the bitstring.
 func (w *Wallet) registerStatusEntry(credID string, idx int) {
+	if idx < 0 {
+		return
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.StatusEntries == nil {
