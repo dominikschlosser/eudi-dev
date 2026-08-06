@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The decisions behind this toolkit are written down.** Seven decision records in `docs/adr/` cover the ones that are hard to reverse and surprising without context: debug-by-default validation, the unauthenticated API, unencrypted storage, the dial-time fetch policy, the per-request store reload, one binary playing every role, and why everything sits under `internal/`. An eighth records why JWS verification moved to a library and JWE did not
+- **A glossary pins the terms this project overloads.** `CONTEXT.md` covers the vocabulary that carries more than one meaning here: attestation (client, verifier, and issued are three unrelated things), profile (trust, demo, and HAIP likewise), deferred versus pending issuance, renewal versus refresh token, and PID meaning both Person Identification Data and a process id. Specification terms used unchanged are deliberately left out
+- **The architecture overview is a third shorter and points at the decision records.** It carried a per-file tree of `cmd/` and a table of key types, both of which drift, plus a data-flow section naming functions of which five no longer existed. Flows are described in domain terms now, and why anything is the way it is lives in the decision records rather than being re-explained here
+- Agent guidance moved into `AGENTS.md` and `docs/agents/`, recording where issues live and how the domain docs are meant to be read
 - The architecture overview lists the packages and command files that were added since it was written. Five packages were missing from it (`demorp`, `jws`, `jwe`, `httpsec`, `imprint`), and `web/` was described as embedded static assets when it is a server with its own handlers. Both trees now match what is on disk
 - The wallet's HTTP API reference covers deferred issuance, the activity log and the last error, which back `wallet deferred` and `wallet logs` and were the endpoints missing from a page that says everything the CLI does is available over HTTP
 
