@@ -37,7 +37,10 @@ services:
       - stats-report:/srv/stats:ro
 
   wallet:
-    image: ghcr.io/dominikschlosser/eudi-dev:latest
+    # WALLET_TAG pins the release to run and lives in .env next to this file
+    # on the host. It is absent in normal operation, which runs the newest
+    # release, and ./deploy.sh rollback sets it to put an earlier one back.
+    image: ghcr.io/dominikschlosser/eudi-dev:${WALLET_TAG:-latest}
     restart: unless-stopped
     logging: *logging
     # No published ports: only Caddy reaches the wallet.

@@ -13,6 +13,9 @@
 #   setup     install Docker, copy the stack, start it (first deployment)
 #   push      copy Caddyfile, compose file and imprint, then apply them
 #   update    pull the latest image and restart (no file changes)
+#   rollback [version]  put the previous release back (or a named one, e.g.
+#             v1.19.16). Without an argument it uses the release that was live
+#             before the last push or update
 #   status    container status and the version the site reports
 #   logs      follow the wallet log
 #   verify    check that the deployed endpoints respond
@@ -68,6 +71,51 @@ deployed_version() {
     sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
 }
 
+# The release the site reports is the same string the image is tagged with
+# (the release workflow tags the image with the git tag), so what is live can
+# be recorded and put back without a lookup.
+record_running_version() {
+  local version
+  version="$(deployed_version)"
+  [[ -n "${version}" ]] || return 0
+  remote "printf '%s\n' '${version}' > .last-version"
+}
+
+previous_version() {
+  remote "cat .last-version 2>/dev/null" || true
+}
+
+# WALLET_TAG lives in the host's .env, which is where compose reads variables
+# for interpolation. Other variables in that file are left alone.
+set_wallet_tag() {
+  local tag="$1"
+  if [[ -z "${tag}" ]]; then
+    remote "touch .env && sed -i.bak '/^WALLET_TAG=/d' .env && rm -f .env.bak"
+  else
+    remote "touch .env && sed -i.bak '/^WALLET_TAG=/d' .env && rm -f .env.bak && printf 'WALLET_TAG=%s\n' '${tag}' >> .env"
+  fi
+}
+
+apply_stack() {
+  compose "pull -q wallet" >/dev/null
+  compose "up -d --quiet-pull" >/dev/null
+  sleep 3
+  compose "ps --format '{{.Name}} {{.Status}}'"
+  local version
+  version="$(deployed_version)"
+  if [[ -n "${version}" ]]; then
+    echo "Version now live: ${version}"
+  fi
+  # An explicit success: without DEMO_URL there is no version to report, and
+  # the caller must not read that as a failed deployment.
+  return 0
+}
+
+# The pin currently in effect on the host, empty when the newest release runs.
+current_wallet_tag() {
+  remote "sed -n 's/^WALLET_TAG=//p' .env 2>/dev/null" || true
+}
+
 case "${COMMAND}" in
   setup)
     require_host
@@ -85,26 +133,51 @@ case "${COMMAND}" in
     ;;
   push)
     require_host
+    record_running_version
     copy_stack
     # Pull first: the compose file can use flags a released image does not
     # know yet (a wall-clock --demo-reset once crash-looped the wallet this
     # way), and recreating containers against a stale image is the one way
     # push can take the demo down.
-    compose "pull -q wallet" >/dev/null
-    compose "up -d --quiet-pull" >/dev/null
-    sleep 3
-    compose "ps --format '{{.Name}} {{.Status}}'"
-    version="$(deployed_version)"
-    [[ -n "${version}" ]] && echo "Version now live: ${version}"
+    apply_stack
     ;;
   update)
     require_host
-    compose "pull -q wallet" >/dev/null
-    compose "up -d --quiet-pull" >/dev/null
-    sleep 3
-    compose "ps --format '{{.Name}} {{.Status}}'"
-    version="$(deployed_version)"
-    [[ -n "${version}" ]] && echo "Version now live: ${version}"
+    record_running_version
+    # An update after a rollback has to leave the pin behind, or it would keep
+    # serving the release that was rolled back to.
+    set_wallet_tag ""
+    apply_stack
+    ;;
+
+  rollback)
+    require_host
+    target="${2:-}"
+    if [[ -z "${target}" ]]; then
+      target="$(previous_version)"
+      [[ -n "${target}" ]] || die "no recorded previous version. Pass one: ./deploy.sh rollback v1.19.16"
+    fi
+    current="$(deployed_version)"
+    if [[ -n "${current}" && "${target}" == "${current}" ]]; then
+      die "${target} is already live, nothing to roll back to."
+    fi
+    echo "Rolling back${current:+ from ${current}} to ${target}..."
+    record_running_version
+    previous_tag="$(current_wallet_tag)"
+    set_wallet_tag "${target}"
+    # Pulling after the pin is set is what tests the release being asked for.
+    # A tag that was never published (an aborted release, a typo) must leave
+    # the running demo alone rather than take it down.
+    if ! compose "pull -q wallet" >/dev/null 2>&1; then
+      set_wallet_tag "${previous_tag}"
+      die "ghcr.io/dominikschlosser/eudi-dev:${target} could not be pulled, so nothing was changed. Check that the release exists."
+    fi
+    apply_stack
+    live="$(deployed_version)"
+    if [[ -n "${live}" && "${live}" != "${target}" ]]; then
+      die "asked for ${target} but ${live} is live. ./deploy.sh logs shows why."
+    fi
+    echo "Rolled back to ${target}. ./deploy.sh update returns to the newest release."
     ;;
   status)
     require_host

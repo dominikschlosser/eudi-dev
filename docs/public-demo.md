@@ -106,10 +106,13 @@ ENV
 ./deploy.sh setup     # first deployment: Docker, stack, volume ownership, start
 ./deploy.sh push      # after editing Caddyfile, compose file or imprint
 ./deploy.sh update    # pull the released image and restart
+./deploy.sh rollback  # put the release that was live before that back
 ./deploy.sh status    # container status plus the version the site reports
 ./deploy.sh verify    # check that every public endpoint answers
 ./deploy.sh logs      # follow the wallet log
 ```
+
+`rollback` covers the case where a release turns out to be wrong once it is in front of people. `push` and `update` record the release they replace, so `rollback` on its own puts that one back, and `rollback v1.19.16` names any release directly. It pins `WALLET_TAG` in the host's `.env`, which is where the compose file reads the image tag from, so the choice survives a restart. The image is pulled before anything is switched, so naming a release that was never published leaves the running demo alone. A later `update` clears the pin and returns to the newest release.
 
 `setup` also fixes the wallet data volume's ownership. Docker creates named volumes owned by root while the image runs as uid 1000, which otherwise sends the wallet into a crash loop on a fresh host.
 
