@@ -37,6 +37,13 @@ type VerifyResult struct {
 
 // Verify verifies the mDOC issuerAuth COSE_Sign1 signature.
 func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
+	// Every other entry point in this package refuses a nil document rather
+	// than dereferencing it, and callers reach them from the same parse
+	// results. Reporting it is what the rest of them do.
+	if doc == nil {
+		return &VerifyResult{Errors: []string{"no document to verify"}}
+	}
+
 	result := &VerifyResult{
 		DocType: doc.DocType,
 	}

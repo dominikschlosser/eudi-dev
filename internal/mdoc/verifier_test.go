@@ -273,3 +273,19 @@ func TestVerify_NilIssuerAuth(t *testing.T) {
 		t.Error("expected error about missing issuerAuth")
 	}
 }
+
+// A parse that produced nothing hands its caller a nil document, and every
+// other entry point in this package reports that rather than panicking.
+func TestVerify_NilDocument(t *testing.T) {
+	result := Verify(nil, nil)
+
+	if result == nil {
+		t.Fatal("Verify(nil) returned no result")
+	}
+	if result.SignatureValid {
+		t.Error("a nil document reported a valid signature")
+	}
+	if len(result.Errors) == 0 {
+		t.Error("a nil document reported no error")
+	}
+}

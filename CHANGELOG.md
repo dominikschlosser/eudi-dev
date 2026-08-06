@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The mdoc verifier was the one entry point that would panic on a nil document.** Everything else in that package reports it and returns, and callers reach all of them from the same parse results, so the odd one out was a crash waiting for whichever caller passed a parse that produced nothing. It now reports it like its neighbours
+
 - **The imprint page's back link did nothing.** It was written as a scripted URL, and every server that mounts the page sends `script-src 'self'` without `'unsafe-inline'`, which blocks exactly that. The link rendered normally and swallowed the click, so nothing about the page said it was broken (this is live on the public demo). It is now a link to the site root, and the page is checked for carrying no script at all
 
 - **The mdoc digest comparison was a hand-written one that could not say no.** It walked only the computed digest and compared byte by byte, so a signed digest shorter than the hash matched on its prefix and a shorter one still would have read past the end of it. A length check at the one call site kept it correct, which is the wrong place for it: the helper is what the next caller reaches for. It is now `bytes.Equal`, and the cases the hand-written version could not tell apart (a truncated digest, an empty one, one with bytes appended) are covered
