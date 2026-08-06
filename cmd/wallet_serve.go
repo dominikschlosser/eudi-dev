@@ -36,31 +36,37 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
+// walletServeOptions is what the wallet serve flags collect. They used to be
+// a var block the RunE closure read straight out of, which is how that
+// closure grew to most of this file, and how a local process id came to
+// shadow the --pid flag halfway through it.
+type walletServeOptions struct {
+	Port                    int
+	AutoAccept              bool
+	CredFiles               []string
+	PID                     bool
+	KeyPath                 string
+	IssuerKey               string
+	SessionTranscript       string
+	Register                bool
+	NoRegister              bool
+	StatusList              bool
+	BaseURL                 string
+	Docker                  bool
+	PreferredFormat         string
+	RequireEncryptedRequest bool
+	HAIP                    bool
+	ClientAttestation       bool
+	VCIClientID             string
+	VCIRedirectURI          string
+	Demo                    bool
+	DemoReset               string
+	ImprintFile             string
+	Detached                bool
+}
+
 func walletServeCmd() *cobra.Command {
-	var (
-		port                    int
-		autoAccept              bool
-		credFiles               []string
-		pid                     bool
-		keyPath                 string
-		issuerKey               string
-		sessionTranscript       string
-		register                bool
-		noRegister              bool
-		statusList              bool
-		baseURL                 string
-		docker                  bool
-		preferredFormat         string
-		requireEncryptedRequest bool
-		haip                    bool
-		clientAttestation       bool
-		vciClientID             string
-		vciRedirectURI          string
-		demo                    bool
-		demoReset               string
-		imprintFile             string
-		detached                bool
-	)
+	var opts walletServeOptions
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -78,423 +84,32 @@ Capabilities:
 Use --register to also register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)
 so the wallet automatically receives incoming protocol requests.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if detached {
-				return spawnDetachedServe(cmd, port, register, noRegister)
-			}
-			store := loadStore()
-			w, err := store.LoadOrCreate()
-			if err != nil {
-				return fmt.Errorf("loading wallet: %w", err)
-			}
-			if templatesDir != "" {
-				w.TemplatesDir = templatesDir
-			}
-			if err := applyValidationMode(w, walletValidationMode); err != nil {
-				return err
-			}
-
-			// Override keys if explicitly provided
-			if keyPath != "" {
-				holderKey, err := loadWalletECKey(keyPath, "holder")
-				if err != nil {
-					return err
-				}
-				w.HolderKey = holderKey
-			}
-			if issuerKey != "" {
-				ik, err := loadWalletECKey(issuerKey, "issuer")
-				if err != nil {
-					return err
-				}
-				w.IssuerKey = ik
-			}
-
-			if cmd.Flags().Changed("demo-reset") && !demo {
-				return fmt.Errorf("--demo-reset requires --demo")
-			}
-			demoOpts, err := parseDemoReset(demoReset)
-			if err != nil {
-				return fmt.Errorf("invalid --demo-reset %q: %w", demoReset, err)
-			}
-			if demo {
-				// A public demo needs a known baseline: the periodic reset
-				// restores exactly the --pid state. Consent stays interactive
-				// for browser flows (API submissions auto-accept anyway), so
-				// visitors see the real wallet UX.
-				pid = true
-
-				// Demo mode is the EUDI profile: a wallet hosted publicly as
-				// a counterparty should hold callers to the same rules a real
-				// EUDI wallet does, rather than accepting anything and
-				// teaching verifiers that they pass. Both are overridable, so
-				// a self-hosted demo can still be permissive.
-				if !cmd.Flags().Changed("mode") {
-					w.ValidationMode = wallet.ValidationModeStrict
-				}
-				if !cmd.Flags().Changed("haip") {
-					haip = true
-				}
-			}
-
-			if autoAccept {
-				w.AutoAccept = true
-			}
-
-			if err := applySessionTranscriptMode(w, sessionTranscript); err != nil {
-				return err
-			}
-
-			if preferredFormat != "" {
-				w.PreferredFormat = preferredFormat
-			}
-
-			if requireEncryptedRequest {
-				encKey, err := mock.GenerateKey()
-				if err != nil {
-					return fmt.Errorf("generating request encryption key: %w", err)
-				}
-				w.RequireEncryptedRequest = true
-				w.RequestEncryptionKey = encKey
-			}
-
-			if haip {
-				w.RequireHAIP = true
-			}
-			if clientAttestation {
-				w.ForceClientAttestation = true
-			}
-			if vciClientID != "" {
-				w.VCIClientID = vciClientID
-			}
-			if vciRedirectURI != "" {
-				w.VCIRedirectURI = vciRedirectURI
-			}
-
-			if cmd.Flags().Changed("base-url") {
-				w.BaseURL = baseURL
-			} else if statusList && strings.TrimSpace(w.BaseURL) == "" {
-				if baseURL == "" {
-					if docker {
-						baseURL = fmt.Sprintf("http://host.docker.internal:%d", port)
-					} else {
-						baseURL = fmt.Sprintf("http://localhost:%d", port)
-					}
-				}
-				w.BaseURL = baseURL
-			}
-
-			if cmd.Flags().Changed("base-url") || cmd.Flags().Changed("docker") || strings.TrimSpace(w.IssuerURL) == "" {
-				issuerBaseURL := baseURL
-				if issuerBaseURL == "" && cmd.Flags().Changed("base-url") {
-					issuerBaseURL = w.BaseURL
-				}
-				w.IssuerURL, err = deriveWalletIssuerURL(port, issuerBaseURL, docker)
-				if err != nil {
-					return err
-				}
-			}
-
-			// A wallet that serves a UI can redeem an authorization code offer:
-			// it identifies itself with its own origin and takes the code at
-			// its /callback endpoint. Without both values the flow is refused
-			// before the pushed authorization request, so an issuer never gets
-			// to see the wallet attestation. Explicit flags still win.
-			{
-				base := strings.TrimRight(strings.TrimSpace(w.BaseURL), "/")
-				if base == "" {
-					if docker {
-						base = fmt.Sprintf("http://host.docker.internal:%d", port)
-					} else {
-						base = fmt.Sprintf("http://localhost:%d", port)
-					}
-				}
-				if w.VCIClientID == "" {
-					w.VCIClientID = base
-				}
-				if w.VCIRedirectURI == "" {
-					w.VCIRedirectURI = base + "/callback"
-				}
-			}
-
-			if demo {
-				// Installed here rather than with the other demo settings: it
-				// needs the resolved base and issuer URLs, so the wallet stays
-				// able to reach its own demo issuer and verifier (a
-				// request_uri or response_uri on its own origin) while every
-				// other internal address remains blocked.
-				format.SetFetchPolicy(format.AllowOwnOrigins(
-					format.BlockPrivateAddresses,
-					w.BaseURL,
-					w.IssuerURL,
-					fmt.Sprintf("http://localhost:%d", port),
-				))
-			}
-
-			if pid {
-				// In demo mode the generated PIDs are the shared baseline and
-				// must survive whatever visitors do to the wallet.
-				generate := w.GenerateDefaultCredentials
-				if demo {
-					generate = func(map[string]any, string) error { return w.GenerateProtectedDefaults() }
-				}
-				if err := generate(nil, ""); err != nil {
-					return fmt.Errorf("generating PID credentials: %w", err)
-				}
-				if err := store.Save(w); err != nil {
-					return fmt.Errorf("saving wallet: %w", err)
-				}
-			}
-
-			for _, path := range credFiles {
-				if err := w.ImportCredentialFromFile(path); err != nil {
-					return fmt.Errorf("importing credential %s: %w", path, err)
-				}
-			}
-			if len(credFiles) > 0 {
-				if err := store.Save(w); err != nil {
-					return fmt.Errorf("saving wallet: %w", err)
-				}
-			}
-
-			// Print startup banner
-			cyan := color.New(color.FgCyan, color.Bold)
-			dim := color.New(color.Faint)
-			yellow := color.New(color.FgYellow)
-			publicHTTPURL := fmt.Sprintf("http://localhost:%d", port)
-			if baseURL != "" {
-				publicHTTPURL = baseURL
-			} else if docker {
-				publicHTTPURL = fmt.Sprintf("http://host.docker.internal:%d", port)
-			}
-			httpsURL := w.IssuerURL
-			issuerViaBaseURL := issuerServedByBaseURL(w.IssuerURL, w.BaseURL)
-
-			cyan.Printf("EUDI Dev Wallet %s\n", Version)
-			dim.Println("───────────────────────────────────────")
-			fmt.Printf("  Server:      http://localhost:%d\n", port)
-			if publicHTTPURL != fmt.Sprintf("http://localhost:%d", port) {
-				dim.Printf("               %s\n", publicHTTPURL)
-			}
-			if issuerViaBaseURL {
-				fmt.Printf("  Issuer:      %s (served via base URL, external TLS)\n", httpsURL)
-				fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
-				fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
-				fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
-			} else {
-				fmt.Printf("  HTTPS:       %s\n", httpsURL)
-				fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
-				dim.Printf("               %s/authorize\n", httpsURL)
-				fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
-				dim.Printf("               %s/api/trustlist\n", httpsURL)
-				fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
-				dim.Printf("               %s/api/trustlists\n", httpsURL)
-			}
-			fmt.Printf("  Metadata:    %s/.well-known/jwt-vc-issuer\n", httpsURL)
-			fmt.Printf("  Credentials: %d loaded\n", len(w.GetCredentials()))
-			fmt.Printf("  Storage:     %s\n", store.Dir)
-			fmt.Printf("  Validation:  %s\n", w.ValidationMode)
-			if demo {
-				if schedule := demoResetDescription(demoOpts); schedule != "" {
-					fmt.Printf("  Mode:        public demo (admin API disabled, %s)\n", schedule)
-				} else {
-					fmt.Printf("  Mode:        public demo (admin API disabled)\n")
-				}
-			} else if w.AutoAccept {
-				fmt.Printf("  Mode:        auto-accept\n")
-			} else {
-				fmt.Printf("  Mode:        interactive (consent UI)\n")
-			}
-			fmt.Printf("  Transcript:  %s\n", w.SessionTranscript)
-			if w.PreferredFormat != "" {
-				fmt.Printf("  Preferred:   %s\n", w.PreferredFormat)
-			}
-			if w.BaseURL != "" {
-				fmt.Printf("  Status List: %s/api/statuslist\n", publicHTTPURL)
-				dim.Printf("               %s/api/statuslist\n", httpsURL)
-			}
-			if w.RequireEncryptedRequest {
-				fmt.Printf("  Encrypted:   request object encryption required\n")
-			}
-			if w.RequireHAIP {
-				fmt.Printf("  HAIP:        enforced (presentations: x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
-				fmt.Printf("               enforced (issuance: https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)\n")
-			}
-			for _, warning := range servingConfigWarnings(w, port, docker) {
-				yellow.Printf("  Warning:     %s\n", warning)
-			}
-
-			// Register URL scheme handlers if requested
-			if register && !noRegister {
-				serveArgs, err := serializeWalletServeArgs(cmd)
-				if err != nil {
-					return fmt.Errorf("serializing wallet serve flags for registration: %w", err)
-				}
-				if err := wallet.RegisterURLSchemes(wallet.RegisterOptions{
-					ListenerPort: port,
-					AutoAccept:   w.AutoAccept,
-					ServeArgs:    serveArgs,
-				}); err != nil {
-					yellow.Printf("  Register:    skipped (%s)\n", err)
-				} else if wallet.SupportsURLSchemeRegistration() {
-					fmt.Printf("  Register:    URL scheme handlers registered\n")
-				} else {
-					yellow.Printf("  Register:    not supported on this platform; use 'wallet accept <uri>' for copied links\n")
-				}
-			}
-
-			dim.Println("───────────────────────────────────────")
-			fmt.Println()
-
-			if len(w.GetCredentials()) > 0 {
-				for _, c := range w.GetCredentials() {
-					fmt.Printf("  [%s] %s (%d claims)\n", c.Format, credLabel(c), len(c.Claims))
-				}
-				fmt.Println()
-			}
-
-			var imprintHTML []byte
-			if imprintFile != "" {
-				imprintHTML, err = imprint.Load(imprintFile)
-				if err != nil {
-					return err
-				}
-			}
-
-			srv := wallet.NewServer(w, port, func() {
-				if err := store.Save(w); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
-				}
-			})
-			srv.SetStore(store)
-			srv.SetVersion(Version)
-			srv.SetImprint(imprintHTML)
-			if demo {
-				srv.SetDemo(demoOpts)
-			}
-			// Embed the credential decoder UI so stored credentials can be
-			// inspected from the wallet UI. Resolving credentials by id lets
-			// those links name a credential instead of carrying it.
-			srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{
-				Version:     Version,
-				ImprintHTML: imprintHTML,
-				Demo:        demo,
-				CredentialByID: func(id string) (string, bool) {
-					cred, ok := w.GetCredential(id)
-					if !ok {
-						return "", false
-					}
-					return cred.Raw, true
-				},
-			}))
-			// Demo issuer and verifier: complete OID4VCI / OID4VP
-			// counterparties for out-of-the-box protocol flows.
-			demoRP := demorp.New(w, func() string {
-				if base := strings.TrimSpace(w.BaseURL); base != "" {
-					return base
-				}
-				return fmt.Sprintf("http://localhost:%d", port)
-			})
-			// Issuing with a status list reserves an index on the wallet's own
-			// list, and every wallet API request reloads the store, so the
-			// reservation has to reach disk before the next one.
-			demoRP.SetOnWalletChange(func() {
-				if err := store.Save(w); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
-				}
-			})
-			srv.Mount("/issuer", demoRP.IssuerHandler())
-			srv.Mount("/verifier", demoRP.VerifierHandler())
-			// OID4VCI inserts the well-known segment before the issuer path,
-			// so the metadata for the /issuer-mounted issuer lives at the
-			// server root.
-			srv.Handle("GET /.well-known/openid-credential-issuer/issuer", demoRP.IssuerMetadataHandler())
-			// Same for the authorization server metadata of the demo issuer,
-			// which is its own authorization server (RFC 8414 §3.1).
-			srv.Handle("GET /.well-known/oauth-authorization-server/issuer", demoRP.AuthorizationServerMetadataHandler())
-			if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
-				return err
-			}
-			if issuerViaBaseURL {
-				// The TLS terminator in front of the base URL serves the
-				// issuer origin. Without this the derived port (443 for a
-				// port-less https URL) would be bound locally.
-				srv.SetIssuerListenPort(-1)
-			}
-
-			// Always enable request logging
-			srv.SetLogger(func(format string, args ...any) {
-				timestamp := time.Now().Format("15:04:05")
-				dim.Printf("[%s] ", timestamp)
-				fmt.Printf(format+"\n", args...)
-			})
-
-			// Point the user at the consent UI when an interactive
-			// presentation or issuance arrives. On a desktop that means
-			// opening it. On a headless host the URL is all there is to give,
-			// so say where it is rather than claiming to open something.
-			// Not on a demo host: visitors get the consent UI through the
-			// browser redirect instead.
-			if !w.AutoAccept && !demo {
-				srv.SetOnUIRequest(func() {
-					url := fmt.Sprintf("http://localhost:%d/?focus=overview", port)
-					if hasDesktopSession() {
-						fmt.Printf("  Opening wallet UI: %s\n", url)
-					} else {
-						fmt.Printf("  Waiting for consent at: %s\n", url)
-					}
-					openBrowser(url)
-				})
-			}
-
-			if register && !noRegister {
-				fmt.Println("Listening for URL scheme dispatches...")
-				fmt.Println()
-			}
-
-			// Record this instance so `wallet instances` can discover it and
-			// `wallet kill` and POST /api/shutdown can stop it.
-			pid := os.Getpid()
-			if err := remote.RegisterInstance(remote.Instance{
-				PID:       pid,
-				Port:      port,
-				URL:       fmt.Sprintf("http://localhost:%d", port),
-				WalletDir: store.Dir,
-				StartedAt: time.Now(),
-			}); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: registering wallet instance: %v\n", err)
-			}
-			defer remote.UnregisterInstance(pid)
-			srv.ShutdownFunc = func() {
-				remote.UnregisterInstance(pid)
-				os.Exit(0)
-			}
-
-			return srv.ListenAndServe()
+			return runWalletServe(cmd, &opts)
 		},
 	}
 
-	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port")
-	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Headless mode: auto-accept presentations and credential offers")
-	cmd.Flags().StringSliceVar(&credFiles, "credential", nil, "Import credential from file (repeatable)")
-	cmd.Flags().BoolVar(&pid, "pid", false, "Auto-generate default EUDI PID credentials (SD-JWT + mDoc)")
-	cmd.Flags().StringVar(&keyPath, "key", "", "Holder private key file (PEM/JWK); uses stored key or auto-generates")
-	cmd.Flags().StringVar(&issuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
-	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
-	cmd.Flags().BoolVar(&register, "register", false, "Register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)")
-	cmd.Flags().BoolVar(&noRegister, "no-register", false, "Skip URL scheme registration (overrides --register)")
-	cmd.Flags().BoolVar(&statusList, "status-list", false, "Embed status list references in generated credentials")
-	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL for the wallet's HTTP endpoints; its host is also reused for HTTPS wallet endpoints")
-	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
-	cmd.Flags().StringVar(&preferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
-	cmd.Flags().BoolVar(&requireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
-	cmd.Flags().BoolVar(&clientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
-	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
-	cmd.Flags().StringVar(&vciClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().StringVar(&vciRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
-	cmd.Flags().StringVar(&demoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
-	cmd.Flags().StringVar(&imprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
-	cmd.Flags().BoolVarP(&detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
+	cmd.Flags().IntVar(&opts.Port, "port", config.DefaultWalletPort, "Wallet server port")
+	cmd.Flags().BoolVar(&opts.AutoAccept, "auto-accept", false, "Headless mode: auto-accept presentations and credential offers")
+	cmd.Flags().StringSliceVar(&opts.CredFiles, "credential", nil, "Import credential from file (repeatable)")
+	cmd.Flags().BoolVar(&opts.PID, "pid", false, "Auto-generate default EUDI PID credentials (SD-JWT + mDoc)")
+	cmd.Flags().StringVar(&opts.KeyPath, "key", "", "Holder private key file (PEM/JWK); uses stored key or auto-generates")
+	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
+	cmd.Flags().StringVar(&opts.SessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
+	cmd.Flags().BoolVar(&opts.Register, "register", false, "Register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)")
+	cmd.Flags().BoolVar(&opts.NoRegister, "no-register", false, "Skip URL scheme registration (overrides --register)")
+	cmd.Flags().BoolVar(&opts.StatusList, "status-list", false, "Embed status list references in generated credentials")
+	cmd.Flags().StringVar(&opts.BaseURL, "base-url", "", "Base URL for the wallet's HTTP endpoints; its host is also reused for HTTPS wallet endpoints")
+	cmd.Flags().BoolVar(&opts.Docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
+	cmd.Flags().StringVar(&opts.PreferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
+	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
+	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
+	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
+	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
+	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
+	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
+	cmd.Flags().BoolVarP(&opts.Detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
 	return cmd
 }
 
@@ -657,4 +272,401 @@ func demoResetDescription(opts wallet.DemoOptions) string {
 	default:
 		return ""
 	}
+}
+
+// runWalletServe starts the wallet server. It is the whole of what the
+// serve command does, kept out of the flag builder so the two read apart.
+func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
+	if opts.Detached {
+		return spawnDetachedServe(cmd, opts.Port, opts.Register, opts.NoRegister)
+	}
+	store := loadStore()
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		return fmt.Errorf("loading wallet: %w", err)
+	}
+	if templatesDir != "" {
+		w.TemplatesDir = templatesDir
+	}
+	if err := applyValidationMode(w, walletValidationMode); err != nil {
+		return err
+	}
+
+	// Override keys if explicitly provided
+	if opts.KeyPath != "" {
+		holderKey, err := loadWalletECKey(opts.KeyPath, "holder")
+		if err != nil {
+			return err
+		}
+		w.HolderKey = holderKey
+	}
+	if opts.IssuerKey != "" {
+		ik, err := loadWalletECKey(opts.IssuerKey, "issuer")
+		if err != nil {
+			return err
+		}
+		w.IssuerKey = ik
+	}
+
+	if cmd.Flags().Changed("demo-reset") && !opts.Demo {
+		return fmt.Errorf("--demo-reset requires --demo")
+	}
+	demoOpts, err := parseDemoReset(opts.DemoReset)
+	if err != nil {
+		return fmt.Errorf("invalid --demo-reset %q: %w", opts.DemoReset, err)
+	}
+	if opts.Demo {
+		// A public demo needs a known baseline: the periodic reset
+		// restores exactly the --pid state. Consent stays interactive
+		// for browser flows (API submissions auto-accept anyway), so
+		// visitors see the real wallet UX.
+		opts.PID = true
+
+		// Demo mode is the EUDI profile: a wallet hosted publicly as
+		// a counterparty should hold callers to the same rules a real
+		// EUDI wallet does, rather than accepting anything and
+		// teaching verifiers that they pass. Both are overridable, so
+		// a self-hosted demo can still be permissive.
+		if !cmd.Flags().Changed("mode") {
+			w.ValidationMode = wallet.ValidationModeStrict
+		}
+		if !cmd.Flags().Changed("haip") {
+			opts.HAIP = true
+		}
+	}
+
+	if opts.AutoAccept {
+		w.AutoAccept = true
+	}
+
+	if err := applySessionTranscriptMode(w, opts.SessionTranscript); err != nil {
+		return err
+	}
+
+	if opts.PreferredFormat != "" {
+		w.PreferredFormat = opts.PreferredFormat
+	}
+
+	if opts.RequireEncryptedRequest {
+		encKey, err := mock.GenerateKey()
+		if err != nil {
+			return fmt.Errorf("generating request encryption key: %w", err)
+		}
+		w.RequireEncryptedRequest = true
+		w.RequestEncryptionKey = encKey
+	}
+
+	if opts.HAIP {
+		w.RequireHAIP = true
+	}
+	if opts.ClientAttestation {
+		w.ForceClientAttestation = true
+	}
+	if opts.VCIClientID != "" {
+		w.VCIClientID = opts.VCIClientID
+	}
+	if opts.VCIRedirectURI != "" {
+		w.VCIRedirectURI = opts.VCIRedirectURI
+	}
+
+	if cmd.Flags().Changed("base-url") {
+		w.BaseURL = opts.BaseURL
+	} else if opts.StatusList && strings.TrimSpace(w.BaseURL) == "" {
+		if opts.BaseURL == "" {
+			if opts.Docker {
+				opts.BaseURL = fmt.Sprintf("http://host.docker.internal:%d", opts.Port)
+			} else {
+				opts.BaseURL = fmt.Sprintf("http://localhost:%d", opts.Port)
+			}
+		}
+		w.BaseURL = opts.BaseURL
+	}
+
+	if cmd.Flags().Changed("base-url") || cmd.Flags().Changed("docker") || strings.TrimSpace(w.IssuerURL) == "" {
+		issuerBaseURL := opts.BaseURL
+		if issuerBaseURL == "" && cmd.Flags().Changed("base-url") {
+			issuerBaseURL = w.BaseURL
+		}
+		w.IssuerURL, err = deriveWalletIssuerURL(opts.Port, issuerBaseURL, opts.Docker)
+		if err != nil {
+			return err
+		}
+	}
+
+	// A wallet that serves a UI can redeem an authorization code offer:
+	// it identifies itself with its own origin and takes the code at
+	// its /callback endpoint. Without both values the flow is refused
+	// before the pushed authorization request, so an issuer never gets
+	// to see the wallet attestation. Explicit flags still win.
+	{
+		base := strings.TrimRight(strings.TrimSpace(w.BaseURL), "/")
+		if base == "" {
+			if opts.Docker {
+				base = fmt.Sprintf("http://host.docker.internal:%d", opts.Port)
+			} else {
+				base = fmt.Sprintf("http://localhost:%d", opts.Port)
+			}
+		}
+		if w.VCIClientID == "" {
+			w.VCIClientID = base
+		}
+		if w.VCIRedirectURI == "" {
+			w.VCIRedirectURI = base + "/callback"
+		}
+	}
+
+	if opts.Demo {
+		// Installed here rather than with the other demo settings: it
+		// needs the resolved base and issuer URLs, so the wallet stays
+		// able to reach its own demo issuer and verifier (a
+		// request_uri or response_uri on its own origin) while every
+		// other internal address remains blocked.
+		format.SetFetchPolicy(format.AllowOwnOrigins(
+			format.BlockPrivateAddresses,
+			w.BaseURL,
+			w.IssuerURL,
+			fmt.Sprintf("http://localhost:%d", opts.Port),
+		))
+	}
+
+	if opts.PID {
+		// In demo mode the generated PIDs are the shared baseline and
+		// must survive whatever visitors do to the wallet.
+		generate := w.GenerateDefaultCredentials
+		if opts.Demo {
+			generate = func(map[string]any, string) error { return w.GenerateProtectedDefaults() }
+		}
+		if err := generate(nil, ""); err != nil {
+			return fmt.Errorf("generating PID credentials: %w", err)
+		}
+		if err := store.Save(w); err != nil {
+			return fmt.Errorf("saving wallet: %w", err)
+		}
+	}
+
+	for _, path := range opts.CredFiles {
+		if err := w.ImportCredentialFromFile(path); err != nil {
+			return fmt.Errorf("importing credential %s: %w", path, err)
+		}
+	}
+	if len(opts.CredFiles) > 0 {
+		if err := store.Save(w); err != nil {
+			return fmt.Errorf("saving wallet: %w", err)
+		}
+	}
+
+	// Print startup banner
+	cyan := color.New(color.FgCyan, color.Bold)
+	dim := color.New(color.Faint)
+	yellow := color.New(color.FgYellow)
+	publicHTTPURL := fmt.Sprintf("http://localhost:%d", opts.Port)
+	if opts.BaseURL != "" {
+		publicHTTPURL = opts.BaseURL
+	} else if opts.Docker {
+		publicHTTPURL = fmt.Sprintf("http://host.docker.internal:%d", opts.Port)
+	}
+	httpsURL := w.IssuerURL
+	issuerViaBaseURL := issuerServedByBaseURL(w.IssuerURL, w.BaseURL)
+
+	cyan.Printf("EUDI Dev Wallet %s\n", Version)
+	dim.Println("───────────────────────────────────────")
+	fmt.Printf("  Server:      http://localhost:%d\n", opts.Port)
+	if publicHTTPURL != fmt.Sprintf("http://localhost:%d", opts.Port) {
+		dim.Printf("               %s\n", publicHTTPURL)
+	}
+	if issuerViaBaseURL {
+		fmt.Printf("  Issuer:      %s (served via base URL, external TLS)\n", httpsURL)
+		fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
+		fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
+		fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
+	} else {
+		fmt.Printf("  HTTPS:       %s\n", httpsURL)
+		fmt.Printf("  Authorize:   %s/authorize\n", publicHTTPURL)
+		dim.Printf("               %s/authorize\n", httpsURL)
+		fmt.Printf("  Trust List:  %s/api/trustlist\n", publicHTTPURL)
+		dim.Printf("               %s/api/trustlist\n", httpsURL)
+		fmt.Printf("  Trust Lists: %s/api/trustlists\n", publicHTTPURL)
+		dim.Printf("               %s/api/trustlists\n", httpsURL)
+	}
+	fmt.Printf("  Metadata:    %s/.well-known/jwt-vc-issuer\n", httpsURL)
+	fmt.Printf("  Credentials: %d loaded\n", len(w.GetCredentials()))
+	fmt.Printf("  Storage:     %s\n", store.Dir)
+	fmt.Printf("  Validation:  %s\n", w.ValidationMode)
+	if opts.Demo {
+		if schedule := demoResetDescription(demoOpts); schedule != "" {
+			fmt.Printf("  Mode:        public demo (admin API disabled, %s)\n", schedule)
+		} else {
+			fmt.Printf("  Mode:        public demo (admin API disabled)\n")
+		}
+	} else if w.AutoAccept {
+		fmt.Printf("  Mode:        auto-accept\n")
+	} else {
+		fmt.Printf("  Mode:        interactive (consent UI)\n")
+	}
+	fmt.Printf("  Transcript:  %s\n", w.SessionTranscript)
+	if w.PreferredFormat != "" {
+		fmt.Printf("  Preferred:   %s\n", w.PreferredFormat)
+	}
+	if w.BaseURL != "" {
+		fmt.Printf("  Status List: %s/api/statuslist\n", publicHTTPURL)
+		dim.Printf("               %s/api/statuslist\n", httpsURL)
+	}
+	if w.RequireEncryptedRequest {
+		fmt.Printf("  Encrypted:   request object encryption required\n")
+	}
+	if w.RequireHAIP {
+		fmt.Printf("  HAIP:        enforced (presentations: x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
+		fmt.Printf("               enforced (issuance: https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)\n")
+	}
+	for _, warning := range servingConfigWarnings(w, opts.Port, opts.Docker) {
+		yellow.Printf("  Warning:     %s\n", warning)
+	}
+
+	// Register URL scheme handlers if requested
+	if opts.Register && !opts.NoRegister {
+		serveArgs, err := serializeWalletServeArgs(cmd)
+		if err != nil {
+			return fmt.Errorf("serializing wallet serve flags for registration: %w", err)
+		}
+		if err := wallet.RegisterURLSchemes(wallet.RegisterOptions{
+			ListenerPort: opts.Port,
+			AutoAccept:   w.AutoAccept,
+			ServeArgs:    serveArgs,
+		}); err != nil {
+			yellow.Printf("  Register:    skipped (%s)\n", err)
+		} else if wallet.SupportsURLSchemeRegistration() {
+			fmt.Printf("  Register:    URL scheme handlers registered\n")
+		} else {
+			yellow.Printf("  Register:    not supported on this platform; use 'wallet accept <uri>' for copied links\n")
+		}
+	}
+
+	dim.Println("───────────────────────────────────────")
+	fmt.Println()
+
+	if len(w.GetCredentials()) > 0 {
+		for _, c := range w.GetCredentials() {
+			fmt.Printf("  [%s] %s (%d claims)\n", c.Format, credLabel(c), len(c.Claims))
+		}
+		fmt.Println()
+	}
+
+	var imprintHTML []byte
+	if opts.ImprintFile != "" {
+		imprintHTML, err = imprint.Load(opts.ImprintFile)
+		if err != nil {
+			return err
+		}
+	}
+
+	srv := wallet.NewServer(w, opts.Port, func() {
+		if err := store.Save(w); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
+		}
+	})
+	srv.SetStore(store)
+	srv.SetVersion(Version)
+	srv.SetImprint(imprintHTML)
+	if opts.Demo {
+		srv.SetDemo(demoOpts)
+	}
+	// Embed the credential decoder UI so stored credentials can be
+	// inspected from the wallet UI. Resolving credentials by id lets
+	// those links name a credential instead of carrying it.
+	srv.Mount("/decoder", web.NewMuxWithOptions(web.MuxOptions{
+		Version:     Version,
+		ImprintHTML: imprintHTML,
+		Demo:        opts.Demo,
+		CredentialByID: func(id string) (string, bool) {
+			cred, ok := w.GetCredential(id)
+			if !ok {
+				return "", false
+			}
+			return cred.Raw, true
+		},
+	}))
+	// Demo issuer and verifier: complete OID4VCI / OID4VP
+	// counterparties for out-of-the-box protocol flows.
+	demoRP := demorp.New(w, func() string {
+		if base := strings.TrimSpace(w.BaseURL); base != "" {
+			return base
+		}
+		return fmt.Sprintf("http://localhost:%d", opts.Port)
+	})
+	// Issuing with a status list reserves an index on the wallet's own
+	// list, and every wallet API request reloads the store, so the
+	// reservation has to reach disk before the next one.
+	demoRP.SetOnWalletChange(func() {
+		if err := store.Save(w); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
+		}
+	})
+	srv.Mount("/issuer", demoRP.IssuerHandler())
+	srv.Mount("/verifier", demoRP.VerifierHandler())
+	// OID4VCI inserts the well-known segment before the issuer path,
+	// so the metadata for the /issuer-mounted issuer lives at the
+	// server root.
+	srv.Handle("GET /.well-known/openid-credential-issuer/issuer", demoRP.IssuerMetadataHandler())
+	// Same for the authorization server metadata of the demo issuer,
+	// which is its own authorization server (RFC 8414 §3.1).
+	srv.Handle("GET /.well-known/oauth-authorization-server/issuer", demoRP.AuthorizationServerMetadataHandler())
+	if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
+		return err
+	}
+	if issuerViaBaseURL {
+		// The TLS terminator in front of the base URL serves the
+		// issuer origin. Without this the derived port (443 for a
+		// port-less https URL) would be bound locally.
+		srv.SetIssuerListenPort(-1)
+	}
+
+	// Always enable request logging
+	srv.SetLogger(func(format string, args ...any) {
+		timestamp := time.Now().Format("15:04:05")
+		dim.Printf("[%s] ", timestamp)
+		fmt.Printf(format+"\n", args...)
+	})
+
+	// Point the user at the consent UI when an interactive
+	// presentation or issuance arrives. On a desktop that means
+	// opening it. On a headless host the URL is all there is to give,
+	// so say where it is rather than claiming to open something.
+	// Not on a demo host: visitors get the consent UI through the
+	// browser redirect instead.
+	if !w.AutoAccept && !opts.Demo {
+		srv.SetOnUIRequest(func() {
+			url := fmt.Sprintf("http://localhost:%d/?focus=overview", opts.Port)
+			if hasDesktopSession() {
+				fmt.Printf("  Opening wallet UI: %s\n", url)
+			} else {
+				fmt.Printf("  Waiting for consent at: %s\n", url)
+			}
+			openBrowser(url)
+		})
+	}
+
+	if opts.Register && !opts.NoRegister {
+		fmt.Println("Listening for URL scheme dispatches...")
+		fmt.Println()
+	}
+
+	// Record this instance so `wallet instances` can discover it and
+	// `wallet kill` and POST /api/shutdown can stop it.
+	processID := os.Getpid()
+	if err := remote.RegisterInstance(remote.Instance{
+		PID:       processID,
+		Port:      opts.Port,
+		URL:       fmt.Sprintf("http://localhost:%d", opts.Port),
+		WalletDir: store.Dir,
+		StartedAt: time.Now(),
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: registering wallet instance: %v\n", err)
+	}
+	defer remote.UnregisterInstance(processID)
+	srv.ShutdownFunc = func() {
+		remote.UnregisterInstance(processID)
+		os.Exit(0)
+	}
+
+	return srv.ListenAndServe()
 }
