@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
@@ -98,9 +99,13 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 		}
 	}
 
+	sortMatchesNewestFirst(matches, credentials)
+
 	if w.PreferredFormat != "" {
 		sortMatchesByPreferredFormat(matches, w.PreferredFormat)
 	}
+
+	matches = keepOnePresentationPerQuery(matches)
 
 	// Apply credential_sets constraints
 	if credSets, ok := query["credential_sets"].([]any); ok {
@@ -115,6 +120,64 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
 	return matches
+}
+
+// sortMatchesNewestFirst orders the candidates for each query id by when the
+// credential was issued, newest first, so that the one kept for presentation
+// is the most recent credential that answers the query. A renewed credential
+// supersedes the one it replaces, and this is the order the wallet already
+// lists credentials in. Credentials that state no issuance time sort last,
+// and ties keep the order they arrived in.
+func sortMatchesNewestFirst(matches []CredentialMatch, credentials []StoredCredential) {
+	issued := make(map[string]time.Time, len(credentials))
+	for _, c := range credentials {
+		issued[c.ID] = CredentialIssuedAt(c)
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].QueryID != matches[j].QueryID {
+			return false
+		}
+		a, b := issued[matches[i].CredentialID], issued[matches[j].CredentialID]
+		if a.IsZero() != b.IsZero() {
+			return b.IsZero()
+		}
+		return a.After(b)
+	})
+}
+
+// keepOnePresentationPerQuery reduces the candidates for each query id to the
+// single credential that will be presented for it.
+//
+// A DCQL credential query asks for one credential. OID4VP 1.0 lets a wallet
+// return several for the same query id only when the query sets `multiple`,
+// which this wallet does not implement, so anything past the first is not
+// something a verifier asked for. Reducing here rather than at submission is
+// what makes the choice visible: the consent dialog and the activity log are
+// built from these matches, and they were reporting credentials that were
+// never sent.
+//
+// Leaving it to submission also meant the wallet signed a presentation for
+// every candidate and then wrote them all to one key of a map, so all but the
+// last were built and thrown away, and which one survived was decided by map
+// assignment order rather than by anything considered. A wallet holding two
+// credentials of the same type presented whichever happened to be stored
+// last.
+func keepOnePresentationPerQuery(matches []CredentialMatch) []CredentialMatch {
+	if len(matches) == 0 {
+		return matches
+	}
+	seen := make(map[string]bool, len(matches))
+	kept := matches[:0]
+	for _, m := range matches {
+		if seen[m.QueryID] {
+			log.Printf("[DCQL]   query=%s: credential %s not presented: the query asks for one credential and a better candidate matched",
+				m.QueryID, m.CredentialID)
+			continue
+		}
+		seen[m.QueryID] = true
+		kept = append(kept, m)
+	}
+	return kept
 }
 
 // sortMatchesByPreferredFormat moves the preferred format to the front within

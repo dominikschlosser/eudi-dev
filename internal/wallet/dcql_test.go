@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
@@ -1210,5 +1211,121 @@ func TestEvaluateDCQL_PreferredFormatSortIsStable(t *testing.T) {
 		if order[i] != want[i] {
 			t.Fatalf("order = %v, want %v (preferred first, input order kept within each group)", order, want)
 		}
+	}
+}
+
+// A DCQL credential query asks for one credential, and this wallet does not
+// implement `multiple`, so two credentials of the same type must not both be
+// reported as matches. They used to be: every candidate was signed into a
+// presentation and written to the same key of the vp_token map, so all but
+// the last were discarded and the survivor was whichever happened to be
+// stored last. The OIDF conformance suite caught it once an issuance plan
+// had left a second PID in the wallet.
+func addSDJWTPID(t *testing.T, w *Wallet, id string, iat int64) {
+	t.Helper()
+	key, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := jws.Sign(
+		map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"},
+		map[string]any{"vct": mock.DefaultPIDVCT, "iat": iat, "given_name": "Ada", "family_name": "Lovelace"},
+		key,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Credentials = append(w.Credentials, StoredCredential{
+		ID:     id,
+		Format: "dc+sd-jwt",
+		VCT:    mock.DefaultPIDVCT,
+		Raw:    raw,
+		Claims: map[string]any{"vct": mock.DefaultPIDVCT, "iat": iat, "given_name": "Ada", "family_name": "Lovelace"},
+	})
+}
+
+func pidQuery() map[string]any {
+	return map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+				"claims": []any{
+					map[string]any{"path": []any{"given_name"}},
+					map[string]any{"path": []any{"family_name"}},
+				},
+			},
+		},
+	}
+}
+
+func TestEvaluateDCQL_OneCredentialPerQueryNewestWins(t *testing.T) {
+	w := generateTestWallet(t)
+	addSDJWTPID(t, w, "older", 1000)
+	addSDJWTPID(t, w, "newer", 3000)
+	addSDJWTPID(t, w, "middle", 2000)
+
+	matches := w.EvaluateDCQL(pidQuery())
+
+	if len(matches) != 1 {
+		t.Fatalf("matches = %d, want 1 (the query asks for one credential)", len(matches))
+	}
+	if matches[0].CredentialID != "newer" {
+		t.Errorf("presented %s, want the newest credential (newer)", matches[0].CredentialID)
+	}
+}
+
+// Stored last must not decide it either: that was the old behaviour, so a
+// wallet whose newest credential is not the last one stored proves the
+// selection is by issuance date rather than by arrival.
+func TestEvaluateDCQL_NewestWinsEvenWhenStoredFirst(t *testing.T) {
+	w := generateTestWallet(t)
+	addSDJWTPID(t, w, "newest", 9000)
+	addSDJWTPID(t, w, "oldest", 1000)
+
+	matches := w.EvaluateDCQL(pidQuery())
+
+	if len(matches) != 1 {
+		t.Fatalf("matches = %d, want 1", len(matches))
+	}
+	if matches[0].CredentialID != "newest" {
+		t.Errorf("presented %s, want newest", matches[0].CredentialID)
+	}
+}
+
+// Reducing to one is per query id, not overall: a verifier asking for two
+// different credentials still gets both.
+func TestEvaluateDCQL_DistinctQueriesEachKeepAMatch(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid_sdjwt",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+				"claims": []any{map[string]any{"path": []any{"given_name"}}},
+			},
+			map[string]any{
+				"id":     "pid_mdoc",
+				"format": "mso_mdoc",
+				"meta":   map[string]any{"doctype_value": mock.PIDNamespace},
+				"claims": []any{map[string]any{"path": []any{mock.PIDNamespace, "given_name"}}},
+			},
+		},
+	}
+
+	matches := w.EvaluateDCQL(query)
+
+	if len(matches) != 2 {
+		t.Fatalf("matches = %d, want 2 (one per query id)", len(matches))
+	}
+	seen := map[string]bool{}
+	for _, m := range matches {
+		seen[m.QueryID] = true
+	}
+	if !seen["pid_sdjwt"] || !seen["pid_mdoc"] {
+		t.Errorf("query ids = %v, want both pid_sdjwt and pid_mdoc", seen)
 	}
 }
