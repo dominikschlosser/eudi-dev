@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **The README compares this toolkit with the rest of the EUDI tooling.** Most of that tooling is an issuer or a verifier you point a wallet at, so the thing under test is the wallet. This is the wallet, and the table near the top of the README says so in one line per tool, along with what each one tests, whether it runs locally, and whether it can be scripted. It also says when to reach for something else: the OpenID Foundation suite for certification, the Animo or EUDI services when the wallet is what you are testing, an SDK for shipping a product, a hosted decoder for one quick look
+- **The README compares this toolkit with the rest of the EUDI tooling.** Most of that tooling is an issuer or a verifier you point a wallet at, so the thing under test is the wallet. This is the wallet, and the table near the top of the README says so in one line per tool, along with what each one tests, whether it runs locally, and whether it can be scripted. It also says when to reach for something else: the OpenID Foundation suite for certification, the Animo or EUDI services when the wallet is what you are testing, an SDK for shipping a product, Multipaz when the flow is proximity rather than remote (this speaks OID4VP over HTTP and has no BLE or NFC transport), a hosted decoder for one quick look
 
 ## [1.19.14] - 2026-08-06
 
