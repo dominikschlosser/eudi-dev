@@ -431,3 +431,59 @@ func TestZlibDecompress(t *testing.T) {
 		t.Errorf("got %q, want %q", got, data)
 	}
 }
+
+// idx comes from the credential's own status claim and bits from the fetched
+// status list, so both are somebody else's numbers. Reading an entry must
+// refuse them rather than panic or invent a status: this runs on every
+// presentation the demo verifier checks for revocation.
+func TestExtractStatus_RefusesHostileParameters(t *testing.T) {
+	bitstring := []byte{0xFF, 0x00, 0xAA}
+
+	for _, tc := range []struct {
+		name string
+		idx  int
+		bits int
+	}{
+		{"negative index", -1, 1},
+		{"very negative index", -1 << 20, 8},
+		{"zero bits", 0, 0},
+		{"negative bits", 0, -1},
+		{"three bits", 0, 3},
+		{"absurd bits", 0, 100},
+		{"index past the end", 1 << 20, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("panicked instead of reporting: %v", r)
+				}
+			}()
+			if _, err := extractStatus(bitstring, tc.idx, tc.bits); err == nil {
+				t.Error("accepted a parameter it should refuse")
+			}
+		})
+	}
+}
+
+// The four widths the specification allows must still read correctly.
+func TestExtractStatus_ReadsEveryAllowedWidth(t *testing.T) {
+	for _, tc := range []struct {
+		bits, idx, want int
+		bitstring       []byte
+	}{
+		{bits: 1, idx: 0, want: 1, bitstring: []byte{0x01}},
+		{bits: 1, idx: 3, want: 1, bitstring: []byte{0x08}},
+		{bits: 2, idx: 1, want: 3, bitstring: []byte{0x0C}},
+		{bits: 4, idx: 1, want: 0x0A, bitstring: []byte{0xA0}},
+		{bits: 8, idx: 1, want: 0xBE, bitstring: []byte{0x00, 0xBE}},
+	} {
+		got, err := extractStatus(tc.bitstring, tc.idx, tc.bits)
+		if err != nil {
+			t.Errorf("bits=%d idx=%d: %v", tc.bits, tc.idx, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("bits=%d idx=%d = %d, want %d", tc.bits, tc.idx, got, tc.want)
+		}
+	}
+}

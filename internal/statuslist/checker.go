@@ -253,7 +253,24 @@ func zlibDecompress(data []byte) ([]byte, error) {
 	return io.ReadAll(fr)
 }
 
+// extractStatus reads one entry out of the decompressed bitstring.
+//
+// Both idx and bits arrive from documents somebody else wrote: idx from the
+// credential's own status claim and bits from the fetched status list. A
+// negative idx used to reach the shift below and panic with "negative shift
+// amount", which a credential could therefore do to whoever checked whether
+// it was revoked. A bits value outside the four the specification allows
+// produced a mask that read the whole byte and reported it as a status.
 func extractStatus(bitstring []byte, idx, bits int) (int, error) {
+	if idx < 0 {
+		return 0, fmt.Errorf("status list index %d is negative", idx)
+	}
+	switch bits {
+	case 1, 2, 4, 8:
+	default:
+		return 0, fmt.Errorf("status list declares %d bits per entry, which is not one of 1, 2, 4 or 8", bits)
+	}
+
 	bitPos := idx * bits
 	byteIdx := bitPos / 8
 	bitOffset := bitPos % 8
