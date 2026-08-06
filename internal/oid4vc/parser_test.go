@@ -524,3 +524,143 @@ func makeTestJWT(header, payload map[string]any) string {
 		base64.RawURLEncoding.EncodeToString(p) + "." +
 		base64.RawURLEncoding.EncodeToString([]byte("test-signature"))
 }
+
+// OID4VP 1.0 §5.10.1: "The Wallet MUST extract the set of Authorization
+// Request parameters from the Request Object. The Wallet MUST only use the
+// parameters in this Request Object, even if the same parameter was provided
+// in an Authorization Request query parameter."
+//
+// The query string is not signed, so a parameter taken from it decides what
+// the wallet discloses while the Verifier's signature still verifies over
+// something else. dcql_query is the one that matters most: it names the
+// credentials and the claims.
+func TestParseVPQueryParametersNeverOutrankTheRequestObject(t *testing.T) {
+	signedQuery := map[string]any{
+		"credentials": []any{map[string]any{
+			"id":     "pid",
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"given_name"}}},
+		}},
+	}
+	payload := map[string]any{
+		"client_id":     "https://verifier.example",
+		"response_type": "vp_token",
+		"response_mode": "direct_post.jwt",
+		"response_uri":  "https://verifier.example/signed",
+		"nonce":         "signed-nonce",
+		"dcql_query":    signedQuery,
+	}
+	jwt := makeTestJWT(map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}, payload)
+
+	// Everything an attacker could append to the invocation URL.
+	attackerQuery := `{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["urn:eudi:pid:1"]},` +
+		`"claims":[{"path":["given_name"]},{"path":["family_name"]},{"path":["birthdate"]}]}]}`
+	uri := "openid4vp://?client_id=https://verifier.example&request=" + url.QueryEscape(jwt) +
+		"&dcql_query=" + url.QueryEscape(attackerQuery) +
+		"&response_uri=" + url.QueryEscape("https://attacker.example/collect") +
+		"&nonce=attacker-nonce&response_mode=direct_post&state=attacker-state"
+
+	_, result, err := Parse(uri)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ar := result.(*AuthorizationRequest)
+
+	creds, _ := ar.DCQLQuery["credentials"].([]any)
+	if len(creds) != 1 {
+		t.Fatalf("credentials = %d, want 1", len(creds))
+	}
+	claims, _ := creds[0].(map[string]any)["claims"].([]any)
+	if len(claims) != 1 {
+		t.Errorf("claims = %d, want the single claim the Verifier signed for", len(claims))
+	}
+	if ar.ResponseURI != "https://verifier.example/signed" {
+		t.Errorf("response_uri = %q, want the signed one", ar.ResponseURI)
+	}
+	if ar.Nonce != "signed-nonce" {
+		t.Errorf("nonce = %q, want the signed one", ar.Nonce)
+	}
+	if ar.ResponseMode != "direct_post.jwt" {
+		t.Errorf("response_mode = %q, want the signed one", ar.ResponseMode)
+	}
+	if ar.State != "" {
+		t.Errorf("state = %q, want it absent: the Request Object carried none", ar.State)
+	}
+}
+
+// A parameter the Request Object omits is absent, not inherited. Keeping the
+// outer value is the same defect as overriding, just quieter.
+func TestParseVPDropsQueryParametersTheRequestObjectOmits(t *testing.T) {
+	payload := map[string]any{
+		"client_id":     "https://verifier.example",
+		"response_type": "vp_token",
+		"response_mode": "direct_post.jwt",
+		"response_uri":  "https://verifier.example/signed",
+		"nonce":         "signed-nonce",
+	}
+	jwt := makeTestJWT(map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}, payload)
+	uri := "openid4vp://?client_id=https://verifier.example&request=" + url.QueryEscape(jwt) +
+		"&scope=" + url.QueryEscape("openid pid") +
+		"&redirect_uri=" + url.QueryEscape("https://attacker.example/cb") +
+		"&client_metadata=" + url.QueryEscape(`{"jwks":{"keys":[]}}`)
+
+	_, result, err := Parse(uri)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ar := result.(*AuthorizationRequest)
+
+	if ar.Scope != "" {
+		t.Errorf("scope = %q, want it absent", ar.Scope)
+	}
+	if ar.RedirectURI != "" {
+		t.Errorf("redirect_uri = %q, want it absent", ar.RedirectURI)
+	}
+	if ar.ClientMetadata != nil {
+		t.Errorf("client_metadata = %v, want it absent", ar.ClientMetadata)
+	}
+	// The transport is not a request parameter and still has to survive.
+	if ar.RequestObject == nil {
+		t.Error("the raw request object was dropped")
+	}
+}
+
+// A Request Object with no client_id is not identical to an outer one that
+// has a value, which §5.10.1 requires.
+func TestParseVPRejectsARequestObjectWithoutClientID(t *testing.T) {
+	jwt := makeTestJWT(map[string]any{"alg": "ES256"}, map[string]any{"response_type": "vp_token"})
+	uri := "openid4vp://?client_id=https://outer.example&request=" + url.QueryEscape(jwt)
+
+	if _, _, err := Parse(uri); err == nil {
+		t.Fatal("expected a client_id mismatch error")
+	}
+}
+
+// A request_uri-delivered object is the same rule: the fetched object decides.
+func TestParseVPRequestURIObjectOutranksTheQueryString(t *testing.T) {
+	payload := map[string]any{
+		"client_id":     "https://verifier.example",
+		"response_type": "vp_token",
+		"response_mode": "direct_post.jwt",
+		"response_uri":  "https://verifier.example/signed",
+		"nonce":         "signed-nonce",
+	}
+	jwt := makeTestJWT(map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}, payload)
+	uri := "openid4vp://?client_id=https://verifier.example&request_uri=" +
+		url.QueryEscape("https://verifier.example/req") + "&nonce=attacker-nonce"
+
+	_, result, err := ParseWithOptions(uri, ParseOptions{
+		FetchRequestURI: func(string, string) (string, error) { return jwt, nil },
+	})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ar := result.(*AuthorizationRequest)
+	if ar.Nonce != "signed-nonce" {
+		t.Errorf("nonce = %q, want the signed one", ar.Nonce)
+	}
+	if ar.RequestURI == "" {
+		t.Error("request_uri was dropped; it records how the object arrived")
+	}
+}

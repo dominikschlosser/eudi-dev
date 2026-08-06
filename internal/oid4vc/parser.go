@@ -177,6 +177,16 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 		}
 	}
 
+	// Read before any Request Object is resolved. A signed object replaces the
+	// whole parameter set, so anything taken from the query string afterwards
+	// would outrank what the Verifier signed.
+	if dq := q.Get("dcql_query"); dq != "" {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(dq), &m); err == nil {
+			req.DCQLQuery = m
+		}
+	}
+
 	// Resolve request_uri (fetch and parse JWT)
 	if requestURI := q.Get("request_uri"); requestURI != "" {
 		req.RequestURI = requestURI
@@ -218,45 +228,47 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 		}
 	}
 
-	// Parse dcql_query
-	if dq := q.Get("dcql_query"); dq != "" {
-		var m map[string]any
-		if err := json.Unmarshal([]byte(dq), &m); err == nil {
-			req.DCQLQuery = m
-		}
-	}
-
 	return TypeVP, req, nil
 }
 
-// applyRequestObjectPayload applies Request Object claims authoritatively per OID4VP 1.0.
+// applyRequestObjectPayload replaces the request parameters with the claims of
+// the Request Object.
+//
+// OID4VP 1.0 §5.10.1: "The Wallet MUST extract the set of Authorization
+// Request parameters from the Request Object. The Wallet MUST only use the
+// parameters in this Request Object, even if the same parameter was provided
+// in an Authorization Request query parameter." So a parameter the signed
+// object leaves out is absent rather than inherited from the URL. Merging the
+// two instead let anyone who can append to the invocation URL decide what the
+// wallet discloses, with the Verifier's signature still verifying over
+// something else entirely.
+//
+// The transport stays outside this: request_uri and request_uri_method say
+// how the object was fetched rather than what was asked for.
 func applyRequestObjectPayload(req *AuthorizationRequest, payload map[string]any) error {
-	if outerClientID := req.ClientID; outerClientID != "" {
-		if innerClientID, ok := payload["client_id"].(string); ok && innerClientID != "" && innerClientID != outerClientID {
-			return fmt.Errorf("request object client_id %q does not match outer client_id %q", innerClientID, outerClientID)
-		}
+	innerClientID, _ := payload["client_id"].(string)
+	// "The Client Identifier value in the client_id Authorization Request
+	// parameter and the Request Object client_id claim value MUST be
+	// identical, including the Client Identifier Prefix."
+	if req.ClientID != "" && innerClientID != req.ClientID {
+		return fmt.Errorf("request object client_id %q does not match outer client_id %q", innerClientID, req.ClientID)
 	}
 
-	setString := func(target *string, key string) {
-		if v, ok := payload[key].(string); ok && v != "" {
-			*target = v
-		}
+	str := func(key string) string {
+		v, _ := payload[key].(string)
+		return v
 	}
-	setString(&req.ClientID, "client_id")
-	setString(&req.ResponseType, "response_type")
-	setString(&req.ResponseMode, "response_mode")
-	setString(&req.Nonce, "nonce")
-	setString(&req.State, "state")
-	setString(&req.RedirectURI, "redirect_uri")
-	setString(&req.ResponseURI, "response_uri")
-	setString(&req.Scope, "scope")
+	req.ClientID = innerClientID
+	req.ResponseType = str("response_type")
+	req.ResponseMode = str("response_mode")
+	req.Nonce = str("nonce")
+	req.State = str("state")
+	req.RedirectURI = str("redirect_uri")
+	req.ResponseURI = str("response_uri")
+	req.Scope = str("scope")
 
-	if dq, ok := payload["dcql_query"].(map[string]any); ok {
-		req.DCQLQuery = dq
-	}
-	if clientMetadata, ok := payload["client_metadata"].(map[string]any); ok {
-		req.ClientMetadata = clientMetadata
-	}
+	req.DCQLQuery, _ = payload["dcql_query"].(map[string]any)
+	req.ClientMetadata, _ = payload["client_metadata"].(map[string]any)
 
 	return nil
 }
@@ -312,12 +324,17 @@ func parseJSONInput(raw string) (RequestType, any, error) {
 		return parseVCIJSON([]byte(raw))
 	}
 
-	if _, ok := m["client_id"]; ok {
-		rt, req := buildVPFromJSON(m)
-		return rt, req, nil
+	// An unsigned request over the Digital Credentials API carries no
+	// client_id at all (OID4VP 1.0 Appendix A.2), so the request is
+	// recognised by what it asks for rather than by who is asking.
+	for _, marker := range []string{"client_id", "dcql_query", "response_type"} {
+		if _, ok := m[marker]; ok {
+			rt, req := buildVPFromJSON(m)
+			return rt, req, nil
+		}
 	}
 
-	return 0, nil, fmt.Errorf("JSON does not contain VCI or VP markers (credential_issuer, client_id)")
+	return 0, nil, fmt.Errorf("JSON does not contain VCI or VP markers (credential_issuer, client_id, dcql_query, response_type)")
 }
 
 func buildVPFromJSON(m map[string]any) (RequestType, *AuthorizationRequest) {
