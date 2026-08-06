@@ -63,3 +63,25 @@ func TestLoadRejectsNonHTMLAndEmpty(t *testing.T) {
 		t.Error("Load accepted a missing file")
 	}
 }
+
+// The wallet and decoder both serve this page under a Content-Security-Policy
+// with script-src 'self' and no 'unsafe-inline', which blocks a javascript:
+// URL. A back link written that way renders fine and does nothing when
+// clicked, so nothing about the page reveals that it is broken.
+func TestLoadPageRunsNoScript(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "imprint.html")
+	if err := os.WriteFile(path, []byte("<h1>Imprint</h1>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	html := string(page)
+	if strings.Contains(html, "javascript:") {
+		t.Error("page uses a javascript: URL, which the Content-Security-Policy blocks")
+	}
+	if !strings.Contains(html, `<a href="/">`) {
+		t.Error("page has no back link to the site root")
+	}
+}
