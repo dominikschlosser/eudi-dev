@@ -164,7 +164,7 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 					}
 				}
 			}
-			json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
 		default:
 			rw.WriteHeader(http.StatusNotFound)

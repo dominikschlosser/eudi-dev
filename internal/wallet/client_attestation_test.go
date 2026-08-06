@@ -125,7 +125,7 @@ func silentAttestationIssuer(t *testing.T, w *Wallet) (*httptest.Server, string,
 			})
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
-			json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
 		default:
 			rw.WriteHeader(http.StatusNotFound)

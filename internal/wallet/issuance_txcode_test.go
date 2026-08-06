@@ -67,7 +67,7 @@ func txCodeIssuer(t *testing.T, w *Wallet, wantCode string) (*httptest.Server, s
 			}
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
-			json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
 		default:
 			rw.WriteHeader(http.StatusNotFound)

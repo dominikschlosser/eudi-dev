@@ -16,7 +16,9 @@ package demorp
 
 import (
 	"crypto/ecdsa"
+	"crypto/x509"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -67,7 +69,6 @@ type offerState struct {
 	issuerState string
 	subject     string
 	accessToken string
-	cNonce      string
 	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
 	// the pre-authorized flow, which uses a bearer token.
 	jkt string
@@ -156,18 +157,27 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 				// code flow, so the configuration has to name one.
 				"scope": ticketScope,
 				"cryptographic_binding_methods_supported": []string{"jwk"},
-				"claims": []map[string]any{
-					{"path": []string{"event"}},
-					{"path": []string{"tier"}},
-					{"path": []string{"seat"}},
-					{"path": []string{"given_name"}},
-					{"path": []string{"family_name"}},
-				},
 				"proof_types_supported": map[string]any{
 					"jwt": map[string]any{"proof_signing_alg_values_supported": []string{"ES256"}},
 				},
-				"display": []map[string]any{
-					{"name": "Demo Event Ticket", "description": "A sample event ticket issued by the demo issuer", "locale": "en-US"},
+				// What the credential is called and which claims it carries go
+				// one level down. OpenID4VCI 1.0 §12.2.4 defines
+				// credential_metadata as the "Object containing information
+				// relevant to the usage and display of issued Credentials",
+				// holding display and claims. A wallet built to 1.0 looks
+				// nowhere else, and one that finds nothing here asks the user to
+				// consent to a credential with no name and no claims.
+				"credential_metadata": map[string]any{
+					"display": []map[string]any{
+						{"name": "Demo Event Ticket", "description": "A sample event ticket issued by the demo issuer", "locale": "en-US"},
+					},
+					"claims": []map[string]any{
+						{"path": []string{"event"}},
+						{"path": []string{"tier"}},
+						{"path": []string{"seat"}},
+						{"path": []string{"given_name"}},
+						{"path": []string{"family_name"}},
+					},
 				},
 			},
 		},
@@ -284,29 +294,27 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offer.accessToken = randToken()
-	offer.cNonce = randToken()
 	d.tokens[offer.accessToken] = offer
+	// No c_nonce. OpenID4VCI 1.0 §6.2 lists what a token response may add to
+	// RFC 6749 and defines no such parameter, and this issuer advertises a Nonce
+	// Endpoint (§7), which is where the challenge comes from.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":       offer.accessToken,
-		"token_type":         "Bearer",
-		"expires_in":         int(entryTTL.Seconds()),
-		"c_nonce":            offer.cNonce,
-		"c_nonce_expires_in": int(entryTTL.Seconds()),
+		"access_token": offer.accessToken,
+		"token_type":   "Bearer",
+		"expires_in":   int(entryTTL.Seconds()),
 	})
 }
 
-// credentialRequest covers both the current plural `proofs` form the wallet
-// sends and the singular `proof` form for other clients.
+// credentialRequest is a Credential Request as defined in OpenID4VCI 1.0 §8.2.
+// The key proofs arrive under proofs, "exactly one parameter named as the proof
+// type in Appendix F, the value set for this parameter is a non-empty array".
+// There is no singular proof member in 1.0.
 type credentialRequest struct {
 	CredentialConfigurationID string `json:"credential_configuration_id"`
 	CredentialIdentifier      string `json:"credential_identifier"`
 	Proofs                    struct {
 		JWT []string `json:"jwt"`
 	} `json:"proofs"`
-	Proof struct {
-		ProofType string `json:"proof_type"`
-		JWT       string `json:"jwt"`
-	} `json:"proof"`
 }
 
 func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
@@ -323,10 +331,9 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		delete(d.tokens, token)
 		known = false
 	}
-	var cNonce, subject, jkt string
+	var subject, jkt string
 	var withStatus bool
 	if known {
-		cNonce = offer.cNonce
 		subject = offer.subject
 		jkt = offer.jkt
 		withStatus = offer.withStatus
@@ -352,32 +359,66 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 
 	var req credentialRequest
 	if err := decodeJSONBody(r, &req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_credential_request", "error_description": err.Error()})
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_credential_request", err.Error()))
 		return
 	}
-	proofJWT := req.Proof.JWT
-	if len(req.Proofs.JWT) > 0 {
-		proofJWT = req.Proofs.JWT[0]
-	}
-	if proofJWT == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_proof", "error_description": "a jwt proof is required"})
+	if status, errResp := d.checkRequestedCredential(req); errResp != nil {
+		writeJSON(w, status, errResp)
 		return
 	}
-
-	holderKey, err := verifyProofJWT(proofJWT, cNonce, d.nonceIssued)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_proof", "error_description": err.Error()})
+	if len(req.Proofs.JWT) == 0 {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_proof", "proofs.jwt is required"))
 		return
 	}
 
-	credential, err := d.signTicket(holderKey, subject, withStatus)
+	holderKey, err := d.verifyProofJWT(req.Proofs.JWT[0])
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "credential_request_denied", "error_description": err.Error()})
+		writeJSON(w, http.StatusBadRequest, oauthError(err.code, err.description))
+		return
+	}
+
+	credential, signErr := d.signTicket(holderKey, subject, withStatus)
+	if signErr != nil {
+		// Not a §8.3.1.2 error: those describe what is wrong with the request
+		// and are answered with 400, and credential_request_denied in particular
+		// tells the wallet "the Credential cannot be issued", so it stops asking.
+		// A signing failure here is this issuer being broken, which the next
+		// attempt may well survive.
+		writeJSON(w, http.StatusInternalServerError, oauthError("server_error", signErr.Error()))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"credentials": []map[string]any{{"credential": credential}},
 	})
+}
+
+// checkRequestedCredential holds the request to what §8.2 says may name the
+// credential: credential_identifier is "REQUIRED when an Authorization Details
+// of type openid_credential was returned from the Token Response. It MUST NOT
+// be used otherwise [...] When this parameter is used, the
+// credential_configuration_id MUST NOT be present", and
+// credential_configuration_id is "REQUIRED if a credential_identifiers
+// parameter was not returned from the Token Response".
+//
+// This issuer returns no authorization_details, so the configuration id is the
+// only way to ask it for anything, and it knows exactly one configuration. The
+// error codes are those §8.3.1.2 defines for the case.
+func (d *DemoRP) checkRequestedCredential(req credentialRequest) (int, map[string]string) {
+	switch {
+	case req.CredentialIdentifier != "" && req.CredentialConfigurationID != "":
+		return http.StatusBadRequest, oauthError("invalid_credential_request",
+			"credential_identifier and credential_configuration_id must not both be present")
+	case req.CredentialIdentifier != "":
+		return http.StatusBadRequest, oauthError("unknown_credential_identifier",
+			"this issuer returns no authorization_details, so no credential identifier is defined")
+	case req.CredentialConfigurationID == "":
+		return http.StatusBadRequest, oauthError("invalid_credential_request",
+			"credential_configuration_id is required")
+	case req.CredentialConfigurationID != ticketConfigurationID:
+		return http.StatusBadRequest, oauthError("unknown_credential_configuration",
+			fmt.Sprintf("this issuer only offers the %s configuration", ticketConfigurationID))
+	}
+	return 0, nil
 }
 
 // handleNonce is the Nonce Endpoint of OpenID4VCI 1.0 §7. A wallet posts here
@@ -401,10 +442,8 @@ func (d *DemoRP) handleNonce(w http.ResponseWriter, r *http.Request) {
 
 	// A challenge that a cache could hand to somebody else is not one.
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{
-		"c_nonce":            nonce,
-		"c_nonce_expires_in": int(entryTTL.Seconds()),
-	})
+	// c_nonce alone: §7.2 defines it as the one parameter of a Nonce Response.
+	writeJSON(w, http.StatusOK, map[string]any{"c_nonce": nonce})
 }
 
 // nonceIssued reports whether the nonce came from the Nonce Endpoint and has
@@ -428,38 +467,161 @@ func (d *DemoRP) nonceIssued(nonce string) bool {
 	return true
 }
 
-// verifyProofJWT validates an openid4vci-proof+jwt: the signature must
-// verify with the embedded holder JWK, and the nonce must be one this issuer
-// handed out.
+// proofError is a rejected key proof, carrying the §8.3.1.2 error code that
+// tells the wallet what to do about it. The distinction matters: invalid_nonce
+// asks for a fresh challenge and another attempt, invalid_proof does not.
+type proofError struct {
+	code        string
+	description string
+}
+
+func (e *proofError) Error() string { return e.code + ": " + e.description }
+
+func invalidProof(format string, args ...any) *proofError {
+	return &proofError{code: "invalid_proof", description: fmt.Sprintf(format, args...)}
+}
+
+// proofClockSkew is the window a key proof's iat may fall in. Appendix F.4
+// requires "the creation time of the JWT [...] is within an acceptable window
+// (see Section 13.8)" without naming one, so this is the round trip plus the
+// clock difference between two machines that are trying.
+const proofClockSkew = 5 * time.Minute
+
+// verifyProofJWT validates a jwt key proof against Appendix F.4, which requires
+// the issuer to ensure "all required claims for that proof type are contained
+// as defined in Appendix F, the key proof is explicitly typed using header
+// parameters as defined for that proof type, the header parameter indicates a
+// registered asymmetric digital signature algorithm [...] the signature on the
+// key proof verifies with the public key contained in the header parameter,
+// [...] if the server has a Nonce Endpoint, the nonce in the key proof matches
+// the server-provided c_nonce value, the creation time of the JWT [...] is
+// within an acceptable window".
 //
-// Two nonces are accepted. cNonce is the one returned with the access token,
-// which the drafts specified and older wallets still use. isIssued covers the
-// Nonce Endpoint of OpenID4VCI 1.0, which is where a wallet built to the
-// final specification gets its challenge.
-func verifyProofJWT(raw, cNonce string, isIssued func(string) bool) (*ecdsa.PublicKey, error) {
+// The audience check is what stops a proof from travelling: Appendix F.1 makes
+// aud "REQUIRED (string). The value of this claim MUST be the Credential Issuer
+// Identifier", and an issuer that does not check it accepts a proof the holder
+// minted for somebody else.
+func (d *DemoRP) verifyProofJWT(raw string) (*ecdsa.PublicKey, *proofError) {
 	proof, err := parseCompactJWT(raw)
 	if err != nil {
-		return nil, fmt.Errorf("parsing proof JWT: %w", err)
+		return nil, invalidProof("parsing proof JWT: %v", err)
 	}
-	jwk, ok := proof.header["jwk"].(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("proof JWT header has no jwk")
+	if typ, _ := proof.header["typ"].(string); typ != "openid4vci-proof+jwt" {
+		return nil, invalidProof("proof JWT typ is %q, want openid4vci-proof+jwt", typ)
 	}
-	holderKey, err := holderKeyFromJWK(jwk)
-	if err != nil {
-		return nil, fmt.Errorf("parsing proof jwk: %w", err)
+	if alg, _ := proof.header["alg"].(string); alg != "ES256" {
+		return nil, invalidProof("proof JWT alg is %q, and this issuer advertises ES256 only", alg)
+	}
+
+	holderKey, keyErr := proofKeyMaterial(proof.header)
+	if keyErr != nil {
+		return nil, keyErr
 	}
 	if !verifyES256(holderKey, proof.signingInput, proof.signature) {
-		return nil, fmt.Errorf("proof JWT signature does not verify with the embedded jwk")
+		return nil, invalidProof("proof JWT signature does not verify with the key in its header")
 	}
+
+	if aud, _ := proof.payload["aud"].(string); aud != d.issuerID() {
+		return nil, invalidProof("proof JWT aud is %q, want the credential issuer identifier %q", aud, d.issuerID())
+	}
+	iat, ok := proof.payload["iat"].(float64)
+	if !ok {
+		return nil, invalidProof("proof JWT has no numeric iat")
+	}
+	if age := time.Since(time.Unix(int64(iat), 0)); age > proofClockSkew || age < -proofClockSkew {
+		return nil, invalidProof("proof JWT iat is %s away from now, outside the %s window this issuer accepts", age.Round(time.Second), proofClockSkew)
+	}
+
+	// This issuer has a Nonce Endpoint, so that endpoint is the only source of a
+	// valid challenge: §8.2 says "The c_nonce value is retrieved from the Nonce
+	// Endpoint as defined in Section 7".
 	nonce, _ := proof.payload["nonce"].(string)
-	if nonce != cNonce && !(isIssued != nil && isIssued(nonce)) {
-		if nonce == "" {
-			return nil, fmt.Errorf("proof JWT carries no nonce: request one from the nonce endpoint")
-		}
-		return nil, fmt.Errorf("proof JWT nonce is not one this issuer handed out")
+	if nonce == "" {
+		// §8.3.1.2 puts a missing challenge under invalid_proof: "(3) if at
+		// least one of the key proofs does not contain a c_nonce value".
+		return nil, invalidProof("proof JWT carries no nonce: request one from the nonce endpoint")
+	}
+	if !d.nonceIssued(nonce) {
+		// §8.3.1.2 invalid_nonce: "at least one of the key proofs contains an
+		// invalid c_nonce value. The wallet should retrieve a new c_nonce value
+		// (refer to Section 7)." Answering invalid_proof instead tells a
+		// conformant wallet the request is beyond saving, so it never retries.
+		return nil, &proofError{code: "invalid_nonce", description: "proof JWT nonce is not one this issuer handed out"}
 	}
 	return holderKey, nil
+}
+
+// proofKeyMaterial reads the key a proof is bound to. Appendix F.1 offers three
+// header parameters and allows exactly one: jwk "MUST NOT be present if kid or
+// x5c is present", and kid and x5c say the same of the others.
+//
+// kid names a key this issuer would have to look up somewhere (Appendix F.1
+// points at a DID URL), and a demo issuer has nowhere to look, so it is refused
+// with a reason rather than treated as a malformed proof.
+func proofKeyMaterial(header map[string]any) (*ecdsa.PublicKey, *proofError) {
+	jwk, hasJWK := header["jwk"].(map[string]any)
+	x5c, hasX5C := header["x5c"]
+	kid, hasKID := header["kid"].(string)
+	if hasKID && kid == "" {
+		hasKID = false
+	}
+
+	present := 0
+	for _, found := range []bool{hasJWK, hasX5C, hasKID} {
+		if found {
+			present++
+		}
+	}
+	if present == 0 {
+		return nil, invalidProof("proof JWT header carries none of jwk, x5c or kid")
+	}
+	if present > 1 {
+		return nil, invalidProof("proof JWT header carries more than one of jwk, x5c and kid")
+	}
+
+	switch {
+	case hasJWK:
+		key, err := holderKeyFromJWK(jwk)
+		if err != nil {
+			return nil, invalidProof("parsing proof jwk: %v", err)
+		}
+		return key, nil
+	case hasX5C:
+		key, err := proofKeyFromX5C(x5c)
+		if err != nil {
+			return nil, invalidProof("%v", err)
+		}
+		return key, nil
+	default:
+		return nil, invalidProof("proof JWT identifies its key by kid, which this issuer cannot resolve: send jwk or x5c")
+	}
+}
+
+// proofKeyFromX5C takes the key out of the first certificate of an x5c header,
+// which Appendix F.1 defines as "at least one certificate where the first
+// certificate contains the key that the Credential is to be bound to".
+func proofKeyFromX5C(raw any) (*ecdsa.PublicKey, error) {
+	entries, ok := raw.([]any)
+	if !ok || len(entries) == 0 {
+		return nil, fmt.Errorf("proof JWT x5c is not a non-empty array")
+	}
+	encoded, ok := entries[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("proof JWT x5c leaf is not a string")
+	}
+	der, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("decoding proof JWT x5c leaf: %w", err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, fmt.Errorf("parsing proof JWT x5c leaf: %w", err)
+	}
+	key, ok := cert.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("proof JWT x5c leaf does not carry an EC key")
+	}
+	return key, nil
 }
 
 // statusListURI is the status list a ticket issued with a status reference

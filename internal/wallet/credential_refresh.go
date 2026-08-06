@@ -63,19 +63,64 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if accessToken == "" {
 		return nil, fmt.Errorf("the token response carried no access_token")
 	}
-	cNonce, _ := tokenResp["c_nonce"].(string)
 	authScheme := accessTokenScheme(tokenResp, renewal.UseDPoP)
+
+	// A renewal is an ordinary credential request, so it needs what every
+	// credential request needs: the Nonce Endpoint the challenge comes from
+	// (§8.2: "The c_nonce value is retrieved from the Nonce Endpoint as defined
+	// in Section 7"), and the encryption the issuer requires. Both live in the
+	// Credential Issuer Metadata, which is read again from the Credential Issuer
+	// Identifier the credential was stored with, because §12.2.2 makes the
+	// identifier the address of that document. A renewal that skipped this sent
+	// a proof with no nonce and was refused by every 1.0 issuer.
+	metadata, metadataErr := fetchIssuerMetadata(renewal.Issuer)
+	if metadataErr != nil {
+		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
+	}
+
+	cNonce := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.ValidationMode, metadata, w.HolderKey)
+	if err != nil {
+		return nil, err
+	}
 
 	// The holder key alone: a renewal replaces one credential, so there is no
 	// batch to match back to several ephemeral keys.
 	proofKeys := []*ecdsa.PrivateKey{w.HolderKey}
-	proofJWTs, err := createProofJWTs(proofKeys, renewal.Issuer, cNonce, nil)
+
+	// §8.2 gives the two ways to name what is being requested and lets neither
+	// stand in for the other: credential_identifier is "REQUIRED when an
+	// Authorization Details of type openid_credential was returned from the
+	// Token Response. It MUST NOT be used otherwise", and
+	// credential_configuration_id is "REQUIRED if a credential_identifiers
+	// parameter was not returned from the Token Response [...] It MUST NOT be
+	// used otherwise." The refresh token response is the one that decides here.
+	credentialIdentifier := resolveCredentialIdentifier(tokenResp, nil)
+	credentialConfigurationID := ""
+	if credentialIdentifier == "" {
+		credentialConfigurationID = renewal.ConfigurationID
+	}
+
+	attempt := credentialRequestAttempt{
+		metadata:                  metadata,
+		endpoint:                  renewal.CredentialEndpoint,
+		issuer:                    renewal.Issuer,
+		configID:                  renewal.ConfigurationID,
+		accessToken:               accessToken,
+		authScheme:                authScheme,
+		credentialIdentifier:      credentialIdentifier,
+		credentialConfigurationID: credentialConfigurationID,
+		responseEncryption:        responseEncryption,
+		dpopKey:                   dpopKey,
+		proofKeys:                 proofKeys,
+		nonce:                     &nonce,
+	}
+	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {
 		return nil, fmt.Errorf("building the proof: %w", err)
 	}
 
-	credResp, err := requestCredentialWithDPoP(w.ValidationMode, nil, renewal.CredentialEndpoint, accessToken, authScheme,
-		proofJWTs, "", renewal.ConfigurationID, nil, dpopKey, w.HolderKey, &nonce)
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting the credential: %w", err)
 	}

@@ -17,6 +17,7 @@ package wallet
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -50,6 +51,15 @@ type mockIssuerOpts struct {
 	oneShotOfferURI bool
 	// onOfferFetch is called whenever the credential_offer_uri endpoint is dereferenced.
 	onOfferFetch func()
+	// inspectMetadataRequest sees the request the wallet makes for the issuer
+	// metadata, so a test can look at the headers it sends.
+	inspectMetadataRequest func(*testing.T, *http.Request)
+	// inspectNonceRequest sees every request the wallet makes to the Nonce
+	// Endpoint.
+	inspectNonceRequest func(*testing.T, *http.Request)
+	// rejectFirstNonce answers the first credential request with the
+	// invalid_nonce error of §8.3.1.2, whatever challenge it carried.
+	rejectFirstNonce bool
 }
 
 func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Server, string) {
@@ -59,7 +69,7 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 
 	credResp := opts.credentialResponse
 	if credResp == nil {
-		credResp = map[string]any{"credential": credRaw}
+		credResp = map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}}
 	}
 
 	configFormat := opts.credentialConfigFormat
@@ -70,11 +80,16 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 	// Use a closure-based handler to capture serverURL dynamically.
 	var serverURL string
 	var offerFetches int
+	var credentialRequests int
+	var nonces int
 	var offerMu sync.Mutex
 
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			if opts.inspectMetadataRequest != nil {
+				opts.inspectMetadataRequest(t, r)
+			}
 			meta := map[string]any{
 				"credential_issuer":   serverURL,
 				"credential_endpoint": serverURL + "/credential",
@@ -86,12 +101,16 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 					"test-config": map[string]any{
 						"format": configFormat,
 						"vct":    "urn:test:credential",
-						"display": []any{
-							map[string]any{"name": "Test Credential", "description": "A credential for tests"},
-						},
-						"claims": []any{
-							map[string]any{"path": []any{"given_name"}},
-							map[string]any{"path": []any{"address", "locality"}},
+						// §12.2.4 keeps display and claims inside
+						// credential_metadata.
+						"credential_metadata": map[string]any{
+							"display": []any{
+								map[string]any{"name": "Test Credential", "description": "A credential for tests"},
+							},
+							"claims": []any{
+								map[string]any{"path": []any{"given_name"}},
+								map[string]any{"path": []any{"address", "locality"}},
+							},
 						},
 					},
 				},
@@ -124,8 +143,15 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 			json.NewEncoder(rw).Encode(resp)
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/nonce"):
+			if opts.inspectNonceRequest != nil {
+				opts.inspectNonceRequest(t, r)
+			}
+			offerMu.Lock()
+			nonces++
+			current := nonces
+			offerMu.Unlock()
 			rw.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(rw).Encode(map[string]any{"c_nonce": "nonce-from-endpoint"})
+			json.NewEncoder(rw).Encode(map[string]any{"c_nonce": fmt.Sprintf("nonce-from-endpoint-%d", current)})
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
 			auth := r.Header.Get("Authorization")
@@ -134,6 +160,10 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 				json.NewEncoder(rw).Encode(map[string]string{"error": "invalid_token"})
 				return
 			}
+			offerMu.Lock()
+			credentialRequests++
+			attempt := credentialRequests
+			offerMu.Unlock()
 			if opts.inspectCredentialRequest != nil {
 				body, _ := io.ReadAll(r.Body)
 				var reqBody map[string]any
@@ -143,6 +173,14 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 				opts.inspectCredentialRequest(t, reqBody)
 			}
 			rw.Header().Set("Content-Type", "application/json")
+			if opts.rejectFirstNonce && attempt == 1 {
+				rw.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(rw).Encode(map[string]any{
+					"error":             "invalid_nonce",
+					"error_description": "the challenge in the key proof is stale",
+				})
+				return
+			}
 			json.NewEncoder(rw).Encode(credResp)
 
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/credential-offer"):
@@ -522,7 +560,8 @@ func TestProcessCredentialOffer_NonceFallback(t *testing.T) {
 	}
 }
 
-func TestProcessCredentialOffer_Draft14CredentialsArray(t *testing.T) {
+// The credentials array of objects is the one shape §8.3 defines.
+func TestProcessCredentialOffer_CredentialsArray(t *testing.T) {
 	w := generateTestWallet(t)
 	credRaw := generateTestCredential(t, w)
 
@@ -542,7 +581,7 @@ func TestProcessCredentialOffer_Draft14CredentialsArray(t *testing.T) {
 
 	result, err := w.ProcessCredentialOffer(offerURI)
 	if err != nil {
-		t.Fatalf("ProcessCredentialOffer (draft 14): %v", err)
+		t.Fatalf("ProcessCredentialOffer: %v", err)
 	}
 
 	if result.CredentialID == "" {
@@ -685,7 +724,7 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/credential":
 			rw.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}
@@ -798,7 +837,7 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/credential":
 			rw.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}
@@ -1096,7 +1135,7 @@ func TestProcessCredentialOffer_TxCodeSentInTokenRequest(t *testing.T) {
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
 			rw.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
 		default:
 			rw.WriteHeader(http.StatusNotFound)
@@ -1193,12 +1232,15 @@ func TestProcessCredentialOffer_NoTxCodeWhenNotSet(t *testing.T) {
 	}
 }
 
-func TestProcessCredentialOffer_Draft14RawStringArray(t *testing.T) {
+// §8.3: "The elements of the array MUST be objects." An array of bare strings
+// is a draft shape, and a credential taken out of one never passes through the
+// checks that read the object around it.
+func TestProcessCredentialOffer_RejectsAnArrayOfRawCredentialStrings(t *testing.T) {
 	w := generateTestWallet(t)
 	credRaw := generateTestCredential(t, w)
 
 	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
-		tokenCNonce: "test-c-nonce",
+		nonceEndpoint: true,
 		credentialResponse: map[string]any{
 			"credentials": []any{credRaw},
 		},
@@ -1209,13 +1251,28 @@ func TestProcessCredentialOffer_Draft14RawStringArray(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	result, err := w.ProcessCredentialOffer(offerURI)
-	if err != nil {
-		t.Fatalf("ProcessCredentialOffer (draft 14 raw strings): %v", err)
+	if _, err := w.ProcessCredentialOffer(offerURI); err == nil {
+		t.Fatal("a credentials array of bare strings was accepted")
 	}
+}
 
-	if result.CredentialID == "" {
-		t.Error("expected non-empty credential ID")
+// §8.3 has no top-level credential member either.
+func TestProcessCredentialOffer_RejectsATopLevelCredentialString(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		nonceEndpoint:      true,
+		credentialResponse: map[string]any{"credential": credRaw},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, err := w.ProcessCredentialOffer(offerURI); err == nil {
+		t.Fatal("a top-level credential string was accepted")
 	}
 }
 
@@ -1258,7 +1315,7 @@ func TestProcessCredentialOffer_VerifiesViaIssuerMetadata(t *testing.T) {
 
 	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
 		tokenCNonce:        "test-c-nonce",
-		credentialResponse: map[string]any{"credential": credRaw},
+		credentialResponse: map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}},
 	})
 	defer srv.Close()
 
@@ -1430,5 +1487,191 @@ func TestIssuanceConsentSurvivesMissingIssuerMetadata(t *testing.T) {
 	}
 	if !details.TxCode || details.TxCodeHint != "6 numeric characters" {
 		t.Errorf("tx_code requirement not surfaced: %+v", details)
+	}
+}
+
+// proofNonceOf reads the nonce claim out of the first key proof of a credential
+// request body.
+func proofNonceOf(t *testing.T, reqBody map[string]any) string {
+	t.Helper()
+	proofs, _ := reqBody["proofs"].(map[string]any)
+	jwts, _ := proofs["jwt"].([]any)
+	if len(jwts) == 0 {
+		t.Fatalf("credential request carries no key proof: %v", reqBody)
+	}
+	compact, _ := jwts[0].(string)
+	parts := strings.Split(compact, ".")
+	if len(parts) != 3 {
+		t.Fatalf("key proof is not a compact JWT: %q", compact)
+	}
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decoding key proof payload: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		t.Fatalf("parsing key proof payload: %v", err)
+	}
+	nonce, _ := payload["nonce"].(string)
+	return nonce
+}
+
+// §8.3.1.2 on invalid_nonce: "at least one of the key proofs contains an
+// invalid c_nonce value. The wallet should retrieve a new c_nonce value (refer
+// to Section 7)." Treating it as terminal loses a credential the issuer was
+// willing to hand over for the cost of one more request.
+func TestProcessCredentialOffer_RetriesOnInvalidNonce(t *testing.T) {
+	w := generateTestWallet(t)
+
+	var proofNonces []string
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		nonceEndpoint:    true,
+		rejectFirstNonce: true,
+		inspectCredentialRequest: func(t *testing.T, reqBody map[string]any) {
+			proofNonces = append(proofNonces, proofNonceOf(t, reqBody))
+		},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Error("no credential was imported after the retry")
+	}
+	if len(proofNonces) != 2 {
+		t.Fatalf("the issuer saw %d credential requests, want 2: %v", len(proofNonces), proofNonces)
+	}
+	if proofNonces[0] == proofNonces[1] {
+		t.Errorf("the retry reused the rejected challenge %q", proofNonces[0])
+	}
+	if proofNonces[1] != "nonce-from-endpoint-2" {
+		t.Errorf("retry challenge = %q, want the second one from the Nonce Endpoint", proofNonces[1])
+	}
+}
+
+// §7.1: "The Nonce Endpoint is not a protected resource, meaning the Wallet
+// does not need to supply an access token to access it." Presenting one anyway
+// hands the access token to an endpoint that has no business seeing it.
+func TestProcessCredentialOffer_NonceRequestIsUnauthenticated(t *testing.T) {
+	w := generateTestWallet(t)
+
+	var authorization, dpop string
+	var nonceRequests int
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		nonceEndpoint: true,
+		inspectNonceRequest: func(t *testing.T, r *http.Request) {
+			nonceRequests++
+			authorization = r.Header.Get("Authorization")
+			dpop = r.Header.Get("DPoP")
+		},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, err := w.ProcessCredentialOffer(offerURI); err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+	if nonceRequests == 0 {
+		t.Fatal("the wallet never asked the Nonce Endpoint")
+	}
+	if authorization != "" {
+		t.Errorf("the nonce request carried Authorization %q", authorization)
+	}
+	if dpop != "" {
+		t.Errorf("the nonce request carried a DPoP proof %q", dpop)
+	}
+}
+
+// §12.2.2 gives the metadata two media types, application/json and
+// application/jwt. application/openidvci-issuer-metadata+jwt is not one of
+// them: that string is the typ header value of the signed form (§12.2.3), and
+// an issuer negotiating on it has nothing to match.
+func TestProcessCredentialOffer_MetadataAcceptHeader(t *testing.T) {
+	w := generateTestWallet(t)
+
+	accept := ""
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		nonceEndpoint: true,
+		inspectMetadataRequest: func(t *testing.T, r *http.Request) {
+			accept = r.Header.Get("Accept")
+		},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, err := w.ProcessCredentialOffer(offerURI); err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+	if !strings.Contains(accept, "application/json") {
+		t.Errorf("Accept = %q, want it to include application/json", accept)
+	}
+	if !strings.Contains(accept, "application/jwt") {
+		t.Errorf("Accept = %q, want it to include application/jwt", accept)
+	}
+	if strings.Contains(accept, "openidvci-issuer-metadata+jwt") {
+		t.Errorf("Accept = %q, which names a media type that does not exist", accept)
+	}
+}
+
+// §8.2 leaves one source for the challenge: "The c_nonce value is retrieved
+// from the Nonce Endpoint as defined in Section 7." An issuer that puts one in
+// the token response instead is pre-1.0, and strict mode is where the wallet
+// refuses to paper over that. Debug mode completes the flow and says so.
+func TestProcessCredentialOffer_TokenResponseCNonceByValidationMode(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mode      ValidationMode
+		wantNonce string
+	}{
+		{"strict ignores it", ValidationModeStrict, ""},
+		{"debug uses it", ValidationModeDebug, "test-c-nonce"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			w.ValidationMode = tc.mode
+
+			seen := ""
+			srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+				tokenCNonce: "test-c-nonce",
+				inspectCredentialRequest: func(t *testing.T, reqBody map[string]any) {
+					seen = proofNonceOf(t, reqBody)
+				},
+			})
+			defer srv.Close()
+
+			oldClient := httpClient
+			httpClient = srv.Client()
+			defer func() { httpClient = oldClient }()
+
+			if _, err := w.ProcessCredentialOffer(offerURI); err != nil {
+				t.Fatalf("ProcessCredentialOffer: %v", err)
+			}
+			if seen != tc.wantNonce {
+				t.Errorf("proof nonce = %q, want %q", seen, tc.wantNonce)
+			}
+
+			// Either way the wallet says the issuer is behind the specification.
+			found := false
+			for _, entry := range w.GetLog() {
+				if strings.Contains(entry.Detail, "c_nonce") && strings.Contains(entry.Detail, "token response") {
+					found = true
+				}
+			}
+			if !found {
+				t.Error("the activity log does not name the issuer as pre-1.0")
+			}
+		})
 	}
 }

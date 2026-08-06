@@ -161,11 +161,18 @@ func describeConfiguration(metadata map[string]any, id string) OfferedCredential
 	out.Format, _ = config["format"].(string)
 	out.VCT, _ = config["vct"].(string)
 	out.DocType, _ = config["doctype"].(string)
-	if entry, ok := firstDisplayEntry(config["display"]); ok {
+	// What the credential is called and which claims it carries sit one level
+	// down. OID4VCI 1.0 §12.2.4 puts them under credential_metadata: "Object
+	// containing information relevant to the usage and display of issued
+	// Credentials", holding the display array and the claims array. Reading them
+	// off the configuration itself finds nothing at a conformant issuer, and the
+	// consent dialog then names no credential and lists no claims.
+	credentialMetadata, _ := config["credential_metadata"].(map[string]any)
+	if entry, ok := firstDisplayEntry(credentialMetadata["display"]); ok {
 		out.Name, _ = entry["name"].(string)
 		out.Description, _ = entry["description"].(string)
 	}
-	out.Claims = configurationClaimNames(config["claims"])
+	out.Claims = configurationClaimNames(credentialMetadata["claims"])
 	return out
 }
 

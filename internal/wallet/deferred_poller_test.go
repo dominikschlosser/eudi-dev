@@ -49,14 +49,18 @@ func deferredCollectionIssuer(t *testing.T, credRaw string, pendingRounds, inter
 			return
 		}
 		if current <= pendingRounds {
-			rw.WriteHeader(http.StatusBadRequest)
+			// §9.2: "If the Credential Issuer still requires more time, the
+			// Deferred Credential Response MUST use the interval and
+			// transaction_id parameters [...] and it MUST respond with the HTTP
+			// status code 202".
+			rw.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(rw).Encode(map[string]any{
-				"error":    "issuance_pending",
-				"interval": intervalSeconds,
+				"transaction_id": "test-transaction",
+				"interval":       intervalSeconds,
 			})
 			return
 		}
-		json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+		json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 	}))
 
 	return srv, func() int {
@@ -493,7 +497,7 @@ func TestDeferredCollectionRefreshesAnExpiredToken(t *testing.T) {
 				return
 			}
 			rw.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}

@@ -115,7 +115,10 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	// A missing authorization server document is not fatal here: the
 	// endpoints fall back to the issuer's own metadata below, so the error is
 	// carried rather than returned.
-	authServer := getAuthorizationServer(metadata, offer.CredentialIssuer)
+	authServer, err := selectAuthorizationServer(metadata, offer)
+	if err != nil {
+		return nil, err
+	}
 	oauthMeta, oauthErr := w.fetchLoggedMetadata(metadataFetch{
 		event:         "oauth_metadata",
 		fetchLabel:    "OAuth metadata",
@@ -209,18 +212,10 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	})
 
 	accessToken, _ := tokenResp["access_token"].(string)
-	cNonce, _ := tokenResp["c_nonce"].(string)
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
-	// The Nonce Endpoint is authoritative wherever an issuer advertises one:
-	// it is the source OpenID4VCI 1.0 defines, and an issuer naming it is
-	// naming what it will accept. A c_nonce in the token response belongs to
-	// the earlier drafts and may already be stale, so it serves only as the
-	// fallback for issuers that offer no endpoint.
-	if endpointNonce := fetchNonceWithDPoP(metadata, accessToken, authScheme, dpopKey, &nonces.resource); endpointNonce != "" {
-		cNonce = endpointNonce
-	}
+	cNonce := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
 
 	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
 	log.Printf("[VCI] Credential endpoint: %s", credentialEndpoint)
@@ -239,24 +234,16 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
-	// A key attestation covers the nonce, so it is rebuilt wherever the proofs
-	// are rebuilt below.
-	proofHeader, err := createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
-	if err != nil {
-		return nil, fmt.Errorf("building credential proof header: %w", err)
-	}
-	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
-	if err != nil {
-		return nil, fmt.Errorf("creating proof JWT: %w", err)
-	}
-	log.Printf("[VCI] Proof JWT: %s", proofJWTs[0])
 
 	// Request credential
 	credFormat := ""
 	if configID != "" {
 		credFormat = resolveCredentialFormat(metadata, configID)
 	}
-	responseEncryption := buildCredentialResponseEncryptionRequest(metadata, w.HolderKey)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.ValidationMode, metadata, w.HolderKey)
+	if err != nil {
+		return nil, err
+	}
 
 	// Extract credential_identifiers from authorization_details in token response
 	credentialIdentifier := resolveCredentialIdentifier(tokenResp, offer.CredentialConfigurationIDs)
@@ -265,109 +252,27 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
 	}
 
-	// If no c_nonce in token response, try a nonce endpoint or send without
-	// proof first to get a c_nonce from the error response.
-	if cNonce == "" {
-		cNonce = fetchNonceWithDPoP(metadata, accessToken, authScheme, dpopKey, &nonces.resource)
-		if cNonce != "" {
-			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
-			if err != nil {
-				return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
-			}
-			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
-			if err != nil {
-				return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
-			}
-			log.Printf("[VCI] Recreated proof JWT with nonce from nonce endpoint")
-		}
+	attempt := credentialRequestAttempt{
+		metadata:                  metadata,
+		endpoint:                  credentialEndpoint,
+		issuer:                    offer.CredentialIssuer,
+		configID:                  configID,
+		accessToken:               accessToken,
+		authScheme:                authScheme,
+		credentialIdentifier:      credentialIdentifier,
+		credentialConfigurationID: credentialConfigurationID,
+		responseEncryption:        responseEncryption,
+		dpopKey:                   dpopKey,
+		proofKeys:                 proofKeys,
+		nonce:                     &nonces.resource,
 	}
-
-	if cNonce == "" {
-		// Try credential request without proof to get c_nonce from error response
-		log.Printf("[VCI] No c_nonce available, attempting credential request to obtain one")
-		w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
-		nonceResp, nonceErr := requestCredentialWithDPoP(
-			w.ValidationMode,
-			metadata,
-			credentialEndpoint,
-			accessToken,
-			authScheme,
-			proofJWTs,
-			credentialIdentifier,
-			credentialConfigurationID,
-			responseEncryption,
-			dpopKey,
-			w.HolderKey,
-			&nonces.resource,
-		)
-		w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), nonceErr == nil, credentialResponseLogDetails(credentialEndpoint, nonceResp, nonceErr))
-		if nonceErr != nil {
-			// Check if the error response contained a c_nonce
-			if n, ok := nonceResp["c_nonce"].(string); ok && n != "" {
-				cNonce = n
-				log.Printf("[VCI] Got c_nonce from error response: %s", cNonce)
-				// Recreate proofs with the real nonce
-				proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
-				if err != nil {
-					return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
-				}
-				proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
-				if err != nil {
-					return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
-				}
-			} else {
-				return nil, fmt.Errorf("requesting credential: %w", nonceErr)
-			}
-		} else {
-			// First request succeeded without nonce. Use the response directly
-			credential, err := selectHolderBoundCredential(nonceResp, proofKeys)
-			if err != nil {
-				return nil, err
-			}
-			imported, err := w.ImportCredential(credential)
-			if err != nil {
-				return nil, fmt.Errorf("importing received credential: %w", err)
-			}
-			w.logCredentialImport(imported, credential, offer.CredentialIssuer)
-			w.rememberRenewal(imported.ID, refreshToken, CredentialRenewal{
-				Issuer:             offer.CredentialIssuer,
-				TokenEndpoint:      tokenEndpoint,
-				CredentialEndpoint: credentialEndpoint,
-				ConfigurationID:    configID,
-				UseDPoP:            dpopKey != nil,
-				ClientAuth:         clientAuth,
-			})
-			if credFormat == "" {
-				credFormat = imported.Format
-			}
-			verificationStatus, verificationDetail := verifyImportedJWTMetadataSignature(credential)
-			return &IssuanceResult{
-				CredentialID:       imported.ID,
-				Format:             credFormat,
-				Issuer:             offer.CredentialIssuer,
-				VerificationStatus: verificationStatus,
-				VerificationDetail: verificationDetail,
-				Imported:           imported,
-			}, nil
-		}
+	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
+	if err != nil {
+		return nil, err
 	}
+	log.Printf("[VCI] Proof JWT: %s", proofJWTs[0])
 
-	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
-	credResp, err := requestCredentialWithDPoP(
-		w.ValidationMode,
-		metadata,
-		credentialEndpoint,
-		accessToken,
-		authScheme,
-		proofJWTs,
-		credentialIdentifier,
-		credentialConfigurationID,
-		responseEncryption,
-		dpopKey,
-		w.HolderKey,
-		&nonces.resource,
-	)
-	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), err == nil, credentialResponseLogDetails(credentialEndpoint, credResp, err))
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -514,8 +419,14 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating metadata request: %w", err)
 	}
-	// Some issuers (e.g. Procivis One) reject requests without an Accept header.
-	req.Header.Set("Accept", "application/json, application/openidvci-issuer-metadata+jwt")
+	// OpenID4VCI 1.0 §12.2.2 gives the issuer two forms to answer in: "an
+	// unsigned JSON document using the media type application/json, or a signed
+	// JSON Web Token (JWT) containing the Credential Issuer Metadata in its
+	// payload using the media type application/jwt". Naming both signals that
+	// signed metadata is supported. There is no
+	// application/openidvci-issuer-metadata+jwt media type: that string is the
+	// typ header value of the signed form (§12.2.3).
+	req.Header.Set("Accept", "application/json, application/jwt")
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
@@ -531,7 +442,7 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading metadata: %w", err)
 	}
-	return parseIssuerMetadataResponse(body, resp.Header.Get("Content-Type"))
+	return parseIssuerMetadataResponse(body, resp.Header.Get("Content-Type"), issuer)
 }
 
 func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
@@ -553,29 +464,54 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 	return fmt.Sprintf("%s://%s/.well-known/%s%s", parsed.Scheme, parsed.Host, wellKnownType, path), nil
 }
 
-func parseIssuerMetadataResponse(body []byte, contentType string) (map[string]any, error) {
+// parseIssuerMetadataResponse decodes a Credential Issuer Metadata response in
+// either of the two forms §12.2.2 allows. issuer is the Credential Issuer
+// Identifier the metadata URL was built from, which both the signature check
+// and the identity check below are made against.
+func parseIssuerMetadataResponse(body []byte, contentType, issuer string) (map[string]any, error) {
 	raw := strings.TrimSpace(string(body))
 	if raw == "" {
 		return nil, fmt.Errorf("issuer metadata response was empty")
 	}
 
+	var metadata map[string]any
 	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
-	if strings.Contains(mediaType, "openidvci-issuer-metadata+jwt") || isLikelyCompactJWT(raw) {
+	if mediaType == "application/jwt" || strings.Contains(mediaType, "openidvci-issuer-metadata+jwt") || isLikelyCompactJWT(raw) {
 		token, err := sdjwt.Parse(raw)
 		if err != nil {
 			return nil, fmt.Errorf("parsing signed issuer metadata: %w", err)
 		}
-		if err := verifySignedIssuerMetadata(token); err != nil {
+		if err := verifySignedIssuerMetadata(token, issuer); err != nil {
 			return nil, err
 		}
-		return token.Payload, nil
-	}
-
-	var metadata map[string]any
-	if err := json.Unmarshal(body, &metadata); err != nil {
+		metadata = token.Payload
+	} else if err := json.Unmarshal(body, &metadata); err != nil {
 		return nil, fmt.Errorf("parsing metadata JSON: %w", err)
 	}
+
+	if err := checkCredentialIssuerIdentifier(metadata, issuer); err != nil {
+		return nil, err
+	}
 	return metadata, nil
+}
+
+// checkCredentialIssuerIdentifier holds the metadata to the identifier it was
+// fetched for.
+//
+// OpenID4VCI 1.0 §12.2.4 on credential_issuer: "The value MUST be identical to
+// the Credential Issuer's identifier value into which the well-known URI string
+// was inserted to create the URL used to retrieve the metadata. If these values
+// are not identical (when compared using a simple string comparison with no
+// normalization), the data contained in the response MUST NOT be used."
+func checkCredentialIssuerIdentifier(metadata map[string]any, issuer string) error {
+	declared, _ := metadata["credential_issuer"].(string)
+	if declared == issuer {
+		return nil
+	}
+	if declared == "" {
+		return fmt.Errorf("issuer metadata for %q carries no credential_issuer identifier", issuer)
+	}
+	return fmt.Errorf("issuer metadata declares credential_issuer %q but was fetched for %q, so it cannot be used", declared, issuer)
 }
 
 func isLikelyCompactJWT(raw string) bool {
@@ -603,34 +539,95 @@ func isLikelyCompactJWT(raw string) bool {
 	return true
 }
 
-func verifySignedIssuerMetadata(token *sdjwt.Token) error {
+// issuerMetadataTrustAnchors are the roots a signed Credential Issuer Metadata
+// certificate chain has to end in. nil selects the host's own root store, which
+// is what a wallet with no separately provisioned anchors has to go on. Tests
+// point it at the certificate authority they signed with.
+var issuerMetadataTrustAnchors *x509.CertPool
+
+// signedIssuerMetadataTyp is the typ header value §12.2.3 requires on signed
+// Credential Issuer Metadata. It is a JWT type, not a media type.
+const signedIssuerMetadataTyp = "openidvci-issuer-metadata+jwt"
+
+// verifySignedIssuerMetadata checks signed Credential Issuer Metadata against
+// §12.2.3 before any of it is read.
+//
+// The section requires typ to be openidvci-issuer-metadata+jwt, an alg that is
+// neither none nor a symmetric algorithm, and a sub "matching the Credential
+// Issuer Identifier". It also requires more than a valid signature: "When
+// requesting signed metadata, the Wallet MUST establish trust in the signer of
+// the metadata. Otherwise, the Wallet MUST reject the signed metadata." The
+// mechanism is out of scope of the specification, so this wallet takes the one
+// the header can carry: an x5c chain ending in a trusted root. Metadata signed
+// by a key the wallet cannot place is rejected rather than read, which is what
+// the requirement means: without it, anyone able to answer the request could
+// dictate the endpoints the flow then talks to.
+func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 	if token == nil {
 		return fmt.Errorf("signed issuer metadata token is nil")
 	}
-	x5cRaw, ok := token.Header["x5c"]
-	if !ok {
-		return nil
+	if typ, _ := token.Header["typ"].(string); typ != signedIssuerMetadataTyp {
+		return fmt.Errorf("signed issuer metadata has typ %q, want %q", typ, signedIssuerMetadataTyp)
 	}
-	entries, err := normalizeMetadataX5CEntries(x5cRaw)
+	alg, _ := token.Header["alg"].(string)
+	if alg == "" || strings.EqualFold(alg, "none") || strings.HasPrefix(strings.ToUpper(alg), "HS") {
+		return fmt.Errorf("signed issuer metadata alg %q is not an asymmetric digital signature algorithm", alg)
+	}
+	sub, _ := token.Payload["sub"].(string)
+	if sub != issuer {
+		return fmt.Errorf("signed issuer metadata sub %q does not match the credential issuer identifier %q", sub, issuer)
+	}
+
+	cert, err := signedIssuerMetadataSigner(token)
 	if err != nil {
-		return fmt.Errorf("parsing issuer metadata x5c: %w", err)
-	}
-	if len(entries) == 0 {
-		return nil
-	}
-	der, err := format.DecodeBase64Std(entries[0])
-	if err != nil {
-		return fmt.Errorf("decoding issuer metadata x5c leaf: %w", err)
-	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return fmt.Errorf("parsing issuer metadata x5c leaf: %w", err)
+		return err
 	}
 	result := sdjwt.Verify(token, cert.PublicKey)
 	if result == nil || !result.SignatureValid {
 		return fmt.Errorf("issuer metadata signature is invalid")
 	}
 	return nil
+}
+
+// signedIssuerMetadataSigner returns the leaf certificate of a signed metadata
+// x5c chain, once the chain is known to end in a trusted root.
+func signedIssuerMetadataSigner(token *sdjwt.Token) (*x509.Certificate, error) {
+	x5cRaw, ok := token.Header["x5c"]
+	if !ok {
+		return nil, fmt.Errorf("signed issuer metadata carries no x5c, so its signer cannot be trusted")
+	}
+	entries, err := normalizeMetadataX5CEntries(x5cRaw)
+	if err != nil {
+		return nil, fmt.Errorf("parsing issuer metadata x5c: %w", err)
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("signed issuer metadata x5c is empty, so its signer cannot be trusted")
+	}
+	certs := make([]*x509.Certificate, 0, len(entries))
+	for i, entry := range entries {
+		der, err := format.DecodeBase64Std(entry)
+		if err != nil {
+			return nil, fmt.Errorf("decoding issuer metadata x5c entry %d: %w", i, err)
+		}
+		cert, err := x509.ParseCertificate(der)
+		if err != nil {
+			return nil, fmt.Errorf("parsing issuer metadata x5c entry %d: %w", i, err)
+		}
+		certs = append(certs, cert)
+	}
+
+	intermediates := x509.NewCertPool()
+	for _, cert := range certs[1:] {
+		intermediates.AddCert(cert)
+	}
+	if _, err := certs[0].Verify(x509.VerifyOptions{
+		Roots:         issuerMetadataTrustAnchors,
+		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+	}); err != nil {
+		return nil, fmt.Errorf("signed issuer metadata signer is not trusted: %w", err)
+	}
+	return certs[0], nil
 }
 
 func normalizeMetadataX5CEntries(raw any) ([]string, error) {
@@ -653,13 +650,85 @@ func normalizeMetadataX5CEntries(raw any) ([]string, error) {
 }
 
 func getAuthorizationServer(metadata map[string]any, issuer string) string {
-	authServer := issuer
-	if servers, ok := metadata["authorization_servers"].([]any); ok && len(servers) > 0 {
-		if s, ok := servers[0].(string); ok && s != "" {
-			authServer = s
+	servers := authorizationServersFromMetadata(metadata)
+	if len(servers) == 0 {
+		return issuer
+	}
+	return servers[0]
+}
+
+// authorizationServersFromMetadata lists the authorization_servers entries of
+// the Credential Issuer Metadata. §12.2.4 makes the parameter optional: "If
+// this parameter is omitted, the entity providing the Credential Issuer is also
+// acting as the Authorization Server".
+func authorizationServersFromMetadata(metadata map[string]any) []string {
+	raw, ok := metadata["authorization_servers"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		if s, _ := entry.(string); s != "" {
+			out = append(out, s)
 		}
 	}
-	return authServer
+	return out
+}
+
+// offerAuthorizationServer reads the authorization_server hint the offer's
+// grant may carry. §12.2.4 defines it as "OPTIONAL string that the Wallet can
+// use to identify the Authorization Server to use with this grant type when
+// authorization_servers parameter in the Credential Issuer metadata has
+// multiple entries."
+func offerAuthorizationServer(offer *oid4vc.CredentialOffer) string {
+	if offer == nil {
+		return ""
+	}
+	grants, ok := offer.FullJSON["grants"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, grantType := range []string{"urn:ietf:params:oauth:grant-type:pre-authorized_code", "authorization_code"} {
+		grant, ok := grants[grantType].(map[string]any)
+		if !ok {
+			continue
+		}
+		if server, _ := grant["authorization_server"].(string); server != "" {
+			return server
+		}
+	}
+	return ""
+}
+
+// selectAuthorizationServer picks the authorization server this offer is to be
+// redeemed at.
+//
+// §12.2.4: "When the Wallet is using authorization_server parameter in the
+// Credential Offer as a hint to determine which Authorization Server to use out
+// of multiple, the Wallet MUST NOT proceed with the flow if the
+// authorization_server Credential Offer parameter value does not match any of
+// the entries in the authorization_servers array." A hint that matches nothing
+// is therefore an error rather than something to fall back from: the issuer
+// named a server this metadata does not vouch for.
+func selectAuthorizationServer(metadata map[string]any, offer *oid4vc.CredentialOffer) (string, error) {
+	servers := authorizationServersFromMetadata(metadata)
+	hint := offerAuthorizationServer(offer)
+	issuer := ""
+	if offer != nil {
+		issuer = offer.CredentialIssuer
+	}
+	if hint == "" {
+		if len(servers) == 0 {
+			return issuer, nil
+		}
+		return servers[0], nil
+	}
+	for _, candidate := range servers {
+		if candidate == hint {
+			return hint, nil
+		}
+	}
+	return "", fmt.Errorf("credential offer names authorization server %q, which the issuer metadata of %s does not list", hint, issuer)
 }
 
 func validateAuthorizationServerIssuer(authServer string, oauthMeta map[string]any) error {
@@ -682,13 +751,19 @@ func normalizeIssuerURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
+// getTokenEndpoint resolves the token endpoint of the authorization server.
+//
+// token_endpoint is an authorization server metadata parameter (RFC 8414 §2),
+// and OpenID4VCI 1.0 §12.2.4 defines no such Credential Issuer Metadata
+// parameter, so the authorization server document is what decides. An issuer
+// that publishes one in its own metadata anyway is read only when no
+// authorization server metadata was reachable, which is the case the URL guess
+// below also covers.
 func getTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer string) string {
-	// OID4VCI: token_endpoint may be directly in credential issuer metadata
-	if ep, ok := metadata["token_endpoint"].(string); ok {
+	if ep, ok := oauthMeta["token_endpoint"].(string); ok && ep != "" {
 		return ep
 	}
-
-	if ep, ok := oauthMeta["token_endpoint"].(string); ok {
+	if ep, ok := metadata["token_endpoint"].(string); ok && ep != "" {
 		return ep
 	}
 
@@ -811,25 +886,51 @@ func resolveCredentialIdentifier(tokenResp map[string]any, configIDs []string) s
 	return ""
 }
 
-func buildCredentialResponseEncryptionRequest(metadata map[string]any, holderKey *ecdsa.PrivateKey) map[string]any {
+// buildCredentialResponseEncryptionRequest builds the
+// credential_response_encryption object of §8.2, or nil when the wallet must
+// not ask for an encrypted response.
+//
+// The parameter never travels on its own: §8.2 says "Credential Request
+// encryption MUST be used if the credential_response_encryption parameter is
+// included, to prevent it being substituted by an attacker." An issuer that
+// offers no usable request encryption key therefore gets no encryption request
+// either, and one that requires an encrypted response while offering no way to
+// encrypt the request cannot be satisfied at all.
+func buildCredentialResponseEncryptionRequest(mode ValidationMode, metadata map[string]any, holderKey *ecdsa.PrivateKey) (map[string]any, error) {
 	if holderKey == nil {
-		return nil
+		return nil, nil
 	}
 	raw, ok := metadata["credential_response_encryption"].(map[string]any)
 	if !ok {
-		return nil
+		return nil, nil
 	}
+	required, _ := raw["encryption_required"].(bool)
 
 	alg := firstSupportedString(raw["alg_values_supported"], preferredCredentialResponseEncryptionAlgs)
 	enc := firstSupportedString(raw["enc_values_supported"], preferredCredentialResponseEncryptionEncs)
 	if alg == "" || enc == "" {
-		return nil
+		if required {
+			return nil, fmt.Errorf("issuer requires an encrypted credential response but advertised no alg or enc value the wallet supports")
+		}
+		return nil, nil
+	}
+
+	requestEncryption, err := selectCredentialRequestEncryption(mode, metadata)
+	if err != nil {
+		return nil, err
+	}
+	if requestEncryption == nil {
+		if required {
+			return nil, fmt.Errorf("issuer requires an encrypted credential response but published no usable credential_request_encryption key, and the credential request must be encrypted whenever credential_response_encryption is sent")
+		}
+		log.Printf("[VCI] Not requesting credential response encryption: the credential request itself cannot be encrypted")
+		return nil, nil
 	}
 
 	return map[string]any{
 		"jwk": publicCredentialResponseEncryptionJWK(&holderKey.PublicKey, alg),
 		"enc": enc,
-	}
+	}, nil
 }
 
 func publicCredentialResponseEncryptionJWK(key *ecdsa.PublicKey, alg string) map[string]any {
@@ -975,28 +1076,114 @@ func credentialRequestEncryptionRequired(raw map[string]any) bool {
 	return required
 }
 
-// extractCredential extracts the credential string from a credential response.
-// Supports both the single "credential" field and the "credentials" array format.
-func extractCredential(resp map[string]any) string {
-	// Single credential field (OID4VCI draft 13 and earlier)
-	if c, ok := resp["credential"].(string); ok && c != "" {
-		return c
+// issuanceChallenge obtains the c_nonce the key proofs of this flow are signed
+// over.
+//
+// §8.2 leaves one source: "The c_nonce value is retrieved from the Nonce
+// Endpoint as defined in Section 7." A c_nonce in the token response is a
+// pre-1.0 issuer showing through, and a wallet that reads it signs its proof
+// over a challenge the specification does not define. Strict mode therefore
+// ignores it outright, and debug mode says whose issuer is behind the times
+// before using it, because being able to complete the flow is what the mode is
+// for.
+func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer string, dpopNonce *string) string {
+	if cNonce := fetchNonce(metadata, dpopNonce); cNonce != "" {
+		return cNonce
 	}
-
-	// Credentials array (OID4VCI draft 14+)
-	if creds, ok := resp["credentials"].([]any); ok && len(creds) > 0 {
-		if entry, ok := creds[0].(map[string]any); ok {
-			if c, ok := entry["credential"].(string); ok {
-				return c
-			}
-		}
-		// Array of raw strings
-		if c, ok := creds[0].(string); ok {
-			return c
-		}
+	cNonce, _ := tokenResp["c_nonce"].(string)
+	if cNonce == "" {
+		return ""
 	}
+	if w.ValidationMode == ValidationModeStrict {
+		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OpenID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
+		w.AddLog("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), false)
+		return ""
+	}
+	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define; this issuer is pre-1.0", issuer)
+	w.AddLog("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0. Strict mode refuses it", issuer), false)
+	return cNonce
+}
 
-	return ""
+// credentialRequestAttempt is one credential request in every detail it takes
+// to send it again. §8.3.1.2 answers a stale challenge with invalid_nonce and
+// expects another attempt, and the retry has to reproduce the request down to
+// the proof keys it is bound to.
+type credentialRequestAttempt struct {
+	metadata                  map[string]any
+	endpoint                  string
+	issuer                    string
+	configID                  string
+	accessToken               string
+	authScheme                string
+	credentialIdentifier      string
+	credentialConfigurationID string
+	responseEncryption        map[string]any
+	dpopKey                   *ecdsa.PrivateKey
+	proofKeys                 []*ecdsa.PrivateKey
+	// nonce is the DPoP nonce state of the resource server, not the c_nonce.
+	nonce *string
+}
+
+// buildCredentialProofs signs one key proof per proof key over one challenge. A
+// key attestation covers the challenge too, so the header is rebuilt with them.
+func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string) ([]string, error) {
+	header, err := createCredentialProofHeader(w, a.metadata, a.configID, cNonce, a.proofKeys)
+	if err != nil {
+		return nil, fmt.Errorf("building credential proof header: %w", err)
+	}
+	proofs, err := createProofJWTs(a.proofKeys, a.issuer, cNonce, header)
+	if err != nil {
+		return nil, fmt.Errorf("creating proof JWT: %w", err)
+	}
+	return proofs, nil
+}
+
+// requestCredentialWithNonceRetry sends a credential request and, when the
+// issuer says the challenge was no good, fetches a fresh one and sends it once
+// more.
+//
+// §8.3.1.2 on invalid_nonce: "The proofs parameter in the Credential Request
+// uses an invalid nonce: at least one of the key proofs contains an invalid
+// c_nonce value. The wallet should retrieve a new c_nonce value (refer to
+// Section 7)." One retry: a second rejection of a challenge the issuer just
+// handed out is the issuer disagreeing with itself, and asking again would loop.
+func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, proofJWTs []string) (map[string]any, error) {
+	credResp, err := w.sendCredentialRequest(a, proofJWTs)
+	if err == nil || !isInvalidNonceError(err) {
+		return credResp, err
+	}
+	cNonce := fetchNonce(a.metadata, a.nonce)
+	if cNonce == "" {
+		return nil, err
+	}
+	retryProofs, buildErr := w.buildCredentialProofs(a, cNonce)
+	if buildErr != nil {
+		return nil, buildErr
+	}
+	log.Printf("[VCI] Issuer rejected the proof nonce, retrying once with a fresh nonce from the Nonce Endpoint")
+	return w.sendCredentialRequest(a, retryProofs)
+}
+
+func (w *Wallet) sendCredentialRequest(a credentialRequestAttempt, proofJWTs []string) (map[string]any, error) {
+	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", a.endpoint), true,
+		credentialRequestLogDetails(a.endpoint, a.accessToken, proofJWTs, a.credentialIdentifier, a.credentialConfigurationID, a.responseEncryption))
+	credResp, err := requestCredentialWithDPoP(
+		w.ValidationMode,
+		a.metadata,
+		a.endpoint,
+		a.accessToken,
+		a.authScheme,
+		proofJWTs,
+		a.credentialIdentifier,
+		a.credentialConfigurationID,
+		a.responseEncryption,
+		a.dpopKey,
+		w.HolderKey,
+		a.nonce,
+	)
+	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", a.endpoint), err == nil,
+		credentialResponseLogDetails(a.endpoint, credResp, err))
+	return credResp, err
 }
 
 func parseCredentialResponseBody(body []byte, holderKey *ecdsa.PrivateKey) (map[string]any, error) {

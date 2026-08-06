@@ -151,33 +151,33 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 
 	accessToken, _ := tokenResp["access_token"].(string)
-	cNonce, _ := tokenResp["c_nonce"].(string)
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	if accessToken == "" {
 		return nil, fmt.Errorf("token response missing access_token")
 	}
 	authScheme := accessTokenScheme(tokenResp, true)
 
-	// The Nonce Endpoint is authoritative wherever an issuer advertises one:
-	// it is the source OpenID4VCI 1.0 defines, and an issuer naming it is
-	// naming what it will accept. A c_nonce in the token response belongs to
-	// the earlier drafts and may already be stale, so it serves only as the
-	// fallback for issuers that offer no endpoint.
-	if endpointNonce := fetchNonceWithDPoP(metadata, accessToken, authScheme, w.HolderKey, &nonces.resource); endpointNonce != "" {
-		cNonce = endpointNonce
+	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
+		w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", nonceEndpoint), true, map[string]any{
+			"direction": "outbound",
+			"method":    "POST",
+			"url":       nonceEndpoint,
+			"endpoint":  "nonce",
+		})
+	}
+	cNonce := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
+	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
+		w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", nonceEndpoint), cNonce != "", map[string]any{
+			"direction": "inbound",
+			"url":       nonceEndpoint,
+			"endpoint":  "nonce",
+			"c_nonce":   cNonce,
+		})
 	}
 
 	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
-	}
-	proofHeader, err := createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
-	if err != nil {
-		return nil, fmt.Errorf("building credential proof header: %w", err)
-	}
-	proofJWTs, err := createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
-	if err != nil {
-		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}
 
 	credentialIdentifier := resolveCredentialIdentifier(tokenResp, offer.CredentialConfigurationIDs)
@@ -185,54 +185,31 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
 	}
-	responseEncryption := buildCredentialResponseEncryptionRequest(metadata, w.HolderKey)
-
-	if cNonce == "" {
-		if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
-			w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", nonceEndpoint), true, map[string]any{
-				"direction": "outbound",
-				"method":    "POST",
-				"url":       nonceEndpoint,
-				"endpoint":  "nonce",
-			})
-		}
-		cNonce = fetchNonceWithDPoP(metadata, accessToken, authScheme, w.HolderKey, &nonces.resource)
-		if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
-			w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", nonceEndpoint), cNonce != "", map[string]any{
-				"direction": "inbound",
-				"url":       nonceEndpoint,
-				"endpoint":  "nonce",
-				"c_nonce":   cNonce,
-			})
-		}
-		if cNonce != "" {
-			proofHeader, err = createCredentialProofHeader(w, metadata, configID, cNonce, proofKeys)
-			if err != nil {
-				return nil, fmt.Errorf("building credential proof header with nonce: %w", err)
-			}
-			proofJWTs, err = createProofJWTs(proofKeys, offer.CredentialIssuer, cNonce, proofHeader)
-			if err != nil {
-				return nil, fmt.Errorf("creating proof JWT with nonce: %w", err)
-			}
-		}
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.ValidationMode, metadata, w.HolderKey)
+	if err != nil {
+		return nil, err
 	}
 
-	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", credentialEndpoint), true, credentialRequestLogDetails(credentialEndpoint, accessToken, proofJWTs, credentialIdentifier, credentialConfigurationID, responseEncryption))
-	credResp, err := requestCredentialWithDPoP(
-		w.ValidationMode,
-		metadata,
-		credentialEndpoint,
-		accessToken,
-		authScheme,
-		proofJWTs,
-		credentialIdentifier,
-		credentialConfigurationID,
-		responseEncryption,
-		w.HolderKey,
-		w.HolderKey,
-		&nonces.resource,
-	)
-	w.addProtocolLog("issuance", "credential_response", fmt.Sprintf("Credential response from %s", credentialEndpoint), err == nil, credentialResponseLogDetails(credentialEndpoint, credResp, err))
+	attempt := credentialRequestAttempt{
+		metadata:                  metadata,
+		endpoint:                  credentialEndpoint,
+		issuer:                    offer.CredentialIssuer,
+		configID:                  configID,
+		accessToken:               accessToken,
+		authScheme:                authScheme,
+		credentialIdentifier:      credentialIdentifier,
+		credentialConfigurationID: credentialConfigurationID,
+		responseEncryption:        responseEncryption,
+		dpopKey:                   w.HolderKey,
+		proofKeys:                 proofKeys,
+		nonce:                     &nonces.resource,
+	}
+	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
+	if err != nil {
+		return nil, err
+	}
+
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -797,20 +774,45 @@ func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, end
 	}
 	respBody, _, reqErr := doDPoPRequest("POST", endpoint, contentType, credentialAccept(credentialResponseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
 	out, parseErr := parseCredentialResponseBody(respBody, holderKey)
+	if parseErr == nil {
+		// A Credential Error Response is reported by its code rather than as an
+		// HTTP failure, because the code decides what happens next: §8.3.1.2
+		// asks for another attempt on invalid_nonce and for none at all on
+		// credential_request_denied.
+		if code, _ := out["error"].(string); code != "" {
+			desc, _ := out["error_description"].(string)
+			return out, credentialErrorResponse{code: code, description: desc}
+		}
+	}
 	if reqErr != nil {
-		// The parsed error response is returned alongside the failure: a
-		// credential request refused for a stale proof answers with the
-		// c_nonce to rebuild it with.
 		return out, reqErr
 	}
 	if parseErr != nil {
 		return nil, parseErr
 	}
-	if errMsg, _ := out["error"].(string); errMsg != "" {
-		desc, _ := out["error_description"].(string)
-		return nil, fmt.Errorf("credential error: %s: %s", errMsg, desc)
-	}
 	return out, nil
+}
+
+// credentialErrorResponse is a Credential Error Response as defined in
+// §8.3.1.2. The code is kept apart from the message because the wallet acts on
+// it rather than only reporting it.
+type credentialErrorResponse struct {
+	code        string
+	description string
+}
+
+func (e credentialErrorResponse) Error() string {
+	if e.description == "" {
+		return "credential error: " + e.code
+	}
+	return "credential error: " + e.code + ": " + e.description
+}
+
+// isInvalidNonceError reports whether the issuer refused the request for the
+// challenge its key proofs carried.
+func isInvalidNonceError(err error) bool {
+	var credErr credentialErrorResponse
+	return errors.As(err, &credErr) && credErr.code == "invalid_nonce"
 }
 
 // deferredContext carries what a deferred credential request needs, both for
@@ -886,12 +888,25 @@ func (e stillPendingError) Error() string {
 // deferredCredentialAttempt makes exactly one deferred credential request. A
 // still-working issuer comes back as a stillPendingError carrying its
 // interval, because whether to wait is the caller's decision.
-func deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID string, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
-	body, err := json.Marshal(map[string]any{"transaction_id": transactionID})
-	if err != nil {
-		return nil, fmt.Errorf("marshaling deferred credential request: %w", err)
+//
+// The request is held to the same encryption rules as the one that started the
+// issuance. §9.1: "The Client MAY encrypt the request when encryption_required
+// is false and MUST do so when encryption_required is true", and the wallet
+// "MAY request encrypted responses by providing its encryption parameters in
+// the Deferred Credential Request when encryption_required is false and MUST do
+// so when encryption_required is true. Note that this object will be used for
+// encrypting the response, regardless of what was sent in the initial
+// Credential Request. If it is not included encryption will not be performed."
+func deferredCredentialAttempt(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme, transactionID string, responseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+	reqBody := map[string]any{"transaction_id": transactionID}
+	if responseEncryption != nil {
+		reqBody["credential_response_encryption"] = responseEncryption
 	}
-	respBody, _, reqErr := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
+	body, contentType, err := prepareCredentialRequestBody(mode, metadata, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	respBody, _, reqErr := doDPoPRequest("POST", endpoint, contentType, credentialAccept(responseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
 	out, parseErr := parseCredentialResponseBody(respBody, holderKey)
 	if parseErr != nil {
 		if reqErr != nil {
@@ -916,18 +931,15 @@ func deferredCredentialAttempt(endpoint, accessToken, authScheme, transactionID 
 // deferredIssuancePending reports whether a deferred credential response says
 // the credential is not ready yet, and how long to wait before asking again.
 //
-// OID4VCI 1.0 §9.3 answers a deferred request for a credential that is not
-// ready with the issuance_pending error and an optional interval, so the
-// pending state arrives as an HTTP error rather than as a success body. Some
-// issuers instead echo the transaction_id back in a success-shaped response
-// carrying no credential, which means the same thing, so both are accepted.
+// OpenID4VCI 1.0 §9.2: "If the Credential Issuer still requires more time, the
+// Deferred Credential Response MUST use the interval and transaction_id
+// parameters as defined in Section 8.3 and it MUST respond with the HTTP status
+// code 202". Not ready is therefore a successful response carrying the
+// transaction back with no credentials, not an error code.
 func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 	interval := deferredPollInterval
 	if seconds, ok := numericValue(out["interval"]); ok && seconds >= 1 {
 		interval = time.Duration(seconds) * time.Second
-	}
-	if code, _ := out["error"].(string); code == "issuance_pending" {
-		return true, interval
 	}
 	if txID, _ := out["transaction_id"].(string); txID != "" && len(credentialStringsFromResponse(out)) == 0 {
 		return true, interval
@@ -953,12 +965,19 @@ func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID 
 	return nil
 }
 
-func fetchNonceWithDPoP(metadata map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) string {
+// fetchNonce asks the Nonce Endpoint for a challenge.
+//
+// Nothing is presented with the request: §7.1 says "The Nonce Endpoint is not a
+// protected resource, meaning the Wallet does not need to supply an access
+// token to access it", so neither the access token nor a DPoP proof belongs on
+// it. The DPoP nonce state is still carried in, because §7.2 lets the issuer
+// hand out a DPoP nonce here for the Credential Endpoint to use.
+func fetchNonce(metadata map[string]any, nonce *string) string {
 	ep, _ := metadata["nonce_endpoint"].(string)
 	if ep == "" {
 		return ""
 	}
-	respBody, _, err := doDPoPRequest("POST", ep, "application/x-www-form-urlencoded", "", nil, authScheme, accessToken, dpopKey, nonce, nil)
+	respBody, _, err := doDPoPRequest("POST", ep, "", "", nil, "", "", nil, nonce, nil)
 	if err != nil {
 		return ""
 	}
@@ -1032,9 +1051,9 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 			continue
 		}
 		if resp.StatusCode >= 400 {
-			// The body travels with the error: an OID4VCI error response
-			// carries members the caller has to act on, such as a c_nonce to
-			// rebuild a proof with or issuance_pending and its interval.
+			// The body travels with the error: a Credential Error Response
+			// (§8.3.1.2) carries the code the caller acts on, such as the
+			// invalid_nonce that asks for a fresh challenge and another attempt.
 			return respBody, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		}
 		return respBody, resp.StatusCode, nil

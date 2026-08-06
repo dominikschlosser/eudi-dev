@@ -15,8 +15,13 @@
 package demorp
 
 import (
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,11 +57,56 @@ func TestIssuerMetadataAdvertisesTheNonceEndpoint(t *testing.T) {
 	}
 }
 
+// OpenID4VCI 1.0 §12.2.4 keeps the display data and the claims of a
+// configuration inside credential_metadata. A wallet built to 1.0 looks
+// nowhere else, so an issuer that puts them at the top level shows the user a
+// consent dialog with no credential name and no claims.
+func TestIssuerMetadataPutsDisplayAndClaimsUnderCredentialMetadata(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/openid-credential-issuer", nil)
+	rec := httptest.NewRecorder()
+	d.IssuerHandler().ServeHTTP(rec, req)
+
+	var metadata map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &metadata); err != nil {
+		t.Fatalf("decoding metadata: %v", err)
+	}
+	configs, _ := metadata["credential_configurations_supported"].(map[string]any)
+	config, _ := configs[ticketConfigurationID].(map[string]any)
+	if config == nil {
+		t.Fatalf("no %s configuration in %v", ticketConfigurationID, configs)
+	}
+	if _, present := config["display"]; present {
+		t.Error("display is still a top-level member of the credential configuration")
+	}
+	if _, present := config["claims"]; present {
+		t.Error("claims is still a top-level member of the credential configuration")
+	}
+
+	credentialMetadata, _ := config["credential_metadata"].(map[string]any)
+	if credentialMetadata == nil {
+		t.Fatalf("configuration has no credential_metadata object: %v", config)
+	}
+	display, _ := credentialMetadata["display"].([]any)
+	if len(display) == 0 {
+		t.Fatalf("credential_metadata carries no display array: %v", credentialMetadata)
+	}
+	first, _ := display[0].(map[string]any)
+	if first["name"] != "Demo Event Ticket" {
+		t.Errorf("display name = %v, want Demo Event Ticket", first["name"])
+	}
+	claims, _ := credentialMetadata["claims"].([]any)
+	if len(claims) != 5 {
+		t.Errorf("credential_metadata carries %d claims, want 5", len(claims))
+	}
+}
+
 func TestNonceEndpoint(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	h := d.IssuerHandler()
 
-	get := func() (string, *httptest.ResponseRecorder) {
+	get := func() (map[string]any, *httptest.ResponseRecorder) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, "/nonce", nil)
 		rec := httptest.NewRecorder()
@@ -65,24 +115,28 @@ func TestNonceEndpoint(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decoding nonce response: %v (%s)", err, rec.Body.String())
 		}
-		nonce, _ := resp["c_nonce"].(string)
-		return nonce, rec
+		return resp, rec
 	}
 
-	nonce, rec := get()
+	resp, rec := get()
+	nonce, _ := resp["c_nonce"].(string)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
 	}
 	if nonce == "" {
 		t.Fatal("the nonce endpoint returned no c_nonce")
 	}
+	// §7.2 defines c_nonce as the one parameter of a Nonce Response.
+	if _, present := resp["c_nonce_expires_in"]; present {
+		t.Errorf("nonce response carries c_nonce_expires_in, which §7.2 does not define: %v", resp)
+	}
 	// A challenge a cache could hand to somebody else is not a challenge.
 	if store := rec.Header().Get("Cache-Control"); !strings.Contains(store, "no-store") {
 		t.Errorf("Cache-Control = %q, want no-store", store)
 	}
 
-	second, _ := get()
-	if second == nonce {
+	secondResp, _ := get()
+	if secondResp["c_nonce"] == nonce {
 		t.Error("the nonce endpoint handed out the same challenge twice")
 	}
 
@@ -109,94 +163,258 @@ func TestNonceIssuedRejectsAnExpiredNonce(t *testing.T) {
 	}
 }
 
-// proofJWT builds an openid4vci-proof+jwt carrying the given nonce.
-func proofJWT(t *testing.T, nonce string) string {
+// proofOptions is what a key proof carries, so a test can bend exactly one
+// element of Appendix F.1 and leave the rest correct.
+type proofOptions struct {
+	audience  string
+	nonce     string
+	iat       time.Time
+	typ       string
+	alg       string
+	omitIAT   bool
+	keyHeader string // "jwk" (default), "x5c", "kid", "none", "jwk+kid"
+}
+
+func proofJWTWith(t *testing.T, d *DemoRP, opts proofOptions) string {
 	t.Helper()
 	key, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := map[string]any{"aud": "https://issuer.example", "iat": time.Now().Unix()}
-	if nonce != "" {
-		payload["nonce"] = nonce
+	return proofJWTForKey(t, d, key, opts)
+}
+
+func proofJWTForKey(t *testing.T, d *DemoRP, key *ecdsa.PrivateKey, opts proofOptions) string {
+	t.Helper()
+	audience := opts.audience
+	if audience == "" {
+		audience = d.issuerID()
 	}
-	compact, err := jws.Sign(map[string]any{
-		"alg": "ES256",
-		"typ": "openid4vci-proof+jwt",
-		"jwk": mock.SigningJWKMap(&key.PublicKey),
-	}, payload, key)
+	issuedAt := opts.iat
+	if issuedAt.IsZero() {
+		issuedAt = time.Now()
+	}
+	typ := opts.typ
+	if typ == "" {
+		typ = "openid4vci-proof+jwt"
+	}
+	alg := opts.alg
+	if alg == "" {
+		alg = "ES256"
+	}
+
+	payload := map[string]any{"aud": audience}
+	if !opts.omitIAT {
+		payload["iat"] = issuedAt.Unix()
+	}
+	if opts.nonce != "" {
+		payload["nonce"] = opts.nonce
+	}
+
+	header := map[string]any{"alg": alg, "typ": typ}
+	switch opts.keyHeader {
+	case "", "jwk":
+		header["jwk"] = mock.SigningJWKMap(&key.PublicKey)
+	case "x5c":
+		header["x5c"] = []any{base64.StdEncoding.EncodeToString(selfSignedDER(t, key))}
+	case "kid":
+		header["kid"] = "did:example:123#key-1"
+	case "jwk+kid":
+		header["jwk"] = mock.SigningJWKMap(&key.PublicKey)
+		header["kid"] = "did:example:123#key-1"
+	case "none":
+	}
+
+	compact, err := jws.Sign(header, payload, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return compact
 }
 
-func TestVerifyProofJWTAcceptsBothNonceSources(t *testing.T) {
+func selfSignedDER(t *testing.T, key *ecdsa.PrivateKey) []byte {
+	t.Helper()
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "proof key"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
+}
+
+func issuedNonce(t *testing.T, d *DemoRP) string {
+	t.Helper()
+	nonce := randToken()
+	d.mu.Lock()
+	d.nonces[nonce] = time.Now().Add(time.Minute)
+	d.mu.Unlock()
+	return nonce
+}
+
+func TestVerifyProofJWTAcceptsANonceFromTheNonceEndpoint(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	nonce := issuedNonce(t, d)
+
+	if _, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce})); err != nil {
+		t.Errorf("a nonce from the nonce endpoint was refused: %v", err)
+	}
+}
+
+// The Nonce Endpoint is this issuer's only source of a challenge, per §8.2:
+// "The c_nonce value is retrieved from the Nonce Endpoint as defined in
+// Section 7." A nonce it minted with a token response is not one of its own.
+func TestVerifyProofJWTRejectsANonceItNeverHandedOut(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 
-	// The Nonce Endpoint, which is where a wallet built to 1.0 looks.
-	endpointNonce := "from-the-endpoint"
-	d.mu.Lock()
-	d.nonces[endpointNonce] = time.Now().Add(time.Minute)
-	d.mu.Unlock()
+	_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: "invented"}))
+	if err == nil {
+		t.Fatal("a nonce this issuer never handed out was accepted")
+	}
+	// §8.3.1.2: invalid_nonce is what tells a wallet to fetch a fresh challenge
+	// and try again. invalid_proof tells it to give up.
+	if err.code != "invalid_nonce" {
+		t.Errorf("error code = %q, want invalid_nonce", err.code)
+	}
+}
 
-	t.Run("a nonce from the nonce endpoint", func(t *testing.T) {
-		if _, err := verifyProofJWT(proofJWT(t, endpointNonce), "token-c-nonce", d.nonceIssued); err != nil {
-			t.Errorf("a nonce from the nonce endpoint was refused: %v", err)
-		}
-	})
+// §8.3.1.2 puts a missing challenge under invalid_proof: "(3) if at least one
+// of the key proofs does not contain a c_nonce value".
+func TestVerifyProofJWTRejectsAProofWithNoNonce(t *testing.T) {
+	d, _, _ := newDemoRP(t)
 
-	// The token response c_nonce, which the drafts specified and older
-	// wallets still use.
-	t.Run("the c_nonce from the token response", func(t *testing.T) {
-		if _, err := verifyProofJWT(proofJWT(t, "token-c-nonce"), "token-c-nonce", d.nonceIssued); err != nil {
-			t.Errorf("the token response c_nonce was refused: %v", err)
-		}
-	})
+	_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{}))
+	if err == nil {
+		t.Fatal("a proof with no nonce was accepted")
+	}
+	if err.code != "invalid_proof" {
+		t.Errorf("error code = %q, want invalid_proof", err.code)
+	}
+	if !strings.Contains(err.description, "nonce endpoint") {
+		t.Errorf("description = %q, want it to point at the nonce endpoint", err.description)
+	}
+}
 
-	t.Run("a nonce from neither", func(t *testing.T) {
-		_, err := verifyProofJWT(proofJWT(t, "invented"), "token-c-nonce", d.nonceIssued)
+// Appendix F.1 makes aud "REQUIRED (string). The value of this claim MUST be
+// the Credential Issuer Identifier", and F.4 makes checking it the issuer's
+// job. Without the check, a proof the holder minted for another issuer, and
+// which that issuer may have logged or leaked, is accepted here.
+func TestVerifyProofJWTRejectsAProofMintedForAnotherIssuer(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	nonce := issuedNonce(t, d)
+
+	_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{
+		nonce:    nonce,
+		audience: "https://another-issuer.example",
+	}))
+	if err == nil {
+		t.Fatal("a proof addressed to another credential issuer was accepted")
+	}
+	if !strings.Contains(err.description, "aud") {
+		t.Errorf("description = %q, want it to name the aud claim", err.description)
+	}
+}
+
+func TestVerifyProofJWTRejectsAProofOutsideTheAcceptedIATWindow(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	nonce := issuedNonce(t, d)
+
+	t.Run("issued long ago", func(t *testing.T) {
+		_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{
+			nonce: nonce,
+			iat:   time.Now().Add(-2 * proofClockSkew),
+		}))
 		if err == nil {
-			t.Fatal("a nonce this issuer never handed out was accepted")
+			t.Fatal("a proof issued long before now was accepted")
 		}
-		if !strings.Contains(err.Error(), "not one this issuer handed out") {
-			t.Errorf("error = %q", err)
+		if !strings.Contains(err.description, "iat") {
+			t.Errorf("description = %q, want it to name iat", err.description)
 		}
 	})
 
-	// The failure a real wallet hit. The message has to point at the fix
-	// rather than report a mismatch against a value the wallet never saw.
-	t.Run("no nonce at all", func(t *testing.T) {
-		_, err := verifyProofJWT(proofJWT(t, ""), "token-c-nonce", d.nonceIssued)
+	t.Run("issued in the future", func(t *testing.T) {
+		_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{
+			nonce: nonce,
+			iat:   time.Now().Add(2 * proofClockSkew),
+		}))
 		if err == nil {
-			t.Fatal("a proof with no nonce was accepted")
+			t.Fatal("a proof issued in the future was accepted")
 		}
-		if !strings.Contains(err.Error(), "nonce endpoint") {
-			t.Errorf("error = %q, want it to point at the nonce endpoint", err)
+	})
+
+	t.Run("no iat at all", func(t *testing.T) {
+		_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, omitIAT: true}))
+		if err == nil {
+			t.Fatal("a proof with no iat was accepted")
+		}
+	})
+}
+
+// Appendix F.4: "the key proof is explicitly typed using header parameters as
+// defined for that proof type", and F.1 fixes that type as
+// openid4vci-proof+jwt.
+func TestVerifyProofJWTRejectsAWronglyTypedProof(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	nonce := issuedNonce(t, d)
+
+	_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, typ: "JWT"}))
+	if err == nil {
+		t.Fatal("a proof typed JWT was accepted")
+	}
+	if !strings.Contains(err.description, "typ") {
+		t.Errorf("description = %q, want it to name typ", err.description)
+	}
+}
+
+// Appendix F.1 offers jwk, kid and x5c and allows exactly one of them.
+func TestVerifyProofJWTKeyMaterialForms(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+
+	t.Run("x5c", func(t *testing.T) {
+		nonce := issuedNonce(t, d)
+		if _, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, keyHeader: "x5c"})); err != nil {
+			t.Errorf("a proof carrying its key in x5c was refused: %v", err)
+		}
+	})
+
+	t.Run("kid names a key this issuer cannot resolve", func(t *testing.T) {
+		nonce := issuedNonce(t, d)
+		_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, keyHeader: "kid"}))
+		if err == nil {
+			t.Fatal("a proof identifying its key only by kid was accepted")
+		}
+		if !strings.Contains(err.description, "kid") {
+			t.Errorf("description = %q, want it to say why kid cannot be used", err.description)
+		}
+	})
+
+	t.Run("two key parameters at once", func(t *testing.T) {
+		nonce := issuedNonce(t, d)
+		_, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, keyHeader: "jwk+kid"}))
+		if err == nil {
+			t.Fatal("a proof carrying both jwk and kid was accepted")
+		}
+	})
+
+	t.Run("no key parameter at all", func(t *testing.T) {
+		nonce := issuedNonce(t, d)
+		if _, err := d.verifyProofJWT(proofJWTWith(t, d, proofOptions{nonce: nonce, keyHeader: "none"})); err == nil {
+			t.Fatal("a proof carrying no key material was accepted")
 		}
 	})
 }
 
 func TestVerifyProofJWTRejectsBadProofs(t *testing.T) {
 	d, _, _ := newDemoRP(t)
+	nonce := issuedNonce(t, d)
 
 	t.Run("not a JWT", func(t *testing.T) {
-		if _, err := verifyProofJWT("nonsense", "n", d.nonceIssued); err == nil {
+		if _, err := d.verifyProofJWT("nonsense"); err == nil {
 			t.Error("something that is not a JWT was accepted")
-		}
-	})
-
-	t.Run("no jwk in the header", func(t *testing.T) {
-		key, err := mock.GenerateKey()
-		if err != nil {
-			t.Fatal(err)
-		}
-		compact, err := jws.Sign(map[string]any{"alg": "ES256"}, map[string]any{"nonce": "n"}, key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := verifyProofJWT(compact, "n", d.nonceIssued); err == nil {
-			t.Error("a proof without an embedded jwk was accepted")
 		}
 	})
 
@@ -214,25 +432,25 @@ func TestVerifyProofJWTRejectsBadProofs(t *testing.T) {
 			"alg": "ES256",
 			"typ": "openid4vci-proof+jwt",
 			"jwk": mock.SigningJWKMap(&other.PublicKey),
-		}, map[string]any{"nonce": "n"}, signing)
+		}, map[string]any{"aud": d.issuerID(), "iat": time.Now().Unix(), "nonce": nonce}, signing)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := verifyProofJWT(compact, "n", d.nonceIssued); err == nil {
+		if _, err := d.verifyProofJWT(compact); err == nil {
 			t.Error("a proof whose signature does not match its jwk was accepted")
 		}
 	})
 
 	t.Run("a signature that is not valid base64", func(t *testing.T) {
-		parts := strings.Split(proofJWT(t, "n"), ".")
-		if _, err := verifyProofJWT(parts[0]+"."+parts[1]+".!!!", "n", d.nonceIssued); err == nil {
+		parts := strings.Split(proofJWTWith(t, d, proofOptions{nonce: nonce}), ".")
+		if _, err := d.verifyProofJWT(parts[0] + "." + parts[1] + ".!!!"); err == nil {
 			t.Error("an unreadable signature was accepted")
 		}
 	})
 
 	t.Run("a header that is not JSON", func(t *testing.T) {
 		bad := base64.RawURLEncoding.EncodeToString([]byte("not json")) + ".e30.AAAA"
-		if _, err := verifyProofJWT(bad, "n", d.nonceIssued); err == nil {
+		if _, err := d.verifyProofJWT(bad); err == nil {
 			t.Error("a header that is not JSON was accepted")
 		}
 	})

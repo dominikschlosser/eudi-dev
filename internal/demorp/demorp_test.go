@@ -1043,6 +1043,31 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	if got := ticket.Claims["given_name"]; got != demoAccountGivenName {
 		t.Errorf("ticket given_name = %v, want %q from the logged-in account", got, demoAccountGivenName)
 	}
+
+	// OpenID4VCI 1.0 §6.2 defines no c_nonce in a token response, and this
+	// issuer advertises a Nonce Endpoint (§7). The wallet ran in strict mode,
+	// so it would have ignored one anyway: what this checks is that the issuer
+	// stopped sending it.
+	sawTokenResponse := false
+	for _, entry := range w.GetLog() {
+		if entry.Details == nil || entry.Details["endpoint"] != "token" || entry.Details["direction"] != "inbound" {
+			continue
+		}
+		response, _ := entry.Details["response"].(map[string]any)
+		if response == nil {
+			continue
+		}
+		sawTokenResponse = true
+		if _, present := response["c_nonce"]; present {
+			t.Errorf("the token response carries a c_nonce, which OpenID4VCI 1.0 does not define: %v", response)
+		}
+		if _, present := response["c_nonce_expires_in"]; present {
+			t.Errorf("the token response carries c_nonce_expires_in: %v", response)
+		}
+	}
+	if !sawTokenResponse {
+		t.Error("the activity log recorded no token response to check")
+	}
 }
 
 // requestURIFromLoginPage reads the hidden field that ties the login form back

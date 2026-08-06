@@ -208,12 +208,29 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		pending = refreshed
 	}
 
+	// §9.1 holds a Deferred Credential Request to the same encryption as the
+	// request that started the issuance, and what the issuer requires is in its
+	// metadata. The flow that knew it is gone by the time the poller runs, so
+	// the metadata is read again from the Credential Issuer Identifier. A
+	// document that cannot be reached leaves the request unencrypted rather than
+	// costing the credential: an issuer that required encryption refuses that
+	// attempt, and the next one is a poll away.
+	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer)
+	if metadataErr != nil {
+		metadata = nil
+	}
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(s.wallet.ValidationMode, metadata, s.wallet.HolderKey)
+	if err != nil {
+		return s.rescheduleDeferred(pending, pending.Interval(), err.Error())
+	}
+
 	// One request per turn: the schedule lives here, so the request must not
 	// wait on its own or two things would be pacing the same issuer.
 	nonce := ""
 	credResp, err := deferredCredentialAttempt(
+		s.wallet.ValidationMode, metadata,
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-		pending.TransactionID, dpopKey, s.wallet.HolderKey, &nonce)
+		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
 
 	// An issuer that refuses the authorization may simply have expired the
 	// token earlier than it said. One renewal and one retry is worth it before
@@ -224,8 +241,9 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 			pending = refreshed
 			nonce = ""
 			credResp, err = deferredCredentialAttempt(
+				s.wallet.ValidationMode, metadata,
 				pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-				pending.TransactionID, dpopKey, s.wallet.HolderKey, &nonce)
+				pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
 		}
 	}
 

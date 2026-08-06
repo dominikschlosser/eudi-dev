@@ -93,7 +93,7 @@ func TestCredentialOfferEndpoint_CredentialOfferByReference(t *testing.T) {
 // requires it to.
 func TestDeferredIssuanceSurvivesAProfileOverride(t *testing.T) {
 	w := generateTestWallet(t)
-	issuer, offerURI, _ := deferringIssuer(t, w, 1, "error", 1)
+	issuer, offerURI, _ := deferringIssuer(t, w, 1, 1)
 	defer issuer.Close()
 
 	oldClient := httpClient

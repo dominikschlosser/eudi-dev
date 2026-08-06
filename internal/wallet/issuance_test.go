@@ -15,6 +15,8 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 func TestResolveCredentialIdentifier_FromAuthDetails(t *testing.T) {
@@ -76,65 +79,64 @@ func TestResolveCredentialIdentifier_NoConfigIDs(t *testing.T) {
 	}
 }
 
-func TestExtractCredential_SingleField(t *testing.T) {
-	resp := map[string]any{
-		"credential": "eyJhbGci...",
-	}
-
-	got := extractCredential(resp)
-	if got != "eyJhbGci..." {
-		t.Errorf("expected eyJhbGci..., got %s", got)
-	}
-}
-
-func TestExtractCredential_CredentialsArray(t *testing.T) {
+// OpenID4VCI 1.0 §8.3 defines one shape for issued credentials: a credentials
+// array whose "elements of the array MUST be objects", each with a credential
+// member. A top-level credential string and an array of bare strings are draft
+// shapes, and reading them lets a response the wallet's own batch and binding
+// checks were written against through unexamined.
+func TestCredentialStringsFromResponse_CredentialsArray(t *testing.T) {
 	resp := map[string]any{
 		"credentials": []any{
-			map[string]any{
-				"credential": "eyJhbGci-from-array",
-			},
+			map[string]any{"credential": "first"},
+			map[string]any{"credential": "second"},
 		},
 	}
 
-	got := extractCredential(resp)
-	if got != "eyJhbGci-from-array" {
-		t.Errorf("expected eyJhbGci-from-array, got %s", got)
+	got := credentialStringsFromResponse(resp)
+	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		t.Errorf("credentials = %v, want [first second]", got)
 	}
 }
 
-func TestExtractCredential_CredentialsArrayRawStrings(t *testing.T) {
-	resp := map[string]any{
-		"credentials": []any{
-			"raw-credential-string",
+func TestCredentialStringsFromResponse_RejectsDraftShapes(t *testing.T) {
+	for name, resp := range map[string]map[string]any{
+		"a top-level credential string": {"credential": "eyJhbGci..."},
+		"an array of raw strings":       {"credentials": []any{"raw-credential-string"}},
+		"nothing at all":                {"status": "ok"},
+		"an empty credentials array":    {"credentials": []any{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := credentialStringsFromResponse(resp); len(got) != 0 {
+				t.Errorf("credentials = %v, want none", got)
+			}
+		})
+	}
+}
+
+// requestEncryptionMetadata is the credential_request_encryption object of an
+// issuer that publishes a usable ECDH-ES key.
+func requestEncryptionMetadata(t *testing.T, required bool) (map[string]any, *ecdsa.PrivateKey) {
+	t.Helper()
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	pubJWK := mock.PublicKeyJWKMap(&issuerKey.PublicKey)
+	return map[string]any{
+		"jwks": map[string]any{
+			"keys": []any{map[string]any{
+				"kty": pubJWK["kty"],
+				"crv": pubJWK["crv"],
+				"x":   pubJWK["x"],
+				"y":   pubJWK["y"],
+				"kid": "issuer-enc-key",
+				"use": "enc",
+				"alg": "ECDH-ES",
+			}},
 		},
-	}
-
-	got := extractCredential(resp)
-	if got != "raw-credential-string" {
-		t.Errorf("expected raw-credential-string, got %s", got)
-	}
-}
-
-func TestExtractCredential_Empty(t *testing.T) {
-	resp := map[string]any{
-		"status": "ok",
-	}
-
-	got := extractCredential(resp)
-	if got != "" {
-		t.Errorf("expected empty, got %s", got)
-	}
-}
-
-func TestExtractCredential_EmptyCredentialsArray(t *testing.T) {
-	resp := map[string]any{
-		"credentials": []any{},
-	}
-
-	got := extractCredential(resp)
-	if got != "" {
-		t.Errorf("expected empty, got %s", got)
-	}
+		"enc_values_supported": []any{"A256GCM", "A128GCM"},
+		"encryption_required":  required,
+	}, issuerKey
 }
 
 func TestBuildCredentialResponseEncryptionRequest(t *testing.T) {
@@ -142,15 +144,20 @@ func TestBuildCredentialResponseEncryptionRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
+	requestEncryption, _ := requestEncryptionMetadata(t, false)
 
 	metadata := map[string]any{
+		"credential_request_encryption": requestEncryption,
 		"credential_response_encryption": map[string]any{
 			"alg_values_supported": []any{"ECDH-ES+A256KW", "ECDH-ES"},
 			"enc_values_supported": []any{"A256GCM", "A128GCM"},
 		},
 	}
 
-	got := buildCredentialResponseEncryptionRequest(metadata, holderKey)
+	got, err := buildCredentialResponseEncryptionRequest(ValidationModeStrict, metadata, holderKey)
+	if err != nil {
+		t.Fatalf("buildCredentialResponseEncryptionRequest: %v", err)
+	}
 	if got == nil {
 		t.Fatal("expected credential response encryption request")
 	}
@@ -167,6 +174,47 @@ func TestBuildCredentialResponseEncryptionRequest(t *testing.T) {
 	if jwk["use"] != "enc" {
 		t.Fatalf("expected use=enc, got %v", jwk["use"])
 	}
+}
+
+// §8.2: "Credential Request encryption MUST be used if the
+// credential_response_encryption parameter is included, to prevent it being
+// substituted by an attacker." An issuer that publishes no way to encrypt the
+// request therefore gets no encryption request either, and one that demands an
+// encrypted response anyway cannot be served.
+func TestBuildCredentialResponseEncryptionRequest_NeedsRequestEncryption(t *testing.T) {
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	responseEncryption := map[string]any{
+		"alg_values_supported": []any{"ECDH-ES"},
+		"enc_values_supported": []any{"A128GCM"},
+	}
+
+	t.Run("no request encryption offered", func(t *testing.T) {
+		got, err := buildCredentialResponseEncryptionRequest(ValidationModeStrict, map[string]any{
+			"credential_response_encryption": responseEncryption,
+		}, holderKey)
+		if err != nil {
+			t.Fatalf("buildCredentialResponseEncryptionRequest: %v", err)
+		}
+		if got != nil {
+			t.Fatalf("asked for an encrypted response the request cannot be paired with: %v", got)
+		}
+	})
+
+	t.Run("an encrypted response is required but the request cannot be encrypted", func(t *testing.T) {
+		required := map[string]any{
+			"alg_values_supported": []any{"ECDH-ES"},
+			"enc_values_supported": []any{"A128GCM"},
+			"encryption_required":  true,
+		}
+		if _, err := buildCredentialResponseEncryptionRequest(ValidationModeStrict, map[string]any{
+			"credential_response_encryption": required,
+		}, holderKey); err == nil {
+			t.Fatal("an issuer that requires response encryption without offering request encryption was accepted")
+		}
+	})
 }
 
 func TestPrepareCredentialRequestBody_EncryptsWhenIssuerAdvertisesRequestEncryption(t *testing.T) {
@@ -377,19 +425,31 @@ func TestWellKnownURL_PreservesTrailingSlashInIssuerPath(t *testing.T) {
 	}
 }
 
+// trustSignedIssuerMetadataFrom points the signed-metadata trust check at one
+// wallet's certificate authority for the duration of a test.
+func trustSignedIssuerMetadataFrom(t *testing.T, w *Wallet) {
+	t.Helper()
+	pool := x509.NewCertPool()
+	pool.AddCert(w.CertChain[len(w.CertChain)-1])
+	previous := issuerMetadataTrustAnchors
+	issuerMetadataTrustAnchors = pool
+	t.Cleanup(func() { issuerMetadataTrustAnchors = previous })
+}
+
 func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://issuer.example:8443"
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
 	}
+	trustSignedIssuerMetadataFrom(t, w)
 
 	raw, err := signCredentialIssuerMetadataJWT(w, w.IssuerURL, time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatalf("signing issuer metadata: %v", err)
 	}
 
-	metadata, err := parseIssuerMetadataResponse([]byte(raw), "application/openidvci-issuer-metadata+jwt")
+	metadata, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL)
 	if err != nil {
 		t.Fatalf("parsing signed issuer metadata: %v", err)
 	}
@@ -427,6 +487,7 @@ func TestParseIssuerMetadataResponse_RejectsTamperedSignedJWT(t *testing.T) {
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
 	}
+	trustSignedIssuerMetadataFrom(t, w)
 
 	raw, err := signCredentialIssuerMetadataJWT(w, w.IssuerURL, time.Now().Add(time.Hour))
 	if err != nil {
@@ -448,8 +509,113 @@ func TestParseIssuerMetadataResponse_RejectsTamperedSignedJWT(t *testing.T) {
 	parts[1] = format.EncodeBase64URL([]byte(tamperedPayload))
 	tampered := strings.Join(parts, ".")
 
-	if _, err := parseIssuerMetadataResponse([]byte(tampered), "application/openidvci-issuer-metadata+jwt"); err == nil {
+	if _, err := parseIssuerMetadataResponse([]byte(tampered), "application/jwt", w.IssuerURL); err == nil {
 		t.Fatal("expected tampered signed issuer metadata to fail verification")
+	}
+}
+
+// §12.2.3: "When requesting signed metadata, the Wallet MUST establish trust in
+// the signer of the metadata. Otherwise, the Wallet MUST reject the signed
+// metadata." A token with no x5c leaves nothing to establish trust from, and
+// accepting it lets whoever answered the request name the endpoints the rest of
+// the flow talks to.
+func TestParseIssuerMetadataResponse_RejectsSignedMetadataWithNoTrustAnchor(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example:8443"
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating credentials: %v", err)
+	}
+
+	payload := map[string]any{
+		"credential_issuer":   w.IssuerURL,
+		"credential_endpoint": w.IssuerURL + "/credential",
+		"sub":                 w.IssuerURL,
+		"iat":                 time.Now().Unix(),
+	}
+
+	t.Run("no x5c at all", func(t *testing.T) {
+		raw, err := signJSONWebSignature(payload, w.IssuerKey, map[string]any{
+			"alg": "ES256",
+			"typ": signedIssuerMetadataTyp,
+		})
+		if err != nil {
+			t.Fatalf("signing: %v", err)
+		}
+		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+			t.Fatal("signed issuer metadata with no way to establish trust in its signer was accepted")
+		}
+	})
+
+	t.Run("an x5c chain that anchors nowhere", func(t *testing.T) {
+		raw, err := signCredentialIssuerMetadataJWT(w, w.IssuerURL, time.Now().Add(time.Hour))
+		if err != nil {
+			t.Fatalf("signing issuer metadata: %v", err)
+		}
+		// No trust anchors are configured, so the chain ends in a certificate
+		// authority the wallet has never heard of.
+		issuerMetadataTrustAnchors = x509.NewCertPool()
+		t.Cleanup(func() { issuerMetadataTrustAnchors = nil })
+		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+			t.Fatal("signed issuer metadata from an untrusted signer was accepted")
+		}
+	})
+}
+
+// §12.2.3 requires "sub: REQUIRED. String matching the Credential Issuer
+// Identifier".
+func TestParseIssuerMetadataResponse_RejectsSignedMetadataForAnotherIssuer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example:8443"
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("generating credentials: %v", err)
+	}
+	trustSignedIssuerMetadataFrom(t, w)
+
+	// Everything else lines up: the payload names the issuer the metadata was
+	// fetched for, and the signature is from a trusted signer. Only sub is a
+	// different party, which is what §12.2.3 forbids.
+	chain, err := w.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("building the signing chain: %v", err)
+	}
+	raw, err := signJSONWebSignature(map[string]any{
+		"credential_issuer":   w.IssuerURL,
+		"credential_endpoint": w.IssuerURL + "/credential",
+		"sub":                 "https://elsewhere.example",
+		"iat":                 time.Now().Unix(),
+	}, w.IssuerKey, map[string]any{
+		"alg": "ES256",
+		"typ": signedIssuerMetadataTyp,
+		"x5c": buildJWSX5C(chain),
+	})
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+	if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+		t.Fatal("signed issuer metadata whose sub names another issuer was accepted")
+	}
+}
+
+// §12.2.4 on credential_issuer: "If these values are not identical (when
+// compared using a simple string comparison with no normalization), the data
+// contained in the response MUST NOT be used."
+func TestParseIssuerMetadataResponse_RejectsMismatchedCredentialIssuer(t *testing.T) {
+	raw := []byte(`{"credential_issuer":"https://attacker.example","credential_endpoint":"https://attacker.example/credential"}`)
+
+	if _, err := parseIssuerMetadataResponse(raw, "application/json", "https://issuer.example"); err == nil {
+		t.Fatal("metadata declaring a different credential_issuer was used")
+	}
+
+	missing := []byte(`{"credential_endpoint":"https://issuer.example/credential"}`)
+	if _, err := parseIssuerMetadataResponse(missing, "application/json", "https://issuer.example"); err == nil {
+		t.Fatal("metadata carrying no credential_issuer was used")
+	}
+
+	// A trailing slash is a different string, and the comparison is made with
+	// no normalization.
+	slashed := []byte(`{"credential_issuer":"https://issuer.example/"}`)
+	if _, err := parseIssuerMetadataResponse(slashed, "application/json", "https://issuer.example"); err == nil {
+		t.Fatal("metadata whose credential_issuer differs only by a trailing slash was used")
 	}
 }
 
@@ -464,12 +630,88 @@ func TestParseIssuerMetadataResponse_JSONWithDots(t *testing.T) {
 		}
 	}`)
 
-	metadata, err := parseIssuerMetadataResponse(raw, "application/json")
+	metadata, err := parseIssuerMetadataResponse(raw, "application/json", "http://localhost:8080/realms/wallet-app-demo")
 	if err != nil {
 		t.Fatalf("parsing metadata JSON: %v", err)
 	}
 	if metadata["credential_issuer"] != "http://localhost:8080/realms/wallet-app-demo" {
 		t.Fatalf("unexpected credential_issuer: %v", metadata["credential_issuer"])
+	}
+}
+
+// §12.2.4: "When the Wallet is using authorization_server parameter in the
+// Credential Offer as a hint to determine which Authorization Server to use out
+// of multiple, the Wallet MUST NOT proceed with the flow if the
+// authorization_server Credential Offer parameter value does not match any of
+// the entries in the authorization_servers array."
+func TestSelectAuthorizationServer(t *testing.T) {
+	offerWithHint := func(hint string) *oid4vc.CredentialOffer {
+		grant := map[string]any{"pre-authorized_code": "code"}
+		if hint != "" {
+			grant["authorization_server"] = hint
+		}
+		return &oid4vc.CredentialOffer{
+			CredentialIssuer: "https://issuer.example",
+			FullJSON: map[string]any{
+				"grants": map[string]any{
+					"urn:ietf:params:oauth:grant-type:pre-authorized_code": grant,
+				},
+			},
+		}
+	}
+	metadata := map[string]any{
+		"authorization_servers": []any{"https://as-one.example", "https://as-two.example"},
+	}
+
+	t.Run("the hint selects the named server", func(t *testing.T) {
+		got, err := selectAuthorizationServer(metadata, offerWithHint("https://as-two.example"))
+		if err != nil {
+			t.Fatalf("selectAuthorizationServer: %v", err)
+		}
+		if got != "https://as-two.example" {
+			t.Errorf("authorization server = %q, want the one the offer named", got)
+		}
+	})
+
+	t.Run("a hint matching no entry stops the flow", func(t *testing.T) {
+		if _, err := selectAuthorizationServer(metadata, offerWithHint("https://attacker.example")); err == nil {
+			t.Fatal("an authorization server the issuer metadata does not list was accepted")
+		}
+	})
+
+	t.Run("no hint falls back to the first entry", func(t *testing.T) {
+		got, err := selectAuthorizationServer(metadata, offerWithHint(""))
+		if err != nil {
+			t.Fatalf("selectAuthorizationServer: %v", err)
+		}
+		if got != "https://as-one.example" {
+			t.Errorf("authorization server = %q, want the first entry", got)
+		}
+	})
+
+	t.Run("no authorization_servers at all is the issuer itself", func(t *testing.T) {
+		got, err := selectAuthorizationServer(map[string]any{}, offerWithHint(""))
+		if err != nil {
+			t.Fatalf("selectAuthorizationServer: %v", err)
+		}
+		if got != "https://issuer.example" {
+			t.Errorf("authorization server = %q, want the credential issuer", got)
+		}
+	})
+}
+
+// token_endpoint is an authorization server metadata parameter (RFC 8414 §2),
+// and §12.2.4 defines none for the Credential Issuer, so the authorization
+// server document wins wherever the two disagree.
+func TestGetTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T) {
+	metadata := map[string]any{"token_endpoint": "https://issuer.example/token"}
+	oauthMeta := map[string]any{"token_endpoint": "https://as.example/token"}
+
+	if got := getTokenEndpoint(metadata, oauthMeta, "https://issuer.example"); got != "https://as.example/token" {
+		t.Errorf("token endpoint = %q, want the authorization server's", got)
+	}
+	if got := getTokenEndpoint(metadata, nil, "https://issuer.example"); got != "https://issuer.example/token" {
+		t.Errorf("token endpoint = %q, want the issuer's own when no AS metadata was reachable", got)
 	}
 }
 

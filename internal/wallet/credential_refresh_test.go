@@ -23,20 +23,45 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
+
+// renewalIssuerMetadata is the Credential Issuer Metadata a renewal reads back
+// from the Credential Issuer Identifier. §12.2.2 makes the identifier the
+// address of this document, and §8.2 makes the Nonce Endpoint in it the source
+// of the challenge every credential request needs.
+func renewalIssuerMetadata(issuer string) map[string]any {
+	return map[string]any{
+		"credential_issuer":   issuer,
+		"credential_endpoint": issuer + "/credential",
+		"nonce_endpoint":      issuer + "/nonce",
+	}
+}
 
 // A renewed credential keeps its id: a verifier query, a UI selection and the
 // activity log all refer to credentials by id, so a new entry would read as
 // the old one being deleted and an unrelated one appearing.
+//
+// The renewal is also an ordinary credential request, so the issuer here holds
+// it to what §8.2 requires: a key proof carrying a challenge from the Nonce
+// Endpoint. A renewal that never fetched one is refused.
 func TestRefreshCredentialKeepsTheIdentity(t *testing.T) {
 	w := generateTestWallet(t)
 	original := generateTestCredential(t, w)
 	renewed := generateTestCredential(t, w)
 
 	var refreshGrants int
+	var serverURL string
+	var nonceRequests int
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+		case strings.HasSuffix(r.URL.Path, "/nonce"):
+			nonceRequests++
+			_ = json.NewEncoder(rw).Encode(map[string]any{"c_nonce": "renewal-nonce"})
 		case strings.HasSuffix(r.URL.Path, "/token"):
 			body, _ := io.ReadAll(r.Body)
 			form, _ := url.ParseQuery(string(body))
@@ -54,12 +79,32 @@ func TestRefreshCredentialKeepsTheIdentity(t *testing.T) {
 				rw.WriteHeader(http.StatusForbidden)
 				return
 			}
-			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": renewed})
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			proofs, _ := body["proofs"].(map[string]any)
+			jwts, _ := proofs["jwt"].([]any)
+			if len(jwts) == 0 {
+				rw.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(rw).Encode(map[string]any{"error": "invalid_proof"})
+				return
+			}
+			// A renewal that never asked the Nonce Endpoint sends a proof with
+			// no nonce claim, which every 1.0 issuer refuses.
+			if nonce := proofNonce(jwts[0]); nonce != "renewal-nonce" {
+				rw.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(rw).Encode(map[string]any{
+					"error":             "invalid_nonce",
+					"error_description": "proof nonce is " + nonce,
+				})
+				return
+			}
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": renewed}}})
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer srv.Close()
+	serverURL = srv.URL
 
 	oldClient := httpClient
 	httpClient = srv.Client()
@@ -102,6 +147,9 @@ func TestRefreshCredentialKeepsTheIdentity(t *testing.T) {
 	}
 	if refreshGrants != 1 {
 		t.Errorf("the issuer saw %d refresh grants, want 1", refreshGrants)
+	}
+	if nonceRequests != 1 {
+		t.Errorf("the renewal asked the Nonce Endpoint %d times, want 1", nonceRequests)
 	}
 }
 
@@ -174,19 +222,25 @@ func TestPresentingRenewsACredentialAboutToExpire(t *testing.T) {
 	replacement := generateTestCredential(t, w)
 
 	var credentialRequests int
+	var serverURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+		case strings.HasSuffix(r.URL.Path, "/nonce"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{"c_nonce": "renewal-nonce"})
 		case strings.HasSuffix(r.URL.Path, "/token"):
 			_ = json.NewEncoder(rw).Encode(map[string]any{"access_token": "fresh", "token_type": "Bearer"})
 		case strings.HasSuffix(r.URL.Path, "/credential"):
 			credentialRequests++
-			_ = json.NewEncoder(rw).Encode(map[string]any{"credential": replacement})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": replacement}}})
 		default:
 			rw.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer srv.Close()
+	serverURL = srv.URL
 
 	oldClient := httpClient
 	httpClient = srv.Client()
@@ -231,9 +285,14 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 	var challenges int
 	var sawAttestation, sawPoP, sawAssertion string
 	newIssuer := func() *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		var serverURL string
+		mux := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 			rw.Header().Set("Content-Type", "application/json")
 			switch {
+			case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+				_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+			case strings.HasSuffix(r.URL.Path, "/nonce"):
+				_ = json.NewEncoder(rw).Encode(map[string]any{"c_nonce": "renewal-nonce"})
 			case strings.HasSuffix(r.URL.Path, "/challenge"):
 				challenges++
 				_ = json.NewEncoder(rw).Encode(map[string]any{"attestation_challenge": "chal-1"})
@@ -247,11 +306,14 @@ func TestRefreshCredentialAuthenticatesTheClient(t *testing.T) {
 					"access_token": "fresh", "token_type": "Bearer", "expires_in": 300,
 				})
 			case strings.HasSuffix(r.URL.Path, "/credential"):
-				_ = json.NewEncoder(rw).Encode(map[string]any{"credential": renewed})
+				_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": renewed}}})
 			default:
 				rw.WriteHeader(http.StatusNotFound)
 			}
-		}))
+		})
+		srv := httptest.NewServer(mux)
+		serverURL = srv.URL
+		return srv
 	}
 
 	oldClient := httpClient
@@ -449,5 +511,110 @@ func TestRefreshReportsANonOAuthRefusal(t *testing.T) {
 	_, err = w.RefreshCredential(imported.ID)
 	if err == nil || !strings.Contains(err.Error(), "gateway is on fire") {
 		t.Errorf("error = %v, want the body of a refusal that is not an OAuth error", err)
+	}
+}
+
+// proofNonce reads the nonce claim out of a key proof, so a test issuer can
+// refuse a proof that carries the wrong challenge the way a real one does.
+func proofNonce(raw any) string {
+	compact, _ := raw.(string)
+	parts := strings.Split(compact, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payloadJSON, err := format.DecodeBase64URL(parts[1])
+	if err != nil {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		return ""
+	}
+	nonce, _ := payload["nonce"].(string)
+	return nonce
+}
+
+// §8.2 lets exactly one of the two members name what is being requested:
+// credential_identifier is "REQUIRED when an Authorization Details of type
+// openid_credential was returned from the Token Response. It MUST NOT be used
+// otherwise", and credential_configuration_id "MUST NOT be used" when a
+// credential_identifiers parameter was returned. A renewal that always sends
+// the configuration id gets refused by an issuer that answered with datasets.
+func TestRefreshCredentialNamesTheCredentialTheTokenResponseAllows(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		authorizationDetails []any
+		wantIdentifier       string
+		wantConfiguration    string
+	}{
+		{
+			name:              "no authorization details",
+			wantConfiguration: "cfg",
+		},
+		{
+			name: "credential identifiers returned",
+			authorizationDetails: []any{map[string]any{
+				"type":                        "openid_credential",
+				"credential_configuration_id": "cfg",
+				"credential_identifiers":      []any{"dataset-1"},
+			}},
+			wantIdentifier: "dataset-1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			original := generateTestCredential(t, w)
+			renewed := generateTestCredential(t, w)
+
+			var serverURL string
+			var request map[string]any
+			srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				rw.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+					_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+				case strings.HasSuffix(r.URL.Path, "/nonce"):
+					_ = json.NewEncoder(rw).Encode(map[string]any{"c_nonce": "renewal-nonce"})
+				case strings.HasSuffix(r.URL.Path, "/token"):
+					resp := map[string]any{"access_token": "fresh", "token_type": "Bearer"}
+					if tc.authorizationDetails != nil {
+						resp["authorization_details"] = tc.authorizationDetails
+					}
+					_ = json.NewEncoder(rw).Encode(resp)
+				case strings.HasSuffix(r.URL.Path, "/credential"):
+					_ = json.NewDecoder(r.Body).Decode(&request)
+					_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": renewed}}})
+				default:
+					rw.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+			serverURL = srv.URL
+
+			oldClient := httpClient
+			httpClient = srv.Client()
+			defer func() { httpClient = oldClient }()
+
+			imported, err := w.ImportCredential(original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+				Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+				CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
+			})
+			if _, err := w.RefreshCredential(imported.ID); err != nil {
+				t.Fatalf("RefreshCredential: %v", err)
+			}
+
+			identifier, _ := request["credential_identifier"].(string)
+			configuration, _ := request["credential_configuration_id"].(string)
+			if identifier != tc.wantIdentifier {
+				t.Errorf("credential_identifier = %q, want %q", identifier, tc.wantIdentifier)
+			}
+			if configuration != tc.wantConfiguration {
+				t.Errorf("credential_configuration_id = %q, want %q", configuration, tc.wantConfiguration)
+			}
+		})
 	}
 }

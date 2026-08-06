@@ -139,28 +139,28 @@ func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateK
 	return holderCredential, nil
 }
 
-// credentialStringsFromResponse extracts all credential strings from a
-// credential response, supporting both the "credentials" array (OID4VCI 1.0)
-// and the legacy single "credential" member.
+// credentialStringsFromResponse extracts the credentials from a credential
+// response.
+//
+// One shape is read, the one OpenID4VCI 1.0 §8.3 defines: "credentials:
+// OPTIONAL. Contains an array of one or more issued Credentials. [...] The
+// elements of the array MUST be objects", each with a "credential: REQUIRED.
+// Contains one issued Credential." A top-level credential string and an array
+// of bare strings are draft shapes, and reading them lets a response the
+// wallet's own checks were written against slip past unnoticed.
 func credentialStringsFromResponse(resp map[string]any) []string {
-	if c, ok := resp["credential"].(string); ok && c != "" {
-		return []string{c}
-	}
 	rawCreds, ok := resp["credentials"].([]any)
 	if !ok {
 		return nil
 	}
 	var out []string
 	for _, entry := range rawCreds {
-		switch v := entry.(type) {
-		case map[string]any:
-			if c, ok := v["credential"].(string); ok && c != "" {
-				out = append(out, c)
-			}
-		case string:
-			if v != "" {
-				out = append(out, v)
-			}
+		object, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if c, ok := object["credential"].(string); ok && c != "" {
+			out = append(out, c)
 		}
 	}
 	return out

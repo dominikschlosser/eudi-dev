@@ -294,7 +294,6 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		issuerState: granted.issuerState,
 		subject:     granted.subject,
 		accessToken: randToken(),
-		cNonce:      randToken(),
 		jkt:         jkt,
 		expires:     time.Now().Add(entryTTL),
 	}
@@ -307,12 +306,13 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	d.tokens[offer.accessToken] = offer
 	d.mu.Unlock()
 
+	// No c_nonce. OpenID4VCI 1.0 §6.2 lists what a token response may add to
+	// RFC 6749 and defines no such parameter, and this issuer advertises a Nonce
+	// Endpoint (§7), which is where the challenge comes from.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":       offer.accessToken,
-		"token_type":         "DPoP",
-		"expires_in":         int(entryTTL.Seconds()),
-		"c_nonce":            offer.cNonce,
-		"c_nonce_expires_in": int(entryTTL.Seconds()),
+		"access_token": offer.accessToken,
+		"token_type":   "DPoP",
+		"expires_in":   int(entryTTL.Seconds()),
 	})
 }
 

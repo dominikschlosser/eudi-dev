@@ -15,7 +15,9 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -23,14 +25,16 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // deferringIssuer serves a pre-authorized offer whose credential endpoint
 // answers with a transaction_id, then holds the deferred endpoint pending for
-// pendingRounds polls before releasing the credential. pendingStyle picks how
-// "not ready" is expressed: OID4VCI 1.0 §9.3 uses the issuance_pending error,
-// while some issuers echo the transaction_id back in a success-shaped body.
-func deferringIssuer(t *testing.T, w *Wallet, pendingRounds int, pendingStyle string, intervalSeconds int) (*httptest.Server, string, func() int) {
+// pendingRounds polls before releasing the credential. Not ready is expressed
+// the way OpenID4VCI 1.0 §9.2 defines it: HTTP 202 with the transaction_id and
+// the interval, and no credentials.
+func deferringIssuer(t *testing.T, w *Wallet, pendingRounds int, intervalSeconds int) (*httptest.Server, string, func() int) {
 	t.Helper()
 
 	credRaw := generateTestCredential(t, w)
@@ -78,21 +82,14 @@ func deferringIssuer(t *testing.T, w *Wallet, pendingRounds int, pendingStyle st
 				return
 			}
 			if current <= pendingRounds {
-				if pendingStyle == "issuance_pending" {
-					rw.WriteHeader(http.StatusBadRequest)
-					json.NewEncoder(rw).Encode(map[string]any{
-						"error":    "issuance_pending",
-						"interval": intervalSeconds,
-					})
-					return
-				}
+				rw.WriteHeader(http.StatusAccepted)
 				json.NewEncoder(rw).Encode(map[string]any{
 					"transaction_id": "test-transaction",
 					"interval":       intervalSeconds,
 				})
 				return
 			}
-			json.NewEncoder(rw).Encode(map[string]any{"credential": credRaw})
+			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
 		default:
 			rw.WriteHeader(http.StatusNotFound)
@@ -184,33 +181,33 @@ func TestDeferredIssuancePending(t *testing.T) {
 		wantInterval time.Duration
 	}{
 		{
-			name:        "spec error with an interval",
-			out:         map[string]any{"error": "issuance_pending", "interval": float64(7)},
-			wantPending: true, wantInterval: 7 * time.Second,
-		},
-		{
-			name:        "spec error without an interval falls back",
-			out:         map[string]any{"error": "issuance_pending"},
-			wantPending: true, wantInterval: deferredPollInterval,
-		},
-		{
-			name:        "echoed transaction_id with no credential",
+			name:        "the transaction handed back with an interval",
 			out:         map[string]any{"transaction_id": "t", "interval": float64(3)},
 			wantPending: true, wantInterval: 3 * time.Second,
 		},
 		{
+			name:        "the transaction handed back without an interval falls back",
+			out:         map[string]any{"transaction_id": "t"},
+			wantPending: true, wantInterval: deferredPollInterval,
+		},
+		{
 			name:        "transaction_id alongside a credential is not pending",
-			out:         map[string]any{"transaction_id": "t", "credential": "abc"},
+			out:         map[string]any{"transaction_id": "t", "credentials": []any{map[string]any{"credential": "abc"}}},
 			wantPending: false,
 		},
 		{
 			name:        "a credential is not pending",
-			out:         map[string]any{"credential": "abc"},
+			out:         map[string]any{"credentials": []any{map[string]any{"credential": "abc"}}},
 			wantPending: false,
 		},
 		{
-			name:        "another error is not pending",
+			name:        "an error is not pending",
 			out:         map[string]any{"error": "invalid_token"},
+			wantPending: false,
+		},
+		{
+			name:        "the draft-era issuance_pending error is not a pending signal",
+			out:         map[string]any{"error": "issuance_pending", "interval": float64(7)},
 			wantPending: false,
 		},
 	} {
@@ -233,7 +230,7 @@ func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
 	w := generateTestWallet(t)
 	// Pending for far longer than any caller would wait, and the deferred
 	// endpoint must not be touched during the offer flow at all.
-	srv, offerURI, polls := deferringIssuer(t, w, 1000, "issuance_pending", 3600)
+	srv, offerURI, polls := deferringIssuer(t, w, 1000, 3600)
 	defer srv.Close()
 
 	oldClient := httpClient
@@ -296,5 +293,106 @@ func TestIssuanceRemembersHowToRenew(t *testing.T) {
 	})
 	if stored, _ := w.GetCredential("cred-2"); stored.CanRenew() || stored.Renewal != nil {
 		t.Error("a credential without a refresh token was recorded as renewable")
+	}
+}
+
+// §9.1 holds a Deferred Credential Request to the same encryption as the one
+// that started the issuance: "The Client MAY encrypt the request when
+// encryption_required is false and MUST do so when encryption_required is
+// true", and it "MUST [provide its encryption parameters] when
+// encryption_required is true. Note that this object will be used for
+// encrypting the response, regardless of what was sent in the initial
+// Credential Request. If it is not included encryption will not be performed."
+// A plaintext poll at an issuer that requires encryption never collects the
+// credential.
+func TestDeferredCredentialRequestIsEncryptedWhenTheIssuerRequiresIt(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubJWK := mock.PublicKeyJWKMap(&issuerKey.PublicKey)
+
+	var serverURL string
+	var contentType string
+	var deferredRequest map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":            serverURL,
+				"credential_endpoint":          serverURL + "/credential",
+				"deferred_credential_endpoint": serverURL + "/deferred",
+				"credential_request_encryption": map[string]any{
+					"jwks": map[string]any{"keys": []any{map[string]any{
+						"kty": pubJWK["kty"], "crv": pubJWK["crv"],
+						"x": pubJWK["x"], "y": pubJWK["y"],
+						"kid": "issuer-enc-key", "use": "enc", "alg": "ECDH-ES",
+					}}},
+					"enc_values_supported": []any{"A256GCM"},
+					"encryption_required":  true,
+				},
+				"credential_response_encryption": map[string]any{
+					"alg_values_supported": []any{"ECDH-ES"},
+					"enc_values_supported": []any{"A128GCM"},
+					"encryption_required":  true,
+				},
+			})
+
+		case strings.HasSuffix(r.URL.Path, "/deferred"):
+			contentType = r.Header.Get("Content-Type")
+			body, _ := io.ReadAll(r.Body)
+			decrypted, err := DecryptCompactJWE(strings.TrimSpace(string(body)), issuerKey)
+			if err != nil {
+				rw.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(rw).Encode(map[string]any{"error": "invalid_encryption_parameters"})
+				return
+			}
+			_ = json.Unmarshal([]byte(decrypted), &deferredRequest)
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credentials": []any{map[string]any{"credential": credRaw}},
+			})
+
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, func() {})
+	pending, err := newDeferredIssuance(deferredContext{
+		issuer:           srv.URL,
+		configID:         "test-config",
+		format:           "dc+sd-jwt",
+		deferredEndpoint: srv.URL + "/deferred",
+		accessToken:      "test-access-token",
+		authScheme:       "Bearer",
+		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
+	}, "test-transaction", time.Second)
+	if err != nil {
+		t.Fatalf("newDeferredIssuance: %v", err)
+	}
+	w.AddDeferredIssuance(pending)
+
+	attempt := server.attemptDeferredCollection(*pending)
+	if !attempt.Collected {
+		t.Fatalf("the deferred credential was not collected: %+v", attempt)
+	}
+	if contentType != "application/jwt" {
+		t.Errorf("Content-Type = %q, want application/jwt: the request must be encrypted", contentType)
+	}
+	if deferredRequest["transaction_id"] != "test-transaction" {
+		t.Errorf("decrypted transaction_id = %v", deferredRequest["transaction_id"])
+	}
+	if _, present := deferredRequest["credential_response_encryption"]; !present {
+		t.Errorf("the deferred request carries no credential_response_encryption: %v", deferredRequest)
 	}
 }
