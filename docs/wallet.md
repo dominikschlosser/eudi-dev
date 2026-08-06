@@ -888,6 +888,44 @@ Credential listings (`GET /api/credentials` and `GET /api/credentials/{id}`) inc
 
 The status list JWT is served at `GET /api/statuslist` on both the HTTP wallet port and the HTTPS wallet port.
 
+### Deferred issuance
+
+An issuer that cannot hand over a credential immediately answers the credential request with a transaction id, and the wallet keeps collecting it in the background. These endpoints are what `wallet deferred` drives:
+
+| Method   | Path                          | Description                                                       | CLI equivalent              |
+|----------|-------------------------------|-------------------------------------------------------------------|-----------------------------|
+| `GET`    | `/api/deferred`               | List the credentials still being collected, with attempt counts   | `wallet deferred`           |
+| `POST`   | `/api/deferred/{id}/collect`  | Ask the issuer now rather than waiting for the next attempt       | `wallet deferred check <id>`   |
+| `DELETE` | `/api/deferred/{id}`          | Stop collecting one (returns the issuer and transaction id it dropped, `404` when the id is unknown) | `wallet deferred abandon <id>` |
+
+```bash
+curl http://localhost:8085/api/deferred
+curl -X POST http://localhost:8085/api/deferred/<id>/collect
+```
+
+### Activity log
+
+The activity log is what the wallet UI shows and what `wallet logs` prints. Each entry carries a timestamp, a category (`presentation`, `issuance`), a description, a success flag, and for protocol steps a `details` object holding the request or response as it went over the wire.
+
+| Method   | Path       | Description                                     | CLI equivalent |
+|----------|------------|--------------------------------------------------|----------------|
+| `GET`    | `/api/log` | The persisted activity log, newest last          | `wallet logs`  |
+| `DELETE` | `/api/log` | Clear it (`204`, and the wallet UI's Clear button) | —              |
+
+```bash
+curl http://localhost:8085/api/log
+curl -X DELETE http://localhost:8085/api/log
+```
+
+### Last error
+
+The UI polls this on page load so a failure that happened while no page was open is still reported. `GET` answers `200` either way, with `null` when there is nothing to report.
+
+| Method   | Path         | Description                                        |
+|----------|--------------|-----------------------------------------------------|
+| `GET`    | `/api/error` | The last error (`message` and `detail`), or `null` |
+| `DELETE` | `/api/error` | Clear it                                            |
+
 ### Encrypted request objects (`request_uri_method=post`)
 
 OID4VP 1.0 Section 5.10 defines an optional mechanism where the wallet POSTs its capabilities and an encryption key to the verifier's `request_uri` endpoint, instead of using a plain GET. This allows the verifier to encrypt the request object so that only the wallet can read it.

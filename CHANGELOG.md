@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`wallet serve` runs from a function rather than from inside its flag builder.** Twenty-two flags were declared in a var block that the `RunE` closure read straight out of, so the builder was 466 lines of which the closure was 370, and every other command in the package (`runValidate`, `runDecode`, `runProxy`) already reads the other way round. The flags are a struct now and the work is `runWalletServe`, leaving the builder at 52 lines. It also removes a shadowing that was easy to miss: `--pid` and the local process id were both called `pid` in the same closure, the second one hiding the first from its declaration onward
 
+### Documentation
+
+- The architecture overview lists the packages and command files that were added since it was written. Five packages were missing from it (`demorp`, `jws`, `jwe`, `httpsec`, `imprint`), and `web/` was described as embedded static assets when it is a server with its own handlers. Both trees are now checked against the tree rather than kept by hand
+- The wallet's HTTP API reference covers deferred issuance, the activity log and the last error, which back `wallet deferred` and `wallet logs` and were the endpoints missing from a page that says everything the CLI does is available over HTTP
+
 ### Fixed
 
 - **Only a demo wallet capped the size of a request it would read.** Everywhere else the server read whatever it was sent fully into memory, so how much of it a caller could occupy was the caller's choice. The same one megabyte cap now applies to every wallet server, which every legitimate payload (credentials, offers, presentations, templates) is far below

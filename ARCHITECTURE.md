@@ -7,10 +7,13 @@ cmd/                        CLI commands (Cobra)
 ├── root.go                 Root command and global flags
 ├── wallet.go               Root wallet command, helpers, simple subcommands
 ├── wallet_serve.go         wallet serve (HTTP server + web UI)
+├── wallet_serve_detach.go  wallet serve --detached (background process)
+├── wallet_service.go       The management operations both backends implement
 ├── wallet_present.go       OID4VP/VCI dispatch, consent flow, submission
 ├── wallet_scan.go          wallet accept, wallet scan (QR + URI dispatch)
 ├── wallet_generate.go      wallet generate-pid (deprecated)
 ├── wallet_logs.go          wallet logs (print + follow persisted interactions)
+├── wallet_deferred.go      wallet deferred (list, check, abandon)
 ├── wallet_remote.go        wallet use, instances, kill, info (remote control)
 ├── wallet_remote_ops.go    Remote implementations of the management commands
 ├── templates.go            Credential template management commands
@@ -20,14 +23,23 @@ cmd/                        CLI commands (Cobra)
 ├── validate.go             Signature verification & revocation check
 ├── dcql.go                 DCQL query generation
 ├── issue.go                Test credential generation
+├── completion.go           Shell completion command
+├── completions.go          Argument completion functions
+├── detach_unix.go          Detaching a child process (Unix)
+├── detach_windows.go       Detaching a child process (Windows)
 └── version.go              Version command
 
 internal/
 ├── config/                 Centralized defaults (ports, timeouts)
 ├── credtemplate/           Credential templates (pre-defined PID templates, user template files)
 ├── dcql/                   DCQL query parsing, evaluation, generation
-├── format/                 Format detection, base64url, credential type constants
+├── demorp/                 Demo issuer and verifier served by the wallet (OID4VCI + OID4VP counterparties)
+├── format/                 Format detection, base64url, credential type constants, outbound fetch policy
+├── httpsec/                Browser security headers and the cross-origin guard every UI serves
+├── imprint/                Operator-supplied legal notice page served at /imprint
 ├── jsonutil/               Type-safe accessors for map[string]any
+├── jwe/                    Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM)
+├── jws/                    ES256 JWS signing (shared signature encoding)
 ├── keys/                   PEM/JWK key loading and conversion
 ├── mdoc/                   mDOC/mDL parsing (CBOR) and COSE_Sign1 verification
 ├── mock/                   Test credential generators (SD-JWT, JWT, mDOC)
@@ -41,7 +53,7 @@ internal/
 ├── trustlist/              ETSI TS 119 612 trust list parsing
 ├── validate/               Orchestrates verification (sig, expiry, revocation)
 ├── wallet/                 Wallet state, server, OID4VP/VCI protocol logic
-└── web/                    Embedded static assets (HTML/CSS/JS for web UIs)
+└── web/                    Decoder and validator web UI (HTTP handlers plus embedded static assets)
 ```
 
 ## Data Flow
