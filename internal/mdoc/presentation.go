@@ -23,7 +23,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
-	"math/big"
 	"strconv"
 
 	"github.com/fxamacker/cbor/v2"
@@ -137,33 +136,33 @@ func DeviceKey(doc *Document) (*ecdsa.PublicKey, error) {
 	if info == nil {
 		return nil, fmt.Errorf("the MSO names no device key, so the credential is not holder-bound")
 	}
-	raw, ok := info["deviceKey"]
-	if !ok {
+	if _, ok := info["deviceKey"]; !ok {
 		return nil, fmt.Errorf("deviceKeyInfo carries no deviceKey")
 	}
-	key, ok := raw.(map[string]any)
-	if !ok {
+	if len(doc.IssuerAuth.MSO.DeviceKeyCBOR) == 0 {
 		return nil, fmt.Errorf("deviceKey is not a COSE_Key map")
 	}
 
-	// COSE_Key for EC2: 1=kty, -1=crv, -2=x, -3=y. CBOR integer keys arrive
-	// here as their decimal strings.
-	if kty := coseInt(key["1"]); kty != 2 {
-		return nil, fmt.Errorf("device key type %d is not EC2", kty)
+	// go-cose reads the COSE_Key. Reading the labels by hand (1=kty, -1=crv,
+	// -2=x, -3=y) meant carrying an opinion on which curves count and
+	// rebuilding the point from the coordinates, neither of which belongs
+	// here now that a COSE library is already a dependency.
+	var key cose.Key
+	if err := key.UnmarshalCBOR(doc.IssuerAuth.MSO.DeviceKeyCBOR); err != nil {
+		return nil, fmt.Errorf("device key is not a valid COSE_Key: %w", err)
 	}
-	if crv := coseInt(key["-1"]); crv != 1 {
-		return nil, fmt.Errorf("device key curve %d is not P-256", crv)
+	pub, err := key.PublicKey()
+	if err != nil {
+		return nil, fmt.Errorf("reading the device key: %w", err)
 	}
-	x, xok := key["-2"].([]byte)
-	y, yok := key["-3"].([]byte)
-	if !xok || !yok {
-		return nil, fmt.Errorf("device key is missing its coordinates")
+	ecPub, ok := pub.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("device key is %T, not an EC2 key", pub)
 	}
-	return &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(x),
-		Y:     new(big.Int).SetBytes(y),
-	}, nil
+	if ecPub.Curve != elliptic.P256() {
+		return nil, fmt.Errorf("device key curve %s is not P-256", ecPub.Curve.Params().Name)
+	}
+	return ecPub, nil
 }
 
 func coseInt(v any) int64 {

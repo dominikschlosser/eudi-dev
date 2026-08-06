@@ -411,6 +411,11 @@ func parseMSO(data []byte) (*MSO, error) {
 	// Parse deviceKeyInfo
 	if dk, ok := msoMap["deviceKeyInfo"].(map[any]any); ok {
 		mso.DeviceKeyInfo = convertCBORMapToStringKeys(dk)
+		// Re-encoded here, where the labels are still integers, rather than
+		// from the display map above, whose keys are strings by then.
+		if raw, err := cbor.Marshal(dk["deviceKey"]); err == nil {
+			mso.DeviceKeyCBOR = raw
+		}
 	}
 
 	// Parse status

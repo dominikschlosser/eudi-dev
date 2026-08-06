@@ -70,7 +70,12 @@ type MSO struct {
 	ValueDigests    map[string]map[uint64][]byte
 	ValidityInfo    *ValidityInfo
 	DeviceKeyInfo   map[string]any
-	Status          map[string]any
+	// DeviceKeyCBOR is the deviceKey COSE_Key as it was encoded. The decoded
+	// DeviceKeyInfo above has its integer labels turned into decimal strings
+	// for display, which no COSE library can read back, so the bytes are kept
+	// for DeviceKey to decode properly.
+	DeviceKeyCBOR []byte
+	Status        map[string]any
 }
 
 // ValidityInfo contains credential validity dates.

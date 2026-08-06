@@ -19,6 +19,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
+
+	"github.com/fxamacker/cbor/v2"
 )
 
 // These pin what DeviceKey reads out of an MSO and what it refuses, so the
@@ -26,25 +28,33 @@ import (
 // trust that a holder-bound credential still resolves to the same key.
 // Written against the hand-rolled label decoding.
 
-// msoWithDeviceKey builds the smallest document DeviceKey looks at. The
-// labels are decimal strings because the CBOR decoder converts integer keys
-// that way before DeviceKey ever sees them.
-func msoWithDeviceKey(deviceKey any) *Document {
+// msoWithDeviceKey builds the smallest document DeviceKey looks at: the
+// display map records that a deviceKey is present, and the CBOR beside it is
+// what actually gets decoded.
+func msoWithDeviceKey(t *testing.T, coseKey map[any]any) *Document {
+	t.Helper()
+	raw, err := cbor.Marshal(coseKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &Document{
 		IssuerAuth: &IssuerAuth{
 			MSO: &MSO{
-				DeviceKeyInfo: map[string]any{"deviceKey": deviceKey},
+				DeviceKeyInfo: map[string]any{"deviceKey": "present"},
+				DeviceKeyCBOR: raw,
 			},
 		},
 	}
 }
 
-func coseEC2(x, y []byte) map[string]any {
-	return map[string]any{
-		"1":  int64(2), // kty: EC2
-		"-1": int64(1), // crv: P-256
-		"-2": x,
-		"-3": y,
+// coseEC2 is a COSE_Key with the integer labels a real one carries:
+// 1=kty, -1=crv, -2=x, -3=y.
+func coseEC2(x, y []byte) map[any]any {
+	return map[any]any{
+		int64(1):  int64(2),
+		int64(-1): int64(1),
+		int64(-2): x,
+		int64(-3): y,
 	}
 }
 
@@ -55,7 +65,7 @@ func TestDeviceKey_ResolvesTheBoundKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := msoWithDeviceKey(coseEC2(
+	doc := msoWithDeviceKey(t, coseEC2(
 		key.X.FillBytes(make([]byte, 32)),
 		key.Y.FillBytes(make([]byte, 32)),
 	))
@@ -70,9 +80,12 @@ func TestDeviceKey_ResolvesTheBoundKey(t *testing.T) {
 }
 
 // A coordinate shorter than the curve size is where padding mistakes turn
-// into a different point.
+// into a different point, and where a stricter decoder starts refusing keys
+// its predecessor read. Real issuers emit these, because anything encoding a
+// big.Int directly drops the leading zero byte. Searched rather than skipped:
+// a skip here would hide exactly the regression it exists to catch.
 func TestDeviceKey_ShortCoordinate(t *testing.T) {
-	for attempt := 0; attempt < 200; attempt++ {
+	for attempt := 0; attempt < 20000; attempt++ {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
 			t.Fatal(err)
@@ -81,7 +94,7 @@ func TestDeviceKey_ShortCoordinate(t *testing.T) {
 			continue
 		}
 		// Unpadded, the way a lax encoder would write it.
-		doc := msoWithDeviceKey(coseEC2(key.X.Bytes(), key.Y.FillBytes(make([]byte, 32))))
+		doc := msoWithDeviceKey(t, coseEC2(key.X.Bytes(), key.Y.FillBytes(make([]byte, 32))))
 		got, err := DeviceKey(doc)
 		if err != nil {
 			t.Fatalf("DeviceKey with a short X: %v", err)
@@ -91,7 +104,7 @@ func TestDeviceKey_ShortCoordinate(t *testing.T) {
 		}
 		return
 	}
-	t.Skip("no short coordinate generated in 200 attempts")
+	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
 }
 
 // What DeviceKey must refuse. Returning a key for any of these would report
@@ -108,18 +121,18 @@ func TestDeviceKey_Rejects(t *testing.T) {
 		{"no MSO", &Document{IssuerAuth: &IssuerAuth{}}},
 		{"no deviceKeyInfo", &Document{IssuerAuth: &IssuerAuth{MSO: &MSO{}}}},
 		{"deviceKeyInfo without a deviceKey", &Document{IssuerAuth: &IssuerAuth{MSO: &MSO{DeviceKeyInfo: map[string]any{}}}}},
-		{"deviceKey is not a map", msoWithDeviceKey("not a COSE_Key")},
-		{"key type is not EC2", msoWithDeviceKey(map[string]any{
-			"1": int64(1), "-1": int64(1), "-2": valid, "-3": valid,
+		{"deviceKey is present but its CBOR is not a COSE_Key", &Document{IssuerAuth: &IssuerAuth{MSO: &MSO{DeviceKeyInfo: map[string]any{"deviceKey": "x"}, DeviceKeyCBOR: []byte{0x01, 0x02}}}}},
+		{"key type is not EC2", msoWithDeviceKey(t, map[any]any{
+			int64(1): int64(1), int64(-1): int64(1), int64(-2): valid, int64(-3): valid,
 		})},
-		{"curve is not P-256", msoWithDeviceKey(map[string]any{
-			"1": int64(2), "-1": int64(2), "-2": valid, "-3": valid,
+		{"curve is not P-256", msoWithDeviceKey(t, map[any]any{
+			int64(1): int64(2), int64(-1): int64(2), int64(-2): valid, int64(-3): valid,
 		})},
-		{"missing x", msoWithDeviceKey(map[string]any{
-			"1": int64(2), "-1": int64(1), "-3": valid,
+		{"missing x", msoWithDeviceKey(t, map[any]any{
+			int64(1): int64(2), int64(-1): int64(1), int64(-3): valid,
 		})},
-		{"missing y", msoWithDeviceKey(map[string]any{
-			"1": int64(2), "-1": int64(1), "-2": valid,
+		{"missing y", msoWithDeviceKey(t, map[any]any{
+			int64(1): int64(2), int64(-1): int64(1), int64(-2): valid,
 		})},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -149,8 +162,8 @@ func TestDeviceKey_IntegerLabelTypes(t *testing.T) {
 		{"int", 2, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc := msoWithDeviceKey(map[string]any{
-				"1": tc.kty, "-1": tc.crv, "-2": x, "-3": y,
+			doc := msoWithDeviceKey(t, map[any]any{
+				int64(1): tc.kty, int64(-1): tc.crv, int64(-2): x, int64(-3): y,
 			})
 			got, err := DeviceKey(doc)
 			if err != nil {
