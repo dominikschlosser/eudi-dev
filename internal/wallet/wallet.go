@@ -727,9 +727,29 @@ func (w *Wallet) AddLogDetails(action, detail string, success bool, details map[
 	})
 }
 
+// maxLogEntries is how much activity history a wallet keeps. The log is
+// persisted with the wallet and re-read at every request boundary, so an
+// unbounded one costs disk and a growing parse on each of those reloads, not
+// just memory. A thousand entries is the same depth the proxy keeps.
+//
+// logTrimSlack lets the log run past the cap before it is trimmed, so the
+// copy happens once every few hundred entries rather than on every append.
+const (
+	maxLogEntries = 1000
+	logTrimSlack  = 256
+)
+
 func (w *Wallet) appendLogEntry(entry LogEntry) {
 	w.mu.Lock()
 	w.Log = append(w.Log, entry)
+	if len(w.Log) >= maxLogEntries+logTrimSlack {
+		// Copied into a fresh slice rather than resliced: resliced, the
+		// dropped entries stay reachable through the backing array and their
+		// details maps are never collected.
+		trimmed := make([]LogEntry, maxLogEntries)
+		copy(trimmed, w.Log[len(w.Log)-maxLogEntries:])
+		w.Log = trimmed
+	}
 	sink := w.logSink
 	w.mu.Unlock()
 	if sink != nil {

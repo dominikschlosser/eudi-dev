@@ -1518,6 +1518,10 @@
         document.querySelector('label[for="issue-save-template"]').hidden = true;
         document.getElementById('template-form').hidden = true;
         document.getElementById('templates-btn').hidden = true;
+        // The activity log is shared history on a demo, and the server
+        // refuses to clear it. Leaving the button would offer an action that
+        // can only fail.
+        document.getElementById('clear-log-btn').hidden = true;
         if (!localStorage.getItem('demo-banner-dismissed')) {
           document.getElementById('demo-banner').hidden = false;
         }

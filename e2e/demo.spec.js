@@ -547,6 +547,9 @@ test.describe("Demo mode hardening", () => {
     // Templates are read-only here, and the wallet is behind a TLS terminator.
     await expect(page.locator("#templates-btn")).toBeHidden();
     await expect(page.locator("#tls-cert-pem-link")).toBeHidden();
+    // The activity log is shared history and the server refuses to clear it,
+    // so offering the button would only produce a 403.
+    await expect(page.locator("#clear-log-btn")).toBeHidden();
     // The shared-instance warning has to be there.
     await expect(page.locator("#demo-banner")).toBeVisible();
   });

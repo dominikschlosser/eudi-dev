@@ -545,3 +545,33 @@ func TestRequestBodyIsCapped(t *testing.T) {
 		})
 	}
 }
+
+// Clearing the activity log or the last error changes what every other
+// visitor sees, and nothing on a demo instance needs it.
+func TestDemoBlocksClearingSharedHistory(t *testing.T) {
+	srv := newDemoTestServer(t)
+
+	for _, path := range []string{"/api/log", "/api/error"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, path, nil)
+			req.Host = "localhost:8085"
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+			}
+		})
+	}
+}
+
+// A local wallet still clears its own log.
+func TestLocalWalletStillClearsItsLog(t *testing.T) {
+	srv := newTestServer(t, false)
+	req := httptest.NewRequest(http.MethodDelete, "/api/log", nil)
+	req.Host = "localhost:8085"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusForbidden {
+		t.Error("a local wallet was refused permission to clear its own log")
+	}
+}

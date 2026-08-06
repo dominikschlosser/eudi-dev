@@ -156,6 +156,11 @@ func demoBlockedRoute(r *http.Request) bool {
 		return true
 	case r.Method == http.MethodPut && p == "/api/config/preferred-format":
 		return true
+	// Clearing the shared history is a change to what every other visitor
+	// sees, and nothing on a demo instance needs it. The log is bounded on
+	// its own, so keeping it is not a growth problem.
+	case r.Method == http.MethodDelete && (p == "/api/log" || p == "/api/error"):
+		return true
 	}
 	return false
 }

@@ -85,7 +85,11 @@ func (s *Server) SetVersion(version string) {
 // handleLog returns the activity log.
 // demoLogLimit caps the activity log served in demo mode: a busy shared
 // wallet accumulates entries from every visitor between resets, and the UI
-// only needs the recent tail. Local instances stay unbounded.
+// only needs the recent tail. Local instances serve the whole log.
+//
+// This bounds the response, not the log. What the wallet keeps is bounded
+// separately by maxLogEntries, which is what stops the stored log from
+// growing the wallet file and the reload that every request does.
 const demoLogLimit = 50
 
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {

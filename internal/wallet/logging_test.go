@@ -206,3 +206,32 @@ func TestActivityLog_KeepsSecretsForALocalWallet(t *testing.T) {
 		t.Errorf("access_token = %v, want the real value on a local wallet", got)
 	}
 }
+
+// The log is persisted with the wallet and re-read at every request
+// boundary, so an unbounded one is disk and a growing parse per reload, not
+// just memory. It matters most on a demo instance, where anyone can drive
+// activity and clearing the log is refused.
+func TestActivityLog_IsBounded(t *testing.T) {
+	w := generateTestWallet(t)
+	before := len(w.GetLog())
+
+	for i := 0; i < maxLogEntries*3; i++ {
+		w.AddLog("presentation", "entry", true)
+	}
+
+	got := len(w.GetLog())
+	if got > maxLogEntries+logTrimSlack {
+		t.Errorf("log holds %d entries, want it trimmed to around %d", got, maxLogEntries)
+	}
+	if got < maxLogEntries {
+		t.Errorf("log holds %d entries, want it to keep at least %d", got, maxLogEntries)
+	}
+	_ = before
+
+	// The newest entries are the ones kept.
+	w.AddLog("presentation", "the-last-one", true)
+	entries := w.GetLog()
+	if entries[len(entries)-1].Detail != "the-last-one" {
+		t.Error("trimming dropped the newest entry instead of the oldest")
+	}
+}
