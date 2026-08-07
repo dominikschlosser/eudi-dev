@@ -1675,3 +1675,121 @@ func TestProcessCredentialOffer_TokenResponseCNonceByValidationMode(t *testing.T
 		})
 	}
 }
+
+// An Authorization Server that publishes no pushed authorization request
+// endpoint takes the request at its authorization endpoint instead, which is
+// the plain authorization request of RFC 6749 §4.1.1. RFC 9126 §2 makes the
+// endpoint's presence the signal ("Authorization servers supporting PAR SHOULD
+// include the URL of their pushed authorization request endpoint in their
+// authorization server metadata document"), and OpenID4VCI requires neither
+// PAR nor DPoP, so an issuer offering neither has to be collectable.
+func TestProcessCredentialOffer_AuthCodeWithoutPARorDPoP(t *testing.T) {
+	w := generateTestWallet(t)
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+
+	credRaw := generateTestCredential(t, w)
+	var (
+		serverURL      string
+		authQuery      url.Values
+		sawPARRequest  bool
+		sawDPoPHeader  bool
+		tokenAuthState string
+	)
+
+	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("DPoP") != "" {
+			sawDPoPHeader = true
+		}
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":     serverURL,
+				"authorization_servers": []string{serverURL},
+				"credential_endpoint":   serverURL + "/credential",
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{"format": "dc+sd-jwt", "scope": "test-scope"},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
+			// No pushed_authorization_request_endpoint and no
+			// dpop_signing_alg_values_supported: an ordinary OAuth server.
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"issuer":                 serverURL,
+				"authorization_endpoint": serverURL + "/authorize",
+				"token_endpoint":         serverURL + "/token",
+			})
+		case r.URL.Path == "/par":
+			sawPARRequest = true
+			rw.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
+			authQuery = r.URL.Query()
+			tokenAuthState = authQuery.Get("state")
+			http.Redirect(rw, r, w.VCIRedirectURI+"?code=issued-code&state="+url.QueryEscape(tokenAuthState), http.StatusFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"access_token": "plain-bearer-token",
+				"token_type":   "Bearer",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/credential":
+			if got := r.Header.Get("Authorization"); got != "Bearer plain-bearer-token" {
+				t.Errorf("Authorization = %q, want a bearer token", got)
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credentials": []any{map[string]any{"credential": credRaw}},
+			})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer issuer.Close()
+	serverURL = issuer.URL
+
+	oldClient := httpClient
+	httpClient = issuer.Client()
+	defer func() { httpClient = oldClient }()
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"authorization_code": map[string]any{"issuer_state": "some-state"},
+		},
+	}
+	offerJSON, err := json.Marshal(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := w.ProcessCredentialOffer("openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON)))
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("no credential was collected")
+	}
+
+	if sawPARRequest {
+		t.Error("the wallet pushed the request to an endpoint the server does not publish")
+	}
+	if sawDPoPHeader {
+		t.Error("the wallet sent a DPoP proof to a server that advertises no DPoP support")
+	}
+	// The parameters PAR would have carried have to reach the authorization
+	// endpoint instead.
+	for _, key := range []string{"response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method"} {
+		if authQuery.Get(key) == "" {
+			t.Errorf("the authorization request carried no %s: %v", key, authQuery.Encode())
+		}
+	}
+	if got := authQuery.Get("code_challenge_method"); got != "S256" {
+		t.Errorf("code_challenge_method = %q, want S256", got)
+	}
+	if authQuery.Get("request_uri") != "" {
+		t.Error("the authorization request named a request_uri although nothing was pushed")
+	}
+}

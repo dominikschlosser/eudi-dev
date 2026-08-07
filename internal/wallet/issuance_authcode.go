@@ -40,10 +40,15 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("OID4VCI authorization_code flow requires configured wallet client_id and redirect_uri")
 	}
 
+	// Pushed Authorization Requests are used where the Authorization Server
+	// offers them and skipped where it does not. RFC 9126 §2 asks a server
+	// that supports PAR to publish the endpoint ("Authorization servers
+	// supporting PAR SHOULD include the URL of their pushed authorization
+	// request endpoint in their authorization server metadata document"), so
+	// its absence is the server saying it takes the request at the
+	// authorization endpoint instead. OpenID4VCI requires neither, and HAIP
+	// asks for PAR through FAPI 2.0, which the profile checks separately.
 	parEndpoint, _ := oauthMeta["pushed_authorization_request_endpoint"].(string)
-	if parEndpoint == "" {
-		return nil, fmt.Errorf("authorization server metadata did not include pushed_authorization_request_endpoint")
-	}
 	authorizationEndpoint, _ := oauthMeta["authorization_endpoint"].(string)
 	if authorizationEndpoint == "" {
 		return nil, fmt.Errorf("authorization server metadata did not include authorization_endpoint")
@@ -53,9 +58,13 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if clientAuthMethod != "" && clientAuthMethod != "private_key_jwt" && clientAuthMethod != "attest_jwt_client_auth" {
 		return nil, fmt.Errorf("unsupported token endpoint auth method %q", clientAuthMethod)
 	}
-	useDPoP := supportsDPoP(oauthMeta)
-	if !useDPoP {
-		return nil, fmt.Errorf("authorization_code flow currently requires DPoP-capable issuer metadata")
+	// A sender-constrained token is used where the server advertises DPoP.
+	// RFC 9449 leaves the metadata optional, and an Authorization Server that
+	// names no signing algorithms is one that issues bearer tokens, which is
+	// what the request then carries.
+	var dpopKey *ecdsa.PrivateKey
+	if supportsDPoP(oauthMeta) {
+		dpopKey = w.HolderKey
 	}
 
 	configID := ""
@@ -91,15 +100,20 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, err
 	}
 
-	w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
-	parResp, err := postFormWithDPoP(parEndpoint, parForm, w.HolderKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
-	w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
-	if err != nil {
-		return nil, fmt.Errorf("PAR request: %w", err)
-	}
-	requestURI, _ := parResp["request_uri"].(string)
-	if requestURI == "" {
-		return nil, fmt.Errorf("PAR response missing request_uri")
+	// requestURI is empty when the request goes to the authorization endpoint
+	// directly, and the parameters travel in the query string instead.
+	var requestURI string
+	if parEndpoint != "" {
+		w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
+		parResp, err := postFormWithDPoP(parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
+		w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
+		if err != nil {
+			return nil, fmt.Errorf("PAR request: %w", err)
+		}
+		requestURI, _ = parResp["request_uri"].(string)
+		if requestURI == "" {
+			return nil, fmt.Errorf("PAR response missing request_uri")
+		}
 	}
 
 	w.addProtocolLog("issuance", "authorization_request", fmt.Sprintf("Start authorization request at %s", authorizationEndpoint), true, map[string]any{
@@ -112,7 +126,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		"redirect_uri": redirectURI,
 		"state":        state,
 	})
-	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, redirectURI, state, oauthIssuer(oauthMeta, ""), w.ValidationMode)
+	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), w.ValidationMode)
 	authorizationResponseDetails := map[string]any{
 		"direction": "inbound",
 		"endpoint":  "authorization",
@@ -144,7 +158,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, formRequestLogDetails(tokenEndpoint, "token", tokenForm))
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, w.HolderKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
 	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
@@ -200,7 +214,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		credentialIdentifier:      credentialIdentifier,
 		credentialConfigurationID: credentialConfigurationID,
 		responseEncryption:        responseEncryption,
-		dpopKey:                   w.HolderKey,
+		dpopKey:                   dpopKey,
 		proofKeys:                 proofKeys,
 		nonce:                     &nonces.resource,
 	}
@@ -1092,8 +1106,8 @@ func derefString(v *string) string {
 	return *v
 }
 
-func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
-	location, body, err := callAuthorizationEndpoint(endpoint, clientID, requestURI)
+func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
+	location, body, err := callAuthorizationEndpoint(endpoint, clientID, requestURI, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1189,10 +1203,25 @@ func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, e
 	return nil
 }
 
-func callAuthorizationEndpoint(endpoint, clientID, requestURI string) (string, string, error) {
+// callAuthorizationEndpoint starts the authorization request.
+//
+// A request that went through PAR is referred to by its request_uri, and the
+// Authorization Server already holds everything else. Without PAR the same
+// parameters travel in the query string, which is the plain authorization
+// request of RFC 6749 §4.1.1.
+func callAuthorizationEndpoint(endpoint, clientID, requestURI string, params url.Values) (string, string, error) {
 	values := url.Values{}
-	values.Set("client_id", clientID)
-	values.Set("request_uri", requestURI)
+	if requestURI != "" {
+		values.Set("client_id", clientID)
+		values.Set("request_uri", requestURI)
+	} else {
+		for key, entries := range params {
+			for _, entry := range entries {
+				values.Add(key, entry)
+			}
+		}
+		values.Set("client_id", clientID)
+	}
 	req, err := http.NewRequest("GET", endpoint+"?"+values.Encode(), nil)
 	if err != nil {
 		return "", "", fmt.Errorf("creating authorization request: %w", err)
