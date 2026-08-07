@@ -130,14 +130,23 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
 
+	// The profile decides how many checks run, the mode decides what a
+	// violation does. Strict refuses the offer, debug reports every violation
+	// and collects the credential anyway, which is what makes a run against a
+	// counterparty that does not follow the profile worth watching.
 	if w.RequireHAIP {
 		if violations := ValidateHAIPIssuanceCompliance(offer, oauthMeta); len(violations) > 0 {
 			w.AddLog("issuance", fmt.Sprintf("HAIP violations: %v", violations), false)
-			w.addProtocolLog("issuance", "haip_violation", "Credential offer rejected by HAIP 1.0 enforcement", false, map[string]any{
+			w.addProtocolLog("issuance", "haip_violation", "Credential offer does not follow HAIP 1.0", false, map[string]any{
 				"issuer":     offer.CredentialIssuer,
 				"violations": violations,
 			})
-			return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
+			if w.ValidationMode == ValidationModeStrict {
+				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
+			}
+			for _, v := range violations {
+				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
+			}
 		}
 	}
 

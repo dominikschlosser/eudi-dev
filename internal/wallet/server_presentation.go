@@ -186,7 +186,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		Source:           "api",
 	}
 
-	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, authReq)
+	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, reqServer.wallet.RequireHAIP, authReq)
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)

@@ -28,11 +28,11 @@ import (
 // ValidateHAIPCompliance checks an authorization request against HAIP 1.0.
 // It returns a list of violations, empty when the request conforms.
 //
-// Every finding here is a violation of a MUST in the profile, so all of them
-// are errors whenever --haip is on. That is what separates this from the
-// validation mode: strict and debug decide whether a general specification
-// finding stops the flow or is only reported, while asking for HAIP is
-// asserting that the counterparty follows this profile.
+// Every finding here is a violation of a MUST in the profile. Asking for HAIP
+// is what makes these checks run at all, on top of the ones OpenID4VP asks of
+// any Verifier. What a violation then does is the validation mode's decision,
+// the same as for every other finding: strict stops the flow, debug reports it
+// and carries on.
 func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
 	var violations []string
 	if params == nil {

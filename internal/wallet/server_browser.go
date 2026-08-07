@@ -122,7 +122,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, authReq)
+	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, reqServer.wallet.RequireHAIP, authReq)
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
@@ -136,20 +136,6 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	for _, finding := range findings {
 		reqServer.log("  WARNING: %s", finding)
 		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
-	}
-
-	if reqServer.wallet.RequireHAIP {
-		if violations := ValidateHAIPCompliance(authReq, authReq.RequestObject); len(violations) > 0 {
-			for _, v := range violations {
-				reqServer.log("  HAIP VIOLATION: %s", v)
-			}
-			reqServer.wallet.AddLog("presentation", fmt.Sprintf("HAIP violations: %v", violations), false)
-			// A profile violation is a request the wallet will not act on, so
-			// §8.5's invalid_request is what the verifier is owed.
-			reqServer.writeBrowserAuthorizationError(w, authReq, protocol, errorCodeInvalidRequest,
-				"HAIP 1.0 compliance check failed: "+strings.Join(violations, "; "), http.StatusBadRequest)
-			return
-		}
 	}
 
 	if authReq.DCQLQuery != nil {

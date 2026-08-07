@@ -6,7 +6,7 @@ The split runs through the whole request path rather than sitting at the edge, b
 
 Both modes run the checks and keep what they find. A mode that ran them and threw the results away would make the debug default useless for the one job it has, since the run meant for watching what a counterparty gets wrong is the run where naming it matters most.
 
-`--haip` sits outside this split. It is not a third mode: it decides whether the counterparty is held to HAIP 1.0, and every check in that profile is a MUST, so a violation is an error whatever the validation mode says. A wallet asked for HAIP that only warned about a HAIP violation would be asserting a profile it did not enforce, which is what the flag exists to rule out.
+`--haip` sits alongside this split rather than inside it. It is not a third mode: it decides how many checks run, adding everything HAIP 1.0 asks of a counterparty on top of what the base specifications ask of any. What a violation then does is this decision's, the same as for every other finding, so a HAIP run in debug mode names every profile violation it sees and continues, and the same run in strict mode refuses the request.
 
 ## Consequences
 

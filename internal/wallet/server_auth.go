@@ -214,7 +214,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 
-	findings, err := ValidateAuthorizationRequest(s.wallet.ValidationMode, authReq)
+	findings, err := ValidateAuthorizationRequest(s.wallet.ValidationMode, s.wallet.RequireHAIP, authReq)
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("presentation", err.Error(), false)
@@ -234,30 +234,6 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
 		s.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
-	}
-
-	// HAIP 1.0 compliance check
-	if s.wallet.RequireHAIP {
-		if violations := ValidateHAIPCompliance(authReq, authReq.RequestObject); len(violations) > 0 {
-			for _, v := range violations {
-				s.log("  HAIP VIOLATION: %s", v)
-			}
-			s.wallet.AddLog("presentation", fmt.Sprintf("HAIP violations: %v", violations), false)
-			s.wallet.NotifyError(WalletError{
-				Message: "HAIP 1.0 compliance check failed",
-				Detail:  strings.Join(violations, "; "),
-			})
-			s.triggerUIRequest()
-			// A profile violation is a request the wallet will not act on, so
-			// §8.5's invalid_request is what the verifier is owed.
-			description := "HAIP 1.0 compliance check failed: " + strings.Join(violations, "; ")
-			s.reportRefusalToVerifier(authReq, errorCodeInvalidRequest, description)
-			writeJSON(w, http.StatusBadRequest, map[string]any{
-				"error":             errorCodeInvalidRequest,
-				"error_description": description,
-			})
-			return
-		}
 	}
 
 	// Log DCQL query

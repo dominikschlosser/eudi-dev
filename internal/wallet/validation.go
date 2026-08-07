@@ -24,7 +24,14 @@ import (
 
 // ValidateAuthorizationRequest evaluates request syntax, verifier metadata, and
 // request-object checks for the full authorization request the wallet received.
-func ValidateAuthorizationRequest(mode ValidationMode, params *AuthorizationRequestParams) ([]string, error) {
+//
+// The two switches a caller has are separate. requireHAIP decides how many
+// checks run, adding everything the High Assurance Interoperability Profile
+// asks of a Verifier on top of what OpenID4VP asks of any of them. The mode
+// decides what a finding does: strict stops the flow, debug reports it and
+// carries on. Neither implies the other, so a HAIP run in debug mode names
+// every profile violation it sees without refusing the request.
+func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP bool, params *AuthorizationRequestParams) ([]string, error) {
 	if err := validateAuthorizationRequestSyntax(params); err != nil {
 		return nil, fmt.Errorf("authorization request validation failed: %w", err)
 	}
@@ -57,16 +64,16 @@ func ValidateAuthorizationRequest(mode ValidationMode, params *AuthorizationRequ
 		requestOrigin = params.RequestOrigin
 		reqObj = params.RequestObject
 	}
-	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
+	return validatePresentationRequestCore(mode, requireHAIP, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
 }
 
 // ValidatePresentationRequest evaluates client_id, request-object metadata, and signature checks.
 // In debug mode findings are returned as warnings. In strict mode any finding is fatal.
 func ValidatePresentationRequest(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string) ([]string, error) {
-	return validatePresentationRequestCore(mode, clientID, reqObj, responseURI, "", nil, nil)
+	return validatePresentationRequestCore(mode, false, clientID, reqObj, responseURI, "", nil, nil)
 }
 
-func validatePresentationRequestCore(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
+func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
 	var findings []string
 
 	if finding := VerifyClientID(clientID, reqObj, responseURI, requestOrigin); finding != "" {
@@ -79,6 +86,9 @@ func validatePresentationRequestCore(mode ValidationMode, clientID string, reqOb
 		findings = append(findings, finding)
 	}
 	findings = append(findings, authorizationFindings(params, payload)...)
+	if requireHAIP {
+		findings = append(findings, ValidateHAIPCompliance(params, reqObj)...)
+	}
 
 	if mode == ValidationModeStrict && len(findings) > 0 {
 		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, "; "))

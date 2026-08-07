@@ -243,7 +243,10 @@ func TestUnsupportedTransactionDataReturnsInvalidTransactionDataToTheVerifier(t 
 // makes an invalid_request the verifier is owed.
 func TestAHAIPViolationIsReportedToTheVerifier(t *testing.T) {
 	srv := newTestServer(t, true)
+	// --haip decides that the profile checks run, the mode decides that a
+	// violation refuses the request rather than being reported.
 	srv.wallet.RequireHAIP = true
+	srv.wallet.ValidationMode = ValidationModeStrict
 	verifier := newCaptureVerifier(t)
 
 	params := url.Values{

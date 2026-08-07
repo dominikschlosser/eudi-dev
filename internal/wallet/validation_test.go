@@ -29,7 +29,7 @@ func TestValidateAuthorizationRequest_StrictRejectsMissingNonce(t *testing.T) {
 		ResponseURI:  "https://verifier.example/response",
 	}
 
-	_, err := ValidateAuthorizationRequest(ValidationModeStrict, params)
+	_, err := ValidateAuthorizationRequest(ValidationModeStrict, false, params)
 	if err == nil || !strings.Contains(err.Error(), "nonce") {
 		t.Fatalf("expected nonce validation error, got %v", err)
 	}
@@ -43,7 +43,7 @@ func TestValidateAuthorizationRequest_DebugAllowsMissingNonce(t *testing.T) {
 		ResponseURI:  "https://verifier.example/response",
 	}
 
-	if _, err := ValidateAuthorizationRequest(ValidationModeDebug, params); err != nil {
+	if _, err := ValidateAuthorizationRequest(ValidationModeDebug, false, params); err != nil {
 		t.Fatalf("expected debug mode to allow missing nonce, got %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func TestValidateAuthorizationRequest_StrictRejectsUnsupportedClientIDPrefix(t *
 		Nonce:        "nonce",
 	}
 
-	_, err := ValidateAuthorizationRequest(ValidationModeStrict, params)
+	_, err := ValidateAuthorizationRequest(ValidationModeStrict, false, params)
 	if err == nil || !strings.Contains(err.Error(), "unsupported prefix") {
 		t.Fatalf("expected unsupported client_id prefix error, got %v", err)
 	}
@@ -81,7 +81,7 @@ func TestValidateAuthorizationRequest_StrictRejectsRedirectURIWithDirectPost(t *
 		},
 	}
 
-	_, err := ValidateAuthorizationRequest(ValidationModeStrict, params)
+	_, err := ValidateAuthorizationRequest(ValidationModeStrict, false, params)
 	if err == nil || !strings.Contains(err.Error(), "redirect_uri") {
 		t.Fatalf("expected redirect_uri validation error, got %v", err)
 	}
@@ -110,7 +110,7 @@ func TestValidateAuthorizationRequest_StrictRejectsRequestObjectTransactionData(
 		},
 	}
 
-	_, err := ValidateAuthorizationRequest(ValidationModeStrict, params)
+	_, err := ValidateAuthorizationRequest(ValidationModeStrict, false, params)
 	if err == nil || !strings.Contains(err.Error(), "transaction_data") {
 		t.Fatalf("expected transaction_data validation error, got %v", err)
 	}

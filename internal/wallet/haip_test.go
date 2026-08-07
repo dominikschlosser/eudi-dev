@@ -66,9 +66,14 @@ func haipCompliantParams(t *testing.T) (*AuthorizationRequestParams, *oid4vc.Req
 		ClientID:      clientID,
 		ResponseType:  "vp_token",
 		ResponseMode:  "dc_api.jwt",
+		Nonce:         "n-haip",
 		RequestOrigin: "https://verifier.example",
 		DCQLQuery: map[string]any{"credentials": []any{
-			map[string]any{"id": "pid", "format": "dc+sd-jwt"},
+			map[string]any{
+				"id":     "pid",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			},
 		}},
 		ClientMetadata: map[string]any{
 			"encrypted_response_enc_values_supported": []any{"A128GCM", "A256GCM"},
@@ -703,4 +708,52 @@ func selfSignedCert(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 		t.Fatal(err)
 	}
 	return cert, key
+}
+
+// The two switches are independent. --haip decides how many checks run, and
+// the validation mode decides what a finding does. A HAIP run in debug mode
+// therefore names every profile violation it sees and still lets the flow
+// continue, which is what makes it useful for watching a counterparty that
+// does not follow the profile.
+func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
+	violating := func(t *testing.T) *AuthorizationRequestParams {
+		t.Helper()
+		params, reqObj := haipCompliantParams(t)
+		params.RequestObject = reqObj
+		// A Verifier listing one content encryption algorithm violates §5.
+		params.ClientMetadata = map[string]any{
+			"encrypted_response_enc_values_supported": []any{"A128GCM"},
+		}
+		return params
+	}
+
+	t.Run("strict refuses", func(t *testing.T) {
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, violating(t))
+		if err == nil {
+			t.Fatalf("strict mode accepted a profile violation, findings = %v", findings)
+		}
+		if !strings.Contains(err.Error(), "encrypted_response_enc_values_supported") {
+			t.Errorf("error = %q, want it to name the violation", err)
+		}
+	})
+
+	t.Run("debug reports and continues", func(t *testing.T) {
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, violating(t))
+		if err != nil {
+			t.Fatalf("debug mode refused the request: %v", err)
+		}
+		if !containsSubstring(findings, "encrypted_response_enc_values_supported") {
+			t.Errorf("findings = %v, want the violation reported", findings)
+		}
+	})
+
+	t.Run("without --haip the profile checks do not run at all", func(t *testing.T) {
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, violating(t))
+		if err != nil {
+			t.Fatalf("a request that only breaks the profile was refused without --haip: %v", err)
+		}
+		if containsSubstring(findings, "HAIP") {
+			t.Errorf("findings = %v, want no profile checks without --haip", findings)
+		}
+	})
 }

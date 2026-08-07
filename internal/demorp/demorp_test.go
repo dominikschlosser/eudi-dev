@@ -860,6 +860,9 @@ func TestHAIPEnforcementRejectsPlainRequest(t *testing.T) {
 	issuerKey, _ := mock.GenerateKey()
 	w := wallet.New(holderKey, issuerKey, true)
 	w.RequireHAIP = true
+	// --haip decides how many checks run, the mode decides what a violation
+	// does. Refusing the request is the strict reading.
+	w.ValidationMode = wallet.ValidationModeStrict
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID: %v", err)
 	}

@@ -2,7 +2,7 @@
 
 These are the current local wallet conformance results for `eudi-dev`. Use [Running OIDF Wallet Conformance](./conformance-run.md) to reproduce or update them.
 
-**A re-run is pending.** The numbers below predate the 1.19.18 conformance work on the wallet, the demo issuer and the demo verifier (Request Object parameter extraction, Client Identifier Prefix handling, unsigned Digital Credentials API requests, HAIP enforcement independent of the validation mode, the Nonce Endpoint, status list verification). They are recorded as measured and no figure here has been adjusted for those changes, so treat every count as belonging to the run it is dated with until the full matrix has been run again.
+**A re-run is pending.** The numbers below predate the 1.19.18 conformance work on the wallet, the demo issuer and the demo verifier (Request Object parameter extraction, Client Identifier Prefix handling, unsigned Digital Credentials API requests, the added HAIP checks, the Nonce Endpoint, status list verification). They are recorded as measured and no figure here has been adjusted for those changes, so treat every count as belonging to the run it is dated with until the full matrix has been run again.
 
 ## Baseline
 

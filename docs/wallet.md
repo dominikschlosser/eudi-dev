@@ -602,7 +602,7 @@ The override never displaces client authentication the server did ask for: an au
 
 Use `--haip` with `wallet serve` or `wallet accept` to enforce [HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) compliance on incoming OID4VP requests. `--demo` turns it on by default (see [hosting a public demo](public-demo.md)).
 
-`--haip` and `--mode` are separate switches and answer different questions. `--mode strict` versus `--mode debug` decides whether a general specification finding stops the flow or is only reported. `--haip` decides whether the counterparty is held to the profile at all, and every check below is a MUST in it, so a violation is an error whenever `--haip` is on regardless of the validation mode. Asking for HAIP is asserting that the counterparty follows HAIP, which a warning would not assert.
+`--haip` and `--mode` are separate switches and answer different questions. `--haip` decides how many checks run, adding every check below on top of the ones that apply to any counterparty. `--mode` decides what a finding does, the same for a profile violation as for any other: `--mode strict` stops the flow, `--mode debug` reports it and carries on. So `--haip --mode debug` names every profile violation it sees without refusing the request, which is what makes it useful against a counterparty still being brought into line.
 
 Enforcement covers **presentations**: OID4VP `direct_post.jwt` and Browser API `dc_api.jwt`. When enabled, the wallet rejects requests that violate any of:
 
