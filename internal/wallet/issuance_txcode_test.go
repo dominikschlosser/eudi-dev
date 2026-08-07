@@ -117,7 +117,7 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 		{"no code", "", "Missing required 'tx_code'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			consentReq, _, err := prepareIssuanceConsentRequest(offerURI, ValidationModeDebug)
+			consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
 			if err != nil {
 				t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 			}
@@ -199,7 +199,7 @@ func TestDescribeCredentialOffer_TxCodeShape(t *testing.T) {
 			if len(tc.txCode) == 0 {
 				offer.Grants.TxCode = map[string]any{"input_mode": ""}
 			}
-			details := describeCredentialOffer(offer, ValidationModeDebug)
+			details := describeCredentialOffer(offer)
 			if !details.TxCode {
 				t.Fatal("expected tx_code to be reported as required")
 			}

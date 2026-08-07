@@ -1374,7 +1374,7 @@ func TestIssuanceConsentDescribesTheOffer(t *testing.T) {
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
 	defer issuer.Close()
 
-	req, _, err := prepareIssuanceConsentRequest(offerURI, ValidationModeDebug)
+	req, _, err := prepareIssuanceConsentRequest(offerURI)
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1433,7 +1433,7 @@ func TestIssuanceConsentResolvesOfferByReference(t *testing.T) {
 	})
 	defer issuer.Close()
 
-	req, _, err := prepareIssuanceConsentRequest(offerURI, ValidationModeDebug)
+	req, _, err := prepareIssuanceConsentRequest(offerURI)
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1455,7 +1455,7 @@ func TestIssuanceConsentResolvesOfferByReference(t *testing.T) {
 // An offer whose URI cannot be fetched must still produce a dialog: naming
 // the host and the failure beats refusing to ask.
 func TestIssuanceConsentSurvivesUnresolvableOfferURI(t *testing.T) {
-	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer_uri=https://issuer.invalid/offer/1", ValidationModeDebug)
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer_uri=https://issuer.invalid/offer/1")
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1471,7 +1471,7 @@ func TestIssuanceConsentSurvivesUnresolvableOfferURI(t *testing.T) {
 func TestIssuanceConsentSurvivesMissingIssuerMetadata(t *testing.T) {
 	offer := `{"credential_issuer":"https://issuer.invalid","credential_configuration_ids":["some-config"],` +
 		`"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"abc","tx_code":{"length":6,"input_mode":"numeric"}}}}`
-	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer="+url.QueryEscape(offer), ValidationModeDebug)
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer=" + url.QueryEscape(offer))
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
