@@ -54,6 +54,53 @@ func doIssuanceRequest(req *http.Request) (*http.Response, error) {
 	return httpClient.Do(req)
 }
 
+// metadataFetchAttempts is how many times a metadata document is asked for
+// before the wallet gives up on it.
+//
+// Metadata is read from somebody else's server at the start of every flow, and
+// a single slow answer there is not evidence that the issuer cannot be talked
+// to. Giving up on the first one ends the flow with a message about what the
+// metadata did not contain, which points at the issuer's configuration rather
+// than at the read that never completed.
+const metadataFetchAttempts = 3
+
+// metadataRetryDelay spaces the attempts out enough to outlast a moment of
+// unresponsiveness without holding a flow up for long.
+var metadataRetryDelay = 500 * time.Millisecond
+
+// fetchMetadataDocument performs a metadata GET, retrying a request that could
+// not be completed or that the server could not answer.
+//
+// Only the transport failing and the 5xx range are retried. A 404 is the
+// server saying it publishes nothing there, which is an answer, and every
+// other 4xx is about the request rather than the moment it was made.
+func fetchMetadataDocument(newRequest func() (*http.Request, error)) (*http.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= metadataFetchAttempts; attempt++ {
+		req, err := newRequest()
+		if err != nil {
+			return nil, err
+		}
+		resp, err := doIssuanceRequest(req)
+		if err == nil && resp.StatusCode < 500 {
+			return resp, nil
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = fmt.Errorf("%s answered HTTP %d", req.URL, resp.StatusCode)
+		}
+		if attempt < metadataFetchAttempts {
+			log.Printf("[VCI] metadata read from %s did not complete (%v), retrying", req.URL, lastErr)
+			time.Sleep(metadataRetryDelay)
+		}
+	}
+	return nil, lastErr
+}
+
 // IssuanceResult captures the result of an OID4VCI flow.
 type IssuanceResult struct {
 	CredentialID       string `json:"credential_id"`
@@ -424,19 +471,21 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 		return nil, fmt.Errorf("building issuer metadata URL: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", metadataURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating metadata request: %w", err)
-	}
-	// OpenID4VCI 1.0 §12.2.2 gives the issuer two forms to answer in: "an
-	// unsigned JSON document using the media type application/json, or a signed
-	// JSON Web Token (JWT) containing the Credential Issuer Metadata in its
-	// payload using the media type application/jwt". Naming both signals that
-	// signed metadata is supported. There is no
-	// application/openidvci-issuer-metadata+jwt media type: that string is the
-	// typ header value of the signed form (§12.2.3).
-	req.Header.Set("Accept", "application/json, application/jwt")
-	resp, err := doIssuanceRequest(req)
+	resp, err := fetchMetadataDocument(func() (*http.Request, error) {
+		req, err := http.NewRequest("GET", metadataURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating metadata request: %w", err)
+		}
+		// OpenID4VCI 1.0 §12.2.2 gives the issuer two forms to answer in: "an
+		// unsigned JSON document using the media type application/json, or a
+		// signed JSON Web Token (JWT) containing the Credential Issuer Metadata
+		// in its payload using the media type application/jwt". Naming both
+		// signals that signed metadata is supported. There is no
+		// application/openidvci-issuer-metadata+jwt media type: that string is
+		// the typ header value of the signed form (§12.2.3).
+		req.Header.Set("Accept", "application/json, application/jwt")
+		return req, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching metadata: %w", err)
 	}
@@ -791,16 +840,15 @@ func fetchOAuthMetadata(authServer string) (map[string]any, error) {
 	urls := []string{oauthURL}
 
 	for _, u := range urls {
-		req, err := http.NewRequest("GET", u, nil)
-		if err != nil {
-			continue
-		}
-		req.Header.Set("Accept", "application/json")
-		resp, err := doIssuanceRequest(req)
-		if err != nil {
-			if resp != nil {
-				resp.Body.Close()
+		resp, err := fetchMetadataDocument(func() (*http.Request, error) {
+			req, err := http.NewRequest("GET", u, nil)
+			if err != nil {
+				return nil, err
 			}
+			req.Header.Set("Accept", "application/json")
+			return req, nil
+		})
+		if err != nil {
 			continue
 		}
 
