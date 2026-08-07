@@ -627,6 +627,16 @@ func TestHAIPRejectsSelfSignedAndAnchoredChains(t *testing.T) {
 		reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
 
 		violations := ValidateHAIPCompliance(params, reqObj)
+		// The finding names what was seen, a certificate that signed itself,
+		// and where. Which certificate is a trust anchor depends on what the
+		// party checking was configured with, which the wallet has not been
+		// given, so the message must not assert it read one off the chain.
+		if !containsSubstring(violations, "self-signed certificate at position 2") {
+			t.Errorf("violations = %v, want the self-signed certificate named with its position", violations)
+		}
+		if !containsSubstring(violations, caCert.Subject.String()) {
+			t.Errorf("violations = %v, want the offending certificate's subject named", violations)
+		}
 		if !containsSubstring(violations, "trust anchor") {
 			t.Errorf("violations = %v, want the anchor refused", violations)
 		}

@@ -796,11 +796,11 @@
     info.appendChild(renderNote(MDOC_NOTES.structure));
     info.appendChild(renderKV("DocType", data.docType));
     if (data.isDeviceResponse) {
-      info.appendChild(renderKV("Container", "DeviceResponse (a presentation)"));
+      info.appendChild(renderKV("Container", "DeviceResponse"));
       if (data.responseVersion) info.appendChild(renderKV("version", data.responseVersion));
       if (data.responseStatus !== undefined) info.appendChild(renderKV("status", data.responseStatus));
     } else {
-      info.appendChild(renderKV("Container", "IssuerSigned (a credential as issued)"));
+      info.appendChild(renderKV("Container", "IssuerSigned"));
     }
     appendSection("Document Info", info, { docType: data.docType });
 

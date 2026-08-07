@@ -145,16 +145,26 @@ func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid
 	// §5: "The X.509 certificate of the trust anchor MUST NOT be included in
 	// the x5c JOSE header of the signed request. The X.509 certificate
 	// signing the request MUST NOT be self-signed."
+	//
+	// Which certificate is the trust anchor is not something the wallet can
+	// read off the chain: an anchor is whatever the party checking the chain
+	// was configured to trust, and this wallet has been given no such list. So
+	// the finding reports what is there to see, a certificate that signed
+	// itself, which is a root and is the shape the requirement is aimed at.
+	// The wording matters because the two are not the same claim, and a
+	// verifier told its trust anchor was included has no way to act on that if
+	// the certificate it sent was not one.
 	certs, _ := extractCertChain(reqObj)
 	if len(certs) > 0 {
 		leaf := certs[0]
 		if isSelfSignedCert(leaf) {
 			violations = append(violations, "HAIP: the certificate signing the request MUST NOT be self-signed")
 		}
-		for _, cert := range certs[1:] {
+		for i, cert := range certs[1:] {
 			if isSelfSignedCert(cert) {
-				violations = append(violations,
-					"HAIP: the trust anchor MUST NOT be included in the x5c header of the signed request")
+				violations = append(violations, fmt.Sprintf(
+					"HAIP: the x5c header of the signed request carries a self-signed certificate at position %d (subject %q), and §5 says the certificate of the trust anchor MUST NOT be included there",
+					i+2, cert.Subject.String()))
 				break
 			}
 		}
