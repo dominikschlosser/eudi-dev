@@ -145,6 +145,8 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `OIDF_VCI_ALIAS`: convenience alias used by the default `OIDF_VCI_REDIRECT_URI`
 - `OIDF_SUITE_URL`: override the suite tarball URL. Defaults to the latest upstream release archive
 - `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the wrapper terminates a stuck module. Defaults to `180`, set `0` to disable
+- `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite shares this machine with the wallet and can take tens of seconds to answer under load. The wallet's own default is `15s`, which is short on purpose for interactive use. A value that cannot be parsed is ignored and the default applies
+- `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite's database after a run. The wrapper drops it otherwise, because a database carrying days of runs has the server pausing long enough to stall a run
 
 ## Hosted Mode
 

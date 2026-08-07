@@ -203,7 +203,15 @@ echo "Installing runner dependencies..."
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet -r "$SUITE_DIR/scripts/requirements.txt"
 
-echo "Starting wallet on $WALLET_URL"
+# The suite runs on this same machine and competes with the wallet for it, so
+# a request it would normally answer at once can take tens of seconds under
+# load. The wallet's default wait is short on purpose (a developer pointed at
+# a dead endpoint wants to hear about it), but here giving up costs the module
+# and the flow cannot be resumed, so the run ends up measuring the machine.
+EUDI_REMOTE_TIMEOUT=${EUDI_REMOTE_TIMEOUT:-120s}
+export EUDI_REMOTE_TIMEOUT
+
+echo "Starting wallet on $WALLET_URL (remote timeout $EUDI_REMOTE_TIMEOUT)"
 (
   cd "$ROOT_DIR"
   exec "$LOCAL_OID4VC_DEV" wallet serve \

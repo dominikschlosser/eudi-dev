@@ -229,3 +229,32 @@ func TestFetchURLDoesNotRetryAnHTTPError(t *testing.T) {
 		t.Errorf("server was called %d times, want 1", n)
 	}
 }
+
+// TestResolveRemoteTimeout covers the override. A counterparty sharing a
+// machine with the wallet can take far longer to answer than one that does
+// not, and the flow cannot be resumed once the wallet has given up, so the
+// wait is configurable. A value that cannot be read leaves the default rather
+// than turning every remote read into one that never times out.
+func TestResolveRemoteTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want time.Duration
+	}{
+		{"unset", "", DefaultRemoteTimeout},
+		{"blank", "   ", DefaultRemoteTimeout},
+		{"seconds", "45s", 45 * time.Second},
+		{"minutes", "2m", 2 * time.Minute},
+		{"surrounding space", " 30s ", 30 * time.Second},
+		{"not a duration", "soon", DefaultRemoteTimeout},
+		{"bare number", "45", DefaultRemoteTimeout},
+		{"zero", "0s", DefaultRemoteTimeout},
+		{"negative", "-5s", DefaultRemoteTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveRemoteTimeout(tc.raw); got != tc.want {
+				t.Errorf("resolveRemoteTimeout(%q) = %s, want %s", tc.raw, got, tc.want)
+			}
+		})
+	}
+}

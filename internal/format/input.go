@@ -19,6 +19,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,8 +28,45 @@ import (
 	"time"
 )
 
+// DefaultRemoteTimeout is how long a request to a counterparty may take before
+// the wallet gives up on it.
+//
+// Short on purpose: a developer pointed at an issuer or verifier that does not
+// answer learns more from a prompt failure than from a long wait.
+const DefaultRemoteTimeout = 15 * time.Second
+
+// remoteTimeoutEnv names the environment variable that overrides it, as a Go
+// duration ("45s", "2m").
+//
+// The value is not always the wallet's to pick. A counterparty run on the same
+// machine as the wallet, which is what a conformance harness does, competes
+// with it for the CPU and can take tens of seconds to answer a request it
+// would normally serve at once. Giving up there costs the whole exchange, and
+// the flow cannot be resumed, so the run that was measuring something ends up
+// measuring the machine instead.
+const remoteTimeoutEnv = "EUDI_REMOTE_TIMEOUT"
+
+// remoteTimeout resolves the timeout once, at startup.
+var remoteTimeout = resolveRemoteTimeout(os.Getenv(remoteTimeoutEnv))
+
+// resolveRemoteTimeout reads the override. Anything unparseable or not
+// positive leaves the default in place, because a mistyped duration should not
+// silently turn every remote read into one that never times out.
+func resolveRemoteTimeout(raw string) time.Duration {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultRemoteTimeout
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		log.Printf("[HTTP] ignoring %s=%q (%v), using %s", remoteTimeoutEnv, raw, err, DefaultRemoteTimeout)
+		return DefaultRemoteTimeout
+	}
+	return value
+}
+
 var httpClient = &http.Client{
-	Timeout:   15 * time.Second,
+	Timeout:   remoteTimeout,
 	Transport: newPolicyTransport(),
 }
 
@@ -78,7 +116,7 @@ func HTTPClientForURL(rawURL string) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   15 * time.Second,
+		Timeout:   remoteTimeout,
 		Transport: transport,
 	}
 }
