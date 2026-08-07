@@ -259,6 +259,13 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A new request makes any earlier failure stale. The stored error outlives
+	// the flow it came from (the endpoint that reads it only peeks), so without
+	// this the wallet page shows the previous failure while this request is
+	// still being registered, and swaps it for the consent dialog a moment
+	// later.
+	s.wallet.ClearLastError()
+
 	reqServer := s
 	if body.HAIP != nil || body.Mode != "" {
 		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{

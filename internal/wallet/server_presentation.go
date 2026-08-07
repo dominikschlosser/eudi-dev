@@ -84,6 +84,9 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A new request makes any earlier failure stale, the same as for an offer.
+	s.wallet.ClearLastError()
+
 	s.log("Received authorization request")
 	// Truncate URI for display
 	uriDisplay := format.Truncate(body.URI, 120)

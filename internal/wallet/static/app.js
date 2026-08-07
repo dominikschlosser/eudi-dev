@@ -1167,16 +1167,35 @@
   // this a later action inherits an error it had nothing to do with.
   function expectError() {
     errorClaim.expect();
+    dropStoredError();
+  }
+
+  // The stored error survives a GET (the endpoint peeks rather than pops), so
+  // anything that has decided not to show one has to drop it, or it surfaces
+  // again later against whatever request happens to be on screen then.
+  function dropStoredError() {
     fetch('/api/error', { method: 'DELETE' }).catch(() => {});
   }
 
+  // Whether a consent request currently owns the dialog. An error belonging to
+  // an earlier request must not take that dialog over, and must not be left
+  // stored to reappear once this one closes.
+  let consentRequestOpen = false;
+
   function presentError(err) {
     if (!err || !err.message) return;
+    if (consentRequestOpen) {
+      // A request the user is being asked about is on screen. This error is
+      // not from it: the flow it belongs to ended before this one began.
+      dropStoredError();
+      return;
+    }
     if (!errorClaim.take()) return;
     showErrorDialog(err.message, err.detail);
   }
 
   function showErrorDialog(message, detail) {
+    consentRequestOpen = false;
     consentOverlay.classList.add('active');
 
     var html = '<div class="consent-title" style="color:var(--danger)">Error</div>' +
@@ -1192,6 +1211,7 @@
 
     consentDialog.innerHTML = html;
     document.getElementById('error-dismiss').addEventListener('click', () => {
+      consentRequestOpen = false;
       consentOverlay.classList.remove('active');
       fetch('/api/error', { method: 'DELETE' }).catch(() => {});
       loadLog();
@@ -1246,6 +1266,7 @@
 
     consentDialog.innerHTML = html;
     document.getElementById('result-dismiss').addEventListener('click', () => {
+      consentRequestOpen = false;
       consentOverlay.classList.remove('active');
       loadLog();
     });
@@ -1336,6 +1357,8 @@
   }
 
   function showConsentDialog(req) {
+    consentRequestOpen = true;
+    dropStoredError();
     consentOverlay.classList.add('active');
 
     const isIssuance = req.type === 'issuance';
@@ -1430,6 +1453,7 @@
           // Deferred, not failed: the wallet keeps collecting it and the
           // credential appears once it arrives.
           if (result.pending) {
+            consentRequestOpen = false;
             consentOverlay.classList.remove('active');
             await loadDeferred();
             await loadLog();
@@ -1440,6 +1464,7 @@
             showErrorDialog('Credential issuance failed', detail);
             return;
           }
+          consentRequestOpen = false;
           consentOverlay.classList.remove('active');
           if (demoMode) refreshPendingBanner();
           await loadCredentials();
@@ -1459,6 +1484,7 @@
       } catch (e) {
         console.error('Deny failed:', e);
       }
+      consentRequestOpen = false;
       consentOverlay.classList.remove('active');
       await loadLog();
     });

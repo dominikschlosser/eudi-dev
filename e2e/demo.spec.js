@@ -176,6 +176,63 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
   });
 
+  // An issuance that failed leaves its error stored on the wallet, and the
+  // endpoint that reads it only peeks, so it outlives the flow it came from.
+  // A later request must not show it: the wallet page opens while the request
+  // is still being registered, and a stale error presented there is swapped
+  // for the consent dialog a moment later, which reads as the old failure
+  // reopening on every issuance.
+  test("an earlier failure does not reopen on the next issuance", async ({ page }) => {
+    // An offer naming an issuer that cannot be reached fails and stores the error.
+    const dead = "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify({
+      credential_issuer: "https://issuer.invalid",
+      credential_configuration_ids: ["nope"],
+      grants: { "urn:ietf:params:oauth:grant-type:pre-authorized_code": { "pre-authorized_code": "x" } },
+    }));
+    await postJSON("/api/offers", { uri: dead });
+    await expect
+      .poll(async () => (await (await fetch(`${BASE}/api/error`)).json())?.message ?? "")
+      .not.toBe("");
+
+    // The next issuance starts. This is the tab the flow belongs to, so it is
+    // allowed to open dialogs, which is what lets the stale error through.
+    const { body: offer } = await postJSON("/issuer/api/offers", {});
+    const offerDoc = await (await fetch(offer.offer_uri)).json();
+    const uri = "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify(offerDoc));
+
+    // Record every dialog the page puts up, from the first paint onwards, so a
+    // stale error that shows for a moment and is then replaced by the consent
+    // dialog is still caught. A plain assertion afterwards cannot see it: it
+    // retries until it passes, and the flash is gone by then.
+    await page.addInitScript(() => {
+      window.__dialogs = [];
+      document.addEventListener("DOMContentLoaded", () => {
+        const dialog = document.getElementById("consent-dialog");
+        const overlay = document.getElementById("consent-overlay");
+        if (!dialog || !overlay) return;
+        new MutationObserver(() => {
+          if (overlay.classList.contains("active") && dialog.textContent.trim()) {
+            window.__dialogs.push(dialog.textContent.slice(0, 80));
+          }
+        }).observe(dialog, { childList: true, subtree: true, characterData: true });
+      });
+    });
+
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    submitAsSchemeHandler("/api/offers", uri);
+
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#consent-dialog")).toContainText("Demo Event Ticket");
+    await page.waitForTimeout(1000);
+
+    const shown = await page.evaluate(() => window.__dialogs);
+    expect(shown.join(" | ")).not.toMatch(/Error/);
+    await expect(page.locator(".consent-overlay.active")).toHaveCount(1);
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
   test("an offer delivered by reference is described too", async ({ page }) => {
     // The demo issuer hands out credential_offer_uri links, so this is the
     // path a visitor actually takes.
