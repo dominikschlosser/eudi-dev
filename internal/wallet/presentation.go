@@ -336,8 +336,21 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 		responseMode = "direct_post"
 	}
 
+	// A Digital Credentials API error is never encrypted, whichever response
+	// mode was asked for. Appendix A.4: "Protocol error responses are returned
+	// as an object within the data property. This object has a single property
+	// with the name error and a value containing the error response code as
+	// defined in Section 8.5." Encrypting it hands the Verifier a JWE where it
+	// expects that object, which reads as a response rather than as a refusal.
+	if isDCAPIResponseMode(responseMode) {
+		return &AuthorizationResponseEnvelope{
+			ResponseMode: responseMode,
+			Plain:        map[string]any{"error": errorCode},
+		}, nil
+	}
+
 	switch responseMode {
-	case "direct_post.jwt", "dc_api.jwt":
+	case "direct_post.jwt":
 		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
 			return nil, fmt.Errorf("response_mode is %s but no encryption key found in client_metadata.jwks — verifier must provide JWK per OID4VP 1.0", responseMode)
 		}

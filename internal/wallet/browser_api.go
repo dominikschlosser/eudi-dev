@@ -251,6 +251,17 @@ func BuildBrowserAPIResult(protocol string, response *AuthorizationResponseEnvel
 
 	switch response.ResponseMode {
 	case "dc_api.jwt":
+		// An error is carried plainly even under the encrypted response mode.
+		// Appendix A.4 defines the error as "an object within the data
+		// property" with "a single property with the name error", and a
+		// Verifier reading a JWE where that object belongs sees a response
+		// rather than a refusal.
+		if response.ResponseJWT == "" && response.Plain != nil {
+			return &BrowserAPIResult{
+				Protocol: protocol,
+				Data:     dcAPIData(response.Plain),
+			}, nil
+		}
 		if response.ResponseJWT == "" {
 			return nil, fmt.Errorf("dc_api.jwt response is missing response JWT")
 		}

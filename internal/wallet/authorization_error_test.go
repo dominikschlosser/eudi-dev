@@ -370,3 +370,48 @@ func TestDCAPIMalformedRequestReturnsAnErrorObject(t *testing.T) {
 		t.Fatalf("error object has %d members, want exactly one: %#v", len(data), data)
 	}
 }
+
+// OID4VP 1.0 Appendix A.4: "Protocol error responses are returned as an object
+// within the data property. This object has a single property with the name
+// error and a value containing the error response code as defined in Section
+// 8.5." That holds for dc_api.jwt too. A Verifier that asked for an encrypted
+// response and receives a JWE where the error object belongs reads a response
+// rather than a refusal, which is how a wallet that correctly rejected a
+// request looks like one that answered it.
+func TestDCAPIErrorIsNotEncryptedUnderTheEncryptedResponseMode(t *testing.T) {
+	w := generateTestWallet(t)
+	params := PresentationParams{
+		ResponseMode:   "dc_api.jwt",
+		RequestOrigin:  "https://verifier.example",
+		ClientMetadata: map[string]any{},
+	}
+
+	response, err := w.BuildAuthorizationErrorResponse("invalid_request", "nonce is required", "some-state", params)
+	if err != nil {
+		t.Fatalf("BuildAuthorizationErrorResponse: %v", err)
+	}
+	if response.ResponseJWT != "" {
+		t.Errorf("the error was encrypted: %s", response.ResponseJWT)
+	}
+	if got := response.Plain["error"]; got != "invalid_request" {
+		t.Errorf("error = %v, want invalid_request", got)
+	}
+
+	result, err := BuildBrowserAPIResult(BrowserAPIProtocolOpenID4VPUnsigned, response)
+	if err != nil {
+		t.Fatalf("BuildBrowserAPIResult: %v", err)
+	}
+	data, ok := result.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("data = %#v, want an object", result.Data)
+	}
+	if len(data) != 1 {
+		t.Errorf("the error object has %d members, want exactly one: %v", len(data), data)
+	}
+	if data["error"] != "invalid_request" {
+		t.Errorf("error = %v, want invalid_request", data["error"])
+	}
+	if _, encrypted := data["response"]; encrypted {
+		t.Error("the error object carries an encrypted response")
+	}
+}
