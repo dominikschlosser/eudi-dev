@@ -189,7 +189,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		})
 	}
 
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}

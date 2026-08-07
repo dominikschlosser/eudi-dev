@@ -22,24 +22,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
-
-// attestedKeysContain reports whether jwk appears in an attested_keys array,
-// comparing the EC coordinates that identify the key.
-func attestedKeysContain(attested []any, jwk map[string]any) bool {
-	if jwk == nil {
-		return false
-	}
-	for _, entry := range attested {
-		key, ok := entry.(map[string]any)
-		if ok && key["x"] == jwk["x"] && key["y"] == jwk["y"] {
-			return true
-		}
-	}
-	return false
-}
 
 // strictPreAuthIssuer serves a pre-authorized_code issuer that requires
 // DPoP-bound tokens, client (wallet) attestation, and key attestation in the
@@ -152,36 +135,27 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 					writeErr(http.StatusBadRequest, "invalid_proof", "no proof")
 					return
 				}
-				// One proof per key, each carrying a key_attestation whose
-				// attested_keys covers the key that signed it (OpenID4VCI 1.0
-				// Appendix F.1). Any number of proofs is acceptable.
-				for i, entry := range jwts {
-					header := decodeJWTPart(t, entry.(string), 0)
-					attestation, _ := header["key_attestation"].(string)
-					if attestation == "" {
-						writeErr(http.StatusBadRequest, "invalid_proof", "key attestation is required")
-						return
-					}
-					attHeader := decodeJWTPart(t, attestation, 0)
-					if attHeader["typ"] != "key-attestation+jwt" {
-						t.Errorf("proof %d: key attestation typ = %v, want key-attestation+jwt", i, attHeader["typ"])
-					}
-					attPayload := decodeJWTPart(t, attestation, 1)
-					if attPayload["nonce"] != "test-c-nonce" {
-						t.Errorf("proof %d: key attestation nonce = %v, want test-c-nonce", i, attPayload["nonce"])
-					}
-					proofJWK, _ := header["jwk"].(map[string]any)
-					attested, _ := attPayload["attested_keys"].([]any)
-					if !attestedKeysContain(attested, proofJWK) {
-						writeErr(http.StatusBadRequest, "invalid_proof",
-							"the key that signed the proof is not in attested_keys")
-						return
-					}
+				if len(jwts) != 1 {
+					writeErr(http.StatusBadRequest, "invalid_proof",
+						"only a single proofs entry is supported when the jwt proof header contains key_attestation")
+					return
 				}
-				firstAttestation := decodeJWTPart(t, jwts[0].(string), 0)["key_attestation"].(string)
-				attPayload := decodeJWTPart(t, firstAttestation, 1)
-				if attested, _ := attPayload["attested_keys"].([]any); len(attested) != len(jwts) {
-					t.Errorf("key attestation attests %d keys, want one per proof (%d)", len(attested), len(jwts))
+				header := decodeJWTPart(t, jwts[0].(string), 0)
+				attestation, _ := header["key_attestation"].(string)
+				if attestation == "" {
+					writeErr(http.StatusBadRequest, "invalid_proof", "key attestation is required")
+					return
+				}
+				attHeader := decodeJWTPart(t, attestation, 0)
+				if attHeader["typ"] != "key-attestation+jwt" {
+					t.Errorf("key attestation typ = %v, want key-attestation+jwt", attHeader["typ"])
+				}
+				attPayload := decodeJWTPart(t, attestation, 1)
+				if attPayload["nonce"] != "test-c-nonce" {
+					t.Errorf("key attestation nonce = %v, want test-c-nonce", attPayload["nonce"])
+				}
+				if keys, _ := attPayload["attested_keys"].([]any); len(keys) != 1 {
+					t.Errorf("key attestation attests %d keys, want the single proof key", len(keys))
 				}
 				for _, claim := range []string{"key_storage", "user_authentication"} {
 					values, _ := attPayload[claim].([]any)
@@ -246,11 +220,10 @@ func TestProcessCredentialOffer_PreAuthHonorsIssuerProtections(t *testing.T) {
 	}
 }
 
-// TestIssuanceProofKeys_KeyAttestationBatches covers batch issuance and key
-// attestation meeting. OpenID4VCI 1.0 Appendix F.1 has one proof per key, each
-// carrying a key_attestation, so a configuration requiring key attestations
-// batches like any other and the attestation covers every key proven.
-func TestIssuanceProofKeys_KeyAttestationBatches(t *testing.T) {
+// TestIssuanceProofKeys_KeyAttestationKeepsOneProof covers batch issuance and
+// key attestation meeting: the attestation stands for the key that signed its
+// proof, so the batch has to collapse to a single entry.
+func TestIssuanceProofKeys_KeyAttestationKeepsOneProof(t *testing.T) {
 	holder := testKey(t)
 	metadata := map[string]any{
 		"batch_credential_issuance": map[string]any{"batch_size": float64(10)},
@@ -260,42 +233,26 @@ func TestIssuanceProofKeys_KeyAttestationBatches(t *testing.T) {
 					"jwt": map[string]any{"key_attestations_required": map[string]any{}},
 				},
 			},
+			"plain": map[string]any{
+				"proof_types_supported": map[string]any{"jwt": map[string]any{}},
+			},
 		},
 	}
 
-	keys, err := issuanceProofKeys(holder, metadata)
+	keys, err := issuanceProofKeys(holder, metadata, "attested")
+	if err != nil {
+		t.Fatalf("issuanceProofKeys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Errorf("key attestation config produced %d proof keys, want 1", len(keys))
+	}
+
+	keys, err = issuanceProofKeys(holder, metadata, "plain")
 	if err != nil {
 		t.Fatalf("issuanceProofKeys: %v", err)
 	}
 	if len(keys) != batchProofKeyCount {
-		t.Fatalf("key attestation config produced %d proof keys, want %d", len(keys), batchProofKeyCount)
-	}
-
-	w := generateTestWallet(t)
-	w.HolderKey = holder
-	header, err := createCredentialProofHeader(w, metadata, "attested", "nonce-123", keys)
-	if err != nil {
-		t.Fatalf("createCredentialProofHeader: %v", err)
-	}
-	attested, _ := decodeJWTPart(t, header["key_attestation"].(string), 1)["attested_keys"].([]any)
-	if len(attested) != len(keys) {
-		t.Fatalf("attestation covers %d keys, want %d", len(attested), len(keys))
-	}
-	// Every proof key must appear in attested_keys: the issuer matches each
-	// proof's signing key against that list before issuing for it.
-	for i, key := range keys {
-		want := mock.SigningJWKMap(&key.PublicKey)
-		found := false
-		for _, entry := range attested {
-			got, ok := entry.(map[string]any)
-			if ok && got["x"] == want["x"] && got["y"] == want["y"] {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("proof key %d is not in attested_keys", i)
-		}
+		t.Errorf("plain config produced %d proof keys, want %d", len(keys), batchProofKeyCount)
 	}
 }
 

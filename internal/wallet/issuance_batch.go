@@ -52,12 +52,20 @@ func advertisedBatchSize(metadata map[string]any) int {
 // advertises batch issuance with batch_size >= 2, fresh ephemeral keys are
 // added so each credential in the batch is bound to a distinct key (required
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).
-//
-// A credential configuration that requires key attestations batches the same
-// way: OpenID4VCI 1.0 Appendix F.1 has one proof per key, each carrying a
-// key_attestation whose attested_keys covers every key proven here.
-func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]*ecdsa.PrivateKey, error) {
+func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, configID string) ([]*ecdsa.PrivateKey, error) {
 	keys := []*ecdsa.PrivateKey{holderKey}
+	// Where a key attestation is involved, the batch is counted from the
+	// attestation rather than from the proofs: OpenID4VCI 1.0 Appendix F.1 and
+	// F.3 both say the issuer "SHOULD issue a Credential for each cryptographic
+	// public key specified in the attested_keys claim within the
+	// key_attestation parameter". Several proofs each carrying an attestation
+	// over the same keys has no single reading, so issuers refuse it (the Animo
+	// playground answers "Only a single proofs entry is supported when jwt
+	// proof header contains 'key_attestation'"). The attestation is the
+	// requirement, so it wins and the request stays at one proof.
+	if _, required := credentialKeyAttestationRequirement(metadata, configID); required {
+		return keys, nil
+	}
 	batchSize := advertisedBatchSize(metadata)
 	if batchSize < 2 {
 		return keys, nil
