@@ -592,9 +592,21 @@ def purge_issued_credentials(wallet_url: str, baseline_ids: set[str]) -> int:
     return removed
 
 
-def create_vp_config(suite_dir: Path, scenario: PlanScenario, materials: WalletMaterials, output: Path) -> None:
+def wallet_run_suffix(args: argparse.Namespace) -> str:
+    """Returns a token unique to this run, taken from the wallet's port."""
+    port = urllib.parse.urlparse(args.wallet_url).port
+    return str(port) if port else "local"
+
+
+def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanScenario, materials: WalletMaterials, output: Path) -> None:
     config = load_config_template(suite_dir / scenario.template_relpath)
-    config["alias"] = f"oid4vc-dev-{scenario.slug}"
+    # The alias carries the wallet's port, so no two runs ever ask the suite for
+    # the same one. An alias belongs to whichever test claimed it last, and a
+    # new test naming one an earlier test still holds takes it over. Reusing a
+    # fixed alias run after run makes every run contend with the leftovers of
+    # the one before it, which the VCI configurations already avoid by deriving
+    # their alias from the per-run redirect URI.
+    config["alias"] = f"oid4vc-dev-{scenario.slug}-{wallet_run_suffix(args)}"
     config["description"] = f"oid4vc-dev wallet ({scenario.slug})"
     config.setdefault("client", {})
     config["client"]["dcql"] = build_vp_dcql_query(scenario.credential_kind)
@@ -679,7 +691,7 @@ def create_vci_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanS
 def create_config(args: argparse.Namespace, suite_dir: Path, results_dir: Path, scenario: PlanScenario, materials: WalletMaterials) -> Path:
     output = results_dir / f"{scenario.slug}-config.json"
     if scenario.kind == "vp":
-        create_vp_config(suite_dir, scenario, materials, output)
+        create_vp_config(args, suite_dir, scenario, materials, output)
     elif scenario.kind == "vci":
         create_vci_config(args, suite_dir, scenario, materials, output)
     else:
