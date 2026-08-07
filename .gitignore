@@ -1,3 +1,4 @@
+.DS_Store
 .gopath/
 .gocache/
 __pycache__/
