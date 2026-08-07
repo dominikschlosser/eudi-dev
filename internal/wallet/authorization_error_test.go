@@ -352,22 +352,49 @@ func TestDCAPIErrorObjectCarriesOnlyTheErrorCode(t *testing.T) {
 	}
 }
 
-// The same door, a malformed request instead of an empty wallet.
-func TestDCAPIMalformedRequestReturnsAnErrorObject(t *testing.T) {
+// A request that fails validation gets no protocol response over the Digital
+// Credentials API either. §8.5 says the error response "follows the rules as
+// defined in [RFC6749]", and RFC 6749 §4.1.2.1 has the server inform the user
+// rather than answer a request it could not validate. The caller is told with
+// an HTTP error, which is how the calling page learns the wallet refused.
+func TestDCAPIMalformedRequestIsRefusedWithoutAProtocolResponse(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	data := dcAPIRefusal(t, srv, map[string]any{
-		"response_type": "not_a_response_type",
-		"response_mode": "dc_api",
-		"nonce":         "browser-nonce",
-		"state":         "browser-state",
-	})
-
-	if data["error"] != "invalid_request" {
-		t.Fatalf("error object carried %v, want invalid_request", data["error"])
+	payload := map[string]any{
+		"digital": map[string]any{
+			"requests": []any{
+				map[string]any{
+					"protocol": BrowserAPIProtocolOpenID4VPUnsigned,
+					"data": map[string]any{
+						"response_type": "not_a_response_type",
+						"response_mode": "dc_api",
+						"nonce":         "n",
+						"dcql_query":    pidDCQLQuery(),
+					},
+				},
+			},
+		},
 	}
-	if len(data) != 1 {
-		t.Fatalf("error object has %d members, want exactly one: %#v", len(data), data)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://verifier.example")
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_request") {
+		t.Errorf("body = %s, want it to name invalid_request", rec.Body.String())
+	}
+	// Nothing that looks like a presentation may come back.
+	if strings.Contains(rec.Body.String(), "vp_token") {
+		t.Errorf("a refused request produced a presentation: %s", rec.Body.String())
 	}
 }
 

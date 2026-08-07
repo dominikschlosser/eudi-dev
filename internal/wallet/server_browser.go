@@ -130,7 +130,18 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
-		reqServer.writeBrowserAuthorizationError(w, authReq, protocol, refusalCodeForRequest(authReq, err), err.Error(), http.StatusBadRequest)
+		// A request that fails validation gets no protocol response, over the
+		// Digital Credentials API as anywhere else. §8.5 says the error
+		// response "follows the rules as defined in [RFC6749]", and RFC 6749
+		// §4.1.2.1 has the server "inform the resource owner of the error"
+		// rather than answer a request it could not validate. The caller is
+		// told, which over this API is how the page learns the wallet refused,
+		// and the user sees the refusal in the wallet.
+		reqServer.triggerUIRequest()
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":             refusalCodeForRequest(authReq, err),
+			"error_description": err.Error(),
+		})
 		return
 	}
 	for _, finding := range findings {
