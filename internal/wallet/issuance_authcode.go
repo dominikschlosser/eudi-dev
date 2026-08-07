@@ -308,15 +308,15 @@ func (w *Wallet) processAuthorizationCodeOffer(
 // detectTokenEndpointAuthMethod picks the client authentication method to use
 // from the ones the authorization server offers.
 //
-// A server that also accepts an unauthenticated client is taken up on it,
-// ahead of attestation. A wallet attestation is only worth anything to a server
-// that trusts the attester who signed it, and this wallet signs its own with a
-// certificate authority it generated locally, which no deployment has any
-// reason to trust: an issuer that checks the attestation answers "no trusted
-// attester matched" and the flow ends, though the same server would have issued
-// to an unauthenticated client. Where attestation is the only method offered it
-// is used, and --haip and ForceClientAttestation still ask for it outright,
-// because that is the case the wallet is there to exercise.
+// Attestation wins wherever it is offered, even against a method that asks
+// nothing of the client. Signing a wallet attestation is something this wallet
+// can do for itself, so it does it and leaves the counterparty to decide what
+// the attestation is worth: an issuer that trusts no attester it has not been
+// given refuses this one, and that refusal is the accurate answer to a wallet
+// nobody registered, not a reason to present as a client that claims less.
+// The methods that ask nothing are read so that a server offering only those
+// is usable, rather than answered with "unsupported token endpoint auth
+// method".
 // unauthenticatedClientMethod is the registered token endpoint authentication
 // method of a client that does not authenticate. RFC 8414 takes the values of
 // token_endpoint_auth_methods_supported from the IANA "OAuth Token Endpoint
@@ -349,12 +349,6 @@ func detectTokenEndpointAuthMethod(oauthMeta map[string]any) string {
 	}
 	for _, raw := range methods {
 		method, _ := raw.(string)
-		if method == unauthenticatedClientMethod || method == unregisteredPublicClientMethod {
-			return method
-		}
-	}
-	for _, raw := range methods {
-		method, _ := raw.(string)
 		if method == "attest_jwt_client_auth" {
 			return method
 		}
@@ -362,6 +356,13 @@ func detectTokenEndpointAuthMethod(oauthMeta map[string]any) string {
 	for _, raw := range methods {
 		method, _ := raw.(string)
 		if method == "private_key_jwt" {
+			return method
+		}
+	}
+	// Last: a client that authenticates is preferred to one that does not.
+	for _, raw := range methods {
+		method, _ := raw.(string)
+		if method == unauthenticatedClientMethod || method == unregisteredPublicClientMethod {
 			return method
 		}
 	}

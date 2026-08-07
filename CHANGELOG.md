@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.19.22] - 2026-08-07
+
+### Fixed
+
+- **The wallet presented itself as a client claiming less than it can.** Where an authorization server accepted both a wallet attestation and a client that authenticates with nothing, 1.19.21 took the second, on the grounds that no deployment has been given this wallet's self-signed attester and the attestation would be refused. That refusal is the accurate answer to a wallet nobody registered, and skipping it makes every exchange that follows a test of something the wallet is not. Signing the attestation is within its own means, so it sends one wherever the server takes it and leaves the counterparty to judge it. What it cannot do without anchors it was never given, such as placing somebody else's attester or metadata signer, is still reported rather than enforced. A server offering only methods that ask nothing of the client is still usable, which is what 1.19.21 fixed and this keeps
+
 ## [1.19.21] - 2026-08-07
 
 ### Fixed
