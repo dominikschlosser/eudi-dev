@@ -286,7 +286,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if len(offer.CredentialConfigurationIDs) > 0 {
 		configID = offer.CredentialConfigurationIDs[0]
 	}
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
@@ -379,6 +379,10 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		UseDPoP:            dpopKey != nil,
 		ClientAuth:         clientAuth,
 	})
+
+	if err := w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource); err != nil {
+		return nil, err
+	}
 
 	if credFormat == "" {
 		credFormat = imported.Format

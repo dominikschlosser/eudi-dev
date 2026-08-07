@@ -169,7 +169,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if accessToken == "" {
 		return nil, fmt.Errorf("token response missing access_token")
 	}
-	authScheme := accessTokenScheme(tokenResp, true)
+	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
 	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
 		w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", nonceEndpoint), true, map[string]any{
@@ -189,7 +189,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		})
 	}
 
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
@@ -241,7 +241,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		format:        resolveCredentialFormat(metadata, credentialConfigurationID),
 		accessToken:   accessToken,
 		authScheme:    authScheme,
-		dpopKey:       w.HolderKey,
+		dpopKey:       dpopKey,
 		proofKeys:     proofKeys,
 		nonce:         &nonces.resource,
 	})
@@ -268,35 +268,12 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		CredentialEndpoint: credentialEndpoint,
 		ConfigurationID:    configID,
 		ClientID:           clientID,
-		UseDPoP:            true,
+		UseDPoP:            dpopKey != nil,
 		ClientAuth:         clientAuth,
 	})
 
-	if notificationID, _ := credResp["notification_id"].(string); notificationID != "" {
-		if notificationEndpoint, _ := metadata["notification_endpoint"].(string); notificationEndpoint != "" {
-			w.addProtocolLog("issuance", "notification_request", fmt.Sprintf("Send credential notification to %s", notificationEndpoint), true, map[string]any{
-				"direction":          "outbound",
-				"method":             "POST",
-				"url":                notificationEndpoint,
-				"endpoint":           "notification",
-				"notification_id":    notificationID,
-				"notification_event": "credential_accepted",
-			})
-			if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, authScheme, notificationID, w.HolderKey, &nonces.resource); err != nil {
-				w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), false, map[string]any{
-					"direction": "inbound",
-					"url":       notificationEndpoint,
-					"endpoint":  "notification",
-					"error":     err.Error(),
-				})
-				return nil, fmt.Errorf("sending notification: %w", err)
-			}
-			w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), true, map[string]any{
-				"direction": "inbound",
-				"url":       notificationEndpoint,
-				"endpoint":  "notification",
-			})
-		}
+	if err := w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource); err != nil {
+		return nil, err
 	}
 
 	credFormat := resolveCredentialFormat(metadata, credentialConfigurationID)
@@ -959,6 +936,42 @@ func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 		return true, interval
 	}
 	return false, 0
+}
+
+// notifyCredentialAccepted reports a stored credential back to the issuer's
+// Notification Endpoint. OpenID4VCI 1.0 §11.1 leaves this to the wallet ("the
+// Wallet MAY send one or more Notification Requests per notification_id value
+// received"); this wallet sends one whenever the issuer offers the endpoint and
+// the Credential Response carries a notification_id, on every grant type.
+func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
+	notificationID, _ := credResp["notification_id"].(string)
+	notificationEndpoint, _ := metadata["notification_endpoint"].(string)
+	if notificationID == "" || notificationEndpoint == "" {
+		return nil
+	}
+	w.addProtocolLog("issuance", "notification_request", fmt.Sprintf("Send credential notification to %s", notificationEndpoint), true, map[string]any{
+		"direction":          "outbound",
+		"method":             "POST",
+		"url":                notificationEndpoint,
+		"endpoint":           "notification",
+		"notification_id":    notificationID,
+		"notification_event": "credential_accepted",
+	})
+	if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, authScheme, notificationID, dpopKey, nonce); err != nil {
+		w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), false, map[string]any{
+			"direction": "inbound",
+			"url":       notificationEndpoint,
+			"endpoint":  "notification",
+			"error":     err.Error(),
+		})
+		return fmt.Errorf("sending notification: %w", err)
+	}
+	w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), true, map[string]any{
+		"direction": "inbound",
+		"url":       notificationEndpoint,
+		"endpoint":  "notification",
+	})
+	return nil
 }
 
 func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
