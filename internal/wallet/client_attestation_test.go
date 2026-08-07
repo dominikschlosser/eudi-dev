@@ -207,3 +207,42 @@ func TestForceClientAttestation_DoesNotDisplacePrivateKeyJWT(t *testing.T) {
 		t.Error("override should make attestsClient true even for private_key_jwt metadata")
 	}
 }
+
+// TestDetectTokenEndpointAuthMethod_PrefersAnUnauthenticatedClient covers the
+// server that accepts both an unauthenticated client and a wallet attestation.
+// The attestation is signed by a certificate authority this wallet generated
+// for itself, which no deployment has been given, so a server that checks it
+// refuses the exchange. The method that can complete is the one to use.
+func TestDetectTokenEndpointAuthMethod_PrefersAnUnauthenticatedClient(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		methods []any
+		want    string
+		attests bool
+	}{
+		{"both offered", []any{"none", "attest_jwt_client_auth"}, "none", false},
+		{"both offered, unregistered spelling", []any{"public", "attest_jwt_client_auth"}, "public", false},
+		{"attestation is the only option", []any{"attest_jwt_client_auth"}, "attest_jwt_client_auth", true},
+		{"order does not decide it", []any{"attest_jwt_client_auth", "none"}, "none", false},
+		{"private_key_jwt still loses to none", []any{"private_key_jwt", "none"}, "none", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			meta := map[string]any{"token_endpoint_auth_methods_supported": tc.methods}
+			if got := detectTokenEndpointAuthMethod(meta); got != tc.want {
+				t.Errorf("detected %q, want %q", got, tc.want)
+			}
+			if got := w.attestsClient(meta); got != tc.attests {
+				t.Errorf("attestsClient = %v, want %v", got, tc.attests)
+			}
+		})
+	}
+
+	// The profile is the case the attestation exists for, so asking for it
+	// outright still overrides the preference.
+	w := generateTestWallet(t)
+	w.RequireHAIP = true
+	if !w.attestsClient(map[string]any{"token_endpoint_auth_methods_supported": []any{"none", "attest_jwt_client_auth"}}) {
+		t.Error("HAIP should still send a client attestation")
+	}
+}

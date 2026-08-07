@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,7 +56,20 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 
 	clientAuthMethod := detectTokenEndpointAuthMethod(oauthMeta)
-	if clientAuthMethod != "" && clientAuthMethod != "private_key_jwt" && clientAuthMethod != "attest_jwt_client_auth" {
+	switch clientAuthMethod {
+	case "", unauthenticatedClientMethod, "private_key_jwt", "attest_jwt_client_auth":
+	case unregisteredPublicClientMethod:
+		// RFC 8414 takes the values of token_endpoint_auth_methods_supported
+		// from the IANA "OAuth Token Endpoint Authentication Methods" registry,
+		// where a client that does not authenticate is "none". "public" is not
+		// registered, so a server naming it is describing itself in a value no
+		// client is obliged to understand.
+		if err := w.reportServerDeviation(fmt.Sprintf("authorization server advertises the unregistered token endpoint auth method %q; RFC 8414 takes these values from the OAuth Token Endpoint Authentication Methods registry, where an unauthenticated client is %q", unregisteredPublicClientMethod, unauthenticatedClientMethod)); err != nil {
+			return nil, err
+		}
+	default:
+		// Everything else needs a credential the wallet was never issued, such
+		// as the client secret the client_secret_* methods sign or send.
 		return nil, fmt.Errorf("unsupported token endpoint auth method %q", clientAuthMethod)
 	}
 	// A sender-constrained token is used where the server advertises DPoP.
@@ -291,10 +305,53 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}, nil
 }
 
+// detectTokenEndpointAuthMethod picks the client authentication method to use
+// from the ones the authorization server offers.
+//
+// A server that also accepts an unauthenticated client is taken up on it,
+// ahead of attestation. A wallet attestation is only worth anything to a server
+// that trusts the attester who signed it, and this wallet signs its own with a
+// certificate authority it generated locally, which no deployment has any
+// reason to trust: an issuer that checks the attestation answers "no trusted
+// attester matched" and the flow ends, though the same server would have issued
+// to an unauthenticated client. Where attestation is the only method offered it
+// is used, and --haip and ForceClientAttestation still ask for it outright,
+// because that is the case the wallet is there to exercise.
+// unauthenticatedClientMethod is the registered token endpoint authentication
+// method of a client that does not authenticate. RFC 8414 takes the values of
+// token_endpoint_auth_methods_supported from the IANA "OAuth Token Endpoint
+// Authentication Methods" registry, and this is the one that appears there.
+const unauthenticatedClientMethod = "none"
+
+// unregisteredPublicClientMethod is a value some deployments publish for the
+// same thing. It is not in the registry, so it is reported as a deviation
+// before the wallet acts on what it evidently means.
+const unregisteredPublicClientMethod = "public"
+
+// reportServerDeviation records something the counterparty got wrong. Strict
+// refuses to go on, debug names it and continues, which is the difference
+// between the two modes everywhere else in the wallet.
+func (w *Wallet) reportServerDeviation(detail string) error {
+	w.addProtocolLog("issuance", "server_deviation", detail, false, map[string]any{
+		"deviation": detail,
+	})
+	if w.ValidationMode == ValidationModeStrict {
+		return fmt.Errorf("%s", detail)
+	}
+	log.Printf("[VCI] WARNING: %s", detail)
+	return nil
+}
+
 func detectTokenEndpointAuthMethod(oauthMeta map[string]any) string {
 	methods, ok := oauthMeta["token_endpoint_auth_methods_supported"].([]any)
 	if !ok || len(methods) == 0 {
 		return ""
+	}
+	for _, raw := range methods {
+		method, _ := raw.(string)
+		if method == unauthenticatedClientMethod || method == unregisteredPublicClientMethod {
+			return method
+		}
 	}
 	for _, raw := range methods {
 		method, _ := raw.(string)
