@@ -144,6 +144,70 @@ func TestDeferredPoller_CollectsWhenReady(t *testing.T) {
 	assertWalletLogEvent(t, w.GetLog(), "credential_imported")
 }
 
+// TestDeferredPoller_NotifiesAfterCollecting covers the acknowledgement a
+// collected deferred credential owes its issuer. OpenID4VCI 1.0 §8.3 lets the
+// Deferred Credential Response carry a notification_id of its own, so the
+// wallet reports the credential it just stored the same way it does for one
+// handed over immediately.
+func TestDeferredPoller_NotifiesAfterCollecting(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	var mu sync.Mutex
+	var notified []string
+	var issuerURL string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-credential-issuer":
+			json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":     issuerURL,
+				"notification_endpoint": issuerURL + "/notification",
+			})
+		case "/deferred":
+			json.NewEncoder(rw).Encode(map[string]any{
+				"credentials":     []any{map[string]any{"credential": credRaw}},
+				"notification_id": "deferred-notification",
+			})
+		case "/notification":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			notified = append(notified, fmt.Sprintf("%v/%v", body["notification_id"], body["event"]))
+			mu.Unlock()
+			rw.WriteHeader(http.StatusNoContent)
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	issuerURL = srv.URL
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, func() {})
+	pending := pendingFor(t, w, srv.URL+"/deferred", 1)
+	pending.Issuer = issuerURL
+	pending.NextAttemptAt = time.Now().Add(-time.Second)
+	w.AddDeferredIssuance(pending)
+
+	server.collectDueDeferredCredentials(time.Now())
+
+	if got := len(w.GetCredentials()); got != 1 {
+		t.Fatalf("wallet holds %d credentials, want the collected one", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(notified) != 1 {
+		t.Fatalf("notification endpoint called %d times, want 1", len(notified))
+	}
+	if notified[0] != "deferred-notification/credential_accepted" {
+		t.Errorf("notification = %q, want deferred-notification/credential_accepted", notified[0])
+	}
+}
+
 // TestDeferredPoller_GivesUpOnFatalAnswers covers answers that will not get
 // better by asking again: the record has to go, with a reason, rather than
 // hammering the issuer on a timer forever.
