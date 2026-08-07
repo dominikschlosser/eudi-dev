@@ -140,7 +140,19 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"credential_issuer":   issuer,
 		"credential_endpoint": issuer + "/credential",
-		"token_endpoint":      issuer + "/token",
+		// This issuer is its own Authorization Server, and says so rather than
+		// leaving it to be inferred. OpenID4VCI 1.0 §12.2.4 allows the
+		// inference ("If this parameter is omitted, the entity providing the
+		// Credential Issuer is also acting as the Authorization Server"), but
+		// then a wallet only reaches the Authorization Server metadata by
+		// implementing that fallback, and one that does not never sees what the
+		// token endpoint accepts. Naming the server points every wallet at the
+		// document that carries attest_jwt_client_auth, PAR and DPoP.
+		"authorization_servers": []string{issuer},
+		// No token_endpoint here: §12.2.4 does not define one among the
+		// Credential Issuer Metadata parameters, and publishing one invites a
+		// wallet to read this document for what the token endpoint accepts,
+		// which it does not describe.
 		// The Nonce Endpoint of OpenID4VCI 1.0 §7, which is the only place a
 		// wallet built to that specification looks for the challenge its key
 		// proof must carry. A wallet that finds none sends a proof with no
