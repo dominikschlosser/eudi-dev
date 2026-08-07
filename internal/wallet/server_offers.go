@@ -319,7 +319,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 	}
 
 	if !s.wallet.AutoAccept && !apiInitiated {
-		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri)
+		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri, s.wallet.ValidationMode)
 		if err != nil {
 			s.log("  ERROR: %v", err)
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
@@ -453,7 +453,7 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browser
 		writeJSON(w, http.StatusOK, result)
 	}
 }
-func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) {
+func prepareIssuanceConsentRequest(raw string, mode ValidationMode) (*ConsentRequest, string, error) {
 	trimmed := strings.TrimSpace(raw)
 	req := &ConsentRequest{
 		ID:           newConsentID(),
@@ -492,7 +492,7 @@ func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) 
 	}
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
-	req.OfferDetails = describeCredentialOffer(offer)
+	req.OfferDetails = describeCredentialOffer(offer, mode)
 	return req, offer.CredentialIssuer, nil
 }
 func extractCredentialOfferURI(raw string) string {

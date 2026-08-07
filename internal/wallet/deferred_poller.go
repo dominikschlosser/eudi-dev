@@ -215,7 +215,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	// document that cannot be reached leaves the request unencrypted rather than
 	// costing the credential: an issuer that required encryption refuses that
 	// attempt, and the next one is a poll away.
-	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer)
+	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer, s.wallet.ValidationMode)
 	if metadataErr != nil {
 		metadata = nil
 	}

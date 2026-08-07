@@ -449,7 +449,7 @@ func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 		t.Fatalf("signing issuer metadata: %v", err)
 	}
 
-	metadata, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL)
+	metadata, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL, ValidationModeStrict)
 	if err != nil {
 		t.Fatalf("parsing signed issuer metadata: %v", err)
 	}
@@ -509,7 +509,7 @@ func TestParseIssuerMetadataResponse_RejectsTamperedSignedJWT(t *testing.T) {
 	parts[1] = format.EncodeBase64URL([]byte(tamperedPayload))
 	tampered := strings.Join(parts, ".")
 
-	if _, err := parseIssuerMetadataResponse([]byte(tampered), "application/jwt", w.IssuerURL); err == nil {
+	if _, err := parseIssuerMetadataResponse([]byte(tampered), "application/jwt", w.IssuerURL, ValidationModeStrict); err == nil {
 		t.Fatal("expected tampered signed issuer metadata to fail verification")
 	}
 }
@@ -541,7 +541,7 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataWithNoTrustAnchor(t *t
 		if err != nil {
 			t.Fatalf("signing: %v", err)
 		}
-		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL, ValidationModeStrict); err == nil {
 			t.Fatal("signed issuer metadata with no way to establish trust in its signer was accepted")
 		}
 	})
@@ -555,10 +555,50 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataWithNoTrustAnchor(t *t
 		// authority the wallet has never heard of.
 		issuerMetadataTrustAnchors = x509.NewCertPool()
 		t.Cleanup(func() { issuerMetadataTrustAnchors = nil })
-		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+		if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL, ValidationModeStrict); err == nil {
 			t.Fatal("signed issuer metadata from an untrusted signer was accepted")
 		}
 	})
+}
+
+// TestSignedIssuerMetadataUntrustedSignerInDebugMode covers the signer this
+// wallet cannot place. Establishing trust in an ecosystem's issuer CA needs an
+// anchor the wallet is not provisioned with, so debug mode reads the metadata
+// and reports the signer rather than ending the flow, while strict mode holds
+// to §12.2.3 and rejects it.
+func TestSignedIssuerMetadataUntrustedSignerInDebugMode(t *testing.T) {
+	w := generateTestWallet(t)
+	raw, err := signCredentialIssuerMetadataJWT(w, w.IssuerURL, time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("signing issuer metadata: %v", err)
+	}
+	issuerMetadataTrustAnchors = x509.NewCertPool()
+	t.Cleanup(func() { issuerMetadataTrustAnchors = nil })
+
+	metadata, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL, ValidationModeDebug)
+	if err != nil {
+		t.Fatalf("debug mode refused metadata from an unanchored signer: %v", err)
+	}
+	if got, _ := metadata["credential_issuer"].(string); got != w.IssuerURL {
+		t.Errorf("credential_issuer = %q, want %q", got, w.IssuerURL)
+	}
+
+	// The signature still has to hold: not being able to anchor the signer is
+	// no reason to read a document nobody signed.
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		t.Fatalf("expected compact JWT, got %q", raw)
+	}
+	sig, err := format.DecodeBase64URL(parts[2])
+	if err != nil {
+		t.Fatalf("decoding signature: %v", err)
+	}
+	sig[0] ^= 0xFF
+	parts[2] = format.EncodeBase64URL(sig)
+	tampered := strings.Join(parts, ".")
+	if _, err := parseIssuerMetadataResponse([]byte(tampered), "application/jwt", w.IssuerURL, ValidationModeDebug); err == nil {
+		t.Fatal("debug mode accepted signed issuer metadata whose signature does not verify")
+	}
 }
 
 // §12.2.3 requires "sub: REQUIRED. String matching the Credential Issuer
@@ -591,7 +631,7 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataForAnotherIssuer(t *te
 	if err != nil {
 		t.Fatalf("signing: %v", err)
 	}
-	if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+	if _, err := parseIssuerMetadataResponse([]byte(raw), "application/jwt", w.IssuerURL, ValidationModeStrict); err == nil {
 		t.Fatal("signed issuer metadata whose sub names another issuer was accepted")
 	}
 }
@@ -602,19 +642,19 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataForAnotherIssuer(t *te
 func TestParseIssuerMetadataResponse_RejectsMismatchedCredentialIssuer(t *testing.T) {
 	raw := []byte(`{"credential_issuer":"https://attacker.example","credential_endpoint":"https://attacker.example/credential"}`)
 
-	if _, err := parseIssuerMetadataResponse(raw, "application/json", "https://issuer.example"); err == nil {
+	if _, err := parseIssuerMetadataResponse(raw, "application/json", "https://issuer.example", ValidationModeStrict); err == nil {
 		t.Fatal("metadata declaring a different credential_issuer was used")
 	}
 
 	missing := []byte(`{"credential_endpoint":"https://issuer.example/credential"}`)
-	if _, err := parseIssuerMetadataResponse(missing, "application/json", "https://issuer.example"); err == nil {
+	if _, err := parseIssuerMetadataResponse(missing, "application/json", "https://issuer.example", ValidationModeStrict); err == nil {
 		t.Fatal("metadata carrying no credential_issuer was used")
 	}
 
 	// A trailing slash is a different string, and the comparison is made with
 	// no normalization.
 	slashed := []byte(`{"credential_issuer":"https://issuer.example/"}`)
-	if _, err := parseIssuerMetadataResponse(slashed, "application/json", "https://issuer.example"); err == nil {
+	if _, err := parseIssuerMetadataResponse(slashed, "application/json", "https://issuer.example", ValidationModeStrict); err == nil {
 		t.Fatal("metadata whose credential_issuer differs only by a trailing slash was used")
 	}
 }
@@ -630,7 +670,7 @@ func TestParseIssuerMetadataResponse_JSONWithDots(t *testing.T) {
 		}
 	}`)
 
-	metadata, err := parseIssuerMetadataResponse(raw, "application/json", "http://localhost:8080/realms/wallet-app-demo")
+	metadata, err := parseIssuerMetadataResponse(raw, "application/json", "http://localhost:8080/realms/wallet-app-demo", ValidationModeStrict)
 	if err != nil {
 		t.Fatalf("parsing metadata JSON: %v", err)
 	}

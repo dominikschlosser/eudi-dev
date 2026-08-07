@@ -73,7 +73,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	// Identifier the credential was stored with, because §12.2.2 makes the
 	// identifier the address of that document. A renewal that skipped this sent
 	// a proof with no nonce and was refused by every 1.0 issuer.
-	metadata, metadataErr := fetchIssuerMetadata(renewal.Issuer)
+	metadata, metadataErr := fetchIssuerMetadata(renewal.Issuer, w.ValidationMode)
 	if metadataErr != nil {
 		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
 	}

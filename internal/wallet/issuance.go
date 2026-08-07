@@ -153,7 +153,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		responseLabel: "Issuer metadata",
 		wellKnown:     "openid-credential-issuer",
 		issuer:        offer.CredentialIssuer,
-		fetch:         fetchIssuerMetadata,
+		fetch:         func(issuer string) (map[string]any, error) { return fetchIssuerMetadata(issuer, w.ValidationMode) },
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching issuer metadata: %w", err)
@@ -469,7 +469,7 @@ func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
 }
 
 // fetchIssuerMetadata fetches the OpenID Credential Issuer metadata.
-func fetchIssuerMetadata(issuer string) (map[string]any, error) {
+func fetchIssuerMetadata(issuer string, mode ValidationMode) (map[string]any, error) {
 	metadataURL, err := wellKnownURL(issuer, "openid-credential-issuer")
 	if err != nil {
 		return nil, fmt.Errorf("building issuer metadata URL: %w", err)
@@ -504,7 +504,7 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading metadata: %w", err)
 	}
-	return parseIssuerMetadataResponse(body, resp.Header.Get("Content-Type"), issuer)
+	return parseIssuerMetadataResponse(body, resp.Header.Get("Content-Type"), issuer, mode)
 }
 
 func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
@@ -530,7 +530,7 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 // either of the two forms §12.2.2 allows. issuer is the Credential Issuer
 // Identifier the metadata URL was built from, which both the signature check
 // and the identity check below are made against.
-func parseIssuerMetadataResponse(body []byte, contentType, issuer string) (map[string]any, error) {
+func parseIssuerMetadataResponse(body []byte, contentType, issuer string, mode ValidationMode) (map[string]any, error) {
 	raw := strings.TrimSpace(string(body))
 	if raw == "" {
 		return nil, fmt.Errorf("issuer metadata response was empty")
@@ -543,7 +543,7 @@ func parseIssuerMetadataResponse(body []byte, contentType, issuer string) (map[s
 		if err != nil {
 			return nil, fmt.Errorf("parsing signed issuer metadata: %w", err)
 		}
-		if err := verifySignedIssuerMetadata(token, issuer); err != nil {
+		if err := verifySignedIssuerMetadata(token, issuer, mode); err != nil {
 			return nil, err
 		}
 		metadata = token.Payload
@@ -620,11 +620,19 @@ const signedIssuerMetadataTyp = "openidvci-issuer-metadata+jwt"
 // requesting signed metadata, the Wallet MUST establish trust in the signer of
 // the metadata. Otherwise, the Wallet MUST reject the signed metadata." The
 // mechanism is out of scope of the specification, so this wallet takes the one
-// the header can carry: an x5c chain ending in a trusted root. Metadata signed
-// by a key the wallet cannot place is rejected rather than read, which is what
-// the requirement means: without it, anyone able to answer the request could
-// dictate the endpoints the flow then talks to.
-func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
+// the header can carry: an x5c chain ending in a trusted root.
+//
+// Establishing that trust needs anchors this wallet is not provisioned with.
+// An ecosystem's issuer CA is not a WebPKI root, and a tool for testing other
+// people's deployments has nothing to attest one with. So the trust decision
+// follows the validation mode, like any other finding: strict refuses the
+// metadata, which is what the section asks of a wallet that requested the
+// signed form, and debug names the signer it could not place and reads the
+// metadata anyway. Reading it there is no weaker than the unsigned form the
+// same issuer serves on request, which carries no signature at all. The
+// structural checks and the signature itself hold in both modes, because
+// neither needs anything the wallet has to be given.
+func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string, mode ValidationMode) error {
 	if token == nil {
 		return fmt.Errorf("signed issuer metadata token is nil")
 	}
@@ -640,20 +648,26 @@ func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 		return fmt.Errorf("signed issuer metadata sub %q does not match the credential issuer identifier %q", sub, issuer)
 	}
 
-	cert, err := signedIssuerMetadataSigner(token)
+	certs, err := signedIssuerMetadataChain(token)
 	if err != nil {
 		return err
 	}
-	result := sdjwt.Verify(token, cert.PublicKey)
+	result := sdjwt.Verify(token, certs[0].PublicKey)
 	if result == nil || !result.SignatureValid {
 		return fmt.Errorf("issuer metadata signature is invalid")
+	}
+	if err := verifyIssuerMetadataChainTrust(certs); err != nil {
+		if mode == ValidationModeStrict {
+			return fmt.Errorf("signed issuer metadata signer is not trusted: %w", err)
+		}
+		log.Printf("[VCI] signed issuer metadata signer is not trusted (%v); reading it anyway in debug mode", err)
 	}
 	return nil
 }
 
-// signedIssuerMetadataSigner returns the leaf certificate of a signed metadata
-// x5c chain, once the chain is known to end in a trusted root.
-func signedIssuerMetadataSigner(token *sdjwt.Token) (*x509.Certificate, error) {
+// signedIssuerMetadataChain returns the certificates of a signed metadata x5c
+// chain, leaf first.
+func signedIssuerMetadataChain(token *sdjwt.Token) ([]*x509.Certificate, error) {
 	x5cRaw, ok := token.Header["x5c"]
 	if !ok {
 		return nil, fmt.Errorf("signed issuer metadata carries no x5c, so its signer cannot be trusted")
@@ -678,18 +692,22 @@ func signedIssuerMetadataSigner(token *sdjwt.Token) (*x509.Certificate, error) {
 		certs = append(certs, cert)
 	}
 
+	return certs, nil
+}
+
+// verifyIssuerMetadataChainTrust reports whether a signed metadata chain ends
+// in one of the anchors the wallet holds.
+func verifyIssuerMetadataChainTrust(certs []*x509.Certificate) error {
 	intermediates := x509.NewCertPool()
 	for _, cert := range certs[1:] {
 		intermediates.AddCert(cert)
 	}
-	if _, err := certs[0].Verify(x509.VerifyOptions{
+	_, err := certs[0].Verify(x509.VerifyOptions{
 		Roots:         issuerMetadataTrustAnchors,
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	}); err != nil {
-		return nil, fmt.Errorf("signed issuer metadata signer is not trusted: %w", err)
-	}
-	return certs[0], nil
+	})
+	return err
 }
 
 func normalizeMetadataX5CEntries(raw any) ([]string, error) {

@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.19.20] - 2026-08-07
 
 ### Fixed
 
 - **A credential request under key attestation carried more proofs than the specification gives a reading for.** Where the credential configuration required key attestations, the request held one proof per batch key, each with an attestation covering every key. OpenID4VCI 1.0 Appendix F.1 and F.3 both put the count on the attestation rather than the proofs: the issuer "SHOULD issue a Credential for each cryptographic public key specified in the `attested_keys` claim within the `key_attestation` parameter". Several such proofs would have the issuer issue for the same keys once per proof, so an issuer applying that sentence answers `invalid_proof`. The request stays at a single proof wherever an attestation is required, and batch issuance applies where it is not
+- **An issuer whose metadata signer the wallet could not place was unreachable.** Signed Credential Issuer Metadata was refused whenever its `x5c` chain did not end in a root the host already trusts, and that ended the flow in every mode. An ecosystem's issuer CA is not a WebPKI root, so this rejected the EUDI reference issuer outright, on a document it had signed correctly. OpenID4VCI 1.0 §12.2.3 does say "When requesting signed metadata, the Wallet MUST establish trust in the signer of the metadata. Otherwise, the Wallet MUST reject the signed metadata", and strict mode still does exactly that. But establishing that trust needs anchors a wallet has to be provisioned with, which a tool for testing other people's deployments is not, so in debug mode the signer it could not place is named in the log and the metadata is read. Reading it there is no weaker than the unsigned form the same issuer serves on request, which carries no signature at all. What the wallet can check without being given anything still holds in both modes: the `typ`, an asymmetric `alg`, a `sub` matching the Credential Issuer Identifier, and the signature itself
 
 ## [1.19.19] - 2026-08-07
 

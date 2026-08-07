@@ -64,7 +64,7 @@ type IssuanceOfferDetails struct {
 // there is recorded and the offer is still described from what it carries,
 // because a user should not be blocked from deciding by an issuer that
 // publishes no metadata.
-func describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetails {
+func describeCredentialOffer(offer *oid4vc.CredentialOffer, mode ValidationMode) *IssuanceOfferDetails {
 	if offer == nil {
 		return nil
 	}
@@ -82,7 +82,7 @@ func describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetail
 		}
 	}
 
-	metadata, err := fetchIssuerMetadata(offer.CredentialIssuer)
+	metadata, err := fetchIssuerMetadata(offer.CredentialIssuer, mode)
 	if err != nil {
 		details.MetadataError = err.Error()
 	} else {
