@@ -67,9 +67,9 @@ func TestAttestsClient(t *testing.T) {
 }
 
 // silentAttestationIssuer serves an issuer that requires client attestation on
-// its token endpoint while advertising nothing about it, which is what the
-// Animo playground does. A wallet that reads only the metadata is right to
-// send none, so this issuer is unreachable without the override.
+// its token endpoint while advertising nothing about it. A wallet that reads
+// only the metadata is right to send none, so this issuer is unreachable
+// without the override.
 func silentAttestationIssuer(t *testing.T, w *Wallet) (*httptest.Server, string, *int) {
 	t.Helper()
 

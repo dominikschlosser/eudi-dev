@@ -59,10 +59,9 @@ func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, con
 	// F.3 both say the issuer "SHOULD issue a Credential for each cryptographic
 	// public key specified in the attested_keys claim within the
 	// key_attestation parameter". Several proofs each carrying an attestation
-	// over the same keys has no single reading, so issuers refuse it (the Animo
-	// playground answers "Only a single proofs entry is supported when jwt
-	// proof header contains 'key_attestation'"). The attestation is the
-	// requirement, so it wins and the request stays at one proof.
+	// over the same keys would have the issuer issue for those keys once per
+	// proof, which is not a shape the specification defines. The attestation is
+	// the requirement, so it wins and the request stays at one proof.
 	if _, required := credentialKeyAttestationRequirement(metadata, configID); required {
 		return keys, nil
 	}

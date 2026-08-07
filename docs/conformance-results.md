@@ -47,12 +47,9 @@ Re-run for the 1.19.19 release against the same suite baseline, after the confor
 
 The matrix is 14 plans rather than 12: the pre-authorized code flow is now covered for both credential formats (plans 7 and 8).
 
-Two batches of modules moved from `SKIPPED` to `PASSED` in this run, both because the wallet had been declining to do something the suite was waiting for:
+The 2 `SKIPPED` modules are `credential-issuance-notification` in the `vci_credential_issuance_mode=deferred` variant of the two VCI HAIP plans. The suite exits non-zero on an unexpected skip even with no failures, so a run reporting these ends with status 1.
 
-- the 5 mdoc `batch-credential-issuance` modules. **This change was reverted after the run**, see below, so these modules skip again
-- 2 of the 4 `credential-issuance-notification` modules, the pre-authorized code ones. The Notification Endpoint was called only on the authorization code path. This one stands
-
-The 2 remaining `SKIPPED` modules are `credential-issuance-notification` in the `vci_credential_issuance_mode=deferred` variant of the two VCI HAIP plans, measured before the deferred acknowledgement was added. The suite exits non-zero on an unexpected skip even with no failures, so a run reporting these two ends with status 1.
+These figures cover the 5 mdoc `batch-credential-issuance` modules as `PASSED`. They are `SKIPPED` under the single-proof rule the key attestation appendices carry (see below), which puts the current expectation at 109 `PASSED` and 7 `SKIPPED`, pending a re-run.
 
 ### Flaky module to expect
 
@@ -62,9 +59,9 @@ The 2 remaining `SKIPPED` modules are `credential-issuance-notification` in the 
 
 Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet and pass:
 
-- `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet sends 2 proofs with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). Passes in the SD-JWT plans.
+- `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet sends 2 proofs with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
-  **The 5 mdoc variants are skipped, not passed**, and an earlier revision of this document wrongly claimed otherwise. The suite's mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations, and the wallet sends a single proof there, which the module skips as "batch behavior cannot be evaluated". This is deliberate. Appendix F.1 and F.3 both say the issuer "SHOULD issue a Credential for each cryptographic public key specified in the `attested_keys` claim within the `key_attestation` parameter", so where an attestation is present the batch is counted from `attested_keys` and not from the number of proofs. Several proofs each carrying an attestation over the same keys has no single reading, and real issuers refuse it: the Animo playground answers `invalid_proof: Only a single proofs entry is supported when jwt proof header contains 'key_attestation'`. Sending multiple proofs to satisfy this module was tried and reverted for that reason. The suite's own credential builder counts `proof_jwts` for the `jwt` proof type and only reads `attested_keys` for the `attestation` proof type, which is why it expects a shape those issuers reject.
+  The 5 mdoc variants are `SKIPPED`. Those plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations, and there the wallet sends a single proof, which the module skips as "batch behavior cannot be evaluated". Appendix F.1 and F.3 both put the batch count on the attestation rather than the proofs, so where an attestation is required the request holds one proof and the issuer issues for each key in `attested_keys`. The suite's credential builder counts `proof_jwts` for the `jwt` proof type and reads `attested_keys` only for the `attestation` proof type, so this module expects a shape an issuer applying those appendices answers `invalid_proof` to.
 - `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 7, 8, 9, 10).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet now strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, while continuing to preserve the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
