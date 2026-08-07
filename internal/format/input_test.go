@@ -20,7 +20,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestReadInputRaw_RawString(t *testing.T) {
@@ -159,5 +161,71 @@ func TestHTTPClientForURLHostDockerInternalFallback(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+// A remote read that got no answer is tried again. OpenID4VP 1.0 §5.10.2 says
+// of the request_uri fetch that comes through here: "If the Verifier responds
+// with any HTTP error response, the Wallet MUST terminate the process." A
+// connection that never produced a response is not that, and a single moment
+// of unresponsiveness should not end a flow.
+func TestFetchURLRetriesWhenTheServerDoesNotAnswer(t *testing.T) {
+	previous := fetchRetryDelay
+	fetchRetryDelay = time.Millisecond
+	t.Cleanup(func() { fetchRetryDelay = previous })
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			// Close the connection without answering, which is what a
+			// request that times out looks like to the client.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("test server does not support hijacking")
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			conn.Close()
+			return
+		}
+		_, _ = w.Write([]byte("second-time-lucky"))
+	}))
+	defer srv.Close()
+
+	got, err := FetchURL(srv.URL)
+	if err != nil {
+		t.Fatalf("FetchURL: %v", err)
+	}
+	if got != "second-time-lucky" {
+		t.Errorf("body = %q", got)
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("server was called %d times, want 2", n)
+	}
+}
+
+// An HTTP error is an answer, and §5.10.2 says to terminate on one rather than
+// ask again.
+func TestFetchURLDoesNotRetryAnHTTPError(t *testing.T) {
+	previous := fetchRetryDelay
+	fetchRetryDelay = time.Millisecond
+	t.Cleanup(func() { fetchRetryDelay = previous })
+
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	if _, err := FetchURL(srv.URL); err == nil {
+		t.Fatal("expected an error for HTTP 500")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("server was called %d times, want 1", n)
 	}
 }

@@ -204,17 +204,40 @@ func ReadRemoteBody(r io.Reader, what string) ([]byte, error) {
 // lists are all far smaller, so anything larger is a misdirected fetch.
 const maxFetchBytes = 10 << 20
 
+// fetchAttempts is how many times a remote read is tried when the server does
+// not answer at all.
+//
+// Only a request that got no response is repeated. A server that answered,
+// whatever it answered, has said something, and OpenID4VP 1.0 §5.10.2 is
+// explicit for the request_uri case that comes through here: "If the Verifier
+// responds with any HTTP error response, the Wallet MUST terminate the
+// process." A connection that timed out is not a response, so trying it again
+// stops a moment of unresponsiveness from ending a flow.
+const fetchAttempts = 3
+
+// fetchRetryDelay spaces those attempts out.
+var fetchRetryDelay = 500 * time.Millisecond
+
 // FetchURL fetches content from a URL and returns it as a trimmed string.
 func FetchURL(url string) (string, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return "", fmt.Errorf("fetching %s: %w", url, err)
-	}
-	// Go sends no Accept header by default. Some servers reject that.
-	req.Header.Set("Accept", "*/*")
-	resp, err := HTTPClientForURL(url).Do(req)
-	if err != nil {
-		return "", fmt.Errorf("fetching %s: %w", url, err)
+	var resp *http.Response
+	for attempt := 1; ; attempt++ {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return "", fmt.Errorf("fetching %s: %w", url, err)
+		}
+		// Go sends no Accept header by default. Some servers reject that.
+		req.Header.Set("Accept", "*/*")
+
+		var doErr error
+		resp, doErr = HTTPClientForURL(url).Do(req)
+		if doErr == nil {
+			break
+		}
+		if attempt >= fetchAttempts {
+			return "", fmt.Errorf("fetching %s: %w", url, doErr)
+		}
+		time.Sleep(fetchRetryDelay)
 	}
 	defer resp.Body.Close()
 
