@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
@@ -57,28 +56,15 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	authReq, err = parseAuthParams(values, s.parseOpts, s.wallet.ValidationMode)
 
 	if err != nil {
-		// A request the wallet cannot parse is still a request the verifier is
-		// waiting on, so the refusal goes back over the Response Mode as well
-		// as to the local caller (§5.6).
-		target := authorizationErrorTarget(values)
-		s.reportRefusalToVerifier(target, refusalCodeForRequest(target, err), err.Error())
+		// A request that cannot be parsed names a response endpoint the wallet
+		// has no reason to trust, so nothing is sent there (RFC 6749 §4.1.2.1,
+		// which §8.5 adopts). The caller is told instead.
 		http.Error(w, fmt.Sprintf("invalid authorization request: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	authReq.BrowserRedirect = isBrowserNavigation(r)
 	s.handleAuthFlow(w, authReq)
-}
-
-// requestURIValues reads the query parameters of an authorization request URI
-// the wallet could not otherwise parse, so a refusal still knows where the
-// verifier is listening. An unparseable URI yields nothing.
-func requestURIValues(raw string) map[string][]string {
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return nil
-	}
-	return parsed.Query()
 }
 
 // handlePresentationAPI processes a presentation request URI via API.
@@ -149,8 +135,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 			Detail:  err.Error(),
 		})
 		reqServer.triggerUIRequest()
-		target := authorizationErrorTarget(requestURIValues(body.URI))
-		reqServer.reportRefusalToVerifier(target, refusalCodeForRequest(target, err), err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -194,7 +178,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
-		reqServer.reportRefusalToVerifier(authReq, refusalCodeForRequest(authReq, err), err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

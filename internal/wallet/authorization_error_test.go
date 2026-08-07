@@ -154,97 +154,77 @@ func TestAQueryForAnUnsupportedFormatReturnsVPFormatsNotSupported(t *testing.T) 
 	}
 }
 
-// §8.5 collects the malformed-request cases under invalid_request. A request
-// the wallet refuses to act on is one the verifier is still waiting for.
-func TestAMalformedRequestReturnsInvalidRequestToTheVerifier(t *testing.T) {
-	srv := newTestServer(t, true)
-	verifier := newCaptureVerifier(t)
-
-	params := url.Values{
-		"client_id":     {"https://verifier.example"},
-		"response_type": {"not_a_response_type"},
-		"response_mode": {"direct_post"},
-		"nonce":         {"n"},
-		"state":         {"s"},
-		"response_uri":  {verifier.URL},
+// A request that fails validation names a response endpoint the wallet has no
+// reason to trust. §8.5 says the error response "follows the rules as defined
+// in [RFC6749]", and RFC 6749 §4.1.2.1 is explicit about this case: the server
+// "SHOULD inform the resource owner of the error and MUST NOT automatically
+// redirect the user-agent to the invalid redirection URI". So nothing is sent
+// to the verifier and the caller is told instead.
+func TestValidationFailuresAreNotSentToTheVerifier(t *testing.T) {
+	tests := []struct {
+		name      string
+		params    func(responseURI string) url.Values
+		wantLocal string
+	}{
+		{
+			name: "a response type the wallet cannot serve",
+			params: func(responseURI string) url.Values {
+				return url.Values{
+					"client_id":     {"https://verifier.example"},
+					"response_type": {"not_a_response_type"},
+					"response_mode": {"direct_post"},
+					"nonce":         {"n"},
+					"state":         {"s"},
+					"response_uri":  {responseURI},
+				}
+			},
+			wantLocal: "invalid_request",
+		},
+		{
+			name: "a request_uri_method that is neither get nor post",
+			params: func(responseURI string) url.Values {
+				return url.Values{
+					"client_id":          {"https://verifier.example"},
+					"response_type":      {"vp_token"},
+					"response_mode":      {"direct_post"},
+					"nonce":              {"n"},
+					"state":              {"s"},
+					"response_uri":       {responseURI},
+					"request_uri":        {"https://verifier.example/req"},
+					"request_uri_method": {"PATCH"},
+				}
+			},
+			// This path answers before the request is built, so it names the
+			// parameter rather than the §8.5 code.
+			wantLocal: "request_uri_method",
+		},
 	}
 
-	rec := authorizeRequest(t, srv, params)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := newTestServer(t, true)
+			verifier := newCaptureVerifier(t)
 
-	form := verifier.received(t)
-	if got := form.Get("error"); got != "invalid_request" {
-		t.Fatalf("verifier received error %q, want invalid_request", got)
-	}
-	if got := form.Get("state"); got != "s" {
-		t.Fatalf("verifier received state %q, want s", got)
-	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("local caller got %d, want 400", rec.Code)
-	}
-}
+			rec := authorizeRequest(t, srv, tt.params(verifier.URL))
 
-// §8.5 invalid_request_uri_method: "The value of the request_uri_method
-// request parameter is neither get nor post (case-sensitive)."
-func TestABadRequestURIMethodReturnsItsOwnErrorCodeToTheVerifier(t *testing.T) {
-	srv := newTestServer(t, true)
-	verifier := newCaptureVerifier(t)
-
-	params := url.Values{
-		"client_id":          {"https://verifier.example"},
-		"response_type":      {"vp_token"},
-		"response_mode":      {"direct_post"},
-		"nonce":              {"n"},
-		"state":              {"s"},
-		"response_uri":       {verifier.URL},
-		"request_uri":        {"https://verifier.example/request"},
-		"request_uri_method": {"PUT"},
-	}
-
-	rec := authorizeRequest(t, srv, params)
-
-	if got := verifier.received(t).Get("error"); got != "invalid_request_uri_method" {
-		t.Fatalf("verifier received error %q, want invalid_request_uri_method", got)
-	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("local caller got %d, want 400", rec.Code)
-	}
-}
-
-// §8.5 invalid_transaction_data covers a transaction_data object that
-// "contains an unknown or unsupported transaction data type value". This
-// wallet supports no type, so every object in the structure is unsupported.
-func TestUnsupportedTransactionDataReturnsInvalidTransactionDataToTheVerifier(t *testing.T) {
-	srv := newStrictTestServer(t, true)
-	verifier := newCaptureVerifier(t)
-
-	params := url.Values{
-		"client_id":     {"https://verifier.example"},
-		"response_type": {"vp_token"},
-		"response_mode": {"direct_post"},
-		"nonce":         {"n"},
-		"state":         {"s"},
-		"response_uri":  {verifier.URL},
-		"transaction_data": {dcqlQueryParam(t, map[string]any{
-			"type": "urn:example:unknown",
-		})},
-	}
-
-	rec := authorizeRequest(t, srv, params)
-
-	if got := verifier.received(t).Get("error"); got != "invalid_transaction_data" {
-		t.Fatalf("verifier received error %q, want invalid_transaction_data", got)
-	}
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("local caller got %d, want 400", rec.Code)
+			if got := verifier.form; got != nil {
+				t.Errorf("the verifier was contacted with %v, want nothing sent to an unvalidated request's endpoint", got)
+			}
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("local status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tt.wantLocal) {
+				t.Errorf("local body = %s, want it to name %s", rec.Body.String(), tt.wantLocal)
+			}
+		})
 	}
 }
 
-// A profile violation is a request the wallet will not act on, which §8.5
-// makes an invalid_request the verifier is owed.
-func TestAHAIPViolationIsReportedToTheVerifier(t *testing.T) {
+// A profile violation is found while validating the request, so it falls under
+// the same rule: the counterparty is not told through an endpoint the wallet
+// has not been able to validate.
+func TestAHAIPViolationIsNotSentToTheVerifier(t *testing.T) {
 	srv := newTestServer(t, true)
-	// --haip decides that the profile checks run, the mode decides that a
-	// violation refuses the request rather than being reported.
 	srv.wallet.RequireHAIP = true
 	srv.wallet.ValidationMode = ValidationModeStrict
 	verifier := newCaptureVerifier(t)
@@ -258,23 +238,21 @@ func TestAHAIPViolationIsReportedToTheVerifier(t *testing.T) {
 		"response_uri":  {verifier.URL},
 		"dcql_query": {dcqlQueryParam(t, map[string]any{
 			"credentials": []any{
-				map[string]any{"id": "pid", "format": "dc+sd-jwt"},
+				map[string]any{"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{}},
 			},
 		})},
 	}
 
 	rec := authorizeRequest(t, srv, params)
 
-	if got := verifier.received(t).Get("error"); got != "invalid_request" {
-		t.Fatalf("verifier received error %q, want invalid_request", got)
+	if got := verifier.form; got != nil {
+		t.Errorf("the verifier was contacted with %v, want nothing sent", got)
 	}
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("local caller got %d, want 400", rec.Code)
+		t.Errorf("local status = %d, want 400 (%s)", rec.Code, rec.Body.String())
 	}
 }
 
-// The presentation API is a second door onto the same flow, so a refusal
-// reached through it owes the verifier the same response.
 func TestPresentationAPINoMatchReportsAccessDeniedToTheVerifier(t *testing.T) {
 	srv := newTestServer(t, true)
 	verifier := newCaptureVerifier(t)

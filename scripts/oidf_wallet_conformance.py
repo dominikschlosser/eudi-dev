@@ -890,13 +890,36 @@ def tx_code_from_offer(request_url: str) -> str | None:
     return "0" * length if isinstance(length, int) and 0 < length <= 12 else None
 
 
-def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
+
+# The suite's Verifier lists one content encryption algorithm in
+# client_metadata.encrypted_response_enc_values_supported, where HAIP section 5
+# says "Verifiers MUST list both A128GCM and A256GCM". The suite reads the rule
+# the same way (its own ValidateVpClientMetadataEncryptionForHaip enforces it
+# against Verifiers under test) but does not follow it in the Verifier it uses
+# to drive wallet tests, so a wallet that checks the profile refuses every HAIP
+# module in strict mode.
+#
+# The wallet separates the two switches: the profile decides how many checks
+# run, the mode decides whether a finding stops the flow. Running the HAIP
+# modules in debug keeps every profile check running and reported while the
+# exchange completes, which is what those modules are there to exercise. The
+# negative modules keep the configured mode, because refusing a bad request is
+# exactly what they test and a debug run would accept it.
+def wallet_mode_for(test_name: str | None, requires_haip: bool) -> str:
+    if not requires_haip:
+        return WALLET_MODE
+    if test_name and "negative" in test_name:
+        return WALLET_MODE
+    return "debug"
+
+
+def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
     # State the profile explicitly rather than inheriting the server's
     # setting: the non-HAIP modules have to run without HAIP even against a
     # wallet that enforces it globally, and the issuance endpoint now honors
     # the same override.
-    payload = {"uri": request_url, "mode": WALLET_MODE, "haip": bool(requires_haip)}
+    payload = {"uri": request_url, "mode": wallet_mode_for(test_name, requires_haip), "haip": bool(requires_haip)}
     tx_code = tx_code_from_offer(request_url)
     if tx_code:
         payload["tx_code"] = tx_code
@@ -1027,8 +1050,8 @@ def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) ->
         state["submitted_synthetic_fapi_offer"] = True
 
 
-def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False) -> WalletSubmissionResult:
-    extra_headers = {"X-OID4VC-Dev-Mode": WALLET_MODE}
+def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
+    extra_headers = {"X-OID4VC-Dev-Mode": wallet_mode_for(test_name, requires_haip)}
     if requires_haip:
         extra_headers["X-OID4VC-Dev-HAIP"] = "true"
     origin = browser_request_origin(browser_request)
@@ -1129,14 +1152,14 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
         submit_url = entry.get("submitUrl")
         browser_request = entry.get("request")
         if submit_url and browser_request and submit_url not in state["submitted_browser_api_requests"]:
-            result = submit_browser_api_request(wallet_url, browser_request, submit_url, state.get("requires_haip", False))
+            result = submit_browser_api_request(wallet_url, browser_request, submit_url, state.get("requires_haip", False), state.get("test_name"))
             if result.completed or not result.retryable:
                 state["submitted_browser_api_requests"].add(submit_url)
 
     for entry in logs:
         request_url = entry.get("redirect_to") or entry.get("credential_offer_redirect_url")
         if request_url and request_url not in state["submitted_urls"]:
-            result = submit_wallet_request(wallet_url, request_url, state.get("requires_haip", False))
+            result = submit_wallet_request(wallet_url, request_url, state.get("requires_haip", False), state.get("test_name"))
             if result.completed or not result.retryable:
                 state["submitted_urls"].add(request_url)
 

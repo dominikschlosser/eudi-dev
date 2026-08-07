@@ -223,8 +223,17 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 			Detail:  err.Error(),
 		})
 		s.triggerUIRequest()
+		// Nothing is sent to the response endpoint here. §8.5 says the error
+		// response "follows the rules as defined in [RFC6749]", and RFC 6749
+		// §4.1.2.1 is explicit that when the client identifier or the
+		// redirection URI is missing or invalid the server "SHOULD inform the
+		// resource owner of the error and MUST NOT automatically redirect the
+		// user-agent to the invalid redirection URI". A request that fails
+		// validation is exactly that case: its signature did not verify, its
+		// client_id did not match, or it was malformed, so the destination it
+		// names is not one the wallet has any reason to trust. The refusal is
+		// reported to whoever asked this wallet instead.
 		errorCode := refusalCodeForRequest(authReq, err)
-		s.reportRefusalToVerifier(authReq, errorCode, err.Error())
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":             errorCode,
 			"error_description": err.Error(),
@@ -782,31 +791,6 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 	}
 
 	return params, nil
-}
-
-// authorizationErrorTarget rebuilds just enough of a request the wallet failed
-// to parse to still return an Authorization Error Response for it. §5.6 wants
-// the error returned over the supplied Response Mode, and the parameters that
-// decide where it goes (response_mode, response_uri, redirect_uri, state) are
-// readable even when the request as a whole is not. A request delivered by
-// reference may carry none of them, in which case there is no destination and
-// nothing is sent.
-func authorizationErrorTarget(values map[string][]string) *AuthorizationRequestParams {
-	get := func(key string) string {
-		if vs, ok := values[key]; ok && len(vs) > 0 {
-			return vs[0]
-		}
-		return ""
-	}
-	return &AuthorizationRequestParams{
-		ClientID:         get("client_id"),
-		ResponseMode:     get("response_mode"),
-		State:            get("state"),
-		Nonce:            get("nonce"),
-		RedirectURI:      get("redirect_uri"),
-		ResponseURI:      get("response_uri"),
-		RequestURIMethod: get("request_uri_method"),
-	}
 }
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
