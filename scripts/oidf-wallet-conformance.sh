@@ -233,7 +233,35 @@ until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; do
   sleep 1
 done
 
+# Drop the local suite's database once the run is over. The suite records every
+# test and every log line it ever ran, and a database carrying days of them has
+# the server pausing long enough that a wallet request to it times out, which
+# fails the module it was serving and takes the run with it. Nothing here reads
+# the suite's own history: the results are exported per run.
+#
+# Local mode only. A hosted server belongs to somebody else.
+wipe_local_suite_database() {
+  [ "$CONFORMANCE_MODE" = "local" ] || return 0
+  [ "${OIDF_KEEP_SUITE_DB:-0}" = "1" ] && return 0
+  command -v docker >/dev/null 2>&1 || return 0
+
+  container=${OIDF_SUITE_MONGO_CONTAINER:-$(docker ps --format '{{.Names}}' 2>/dev/null | grep -m1 -iE 'conformance.*mongo' || true)}
+  [ -n "$container" ] || return 0
+
+  for shell in mongosh mongo; do
+    if docker exec "$container" sh -c "command -v $shell" >/dev/null 2>&1; then
+      if docker exec "$container" "$shell" --quiet --eval 'db.getSiblingDB("test_suite").dropDatabase()' >/dev/null 2>&1; then
+        echo "Dropped the local suite database in $container"
+      else
+        echo "warning: could not drop the local suite database in $container" >&2
+      fi
+      return 0
+    fi
+  done
+}
+
 echo "Running OIDF Final + HAIP wallet plans against $CONFORMANCE_SERVER ($CONFORMANCE_MODE mode)"
+RUN_STATUS=0
 "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/oidf_wallet_conformance.py" \
   --suite-dir "$SUITE_DIR" \
   --wallet-url "$WALLET_URL" \
@@ -243,8 +271,13 @@ echo "Running OIDF Final + HAIP wallet plans against $CONFORMANCE_SERVER ($CONFO
   --vci-redirect-uri "$OIDF_VCI_REDIRECT_URI" \
   --results-dir "$RESULTS_DIR" \
   --runner-log "$RUNNER_LOG" \
-  "$@"
+  "$@" || RUN_STATUS=$?
+
+# Runs after a failed run too: a run that was killed leaves the most behind.
+wipe_local_suite_database
 
 echo "Wallet log:   $WALLET_LOG"
 echo "Runner log:   $RUNNER_LOG"
 echo "Results dir:  $RESULTS_DIR"
+
+exit $RUN_STATUS
