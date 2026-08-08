@@ -64,6 +64,10 @@ type DemoRP struct {
 	// onWalletChange persists the wallet after the issuer changed something in
 	// it, which so far means reserving a status list index.
 	onWalletChange func()
+	// clientAuth is what the demo authorization server demands of a wallet.
+	// The zero value is ClientAuthRequired, so a caller that never sets it gets
+	// the profile the demo is meant to show.
+	clientAuth ClientAuthMode
 
 	mu       sync.Mutex
 	offers   map[string]*offerState
@@ -99,6 +103,13 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 // demo issuer changed it. Call before serving.
 func (d *DemoRP) SetOnWalletChange(fn func()) {
 	d.onWalletChange = fn
+}
+
+// SetClientAuthMode decides what the demo authorization server demands of a
+// wallet at its pushed authorization request and token endpoints. Call before
+// serving: the mode is published in the authorization server metadata.
+func (d *DemoRP) SetClientAuthMode(mode ClientAuthMode) {
+	d.clientAuth = mode
 }
 
 func (d *DemoRP) saveWallet() {

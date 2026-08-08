@@ -316,7 +316,7 @@ func jsonString(v string) string {
 // parameters, exactly as a wallet would.
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
 	t.Helper()
-	credential, err := d.signTicket(&holderKey.PublicKey, "", false)
+	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -426,7 +426,7 @@ func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, 
 		Issuer:        d.issuerID(),
 		VCT:           TicketVCT,
 		ExpiresIn:     24 * time.Hour,
-		Claims:        ticketClaims(""),
+		Claims:        ticketClaims("", nil),
 		Key:           d.wallet.IssuerKey,
 		HolderKey:     &holderKey.PublicKey,
 		CertChain:     chain,
@@ -721,7 +721,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 
 	id, params := startVerification(t, h, "ticket")
 
-	credential, err := d.signTicket(&holderKey.PublicKey, "", false)
+	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -1046,6 +1046,12 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	if got := ticket.Claims["given_name"]; got != demoAccountGivenName {
 		t.Errorf("ticket given_name = %v, want %q from the logged-in account", got, demoAccountGivenName)
 	}
+	// This wallet's attestation is signed under the CA the issuer reads
+	// directly, so this is the one flow where the attester is one the issuer
+	// was given, and the ticket says so.
+	if got := ticket.Claims["wallet_attestation"]; got != "trusted" {
+		t.Errorf("ticket wallet_attestation = %v, want trusted", got)
+	}
 
 	// OpenID4VCI 1.0 §6.2 defines no c_nonce in a token response, and this
 	// issuer advertises a Nonce Endpoint (§7). The wallet ran in strict mode,
@@ -1283,13 +1289,13 @@ func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
 	saves := 0
 	d.SetOnWalletChange(func() { saves++ })
 
-	if _, err := d.signTicket(&holderKey.PublicKey, "", false); err != nil {
+	if _, err := d.signTicket(&holderKey.PublicKey, ticketGrant{}); err != nil {
 		t.Fatalf("signing a ticket without a status reference: %v", err)
 	}
 	if saves != 0 {
 		t.Errorf("a ticket without a status reference saved the wallet %d times", saves)
 	}
-	if _, err := d.signTicket(&holderKey.PublicKey, "", true); err != nil {
+	if _, err := d.signTicket(&holderKey.PublicKey, ticketGrant{withStatus: true}); err != nil {
 		t.Fatalf("signing a ticket with a status reference: %v", err)
 	}
 	if saves != 1 {

@@ -57,6 +57,7 @@ type walletServeOptions struct {
 	RequireEncryptedRequest bool
 	HAIP                    bool
 	ClientAttestation       bool
+	DemoIssuerClientAuth    string
 	VCIClientID             string
 	VCIRedirectURI          string
 	Demo                    bool
@@ -104,6 +105,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
@@ -279,6 +281,12 @@ func demoResetDescription(opts wallet.DemoOptions) string {
 func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if opts.Detached {
 		return spawnDetachedServe(cmd, opts.Port, opts.Register, opts.NoRegister)
+	}
+	// Read before anything is loaded or written: a mode nobody can spell should
+	// fail on its own, not halfway through starting a server.
+	clientAuthMode, err := demorp.ParseClientAuthMode(opts.DemoIssuerClientAuth)
+	if err != nil {
+		return fmt.Errorf("--demo-issuer-client-auth: %w", err)
 	}
 	store := loadStore()
 	w, err := store.LoadOrCreate()
@@ -593,6 +601,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		}
 		return fmt.Sprintf("http://localhost:%d", opts.Port)
 	})
+	demoRP.SetClientAuthMode(clientAuthMode)
 	// Issuing with a status list reserves an index on the wallet's own
 	// list, and every wallet API request reloads the store, so the
 	// reservation has to reach disk before the next one.

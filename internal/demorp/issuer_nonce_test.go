@@ -97,8 +97,24 @@ func TestIssuerMetadataPutsDisplayAndClaimsUnderCredentialMetadata(t *testing.T)
 		t.Errorf("display name = %v, want Demo Event Ticket", first["name"])
 	}
 	claims, _ := credentialMetadata["claims"].([]any)
-	if len(claims) != 5 {
-		t.Errorf("credential_metadata carries %d claims, want 5", len(claims))
+	described := map[string]bool{}
+	for _, entry := range claims {
+		claim, _ := entry.(map[string]any)
+		path, _ := claim["path"].([]any)
+		if len(path) == 0 {
+			t.Errorf("claim entry has no path: %v", entry)
+			continue
+		}
+		name, _ := path[0].(string)
+		described[name] = true
+	}
+	// Every claim the ticket can carry, so a wallet reading only this document
+	// knows what it is being offered. wallet_attestation is among them and
+	// appears on the authorization code path.
+	for _, name := range []string{"event", "tier", "seat", "given_name", "family_name", "wallet_attestation"} {
+		if !described[name] {
+			t.Errorf("credential_metadata describes no %s claim: %v", name, claims)
+		}
 	}
 }
 

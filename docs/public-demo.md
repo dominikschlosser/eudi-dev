@@ -55,7 +55,7 @@ Both flags default to the wallet's own origin (`--base-url`, plus `/callback`), 
 
 ## The demo issuer as an authorization server
 
-The demo issuer also runs the authorization code flow, with itself as the authorization server. Its metadata (`/.well-known/oauth-authorization-server/issuer`) advertises what HAIP requires: pushed authorization requests required, PKCE S256, DPoP, and `attest_jwt_client_auth`. The endpoints are `/issuer/par`, `/issuer/authorize` and `/issuer/token`.
+The demo issuer also runs the authorization code flow, with itself as the authorization server. Its metadata (`/.well-known/oauth-authorization-server/issuer`) advertises what HAIP requires: pushed authorization requests required, PKCE S256, DPoP, and the two client authentication methods of [OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) draft 10 (`attest_jwt_client_auth` and `attest_jwt_client_auth_dpop`), together with the signing algorithms and proof of possession methods that document requires alongside them. The endpoints are `/issuer/par`, `/issuer/authorize` and `/issuer/token`.
 
 The key-proof challenge comes from the Nonce Endpoint that OpenID4VCI 1.0 §7 defines. The issuer serves it at `POST /issuer/nonce` and advertises it as `nonce_endpoint` in its Credential Issuer metadata, and its token responses carry no `c_nonce`, which is a draft-era parameter the final specification does not define. A proof signed over a stale nonce is answered with `invalid_nonce`, which tells a wallet to fetch a fresh one and retry rather than to give up.
 
@@ -67,13 +67,19 @@ The wallet never opens a browser itself. The browser that matters belongs to the
 
 The callback is matched by `state` alone, so the sign-in can happen in any browser that can reach the wallet. That is what lets `eudi wallet accept` complete an authorization code offer against the hosted demo: the CLI opens the URL locally and follows the flow at `GET /api/offers/{offer_id}` until it reports `completed` or `failed`.
 
-The pushed authorization request and the token request must both carry a wallet attestation, and the demo issuer verifies it rather than waving it through: the certificate in the `x5c` header has to chain to the wallet CA, the PoP has to be signed by the attested key, and `sub`, `iss`, `aud` and the expiry have to line up. The access token is bound to the DPoP key and the credential request has to prove that key again. The ticket then carries the name of the account that signed in, so a flow that skipped the login is visible in the result.
+The pushed authorization request and the token request must both carry a wallet attestation, and the demo issuer verifies it rather than waving it through: the PoP has to be signed by the attested key, and `sub`, `aud`, `jti` and the expiry have to line up. Possession of the attested key can be proven either way the draft allows, with a dedicated `OAuth-Client-Attestation-PoP` JWT or with the DPoP proof the request already carries (`attest_jwt_client_auth_dpop`), where the issuer checks that the DPoP key is the one the attestation attests. The access token is bound to the DPoP key and the credential request has to prove that key again. The ticket then carries the name of the account that signed in, so a flow that skipped the login is visible in the result.
+
+### Wallets from other providers
+
+An attestation is signed by a wallet provider, and this issuer was given exactly one CA, the wallet it is mounted on. Refusing every other attester would mean the authorization code flow can only ever be completed by this project's own wallet, which is no use to anybody testing their own. So an attestation whose certificate does not chain to that CA is accepted on its own leaf and marked instead: the issued ticket carries a `wallet_attestation` claim saying `trusted` (the chain reached the CA), `untrusted` (it did not) or `none` (the client authenticated with nothing). A production issuer resolves the wallet provider's trust list and pins the CA it finds there, which is what `/api/trustlists/wallet-provider` publishes for this wallet.
+
+A wallet that has no attestation to send at all is still refused, because HAIP 1.0 §4.4.1 says it must be ("Wallets MUST use, and Issuers MUST require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that support client authentication"), and demonstrating that is most of the point of this issuer. To test such a wallet, start the server with `--demo-issuer-client-auth optional`. The authorization server then also advertises and accepts `none`, an attestation is still verified wherever one is sent, and the ticket says how the flow actually went.
 
 ## What an issuer needs to verify the wallet
 
 On the authorization-code path the wallet authenticates with attestation-based client authentication and sends both headers on the pushed authorization request and on the token request:
 
-- `OAuth-Client-Attestation`, signed by the wallet's issuer key (`iss` is the wallet origin, `sub` is the client id, `cnf.jwk` is the wallet's holder key). Its `x5c` header carries the leaf certificate only, the self-signed root is stripped.
+- `OAuth-Client-Attestation`, signed by the wallet's issuer key (`sub` is the client id, `cnf.jwk` is the wallet's holder key, and `iss` names the wallet origin, which draft 10 no longer requires but does not forbid). Its `x5c` header carries the leaf certificate only, the self-signed root is stripped.
 - `OAuth-Client-Attestation-PoP`, signed by that holder key. If the authorization server metadata advertises a `challenge_endpoint`, the wallet fetches a challenge first and includes it.
 
 Credential proofs carry a `key-attestation+jwt` from the same signer when the credential configuration sets `key_attestations_required`.

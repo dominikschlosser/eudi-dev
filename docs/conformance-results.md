@@ -4,7 +4,7 @@ These are the current local wallet conformance results for `eudi-dev`. Use [Runn
 
 ## Baseline
 
-- date: 2026-08-07 (previous: 2026-08-05 and 2026-08-04, same totals across 12 plans. And 2026-07-30, which did not exercise credential status. See below)
+- date: 2026-08-08 (previous: 2026-08-07, and 2026-08-05 and 2026-08-04 across 12 plans. And 2026-07-30, which did not exercise credential status. See below)
 - wallet mode: strict
 - suite server: local `https://localhost:8443/`
 - suite baseline: `release-v5.2.1`, version `5.2.1`, revision `932b46f`
@@ -22,7 +22,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The full matrix passes in a single run: all 14 plans finish with 0 condition failures and 0 warnings (114 modules `PASSED`, 38 negative modules `REVIEW`, 2 `SKIPPED`, 15,228 condition successes). The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
+The full matrix runs in one pass: 14 plans, 154 modules, 110 `PASSED`, 38 negative modules `REVIEW`, 5 `SKIPPED`, 1 `FAILED`, 15,404 condition successes against 1 condition failure. The skips and the failure are both accounted for below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
 
 ## Run of 2026-08-04
 
@@ -51,6 +51,16 @@ The 2 `SKIPPED` modules are `credential-issuance-notification` in the `vci_crede
 
 These figures cover the 5 mdoc `batch-credential-issuance` modules as `PASSED`. They are `SKIPPED` under the single-proof rule the key attestation appendices carry (see below), which puts the current expectation at 109 `PASSED` and 7 `SKIPPED`, pending a re-run.
 
+## Run of 2026-08-08
+
+Full matrix for the 1.19.22 release, suite pinned to `release-v5.2.1` to match the running server: **110 modules PASSED, 38 negative modules REVIEW, 5 SKIPPED, 1 FAILED**, 15,404 condition successes across 14 plans, with no watchdog termination.
+
+Runs need `EUDI_REMOTE_TIMEOUT` to complete. The suite shares this machine with the wallet and pauses under load, and at the wallet's 15 second default a request it would normally answer at once times out, which ends that module's exchange and cannot be resumed. The wrapper sets `120s`, and this run recorded 6 such pauses (visible as `[monitor] failed to monitor module`) and completed through all of them. Runs before that setting existed died partway with `context deadline exceeded`.
+
+The 5 `SKIPPED` are the mdoc `batch-credential-issuance` modules, which is deliberate (see below).
+
+The 1 `FAILED` is `oid4vci-1_0-wallet-test-credential-issuance-notification` on `VCIVerifyIssuerStateInAuthorizationRequest`, and it is an artifact of two modules overlapping rather than anything the wallet did. The module logs the check twice: the first authorization request carries the `issuer_state` of the offer under test and passes, and a second one 18 seconds later carries the `issuer_state` of a later offer, which the module is still comparing against the first. The wallet echoed the value each offer gave it, which is what OID4VCI 1.0 §5.1.3 asks of it. Expect this and the flake below to move between runs.
+
 ### Flaky module to expect
 
 `RequestUriFetchedMoreThanOnce` can fail spuriously. `submit_wallet_request` retries a submission up to five times after a transient HTTP 502, and each submission makes the wallet fetch the `request_uri` once, so a retry produces a second fetch that the suite flags. It appeared once in an earlier run of this same code on a loaded machine and did not reproduce on a quiet one. Re-run before treating it as a defect.
@@ -74,7 +84,7 @@ Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization 
 
 ## Matrix
 
-Condition counts are from the 2026-08-07 run. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run, so they are linked against the plan they depict rather than the row number, and the two pre-authorized code plans have none.
+Condition counts are from the 2026-08-08 run. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run, so they are linked against the plan they depict rather than the row number, and the two pre-authorized code plans have none.
 
 | # | Plan | Variant | Current result | Screenshot |
 |---|---|---|---|---|
@@ -82,16 +92,16 @@ Condition counts are from the 2026-08-07 run. The screenshots are the plan-detai
 | 2 | VP Final | SD-JWT, `direct_post.jwt`, signed `x509_hash` | 655 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-02-vp-final-sdjwt-direct-post-jwt.png) |
 | 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 460 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
 | 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 520 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png) |
-| 5 | VCI Final | SD-JWT | 976 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
-| 6 | VCI Final | mDoc | 1011 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
-| 7 | VCI Final | SD-JWT, pre-authorized code | 637 success / 0 failure. | (added after the screenshot run) |
-| 8 | VCI Final | mDoc, pre-authorized code | 644 success / 0 failure. | (added after the screenshot run) |
+| 5 | VCI Final | SD-JWT | 1027 success / 1 failure. Includes batch credential issuance. Carries the `issuer_state` failure described above, which two overlapping modules produce rather than the wallet. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
+| 6 | VCI Final | mDoc | 1010 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
+| 7 | VCI Final | SD-JWT, pre-authorized code | 735 success / 0 failure. | (added after the screenshot run) |
+| 8 | VCI Final | mDoc, pre-authorized code | 643 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | (added after the screenshot run) |
 | 9 | VP HAIP | SD-JWT, `direct_post.jwt` | 693 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
 | 10 | VP HAIP | mDoc, `direct_post.jwt` | 551 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
 | 11 | VP HAIP | SD-JWT, `dc_api.jwt` | 561 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
 | 12 | VP HAIP | mDoc, `dc_api.jwt` | 374 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
-| 13 | VCI HAIP | SD-JWT | 3789 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
-| 14 | VCI HAIP | mDoc | 3897 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
+| 13 | VCI HAIP | SD-JWT | 3805 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
+| 14 | VCI HAIP | mDoc | 3910 success / 0 failure. Batch issuance is `SKIPPED` in all three variants, see below. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
 
 ## Passing VCI Coverage
 

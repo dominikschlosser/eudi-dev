@@ -316,6 +316,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](#wallet-attestation)) |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
 | `--demo`                | `false`  | Public demo profile: implies `--pid`, disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
+| `--demo-issuer-client-auth` | `required` | What the built-in demo issuer's authorization server demands at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also serves wallets that send no wallet attestation (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
 | `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet instances kill` |

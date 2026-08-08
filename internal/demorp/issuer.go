@@ -44,7 +44,14 @@ const (
 // ticketClaims returns the ticket's test data. An authorization code flow
 // authenticates an account first, so the ticket carries that holder's name
 // instead of the generic one.
-func ticketClaims(subject string) map[string]any {
+//
+// It also carries how the wallet authenticated at the token endpoint, because
+// this issuer accepts an attester it was never given and a credential that was
+// collected that way should not be indistinguishable from one that came with a
+// trusted wallet attestation. The pre-authorized code grant authenticates no
+// client at all (OpenID4VCI 1.0 §6.1: "authentication of the Client is
+// OPTIONAL"), so there the claim is left off rather than reported as none.
+func ticketClaims(subject string, auth *clientAuthentication) map[string]any {
 	claims := map[string]any{
 		"event":       "EUDI Interop Fest",
 		"tier":        "backstage",
@@ -55,6 +62,9 @@ func ticketClaims(subject string) map[string]any {
 	if subject == demoAccountUsername {
 		claims["given_name"] = demoAccountGivenName
 		claims["family_name"] = demoAccountFamily
+	}
+	if auth != nil {
+		claims["wallet_attestation"] = auth.ticketClaim()
 	}
 	return claims
 }
@@ -76,6 +86,10 @@ type offerState struct {
 	// list, which is what makes the credential revocable and gives the
 	// verifier's revocation check something to resolve.
 	withStatus bool
+	// clientAuth is how the wallet authenticated when it exchanged the code for
+	// this access token. Nil for the pre-authorized code grant, which
+	// authenticates no client.
+	clientAuth *clientAuthentication
 	expires    time.Time
 }
 
@@ -189,6 +203,11 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 						{"path": []string{"seat"}},
 						{"path": []string{"given_name"}},
 						{"path": []string{"family_name"}},
+						// Present on the authorization code path only, where
+						// there is a client authentication to describe. A claim
+						// is not mandatory unless it says so, so listing it here
+						// does not promise it on every ticket.
+						{"path": []string{"wallet_attestation"}},
 					},
 				},
 			},
@@ -343,12 +362,15 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		delete(d.tokens, token)
 		known = false
 	}
-	var subject, jkt string
-	var withStatus bool
+	// Copied under the lock: the token endpoint writes to the same struct.
+	var granted ticketGrant
 	if known {
-		subject = offer.subject
-		jkt = offer.jkt
-		withStatus = offer.withStatus
+		granted = ticketGrant{
+			subject:    offer.subject,
+			jkt:        offer.jkt,
+			withStatus: offer.withStatus,
+			clientAuth: offer.clientAuth,
+		}
 	}
 	d.mu.Unlock()
 	if !known {
@@ -357,13 +379,13 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	// A token from the authorization code flow is DPoP-bound, so the
 	// credential request has to prove possession of the same key again.
-	if jkt != "" {
+	if granted.jkt != "" {
 		presented, err := d.verifyDPoPProof(r, d.issuerID()+"/credential", token)
 		if err != nil {
 			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_dpop_proof", err.Error()))
 			return
 		}
-		if presented != jkt {
+		if presented != granted.jkt {
 			writeJSON(w, http.StatusUnauthorized, oauthError("invalid_token", "the access token is bound to a different DPoP key"))
 			return
 		}
@@ -389,7 +411,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, signErr := d.signTicket(holderKey, subject, withStatus)
+	credential, signErr := d.signTicket(holderKey, granted)
 	if signErr != nil {
 		// Not a §8.3.1.2 error: those describe what is wrong with the request
 		// and are answered with 400, and credential_request_denied in particular
@@ -643,10 +665,21 @@ func (d *DemoRP) statusListURI() string {
 	return strings.TrimSpace(d.wallet.StatusListURL())
 }
 
+// ticketGrant is what the token exchange settled about the credential a wallet
+// is now asking for, read out of the shared offer state under the lock.
+type ticketGrant struct {
+	subject string
+	// jkt is the DPoP key the access token is bound to, empty for a bearer
+	// token from the pre-authorized code grant.
+	jkt        string
+	withStatus bool
+	clientAuth *clientAuthentication
+}
+
 // signTicket issues the demo ticket SD-JWT VC, holder-bound to the proof key
 // and signed with the wallet's issuer key under a leaf certificate from the
 // wallet CA, so the wallet's trust list covers the credential.
-func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string, withStatus bool) (string, error) {
+func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
 	chain, err := d.wallet.DefaultSigningCertChain()
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
@@ -655,12 +688,12 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, subject string, withStat
 		Issuer:    d.issuerID(),
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
-		Claims:    ticketClaims(subject),
+		Claims:    ticketClaims(granted.subject, granted.clientAuth),
 		Key:       d.wallet.IssuerKey,
 		HolderKey: holderKey,
 		CertChain: chain,
 	}
-	if withStatus {
+	if granted.withStatus {
 		uri := d.statusListURI()
 		if uri == "" {
 			return "", fmt.Errorf("this wallet has no status list URL")
