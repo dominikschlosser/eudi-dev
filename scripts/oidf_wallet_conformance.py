@@ -29,7 +29,12 @@ JSON_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9._-]+\.json)\}")
 TERMINAL_STATES = {"FINISHED", "INTERRUPTED"}
 WALLET_MODE = os.environ.get("OIDF_WALLET_MODE", "strict")
 POLL_INTERVAL = 1.0
-REQUEST_TIMEOUT = 20
+# Seconds to wait on the suite's own API. The suite shares this machine with
+# the wallet and pauses under load, and a poll that gives up here is retried,
+# which makes the wallet fetch the same request_uri a second time and fails the
+# module on RequestUriFetchedMoreThanOnce. Waiting costs nothing when the suite
+# is healthy, because these calls normally answer at once.
+REQUEST_TIMEOUT = int(os.environ.get("OIDF_REQUEST_TIMEOUT", "120"))
 DEFAULT_MODULE_IDLE_TIMEOUT = 180
 SCREENSHOT_DATA_URL = (
     "data:image/png;base64,"
