@@ -31,8 +31,27 @@ class ScenarioPlanArgTests(unittest.TestCase):
         self.assertNotIn("oid4vp-1final-wallet-multisigned-one-invalid-signature", plan_arg)
         # unencrypted response mode: no encryption key to test against
         self.assertNotIn("oid4vp-1final-wallet-ignores-unusable-encryption-key", plan_arg)
-        # release-v5.2.1 suite regression: module self-destructs before wallet involvement
+        # back since release-v5.2.2 fixed the module (placeholder before WAITING)
+        self.assertIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
+
+    def test_haip_dc_api_omits_invalid_client_id_prefix(self):
+        # @VariantNotApplicableWhen on the module: an unsigned DC API request
+        # carries no client_id to corrupt (OID4VP 1.0 Appendix A.2).
+        scenario = PlanScenario(
+            slug="vp-haip-sdjwt-dc-api-jwt",
+            kind="vp",
+            template_relpath="unused.json",
+            plan_name="oid4vp-1final-wallet-haip-test-plan",
+            variant={
+                "credential_format": "sd_jwt_vc",
+                "response_mode": "dc_api.jwt",
+            },
+            credential_kind="sdjwt",
+            requires_haip=True,
+        )
+        plan_arg = scenario_plan_arg(scenario)
         self.assertNotIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
+        self.assertIn("oid4vp-1final-wallet-negative-test-wrong-expected-origins", plan_arg)
 
     def test_final_redirect_uri_direct_post_keeps_applicable_response_uri_negative_test(self):
         scenario = PlanScenario(

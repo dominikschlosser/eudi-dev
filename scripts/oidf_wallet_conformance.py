@@ -746,14 +746,13 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     request_method = variant.get("request_method", "")
     client_id_prefix = variant.get("client_id_prefix", "")
 
-    # release-v5.2.1 suite regression: VP1FinalWalletInvalidClientIdPrefix
-    # overrides performRedirect() to call createPlaceholder() after
-    # super.performRedirect() has already set the module status to WAITING.
-    # Conditions cannot run while WAITING, so the suite kills the module with
-    # "This is a bug in the test module" before the wallet is ever invoked,
-    # and the interrupted module's alias steal breaks the next module too.
-    # Re-enable once fixed upstream (broken for all external-wallet runs).
-    modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
+    # Broken in release-v5.2.1 (createPlaceholder after WAITING), fixed in
+    # release-v5.2.2. The module stays out only where its own
+    # @VariantNotApplicableWhen puts it: an unsigned DC API request carries no
+    # client_id to corrupt (OID4VP 1.0 Appendix A.2), and the DC API plans in
+    # this matrix send unsigned requests.
+    if response_mode in {"dc_api", "dc_api.jwt"} and request_method != "request_uri_signed":
+        modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
 
     if scenario.requires_haip:
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
