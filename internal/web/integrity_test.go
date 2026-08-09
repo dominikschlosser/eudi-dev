@@ -379,8 +379,8 @@ func TestHandleValidate_SDJWTBasic(t *testing.T) {
 		t.Fatalf("expected checks array, got %T", val["checks"])
 	}
 
-	if len(checks) != 4 {
-		t.Errorf("expected 4 checks, got %d", len(checks))
+	if len(checks) != 5 {
+		t.Errorf("expected 5 checks, got %d", len(checks))
 	}
 
 	// Verify check names
@@ -390,6 +390,9 @@ func TestHandleValidate_SDJWTBasic(t *testing.T) {
 		names[cm["name"].(string)] = cm["status"].(string)
 	}
 
+	if names["type"] != "pass" {
+		t.Errorf("type check: got %s, want pass", names["type"])
+	}
 	if names["expiry"] != "pass" {
 		t.Errorf("expiry check: got %s, want pass", names["expiry"])
 	}
@@ -775,7 +778,7 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 	// After a successful validation (even with signature pass/fail),
 	// the banner should always include the verify form for re-verification.
 	// We test via the Validate function directly to check the response
-	// always includes 4 checks regardless of signature state.
+	// always includes 5 checks regardless of signature state.
 
 	// SD-JWT without key → signature skipped, verify form label = "Verify Signature"
 	jwt := makeSDJWT(
@@ -800,8 +803,8 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 	val1 := result1["validation"].(map[string]any)
 	checks1 := val1["checks"].([]any)
 
-	if len(checks1) != 4 {
-		t.Errorf("expected 4 checks without key, got %d", len(checks1))
+	if len(checks1) != 5 {
+		t.Errorf("expected 5 checks without key, got %d", len(checks1))
 	}
 
 	// With an invalid key → signature should fail, but response still has 4 checks
@@ -818,8 +821,8 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 	val2 := result2["validation"].(map[string]any)
 	checks2 := val2["checks"].([]any)
 
-	if len(checks2) != 4 {
-		t.Errorf("expected 4 checks with invalid key, got %d", len(checks2))
+	if len(checks2) != 5 {
+		t.Errorf("expected 5 checks with invalid key, got %d", len(checks2))
 	}
 
 	// Signature check should be "fail" with invalid key

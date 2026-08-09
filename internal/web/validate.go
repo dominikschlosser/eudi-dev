@@ -53,6 +53,9 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		}
 		result := output.BuildSDJWTJSON(token)
 
+		// Type check
+		checks = append(checks, CheckSDJWTType(token))
+
 		// Expiry check
 		checks = append(checks, checkSDJWTExpiry(token))
 
