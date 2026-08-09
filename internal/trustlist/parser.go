@@ -100,10 +100,13 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 		}
 	}
 
-	if lid, ok := lsi["ListIssueDateTime"].(string); ok {
-		info.ListIssueDatetime = lid
-	} else if lid, ok := lsi["ListIssueDatetime"].(string); ok {
-		info.ListIssueDatetime = lid
+	// Accept either casing of the key; issuers in the wild use both
+	// "ListIssueDateTime" and "ListIssueDatetime".
+	for _, key := range []string{"ListIssueDateTime", "ListIssueDatetime"} {
+		if lid, ok := lsi[key].(string); ok {
+			info.ListIssueDatetime = lid
+			break
+		}
 	}
 	if next, ok := lsi["NextUpdate"].(string); ok {
 		info.NextUpdate = next
