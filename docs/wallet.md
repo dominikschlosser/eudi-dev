@@ -637,9 +637,26 @@ curl -X POST http://localhost:8085/api/presentations \
   -d '{"uri": "openid4vp://authorize?...", "haip": false}'
 ```
 
-Omitting `haip` inherits the server setting. `POST /api/offers` takes the same two fields, and the Browser API endpoint takes the override as `X-Eudi-Dev-HAIP: true|false`.
+Omitting `haip` inherits the server setting. `POST /api/offers` takes the same two body fields. Every flow endpoint (`/authorize`, `/api/presentations`, `/api/offers`, `/api/dc-api`) also reads the override from request headers: `X-Eudi-Dev-Mode: strict|debug`, `X-Eudi-Dev-HAIP: true|false` and `X-Eudi-Dev-Encrypted: true|false`. When both are present the JSON body wins over the header, and both win over the browser cookie described below.
 
-The wallet UI shows the active level under **Conformance** in the header, and `eudi wallet config` (alias of `wallet info`) reports the same fields for a local or remote wallet.
+## Changing the conformance settings
+
+The **Conformance** panel in the wallet UI header is editable: validation mode (strict/debug), HAIP, and encrypted requests. How a change is applied depends on the wallet:
+
+- **A local wallet** applies the change to its own settings through `PUT /api/config/conformance` (and `DELETE` to restore the values it started with). Because the settings are not reloaded per request, the change sticks for the life of the process and *every* flow that reaches this wallet honors it: the UI, a scanned QR code, and `openid4vp://` or credential-offer links opened through the CLI or the macOS system handler (which all reach the same wallet).
+- **The public demo** keeps the change per visitor. It is stored in the `eudi_conformance` cookie and applied per request, so it also covers the top-level `/authorize` navigation a verifier link or QR triggers, and one visitor never changes what another sees. The server's own default stays fixed, and `PUT /api/config/conformance` is refused (HTTP 403). The demo notes this functional cookie in its imprint.
+
+For a **remote wallet driven from the CLI** (after `wallet instances use <url>`), you cannot change the remote's settings, so set a CLI-side override instead:
+
+```bash
+eudi wallet conformance --mode debug --haip=false   # sent to the remote as X-Eudi-Dev-* headers
+eudi wallet conformance                             # show the current override
+eudi wallet conformance --reset                     # clear it
+```
+
+The CLI attaches these headers to every request it makes to the remote wallet, which honors them per request. Precedence everywhere is: an explicit header or body value first, then the browser cookie, then the wallet's own setting.
+
+`eudi wallet config` (alias of `wallet info`) reports the active fields for a local or remote wallet.
 
 ## HTTP API
 

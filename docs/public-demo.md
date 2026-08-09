@@ -98,6 +98,8 @@ Pin the CA, not the leaf or the `kid`. The CA survives restarts and the periodic
 
 Hosting a public site in the EU requires an imprint naming the operator. Pass `--imprint-file` with an HTML snippet (name, address, contact). It is served at `/imprint` (also under `/decoder/imprint`) wrapped in a page that includes the EU non-affiliation disclaimer, and the UI footer links to it. The standalone decoder (`eudi serve`) accepts the same flag.
 
+The demo sets one functional cookie, `eudi_conformance`, and only when a visitor changes the **Conformance** panel. It stores that visitor's chosen validation strictness (no personal data, no tracking, not shared with any third party) so requests from their browser are held to it. Under the ePrivacy Directive this is device storage like a theme preference; it is best treated as a functional cookie and mentioned in your imprint or privacy notice.
+
 ## Deploying and updating
 
 [`examples/public-demo/deploy.sh`](../examples/public-demo/deploy.sh) drives a host over ssh. The target is configuration, not a hardcoded value: point `DEMO_HOST` at any ssh destination (a `~/.ssh/config` alias, `user@host`, or a bare host), optionally with `DEMO_DIR` and `DEMO_URL`. Put them in the environment or in a `deploy.env` next to the script (gitignored).
@@ -124,7 +126,7 @@ ENV
 
 ## Usage statistics
 
-The compose example ships an optional usage report, so you can tell whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every five minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, no cookies are set, and no third party is involved.
+The compose example ships an optional usage report, so you can tell whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every five minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, the usage report itself sets no cookies (the wallet's own functional cookie is described under Imprint), and no third party is involved.
 
 ```bash
 ./deploy.sh stats-password   # writes stats.env with a bcrypt hash (gitignored)

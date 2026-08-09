@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The wallet's conformance settings can be changed from the UI, not just read.** The Conformance panel showed the validation mode, HAIP and encrypted-request settings an incoming request is held to, but only the startup flags could set them. The panel is editable now, and how a change takes effect follows the wallet it is made on. A local wallet changes its own settings through `PUT /api/config/conformance` (with `DELETE` to restore what it started with), so every flow that reaches it honors the change: the UI, a scanned QR code, and `openid4vp://` or credential-offer links opened through the CLI or the macOS system handler. The public demo, where the settings are shared and that endpoint is refused, keeps the change per visitor in the `eudi_conformance` cookie and applies it per request, including the top-level `/authorize` navigation a verifier link triggers, so one visitor never changes what another sees. For a remote wallet driven from the CLI, `wallet conformance` records an override the CLI sends as `X-Eudi-Dev-*` headers on each request, which the wallet honors per request. Every flow endpoint reads those headers, and precedence is header or body first, then the cookie, then the wallet's own setting
+
+### Changed
+
+- **The per-request override headers are named `X-Eudi-Dev-*`.** They were `X-OID4VC-Dev-*`, from before the tool was renamed, and the old names are no longer accepted: a caller that set `X-OID4VC-Dev-HAIP` or `X-OID4VC-Dev-Mode` must use `X-Eudi-Dev-HAIP` / `X-Eudi-Dev-Mode`. They are also read on every flow endpoint now, not only the Browser API, and `X-Eudi-Dev-Encrypted` is read alongside them
+
 ## [1.19.22] - 2026-08-07
 
 ### Added
