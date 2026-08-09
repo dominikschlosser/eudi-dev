@@ -357,7 +357,17 @@ func instancesKillCmd() *cobra.Command {
 
 			var targets []remote.DiscoveredInstance
 			if all {
-				targets = instances
+				// --all stops the local instances this machine is running, not
+				// a configured active remote, whose pid belongs to another host
+				// and which a blanket "stop everything" should not reach out and
+				// shut down. Name it explicitly to stop it.
+				for _, inst := range instances {
+					if inst.Source == "active" {
+						fmt.Fprintf(os.Stderr, "Skipping active remote %s; stop it by name if you mean to.\n", inst.URL)
+						continue
+					}
+					targets = append(targets, inst)
+				}
 			} else {
 				target, err := matchInstance(instances, args[0])
 				if err != nil {
@@ -392,23 +402,47 @@ func instancesKillCmd() *cobra.Command {
 // discovered instances.
 func matchInstance(instances []remote.DiscoveredInstance, target string) (remote.DiscoveredInstance, error) {
 	target = strings.TrimSpace(target)
-	normalizedURL := ""
-	if strings.Contains(target, "://") || strings.Contains(target, ":") && strings.Contains(target, ".") || strings.HasPrefix(target, "localhost") {
-		if u, err := remote.NormalizeURL(target); err == nil {
-			normalizedURL = u
-		}
-	}
-	number, numErr := strconv.Atoi(target)
+	noMatch := fmt.Errorf("no running wallet instance matches %q (run `wallet instances list`)", target)
 
-	for _, inst := range instances {
-		if normalizedURL != "" && strings.TrimRight(inst.URL, "/") == normalizedURL {
-			return inst, nil
+	// A bare integer is a pid or a port; anything else is treated as a
+	// URL or host[:port], including host:port forms with no dot (which the
+	// old dotted-host heuristic missed).
+	if number, err := strconv.Atoi(target); err == nil {
+		// Prefer a port match: a port is the identity a user reads off a URL
+		// or `instances list`, so `kill 8085` should stop the server on port
+		// 8085 rather than a process that merely happens to have pid 8085.
+		var byPort, byPID []remote.DiscoveredInstance
+		for _, inst := range instances {
+			switch {
+			case inst.Port == number:
+				byPort = append(byPort, inst)
+			case inst.PID == number:
+				byPID = append(byPID, inst)
+			}
 		}
-		if numErr == nil && (inst.PID == number || inst.Port == number) {
+		switch {
+		case len(byPort) == 1:
+			return byPort[0], nil
+		case len(byPort) > 1:
+			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match port %d; disambiguate by URL", len(byPort), number)
+		case len(byPID) == 1:
+			return byPID[0], nil
+		case len(byPID) > 1:
+			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match pid %d; disambiguate by URL", len(byPID), number)
+		}
+		return remote.DiscoveredInstance{}, noMatch
+	}
+
+	normalizedURL, err := remote.NormalizeURL(target)
+	if err != nil {
+		return remote.DiscoveredInstance{}, noMatch
+	}
+	for _, inst := range instances {
+		if strings.TrimRight(inst.URL, "/") == normalizedURL {
 			return inst, nil
 		}
 	}
-	return remote.DiscoveredInstance{}, fmt.Errorf("no running wallet instance matches %q (run `wallet instances list`)", target)
+	return remote.DiscoveredInstance{}, noMatch
 }
 
 // stopInstance asks the instance to shut down via its API and falls back to

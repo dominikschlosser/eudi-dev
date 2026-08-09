@@ -725,3 +725,52 @@ func TestCredentialValidityLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchInstance(t *testing.T) {
+	instances := []remote.DiscoveredInstance{
+		{Instance: remote.Instance{PID: 8085, Port: 9090, URL: "http://localhost:9090"}},
+		{Instance: remote.Instance{PID: 4242, Port: 8085, URL: "http://localhost:8085"}},
+	}
+
+	// A number that is one instance's port and another's pid resolves to the
+	// port match, not the pid match.
+	got, err := matchInstance(instances, "8085")
+	if err != nil {
+		t.Fatalf("matchInstance(8085): %v", err)
+	}
+	if got.URL != "http://localhost:8085" {
+		t.Fatalf("kill 8085 matched %q, want the server on port 8085", got.URL)
+	}
+
+	// A pid with no colliding port still resolves.
+	got, err = matchInstance(instances, "4242")
+	if err != nil {
+		t.Fatalf("matchInstance(4242): %v", err)
+	}
+	if got.PID != 4242 {
+		t.Fatalf("kill 4242 matched pid %d, want 4242", got.PID)
+	}
+
+	// A bare host:port with no dot normalizes and matches by URL.
+	got, err = matchInstance(instances, "localhost:9090")
+	if err != nil {
+		t.Fatalf("matchInstance(localhost:9090): %v", err)
+	}
+	if got.URL != "http://localhost:9090" {
+		t.Fatalf("matched %q, want http://localhost:9090", got.URL)
+	}
+
+	if _, err := matchInstance(instances, "12345"); err == nil {
+		t.Fatal("expected no match for an unknown number")
+	}
+}
+
+func TestMatchInstanceAmbiguousPort(t *testing.T) {
+	instances := []remote.DiscoveredInstance{
+		{Instance: remote.Instance{PID: 1, Port: 8085, URL: "http://localhost:8085"}},
+		{Instance: remote.Instance{PID: 2, Port: 8085, URL: "http://host.docker.internal:8085"}},
+	}
+	if _, err := matchInstance(instances, "8085"); err == nil {
+		t.Fatal("expected an ambiguity error when two instances share a port")
+	}
+}
