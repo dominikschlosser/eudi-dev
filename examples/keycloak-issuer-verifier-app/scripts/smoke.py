@@ -86,11 +86,12 @@ def strip_ansi(text):
 
 
 def resolve_oid4vc_dev_command():
-    path_bin = shutil.which("oid4vc-dev")
-    if path_bin:
-        return [path_bin], None
+    for name in ("eudi", "eudi-dev"):
+        path_bin = shutil.which(name)
+        if path_bin:
+            return [path_bin], None
 
-    fail("Unable to resolve oid4vc-dev in PATH. Install it first or run ./start.sh.")
+    fail("Unable to resolve eudi in PATH. Install it first or run ./start.sh.")
 
 
 def reset_wallet():

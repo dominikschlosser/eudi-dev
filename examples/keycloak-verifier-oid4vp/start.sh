@@ -12,7 +12,7 @@ compose_args=(-f docker-compose.yml)
 ngrok_override=""
 
 ensure_oid4vc_dev() {
-  if command -v oid4vc-dev >/dev/null 2>&1; then
+  if command -v eudi >/dev/null 2>&1; then
     return 0
   fi
   if ! command -v go >/dev/null 2>&1; then
@@ -27,9 +27,17 @@ ensure_oid4vc_dev() {
   fi
   mkdir -p "${gobin}"
 
-  echo "oid4vc-dev not found. Installing latest with Go..."
-  GOBIN="${gobin}" go install github.com/dominikschlosser/eudi-dev@latest
+  if ! command -v eudi-dev >/dev/null 2>&1; then
+    echo "eudi not found. Installing latest with Go..."
+    GOBIN="${gobin}" go install github.com/dominikschlosser/eudi-dev@latest
+  fi
   export PATH="${gobin}:${PATH}"
+
+  # go install builds the binary as eudi-dev; these examples invoke `eudi`.
+  # Expose it under that name so the commands below resolve.
+  if ! command -v eudi >/dev/null 2>&1; then
+    ln -sf "$(command -v eudi-dev)" "${gobin}/eudi"
+  fi
 }
 
 usage() {
