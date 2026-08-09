@@ -483,7 +483,8 @@ func PrintMDOC(doc *mdoc.Document, opts Options) {
 	for _, ns := range namespaces {
 		items := doc.NameSpaces[ns]
 		printSection(fmt.Sprintf("Namespace: %s (%d claims)", ns, len(items)))
-		// Sort by element identifier
+		// Copy before sorting so printing does not reorder the caller's document.
+		items = append([]mdoc.IssuerSignedItem(nil), items...)
 		sort.Slice(items, func(i, j int) bool {
 			return items[i].ElementIdentifier < items[j].ElementIdentifier
 		})

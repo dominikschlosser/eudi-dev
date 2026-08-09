@@ -69,8 +69,10 @@ func FromMDOC(doc *mdoc.Document) *Query {
 	var claims []ClaimQuery
 	namespaces := sortedKeys(doc.NameSpaces)
 	for _, ns := range namespaces {
-		items := doc.NameSpaces[ns]
-		// Sort items by element identifier
+		// Copy before sorting: doc.NameSpaces[ns] is the caller's slice, and
+		// sorting it in place would silently reorder the document we were
+		// handed to read.
+		items := append([]mdoc.IssuerSignedItem(nil), doc.NameSpaces[ns]...)
 		sort.Slice(items, func(i, j int) bool {
 			return items[i].ElementIdentifier < items[j].ElementIdentifier
 		})
