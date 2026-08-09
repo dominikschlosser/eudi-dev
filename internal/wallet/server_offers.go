@@ -267,7 +267,7 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	s.wallet.ClearLastError()
 
 	reqServer := s
-	opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{
+	opts := mergedConformanceOptions(r, presentationRequestOptions{
 		RequireHAIP:    body.HAIP,
 		ValidationMode: body.Mode,
 	})

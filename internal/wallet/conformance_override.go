@@ -76,3 +76,24 @@ func (o conformanceOverride) applyTo(opts presentationRequestOptions) presentati
 func (opts presentationRequestOptions) hasConformanceOverride() bool {
 	return opts.RequireHAIP != nil || opts.ValidationMode != "" || opts.RequireEncryptedRequest != nil
 }
+
+// mergedConformanceOptions folds the per-request conformance override from
+// three sources into base, in decreasing precedence: explicit body values
+// already on base (highest), then the X-Eudi-Dev-* headers (the CLI and the
+// conformance suite), then the eudi_conformance cookie (the browser UI). base
+// carries the endpoint's own body values and any non-conformance options
+// (AutoAccept, SessionTranscript), which pass through untouched.
+func mergedConformanceOptions(r *http.Request, base presentationRequestOptions) presentationRequestOptions {
+	// Headers fill what the body left unset.
+	if base.RequireHAIP == nil {
+		base.RequireHAIP = parseBoolHeader(r.Header.Get("X-Eudi-Dev-HAIP"))
+	}
+	if base.ValidationMode == "" {
+		base.ValidationMode = r.Header.Get("X-Eudi-Dev-Mode")
+	}
+	if base.RequireEncryptedRequest == nil {
+		base.RequireEncryptedRequest = parseBoolHeader(r.Header.Get("X-Eudi-Dev-Encrypted"))
+	}
+	// The cookie fills whatever body and headers left unset.
+	return conformanceOverrideFromRequest(r).applyTo(base)
+}

@@ -61,7 +61,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	// in a cookie instead, so honor it here too, on a per-request clone, and
 	// parse with the effective validation mode.
 	reqServer := s
-	if opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{}); opts.hasConformanceOverride() {
+	if opts := mergedConformanceOptions(r, presentationRequestOptions{}); opts.hasConformanceOverride() {
 		reqWallet, cloneErr := cloneWalletForPresentation(s.wallet, opts)
 		if cloneErr != nil {
 			http.Error(w, fmt.Sprintf("invalid conformance override: %v", cloneErr), http.StatusBadRequest)
@@ -110,7 +110,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	s.log("  URI: %s", uriDisplay)
 
 	reqServer := s
-	opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{
+	opts := mergedConformanceOptions(r, presentationRequestOptions{
 		AutoAccept:        body.AutoAccept,
 		SessionTranscript: body.SessionTranscript,
 		RequireHAIP:       body.HAIP,

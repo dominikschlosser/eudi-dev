@@ -290,14 +290,14 @@ func TestParseHAIPHeader(t *testing.T) {
 		{"nonsense", nil}, // unparseable inherits, rather than silently enforcing
 	}
 	for _, tc := range tests {
-		got := parseHAIPHeader(tc.header)
+		got := parseBoolHeader(tc.header)
 		switch {
 		case tc.want == nil && got != nil:
-			t.Errorf("parseHAIPHeader(%q) = %v, want nil", tc.header, *got)
+			t.Errorf("parseBoolHeader(%q) = %v, want nil", tc.header, *got)
 		case tc.want != nil && got == nil:
-			t.Errorf("parseHAIPHeader(%q) = nil, want %v", tc.header, *tc.want)
+			t.Errorf("parseBoolHeader(%q) = nil, want %v", tc.header, *tc.want)
 		case tc.want != nil && *got != *tc.want:
-			t.Errorf("parseHAIPHeader(%q) = %v, want %v", tc.header, *got, *tc.want)
+			t.Errorf("parseBoolHeader(%q) = %v, want %v", tc.header, *got, *tc.want)
 		}
 	}
 }

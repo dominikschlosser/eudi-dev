@@ -145,3 +145,32 @@ func TestHandleSetConformanceRefusedInDemo(t *testing.T) {
 		t.Errorf("demo-mode PUT must not change the setting; mode = %q", s.wallet.ValidationMode)
 	}
 }
+
+func TestMergedConformanceOptionsPrecedence(t *testing.T) {
+	// body (base) beats header beats cookie.
+	r := requestWithConformanceCookie(t, `{"mode":"strict","haip":true}`)
+	r.Header.Set("X-Eudi-Dev-Mode", "debug")
+	strict := true
+	got := mergedConformanceOptions(r, presentationRequestOptions{RequireHAIP: &strict})
+	if got.ValidationMode != "debug" {
+		t.Errorf("mode = %q, want debug (header beats cookie)", got.ValidationMode)
+	}
+	if got.RequireHAIP == nil || *got.RequireHAIP != true {
+		t.Errorf("haip = %v, want true (body beats cookie)", got.RequireHAIP)
+	}
+
+	// header-only encrypted is honored (the CLI path, not just DC-API).
+	r2 := httptest.NewRequest(http.MethodPost, "/api/presentations", nil)
+	r2.Header.Set("X-Eudi-Dev-Encrypted", "true")
+	got2 := mergedConformanceOptions(r2, presentationRequestOptions{})
+	if got2.RequireEncryptedRequest == nil || *got2.RequireEncryptedRequest != true {
+		t.Errorf("encrypted = %v, want true from header", got2.RequireEncryptedRequest)
+	}
+
+	// cookie-only falls through when nothing else is set.
+	r3 := requestWithConformanceCookie(t, `{"mode":"strict"}`)
+	got3 := mergedConformanceOptions(r3, presentationRequestOptions{})
+	if got3.ValidationMode != "strict" {
+		t.Errorf("mode = %q, want strict from cookie", got3.ValidationMode)
+	}
+}
