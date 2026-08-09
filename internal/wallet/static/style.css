@@ -1011,6 +1011,28 @@ header h1 {
   color: var(--text-dim);
 }
 
+/* Editable conformance controls. */
+.conf-input {
+  background: var(--bg-surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.conf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+.conf-toggle input {
+  cursor: pointer;
+}
+
 /* Credential offer details in the consent dialog. */
 .offer-facts {
   font-size: 11px;

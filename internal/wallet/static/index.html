@@ -137,17 +137,27 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint">How strictly this wallet checks incoming requests. A verifier that passes here has met these rules, nothing more.</p>
+      <p class="dialog-hint">How strictly this wallet checks incoming requests. A verifier that passes here has met these rules, nothing more. Change them to test how a request fares under a different profile.</p>
       <table class="conformance-table">
-        <tr><td>Validation mode</td><td id="conf-mode">—</td></tr>
-        <tr><td>HAIP 1.0, presentation</td><td id="conf-haip">—</td></tr>
-        <tr><td>HAIP 1.0, issuance</td><td id="conf-haip-issuance">—</td></tr>
-        <tr><td>Encrypted requests</td><td id="conf-encrypted">—</td></tr>
+        <tr><td>Validation mode</td><td>
+          <select id="conf-mode-select" class="conf-input">
+            <option value="strict">strict</option>
+            <option value="debug">debug</option>
+          </select>
+        </td></tr>
+        <tr><td>HAIP 1.0</td><td>
+          <label class="conf-toggle"><input type="checkbox" id="conf-haip-input"> enforced (presentation and issuance)</label>
+        </td></tr>
+        <tr><td>Encrypted requests</td><td>
+          <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> required</label>
+        </td></tr>
         <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
         <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
       </table>
       <p class="dialog-hint" id="conf-explainer"></p>
+      <p class="dialog-hint" id="conf-override-note">These settings are yours alone: they are kept in a cookie in this browser and applied to requests from it. They survive demo resets. Reset returns to this wallet's defaults.</p>
       <div class="consent-buttons">
+        <button class="btn" id="conf-reset">Reset to defaults</button>
         <button class="btn" id="conformance-close">Close</button>
       </div>
     </div>

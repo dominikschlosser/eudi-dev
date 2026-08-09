@@ -1547,6 +1547,18 @@
         document.getElementById('tls-row').hidden = true;
       }
       renderConformance(config);
+      ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !el.dataset.wired) {
+          el.dataset.wired = '1';
+          el.addEventListener('change', onConformanceChange);
+        }
+      });
+      const confReset = document.getElementById('conf-reset');
+      if (confReset && !confReset.dataset.wired) {
+        confReset.dataset.wired = '1';
+        confReset.addEventListener('click', resetConformance);
+      }
       if (config.demo && config.demo.enabled) {
         demoMode = true;
         const note = document.getElementById('demo-note');
@@ -1588,9 +1600,92 @@
   // Shows what an incoming request has to satisfy. The wording is
   // deliberately about consequences rather than flag names: "enforced" only
   // means something if you can see what it rejects.
+  // The conformance override the visitor picks is kept in a cookie so it also
+  // reaches server-side flows (the direct_post response, issuer calls) and the
+  // top-level /authorize navigation, which a header cannot. It is per-browser,
+  // so one visitor's choice never affects another on the shared demo.
+  const CONF_COOKIE = 'eudi_conformance';
+  let conformanceDefaults = { validation_mode: 'strict', require_haip: true, require_encrypted_request: false };
+
+  function readConfCookie() {
+    const m = document.cookie.match(/(?:^|;\s*)eudi_conformance=([^;]*)/);
+    if (!m) return {};
+    try { return JSON.parse(decodeURIComponent(m[1])) || {}; } catch (e) { return {}; }
+  }
+
+  function writeConfCookie(o) {
+    const secure = location.protocol === 'https:' ? ';secure' : '';
+    const base = ';path=/;samesite=lax' + secure;
+    if (!o || !Object.keys(o).length) {
+      document.cookie = CONF_COOKIE + '=' + base + ';max-age=0';
+      return;
+    }
+    document.cookie = CONF_COOKIE + '=' + encodeURIComponent(JSON.stringify(o)) + base + ';max-age=31536000';
+  }
+
+  // Effective = the visitor's cookie override, falling back to the wallet's
+  // configured default for anything they have not changed.
+  function effectiveConformance() {
+    const c = readConfCookie();
+    return {
+      mode: c.mode || (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug'),
+      haip: typeof c.haip === 'boolean' ? c.haip : !!conformanceDefaults.require_haip,
+      encrypted: typeof c.encrypted === 'boolean' ? c.encrypted : !!conformanceDefaults.require_encrypted_request,
+    };
+  }
+
+  function applyConformanceToControls() {
+    const eff = effectiveConformance();
+    const mode = document.getElementById('conf-mode-select');
+    const haip = document.getElementById('conf-haip-input');
+    const enc = document.getElementById('conf-encrypted-input');
+    if (mode) mode.value = eff.mode === 'strict' ? 'strict' : 'debug';
+    if (haip) haip.checked = eff.haip;
+    if (enc) enc.checked = eff.encrypted;
+  }
+
+  // Store only what differs from the wallet's default, so an untouched setting
+  // still follows the server and clearing everything drops the cookie entirely.
+  function onConformanceChange() {
+    const mode = document.getElementById('conf-mode-select');
+    const haip = document.getElementById('conf-haip-input');
+    const enc = document.getElementById('conf-encrypted-input');
+    const o = {};
+    if (mode && mode.value !== (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug')) o.mode = mode.value;
+    if (haip && haip.checked !== !!conformanceDefaults.require_haip) o.haip = haip.checked;
+    if (enc && enc.checked !== !!conformanceDefaults.require_encrypted_request) o.encrypted = enc.checked;
+    writeConfCookie(o);
+    renderConformanceExplainer();
+  }
+
+  function resetConformance() {
+    writeConfCookie(null);
+    applyConformanceToControls();
+    renderConformanceExplainer();
+  }
+
+  function renderConformanceExplainer() {
+    const eff = effectiveConformance();
+    const parts = [];
+    parts.push(eff.mode === 'strict'
+      ? 'Strict validation rejects a bad certificate chain, a broken request object signature, a missing nonce or an unknown client id prefix.'
+      : 'Debug validation only warns about those and continues, so a request that a real wallet would reject still completes here.');
+    if (eff.haip) {
+      parts.push('HAIP 1.0 also requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, direct_post.jwt or dc_api.jwt, DCQL and ES256.');
+      parts.push('For issuance the credential issuer must be https. An offer that uses the authorization endpoint also needs PAR, PKCE S256, DPoP and client authentication. Pre-authorized code offers are accepted as they are.');
+    } else {
+      parts.push('HAIP 1.0 is not enforced, for presentation or issuance.');
+    }
+    if (eff.encrypted) {
+      parts.push('The wallet advertises an encryption key and requires request objects to be encrypted.');
+    }
+    const explainer = document.getElementById('conf-explainer');
+    if (explainer) explainer.textContent = parts.join(' ');
+  }
+
   function renderConformance(config) {
-    // 'on' is something actively enforced, 'off' something not, and
-    // 'neutral' a setting that is neither (a transcript mode is not a level).
+    conformanceDefaults = config || conformanceDefaults;
+    applyConformanceToControls();
     const set = (id, text, state) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -1598,32 +1693,10 @@
       el.classList.toggle('conf-on', state === 'on');
       el.classList.toggle('conf-off', state === 'off');
     };
-    const enforced = (on, onText, offText) =>
-      [on ? onText : offText, on ? 'on' : 'off'];
-
-    const strict = config.validation_mode === 'strict';
-    set('conf-mode', ...enforced(strict, 'strict', 'debug'));
-    set('conf-haip', ...enforced(config.require_haip, 'enforced', 'not enforced'));
-    set('conf-haip-issuance', ...enforced(config.require_haip_issuance, 'enforced', 'not enforced'));
-    set('conf-encrypted', ...enforced(config.require_encrypted_request, 'required', 'not required'));
     set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
     set('conf-format', config.preferred_format || 'no preference',
       config.preferred_format ? 'neutral' : 'off');
-
-    const parts = [];
-    parts.push(strict
-      ? 'Strict validation rejects a bad certificate chain, a broken request object signature, a missing nonce or an unknown client id prefix.'
-      : 'Debug validation only warns about those and continues, so a request that a real wallet would reject still completes here.');
-    if (config.require_haip) {
-      parts.push('HAIP 1.0 also requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, direct_post.jwt or dc_api.jwt, DCQL and ES256.');
-    }
-    if (config.require_haip_issuance) {
-      parts.push('For issuance the credential issuer must be https. An offer that uses the authorization endpoint also needs PAR, PKCE S256, DPoP and client authentication. Pre-authorized code offers are accepted as they are.');
-    } else {
-      parts.push('Issuance is not checked against the profile.');
-    }
-    const explainer = document.getElementById('conf-explainer');
-    if (explainer) explainer.textContent = parts.join(' ');
+    renderConformanceExplainer();
   }
 
   function describeReset(demo) {
