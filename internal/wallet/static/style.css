@@ -103,6 +103,19 @@ header h1 {
   font-size: 11px;
 }
 
+/* The menu toggle only exists for narrow screens; the media query below
+   reveals it and turns the link row into a dropdown. */
+.header-menu-toggle {
+  display: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
 .header-links a {
   color: var(--text-dim);
   text-decoration: none;
@@ -911,6 +924,33 @@ header h1 {
   header {
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  /* Narrow screens: the six links no longer fit on one line, so collapse
+     them behind a toggle and drop them down as a vertical list instead of
+     letting the row overflow horizontally. */
+  .header-left {
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+
+  .header-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .header-links {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    font-size: 13px;
+    padding: 4px 0 2px;
+  }
+
+  .header-links.open {
+    display: flex;
   }
 
   #pending-banner {

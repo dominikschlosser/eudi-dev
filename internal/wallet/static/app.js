@@ -11,6 +11,25 @@
     localStorage.setItem('wallet-theme', isLight ? '' : 'light');
   });
 
+  // Header menu toggle (narrow screens). The links are a horizontal row on
+  // wide screens and a drop-down list behind this button when they no longer
+  // fit; CSS decides which via the media query, this only flips the state.
+  const menuToggle = document.getElementById('header-menu-toggle');
+  const headerLinks = document.getElementById('header-links');
+  if (menuToggle && headerLinks) {
+    menuToggle.addEventListener('click', () => {
+      const open = headerLinks.classList.toggle('open');
+      menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    // Tapping a link closes the menu so it does not stay open over content.
+    headerLinks.addEventListener('click', (e) => {
+      if (e.target.tagName === 'A') {
+        headerLinks.classList.remove('open');
+        menuToggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
   // The wallet is shared, so anything meant for the visitor who started a flow
   // has to reach that tab and no other: the consent dialog, the issuer
   // sign-in, the error report. A claim is how a tab says the next one is

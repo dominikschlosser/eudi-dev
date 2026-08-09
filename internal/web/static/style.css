@@ -857,10 +857,31 @@ textarea.colorized::placeholder {
     overflow: visible;
   }
 
+  /* Let the header wrap instead of overflowing: the title block drops onto
+     its own line, and the links and action buttons wrap within their rows. */
+  header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .header-left {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
   .header-titles {
     flex-direction: column;
     align-items: flex-start;
-    gap: 2px;
+    gap: 6px;
+  }
+
+  .header-links {
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
   }
 }
 

@@ -345,3 +345,17 @@ header h1 {
   color: var(--text-dim);
   font-size: 13px;
 }
+
+/* Narrow screens: the control cluster in the header would otherwise push off
+   the right edge. Let the header and its buttons wrap onto extra rows. */
+@media (max-width: 768px) {
+  header {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+}
