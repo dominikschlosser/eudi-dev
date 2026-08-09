@@ -24,7 +24,7 @@ Two independent settings decide what a finding does to a flow:
 | `direct_post.jwt` response mode | Implemented | JARM-encrypted responses |
 | `dc_api` response mode | Implemented | Browser API responses via `/api/dc-api` |
 | `dc_api.jwt` response mode | Implemented | Encrypted Browser API responses via `/api/dc-api` |
-| JAR (signed request objects) | Implemented | The JWS signature is verified with the leaf `x5c` key in every mode. Strict rejects a failure, debug reports it and continues, and `--haip` makes it an error |
+| JAR (signed request objects) | Implemented | The JWS signature is verified with the leaf `x5c` key in every mode. Strict rejects a failure, debug reports it and continues, and `--haip` makes it an error. The chain is checked for internal consistency but not anchored to a pre-registered verifier CA (a test wallet has none), so this proves the request is self-consistent, not that it came from a trusted verifier (see [SECURITY.md](../SECURITY.md)) |
 | `x509_san_dns:` client_id | Implemented | Verified against leaf cert SAN |
 | `x509_hash:` client_id | Implemented | SHA-256 of the leaf certificate matched against the prefix value |
 | `redirect_uri:` client_id | Implemented | Requires unsigned request objects and checks that the prefix value matches `response_uri` |
