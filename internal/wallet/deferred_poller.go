@@ -223,11 +223,14 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	// document that cannot be reached leaves the request unencrypted rather than
 	// costing the credential: an issuer that required encryption refuses that
 	// attempt, and the next one is a poll away.
+	// Snapshot the validation mode once: this runs on the background poller
+	// goroutine, which can race a local PUT /api/config/conformance.
+	mode := s.wallet.Mode()
 	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer)
 	if metadataErr != nil {
 		metadata = nil
 	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(s.wallet.ValidationMode, metadata, s.wallet.HolderKey)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, s.wallet.HolderKey)
 	if err != nil {
 		return s.rescheduleDeferred(pending, pending.Interval(), err.Error())
 	}
@@ -236,7 +239,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	// wait on its own or two things would be pacing the same issuer.
 	nonce := ""
 	credResp, err := deferredCredentialAttempt(
-		s.wallet.ValidationMode, metadata,
+		mode, metadata,
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
 		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
 
@@ -249,7 +252,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 			pending = refreshed
 			nonce = ""
 			credResp, err = deferredCredentialAttempt(
-				s.wallet.ValidationMode, metadata,
+				mode, metadata,
 				pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
 				pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
 		}

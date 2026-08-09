@@ -135,6 +135,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if templatesDir == "" && walletDir != "" {
 		templatesDir = filepath.Join(walletDir, "templates")
 	}
+	// Snapshot the runtime-mutable conformance fields together under the lock;
+	// a local PUT /api/config/conformance can be changing them concurrently.
+	mode, requireHAIP, requireEncrypted := s.wallet.ConformanceSettings()
 	config := map[string]any{
 		"port":               s.port,
 		"build_id":           processBuildID(),
@@ -144,15 +147,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"issuer_url":         s.wallet.IssuerURL,
 		"status_list_url":    s.wallet.StatusListURL(),
 		"preferred_format":   s.wallet.PreferredFormat,
-		"validation_mode":    string(s.wallet.ValidationMode),
+		"validation_mode":    string(mode),
 		"auto_accept":        s.wallet.AutoAccept,
 		"session_transcript": string(s.wallet.SessionTranscript),
-		"require_haip":       s.wallet.RequireHAIP,
+		"require_haip":       requireHAIP,
 		// Presentations and issuance are gated by the same flag, but they are
 		// reported separately: a client should be able to tell which half it
 		// is being held to without inferring it.
-		"require_haip_issuance":     s.wallet.RequireHAIP,
-		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
+		"require_haip_issuance":     requireHAIP,
+		"require_encrypted_request": requireEncrypted,
 		"force_client_attestation":  s.wallet.ForceClientAttestation,
 		"credential_count":          len(s.wallet.GetCredentials()),
 		// False when an external TLS terminator serves the issuer origin: the
@@ -279,12 +282,14 @@ func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) writeConformanceConfig(w http.ResponseWriter) {
-	s.wallet.mu.Lock()
+	// Direct field reads: already inside the lock, so calling the locking
+	// accessor here would self-deadlock (RWMutex is not reentrant).
+	s.wallet.mu.RLock()
 	resp := map[string]any{
 		"validation_mode":           string(s.wallet.ValidationMode),
 		"require_haip":              s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 	}
-	s.wallet.mu.Unlock()
+	s.wallet.mu.RUnlock()
 	writeJSON(w, http.StatusOK, resp)
 }

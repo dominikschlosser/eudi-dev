@@ -214,7 +214,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 
-	findings, err := ValidateAuthorizationRequest(s.wallet.ValidationMode, s.wallet.RequireHAIP, authReq)
+	mode, requireHAIP, _ := s.wallet.ConformanceSettings()
+	findings, err := ValidateAuthorizationRequest(mode, requireHAIP, authReq)
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("presentation", err.Error(), false)

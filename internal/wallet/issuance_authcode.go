@@ -154,7 +154,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		"redirect_uri": redirectURI,
 		"state":        state,
 	})
-	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), w.ValidationMode)
+	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), w.Mode())
 	authorizationResponseDetails := map[string]any{
 		"direction": "inbound",
 		"endpoint":  "authorization",
@@ -227,7 +227,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
 	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.ValidationMode, metadata, w.HolderKey)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +349,7 @@ func (w *Wallet) reportServerDeviation(detail string) error {
 	w.addProtocolLog("issuance", "server_deviation", detail, false, map[string]any{
 		"deviation": detail,
 	})
-	if w.ValidationMode == ValidationModeStrict {
+	if w.Mode() == ValidationModeStrict {
 		return fmt.Errorf("%s", detail)
 	}
 	log.Printf("[VCI] WARNING: %s", detail)

@@ -188,7 +188,7 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 		return "", nil, fmt.Errorf("marshaling response payload: %w", err)
 	}
 
-	keyInfo, err := extractEncryptionKey(w.ValidationMode, params.RequestObject, params.ClientMetadata)
+	keyInfo, err := extractEncryptionKey(w.Mode(), params.RequestObject, params.ClientMetadata)
 	if err != nil {
 		return "", nil, fmt.Errorf("extracting encryption key: %w", err)
 	}

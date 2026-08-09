@@ -188,7 +188,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				"issuer":     offer.CredentialIssuer,
 				"violations": violations,
 			})
-			if w.ValidationMode == ValidationModeStrict {
+			if w.Mode() == ValidationModeStrict {
 				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
 			}
 			for _, v := range violations {
@@ -198,7 +198,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	}
 
 	if offer.Grants.PreAuthorizedCode == "" {
-		if w.ValidationMode == ValidationModeStrict {
+		if w.Mode() == ValidationModeStrict {
 			if oauthErr != nil {
 				return nil, fmt.Errorf("fetching authorization server metadata: %w", oauthErr)
 			}
@@ -296,7 +296,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	if configID != "" {
 		credFormat = resolveCredentialFormat(metadata, configID)
 	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.ValidationMode, metadata, w.HolderKey)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1169,7 +1169,7 @@ func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer st
 	if cNonce == "" {
 		return ""
 	}
-	if w.ValidationMode == ValidationModeStrict {
+	if w.Mode() == ValidationModeStrict {
 		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OpenID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
 		w.AddLog("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), false)
 		return ""
@@ -1243,7 +1243,7 @@ func (w *Wallet) sendCredentialRequest(a credentialRequestAttempt, proofJWTs []s
 	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", a.endpoint), true,
 		credentialRequestLogDetails(a.endpoint, a.accessToken, proofJWTs, a.credentialIdentifier, a.credentialConfigurationID, a.responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
-		w.ValidationMode,
+		w.Mode(),
 		a.metadata,
 		a.endpoint,
 		a.accessToken,

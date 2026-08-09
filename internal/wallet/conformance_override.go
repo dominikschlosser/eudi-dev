@@ -52,6 +52,12 @@ func conformanceOverrideFromRequest(r *http.Request) conformanceOverride {
 	// Best-effort: a cookie we cannot parse is treated as no override rather
 	// than an error, so a stale or hand-edited value never breaks a flow.
 	_ = json.Unmarshal([]byte(raw), &o)
+	// Drop an unrecognized mode rather than carry it into the flow, where it
+	// would fail ParseValidationMode and return 400 on every request until the
+	// cookie is cleared. The UI only ever writes "strict" or "debug".
+	if o.Mode != "" && o.Mode != string(ValidationModeStrict) && o.Mode != string(ValidationModeDebug) {
+		o.Mode = ""
+	}
 	return o
 }
 

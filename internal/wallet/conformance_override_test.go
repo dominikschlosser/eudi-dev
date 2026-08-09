@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -216,4 +217,68 @@ func TestAuthorizeHonorsConformanceOverride(t *testing.T) {
 	}); code == http.StatusBadRequest {
 		t.Fatal("debug header: request was still rejected, override not honored")
 	}
+}
+
+func TestConformanceOverrideDropsInvalidMode(t *testing.T) {
+	o := conformanceOverrideFromRequest(requestWithConformanceCookie(t, `{"mode":"garbage"}`))
+	if o.Mode != "" {
+		t.Fatalf("an unrecognized mode should be dropped, got %q", o.Mode)
+	}
+	// A valid mode still comes through.
+	if got := conformanceOverrideFromRequest(requestWithConformanceCookie(t, `{"mode":"strict"}`)); got.Mode != "strict" {
+		t.Fatalf("valid mode = %q, want strict", got.Mode)
+	}
+}
+
+func TestHandleResetConformanceRefusedInDemo(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	s := NewServer(w, 0, nil)
+	s.demo = &demoState{}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/config/conformance", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for DELETE in demo mode, got %d", rec.Code)
+	}
+	if s.wallet.ValidationMode != ValidationModeStrict {
+		t.Errorf("demo-mode DELETE must not change the setting; mode = %q", s.wallet.ValidationMode)
+	}
+}
+
+func TestConformanceRoutesBlockedInDemo(t *testing.T) {
+	for _, method := range []string{http.MethodPut, http.MethodDelete} {
+		req := httptest.NewRequest(method, "/api/config/conformance", nil)
+		if !demoBlockedRoute(req) {
+			t.Errorf("%s /api/config/conformance should be blocked in demo mode", method)
+		}
+	}
+}
+
+func TestConformanceSettingsRaceFree(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeDebug
+	s := NewServer(w, 0, nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 30; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			mode := "strict"
+			if i%2 == 0 {
+				mode = "debug"
+			}
+			body := strings.NewReader(`{"mode":"` + mode + `","haip":true,"encrypted":true}`)
+			s.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPut, "/api/config/conformance", body))
+		}(i)
+		go func() {
+			defer wg.Done()
+			// /api/config reads the mode string concurrently with the PUT above,
+			// so -race would flag a torn read if the fields were not guarded.
+			s.mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/config", nil))
+		}()
+	}
+	wg.Wait()
 }

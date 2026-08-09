@@ -686,6 +686,25 @@ func (w *Wallet) GetCredentials() []StoredCredential {
 	return out
 }
 
+// Mode returns the validation mode under the read lock. The conformance
+// settings can be changed at runtime on a local wallet (PUT
+// /api/config/conformance), and ValidationMode is a string, so an unsynchronized
+// read racing that write could tear. Read it through here on any path that can
+// run concurrently with the write.
+func (w *Wallet) Mode() ValidationMode {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.ValidationMode
+}
+
+// ConformanceSettings returns the three runtime-mutable conformance fields
+// together under the read lock.
+func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.ValidationMode, w.RequireHAIP, w.RequireEncryptedRequest
+}
+
 // GetCredential returns a credential by ID.
 func (w *Wallet) GetCredential(id string) (StoredCredential, bool) {
 	w.mu.RLock()

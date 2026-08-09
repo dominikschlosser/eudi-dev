@@ -70,7 +70,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		reqServer = s.cloneWithWallet(reqWallet)
 	}
 
-	authReq, err = parseAuthParams(values, reqServer.parseOpts, reqServer.wallet.ValidationMode)
+	authReq, err = parseAuthParams(values, reqServer.parseOpts, reqServer.wallet.Mode())
 
 	if err != nil {
 		// A request that cannot be parsed names a response endpoint the wallet
@@ -191,7 +191,8 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		Source:           "api",
 	}
 
-	findings, err := ValidateAuthorizationRequest(reqServer.wallet.ValidationMode, reqServer.wallet.RequireHAIP, authReq)
+	vpMode, vpHAIP, _ := reqServer.wallet.ConformanceSettings()
+	findings, err := ValidateAuthorizationRequest(vpMode, vpHAIP, authReq)
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
@@ -221,6 +222,10 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		return nil, fmt.Errorf("wallet is not initialized")
 	}
 
+	// Snapshot the runtime-mutable conformance fields under the lock: a local
+	// PUT /api/config/conformance can change them while this copy runs.
+	srcMode, srcHAIP, srcEncrypted := src.ConformanceSettings()
+
 	clone := &Wallet{
 		HolderKey:               src.HolderKey,
 		IssuerKey:               src.IssuerKey,
@@ -230,10 +235,10 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		AutoAccept:              src.AutoAccept,
 		SessionTranscript:       src.SessionTranscript,
 		PreferredFormat:         src.PreferredFormat,
-		RequireEncryptedRequest: src.RequireEncryptedRequest,
+		RequireEncryptedRequest: srcEncrypted,
 		RequestEncryptionKey:    src.RequestEncryptionKey,
-		RequireHAIP:             src.RequireHAIP,
-		ValidationMode:          src.ValidationMode,
+		RequireHAIP:             srcHAIP,
+		ValidationMode:          srcMode,
 		Credentials:             append([]StoredCredential(nil), src.Credentials...),
 		StatusEntries:           cloneStatusEntries(src.StatusEntries),
 		StatusListCounter:       src.StatusListCounter,
