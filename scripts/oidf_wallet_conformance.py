@@ -1065,9 +1065,16 @@ def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_ur
     extra_headers = {"X-OID4VC-Dev-Mode": wallet_mode_for(test_name, requires_haip)}
     if requires_haip:
         extra_headers["X-OID4VC-Dev-HAIP"] = "true"
-    origin = browser_request_origin(browser_request)
+    # This POST stands in for the browser, and a browser derives Origin from
+    # where the page actually runs, never from what the page's request claims.
+    # The submit URL is that place (the suite serves the browser API page
+    # there), so it is the truthful source. Deriving the origin from the
+    # request content instead would let a planted client_id or
+    # expected_origins choose its own audience, which is exactly what
+    # release-v5.2.2's alternate-happy-flow plants a decoy to catch.
+    origin = origin_from_submit_url(submit_url)
     if not origin:
-        origin = origin_from_submit_url(submit_url)
+        origin = browser_request_origin(browser_request)
     if origin:
         extra_headers["Origin"] = origin
 
