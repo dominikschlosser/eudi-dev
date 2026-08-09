@@ -85,7 +85,15 @@ func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool)
 			_ = child.Process.Kill()
 			return fmt.Errorf("wallet serve did not become ready within 15s, see %s", logPath)
 		case <-ticker.C:
-			if _, ok := instanceIdentityOf(url); !ok {
+			identity, ok := instanceIdentityOf(url)
+			if !ok {
+				continue
+			}
+			// A wallet already listening on this port answers the probe while
+			// our child is still starting (or has just failed to bind). When the
+			// server reports its pid (every non-demo server does), require it to
+			// be our child before declaring the detached server ready.
+			if identity.PID != 0 && identity.PID != child.Process.Pid {
 				continue
 			}
 			fmt.Printf("Wallet server running detached at %s (pid %d)\n", url, child.Process.Pid)
