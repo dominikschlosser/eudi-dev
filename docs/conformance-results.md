@@ -4,10 +4,10 @@ These are the current local wallet conformance results for `eudi-dev`. Use [Runn
 
 ## Baseline
 
-- date: 2026-08-08 (previous: 2026-08-07, and 2026-08-05 and 2026-08-04 across 12 plans. And 2026-07-30, which did not exercise credential status. See below)
+- date: 2026-08-09 (previous: 2026-08-08 and 2026-08-07 on suite release-v5.2.1, 2026-08-05 and 2026-08-04 across 12 plans. And 2026-07-30, which did not exercise credential status. See below)
 - wallet mode: strict
 - suite server: local `https://localhost:8443/`
-- suite baseline: `release-v5.2.1`, version `5.2.1`, revision `932b46f`
+- suite baseline: `release-v5.2.2`, version `5.2.2`, revision `321bc5bc5`
 - full run directory: `/tmp/oidf-wallet-conformance-local-strict`
 - full runner log: `/tmp/oidf-wallet-conformance-local-strict/runner.log`
 - full exported result archives: `/tmp/oidf-wallet-conformance-local-strict/results/`
@@ -22,7 +22,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The full matrix runs in one pass: 14 plans, 154 modules, 110 `PASSED`, 38 negative modules `REVIEW`, 5 `SKIPPED`, 1 `FAILED`, 15,404 condition successes against 1 condition failure. The skips and the failure are both accounted for below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
+The full matrix runs in one pass: 14 plans, 160 modules, 111 `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`, 16,305 condition successes against 1 condition failure. The skips and the condition failure are both accounted for below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
 
 ## Run of 2026-08-04
 
@@ -61,6 +61,16 @@ The 5 `SKIPPED` are the mdoc `batch-credential-issuance` modules, which is delib
 
 The 1 `FAILED` is `oid4vci-1_0-wallet-test-credential-issuance-notification` on `VCIVerifyIssuerStateInAuthorizationRequest`, and it is an artifact of two modules overlapping rather than anything the wallet did. The module logs the check twice: the first authorization request carries the `issuer_state` of the offer under test and passes, and a second one 18 seconds later carries the `issuer_state` of a later offer, which the module is still comparing against the first. The wallet echoed the value each offer gave it, which is what OID4VCI 1.0 §5.1.3 asks of it. Expect this and the flake below to move between runs.
 
+## Run of 2026-08-09
+
+Full matrix on suite `release-v5.2.2`, the first run on that release: **111 modules PASSED, 44 negative modules REVIEW, 5 SKIPPED, 0 FAILED**, 16,305 condition successes across 14 plans and 160 modules, with no watchdog termination through 11 suite pauses.
+
+The matrix is 160 modules rather than 154 because `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` is back in 6 VP plans (REVIEW in all): release-v5.2.2 fixed the module (upstream `4f790f161`, placeholder established before WAITING). It stays out of the DC API plans only, per its own `@VariantNotApplicableWhen`: an unsigned DC API request carries no `client_id` to corrupt (OID4VP 1.0 Appendix A.2).
+
+Release-v5.2.2 also reworked `alternate-happy-flow` to plant a decoy origin in an unsigned DC API request's `expected_origins` and check the wallet ignores it. That exposed a defect in this harness, not the wallet: the monitor built the `Origin` header of its stand-in browser POST from the request content, so it impersonated the decoy and the wallet honoured its caller. The monitor now derives the origin from the submit URL, where the suite actually serves the page, which is what a real browser does.
+
+The 1 condition failure sits in a module that still finished `PASSED`: a suite pause made the monitor retry an offer submission, the wallet ran the flow twice, and `ValidateAuthorizationCode` compared the code of one flow against the other. The same retry artifact family as the 2026-08-08 `issuer_state` failure. Release-v5.2.2 retired the `RequestUriFetchedMoreThanOnce` symptom of this family upstream (`a05a0e298`: multi-fetch no longer fails a wallet), so the note below is historical.
+
 ### Flaky module to expect
 
 `RequestUriFetchedMoreThanOnce` can fail spuriously. `submit_wallet_request` retries a submission up to five times after a transient HTTP 502, and each submission makes the wallet fetch the `request_uri` once, so a retry produces a second fetch that the suite flags. It appeared once in an earlier run of this same code on a loaded machine and did not reproduce on a quiet one. Re-run before treating it as a defect.
@@ -84,24 +94,24 @@ Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization 
 
 ## Matrix
 
-Condition counts are from the 2026-08-08 run. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run, so they are linked against the plan they depict rather than the row number, and the two pre-authorized code plans have none.
+Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run, so they are linked against the plan they depict rather than the row number, and the two pre-authorized code plans have none.
 
 | # | Plan | Variant | Current result | Screenshot |
 |---|---|---|---|---|
-| 1 | VP Final | SD-JWT, `direct_post`, signed `x509_hash` | 460 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-07-30/plan-01-vp-final-sdjwt-direct-post.png) |
-| 2 | VP Final | SD-JWT, `direct_post.jwt`, signed `x509_hash` | 655 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-02-vp-final-sdjwt-direct-post-jwt.png) |
-| 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 460 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
-| 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 520 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png) |
-| 5 | VCI Final | SD-JWT | 1027 success / 1 failure. Includes batch credential issuance. Carries the `issuer_state` failure described above, which two overlapping modules produce rather than the wallet. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
-| 6 | VCI Final | mDoc | 1010 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
-| 7 | VCI Final | SD-JWT, pre-authorized code | 735 success / 0 failure. | (added after the screenshot run) |
-| 8 | VCI Final | mDoc, pre-authorized code | 643 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | (added after the screenshot run) |
-| 9 | VP HAIP | SD-JWT, `direct_post.jwt` | 693 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
-| 10 | VP HAIP | mDoc, `direct_post.jwt` | 551 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
-| 11 | VP HAIP | SD-JWT, `dc_api.jwt` | 561 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
-| 12 | VP HAIP | mDoc, `dc_api.jwt` | 374 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
-| 13 | VCI HAIP | SD-JWT | 3805 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
-| 14 | VCI HAIP | mDoc | 3910 success / 0 failure. Batch issuance is `SKIPPED` in all three variants, see below. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
+| 1 | VP Final | SD-JWT, `direct_post`, signed `x509_hash` | 507 success / 0 failure. `REVIEW` negative modules are pass-equivalent. | [PNG](./conformance-results/2026-07-30/plan-01-vp-final-sdjwt-direct-post.png) |
+| 2 | VP Final | SD-JWT, `direct_post.jwt`, signed `x509_hash` | 711 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-02-vp-final-sdjwt-direct-post-jwt.png) |
+| 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 507 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
+| 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 592 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png) |
+| 5 | VCI Final | SD-JWT | 1021 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
+| 6 | VCI Final | mDoc | 1055 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
+| 7 | VCI Final | SD-JWT, pre-authorized code | 665 success / 0 failure. | (added after the screenshot run) |
+| 8 | VCI Final | mDoc, pre-authorized code | 671 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | (added after the screenshot run) |
+| 9 | VP HAIP | SD-JWT, `direct_post.jwt` | 751 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
+| 10 | VP HAIP | mDoc, `direct_post.jwt` | 625 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
+| 11 | VP HAIP | SD-JWT, `dc_api.jwt` | 579 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
+| 12 | VP HAIP | mDoc, `dc_api.jwt` | 399 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
+| 13 | VCI HAIP | SD-JWT | 3978 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
+| 14 | VCI HAIP | mDoc | 4244 success / 1 failure. Batch issuance is `SKIPPED` in all three variants, see below. The 1 failure is the retried-submission artifact described above; the module finished `PASSED`. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
 
 ## Passing VCI Coverage
 
@@ -127,7 +137,7 @@ The current wrapper passes explicit module lists for VP plans instead of relying
 
 Known release-v5.2.1 suite-side exclusions:
 
-- All VP variants omit `invalid-client-id-prefix`. Release-v5.2.1's `VP1FinalWalletInvalidClientIdPrefix.performRedirect()` calls `createPlaceholder()` after the base class has already set the module status to `WAITING`. Conditions cannot run while `WAITING`, so the suite kills the module with "This is a bug in the test module" before the wallet is ever invoked, and the interrupted module's alias steal also breaks the next module in the plan. This is an upstream regression from commit `7e78b5988` ("expose failure-photo upload up front"). Invalid-prefix rejection was covered at the release-v5.1.44 baseline. Re-enable the module when the upstream fix lands.
+- `invalid-client-id-prefix` runs everywhere except the DC API plans, whose unsigned requests carry no `client_id` to corrupt (the module's own `@VariantNotApplicableWhen`). It was excluded entirely on release-v5.2.1, whose `performRedirect()` ordering bug killed the module before the wallet was invoked; release-v5.2.2 fixed that (`4f790f161`).
 - VP Final `direct_post` omits `alternate-happy-flow` because that module unconditionally replaces encrypted-response setup that is absent for plain `direct_post` (unchanged from release-v5.1.44).
 - VP Final x509 variants omit `response-uri-not-client-id`. The suite marks that module not applicable for `x509_hash`, and the applicable `redirect_uri` variant passes as `REVIEW`.
 - VP Final non-multisigned variants omit `multisigned-one-invalid-signature`.
