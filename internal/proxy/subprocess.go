@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/fatih/color"
 )
@@ -35,6 +36,10 @@ type Subprocess struct {
 	// be consumed by more than one goroutine without one stealing the result.
 	done chan struct{}
 	err  error
+	// outputMu serializes the two stream-scanning goroutines: they share the
+	// OutputScanner and the terminal, so a line's prefix and body stay
+	// together.
+	outputMu sync.Mutex
 }
 
 // StartSubprocess launches args[0] with args[1:] as a child process.
@@ -68,9 +73,11 @@ func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error)
 		done:    make(chan struct{}),
 	}
 
-	// Scan both stdout and stderr
-	merged := io.MultiReader(stdout, stderr)
-	go sub.scanOutput(merged)
+	// Scan stdout and stderr concurrently. io.MultiReader would read stderr
+	// only after stdout hit EOF, so a service that logs heavily to stderr
+	// while keeping stdout open could fill the stderr pipe and block on write.
+	go sub.scanStream(stdout)
+	go sub.scanStream(stderr)
 
 	go func() {
 		sub.err = cmd.Wait()
@@ -80,17 +87,19 @@ func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error)
 	return sub, nil
 }
 
-// scanOutput reads lines from the merged stdout/stderr, scans each line,
-// and prints it to the terminal with a [service] prefix.
-func (s *Subprocess) scanOutput(r io.Reader) {
+// scanStream reads lines from one of the child's output streams, scans each
+// line, and prints it to the terminal with a [service] prefix.
+func (s *Subprocess) scanStream(r io.Reader) {
 	dim := color.New(color.Faint)
 	scan := bufio.NewScanner(r)
 	scan.Buffer(make([]byte, 0, 256*1024), 1024*1024) // allow long lines
 	for scan.Scan() {
 		line := scan.Text()
+		s.outputMu.Lock()
 		s.scanner.Scan(line)
 		dim.Printf("[service] ")
 		fmt.Println(line)
+		s.outputMu.Unlock()
 	}
 }
 
