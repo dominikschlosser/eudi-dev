@@ -312,6 +312,7 @@ func TestDecryptWithCEKRejectsMalformedSegments(t *testing.T) {
 	}{
 		{"too few parts", "a.b.c.d", "expected 5 parts"},
 		{"bad iv", h + "..!!!.AAAA.AAAA", "decoding IV"},
+		{"wrong-length iv", h + "..AAAA.AAAA.AAAA", "IV must be"},
 		{"bad ciphertext", h + "..AAAA.!!!.AAAA", "decoding ciphertext"},
 		{"bad tag", h + "..AAAA.AAAA.!!!", "decoding tag"},
 	}

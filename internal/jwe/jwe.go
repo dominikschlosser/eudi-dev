@@ -151,6 +151,11 @@ func OpenAESGCM(key, iv, ciphertext, tag, aad []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating GCM: %w", err)
 	}
+	// aead.Open panics on a wrong-length nonce, and the IV comes straight from
+	// an attacker-supplied compact JWE, so reject it as an error instead.
+	if len(iv) != aead.NonceSize() {
+		return nil, fmt.Errorf("AES-GCM IV must be %d bytes, got %d", aead.NonceSize(), len(iv))
+	}
 	// Concatenated into a new slice: appending to ciphertext would write the
 	// tag into its backing array when it has the capacity, corrupting the
 	// caller's buffer.
