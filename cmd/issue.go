@@ -600,6 +600,11 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	if issueTrustProfile != "" && issueTrustProfile != "auto" {
 		req["trust_profile"] = issueTrustProfile
 	}
+	// The registration metadata flags (--entitlement, --trust-list-type, ...)
+	// travel in the "trust" object. The server sets Format/VCT/DocType and
+	// applies the trust profile, so an empty spec here is equivalent to sending
+	// none.
+	req["trust"] = issueTrustSpecFromFlags()
 	return req, nil
 }
 

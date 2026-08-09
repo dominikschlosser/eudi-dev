@@ -469,6 +469,76 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 	}
 }
 
+func TestIssueSDJWTToWallet_PersistsTrustMetadataFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	wDir := filepath.Join(tmpDir, "wallet")
+	if err := os.MkdirAll(wDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+
+	issueClaims = ""
+	issueKeyPath = ""
+	issueIssuer = "https://issuer.example"
+	issueVCT = "urn:test:employee:1"
+	issueExpires = "24h"
+	issueNBF = ""
+	issuePID = false
+	issueOmit = nil
+	issueToWallet = false
+	issueStatusListURI = ""
+	issueStatusListIdx = 0
+	issueTrustProfile = "auto"
+	issueEntitlements = nil
+	issueTrustListType = ""
+	issueStatusDetermination = ""
+	issueSchemeCommunityRule = ""
+	issueSchemeTerritory = ""
+	issueTrustEntityName = ""
+	issueIssuanceServiceType = ""
+	issueRevocationServiceType = ""
+	issueIssuanceServiceName = ""
+	issueRevocationServiceName = ""
+	walletDir = ""
+
+	const wantEntitlement = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+	const wantEntity = "Acme Test Issuer"
+	rootCmd.SetArgs([]string{
+		"issue", "--wallet-dir", wDir, "sdjwt", "--wallet",
+		"--vct", "urn:test:employee:1",
+		"--entitlement", wantEntitlement,
+		"--trust-entity-name", wantEntity,
+	})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue sdjwt --wallet: %v", err)
+	}
+
+	store := wallet.NewWalletStore(wDir)
+	w, err := store.LoadOrCreate()
+	if err != nil {
+		t.Fatalf("loading wallet: %v", err)
+	}
+	if len(w.IssuedAttestations) != 1 {
+		t.Fatalf("expected 1 registered attestation, got %d", len(w.IssuedAttestations))
+	}
+	spec := w.IssuedAttestations[0]
+	if spec.EntityName != wantEntity {
+		t.Fatalf("expected entity name %q, got %q", wantEntity, spec.EntityName)
+	}
+	found := false
+	for _, e := range spec.Entitlements {
+		if e == wantEntitlement {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected entitlement %q to be persisted, got %v", wantEntitlement, spec.Entitlements)
+	}
+}
+
 func TestIssueSDJWT_WithCustomIssuerVCTExp(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
