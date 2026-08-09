@@ -66,7 +66,15 @@ func (s *Store) Add(entry *TrafficEntry) {
 	}
 
 	if len(s.entries) >= s.maxSize {
+		evicted := s.entries[0]
 		s.entries = s.entries[1:]
+		// Drop the evicted entry's correlation keys so flows does not grow
+		// without bound over a long session. A logical flow spans a handful of
+		// entries within seconds, far fewer than maxSize, so the keys removed
+		// here belong to flows that are long finished.
+		for _, key := range ExtractCorrelationKeys(evicted) {
+			delete(s.flows, key)
+		}
 	}
 	s.entries = append(s.entries, entry)
 	// Snapshot subscribers under lock

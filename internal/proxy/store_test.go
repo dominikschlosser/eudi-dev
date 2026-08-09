@@ -15,6 +15,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -49,6 +50,25 @@ func TestStoreEviction(t *testing.T) {
 	// Oldest should be ID 3 (IDs 1,2 evicted)
 	if entries[0].ID != 3 {
 		t.Errorf("expected oldest entry ID 3, got %d", entries[0].ID)
+	}
+}
+
+func TestStoreFlowsMapBounded(t *testing.T) {
+	s := NewStore(10)
+	for i := 0; i < 500; i++ {
+		e := &TrafficEntry{
+			Method:     "GET",
+			URL:        fmt.Sprintf("http://example.com/authorize?client_id=test&response_type=vp_token&state=state-%d", i),
+			Class:      ClassVPAuthRequest,
+			ClassLabel: "VP Auth Request",
+		}
+		Classify(e)
+		s.Add(e)
+	}
+	// Each entry contributes one correlation key, and the buffer holds 10, so
+	// the flows map must not accumulate all 500 keys.
+	if got := len(s.flows); got > s.maxSize*3 {
+		t.Fatalf("flows map grew to %d for a %d-entry buffer; eviction is not pruning it", got, s.maxSize)
 	}
 }
 
