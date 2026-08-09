@@ -174,3 +174,46 @@ func TestMergedConformanceOptionsPrecedence(t *testing.T) {
 		t.Errorf("mode = %q, want strict from cookie", got3.ValidationMode)
 	}
 }
+
+// TestAuthorizeHonorsConformanceOverride is the end-to-end proof that the
+// override changes real validation, on the top-level /authorize navigation:
+// the same request is rejected as strict and accepted (past validation) as
+// debug, driven by the cookie and by the header, over the server's own default.
+func TestAuthorizeHonorsConformanceOverride(t *testing.T) {
+	// A request whose client_id uses an unsupported prefix is a validation
+	// finding: fatal in strict, a warning in debug.
+	const reqURL = "/authorize?response_type=vp_token&client_id=bogusprefix:foo&nonce=n1&response_mode=direct_post&response_uri=http://localhost:9/cb&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22c%22%2C%22format%22%3A%22dc%2Bsd-jwt%22%7D%5D%7D"
+
+	newSrv := func() *Server {
+		w := generateTestWallet(t)
+		w.ValidationMode = ValidationModeStrict // server default is strict
+		return NewServer(w, 0, nil)
+	}
+
+	get := func(s *Server, apply func(*http.Request)) int {
+		req := httptest.NewRequest(http.MethodGet, reqURL, nil)
+		if apply != nil {
+			apply(req)
+		}
+		rec := httptest.NewRecorder()
+		s.mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Strict default rejects the finding.
+	if code := get(newSrv(), nil); code != http.StatusBadRequest {
+		t.Fatalf("strict default: got %d, want 400", code)
+	}
+	// A debug cookie overrides the strict default: validation no longer rejects.
+	if code := get(newSrv(), func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: conformanceCookieName, Value: url.QueryEscape(`{"mode":"debug"}`)})
+	}); code == http.StatusBadRequest {
+		t.Fatal("debug cookie: request was still rejected, override not honored")
+	}
+	// A debug header does the same (the CLI path).
+	if code := get(newSrv(), func(r *http.Request) {
+		r.Header.Set("X-Eudi-Dev-Mode", "debug")
+	}); code == http.StatusBadRequest {
+		t.Fatal("debug header: request was still rejected, override not honored")
+	}
+}
