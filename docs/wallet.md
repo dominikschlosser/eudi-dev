@@ -1034,7 +1034,7 @@ eudi wallet list --remote http://localhost:8085
 eudi wallet info
 ```
 
-Remote commands produce the same output as local ones, so scripts do not need to care which wallet is managed. Use `eudi wallet instances use` (without arguments) or `eudi wallet info` to check which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$OID4VC_DEV_HOME/remote.json` when the env variable is set).
+Remote commands produce the same output as local ones, so scripts do not need to care which wallet is managed. Use `eudi wallet instances use` (without arguments) or `eudi wallet info` to check which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$EUDI_DEV_HOME/remote.json` when the env variable is set).
 
 #### Version compatibility
 

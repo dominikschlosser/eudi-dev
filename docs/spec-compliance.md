@@ -49,7 +49,7 @@ Two independent settings decide what a finding does to a flow:
 |---------|--------|-------|
 | Credential offer parsing | Implemented | `openid-credential-offer://` and `haip-vci://` schemes |
 | Pre-authorized code grant | Implemented | With optional `tx_code` |
-| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration plus issuer metadata with PAR and DPoP support |
+| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration. Uses PAR, DPoP and client attestation when the issuer's metadata advertises them; PAR is optional and the flow falls back to the authorization endpoint directly |
 | Pushed Authorization Request (PAR) | Implemented | Used by the authorization-code flow |
 | Token endpoint | Implemented | Exchanges pre-authorized code or authorization code for access token |
 | Credential endpoint | Implemented | Uses OID4VCI 1.0 final `proofs.jwt` and sends `credential_identifier` or `credential_configuration_id` as required (§8.2 forbids both together and forbids either one where the token response did not call for it) |
@@ -60,7 +60,7 @@ Two independent settings decide what a finding does to a flow:
 | Deferred credential issuance | Implemented | Authorization-code flow follows `transaction_id` to `deferred_credential_endpoint`. The poll carries the issuer's required request encryption and its own `credential_response_encryption` (§9.1). Pending is HTTP 202 with `transaction_id` and `interval` (§9.2) |
 | Credential response encryption | Implemented | Requests `credential_response_encryption` when advertised, and only where the request itself can be encrypted, which §8.2 requires whenever the parameter is sent |
 | Credential Issuer Metadata retrieval | Implemented | `Accept: application/json, application/jwt` (§12.2.2). The response is refused unless `credential_issuer` is identical to the requested identifier (§12.2.4) |
-| Signed Credential Issuer Metadata verification | Enforced | `typ`, an asymmetric `alg` and a `sub` matching the issuer identifier, plus trust established in the signer through an `x5c` chain that ends in a configured anchor. Metadata whose signer cannot be placed is rejected (§12.2.3) |
+| Signed Credential Issuer Metadata verification | Implemented | `typ`, an asymmetric `alg`, a `sub` matching the issuer identifier and a valid signature over the `x5c` leaf are all checked. Anchoring the signer to a configured trust anchor is attempted but not required: a test wallet holds no issuer trust anchors, so a signer that cannot be placed is read as signed-but-unplaced (logged) rather than rejected (§12.2.3) |
 | Credential configuration display and claims | Implemented | Read from the `credential_metadata` object of §12.2.4 for the consent dialog |
 | Authorization server selection | Implemented | The offer's `authorization_server` grant parameter selects the entry to use, and a value matching no entry of `authorization_servers` stops the flow (§12.2.4) |
 | Credential Issuer metadata publication | Implemented | Wallet serves `/.well-known/openid-credential-issuer` as unsigned `application/json` by default and as signed `application/jwt` to a client that asks for it (§12.2.2), with `issuer_info` / `registrar_dataset` |
