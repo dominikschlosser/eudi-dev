@@ -334,14 +334,3 @@ func followWalletLogs(ctx context.Context, out io.Writer, store *wallet.WalletSt
 	}
 }
 
-func walletLogEntriesAfter(entries []wallet.LogEntry, after time.Time) []wallet.LogEntry {
-	if after.IsZero() {
-		return entries
-	}
-	for i, entry := range entries {
-		if entry.Time.After(after) {
-			return entries[i:]
-		}
-	}
-	return nil
-}

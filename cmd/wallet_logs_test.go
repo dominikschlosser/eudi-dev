@@ -185,19 +185,3 @@ func TestWalletLogsCommandClean(t *testing.T) {
 	}
 }
 
-func TestWalletLogEntriesAfter(t *testing.T) {
-	first := time.Date(2026, 6, 5, 10, 15, 30, 0, time.UTC)
-	second := first.Add(time.Second)
-	entries := []wallet.LogEntry{
-		{Time: first, Action: "presentation", Detail: "old", Success: true},
-		{Time: second, Action: "presentation", Detail: "new", Success: true},
-	}
-
-	got := walletLogEntriesAfter(entries, first)
-	if len(got) != 1 {
-		t.Fatalf("expected 1 new entry, got %d", len(got))
-	}
-	if got[0].Detail != "new" {
-		t.Fatalf("expected new entry, got %q", got[0].Detail)
-	}
-}
