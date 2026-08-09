@@ -184,4 +184,3 @@ func TestWalletLogsCommandClean(t *testing.T) {
 		t.Fatalf("expected logs clean to remove all entries, got %d", got)
 	}
 }
-

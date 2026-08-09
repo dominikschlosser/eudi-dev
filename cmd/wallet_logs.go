@@ -333,4 +333,3 @@ func followWalletLogs(ctx context.Context, out io.Writer, store *wallet.WalletSt
 		}
 	}
 }
-
