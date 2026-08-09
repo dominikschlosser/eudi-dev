@@ -20,9 +20,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1421,6 +1423,25 @@ func TestClassifyVPAuthRequestWithRequestURIMethod(t *testing.T) {
 	if e.Decoded["request_uri_method"] != "post" {
 		t.Errorf("expected request_uri_method=post, got %v", e.Decoded["request_uri_method"])
 	}
+}
+
+func TestStatefulClassifierConcurrentClassifyIsRaceFree(t *testing.T) {
+	c := NewStatefulClassifier()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			c.Classify(&TrafficEntry{
+				Method:       "GET",
+				URL:          fmt.Sprintf("https://issuer.example/%d/.well-known/openid-credential-issuer", i),
+				StatusCode:   200,
+				ResponseBody: `{"credential_endpoint":"https://issuer.example/cred"}`,
+			})
+		}(i)
+	}
+	wg.Wait()
 }
 
 func TestStatefulClassifierLearnsVCINonceEndpointFromMetadata(t *testing.T) {

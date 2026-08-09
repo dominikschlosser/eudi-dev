@@ -47,22 +47,29 @@ func NewStatefulClassifier() *StatefulClassifier {
 }
 
 func (c *StatefulClassifier) Classify(entry *TrafficEntry) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	class := classifyEntry(entry)
 	if class == ClassUnknown {
-		if learned, ok := c.endpoints[endpointKeyFromRawURL(entry.URL)]; ok {
+		c.mu.Lock()
+		learned, ok := c.endpoints[endpointKeyFromRawURL(entry.URL)]
+		c.mu.Unlock()
+		if ok {
 			class = learned
 		}
 	}
 
 	entry.Class = class
 	entry.ClassLabel = entry.Class.Label()
+	// decodeEntry runs credential validation (disk and, for metadata-keyed
+	// tokens, a network fetch), so keep it off the classifier mutex: holding
+	// the lock here would serialize every proxied exchange behind one slow
+	// issuer-metadata lookup. The endpoints map is only ever touched under the
+	// lock, above and in learn.
 	entry.Decoded = decodeEntry(entry)
 	entry.Credentials, entry.CredentialLabels = extractCredentials(entry)
 
+	c.mu.Lock()
 	c.learn(entry)
+	c.mu.Unlock()
 }
 
 func classifyEntry(e *TrafficEntry) TrafficClass {
