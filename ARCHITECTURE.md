@@ -67,6 +67,7 @@ Described in domain terms rather than function names, which go stale.
 | [0006](docs/adr/0006-one-binary-plays-wallet-issuer-verifier-and-ca.md) | One binary plays wallet, issuer, verifier and CA |
 | [0007](docs/adr/0007-everything-lives-under-internal.md) | Everything lives under `internal/` |
 | [0008](docs/adr/0008-jws-verification-uses-go-jose-jwe-stays-hand-written.md) | JWS verification uses go-jose, JWE stays hand-written |
+| [0009](docs/adr/0009-signatures-are-verified-but-not-anchored-to-a-pre-registered-trust-list.md) | Signatures are verified but not anchored to a pre-registered trust list |
 
 ## Related
 
