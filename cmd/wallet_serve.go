@@ -208,7 +208,10 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 		}
 		switch flag.Value.Type() {
 		case "bool":
-			args = append(args, "--"+flag.Name)
+			// --name=value, not a bare --name: an explicitly-set false (e.g.
+			// --demo --haip=false) must reach the child as false, not be
+			// silently flipped back to true.
+			args = append(args, "--"+flag.Name+"="+flag.Value.String())
 		case "stringSlice", "stringArray":
 			values, getErr := flags.GetStringSlice(flag.Name)
 			if getErr != nil {

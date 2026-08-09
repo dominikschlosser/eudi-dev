@@ -562,7 +562,7 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 
 	want := []string{
 		"--wallet-dir", "/tmp/isolated-wallet",
-		"--auto-accept",
+		"--auto-accept=true",
 		"--base-url", "http://localhost:9123",
 		"--credential", "first.json",
 		"--credential", "second.json",
@@ -573,7 +573,7 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	}
 }
 
-func TestSerializeWalletServeArgs_BoolFalseOmitted(t *testing.T) {
+func TestSerializeWalletServeArgs_UnchangedBoolOmitted(t *testing.T) {
 	cmd := &cobra.Command{Use: "serve"}
 	flags := cmd.Flags()
 	flags.Bool("auto-accept", false, "")
@@ -586,6 +586,24 @@ func TestSerializeWalletServeArgs_BoolFalseOmitted(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("serializeWalletServeArgs() = %#v, want empty", got)
+	}
+}
+
+func TestSerializeWalletServeArgs_ExplicitBoolFalsePreserved(t *testing.T) {
+	cmd := &cobra.Command{Use: "serve"}
+	flags := cmd.Flags()
+	flags.Bool("haip", true, "")
+	if err := flags.Set("haip", "false"); err != nil {
+		t.Fatalf("set haip: %v", err)
+	}
+
+	got, err := serializeWalletServeArgs(cmd)
+	if err != nil {
+		t.Fatalf("serializeWalletServeArgs() error = %v", err)
+	}
+	want := []string{"--haip=false"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("serializeWalletServeArgs() = %#v, want %#v", got, want)
 	}
 }
 
