@@ -33,13 +33,19 @@ go test -v -count=1 ./internal/wallet/...
 
 ### E2E Tests
 
-E2E tests use Playwright and live against a running wallet server:
+E2E tests use Playwright. The Playwright `webServer` builds and starts the
+binary's `serve` command, so the suite drives a live server:
 
 ```bash
 cd e2e
 npm install
+npx playwright install --with-deps chromium   # download the browser (npm install does not)
 npx playwright test
 ```
+
+Some specs (`docker.spec.js`) build and run a Docker image, so they need a
+running Docker daemon; skip them with `--grep-invert docker` if Docker is
+unavailable.
 
 ## Code Style
 

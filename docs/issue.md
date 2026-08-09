@@ -43,6 +43,7 @@ eudi issue mdoc  | eudi decode
 |------|---------|-------------|
 | `--wallet-dir` | `~/.eudi-dev/wallet/` | Wallet storage directory used by `--wallet` |
 | `--templates-dir` | `<wallet-dir>/templates/` | Credential template directory used by `--template` and `--save-template` |
+| `--remote` | — | With `--wallet`: issue on the remote wallet server at this URL (`local` forces the local store) |
 
 ### `issue sdjwt`
 
