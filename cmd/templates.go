@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -201,7 +202,7 @@ var templatesImportCmd = &cobra.Command{
 			tpl.Name = templateImportName
 		}
 		if strings.TrimSpace(tpl.Name) == "" && !strings.HasPrefix(strings.TrimSpace(arg), "{") && arg != "-" {
-			base := arg[strings.LastIndex(arg, "/")+1:]
+			base := filepath.Base(arg)
 			tpl.Name = strings.TrimSuffix(strings.TrimSuffix(base, ".json"), ".template")
 		}
 

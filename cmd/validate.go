@@ -273,8 +273,10 @@ func printLeafSourceNote(source string, opts output.Options) {
 	}
 }
 
-// verifyWithBestKey tries verifying with x5cKey first (if available), then
-// falls back to iterating through pubKeys. Returns the best result found.
+// verifyWithBestKey verifies with x5cKey when the credential carries one: an
+// embedded certificate is what the issuer bound the token to, so it takes
+// precedence and the explicit pubKeys are not consulted. Only when there is no
+// x5cKey does it iterate pubKeys and return the best result found.
 func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKey, verify func(crypto.PublicKey) (T, bool)) T {
 	if x5cKey != nil {
 		result, _ := verify(x5cKey)

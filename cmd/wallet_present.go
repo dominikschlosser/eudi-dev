@@ -350,11 +350,10 @@ func runningWalletServerBaseURLs(opts dispatchOID4Opts) []string {
 }
 
 func registeredWalletListenerBaseURL() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	_ = home
+	// config.BaseDir resolves the state directory itself (EUDI_DEV_HOME, then
+	// the home directory), so there is no need to look up the home directory
+	// here; doing so aborted the lookup when EUDI_DEV_HOME was set but no home
+	// directory was resolvable.
 	raw, err := os.ReadFile(filepath.Join(config.BaseDir(), "url-handler.sh"))
 	if err != nil {
 		return ""
