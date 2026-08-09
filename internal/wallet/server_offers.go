@@ -267,40 +267,17 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	s.wallet.ClearLastError()
 
 	reqServer := s
-	if body.HAIP != nil || body.Mode != "" {
-		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
-			RequireHAIP:    body.HAIP,
-			ValidationMode: body.Mode,
-		})
+	opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{
+		RequireHAIP:    body.HAIP,
+		ValidationMode: body.Mode,
+	})
+	if opts.hasConformanceOverride() {
+		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		// Field by field rather than a struct copy: Server carries a mutex.
-		clone := &Server{
-			wallet:                reqWallet,
-			deferredIssuanceOwner: s.wallet,
-			port:                  s.port,
-			mux:                   s.mux,
-			onSave:                s.onSave,
-			onConsentRequest:      s.onConsentRequest,
-			onUIRequest:           s.onUIRequest,
-			logFunc:               s.logFunc,
-			httpSrv:               s.httpSrv,
-			issuerSrv:             s.issuerSrv,
-			issuerTLSCert:         s.issuerTLSCert,
-			issuerPort:            s.issuerPort,
-			store:                 s.store,
-			demo:                  s.demo,
-			version:               s.version,
-			imprintHTML:           s.imprintHTML,
-		}
-		clone.parseOpts = oid4vc.ParseOptions{
-			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
-				clone.log(format, args...)
-			}),
-		}
-		reqServer = clone
+		reqServer = s.cloneWithWallet(reqWallet)
 	}
 
 	reqServer.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)

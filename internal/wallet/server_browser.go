@@ -52,11 +52,12 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 	reqServer := s
 	haipHeader := parseHAIPHeader(r.Header.Get("X-OID4VC-Dev-HAIP"))
-	if haipHeader != nil || r.Header.Get("X-OID4VC-Dev-Mode") != "" {
-		reqWallet, err := cloneWalletForPresentation(s.wallet, presentationRequestOptions{
-			RequireHAIP:    haipHeader,
-			ValidationMode: r.Header.Get("X-OID4VC-Dev-Mode"),
-		})
+	opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{
+		RequireHAIP:    haipHeader,
+		ValidationMode: r.Header.Get("X-OID4VC-Dev-Mode"),
+	})
+	if opts.hasConformanceOverride() {
+		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
