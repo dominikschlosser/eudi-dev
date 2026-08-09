@@ -29,7 +29,12 @@ import (
 type Subprocess struct {
 	cmd     *exec.Cmd
 	scanner *OutputScanner
-	done    chan error
+	// done is closed once the process has exited; err holds the exit status
+	// and is written before the close, so any reader that waits on done
+	// observes it. A closed channel unblocks every waiter, so Wait and Done can
+	// be consumed by more than one goroutine without one stealing the result.
+	done chan struct{}
+	err  error
 }
 
 // StartSubprocess launches args[0] with args[1:] as a child process.
@@ -60,7 +65,7 @@ func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error)
 	sub := &Subprocess{
 		cmd:     cmd,
 		scanner: scanner,
-		done:    make(chan error, 1),
+		done:    make(chan struct{}),
 	}
 
 	// Scan both stdout and stderr
@@ -68,7 +73,8 @@ func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error)
 	go sub.scanOutput(merged)
 
 	go func() {
-		sub.done <- cmd.Wait()
+		sub.err = cmd.Wait()
+		close(sub.done)
 	}()
 
 	return sub, nil
@@ -88,12 +94,15 @@ func (s *Subprocess) scanOutput(r io.Reader) {
 	}
 }
 
-// Wait blocks until the subprocess exits and returns its error.
+// Wait blocks until the subprocess exits and returns its error. It is safe to
+// call from more than one goroutine.
 func (s *Subprocess) Wait() error {
-	return <-s.done
+	<-s.done
+	return s.err
 }
 
-// Done returns a channel that receives the exit error when the process ends.
-func (s *Subprocess) Done() <-chan error {
+// Done returns a channel that is closed when the process exits. Read the exit
+// error with Wait afterwards.
+func (s *Subprocess) Done() <-chan struct{} {
 	return s.done
 }

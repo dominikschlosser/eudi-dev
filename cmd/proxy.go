@@ -176,7 +176,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	// When subprocess exits on its own, just log it (proxy keeps running).
 	if sub != nil {
 		go func() {
-			if err := <-sub.Done(); err != nil {
+			if err := sub.Wait(); err != nil {
 				fmt.Printf("\nService exited: %v\n", err)
 			} else {
 				fmt.Println("\nService exited")
@@ -210,6 +210,16 @@ func runProxy(cmd *cobra.Command, args []string) error {
 			_ = sub.Wait()
 		}
 		return nil
+	}
+	// The proxy never came up (e.g. the port was busy). Don't leave the
+	// launched service orphaned: it runs in its own process group and would
+	// otherwise survive this command with no proxy in front of it.
+	if sub != nil {
+		sub.Stop()
+		_ = sub.Wait()
+	}
+	if dashboardServer != nil {
+		dashboardServer.Close()
 	}
 	return err
 }
