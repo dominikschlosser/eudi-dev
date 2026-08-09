@@ -59,7 +59,7 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 		return nil, err
 	}
 	if url != "" {
-		return remote.NewClient(url), nil
+		return remoteFlowClient(url), nil
 	}
 	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") || templatesDir != "" {
 		return nil, nil
@@ -75,9 +75,19 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 		if notice := incompatibilityNotice(inst.URL, inst.Version); notice != "" {
 			fmt.Fprintln(os.Stderr, notice)
 		}
-		return remote.NewClient(inst.URL), nil
+		return remoteFlowClient(inst.URL), nil
 	}
 	return nil, nil
+}
+
+// remoteFlowClient builds a client for a remote wallet and attaches the CLI's
+// conformance override (if any) as X-Eudi-Dev-* headers, so a presentation or
+// offer routed to a wallet the CLI cannot reconfigure is still held to the
+// override the user chose. An unset override adds no headers.
+func remoteFlowClient(url string) *remote.Client {
+	c := remote.NewClient(url)
+	c.Headers = loadConformancePref().headers()
+	return c
 }
 
 func instancesUseCmd() *cobra.Command {

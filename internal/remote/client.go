@@ -36,6 +36,10 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+	// Headers are sent on every request. The CLI uses them to carry its
+	// conformance override (X-Eudi-Dev-*) to a remote wallet whose settings it
+	// cannot change, so the remote honors the override per-request.
+	Headers map[string]string
 }
 
 // NewClient creates a client for the wallet server at baseURL.
@@ -78,6 +82,9 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range c.Headers {
+		req.Header.Set(k, v)
 	}
 
 	client := c.HTTP

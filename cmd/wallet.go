@@ -76,6 +76,7 @@ func init() {
 	walletCmd.AddCommand(walletTLSCertCmd())
 	walletCmd.AddCommand(walletInfoCmd())
 	walletCmd.AddCommand(walletInstancesCmd())
+	walletCmd.AddCommand(walletConformanceCmd())
 
 	// Deprecated aliases (hidden from help)
 	presentAlias := &cobra.Command{
