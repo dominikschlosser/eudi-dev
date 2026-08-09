@@ -255,12 +255,11 @@ func TestBuildIssueAttestationSpec_AutoNonPIDDefaults(t *testing.T) {
 	issueIssuanceServiceName = ""
 	issueRevocationServiceName = ""
 
-	spec, err := buildIssueAttestationSpec(&wallet.StoredCredential{
-		Format: "dc+sd-jwt",
-		VCT:    "urn:test:employee:1",
-	})
+	spec := issueTrustSpecFromFlags()
+	spec.Format, spec.VCT = "dc+sd-jwt", "urn:test:employee:1"
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
 	if err != nil {
-		t.Fatalf("buildIssueAttestationSpec: %v", err)
+		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
 	if spec.TrustListType != "http://uri.etsi.org/19602/LoTEType/local" {
 		t.Fatalf("expected local trust-list type, got %s", spec.TrustListType)
@@ -283,12 +282,11 @@ func TestBuildIssueAttestationSpec_RespectsExplicitOverrides(t *testing.T) {
 	issueIssuanceServiceName = "Custom Issuance"
 	issueRevocationServiceName = "Custom Revocation"
 
-	spec, err := buildIssueAttestationSpec(&wallet.StoredCredential{
-		Format:  "mso_mdoc",
-		DocType: "org.iso.23220.photoid.1",
-	})
+	spec := issueTrustSpecFromFlags()
+	spec.Format, spec.DocType = "mso_mdoc", "org.iso.23220.photoid.1"
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
 	if err != nil {
-		t.Fatalf("buildIssueAttestationSpec: %v", err)
+		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
 	if spec.TrustListType != "http://example.com/LoTEType/Custom" {
 		t.Fatalf("expected custom trust-list type, got %s", spec.TrustListType)

@@ -210,9 +210,6 @@ func runIssueSDJWT(cmd *cobra.Command, args []string) error {
 	if err := saveIssueTemplate("sdjwt", claims, alwaysDisclosed); err != nil {
 		return err
 	}
-	if issueToWallet {
-		return importToWallet(result)
-	}
 	return nil
 }
 
@@ -265,9 +262,6 @@ func runIssueJWT(cmd *cobra.Command, args []string) error {
 
 	if err := saveIssueTemplate("jwt", claims, nil); err != nil {
 		return err
-	}
-	if issueToWallet {
-		return importToWallet(result)
 	}
 	return nil
 }
@@ -324,9 +318,6 @@ func runIssueMDOC(cmd *cobra.Command, args []string) error {
 
 	if err := saveIssueTemplate("mdoc", claims, nil); err != nil {
 		return err
-	}
-	if issueToWallet {
-		return importToWallet(result)
 	}
 	return nil
 }
@@ -662,49 +653,6 @@ func issueTrustSpecFromFlags() wallet.IssuedAttestationSpec {
 		IssuanceServiceName:         issueIssuanceServiceName,
 		RevocationServiceName:       issueRevocationServiceName,
 	}
-}
-
-func buildIssueAttestationSpecForType(format, vct, docType string) (wallet.IssuedAttestationSpec, error) {
-	spec := issueTrustSpecFromFlags()
-	spec.Format = format
-	spec.VCT = vct
-	spec.DocType = docType
-	return wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
-}
-
-func buildIssueAttestationSpec(imported *wallet.StoredCredential) (wallet.IssuedAttestationSpec, error) {
-	return buildIssueAttestationSpecForType(imported.Format, imported.VCT, imported.DocType)
-}
-
-func importToWallet(raw string) error {
-	store := wallet.NewWalletStore(walletDir)
-	w, err := store.LoadOrCreate()
-	if err != nil {
-		return fmt.Errorf("loading wallet: %w", err)
-	}
-
-	imported, err := w.ImportCredential(raw)
-	if err != nil {
-		return fmt.Errorf("importing to wallet: %w", err)
-	}
-	spec, err := buildIssueAttestationSpec(imported)
-	if err != nil {
-		return fmt.Errorf("building issued-attestation metadata: %w", err)
-	}
-	if err := w.RegisterIssuedAttestation(spec); err != nil {
-		return fmt.Errorf("registering issued-attestation metadata: %w", err)
-	}
-
-	if err := store.Save(w); err != nil {
-		return fmt.Errorf("saving wallet: %w", err)
-	}
-
-	label := imported.VCT
-	if label == "" {
-		label = imported.DocType
-	}
-	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", imported.Format, label)
-	return nil
 }
 
 func parseNBF(val string) (*time.Time, error) {
