@@ -63,7 +63,8 @@ func init() {
 	walletCmd.AddCommand(walletImportCmd())
 	walletCmd.AddCommand(walletRemoveCmd())
 	walletCmd.AddCommand(walletGeneratePIDCmd())
-	walletCmd.AddCommand(walletAcceptCmd())
+	acceptCmd := walletAcceptCmd()
+	walletCmd.AddCommand(acceptCmd)
 	walletCmd.AddCommand(walletScanCmd())
 	walletCmd.AddCommand(walletLogsCmd())
 	walletCmd.AddCommand(walletDeferredCmd())
@@ -83,13 +84,12 @@ func init() {
 		Hidden:     true,
 		Deprecated: "use 'wallet accept' instead",
 		Args:       cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Delegate to accept
-			acceptCmd, _, _ := walletCmd.Find([]string{"accept"})
-			acceptCmd.SetArgs(args)
-			return acceptCmd.RunE(acceptCmd, args)
-		},
+		// Share accept's flag set and RunE so cobra parses --auto-accept,
+		// --tx-code and the rest for the present invocation too, rather than
+		// running accept with its flags left at their defaults.
+		RunE: acceptCmd.RunE,
 	}
+	presentAlias.Flags().AddFlagSet(acceptCmd.Flags())
 	walletCmd.AddCommand(presentAlias)
 
 	listenAlias := &cobra.Command{

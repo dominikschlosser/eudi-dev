@@ -573,6 +573,18 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	}
 }
 
+func TestPresentAliasForwardsAcceptFlags(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"wallet", "present"})
+	if err != nil {
+		t.Fatalf("finding wallet present: %v", err)
+	}
+	for _, name := range []string{"auto-accept", "tx-code", "haip", "port", "session-transcript"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Errorf("present alias is missing forwarded accept flag --%s", name)
+		}
+	}
+}
+
 func TestSerializeWalletServeArgs_ForwardsTemplatesDir(t *testing.T) {
 	parent := &cobra.Command{Use: "wallet"}
 	parent.PersistentFlags().String("wallet-dir", "", "")
