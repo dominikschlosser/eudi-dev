@@ -25,7 +25,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
-// parseHAIPHeader reads the X-OID4VC-Dev-HAIP override. An absent or
+// parseHAIPHeader reads the X-Eudi-Dev-HAIP override. An absent or
 // unparseable header returns nil, which inherits the server's own setting;
 // "false" is an explicit opt out, so a caller can still be exercised against
 // a wallet that enforces HAIP globally.
@@ -51,10 +51,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 
 	reqServer := s
-	haipHeader := parseHAIPHeader(r.Header.Get("X-OID4VC-Dev-HAIP"))
+	haipHeader := parseHAIPHeader(r.Header.Get("X-Eudi-Dev-HAIP"))
 	opts := conformanceOverrideFromRequest(r).applyTo(presentationRequestOptions{
 		RequireHAIP:    haipHeader,
-		ValidationMode: r.Header.Get("X-OID4VC-Dev-Mode"),
+		ValidationMode: r.Header.Get("X-Eudi-Dev-Mode"),
 	})
 	if opts.hasConformanceOverride() {
 		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)

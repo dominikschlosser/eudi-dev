@@ -637,7 +637,7 @@ curl -X POST http://localhost:8085/api/presentations \
   -d '{"uri": "openid4vp://authorize?...", "haip": false}'
 ```
 
-Omitting `haip` inherits the server setting. `POST /api/offers` takes the same two fields, and the Browser API endpoint takes the override as `X-OID4VC-Dev-HAIP: true|false`.
+Omitting `haip` inherits the server setting. `POST /api/offers` takes the same two fields, and the Browser API endpoint takes the override as `X-Eudi-Dev-HAIP: true|false`.
 
 The wallet UI shows the active level under **Conformance** in the header, and `eudi wallet config` (alias of `wallet info`) reports the same fields for a local or remote wallet.
 

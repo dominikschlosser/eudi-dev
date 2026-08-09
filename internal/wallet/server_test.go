@@ -856,8 +856,8 @@ func TestBrowserPresentationAPI_UnsignedRequestIgnoresExpectedOrigins(t *testing
 	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://wallet.example")
-	req.Header.Set("X-OID4VC-Dev-Mode", "strict")
-	req.Header.Set("X-OID4VC-Dev-HAIP", "true")
+	req.Header.Set("X-Eudi-Dev-Mode", "strict")
+	req.Header.Set("X-Eudi-Dev-HAIP", "true")
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, req)
 
