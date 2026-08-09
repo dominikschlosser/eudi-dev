@@ -188,6 +188,14 @@ type DeferredAttempt struct {
 // issuer still wants more time, and the record is dropped when the issuer says
 // something that will not improve by asking again.
 func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAttempt {
+	if !s.beginDeferredCollection(pending.ID) {
+		// Another collection for this record is already running. Letting a
+		// second one through would ask the issuer twice and import the
+		// credential twice, since ImportCredential dedupes by fresh UUID.
+		return DeferredAttempt{Pending: true, Reason: "a collection for this credential is already in progress"}
+	}
+	defer s.endDeferredCollection(pending.ID)
+
 	proofKeys, err := pending.ProofKeys()
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("its proof keys could not be read back: %v", err))
@@ -364,6 +372,30 @@ func (s *Server) abandonDeferred(pending DeferredIssuance, reason string) Deferr
 	s.persistWallet()
 	s.wallet.NotifyStateChanged()
 	return DeferredAttempt{Abandoned: true, Reason: reason}
+}
+
+// beginDeferredCollection marks a deferred issuance as being collected and
+// reports whether the caller won the right to collect it. A false return means
+// another collection for the same id is already in flight.
+func (s *Server) beginDeferredCollection(id string) bool {
+	s.deferredMu.Lock()
+	defer s.deferredMu.Unlock()
+	if s.deferredInFlight == nil {
+		s.deferredInFlight = make(map[string]bool)
+	}
+	if s.deferredInFlight[id] {
+		return false
+	}
+	s.deferredInFlight[id] = true
+	return true
+}
+
+// endDeferredCollection releases the in-flight marker set by
+// beginDeferredCollection.
+func (s *Server) endDeferredCollection(id string) {
+	s.deferredMu.Lock()
+	defer s.deferredMu.Unlock()
+	delete(s.deferredInFlight, id)
 }
 
 // CollectDeferredNow asks the issuer for a deferred credential right away,

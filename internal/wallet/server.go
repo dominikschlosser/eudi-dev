@@ -54,6 +54,11 @@ type Server struct {
 	// renewalBackoff holds off retrying a credential whose renewal failed.
 	renewalBackoff map[string]time.Time
 	renewalMu      sync.Mutex
+	// deferredInFlight guards a single deferred issuance from being collected
+	// twice at once (the background poller racing an explicit collect, or two
+	// collects), which would send two requests and import the credential twice.
+	deferredInFlight map[string]bool
+	deferredMu       sync.Mutex
 	// pendingOffers holds offers paused for an interactive sign-in, so the
 	// caller that started one can read how it ended.
 	pendingOffers map[string]*pendingOffer

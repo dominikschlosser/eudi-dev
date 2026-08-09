@@ -87,6 +87,48 @@ func pendingFor(t *testing.T, w *Wallet, endpoint string, intervalSeconds int) *
 	return pending
 }
 
+func TestCollectDeferredNow_SkipsWhenCollectionInFlight(t *testing.T) {
+	w := generateTestWallet(t)
+	server := NewServer(w, 0, func() {})
+	pending := pendingFor(t, w, "https://issuer.example/deferred", 1)
+	w.AddDeferredIssuance(pending)
+
+	// Stand in for a collection already running for this record.
+	if !server.beginDeferredCollection(pending.ID) {
+		t.Fatal("expected to acquire the in-flight guard")
+	}
+	defer server.endDeferredCollection(pending.ID)
+
+	attempt, ok := server.CollectDeferredNow(pending.ID)
+	if !ok {
+		t.Fatal("CollectDeferredNow should still find the record")
+	}
+	if !attempt.Pending {
+		t.Fatalf("a collect that races an in-flight one should be skipped as pending, got %+v", attempt)
+	}
+	// The bogus issuer URL is never contacted, so nothing is imported.
+	if got := len(w.GetCredentials()); got != 0 {
+		t.Fatalf("no credential should be imported while a collection is in flight, got %d", got)
+	}
+}
+
+func TestDeferredCollectionInFlightGuard(t *testing.T) {
+	s := &Server{}
+	if !s.beginDeferredCollection("id-1") {
+		t.Fatal("first begin should win")
+	}
+	if s.beginDeferredCollection("id-1") {
+		t.Fatal("second begin for the same id must not win while in flight")
+	}
+	if !s.beginDeferredCollection("id-2") {
+		t.Fatal("a different id should be independent")
+	}
+	s.endDeferredCollection("id-1")
+	if !s.beginDeferredCollection("id-1") {
+		t.Fatal("after release the id can be collected again")
+	}
+}
+
 // TestDeferredPoller_CollectsWhenReady covers the whole point of the poller:
 // a credential the issuer was not ready to hand over lands in the wallet
 // later, without anyone asking again.
