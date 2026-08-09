@@ -648,12 +648,12 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if !w.AutoAccept && !opts.Demo {
 		srv.SetOnUIRequest(func() {
 			url := fmt.Sprintf("http://localhost:%d/?focus=overview", opts.Port)
-			if hasDesktopSession() {
+			if !noOpen && hasDesktopSession() {
 				fmt.Printf("  Opening wallet UI: %s\n", url)
+				openBrowser(url)
 			} else {
 				fmt.Printf("  Waiting for consent at: %s\n", url)
 			}
-			openBrowser(url)
 		})
 	}
 

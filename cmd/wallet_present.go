@@ -471,7 +471,9 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 	dim.Println("───────────────────────────────────────")
 	fmt.Println("Waiting for consent decision...")
 
-	openBrowser(addr)
+	if !noOpen {
+		openBrowser(addr)
+	}
 
 	select {
 	case result := <-consentReq.ResultCh:
