@@ -227,10 +227,10 @@ func serializeWalletServeArgs(cmd *cobra.Command) ([]string, error) {
 	}
 
 	visitChangedPersistentFlags(cmd, func(flag *pflag.Flag) {
-		if flag.Name != "wallet-dir" && flag.Name != "mode" {
-			return
+		switch flag.Name {
+		case "wallet-dir", "mode", "templates-dir":
+			args = append(args, "--"+flag.Name, flag.Value.String())
 		}
-		args = append(args, "--"+flag.Name, flag.Value.String())
 	})
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		appendFlag(cmd.Flags(), flag)

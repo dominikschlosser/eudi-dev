@@ -573,6 +573,27 @@ func TestSerializeWalletServeArgs(t *testing.T) {
 	}
 }
 
+func TestSerializeWalletServeArgs_ForwardsTemplatesDir(t *testing.T) {
+	parent := &cobra.Command{Use: "wallet"}
+	parent.PersistentFlags().String("wallet-dir", "", "")
+	parent.PersistentFlags().String("templates-dir", "", "")
+	cmd := &cobra.Command{Use: "serve"}
+	parent.AddCommand(cmd)
+	cmd.Flags().Int("port", config.DefaultWalletPort, "")
+
+	if err := parent.PersistentFlags().Set("templates-dir", "/custom/templates"); err != nil {
+		t.Fatalf("set templates-dir: %v", err)
+	}
+
+	got, err := serializeWalletServeArgs(cmd)
+	if err != nil {
+		t.Fatalf("serializeWalletServeArgs() error = %v", err)
+	}
+	if !argPairPresent(got, "--templates-dir", "/custom/templates") {
+		t.Fatalf("serializeWalletServeArgs() = %#v, want it to forward --templates-dir", got)
+	}
+}
+
 func TestSerializeWalletServeArgs_UnchangedBoolOmitted(t *testing.T) {
 	cmd := &cobra.Command{Use: "serve"}
 	flags := cmd.Flags()
