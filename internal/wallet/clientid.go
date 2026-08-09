@@ -310,6 +310,17 @@ func ValidateRequestObject(clientID string, reqObj *oid4vc.RequestObjectJWT) str
 
 	alg := jsonutil.GetString(reqObj.Header, "alg")
 	typ := jsonutil.GetString(reqObj.Header, "typ")
+
+	// An unsigned ("alg": "none") Request Object satisfies none of the prefixes
+	// that OID4VP 1.0 requires to be signed. Catch it here, where the client_id
+	// is in scope: VerifyRequestObjectSignature has nothing to verify for
+	// alg=none, and without this a forged unsigned request against a
+	// signing-required prefix would raise no finding at all (and so pass strict
+	// mode). redirect_uri:, which is allowed to be unsigned, is not in the set.
+	if alg == "none" && prefixRequiresSigning(clientID) {
+		return "client_id prefix requires a signed Request Object but the Request Object is unsigned (alg \"none\")"
+	}
+
 	if typ == "" {
 		if alg == "none" {
 			return ""

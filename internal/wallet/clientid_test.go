@@ -234,6 +234,18 @@ func TestValidateRequestObject(t *testing.T) {
 			reqObj:    nil,
 			wantEmpty: true,
 		},
+		{
+			name:     "unsigned request object with signing prefix",
+			clientID: "x509_hash:abc",
+			reqObj:   &oid4vc.RequestObjectJWT{Header: map[string]any{"alg": "none"}},
+			wantMsg:  "requires a signed Request Object",
+		},
+		{
+			name:      "unsigned request object with redirect_uri prefix",
+			clientID:  "redirect_uri:https://verifier.example/cb",
+			reqObj:    &oid4vc.RequestObjectJWT{Header: map[string]any{"alg": "none"}},
+			wantEmpty: true,
+		},
 	}
 
 	for _, tt := range tests {
