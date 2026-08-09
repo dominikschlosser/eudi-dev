@@ -1626,7 +1626,11 @@
   // Effective = the visitor's cookie override, falling back to the wallet's
   // configured default for anything they have not changed.
   function effectiveConformance() {
-    const c = readConfCookie();
+    // On the shared demo the override is per-browser and lives in the cookie.
+    // On a local wallet it is the wallet's own setting (from /api/config), which
+    // the change handler flips server-side so every flow sees it, so the cookie
+    // is not consulted there.
+    const c = demoMode ? readConfCookie() : {};
     return {
       mode: c.mode || (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug'),
       haip: typeof c.haip === 'boolean' ? c.haip : !!conformanceDefaults.require_haip,
@@ -1644,24 +1648,63 @@
     if (enc) enc.checked = eff.encrypted;
   }
 
-  // Store only what differs from the wallet's default, so an untouched setting
-  // still follows the server and clearing everything drops the cookie entirely.
-  function onConformanceChange() {
+  function currentControlValues() {
     const mode = document.getElementById('conf-mode-select');
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
-    const o = {};
-    if (mode && mode.value !== (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug')) o.mode = mode.value;
-    if (haip && haip.checked !== !!conformanceDefaults.require_haip) o.haip = haip.checked;
-    if (enc && enc.checked !== !!conformanceDefaults.require_encrypted_request) o.encrypted = enc.checked;
-    writeConfCookie(o);
+    return {
+      mode: mode ? mode.value : undefined,
+      haip: haip ? haip.checked : undefined,
+      encrypted: enc ? enc.checked : undefined,
+    };
+  }
+
+  async function setServerConformance(values) {
+    try {
+      const resp = await fetch('/api/config/conformance', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
+      if (resp.ok) conformanceDefaults = Object.assign({}, conformanceDefaults, await resp.json());
+    } catch (e) { /* leave the controls as the user set them */ }
+    applyConformanceToControls();
     renderConformanceExplainer();
   }
 
-  function resetConformance() {
+  function onConformanceChange() {
+    const v = currentControlValues();
+    if (demoMode) {
+      // Store only what differs from the wallet's default, so an untouched
+      // setting still follows the server and clearing everything drops the
+      // cookie entirely.
+      const o = {};
+      if (v.mode !== (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug')) o.mode = v.mode;
+      if (v.haip !== !!conformanceDefaults.require_haip) o.haip = v.haip;
+      if (v.encrypted !== !!conformanceDefaults.require_encrypted_request) o.encrypted = v.encrypted;
+      writeConfCookie(o);
+      renderConformanceExplainer();
+      return;
+    }
+    // Local wallet: flip the wallet's own setting so the macOS handler and CLI
+    // (which hit this same wallet) honor it too. Drop any stale cookie so the
+    // server setting is the single source of truth.
     writeConfCookie(null);
-    applyConformanceToControls();
-    renderConformanceExplainer();
+    setServerConformance(v);
+  }
+
+  function resetConformance() {
+    if (demoMode) {
+      writeConfCookie(null);
+      applyConformanceToControls();
+      renderConformanceExplainer();
+      return;
+    }
+    writeConfCookie(null);
+    fetch('/api/config/conformance', { method: 'DELETE' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => { if (c) conformanceDefaults = Object.assign({}, conformanceDefaults, c); applyConformanceToControls(); renderConformanceExplainer(); })
+      .catch(() => { applyConformanceToControls(); renderConformanceExplainer(); });
   }
 
   function renderConformanceExplainer() {
@@ -1696,6 +1739,12 @@
     set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
     set('conf-format', config.preferred_format || 'no preference',
       config.preferred_format ? 'neutral' : 'off');
+    const note = document.getElementById('conf-override-note');
+    if (note) {
+      note.textContent = demoMode
+        ? 'These settings are yours alone: they are kept in a cookie in this browser and applied to requests from it. They survive demo resets. Reset returns to this wallet’s defaults.'
+        : 'These change this wallet’s settings, so every flow honors them: this UI, scanned QR codes and openid4vp / credential-offer links opened through the CLI or the system handler. Reset returns to the values the wallet started with.';
+    }
     renderConformanceExplainer();
   }
 

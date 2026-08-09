@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -85,5 +86,62 @@ func TestConformanceOverrideApplyToPrecedence(t *testing.T) {
 
 	if (presentationRequestOptions{}).hasConformanceOverride() {
 		t.Error("expected empty options to report no conformance override")
+	}
+}
+
+func TestHandleSetAndResetConformance(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeDebug
+	w.RequireHAIP = false
+	w.RequireEncryptedRequest = false
+	s := NewServer(w, 0, nil)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"mode":"strict","haip":true,"encrypted":true}`))
+	putRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d: %s", putRec.Code, putRec.Body.String())
+	}
+	if s.wallet.ValidationMode != ValidationModeStrict {
+		t.Errorf("mode = %q, want strict", s.wallet.ValidationMode)
+	}
+	if !s.wallet.RequireHAIP {
+		t.Error("HAIP was not enabled")
+	}
+	if !s.wallet.RequireEncryptedRequest {
+		t.Error("encrypted requests were not enabled")
+	}
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/config/conformance", nil)
+	delRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("DELETE status = %d", delRec.Code)
+	}
+	if s.wallet.ValidationMode != ValidationModeDebug {
+		t.Errorf("mode after reset = %q, want the startup default debug", s.wallet.ValidationMode)
+	}
+	if s.wallet.RequireHAIP {
+		t.Error("HAIP was not reset to the startup default")
+	}
+	if s.wallet.RequireEncryptedRequest {
+		t.Error("encrypted requests were not reset to the startup default")
+	}
+}
+
+func TestHandleSetConformanceRefusedInDemo(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	s := NewServer(w, 0, nil)
+	s.demo = &demoState{}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"mode":"debug"}`))
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 in demo mode, got %d", rec.Code)
+	}
+	if s.wallet.ValidationMode != ValidationModeStrict {
+		t.Errorf("demo-mode PUT must not change the setting; mode = %q", s.wallet.ValidationMode)
 	}
 }

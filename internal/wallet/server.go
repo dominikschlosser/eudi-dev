@@ -72,6 +72,12 @@ type Server struct {
 	// sets it to deregister the instance and exit. When nil the process exits
 	// directly.
 	ShutdownFunc func()
+	// Startup conformance defaults, captured so DELETE /api/config/conformance
+	// can restore them after a local wallet's UI changed the runtime settings.
+	// Unused in demo mode, where that endpoint is refused.
+	defaultValidationMode          ValidationMode
+	defaultRequireHAIP             bool
+	defaultRequireEncryptedRequest bool
 }
 
 // NewServer creates a new wallet HTTP server.
@@ -79,9 +85,12 @@ type Server struct {
 func NewServer(w *Wallet, port int, onSave func()) *Server {
 	processBuildID()
 	s := &Server{
-		wallet: w,
-		port:   port,
-		onSave: onSave,
+		wallet:                         w,
+		port:                           port,
+		onSave:                         onSave,
+		defaultValidationMode:          w.ValidationMode,
+		defaultRequireHAIP:             w.RequireHAIP,
+		defaultRequireEncryptedRequest: w.RequireEncryptedRequest,
 	}
 	w.SetLogSink(func(LogEntry) {
 		s.triggerSave()
@@ -176,6 +185,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/next-error", s.withFreshStore(s.handleSetNextError))
 	s.mux.HandleFunc("DELETE /api/next-error", s.withFreshStore(s.handleClearNextError))
 	s.mux.HandleFunc("PUT /api/config/preferred-format", s.withFreshStore(s.handleSetPreferredFormat))
+	s.mux.HandleFunc("PUT /api/config/conformance", s.withFreshStore(s.handleSetConformance))
+	s.mux.HandleFunc("DELETE /api/config/conformance", s.withFreshStore(s.handleResetConformance))
 	s.mux.HandleFunc("GET /api/config", s.withFreshStore(s.handleGetConfig))
 	s.mux.HandleFunc("POST /api/shutdown", s.handleShutdown)
 

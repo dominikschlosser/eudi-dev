@@ -219,3 +219,72 @@ func (s *Server) handleSetPreferredFormat(w http.ResponseWriter, r *http.Request
 	s.wallet.mu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]string{"format": body.Format})
 }
+
+// handleSetConformance changes the wallet's runtime conformance settings
+// (validation mode, HAIP, encrypted requests). On a local wallet every flow —
+// the UI, the macOS URL-scheme handler and the CLI — hits this same wallet, so
+// the change reaches all of them without a per-request override. Refused in
+// demo mode, where the settings are shared: a visitor's per-browser choice
+// belongs in the eudi_conformance cookie instead.
+func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
+	if s.demo != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode; use the per-browser override"})
+		return
+	}
+	var body struct {
+		Mode      *string `json:"mode,omitempty"`
+		HAIP      *bool   `json:"haip,omitempty"`
+		Encrypted *bool   `json:"encrypted,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	var mode ValidationMode
+	if body.Mode != nil {
+		parsed, err := ParseValidationMode(*body.Mode)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		mode = parsed
+	}
+	s.wallet.mu.Lock()
+	if body.Mode != nil {
+		s.wallet.ValidationMode = mode
+	}
+	if body.HAIP != nil {
+		s.wallet.RequireHAIP = *body.HAIP
+	}
+	if body.Encrypted != nil {
+		s.wallet.RequireEncryptedRequest = *body.Encrypted
+	}
+	s.wallet.mu.Unlock()
+	s.writeConformanceConfig(w)
+}
+
+// handleResetConformance restores the conformance settings the wallet started
+// with. Refused in demo mode, like handleSetConformance.
+func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) {
+	if s.demo != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode"})
+		return
+	}
+	s.wallet.mu.Lock()
+	s.wallet.ValidationMode = s.defaultValidationMode
+	s.wallet.RequireHAIP = s.defaultRequireHAIP
+	s.wallet.RequireEncryptedRequest = s.defaultRequireEncryptedRequest
+	s.wallet.mu.Unlock()
+	s.writeConformanceConfig(w)
+}
+
+func (s *Server) writeConformanceConfig(w http.ResponseWriter) {
+	s.wallet.mu.Lock()
+	resp := map[string]any{
+		"validation_mode":           string(s.wallet.ValidationMode),
+		"require_haip":              s.wallet.RequireHAIP,
+		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
+	}
+	s.wallet.mu.Unlock()
+	writeJSON(w, http.StatusOK, resp)
+}
