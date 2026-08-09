@@ -206,6 +206,11 @@ func (c *Client) Log() ([]byte, error) {
 	return out, err
 }
 
+// ClearLog removes all activity log entries on the managed instance.
+func (c *Client) ClearLog() error {
+	return c.do(http.MethodDelete, "/api/log", nil, nil)
+}
+
 // Templates lists all credential templates.
 func (c *Client) Templates() ([]map[string]any, error) {
 	var out []map[string]any

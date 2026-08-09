@@ -81,8 +81,11 @@ func walletLogsCleanCmd() *cobra.Command {
 		Short: "Remove old wallet logs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store := loadStore()
-			if err := store.ClearLog(); err != nil {
+			svc, err := managedWallet()
+			if err != nil {
+				return err
+			}
+			if err := svc.ClearLogs(); err != nil {
 				return fmt.Errorf("cleaning wallet logs: %w", err)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Cleared wallet logs.")

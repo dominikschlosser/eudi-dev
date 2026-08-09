@@ -53,6 +53,7 @@ type walletService interface {
 	RemoveAllCredentials() (int, error)
 	Issue(req map[string]any) (map[string]any, error)
 	Logs() ([]wallet.LogEntry, error)
+	ClearLogs() error
 	Templates() ([]credtemplate.Template, error)
 	Template(name string) (*credtemplate.Template, error)
 	// SaveTemplate returns the saved file path when the backend knows it
@@ -131,6 +132,8 @@ func (r *remoteWallet) Logs() ([]wallet.LogEntry, error) {
 	}
 	return entries, nil
 }
+
+func (r *remoteWallet) ClearLogs() error { return r.c.ClearLog() }
 
 func (r *remoteWallet) Templates() ([]credtemplate.Template, error) {
 	docs, err := r.c.Templates()
@@ -334,6 +337,14 @@ func (l *localWallet) Logs() ([]wallet.LogEntry, error) {
 		return nil, err
 	}
 	return w.GetLog(), nil
+}
+
+func (l *localWallet) ClearLogs() error {
+	_, store, err := l.load()
+	if err != nil {
+		return err
+	}
+	return store.ClearLog()
 }
 
 func (l *localWallet) Templates() ([]credtemplate.Template, error) {

@@ -300,6 +300,16 @@ func parityCases() []parityCase {
 			// differ is whether a backend reports anything at all.
 			return len(entries) > 0
 		}},
+		{method: "ClearLogs", observe: func(t *testing.T, s walletService) any {
+			if err := s.ClearLogs(); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := s.Logs()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return len(entries)
+		}},
 		{method: "SaveTemplate", observe: func(t *testing.T, s walletService) any {
 			saveParityTemplate(t, s)
 			tpl, err := s.Template("parity")
