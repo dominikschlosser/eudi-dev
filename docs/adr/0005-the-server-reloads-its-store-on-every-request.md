@@ -1,6 +1,6 @@
 # The server reloads its store on every request
 
-A wallet directory has more than one writer. `wallet serve` holds it open while `wallet import`, `wallet issue` and `wallet remove` run against the same directory from another terminal, and the UI must not show a credential list that a CLI invocation changed a minute ago. Rather than lock the directory or make the CLI talk to the running server, the server treats the file as the source of truth and re-reads it at the request boundary. `withFreshStore` wraps 41 of the 50 routes (`internal/wallet/server.go`).
+A wallet directory has more than one writer. `wallet serve` holds it open while `wallet import`, `wallet issue` and `wallet remove` run against the same directory from another terminal, and the UI must not show a credential list that a CLI invocation changed a minute ago. Rather than lock the directory or make the CLI talk to the running server, the server treats the file as the source of truth and re-reads it at the request boundary. `withFreshStore` wraps 40 of the 50 routes (`internal/wallet/server.go`).
 
 ## Consequences
 

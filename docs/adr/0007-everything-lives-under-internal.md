@@ -4,7 +4,7 @@ status: accepted (expected to be revisited, see Direction)
 
 # Everything lives under internal/
 
-Only `main.go` sits outside `internal/` and `cmd/`, so nothing in this module can be imported by another project. That is deliberate. Several packages (`sdjwt`, `mdoc`, `dcql`, `statuslist`, `trustlist`) parse and verify formats that other Go projects would plausibly want, and making them importable now would turn every signature into a compatibility commitment while the tool is still moving quickly. Keeping the boundary closed means internals can be reshaped for whatever the CLI and the wallet server need next, without a deprecation cycle.
+Only `main.go` and the standalone programs under `examples/` sit outside `internal/` and `cmd/`, and those are all `package main`, so nothing in this module can be imported by another project (an example may reach into `internal/`, which is allowed within the module). That is deliberate. Several packages (`sdjwt`, `mdoc`, `dcql`, `statuslist`, `trustlist`) parse and verify formats that other Go projects would plausibly want, and making them importable now would turn every signature into a compatibility commitment while the tool is still moving quickly. Keeping the boundary closed means internals can be reshaped for whatever the CLI and the wallet server need next, without a deprecation cycle.
 
 ## Direction
 
