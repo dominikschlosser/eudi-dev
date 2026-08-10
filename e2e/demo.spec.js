@@ -581,7 +581,7 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
     await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
 
-    await expect(page.locator("#conf-explainer")).toContainText("signed request object");
+    await expect(page.locator("#conf-explainer")).toContainText("HAIP 1.0 enforced");
 
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);

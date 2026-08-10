@@ -1711,17 +1711,10 @@
     const eff = effectiveConformance();
     const parts = [];
     parts.push(eff.mode === 'strict'
-      ? 'Strict validation rejects a bad certificate chain, a broken request object signature, a missing nonce or an unknown client id prefix.'
-      : 'Debug validation only warns about those and continues, so a request that a real wallet would reject still completes here.');
-    if (eff.haip) {
-      parts.push('HAIP 1.0 also requires a signed request object, an x509_hash, x509_san_dns or web-origin client id, direct_post.jwt or dc_api.jwt, DCQL and ES256.');
-      parts.push('For issuance the credential issuer must be https. An offer that uses the authorization endpoint also needs PAR, PKCE S256, DPoP and client authentication. Pre-authorized code offers are accepted as they are.');
-    } else {
-      parts.push('HAIP 1.0 is not enforced, for presentation or issuance.');
-    }
-    if (eff.encrypted) {
-      parts.push('The wallet advertises an encryption key and requires request objects to be encrypted.');
-    }
+      ? 'Strict: a failed check rejects the request.'
+      : 'Debug: failed checks are warnings, the flow continues.');
+    if (eff.haip) parts.push('HAIP 1.0 enforced.');
+    if (eff.encrypted) parts.push('Request objects must be encrypted.');
     const explainer = document.getElementById('conf-explainer');
     if (explainer) explainer.textContent = parts.join(' ');
   }
@@ -1742,8 +1735,8 @@
     const note = document.getElementById('conf-override-note');
     if (note) {
       note.textContent = demoMode
-        ? 'These settings are yours alone: they are kept in a cookie in this browser and applied to requests from it. They survive demo resets. Reset returns to this wallet’s defaults.'
-        : 'These change this wallet’s own settings. Any flow that reaches this wallet honors them: its UI, scanned QR codes, and openid4vp or credential-offer links the CLI or system handler send to it. Reset restores the startup values.';
+        ? 'Yours only, kept in a cookie. Reset clears it.'
+        : 'Changes this wallet’s settings. Reset restores the defaults.';
     }
     renderConformanceExplainer();
   }
