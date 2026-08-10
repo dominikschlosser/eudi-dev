@@ -125,6 +125,33 @@ async function clearPending() {
   await waitForPending(0);
 }
 
+test.describe("Demo mode conformance panel", () => {
+  test("stores a per-visitor cookie and leaves the shared setting alone", async ({
+    page,
+  }) => {
+    await page.goto(`${BASE}/?focus=overview`);
+    const serverMode = async () =>
+      await page.evaluate(async () => (await (await fetch("/api/config")).json()).validation_mode);
+
+    // Demo default is strict; switch this visitor to debug.
+    expect(await serverMode()).toBe("strict");
+    await page.click("#conformance-link");
+    await page.selectOption("#conf-mode-select", "debug");
+
+    // The visitor's choice lives in a cookie; the shared wallet is untouched.
+    await expect
+      .poll(async () => await page.evaluate(() => document.cookie))
+      .toContain("eudi_conformance");
+    expect(await serverMode()).toBe("strict");
+
+    // Reset clears the cookie.
+    await page.click("#conf-reset");
+    await expect
+      .poll(async () => await page.evaluate(() => document.cookie))
+      .not.toContain("eudi_conformance");
+  });
+});
+
 test.describe("Demo mode consent visibility", () => {
   test.afterEach(async () => {
     await clearPending();
@@ -547,15 +574,12 @@ test.describe("Conformance", () => {
     await page.locator("#conformance-link").click();
     await expect(page.locator("#conformance-overlay")).toHaveClass(/active/);
 
-    await expect(page.locator("#conf-mode")).toHaveText("strict");
-    await expect(page.locator("#conf-haip")).toHaveText("enforced");
-    await expect(page.locator("#conf-haip-issuance")).toHaveText("enforced");
+    // A demo instance defaults to strict validation with HAIP enforced and
+    // encrypted requests not required; the editable controls reflect that.
+    await expect(page.locator("#conf-mode-select")).toHaveValue("strict");
+    await expect(page.locator("#conf-haip-input")).toBeChecked();
+    await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
     await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
-
-    // Only what is enforced is highlighted.
-    await expect(page.locator("#conf-mode")).toHaveClass(/conf-on/);
-    await expect(page.locator("#conf-haip-issuance")).toHaveClass(/conf-on/);
-    await expect(page.locator("#conf-encrypted")).toHaveClass(/conf-off/);
 
     await expect(page.locator("#conf-explainer")).toContainText("signed request object");
 
@@ -588,6 +612,8 @@ test.describe("Demo mode hardening", () => {
       ["POST", "/api/shutdown", null],
       ["POST", "/api/next-error", { error: "access_denied" }],
       ["PUT", "/api/config/preferred-format", { preferred_format: "dc+sd-jwt" }],
+      ["PUT", "/api/config/conformance", { mode: "debug" }],
+      ["DELETE", "/api/config/conformance", null],
     ];
     for (const [method, pathname, body] of blocked) {
       const res = await fetch(BASE + pathname, {

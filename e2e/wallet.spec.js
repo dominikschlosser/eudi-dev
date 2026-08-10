@@ -130,6 +130,31 @@ test.describe("Wallet Dashboard", () => {
     await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
   });
 
+  test("conformance panel changes the local wallet setting via the endpoint", async ({
+    page,
+  }) => {
+    // On a local (non-demo) wallet the panel flips the wallet's own setting
+    // (PUT /api/config/conformance), not a cookie.
+    await page.goto(WALLET_URL);
+    const configMode = async () =>
+      (await page.evaluate(async () => (await (await fetch("/api/config")).json()).validation_mode));
+
+    const before = await configMode();
+    const target = before === "strict" ? "debug" : "strict";
+
+    await page.click("#conformance-link");
+    await page.selectOption("#conf-mode-select", target);
+    await expect.poll(configMode).toBe(target);
+
+    // The change is the server's, not a per-visitor cookie.
+    const cookie = await page.evaluate(() => document.cookie);
+    expect(cookie).not.toContain("eudi_conformance");
+
+    // Reset restores the value the wallet started with.
+    await page.click("#conf-reset");
+    await expect.poll(configMode).toBe(before);
+  });
+
   test("shows PID credentials", async ({ page }) => {
     await page.goto(WALLET_URL);
     // Wait for credentials to load

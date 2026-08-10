@@ -282,3 +282,70 @@ func TestConformanceSettingsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// findingRequestURL is an /authorize request whose client_id uses an
+// unsupported prefix: a validation finding, fatal in strict, a warning in debug.
+const findingRequestURL = "/authorize?response_type=vp_token&client_id=bogusprefix:foo&nonce=n1&response_mode=direct_post&response_uri=http://localhost:9/cb&dcql_query=%7B%22credentials%22%3A%5B%7B%22id%22%3A%22c%22%2C%22format%22%3A%22dc%2Bsd-jwt%22%7D%5D%7D"
+
+func authorizeCode(t *testing.T, s *Server, apply func(*http.Request)) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, findingRequestURL, nil)
+	if apply != nil {
+		apply(req)
+	}
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// TestConformanceEndpointDrivesValidation proves the local-UI surface: flipping
+// the wallet's setting through PUT /api/config/conformance changes how a later
+// flow validates, end to end.
+func TestConformanceEndpointDrivesValidation(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	s := NewServer(w, 0, nil)
+
+	if code := authorizeCode(t, s, nil); code != http.StatusBadRequest {
+		t.Fatalf("strict default should reject the finding, got %d", code)
+	}
+	putRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(putRec, httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"mode":"debug"}`)))
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/config/conformance: got %d", putRec.Code)
+	}
+	if code := authorizeCode(t, s, nil); code == http.StatusBadRequest {
+		t.Fatal("after the endpoint set debug, the same request must no longer be rejected on the finding")
+	}
+}
+
+// TestConformanceCookieIsolationOnDemo proves per-visitor isolation on a shared
+// demo: one visitor's cookie changes only their own request, not another
+// visitor's outcome and not the shared wallet's setting.
+func TestConformanceCookieIsolationOnDemo(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	s := NewServer(w, 0, nil)
+	s.demo = &demoState{}
+
+	// Visitor A carries a debug cookie: accepted past validation.
+	if code := authorizeCode(t, s, func(r *http.Request) {
+		r.AddCookie(&http.Cookie{Name: conformanceCookieName, Value: url.QueryEscape(`{"mode":"debug"}`)})
+	}); code == http.StatusBadRequest {
+		t.Fatal("visitor A's debug cookie should let the request through")
+	}
+	// Visitor B has no cookie: still held to the demo's strict default.
+	if code := authorizeCode(t, s, nil); code != http.StatusBadRequest {
+		t.Fatalf("visitor B (no cookie) must still see the strict default, got %d", code)
+	}
+	// The shared wallet's own setting was never touched by a visitor cookie.
+	if s.wallet.ValidationMode != ValidationModeStrict {
+		t.Fatalf("a visitor cookie must not change the shared wallet; mode = %q", s.wallet.ValidationMode)
+	}
+	// And the demo refuses attempts to change the shared setting.
+	putRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(putRec, httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"mode":"debug"}`)))
+	if putRec.Code != http.StatusForbidden {
+		t.Fatalf("demo must refuse the settings endpoint, got %d", putRec.Code)
+	}
+}
