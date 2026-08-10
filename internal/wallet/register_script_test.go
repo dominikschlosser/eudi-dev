@@ -15,8 +15,14 @@
 package wallet
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The generated script is what actually runs on a scheme dispatch, and it is
@@ -67,5 +73,89 @@ func TestHandlerScriptSourceAutoAccept(t *testing.T) {
 	}
 	if !strings.Contains(script, `AUTO_ACCEPT="true"`) {
 		t.Error("the auto-accept mode must be rendered into the script")
+	}
+}
+
+func TestHandlerScriptForwardsConformanceOverride(t *testing.T) {
+	script := handlerScriptSource("/usr/local/bin/eudi", RegisterOptions{ListenerPort: 8085})
+
+	for _, want := range []string{
+		`CONF_FILE="$(dirname "$0")/conformance.json"`,
+		"X-Eudi-Dev-Mode",
+		"X-Eudi-Dev-HAIP",
+		"X-Eudi-Dev-Encrypted",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("generated handler missing %q", want)
+		}
+	}
+	// The headers ride on both submit paths.
+	if got := strings.Count(script, `"${CONF_HEADERS[@]}"`); got != 2 {
+		t.Errorf("expected the override headers on both submit_offer and submit_presentation, found %d", got)
+	}
+	// They are built only when a remote is configured; a local wallet uses its
+	// own setting.
+	idx := strings.Index(script, "CONF_HEADERS=()")
+	if idx < 0 || !strings.Contains(script[idx:idx+80], `if [[ -n "$REMOTE_URL" ]]`) {
+		t.Error("conformance headers must be gated on a remote being configured")
+	}
+	// The generated script must be valid bash.
+	cmd := exec.Command("bash", "-n")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated handler is not valid bash: %v\n%s", err, out)
+	}
+}
+
+// TestHandlerScriptSendsConformanceHeadersToRemote runs the generated handler
+// end-to-end against a capture server, with remote.json and conformance.json in
+// place, and proves the CLI conformance override reaches the remote as headers.
+func TestHandlerScriptSendsConformanceHeadersToRemote(t *testing.T) {
+	var gotMode, gotHAIP string
+	captured := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/presentations") {
+			gotMode = r.Header.Get("X-Eudi-Dev-Mode")
+			gotHAIP = r.Header.Get("X-Eudi-Dev-HAIP")
+			select {
+			case captured <- struct{}{}:
+			default:
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	// Auto-accept so the handler submits directly, without opening a browser or
+	// starting a local listener.
+	script := handlerScriptSource("/usr/local/bin/eudi", RegisterOptions{ListenerPort: 8085, AutoAccept: true})
+	scriptPath := filepath.Join(dir, "url-handler.sh")
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "remote.json"), []byte(`{"url":"`+srv.URL+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "conformance.json"), []byte("{\n  \"mode\": \"debug\",\n  \"haip\": false\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", scriptPath, "openid4vp://authorize?client_id=x&request_uri=http://localhost:9/x")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Logf("handler exited non-zero (%v): %s", err, out)
+	}
+
+	select {
+	case <-captured:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the remote never received the presentation submit")
+	}
+	if gotMode != "debug" {
+		t.Errorf("X-Eudi-Dev-Mode = %q, want debug", gotMode)
+	}
+	if gotHAIP != "false" {
+		t.Errorf("X-Eudi-Dev-HAIP = %q, want false", gotHAIP)
 	}
 }
