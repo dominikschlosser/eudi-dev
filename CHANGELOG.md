@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.20.1] - 2026-08-10
+
+### Fixed
+
+- **The Conformance panel's note overstated what a local change reaches, and its text ran long.** It read as though a local change also governed the `openid4vp://` and credential-offer links the CLI or the macOS handler sends, which only holds when the same override is set on the local wallet too. The note now says a local change affects this wallet's own settings, and the panel's copy throughout is shorter.
+- **The decoder page's logo sat on top of its title on a narrow screen.** The mobile header placed the logo and the titles in one column and they overlapped. The logo aligns to the top of that column now and the title clears it.
+
+## [1.20.0] - 2026-08-10
 
 ### Added
 
