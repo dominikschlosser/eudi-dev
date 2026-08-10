@@ -1743,7 +1743,7 @@
     if (note) {
       note.textContent = demoMode
         ? 'These settings are yours alone: they are kept in a cookie in this browser and applied to requests from it. They survive demo resets. Reset returns to this wallet’s defaults.'
-        : 'These change this wallet’s settings, so every flow honors them: this UI, scanned QR codes and openid4vp / credential-offer links opened through the CLI or the system handler. Reset returns to the values the wallet started with.';
+        : 'These change this wallet’s own settings. Any flow that reaches this wallet honors them: its UI, scanned QR codes, and openid4vp or credential-offer links the CLI or system handler send to it. Reset restores the startup values.';
     }
     renderConformanceExplainer();
   }
