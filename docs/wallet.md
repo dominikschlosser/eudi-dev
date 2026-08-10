@@ -654,7 +654,21 @@ eudi wallet conformance                             # show the current override
 eudi wallet conformance --reset                     # clear it
 ```
 
-The CLI attaches these headers to every request it makes to the remote wallet, which honors them per request. Precedence everywhere is: an explicit header or body value first, then the browser cookie, then the wallet's own setting.
+The CLI attaches these headers to every request it makes to the remote wallet, which honors them per request. The macOS URL-scheme handler forwards the same headers when it routes an `openid4vp://` or credential-offer link to a remote, so those links honor the CLI override too (a local wallet uses its own setting instead, so the handler adds no headers for it).
+
+### Three surfaces, one precedence
+
+There is no single global override; there is one knob per context, and they do not sync with each other. What you set depends on which flow you are driving:
+
+| Surface | Set with | Stored as | Applies to |
+|---|---|---|---|
+| A local wallet's own setting | its Conformance panel | the wallet's runtime state (`PUT`/`DELETE /api/config/conformance`); reverts to the startup flags on restart | every flow reaching that wallet: its UI, scanned QR, and CLI/handler links pointed at it |
+| A demo visitor's override | the demo's Conformance panel | the `eudi_conformance` cookie (per browser) | that browser's flows, including the top-level `/authorize` navigation |
+| A CLI/handler override to a remote | `wallet conformance` | `conformance.json` (one file per machine, not per wallet) | requests this machine's CLI or macOS handler makes to a *remote* wallet, as `X-Eudi-Dev-*` headers |
+
+`wallet conformance` does not change any wallet's own setting and does not appear in a wallet UI; changing a wallet's setting in its UI does not write `conformance.json`. So a local-to-remote flow through the handler needs the override set locally with `wallet conformance` — the demo's in-browser cookie cannot reach it.
+
+When more than one is present on a single request, precedence is: an explicit header or body value first, then the browser cookie, then the wallet's own setting.
 
 `eudi wallet config` (alias of `wallet info`) reports the active fields for a local or remote wallet.
 
