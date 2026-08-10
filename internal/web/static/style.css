@@ -867,6 +867,13 @@ textarea.colorized::placeholder {
   .header-left {
     flex-wrap: wrap;
     gap: 12px;
+    align-items: flex-start;
+  }
+
+  /* Clear the desktop negative margin: with the title stacked into two lines,
+     it pulled the wordmark and links under the logo. */
+  .header-left .header-logo + .header-titles {
+    margin-left: 0;
   }
 
   .header-titles {
