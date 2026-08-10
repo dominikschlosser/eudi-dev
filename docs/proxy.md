@@ -85,7 +85,7 @@ When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`dire
 
 This works via a debug header: the wallet includes the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding the request to the verifier, so the verifier never sees it.
 
-No configuration is needed. Simply route the wallet through the proxy:
+No configuration is needed. Route the wallet through the proxy:
 
 ```
 eudi wallet                          # wallet sends to response_uri

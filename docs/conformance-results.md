@@ -111,7 +111,7 @@ Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screen
 | 11 | VP HAIP | SD-JWT, `dc_api.jwt` | 579 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
 | 12 | VP HAIP | mDoc, `dc_api.jwt` | 399 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
 | 13 | VCI HAIP | SD-JWT | 3978 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
-| 14 | VCI HAIP | mDoc | 4244 success / 1 failure. Batch issuance is `SKIPPED` in all three variants, see below. The 1 failure is the retried-submission artifact described above; the module finished `PASSED`. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
+| 14 | VCI HAIP | mDoc | 4244 success / 1 failure. Batch issuance is `SKIPPED` in all three variants, see below. The 1 failure is the retried-submission artifact described above. The module finished `PASSED`. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
 
 ## Passing VCI Coverage
 
@@ -137,7 +137,7 @@ The current wrapper passes explicit module lists for VP plans instead of relying
 
 Known release-v5.2.1 suite-side exclusions:
 
-- `invalid-client-id-prefix` runs everywhere except the DC API plans, whose unsigned requests carry no `client_id` to corrupt (the module's own `@VariantNotApplicableWhen`). It was excluded entirely on release-v5.2.1, whose `performRedirect()` ordering bug killed the module before the wallet was invoked; release-v5.2.2 fixed that (`4f790f161`).
+- `invalid-client-id-prefix` runs everywhere except the DC API plans, whose unsigned requests carry no `client_id` to corrupt (the module's own `@VariantNotApplicableWhen`). It was excluded entirely on release-v5.2.1, whose `performRedirect()` ordering bug killed the module before the wallet was invoked, and release-v5.2.2 fixed that (`4f790f161`).
 - VP Final `direct_post` omits `alternate-happy-flow` because that module unconditionally replaces encrypted-response setup that is absent for plain `direct_post` (unchanged from release-v5.1.44).
 - VP Final x509 variants omit `response-uri-not-client-id`. The suite marks that module not applicable for `x509_hash`, and the applicable `redirect_uri` variant passes as `REVIEW`.
 - VP Final non-multisigned variants omit `multisigned-one-invalid-signature`.

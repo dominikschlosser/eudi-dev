@@ -42,7 +42,7 @@ sequenceDiagram
 | `state` | Reflected in the authorization response when present. |
 | `response_uri` | Required for `direct_post` and `direct_post.jwt`. |
 | `redirect_uri` | Required for `fragment`. |
-| `dcql_query` | Practically required for credential selection in `eudi-dev`; this is how the wallet matches stored credentials. |
+| `dcql_query` | Practically required for credential selection in `eudi-dev`. This is how the wallet matches stored credentials. |
 | `request` or `request_uri` | Used when the verifier sends a request object directly or by reference. |
 | `client_metadata` | Important for format negotiation and mandatory for encrypted response modes because `client_metadata.jwks` carries the verifier encryption key. |
 
@@ -113,7 +113,7 @@ sequenceDiagram
 |-----------------|----------|
 | `request_uri` | The wallet dereferences this URI instead of relying only on outer query parameters. |
 | `request_uri_method=post` | Switches the request-object fetch from GET to POST. |
-| `wallet_metadata` | Sent by `eudi-dev`; includes supported formats and signing algorithms, plus an encryption JWK when `--require-encrypted-request` is enabled. |
+| `wallet_metadata` | Sent by `eudi-dev`. Includes supported formats and signing algorithms, plus an encryption JWK when `--require-encrypted-request` is enabled. |
 | `wallet_nonce` | Sent by the wallet for replay protection and checked if returned inside the request object. |
 | `--require-encrypted-request` | Makes the wallet advertise an encryption key and require the POSTed `request_uri` response to be a compact JWE. |
 | Request object `Content-Type` | `eudi-dev` expects `application/oauth-authz-req+jwt` on the POST response. |
@@ -143,7 +143,7 @@ sequenceDiagram
 | Field / setting | Used how |
 |-----------------|----------|
 | Browser API protocol `openid4vp-v1-unsigned` | Unsigned Browser API request branch. |
-| Browser API protocol `openid4vp-v1-signed` | Signed Browser API request branch; request data can be a compact JWT or an object containing `request` or `request_uri`. |
+| Browser API protocol `openid4vp-v1-signed` | Signed Browser API request branch. Request data can be a compact JWT or an object containing `request` or `request_uri`. |
 | `response_mode=dc_api` | Wallet returns plain JSON through the Browser API response envelope. |
 | `response_mode=dc_api.jwt` | Wallet encrypts the response and returns a `response` JWT in the Browser API envelope. |
 | Unsigned Browser API request | Carries no `client_id` (OpenID4VP Appendix A.2). The verifier is identified by the origin the platform reports, and any `client_id` or `expected_origins` in the request data is discarded. |
@@ -154,11 +154,11 @@ sequenceDiagram
 |------|---------------------------|
 | `x509_hash:` | Implemented and verified. |
 | `x509_san_dns:` | Implemented and verified against the verifier certificate SAN. |
-| `redirect_uri:` | Implemented; requires unsigned request objects and must match `response_uri`. |
+| `redirect_uri:` | Implemented. Requires unsigned request objects and must match `response_uri`. |
 | `verifier_attestation:` | Validated structurally. |
-| `decentralized_identifier:` | DID syntax and `kid` cross-check are validated; full DID resolution is not implemented. |
+| `decentralized_identifier:` | DID syntax and `kid` cross-check are validated. Full DID resolution is not implemented. |
 | No prefix (no `:` in the value) | Treated as a pre-registered client, per OpenID4VP §5.9.2. |
 | `origin:` | Refused. §5.9.3 reserves it and forbids a wallet to accept it in a request. |
 | `openid_federation:` | Refused. The trust chain resolution it requires is not implemented. |
 | `--haip` | Holds the counterparty to HAIP 1.0: `response_type=vp_token`, encrypted response modes, the `x509_hash` prefix with a verified request signature and certificate rules, JAR through `request_uri`, DCQL, the `mso_mdoc` and `dc+sd-jwt` formats, `A128GCM` plus `A256GCM` in the verifier's client metadata, and ES256. Violations are errors whatever the wallet mode is. |
-| Wallet mode `debug` vs `strict` | Both collect request findings. `debug` reports them, keeps partially matching DCQL credentials and continues; `strict` turns the same findings into hard failures. |
+| Wallet mode `debug` vs `strict` | Both collect request findings. `debug` reports them, keeps partially matching DCQL credentials and continues. `strict` turns the same findings into hard failures. |

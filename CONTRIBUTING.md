@@ -44,7 +44,7 @@ npx playwright test
 ```
 
 Some specs (`docker.spec.js`) build and run a Docker image, so they need a
-running Docker daemon; skip them with `--grep-invert docker` if Docker is
+running Docker daemon. Skip them with `--grep-invert docker` if Docker is
 unavailable.
 
 ## Code Style

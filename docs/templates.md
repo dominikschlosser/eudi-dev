@@ -13,7 +13,7 @@ Both carry the claim set of the [German PID Rulebook](https://demo.pid-provider.
 
 The mdoc PID spans two namespaces, as the rulebook prescribes: the European claims in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Any mdoc claim key may carry a `namespace:element` prefix to place it in a specific namespace. Everything else lands in the template's namespace. Dates are CBOR tagged the way ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
 
-The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). Note that `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
+The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
 
 ## Template files and storage
 

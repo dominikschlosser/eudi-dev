@@ -14,7 +14,7 @@ The consequence for the threat model is blunt: an attacker who signs a request o
 
 ## What is still enforced
 
-Not anchoring is not the same as not checking. The wallet still requires that a request object for a signing-required `client_id` prefix actually be signed (an `alg` of `none` is a finding, fatal in strict mode), that the `x509_hash` value be the SHA-256 of the certificate that signed the request, that the signing certificate not be self-signed under HAIP, and that the trust anchor not travel in the `x5c` header. None of those need a pre-registered CA, so the wallet does them; the one thing it will not pretend to do is decide that an unknown CA is trustworthy.
+Not anchoring is not the same as not checking. The wallet still requires that a request object for a signing-required `client_id` prefix actually be signed (an `alg` of `none` is a finding, fatal in strict mode), that the `x509_hash` value be the SHA-256 of the certificate that signed the request, that the signing certificate not be self-signed under HAIP, and that the trust anchor not travel in the `x5c` header. None of those need a pre-registered CA, so the wallet does them. The one thing it will not do is decide that an unknown CA is trustworthy.
 
 ## Consequences
 

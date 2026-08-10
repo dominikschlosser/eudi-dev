@@ -70,10 +70,10 @@ sequenceDiagram
 | Field / setting | Used how |
 |-----------------|----------|
 | `grants.urn:ietf:params:oauth:grant-type:pre-authorized_code.pre-authorized_code` | Required to choose the pre-authorized code branch. |
-| `grants...tx_code` | Optional. If present, the issuer expects an out-of-band transaction code; the wallet can send it via `wallet accept --tx-code ...`. |
+| `grants...tx_code` | Optional. If present, the issuer expects an out-of-band transaction code. The wallet can send it via `wallet accept --tx-code ...`. |
 | `access_token` | Used to authorize the credential endpoint call. |
 | `c_nonce` | Taken from the Nonce Endpoint. A `c_nonce` in the token response is a pre-1.0 parameter: strict mode ignores it, debug mode uses it (naming the issuer as pre-1.0) when the issuer advertises no Nonce Endpoint. A challenge the issuer rejects with `invalid_nonce` is fetched again and the request is retried once with rebuilt proofs (§8.3.1.2). |
-| `credential_identifier` vs `credential_configuration_id` | `credential_identifier` wins when the token response exposes it; otherwise the wallet falls back to the first `credential_configuration_id` from the offer. |
+| `credential_identifier` vs `credential_configuration_id` | `credential_identifier` wins when the token response exposes it. Otherwise the wallet falls back to the first `credential_configuration_id` from the offer. |
 
 ## Authorization Code Flow
 

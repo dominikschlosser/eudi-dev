@@ -98,7 +98,7 @@ Pin the CA, not the leaf or the `kid`. The CA survives restarts and the periodic
 
 Hosting a public site in the EU requires an imprint naming the operator. Pass `--imprint-file` with an HTML snippet (name, address, contact). It is served at `/imprint` (also under `/decoder/imprint`) wrapped in a page that includes the EU non-affiliation disclaimer, and the UI footer links to it. The standalone decoder (`eudi serve`) accepts the same flag.
 
-The demo sets one functional cookie, `eudi_conformance`, and only when a visitor changes the **Conformance** panel. It stores that visitor's chosen validation strictness (no personal data, no tracking, not shared with any third party) so requests from their browser are held to it. Under the ePrivacy Directive this is device storage like a theme preference; it is best treated as a functional cookie and mentioned in your imprint or privacy notice.
+The demo sets one functional cookie, `eudi_conformance`, only when a visitor changes the **Conformance** panel. It stores that visitor's chosen validation strictness (no personal data, no tracking, no third parties) so their browser's requests are held to it. Under the ePrivacy Directive this is device storage, like a theme preference. Treat it as a functional cookie and mention it in your imprint or privacy notice.
 
 ## Deploying and updating
 

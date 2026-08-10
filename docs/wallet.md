@@ -641,34 +641,33 @@ Omitting `haip` inherits the server setting. `POST /api/offers` takes the same t
 
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet UI header is editable: validation mode (strict/debug), HAIP, and encrypted requests. How a change is applied depends on the wallet:
+The **Conformance** panel in the wallet header edits three settings: validation mode (strict/debug), HAIP, and encrypted requests. Where a change lands depends on the wallet.
 
-- **A local wallet** applies the change to its own settings through `PUT /api/config/conformance` (and `DELETE` to restore the values it started with). Because the settings are not reloaded per request, the change sticks for the life of the process and *every* flow that reaches this wallet honors it: the UI, a scanned QR code, and `openid4vp://` or credential-offer links opened through the CLI or the macOS system handler (which all reach the same wallet).
-- **The public demo** keeps the change per visitor. It is stored in the `eudi_conformance` cookie and applied per request, so it also covers the top-level `/authorize` navigation a verifier link or QR triggers, and one visitor never changes what another sees. The server's own default stays fixed, and `PUT /api/config/conformance` is refused (HTTP 403). The demo notes this functional cookie in its imprint.
+**A local wallet** changes its own settings through `PUT /api/config/conformance` (`DELETE` restores the startup values). These settings are not reloaded per request, so the change holds until the process restarts. Every flow that reaches this wallet then honors it: the UI, a scanned QR, and `openid4vp://` or credential-offer links routed here by the CLI or the macOS handler.
 
-For a **remote wallet driven from the CLI** (after `wallet instances use <url>`), you cannot change the remote's settings, so set a CLI-side override instead:
+**The public demo** keeps the change per visitor in the `eudi_conformance` cookie, applied per request. It covers the top-level `/authorize` navigation too, and one visitor never affects another. The shared default stays fixed, and `PUT /api/config/conformance` returns 403. The demo notes this functional cookie in its imprint.
+
+**A remote wallet driven from the CLI** (after `wallet instances use <url>`) cannot be reconfigured from here, so set a CLI-side override:
 
 ```bash
 eudi wallet conformance --mode debug --haip=false   # sent to the remote as X-Eudi-Dev-* headers
-eudi wallet conformance                             # show the current override
+eudi wallet conformance                             # show it
 eudi wallet conformance --reset                     # clear it
 ```
 
-The CLI attaches these headers to every request it makes to the remote wallet, which honors them per request. The macOS URL-scheme handler forwards the same headers when it routes an `openid4vp://` or credential-offer link to a remote, so those links honor the CLI override too (a local wallet uses its own setting instead, so the handler adds no headers for it).
+The CLI and the macOS handler attach these headers to every request they make to a remote, which honors them per request.
 
-### Three surfaces, one precedence
+### One knob per context
 
-There is no single global override; there is one knob per context, and they do not sync with each other. What you set depends on which flow you are driving:
+There is no global override. Three independent knobs cover three contexts, and they do not sync.
 
 | Surface | Set with | Stored as | Applies to |
 |---|---|---|---|
-| A local wallet's own setting | its Conformance panel | the wallet's runtime state (`PUT`/`DELETE /api/config/conformance`); reverts to the startup flags on restart | every flow reaching that wallet: its UI, scanned QR, and CLI/handler links pointed at it |
-| A demo visitor's override | the demo's Conformance panel | the `eudi_conformance` cookie (per browser) | that browser's flows, including the top-level `/authorize` navigation |
-| A CLI/handler override to a remote | `wallet conformance` | `conformance.json` (one file per machine, not per wallet) | requests this machine's CLI or macOS handler makes to a *remote* wallet, as `X-Eudi-Dev-*` headers |
+| A wallet's own setting | its Conformance panel | runtime state via `PUT`/`DELETE /api/config/conformance`, reset on restart | every flow reaching that wallet |
+| A demo visitor's override | the demo's Conformance panel | the `eudi_conformance` cookie (per browser) | that browser's flows, including `/authorize` navigation |
+| A CLI or handler override | `wallet conformance` | `conformance.json` (per machine) | this machine's CLI and handler requests to a remote, as `X-Eudi-Dev-*` headers |
 
-`wallet conformance` does not change any wallet's own setting and does not appear in a wallet UI; changing a wallet's setting in its UI does not write `conformance.json`. So a local-to-remote flow through the handler needs the override set locally with `wallet conformance` — the demo's in-browser cookie cannot reach it.
-
-When more than one is present on a single request, precedence is: an explicit header or body value first, then the browser cookie, then the wallet's own setting.
+`wallet conformance` never touches a wallet's own setting or shows in a wallet UI, and a UI change never writes `conformance.json`. A handler link to a remote therefore needs the override set with `wallet conformance` (the demo's cookie cannot reach it). When several are present on one request, an explicit header or body wins, then the cookie, then the wallet's own setting.
 
 `eudi wallet config` (alias of `wallet info`) reports the active fields for a local or remote wallet.
 
@@ -1105,4 +1104,4 @@ Discovery only sees instances running directly on this system. A wallet server i
 
 ### Introspection
 
-`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`; in demo mode those host details are replaced by a `demo` object. `POST /api/shutdown` stops the instance (the response is sent before the process exits).
+`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`. In demo mode those host details are replaced by a `demo` object. `POST /api/shutdown` stops the instance (the response is sent before the process exits).

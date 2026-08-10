@@ -49,7 +49,7 @@ Two independent settings decide what a finding does to a flow:
 |---------|--------|-------|
 | Credential offer parsing | Implemented | `openid-credential-offer://` and `haip-vci://` schemes |
 | Pre-authorized code grant | Implemented | With optional `tx_code` |
-| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration. Uses PAR, DPoP and client attestation when the issuer's metadata advertises them; PAR is optional and the flow falls back to the authorization endpoint directly |
+| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration. Uses PAR, DPoP and client attestation when the issuer's metadata advertises them. PAR is optional, and the flow falls back to the authorization endpoint when it is absent |
 | Pushed Authorization Request (PAR) | Implemented | Used by the authorization-code flow |
 | Token endpoint | Implemented | Exchanges pre-authorized code or authorization code for access token |
 | Credential endpoint | Implemented | Uses OID4VCI 1.0 final `proofs.jwt` and sends `credential_identifier` or `credential_configuration_id` as required (§8.2 forbids both together and forbids either one where the token response did not call for it) |
