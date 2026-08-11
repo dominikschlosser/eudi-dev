@@ -1546,6 +1546,9 @@
         document.getElementById('tls-row-label').hidden = true;
         document.getElementById('tls-row').hidden = true;
       }
+      // Determine demo mode before rendering the conformance panel: its note
+      // and browser-only warning both branch on it.
+      demoMode = !!(config.demo && config.demo.enabled);
       renderConformance(config);
       ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input'].forEach((id) => {
         const el = document.getElementById(id);
@@ -1738,6 +1741,8 @@
         ? 'Yours only, kept in a cookie. Reset clears it.'
         : 'Changes this wallet’s settings. Reset restores the defaults.';
     }
+    const warn = document.getElementById('conf-warning');
+    if (warn) warn.hidden = !demoMode;
     renderConformanceExplainer();
   }
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The demo Conformance panel did not say its override is browser-only.** A visitor who relaxed HAIP or the validation mode there had no sign that a CLI offer sent to the same demo ignores the change, because the override rides a per-browser cookie the CLI never sends. The panel now shows a short warning on the demo. The same ordering bug had also rendered the local note text on the demo, which is corrected.
 - **`wallet conformance` could not turn HAIP or encrypted requests off.** `--haip` and `--encrypted` were bare boolean flags, so they only ever set the override on, while `--mode` took a value. They take `true` or `false` now, matching `--mode`, so a CLI override can relax a remote wallet as well as tighten it. A flag left unset still inherits the remote wallet's own setting.
 
 ## [1.20.1] - 2026-08-10

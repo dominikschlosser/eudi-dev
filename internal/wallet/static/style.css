@@ -1015,6 +1015,22 @@ header h1 {
   color: var(--text-dim);
 }
 
+/* Amber signal for the one thing a demo visitor gets wrong: the cookie
+   override rides this browser, so a CLI offer to the same demo never sees it. */
+.conf-warning {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--yellow);
+  background: rgba(224, 175, 104, 0.12);
+  border-left: 3px solid var(--yellow);
+  border-radius: 4px;
+}
+.conf-warning[hidden] {
+  display: none;
+}
+
 /* Editable conformance controls. */
 .conf-input {
   background: var(--bg-surface);

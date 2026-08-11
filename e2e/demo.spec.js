@@ -583,6 +583,11 @@ test.describe("Conformance", () => {
 
     await expect(page.locator("#conf-explainer")).toContainText("HAIP 1.0 enforced");
 
+    // The override rides a per-browser cookie, so the demo warns that a CLI
+    // offer to the same demo will not see it.
+    await expect(page.locator("#conf-warning")).toBeVisible();
+    await expect(page.locator("#conf-override-note")).toContainText("cookie");
+
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);
   });

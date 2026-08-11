@@ -143,6 +143,9 @@ test.describe("Wallet Dashboard", () => {
     const target = before === "strict" ? "debug" : "strict";
 
     await page.click("#conformance-link");
+    // The browser-only warning is a demo-only thing; a local change reaches
+    // every flow, so it must not appear here.
+    await expect(page.locator("#conf-warning")).toBeHidden();
     await page.selectOption("#conf-mode-select", target);
     await expect.poll(configMode).toBe(target);
 
