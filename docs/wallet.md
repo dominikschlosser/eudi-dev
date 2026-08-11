@@ -315,7 +315,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers. Violations are errors whatever `--mode` says |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](#wallet-attestation)) |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
-| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode strict` and `--haip` (both overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
+| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug` and `--haip` (both overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
 | `--demo-issuer-client-auth` | `required` | What the built-in demo issuer's authorization server demands at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also serves wallets that send no wallet attestation (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
@@ -576,11 +576,11 @@ Collecting happens in `wallet serve`. A one-shot `wallet accept` against the loc
 
 On OID4VCI token requests the wallet authenticates itself with a wallet attestation ([OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)), sent as the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers. The attestation is signed by the wallet's own CA and carries only the leaf in `x5c`, so an issuer verifying it needs the CA from `wallet ca-cert` as its trust anchor.
 
-Under `--haip` the wallet always attests. HAIP 1.0 §4.4.1 is unconditional about it:
+Under `--haip` the wallet attests. HAIP 1.0 §4.4.1 requires it of both sides:
 
 > Wallets MUST use, and Issuers MUST require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that support client authentication (such as the PAR and Token Endpoints).
 
-Nothing there depends on metadata, and nothing requires an issuer to advertise the method, so a wallet holding itself to the profile does not go looking first.
+A conformant issuer therefore both requires and advertises client authentication, and the wallet attests. When an issuer requires HAIP of the wallet but offers only unauthenticated access itself, that is a profile violation, and `--mode` decides what happens: `--mode strict` attests anyway and the exchange fails at the token endpoint (the honest result for a wallet asserting HAIP), while `--mode debug` records the violation as a warning and proceeds without client authentication, so a non-HAIP issuer stays reachable. The public demo runs the debug case.
 
 Without `--haip` it attests **only when the authorization server advertises it**, by listing `attest_jwt_client_auth` in `token_endpoint_auth_methods_supported`. That is what §8 of the draft asks a client to do:
 
@@ -629,45 +629,15 @@ eudi wallet serve --haip --auto-accept --pid
 eudi wallet accept --haip 'openid4vp://authorize?...'
 ```
 
-Enforcement can be overridden for a single request, in either direction, which is how a non-HAIP verifier can still be tested against a wallet that enforces it (and how the conformance runner raises the bar for its HAIP modules only):
-
-```bash
-curl -X POST http://localhost:8085/api/presentations \
-  -H 'Content-Type: application/json' \
-  -d '{"uri": "openid4vp://authorize?...", "haip": false}'
-```
-
-Omitting `haip` inherits the server setting. `POST /api/offers` takes the same two body fields. Every flow endpoint (`/authorize`, `/api/presentations`, `/api/offers`, `/api/dc-api`) also reads the override from request headers: `X-Eudi-Dev-Mode: strict|debug`, `X-Eudi-Dev-HAIP: true|false` and `X-Eudi-Dev-Encrypted: true|false`. When both are present the JSON body wins over the header, and both win over the browser cookie described below.
+Conformance is the wallet's own setting, not a per-request option: every request to a given wallet is held to the same validation mode, HAIP and encrypted-request settings.
 
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet header edits three settings: validation mode (strict/debug), HAIP, and encrypted requests. Where a change lands depends on the wallet.
+The **Conformance** panel in the wallet header shows three settings: validation mode (strict/debug), HAIP, and encrypted requests.
 
-**A local wallet** changes its own settings through `PUT /api/config/conformance` (`DELETE` restores the startup values). These settings are not reloaded per request, so the change holds until the process restarts. Every flow that reaches this wallet then honors it: the UI, a scanned QR, and `openid4vp://` or credential-offer links routed here by the CLI or the macOS handler.
+**A locally-hosted wallet** changes them from that panel, which calls `PUT /api/config/conformance` (`DELETE` restores the startup values). The change is process-level, not reloaded per request, so it holds until the process restarts, and every flow reaching this wallet then honors it: the UI, a scanned QR, and `openid4vp://` or credential-offer links routed here by the CLI or the macOS handler.
 
-**The public demo** keeps the change per visitor in the `eudi_conformance` cookie, applied per request. It covers the top-level `/authorize` navigation too, and one visitor never affects another. The shared default stays fixed, and `PUT /api/config/conformance` returns 403. The demo notes this functional cookie in its imprint.
-
-**A remote wallet driven from the CLI** (after `wallet instances use <url>`) cannot be reconfigured from here, so set a CLI-side override:
-
-```bash
-eudi wallet conformance --mode debug --haip false --encrypted false   # sent to the remote as X-Eudi-Dev-* headers
-eudi wallet conformance                                               # show it
-eudi wallet conformance --reset                                       # clear it
-```
-
-The CLI and the macOS handler attach these headers to every request they make to a remote, which honors them per request.
-
-### One knob per context
-
-There is no global override. Three independent knobs cover three contexts, and they do not sync.
-
-| Surface | Set with | Stored as | Applies to |
-|---|---|---|---|
-| A wallet's own setting | its Conformance panel | runtime state via `PUT`/`DELETE /api/config/conformance`, reset on restart | every flow reaching that wallet |
-| A demo visitor's override | the demo's Conformance panel | the `eudi_conformance` cookie (per browser) | that browser's flows, including `/authorize` navigation |
-| A CLI or handler override | `wallet conformance` | `conformance.json` (per machine) | this machine's CLI and handler requests to a remote, as `X-Eudi-Dev-*` headers |
-
-`wallet conformance` never touches a wallet's own setting or shows in a wallet UI, and a UI change never writes `conformance.json`. A handler link to a remote therefore needs the override set with `wallet conformance` (the demo's cookie cannot reach it). When several are present on one request, an explicit header or body wins, then the cookie, then the wallet's own setting.
+**The public demo** shows the settings read-only. It runs HAIP in debug mode, fixed for every visitor: a counterparty that breaks a rule produces a warning in the activity log and the flow continues, so the demo stays usable against issuers and verifiers still being brought into line. `PUT` and `DELETE /api/config/conformance` return 403. Run the wallet locally to change the settings.
 
 `eudi wallet config` (alias of `wallet info`) reports the active fields for a local or remote wallet.
 
