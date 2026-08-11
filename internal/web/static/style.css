@@ -94,17 +94,13 @@ header {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 24px;
 }
 
-.header-left .header-logo + .header-titles {
-  margin-left: -18px;
-}
-
-.header-titles {
+.header-brand {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 8px;
 }
 
 h1 {
@@ -857,38 +853,31 @@ textarea.colorized::placeholder {
     overflow: visible;
   }
 
-  /* Let the header wrap instead of overflowing: the title block drops onto
-     its own line, and the links and action buttons wrap within their rows. */
+  /* Stack the header into left-aligned rows so nothing overflows and every
+     row shares one left edge: brand, then links on their own full-width row,
+     then the action buttons. */
   header {
-    flex-wrap: wrap;
-    gap: 8px 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
   }
 
   .header-left {
     flex-wrap: wrap;
-    gap: 12px;
-    align-items: flex-start;
-  }
-
-  /* Clear the desktop negative margin: with the title stacked into two lines,
-     it pulled the wordmark and links under the logo. */
-  .header-left .header-logo + .header-titles {
-    margin-left: 0;
-  }
-
-  .header-titles {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
+    align-items: center;
+    gap: 10px 20px;
   }
 
   .header-links {
+    flex-basis: 100%;
     flex-wrap: wrap;
+    gap: 16px;
     font-size: 13px;
   }
 
   .header-right {
     flex-wrap: wrap;
+    gap: 8px;
   }
 }
 
