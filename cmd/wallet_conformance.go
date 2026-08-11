@@ -104,13 +104,14 @@ func printConformancePref(cmd *cobra.Command, p conformancePref) {
 }
 
 func walletConformanceCmd() *cobra.Command {
-	var mode string
-	var haip, encrypted, reset bool
+	var mode, haip, encrypted string
+	var reset bool
 
 	cmd := &cobra.Command{
 		Use:   "conformance",
 		Short: "Set the conformance override the CLI sends to a remote wallet",
 		Long: "Sets a validation-strictness override the CLI attaches (as X-Eudi-Dev-* headers) to every request it makes to a remote wallet, for example after `wallet instances use <url>`. A remote wallet's own settings cannot be changed from here, so it honors this override per request instead.\n\n" +
+			"Each of --haip and --encrypted takes true or false, so an override can both turn a check on and turn it off. A flag left unset inherits the remote wallet's own setting.\n\n" +
 			"This does not affect a local wallet: change a local wallet's settings in its web UI (the conformance panel), which every local flow already honors.\n\n" +
 			"With no flags it prints the current override.",
 		Args: cobra.NoArgs,
@@ -134,11 +135,17 @@ func walletConformanceCmd() *cobra.Command {
 				}
 			}
 			if flags.Changed("haip") {
-				v := haip
+				v, err := parseConformanceBool("haip", haip)
+				if err != nil {
+					return err
+				}
 				p.HAIP = &v
 			}
 			if flags.Changed("encrypted") {
-				v := encrypted
+				v, err := parseConformanceBool("encrypted", encrypted)
+				if err != nil {
+					return err
+				}
 				p.Encrypted = &v
 			}
 			if flags.Changed("mode") || flags.Changed("haip") || flags.Changed("encrypted") {
@@ -151,9 +158,25 @@ func walletConformanceCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&mode, "mode", "", "Validation mode to request from remote wallets: strict or debug")
-	cmd.Flags().BoolVar(&haip, "haip", false, "Request HAIP 1.0 enforcement from remote wallets")
-	cmd.Flags().BoolVar(&encrypted, "encrypted", false, "Request encrypted request objects from remote wallets")
+	cmd.Flags().StringVar(&haip, "haip", "", "Request HAIP 1.0 enforcement from remote wallets: true or false")
+	cmd.Flags().StringVar(&encrypted, "encrypted", "", "Request encrypted request objects from remote wallets: true or false")
 	cmd.Flags().BoolVar(&reset, "reset", false, "Clear the CLI conformance override")
 	_ = cmd.RegisterFlagCompletionFunc("mode", staticCompletion("strict", "debug"))
+	_ = cmd.RegisterFlagCompletionFunc("haip", staticCompletion("true", "false"))
+	_ = cmd.RegisterFlagCompletionFunc("encrypted", staticCompletion("true", "false"))
 	return cmd
+}
+
+// parseConformanceBool reads a --haip/--encrypted value as a bool. It accepts
+// only true or false (not the wider set strconv.ParseBool takes) so the flag
+// reads the same as the true/false the help advertises.
+func parseConformanceBool(flag, value string) (bool, error) {
+	switch value {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid --%s %q (must be true or false)", flag, value)
+	}
 }

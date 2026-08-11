@@ -650,9 +650,9 @@ The **Conformance** panel in the wallet header edits three settings: validation 
 **A remote wallet driven from the CLI** (after `wallet instances use <url>`) cannot be reconfigured from here, so set a CLI-side override:
 
 ```bash
-eudi wallet conformance --mode debug --haip=false   # sent to the remote as X-Eudi-Dev-* headers
-eudi wallet conformance                             # show it
-eudi wallet conformance --reset                     # clear it
+eudi wallet conformance --mode debug --haip false --encrypted false   # sent to the remote as X-Eudi-Dev-* headers
+eudi wallet conformance                                               # show it
+eudi wallet conformance --reset                                       # clear it
 ```
 
 The CLI and the macOS handler attach these headers to every request they make to a remote, which honors them per request.

@@ -14,7 +14,56 @@
 
 package cmd
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
+
+func TestConformanceCmdSetsHAIPAndEncrypted(t *testing.T) {
+	t.Cleanup(func() { _ = saveConformancePref(conformancePref{}) })
+
+	run := func(args ...string) error {
+		cmd := walletConformanceCmd()
+		cmd.SetArgs(args)
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		return cmd.Execute()
+	}
+
+	// Both checks are expressible as false, not just present-means-true.
+	if err := run("--mode", "debug", "--haip", "false", "--encrypted", "false"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := loadConformancePref()
+	if got.Mode != "debug" {
+		t.Errorf("mode = %q, want debug", got.Mode)
+	}
+	if got.HAIP == nil || *got.HAIP {
+		t.Errorf("haip = %v, want false", got.HAIP)
+	}
+	if got.Encrypted == nil || *got.Encrypted {
+		t.Errorf("encrypted = %v, want false", got.Encrypted)
+	}
+
+	// And as true.
+	if err := run("--haip", "true", "--encrypted", "true"); err != nil {
+		t.Fatalf("run true: %v", err)
+	}
+	got = loadConformancePref()
+	if got.HAIP == nil || !*got.HAIP {
+		t.Errorf("haip = %v, want true", got.HAIP)
+	}
+	if got.Encrypted == nil || !*got.Encrypted {
+		t.Errorf("encrypted = %v, want true", got.Encrypted)
+	}
+
+	// A value that is neither true nor false is rejected.
+	err := run("--haip", "yes")
+	if err == nil || !strings.Contains(err.Error(), "must be true or false") {
+		t.Errorf("expected a true/false error, got %v", err)
+	}
+}
 
 func TestConformancePrefRoundTrip(t *testing.T) {
 	off := false
