@@ -451,17 +451,27 @@ func TestResolveClientAuthentication(t *testing.T) {
 		t.Errorf("HAIP strict did not authenticate the client: %+v", auth)
 	}
 
-	// In debug mode the wallet proceeds without client authentication against
-	// such an issuer, so a non-HAIP issuer stays reachable, and records the
-	// profile violation as a warning.
+	// In debug mode the wallet attests a silent issuer (it may require an
+	// attestation without advertising it, §10.1) and warns about the missing
+	// advertisement, so an issuer like the Animo playground still works.
 	w.ValidationMode = ValidationModeDebug
-	before := len(w.GetLog())
-	if auth := w.resolveClientAuthentication("", plain); auth != nil {
-		t.Errorf("HAIP debug should proceed without client auth, got %+v", auth)
+	if auth := w.resolveClientAuthentication("", plain); auth == nil || auth.Method != ClientAuthAttestation {
+		t.Errorf("HAIP debug should attest a silent issuer, got %+v", auth)
 	}
-	logs := w.GetLog()
-	if len(logs) <= before || logs[len(logs)-1].Severity != severityWarning {
-		t.Errorf("expected a warning about missing client authentication (log %d→%d)", before, len(logs))
+	if !hasWarningContaining(w, "advertises no token endpoint client authentication") {
+		t.Error("expected a warning about the missing client-authentication advertisement")
+	}
+
+	// An issuer that explicitly offers only unauthenticated access is taken at
+	// its word: the wallet proceeds without client auth and warns instead.
+	explicitNone := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{
+		"token_endpoint_auth_methods_supported": []any{"none"},
+	}}
+	if auth := w.resolveClientAuthentication("", explicitNone); auth != nil {
+		t.Errorf("HAIP debug should not attest an explicit-none issuer, got %+v", auth)
+	}
+	if !hasWarningContaining(w, "unauthenticated access") {
+		t.Error("expected a warning about the issuer offering only unauthenticated access")
 	}
 }
 

@@ -580,7 +580,12 @@ Under `--haip` the wallet attests. HAIP 1.0 §4.4.1 requires it of both sides:
 
 > Wallets MUST use, and Issuers MUST require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that support client authentication (such as the PAR and Token Endpoints).
 
-A conformant issuer therefore both requires and advertises client authentication, and the wallet attests. When an issuer requires HAIP of the wallet but offers only unauthenticated access itself, that is a profile violation, and `--mode` decides what happens: `--mode strict` attests anyway and the exchange fails at the token endpoint (the honest result for a wallet asserting HAIP), while `--mode debug` records the violation as a warning and proceeds without client authentication, so a non-HAIP issuer stays reachable. The public demo runs the debug case.
+A conformant issuer both requires and advertises client authentication, and the wallet attests. Two kinds of issuer deviate, and `--mode debug` (which the public demo runs) reads each the way that lets issuance proceed:
+
+- An issuer that requires an attestation but advertises no client authentication method at all. Advertising is only a SHOULD in §10.1, so a silent issuer may still require one. The wallet attests anyway and warns about the missing advertisement, so an issuer like the Animo playground works.
+- An issuer that explicitly advertises only unauthenticated access (`none`). The wallet takes it at its word, proceeds without client authentication, and warns, since attesting would only be refused. This is what makes a non-HAIP issuer like Procivis One reachable.
+
+`--mode strict` attests in both cases and lets the exchange fail at the token endpoint if the issuer refuses, the honest result for a wallet asserting HAIP.
 
 Without `--haip` it attests **only when the authorization server advertises it**, by listing `attest_jwt_client_auth` in `token_endpoint_auth_methods_supported`. That is what §8 of the draft asks a client to do:
 

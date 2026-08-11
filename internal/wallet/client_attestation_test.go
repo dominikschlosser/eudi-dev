@@ -37,6 +37,9 @@ func TestAttestsClient(t *testing.T) {
 	otherMethod := map[string]any{
 		"token_endpoint_auth_methods_supported": []any{"client_secret_post"},
 	}
+	explicitNone := map[string]any{
+		"token_endpoint_auth_methods_supported": []any{"none"},
+	}
 
 	for _, tc := range []struct {
 		name  string
@@ -52,15 +55,19 @@ func TestAttestsClient(t *testing.T) {
 		{"another method", otherMethod, false, false, ValidationModeDebug, false},
 		{"another method, override on", otherMethod, false, true, ValidationModeDebug, true},
 		{"no metadata at all", nil, false, false, ValidationModeDebug, false},
-		// HAIP 1.0 §4.4.1 requires client authentication. Against an issuer that
-		// offers none, strict still attests (and fails at the token endpoint),
-		// but debug proceeds without it so a non-HAIP issuer stays reachable.
+		// HAIP 1.0 §4.4.1 requires client authentication. In strict the wallet
+		// always attests (and fails at the token endpoint if refused). In debug
+		// it attests a silent issuer (which may require it without advertising
+		// it, §10.1) but takes an issuer that named an unauthenticated method at
+		// its word so a non-HAIP issuer stays reachable.
 		{"haip strict, silent metadata", silent, true, false, ValidationModeStrict, true},
-		{"haip debug, silent metadata", silent, true, false, ValidationModeDebug, false},
+		{"haip debug, silent metadata attests", silent, true, false, ValidationModeDebug, true},
 		{"haip strict, no metadata", nil, true, false, ValidationModeStrict, true},
-		{"haip debug, no metadata", nil, true, false, ValidationModeDebug, false},
+		{"haip debug, no metadata attests", nil, true, false, ValidationModeDebug, true},
+		{"haip strict, explicit none", explicitNone, true, false, ValidationModeStrict, true},
+		{"haip debug, explicit none does not attest", explicitNone, true, false, ValidationModeDebug, false},
 		{"haip strict, another method", otherMethod, true, false, ValidationModeStrict, true},
-		{"haip debug, another method", otherMethod, true, false, ValidationModeDebug, false},
+		{"haip debug, another method does not attest", otherMethod, true, false, ValidationModeDebug, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := &Wallet{RequireHAIP: tc.haip, ForceClientAttestation: tc.force, ValidationMode: tc.mode}
@@ -190,6 +197,41 @@ func TestForceClientAttestation_ReachesSilentIssuer(t *testing.T) {
 				t.Errorf("issuer saw %d attested token requests, want 1", *attested)
 			}
 		})
+	}
+}
+
+// TestHAIPDebugAttestsSilentIssuer is the Animo playground case: a HAIP wallet
+// in debug mode (the public demo) against an issuer that requires client
+// attestation without advertising the method (§10.1 makes advertising a
+// SHOULD). The wallet attests anyway, so the credential is issued, and warns
+// about the missing advertisement. This is the same "silent" issuer that a
+// non-HAIP wallet needs --client-attestation to reach.
+func TestHAIPDebugAttestsSilentIssuer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.RequireHAIP = true
+	w.ValidationMode = ValidationModeDebug
+	w.IssuerURL = "https://wallet.example"
+	w.BaseURL = "https://wallet.example"
+
+	srv, offerURI, attested := silentAttestationIssuer(t, w)
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("HAIP debug should complete against a silent require-attestation issuer, got %v", err)
+	}
+	if *attested != 1 {
+		t.Errorf("issuer saw %d attested token requests, want 1", *attested)
+	}
+	if result == nil || result.CredentialID == "" {
+		t.Fatal("expected a credential to be imported")
+	}
+	if !hasWarningContaining(w, "advertises no token endpoint client authentication") {
+		t.Error("expected a warning that the issuer does not advertise its client authentication method")
 	}
 }
 

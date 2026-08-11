@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.2] - 2026-08-12
+
+### Fixed
+
+- **The demo could not issue from an issuer that requires client attestation without advertising it.** 1.21.0 made the wallet skip client attestation under HAIP + debug whenever the authorization server did not advertise `attest_jwt_client_auth`. That was too broad. It correctly skips for an issuer that explicitly offers only unauthenticated access (Procivis One), but it also skipped for an issuer that requires an attestation without advertising the method (the Animo playground, since draft-ietf-oauth-attestation-based-client-auth §10.1 makes advertising a SHOULD not a MUST), so the token exchange failed with `invalid_client`. The wallet now attests a silent issuer, and warns that the method was not advertised, while still taking an explicit `none` at its word.
+
 ## [1.21.1] - 2026-08-11
 
 ### Fixed

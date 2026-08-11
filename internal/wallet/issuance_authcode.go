@@ -416,26 +416,40 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 //
 // The wallet always attests when the server advertises it
 // (draft-ietf-oauth-attestation-based-client-auth §8), or when
-// ForceClientAttestation was set for an issuer that checks an attestation
-// without announcing it (advertising is only a SHOULD in §10.1).
+// ForceClientAttestation was set.
 //
 // HAIP 1.0 §4.4.1 is stronger: "Wallets MUST use, and Issuers MUST require, an
-// OAuth2 Client authentication mechanism". A conformant issuer therefore
-// advertises it and the case above already attests. The remaining case is an
-// issuer that requires HAIP of the wallet but offers only unauthenticated
-// access itself — a violation. In strict mode the wallet attests anyway and
-// the exchange fails at the token endpoint, the honest outcome for a wallet
-// asserting HAIP. In debug mode it does not attest, so a non-HAIP issuer can
-// still complete the flow; resolveClientAuthentication records the violation.
+// OAuth2 Client authentication mechanism". Under HAIP the remaining cases turn
+// on what the metadata says and, in debug, on which way an issuer's silence
+// most likely breaks:
+//
+//   - The issuer advertises no client authentication method at all. It may
+//     still require an attestation without announcing it, since §10.1 makes
+//     advertising only a SHOULD. The wallet attests (and warns about the
+//     missing advertisement), so an issuer like the Animo playground works.
+//   - The issuer explicitly advertises only unauthenticated access (none or
+//     public). Attesting would just be refused, so in debug the wallet takes
+//     it at its word and does not attest, letting a non-HAIP issuer like
+//     Procivis One complete the flow. In strict it attests anyway and the
+//     exchange fails, the honest outcome for a wallet asserting HAIP.
+//
+// resolveClientAuthentication records the deviation either way.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false
 	}
-	if w.ForceClientAttestation ||
-		detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" {
+	method := detectTokenEndpointAuthMethod(oauthMeta)
+	if w.ForceClientAttestation || method == "attest_jwt_client_auth" {
 		return true
 	}
-	return w.RequireHAIP && w.Mode() == ValidationModeStrict
+	if !w.RequireHAIP {
+		return false
+	}
+	if w.Mode() == ValidationModeStrict {
+		return true
+	}
+	// debug: attest a silent issuer, honor one that named an unauthenticated method.
+	return method == ""
 }
 
 // clientAuthContext is what deciding, and re-deciding, client authentication
@@ -460,14 +474,23 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 		}
 	}
 	if w.attestsClient(ctx.oauthMeta) {
+		// Under HAIP+debug the wallet attests an issuer that advertised no
+		// client authentication method at all. Attesting is the right call
+		// (§10.1 lets an issuer require it without advertising it), but the
+		// missing advertisement is a deviation worth surfacing.
+		if w != nil && w.RequireHAIP && w.Mode() != ValidationModeStrict &&
+			!w.ForceClientAttestation &&
+			detectTokenEndpointAuthMethod(ctx.oauthMeta) == "" {
+			w.addProtocolWarning("issuance", "client_authentication_not_advertised",
+				"The issuer's authorization server advertises no token endpoint client authentication method (draft-ietf-oauth-attestation-based-client-auth §10.1 recommends it). Attesting anyway, since HAIP requires client authentication.",
+				map[string]any{"token_endpoint": ctx.tokenEndpoint})
+		}
 		return attestationClientAuth(ctx)
 	}
-	// The wallet is not attesting. If HAIP wanted it and this issuer simply
-	// does not offer client authentication, debug mode is proceeding without
+	// The wallet is not attesting. HAIP wanted client authentication but this
+	// issuer advertised only unauthenticated access, so debug proceeds without
 	// it: record the profile violation so it is visible without failing.
-	if w != nil && w.RequireHAIP &&
-		!w.ForceClientAttestation &&
-		detectTokenEndpointAuthMethod(ctx.oauthMeta) != "attest_jwt_client_auth" {
+	if w != nil && w.RequireHAIP && !w.ForceClientAttestation {
 		w.addProtocolWarning("issuance", "haip_client_authentication_unavailable",
 			"HAIP 1.0 §4.4.1 requires client authentication at the token endpoint, but this issuer's authorization server offers only unauthenticated access. Proceeding without it.",
 			map[string]any{"token_endpoint": ctx.tokenEndpoint})
