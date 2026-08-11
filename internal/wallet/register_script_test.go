@@ -159,3 +159,67 @@ func TestHandlerScriptSendsConformanceHeadersToRemote(t *testing.T) {
 		t.Errorf("X-Eudi-Dev-HAIP = %q, want false", gotHAIP)
 	}
 }
+
+// A Homebrew upgrade replaces the versioned Cellar file the stable symlink
+// points at. The handler must be registered with the symlink so it survives.
+func TestStableBinaryPathKeepsHomebrewSymlink(t *testing.T) {
+	root := t.TempDir()
+	cellarBin := filepath.Join(root, "Cellar", "eudi-dev", "1.2.3", "bin")
+	if err := os.MkdirAll(cellarBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(cellarBin, "eudi")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlink := filepath.Join(binDir, "eudi")
+	if err := os.Symlink(target, symlink); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := stableBinaryPath(symlink); got != symlink {
+		t.Errorf("Homebrew symlink: got %q, want the symlink %q", got, symlink)
+	}
+}
+
+// A symlink outside a Cellar (a build or temp location) is not a stable launch
+// point, so the resolved target is used.
+func TestStableBinaryPathResolvesNonHomebrewSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "build", "eudi")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	symlink := filepath.Join(root, "eudi-link")
+	if err := os.Symlink(target, symlink); err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stableBinaryPath(symlink); got != want {
+		t.Errorf("non-Homebrew symlink: got %q, want the resolved target %q", got, want)
+	}
+}
+
+// A real binary (no symlink) is returned unchanged.
+func TestStableBinaryPathPlainFile(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "eudi")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(bin)
+	if got := stableBinaryPath(bin); got != want {
+		t.Errorf("plain file: got %q, want %q", got, want)
+	}
+}

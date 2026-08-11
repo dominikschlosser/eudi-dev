@@ -16,8 +16,29 @@ package wallet
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
+
+// stableBinaryPath prefers a package manager's stable symlink over the
+// versioned file it resolves to. Homebrew installs the binary under
+// …/Cellar/<name>/<version>/bin and exposes it through a stable symlink such as
+// /opt/homebrew/bin/eudi. Baking the resolved (versioned) path into the URL
+// handler pins it to one version, so `brew upgrade` deletes that file and the
+// handler stops working until the user registers again. Keeping the symlink
+// lets an upgrade swap the target underneath it, so registering once is enough.
+// Any other layout uses the resolved path, since a bare symlink in a temporary
+// or build directory is not a stable launch point.
+func stableBinaryPath(executable string) string {
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return executable
+	}
+	if resolved != executable && strings.Contains(filepath.ToSlash(resolved), "/Cellar/") {
+		return executable
+	}
+	return resolved
+}
 
 // handlerScriptSource renders the bash script the .app bundle dispatches to.
 // Separate from writing it so its behavior can be tested without touching

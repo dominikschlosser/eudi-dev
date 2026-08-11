@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The macOS URL-scheme handler survives a Homebrew upgrade.** Registration baked the resolved binary path (`…/Cellar/eudi-dev/<version>/bin/eudi`) into the handler, so `brew upgrade` deleted that file and a clicked `openid4vp` or credential-offer link did nothing until the wallet was registered again. It bakes the stable symlink (`/opt/homebrew/bin/eudi`) instead, so an upgrade swaps the target underneath it and registering once is enough.
 - **The demo conformance warning now names the links a browser override cannot reach.** It called out the CLI but not the `openid4vp` and credential-offer links the macOS handler opens, which run through the same header path rather than the browser cookie. Both are named now.
 
 ## [1.20.2] - 2026-08-11

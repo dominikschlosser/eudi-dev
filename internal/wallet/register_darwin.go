@@ -73,10 +73,10 @@ func RegisterURLSchemes(opts RegisterOptions) error {
 	if err != nil {
 		return fmt.Errorf("finding executable path: %w", err)
 	}
-	binaryPath, err = filepath.EvalSymlinks(binaryPath)
-	if err != nil {
-		return fmt.Errorf("resolving executable path: %w", err)
-	}
+	// Keep a package manager's stable symlink (Homebrew's /opt/homebrew/bin/eudi)
+	// rather than the versioned file it points at, so a `brew upgrade` does not
+	// leave the handler pointing at a deleted binary.
+	binaryPath = stableBinaryPath(binaryPath)
 
 	// Write the bash handler script
 	handlerPath := handlerScriptPath()
