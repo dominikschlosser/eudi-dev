@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.20.4] - 2026-08-11
+
+### Fixed
+
+- **A freshly issued credential could disappear despite a successful issuance.** When a conformance override put the offer on a per-request wallet clone (which the public demo always does), the save ran against the clone's own wallet and its own copy of the store lock rather than the wallet the server serves and reloads. A store reload landing between the import and the save (every poll on the demo triggers one) dropped the new credential, so the flow reported success and left nothing behind. Saving now delegates to the real server, so the credential lands in the served wallet under the same lock the reload takes.
+
 ## [1.20.3] - 2026-08-11
 
 ### Fixed

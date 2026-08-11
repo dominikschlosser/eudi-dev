@@ -45,7 +45,12 @@ type Server struct {
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
-	demo             *demoState
+	// parent is the real server a per-request clone was made from. A clone has
+	// its own wallet and its own storeSyncMu, so persisting through it would
+	// neither lock out the real server's store reloads nor land the credential
+	// in the wallet the real server serves. Saving delegates to the parent.
+	parent *Server
+	demo   *demoState
 	// deferredIssuanceOwner is the wallet whose deferred credentials the
 	// poller collects. Set on the per-request clone a profile override
 	// creates, so a deferral recorded there is handed back rather than
@@ -385,6 +390,13 @@ func (s *Server) triggerSave() {
 // credential is put back if it went missing, and both steps happen under the
 // same lock the reload takes.
 func (s *Server) saveIssuedCredential(result *IssuanceResult) {
+	// A per-request clone shares neither the real server's wallet nor its
+	// store lock, so it must save through the real server, where the credential
+	// lands in the served wallet and a concurrent reload is locked out.
+	if s.parent != nil {
+		s.parent.saveIssuedCredential(result)
+		return
+	}
 	if result != nil && result.Imported != nil {
 		s.storeSyncMu.Lock()
 		if _, ok := s.wallet.GetCredential(result.Imported.ID); !ok {

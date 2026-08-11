@@ -60,6 +60,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		}
 		reqServer = &Server{
 			wallet:           reqWallet,
+			parent:           s,
 			port:             s.port,
 			mux:              s.mux,
 			onSave:           s.onSave,

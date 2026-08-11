@@ -125,6 +125,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 
 		reqServer = &Server{
 			wallet:           reqWallet,
+			parent:           s,
 			port:             s.port,
 			mux:              s.mux,
 			onSave:           s.onSave,
@@ -296,6 +297,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 func (s *Server) cloneWithWallet(reqWallet *Wallet) *Server {
 	clone := &Server{
 		wallet:                reqWallet,
+		parent:                s,
 		deferredIssuanceOwner: s.wallet,
 		port:                  s.port,
 		mux:                   s.mux,
