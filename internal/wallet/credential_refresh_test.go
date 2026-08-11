@@ -442,10 +442,26 @@ func TestResolveClientAuthentication(t *testing.T) {
 		t.Errorf("an issuer that asked for nothing resolved to %+v", auth)
 	}
 
-	// Enforcing HAIP means authenticating whatever the metadata says.
+	// Enforcing HAIP in strict mode authenticates the client even against an
+	// issuer that offers nothing, and lets the exchange fail downstream if it
+	// will not take the attestation.
 	w.RequireHAIP = true
+	w.ValidationMode = ValidationModeStrict
 	if auth := w.resolveClientAuthentication("", plain); auth == nil || auth.Method != ClientAuthAttestation {
-		t.Errorf("HAIP enforcement did not authenticate the client: %+v", auth)
+		t.Errorf("HAIP strict did not authenticate the client: %+v", auth)
+	}
+
+	// In debug mode the wallet proceeds without client authentication against
+	// such an issuer, so a non-HAIP issuer stays reachable, and records the
+	// profile violation as a warning.
+	w.ValidationMode = ValidationModeDebug
+	before := len(w.GetLog())
+	if auth := w.resolveClientAuthentication("", plain); auth != nil {
+		t.Errorf("HAIP debug should proceed without client auth, got %+v", auth)
+	}
+	logs := w.GetLog()
+	if len(logs) <= before || logs[len(logs)-1].Severity != severityWarning {
+		t.Errorf("expected a warning about missing client authentication (log %d→%d)", before, len(logs))
 	}
 }
 

@@ -853,11 +853,14 @@ func TestBrowserPresentationAPI_UnsignedRequestIgnoresExpectedOrigins(t *testing
 		t.Fatalf("marshaling payload: %v", err)
 	}
 
+	// Conformance is the wallet's own setting now, so hold this request to
+	// strict + HAIP by configuring the wallet rather than a per-request header.
+	srv.wallet.ValidationMode = ValidationModeStrict
+	srv.wallet.RequireHAIP = true
+
 	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://wallet.example")
-	req.Header.Set("X-Eudi-Dev-Mode", "strict")
-	req.Header.Set("X-Eudi-Dev-HAIP", "true")
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, req)
 

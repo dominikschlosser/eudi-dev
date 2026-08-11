@@ -126,29 +126,37 @@ async function clearPending() {
 }
 
 test.describe("Demo mode conformance panel", () => {
-  test("stores a per-visitor cookie and leaves the shared setting alone", async ({
-    page,
-  }) => {
+  test("is read-only and cannot change the shared setting", async ({ page }) => {
     await page.goto(`${BASE}/?focus=overview`);
-    const serverMode = async () =>
-      await page.evaluate(async () => (await (await fetch("/api/config")).json()).validation_mode);
+    const config = async () =>
+      await page.evaluate(async () => await (await fetch("/api/config")).json());
 
-    // Demo default is strict; switch this visitor to debug.
-    expect(await serverMode()).toBe("strict");
+    // The demo runs HAIP in debug mode, fixed for everyone.
+    const before = await config();
+    expect(before.validation_mode).toBe("debug");
+    expect(before.require_haip).toBe(true);
+
     await page.click("#conformance-link");
-    await page.selectOption("#conf-mode-select", "debug");
+    // The controls reflect the setting but are disabled; there is no reset.
+    await expect(page.locator("#conf-mode-select")).toHaveValue("debug");
+    await expect(page.locator("#conf-mode-select")).toBeDisabled();
+    await expect(page.locator("#conf-haip-input")).toBeDisabled();
+    await expect(page.locator("#conf-encrypted-input")).toBeDisabled();
+    await expect(page.locator("#conf-reset")).toBeHidden();
+    await expect(page.locator("#conf-override-note")).toContainText("locally");
 
-    // The visitor's choice lives in a cookie; the shared wallet is untouched.
-    await expect
-      .poll(async () => await page.evaluate(() => document.cookie))
-      .toContain("eudi_conformance");
-    expect(await serverMode()).toBe("strict");
-
-    // Reset clears the cookie.
-    await page.click("#conf-reset");
-    await expect
-      .poll(async () => await page.evaluate(() => document.cookie))
-      .not.toContain("eudi_conformance");
+    // No per-visitor cookie is written, and PUT is refused for the demo.
+    expect(await page.evaluate(() => document.cookie)).not.toContain("eudi_conformance");
+    const status = await page.evaluate(async () => {
+      const r = await fetch("/api/config/conformance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "strict" }),
+      });
+      return r.status;
+    });
+    expect(status).toBe(403);
+    expect((await config()).validation_mode).toBe("debug");
   });
 });
 
@@ -569,44 +577,27 @@ test.describe("Verifier polling", () => {
 // The demo is the EUDI profile, and the dialog is where a visitor finds out
 // what that actually means for their verifier.
 test.describe("Conformance", () => {
-  test("the dialog reports what a demo instance enforces", async ({ page }) => {
+  test("the dialog reports what a demo instance checks", async ({ page }) => {
     await page.goto(BASE);
     await page.locator("#conformance-link").click();
     await expect(page.locator("#conformance-overlay")).toHaveClass(/active/);
 
-    // A demo instance defaults to strict validation with HAIP enforced and
-    // encrypted requests not required; the editable controls reflect that.
-    await expect(page.locator("#conf-mode-select")).toHaveValue("strict");
+    // A demo instance runs HAIP in debug mode with encrypted requests not
+    // required; the read-only controls reflect that.
+    await expect(page.locator("#conf-mode-select")).toHaveValue("debug");
     await expect(page.locator("#conf-haip-input")).toBeChecked();
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
     await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
-
-    await expect(page.locator("#conf-explainer")).toContainText("HAIP 1.0 enforced");
-
-    // The override rides a per-browser cookie, so the demo warns that a CLI
-    // offer to the same demo will not see it.
-    await expect(page.locator("#conf-warning")).toBeVisible();
-    await expect(page.locator("#conf-override-note")).toContainText("cookie");
+    await expect(page.locator("#conf-explainer")).toContainText("HAIP 1.0 checked");
 
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);
   });
 
-  test("a request that ignores the profile is rejected", async ({ page }) => {
-    const params = new URLSearchParams({
-      client_id: "redirect_uri:" + BASE + "/nowhere",
-      response_type: "vp_token",
-      response_mode: "direct_post",
-      response_uri: BASE + "/nowhere",
-      nonce: "n-0S6_WzA2Mj",
-      dcql_query: JSON.stringify({
-        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
-      }),
-    });
-    const res = await fetch(`${BASE}/authorize?${params}`);
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain("HAIP");
-  });
+  // Debug mode does not refuse a non-HAIP request; it records the violation as
+  // a warning and carries on. That behavior is covered deterministically by the
+  // Go tests (issuance_procivis_test.go, the presentation-findings warnings),
+  // where it can be asserted without driving a full presentation side effect.
 });
 
 test.describe("Demo mode hardening", () => {

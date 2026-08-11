@@ -66,23 +66,6 @@ if [[ -n "$REMOTE_URL" ]]; then
   echo "routing to active remote wallet $LISTENER" >>"$LOG_FILE"
 fi
 
-# A remote wallet's conformance settings cannot be changed from here, so forward
-# the CLI override ("wallet conformance", stored in conformance.json next to
-# this script) as headers, which the remote honors per request. A local wallet
-# uses its own setting instead, so no headers are added for it.
-CONF_HEADERS=()
-if [[ -n "$REMOTE_URL" ]]; then
-  CONF_FILE="$(dirname "$0")/conformance.json"
-  # Word capture rather than true|false alternation: BSD sed (macOS) does not
-  # support \| in a basic regex, and the value here is only ever true or false.
-  CONF_MODE=$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONF_FILE" 2>/dev/null)
-  CONF_HAIP=$(sed -n 's/.*"haip"[[:space:]]*:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$CONF_FILE" 2>/dev/null)
-  CONF_ENC=$(sed -n 's/.*"encrypted"[[:space:]]*:[[:space:]]*\([a-z][a-z]*\).*/\1/p' "$CONF_FILE" 2>/dev/null)
-  [[ -n "$CONF_MODE" ]] && CONF_HEADERS+=(-H "X-Eudi-Dev-Mode: $CONF_MODE")
-  [[ -n "$CONF_HAIP" ]] && CONF_HEADERS+=(-H "X-Eudi-Dev-HAIP: $CONF_HAIP")
-  [[ -n "$CONF_ENC" ]] && CONF_HEADERS+=(-H "X-Eudi-Dev-Encrypted: $CONF_ENC")
-fi
-
 listener_ready() {
   curl -sf "$LISTENER/api/credentials" >/dev/null 2>&1
 }
@@ -138,7 +121,6 @@ ensure_listener() {
 
 submit_offer() {
   curl -sf -X POST "$LISTENER/api/offers" \
-    "${CONF_HEADERS[@]}" \
     -H "Content-Type: application/json" \
     -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }
@@ -158,7 +140,6 @@ open_remote_ui() {
 
 submit_presentation() {
   curl -sf -X POST "$LISTENER/api/presentations" \
-    "${CONF_HEADERS[@]}" \
     -H "Content-Type: application/json" \
     -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }

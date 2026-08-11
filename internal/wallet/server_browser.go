@@ -18,27 +18,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
-
-// parseBoolHeader reads a boolean override header (e.g. X-Eudi-Dev-HAIP). An
-// absent or unparseable header returns nil, which inherits the server's own
-// setting; "false" is an explicit opt out, so a caller can still be exercised
-// against a wallet that enforces the setting globally.
-func parseBoolHeader(value string) *bool {
-	if value == "" {
-		return nil
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return nil
-	}
-	return &parsed
-}
 
 // handleBrowserPresentationAPI executes an OpenID4VP Browser API request and
 // returns the browser-facing result object that navigator.credentials.get()
@@ -50,34 +32,9 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Conformance is process-level wallet state now, so the browser flow runs
+	// on the real server like every other request.
 	reqServer := s
-	opts := mergedConformanceOptions(r, presentationRequestOptions{})
-	if opts.hasConformanceOverride() {
-		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		reqServer = &Server{
-			wallet:           reqWallet,
-			parent:           s,
-			port:             s.port,
-			mux:              s.mux,
-			onSave:           s.onSave,
-			onConsentRequest: s.onConsentRequest,
-			onUIRequest:      s.onUIRequest,
-			logFunc:          s.logFunc,
-			httpSrv:          s.httpSrv,
-			issuerSrv:        s.issuerSrv,
-			issuerTLSCert:    s.issuerTLSCert,
-			issuerPort:       s.issuerPort,
-		}
-		reqServer.parseOpts = oid4vc.ParseOptions{
-			FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
-				reqServer.log(format, args...)
-			}),
-		}
-	}
 
 	requestOrigin := strings.TrimSpace(r.Header.Get("Origin"))
 	protocol, authReq, err := ParseBrowserAPIRequest(body, reqServer.parseOpts, requestOrigin)

@@ -108,7 +108,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode strict and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVarP(&opts.Detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
@@ -333,13 +333,15 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		// visitors see the real wallet UX.
 		opts.PID = true
 
-		// Demo mode is the EUDI profile: a wallet hosted publicly as
-		// a counterparty should hold callers to the same rules a real
-		// EUDI wallet does, rather than accepting anything and
-		// teaching verifiers that they pass. Both are overridable, so
-		// a self-hosted demo can still be permissive.
+		// Demo mode is the EUDI profile held in debug: a wallet hosted
+		// publicly as a counterparty checks callers against the same
+		// HAIP rules a real EUDI wallet does, but debug mode reports a
+		// violation as a warning and carries on rather than refusing it,
+		// so the demo stays usable against issuers and verifiers still
+		// being brought into line. Both are overridable, so a self-hosted
+		// demo can be stricter or looser.
 		if !cmd.Flags().Changed("mode") {
-			w.ValidationMode = wallet.ValidationModeStrict
+			w.ValidationMode = wallet.ValidationModeDebug
 		}
 		if !cmd.Flags().Changed("haip") {
 			opts.HAIP = true

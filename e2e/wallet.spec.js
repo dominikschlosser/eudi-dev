@@ -143,13 +143,12 @@ test.describe("Wallet Dashboard", () => {
     const target = before === "strict" ? "debug" : "strict";
 
     await page.click("#conformance-link");
-    // The browser-only warning is a demo-only thing; a local change reaches
-    // every flow, so it must not appear here.
-    await expect(page.locator("#conf-warning")).toBeHidden();
+    // A local wallet's controls are editable (unlike the read-only demo).
+    await expect(page.locator("#conf-mode-select")).toBeEnabled();
     await page.selectOption("#conf-mode-select", target);
     await expect.poll(configMode).toBe(target);
 
-    // The change is the server's, not a per-visitor cookie.
+    // The change is the server's own setting, no per-visitor cookie involved.
     const cookie = await page.evaluate(() => document.cookie);
     expect(cookie).not.toContain("eudi_conformance");
 

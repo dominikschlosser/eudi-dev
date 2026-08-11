@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0] - 2026-08-11
+
+### Changed
+
+- **The public demo is graceful against non-conformant counterparties.** It runs HAIP in debug mode now, not strict: a request or issuer that breaks a profile rule produces a warning in the activity log and the flow continues, rather than being refused. In particular, an issuer that requires HAIP of the wallet but offers only unauthenticated access at its token endpoint (as the Procivis One and Animo trial issuers do) no longer fails issuance. The wallet notes the violation and proceeds without client authentication. Under strict mode it still attests and the exchange fails, the honest result for a wallet asserting HAIP.
+- **Conformance settings are the wallet's own, changed only on a locally-hosted wallet.** Validation mode, HAIP and encrypted requests are process-level state set through the local Conformance panel (`PUT`/`DELETE /api/config/conformance`). The public demo shows them read-only. There is no longer a per-request override, which removes the confusion of a browser setting that a CLI or system-handler flow could not see.
+- **The activity log marks spec violations as warnings.** A HAIP or profile violation the wallet noted without failing on is a distinct warning state (a `⚠ WARN` badge), separate from OK and FAIL.
+
+### Removed
+
+- **The per-request conformance override.** The `eudi_conformance` cookie, the `X-Eudi-Dev-*` request headers, the `wallet conformance` CLI command (and its `conformance.json`), and the `haip`/`mode` body fields on the flow endpoints are gone. The demo therefore sets no cookies. The OIDF conformance harness sets the wallet's conformance through `PUT /api/config/conformance` before each submission instead.
+
 ## [1.20.4] - 2026-08-11
 
 ### Fixed

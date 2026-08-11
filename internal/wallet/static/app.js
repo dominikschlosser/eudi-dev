@@ -1002,13 +1002,17 @@
       const hasDetails = entry.details && Object.keys(entry.details).length > 0;
       el.className = 'log-entry' + (hasDetails ? ' has-details' : '');
       const time = new Date(entry.time).toLocaleTimeString();
+      // Three states: a spec violation the wallet noted but did not fail on is
+      // a warning, distinct from a plain OK or a hard FAIL.
+      const warning = entry.severity === 'warning';
+      const statusClass = warning ? 'warning' : (entry.success ? 'success' : 'failure');
+      const statusLabel = warning ? '⚠ WARN' : (entry.success ? 'OK' : 'FAIL');
       let html = '<div class="log-header">' +
         '<span class="log-chevron">' + (hasDetails ? '▸' : '') + '</span>' +
         '<span class="log-time">' + time + '</span>' +
         '<span class="log-action ' + entry.action + '">' + escHtml(entry.action) + '</span>' +
         '<span class="log-detail">' + escHtml(entry.detail) + '</span>' +
-        '<span class="log-status ' + (entry.success ? 'success' : 'failure') + '">' +
-          (entry.success ? 'OK' : 'FAIL') + '</span>' +
+        '<span class="log-status ' + statusClass + '">' + statusLabel + '</span>' +
         '</div>';
       if (hasDetails) {
         html += '<div class="log-details">' + renderLogDetails(entry.details) + '</div>';
@@ -1603,41 +1607,16 @@
   // Shows what an incoming request has to satisfy. The wording is
   // deliberately about consequences rather than flag names: "enforced" only
   // means something if you can see what it rejects.
-  // The conformance override the visitor picks is kept in a cookie so it also
-  // reaches server-side flows (the direct_post response, issuer calls) and the
-  // top-level /authorize navigation, which a header cannot. It is per-browser,
-  // so one visitor's choice never affects another on the shared demo.
-  const CONF_COOKIE = 'eudi_conformance';
-  let conformanceDefaults = { validation_mode: 'strict', require_haip: true, require_encrypted_request: false };
+  // Conformance is the wallet's own process-level setting, reported by
+  // /api/config. Only a locally-hosted wallet can change it (PUT/DELETE
+  // /api/config/conformance); the public demo shows it read-only.
+  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false };
 
-  function readConfCookie() {
-    const m = document.cookie.match(/(?:^|;\s*)eudi_conformance=([^;]*)/);
-    if (!m) return {};
-    try { return JSON.parse(decodeURIComponent(m[1])) || {}; } catch (e) { return {}; }
-  }
-
-  function writeConfCookie(o) {
-    const secure = location.protocol === 'https:' ? ';secure' : '';
-    const base = ';path=/;samesite=lax' + secure;
-    if (!o || !Object.keys(o).length) {
-      document.cookie = CONF_COOKIE + '=' + base + ';max-age=0';
-      return;
-    }
-    document.cookie = CONF_COOKIE + '=' + encodeURIComponent(JSON.stringify(o)) + base + ';max-age=31536000';
-  }
-
-  // Effective = the visitor's cookie override, falling back to the wallet's
-  // configured default for anything they have not changed.
   function effectiveConformance() {
-    // On the shared demo the override is per-browser and lives in the cookie.
-    // On a local wallet it is the wallet's own setting (from /api/config), which
-    // the change handler flips server-side so every flow sees it, so the cookie
-    // is not consulted there.
-    const c = demoMode ? readConfCookie() : {};
     return {
-      mode: c.mode || (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug'),
-      haip: typeof c.haip === 'boolean' ? c.haip : !!conformanceDefaults.require_haip,
-      encrypted: typeof c.encrypted === 'boolean' ? c.encrypted : !!conformanceDefaults.require_encrypted_request,
+      mode: conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug',
+      haip: !!conformanceDefaults.require_haip,
+      encrypted: !!conformanceDefaults.require_encrypted_request,
     };
   }
 
@@ -1646,9 +1625,9 @@
     const mode = document.getElementById('conf-mode-select');
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
-    if (mode) mode.value = eff.mode === 'strict' ? 'strict' : 'debug';
-    if (haip) haip.checked = eff.haip;
-    if (enc) enc.checked = eff.encrypted;
+    if (mode) { mode.value = eff.mode === 'strict' ? 'strict' : 'debug'; mode.disabled = demoMode; }
+    if (haip) { haip.checked = eff.haip; haip.disabled = demoMode; }
+    if (enc) { enc.checked = eff.encrypted; enc.disabled = demoMode; }
   }
 
   function currentControlValues() {
@@ -1676,34 +1655,13 @@
   }
 
   function onConformanceChange() {
-    const v = currentControlValues();
-    if (demoMode) {
-      // Store only what differs from the wallet's default, so an untouched
-      // setting still follows the server and clearing everything drops the
-      // cookie entirely.
-      const o = {};
-      if (v.mode !== (conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug')) o.mode = v.mode;
-      if (v.haip !== !!conformanceDefaults.require_haip) o.haip = v.haip;
-      if (v.encrypted !== !!conformanceDefaults.require_encrypted_request) o.encrypted = v.encrypted;
-      writeConfCookie(o);
-      renderConformanceExplainer();
-      return;
-    }
-    // Local wallet: flip the wallet's own setting so the macOS handler and CLI
-    // (which hit this same wallet) honor it too. Drop any stale cookie so the
-    // server setting is the single source of truth.
-    writeConfCookie(null);
-    setServerConformance(v);
+    if (demoMode) return; // demo controls are read-only
+    // Change this wallet's own setting so every flow reaching it honors it.
+    setServerConformance(currentControlValues());
   }
 
   function resetConformance() {
-    if (demoMode) {
-      writeConfCookie(null);
-      applyConformanceToControls();
-      renderConformanceExplainer();
-      return;
-    }
-    writeConfCookie(null);
+    if (demoMode) return;
     fetch('/api/config/conformance', { method: 'DELETE' })
       .then((r) => (r.ok ? r.json() : null))
       .then((c) => { if (c) conformanceDefaults = Object.assign({}, conformanceDefaults, c); applyConformanceToControls(); renderConformanceExplainer(); })
@@ -1715,8 +1673,8 @@
     const parts = [];
     parts.push(eff.mode === 'strict'
       ? 'Strict: a failed check rejects the request.'
-      : 'Debug: failed checks are warnings, the flow continues.');
-    if (eff.haip) parts.push('HAIP 1.0 enforced.');
+      : 'Debug: a failed check is a warning, the flow continues.');
+    if (eff.haip) parts.push('HAIP 1.0 checked.');
     if (eff.encrypted) parts.push('Request objects must be encrypted.');
     const explainer = document.getElementById('conf-explainer');
     if (explainer) explainer.textContent = parts.join(' ');
@@ -1738,11 +1696,11 @@
     const note = document.getElementById('conf-override-note');
     if (note) {
       note.textContent = demoMode
-        ? 'Yours only, kept in a cookie. Reset clears it.'
+        ? 'Fixed for the demo. Run the wallet locally to change these.'
         : 'Changes this wallet’s settings. Reset restores the defaults.';
     }
-    const warn = document.getElementById('conf-warning');
-    if (warn) warn.hidden = !demoMode;
+    const reset = document.getElementById('conf-reset');
+    if (reset) reset.hidden = demoMode;
     renderConformanceExplainer();
   }
 

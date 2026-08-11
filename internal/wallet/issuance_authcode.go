@@ -346,12 +346,12 @@ const unregisteredPublicClientMethod = "public"
 // refuses to go on, debug names it and continues, which is the difference
 // between the two modes everywhere else in the wallet.
 func (w *Wallet) reportServerDeviation(detail string) error {
-	w.addProtocolLog("issuance", "server_deviation", detail, false, map[string]any{
-		"deviation": detail,
-	})
+	details := map[string]any{"deviation": detail}
 	if w.Mode() == ValidationModeStrict {
+		w.addProtocolLog("issuance", "server_deviation", detail, false, details)
 		return fmt.Errorf("%s", detail)
 	}
+	w.addProtocolWarning("issuance", "server_deviation", detail, details)
 	log.Printf("[VCI] WARNING: %s", detail)
 	return nil
 }
@@ -414,23 +414,28 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 // attestsClient reports whether to authenticate with the wallet attestation
 // against this authorization server.
 //
-// HAIP 1.0 §4.4.1 puts it plainly: "Wallets MUST use, and Issuers MUST
-// require, an OAuth2 Client authentication mechanism at OAuth2 Endpoints that
-// support client authentication (such as the PAR and Token Endpoints)." That
-// is unconditional, so a wallet enforcing HAIP attests without asking the
-// metadata first.
+// The wallet always attests when the server advertises it
+// (draft-ietf-oauth-attestation-based-client-auth §8), or when
+// ForceClientAttestation was set for an issuer that checks an attestation
+// without announcing it (advertising is only a SHOULD in §10.1).
 //
-// Outside HAIP the metadata is the signal, which
-// draft-ietf-oauth-attestation-based-client-auth §8 has a client read.
-// Advertising it there is only a SHOULD, so an issuer may check an attestation
-// without announcing it, and ForceClientAttestation covers that.
+// HAIP 1.0 §4.4.1 is stronger: "Wallets MUST use, and Issuers MUST require, an
+// OAuth2 Client authentication mechanism". A conformant issuer therefore
+// advertises it and the case above already attests. The remaining case is an
+// issuer that requires HAIP of the wallet but offers only unauthenticated
+// access itself — a violation. In strict mode the wallet attests anyway and
+// the exchange fails at the token endpoint, the honest outcome for a wallet
+// asserting HAIP. In debug mode it does not attest, so a non-HAIP issuer can
+// still complete the flow; resolveClientAuthentication records the violation.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false
 	}
-	return w.RequireHAIP ||
-		detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" ||
-		w.ForceClientAttestation
+	if w.ForceClientAttestation ||
+		detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth" {
+		return true
+	}
+	return w.RequireHAIP && w.Mode() == ValidationModeStrict
 }
 
 // clientAuthContext is what deciding, and re-deciding, client authentication
@@ -454,10 +459,20 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 			Audience: oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
 		}
 	}
-	if !w.attestsClient(ctx.oauthMeta) {
-		return nil
+	if w.attestsClient(ctx.oauthMeta) {
+		return attestationClientAuth(ctx)
 	}
-	return attestationClientAuth(ctx)
+	// The wallet is not attesting. If HAIP wanted it and this issuer simply
+	// does not offer client authentication, debug mode is proceeding without
+	// it: record the profile violation so it is visible without failing.
+	if w != nil && w.RequireHAIP &&
+		!w.ForceClientAttestation &&
+		detectTokenEndpointAuthMethod(ctx.oauthMeta) != "attest_jwt_client_auth" {
+		w.addProtocolWarning("issuance", "haip_client_authentication_unavailable",
+			"HAIP 1.0 §4.4.1 requires client authentication at the token endpoint, but this issuer's authorization server offers only unauthenticated access. Proceeding without it.",
+			map[string]any{"token_endpoint": ctx.tokenEndpoint})
+	}
+	return nil
 }
 
 func attestationClientAuth(ctx clientAuthContext) *ClientAuthentication {

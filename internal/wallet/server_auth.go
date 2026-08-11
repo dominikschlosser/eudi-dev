@@ -243,7 +243,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	}
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
-		s.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
+		s.wallet.AddWarning("presentation", fmt.Sprintf("Request does not follow the profile: %s", finding), nil)
 	}
 
 	// Log DCQL query

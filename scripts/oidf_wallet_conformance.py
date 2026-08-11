@@ -924,13 +924,28 @@ def wallet_mode_for(test_name: str | None, requires_haip: bool) -> str:
     return "debug"
 
 
+def set_wallet_conformance(wallet_url: str, mode: str, requires_haip: bool) -> None:
+    # Conformance is the wallet's own setting now. Set it on the local wallet
+    # under test before each submission so the HAIP modules run enforced and the
+    # rest run without HAIP, whatever the wallet started with. This works only
+    # against a locally-hosted wallet, which is the whole point of a conformance
+    # run.
+    try:
+        wallet_request(wallet_url, "PUT", "/api/config/conformance", {"mode": mode, "haip": bool(requires_haip)})
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise SystemExit(
+            f"could not set wallet conformance (HTTP {exc.code}): {body}\n"
+            "The wallet under test must be a locally-hosted instance (not --demo)."
+        )
+
+
 def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
     api_path = wallet_api_path_for_request(request_url)
-    # State the profile explicitly rather than inheriting the server's
-    # setting: the non-HAIP modules have to run without HAIP even against a
-    # wallet that enforces it globally, and the issuance endpoint now honors
-    # the same override.
-    payload = {"uri": request_url, "mode": wallet_mode_for(test_name, requires_haip), "haip": bool(requires_haip)}
+    # The non-HAIP modules must run without HAIP and the HAIP modules with it,
+    # so set the wallet's own conformance for this submission first.
+    set_wallet_conformance(wallet_url, wallet_mode_for(test_name, requires_haip), requires_haip)
+    payload = {"uri": request_url}
     tx_code = tx_code_from_offer(request_url)
     if tx_code:
         payload["tx_code"] = tx_code
@@ -1062,9 +1077,8 @@ def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) ->
 
 
 def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
-    extra_headers = {"X-OID4VC-Dev-Mode": wallet_mode_for(test_name, requires_haip)}
-    if requires_haip:
-        extra_headers["X-OID4VC-Dev-HAIP"] = "true"
+    set_wallet_conformance(wallet_url, wallet_mode_for(test_name, requires_haip), requires_haip)
+    extra_headers = {}
     # This POST stands in for the browser, and a browser derives Origin from
     # where the page actually runs, never from what the page's request claims.
     # The submit URL is that place (the suite serves the browser API page

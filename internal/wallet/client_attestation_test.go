@@ -43,22 +43,27 @@ func TestAttestsClient(t *testing.T) {
 		meta  map[string]any
 		haip  bool
 		force bool
+		mode  ValidationMode
 		want  bool
 	}{
-		{"advertised", advertised, false, false, true},
-		{"silent metadata", silent, false, false, false},
-		{"silent metadata, override on", silent, false, true, true},
-		{"another method", otherMethod, false, false, false},
-		{"another method, override on", otherMethod, false, true, true},
-		{"no metadata at all", nil, false, false, false},
-		// HAIP 1.0 §4.4.1 makes client authentication unconditional, so a
-		// wallet enforcing it never needs the metadata or the override.
-		{"haip, silent metadata", silent, true, false, true},
-		{"haip, no metadata at all", nil, true, false, true},
-		{"haip, another method", otherMethod, true, false, true},
+		{"advertised", advertised, false, false, ValidationModeDebug, true},
+		{"silent metadata", silent, false, false, ValidationModeDebug, false},
+		{"silent metadata, override on", silent, false, true, ValidationModeDebug, true},
+		{"another method", otherMethod, false, false, ValidationModeDebug, false},
+		{"another method, override on", otherMethod, false, true, ValidationModeDebug, true},
+		{"no metadata at all", nil, false, false, ValidationModeDebug, false},
+		// HAIP 1.0 §4.4.1 requires client authentication. Against an issuer that
+		// offers none, strict still attests (and fails at the token endpoint),
+		// but debug proceeds without it so a non-HAIP issuer stays reachable.
+		{"haip strict, silent metadata", silent, true, false, ValidationModeStrict, true},
+		{"haip debug, silent metadata", silent, true, false, ValidationModeDebug, false},
+		{"haip strict, no metadata", nil, true, false, ValidationModeStrict, true},
+		{"haip debug, no metadata", nil, true, false, ValidationModeDebug, false},
+		{"haip strict, another method", otherMethod, true, false, ValidationModeStrict, true},
+		{"haip debug, another method", otherMethod, true, false, ValidationModeDebug, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			w := &Wallet{RequireHAIP: tc.haip, ForceClientAttestation: tc.force}
+			w := &Wallet{RequireHAIP: tc.haip, ForceClientAttestation: tc.force, ValidationMode: tc.mode}
 			if got := w.attestsClient(tc.meta); got != tc.want {
 				t.Errorf("attestsClient = %v, want %v", got, tc.want)
 			}

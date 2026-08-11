@@ -183,14 +183,16 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	// counterparty that does not follow the profile worth watching.
 	if w.RequireHAIP {
 		if violations := ValidateHAIPIssuanceCompliance(offer, oauthMeta); len(violations) > 0 {
-			w.AddLog("issuance", fmt.Sprintf("HAIP violations: %v", violations), false)
-			w.addProtocolLog("issuance", "haip_violation", "Credential offer does not follow HAIP 1.0", false, map[string]any{
+			detail := fmt.Sprintf("Credential offer does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
+			details := map[string]any{
 				"issuer":     offer.CredentialIssuer,
 				"violations": violations,
-			})
+			}
 			if w.Mode() == ValidationModeStrict {
+				w.addProtocolLog("issuance", "haip_violation", detail, false, details)
 				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
 			}
+			w.addProtocolWarning("issuance", "haip_violation", detail, details)
 			for _, v := range violations {
 				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
 			}
@@ -1171,11 +1173,11 @@ func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer st
 	}
 	if w.Mode() == ValidationModeStrict {
 		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OpenID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
-		w.AddLog("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), false)
+		w.AddWarning("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), nil)
 		return ""
 	}
 	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define; this issuer is pre-1.0", issuer)
-	w.AddLog("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0. Strict mode refuses it", issuer), false)
+	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0. Strict mode refuses it", issuer), nil)
 	return cNonce
 }
 

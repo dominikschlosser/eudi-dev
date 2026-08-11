@@ -27,18 +27,13 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
+// presentationRequestOptions carries the per-request knobs a presentation flow
+// still needs. Conformance (validation mode, HAIP, encrypted requests) is not
+// among them: it is process-level wallet state, changed only through the local
+// UI, so every request sees the same settings.
 type presentationRequestOptions struct {
 	AutoAccept        bool
 	SessionTranscript string
-	// RequireHAIP overrides the server's HAIP enforcement for one request.
-	// Nil inherits the server setting. A value turns enforcement on or off,
-	// so a caller can still be tested against a wallet that enforces HAIP
-	// globally (and a HAIP module can raise the bar on one that does not).
-	RequireHAIP    *bool
-	ValidationMode string
-	// RequireEncryptedRequest overrides the server's encrypted-request setting
-	// for one request, the same way RequireHAIP does. Nil inherits the server.
-	RequireEncryptedRequest *bool
 }
 
 // handleAuthorize processes an OID4VP authorization request from query params or form data.
@@ -56,21 +51,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		}
 		values = r.Form
 	}
-	// A verifier link or QR reaches /authorize as a top-level navigation, which
-	// carries no header or body. The visitor's conformance override rides along
-	// in a cookie instead, so honor it here too, on a per-request clone, and
-	// parse with the effective validation mode.
-	reqServer := s
-	if opts := mergedConformanceOptions(r, presentationRequestOptions{}); opts.hasConformanceOverride() {
-		reqWallet, cloneErr := cloneWalletForPresentation(s.wallet, opts)
-		if cloneErr != nil {
-			http.Error(w, fmt.Sprintf("invalid conformance override: %v", cloneErr), http.StatusBadRequest)
-			return
-		}
-		reqServer = s.cloneWithWallet(reqWallet)
-	}
-
-	authReq, err = parseAuthParams(values, reqServer.parseOpts, reqServer.wallet.Mode())
+	authReq, err = parseAuthParams(values, s.parseOpts, s.wallet.Mode())
 
 	if err != nil {
 		// A request that cannot be parsed names a response endpoint the wallet
@@ -81,7 +62,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authReq.BrowserRedirect = isBrowserNavigation(r)
-	reqServer.handleAuthFlow(w, authReq)
+	s.handleAuthFlow(w, authReq)
 }
 
 // handlePresentationAPI processes a presentation request URI via API.
@@ -91,10 +72,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		AutoAccept        bool   `json:"auto_accept,omitempty"`
 		Interactive       bool   `json:"interactive,omitempty"`
 		SessionTranscript string `json:"session_transcript,omitempty"`
-		// Pointer so an explicit "haip": false can switch enforcement off on
-		// a wallet that requires it. Omitting the field inherits the server.
-		HAIP *bool  `json:"haip,omitempty"`
-		Mode string `json:"mode,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -110,13 +87,11 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	s.log("  URI: %s", uriDisplay)
 
 	reqServer := s
-	opts := mergedConformanceOptions(r, presentationRequestOptions{
+	opts := presentationRequestOptions{
 		AutoAccept:        body.AutoAccept,
 		SessionTranscript: body.SessionTranscript,
-		RequireHAIP:       body.HAIP,
-		ValidationMode:    body.Mode,
-	})
-	if opts.AutoAccept || opts.SessionTranscript != "" || opts.hasConformanceOverride() {
+	}
+	if opts.AutoAccept || opts.SessionTranscript != "" {
 		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -125,7 +100,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 
 		reqServer = &Server{
 			wallet:           reqWallet,
-			parent:           s,
 			port:             s.port,
 			mux:              s.mux,
 			onSave:           s.onSave,
@@ -206,7 +180,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, finding := range findings {
 		reqServer.log("  WARNING: %s", finding)
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
+		reqServer.wallet.AddWarning("presentation", fmt.Sprintf("Request does not follow the profile: %s", finding), nil)
 	}
 
 	if body.Interactive {
@@ -271,55 +245,8 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 			return nil, fmt.Errorf("invalid session transcript %q", opts.SessionTranscript)
 		}
 	}
-	if opts.RequireHAIP != nil {
-		clone.RequireHAIP = *opts.RequireHAIP
-	}
-	if opts.RequireEncryptedRequest != nil {
-		clone.RequireEncryptedRequest = *opts.RequireEncryptedRequest
-	}
-	if opts.ValidationMode != "" {
-		mode, err := ParseValidationMode(opts.ValidationMode)
-		if err != nil {
-			return nil, err
-		}
-		clone.ValidationMode = mode
-	}
 
 	return clone, nil
-}
-
-// cloneWithWallet returns a Server that runs one request against reqWallet
-// (a per-request clone) while sharing everything else with s. The whole flow
-// runs on it, so a per-request conformance override reaches validation, the
-// direct_post response and any issuer backend calls alike. deferredIssuanceOwner
-// points at the real wallet so a deferral recorded during the flow is still
-// collected after the clone is gone.
-func (s *Server) cloneWithWallet(reqWallet *Wallet) *Server {
-	clone := &Server{
-		wallet:                reqWallet,
-		parent:                s,
-		deferredIssuanceOwner: s.wallet,
-		port:                  s.port,
-		mux:                   s.mux,
-		onSave:                s.onSave,
-		onConsentRequest:      s.onConsentRequest,
-		onUIRequest:           s.onUIRequest,
-		logFunc:               s.logFunc,
-		httpSrv:               s.httpSrv,
-		issuerSrv:             s.issuerSrv,
-		issuerTLSCert:         s.issuerTLSCert,
-		issuerPort:            s.issuerPort,
-		store:                 s.store,
-		demo:                  s.demo,
-		version:               s.version,
-		imprintHTML:           s.imprintHTML,
-	}
-	clone.parseOpts = oid4vc.ParseOptions{
-		FetchRequestURI: MakeFetchRequestURI(reqWallet, func(format string, args ...any) {
-			clone.log(format, args...)
-		}),
-	}
-	return clone
 }
 
 func cloneStatusEntries(src map[string]StatusEntry) map[string]StatusEntry {

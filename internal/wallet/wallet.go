@@ -296,12 +296,21 @@ type SubmissionResult struct {
 
 // LogEntry records a wallet action.
 type LogEntry struct {
-	Time    time.Time      `json:"time"`
-	Action  string         `json:"action"`
-	Detail  string         `json:"detail"`
-	Success bool           `json:"success"`
-	Details map[string]any `json:"details,omitempty"`
+	Time   time.Time `json:"time"`
+	Action string    `json:"action"`
+	Detail string    `json:"detail"`
+	// Success is the pass/fail of the action. Severity carries a third state a
+	// bool cannot: a spec violation the wallet noted but did not treat as a
+	// failure. An empty Severity means the entry is a plain success or failure
+	// read from Success; "warning" marks a violation that only warned.
+	Success  bool           `json:"success"`
+	Severity string         `json:"severity,omitempty"`
+	Details  map[string]any `json:"details,omitempty"`
 }
+
+// severityWarning marks a log entry that records a spec violation the wallet
+// reported without failing the flow (debug mode, and the demo).
+const severityWarning = "warning"
 
 // New creates a new wallet with the given options.
 // It generates a CA key and certificate chain (CA → leaf) for realistic x5c chains.
@@ -737,6 +746,20 @@ func (w *Wallet) AddLogDetails(action, detail string, success bool, details map[
 		Detail:  detail,
 		Success: success,
 		Details: cloneLogDetails(details),
+	})
+}
+
+// AddWarning records a spec violation the wallet noted without failing the
+// flow (debug mode, and the demo). It is not a failure, so Success stays true
+// and the entry carries the warning severity for the UI to mark distinctly.
+func (w *Wallet) AddWarning(action, detail string, details map[string]any) {
+	w.appendLogEntry(LogEntry{
+		Time:     time.Now(),
+		Action:   action,
+		Detail:   detail,
+		Success:  true,
+		Severity: severityWarning,
+		Details:  cloneLogDetails(details),
 	})
 }
 

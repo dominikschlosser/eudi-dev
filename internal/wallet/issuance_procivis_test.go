@@ -128,67 +128,83 @@ func setupNoneAuthIssuer(t *testing.T, w *Wallet, gotAttestation *bool) (*httpte
 	return srv, offerURI
 }
 
-// TestProcessCredentialOffer_HAIPForcesAttestationAgainstNoneAuthIssuer
-// reproduces the failure seen against the Procivis One trial issuer: with HAIP
-// on, the wallet authenticates at the token endpoint with a wallet attestation
-// (HAIP 1.0 §4.4.1 is unconditional about it), but that issuer offers only the
-// "none" method and rejects the unexpected client authentication with
-// invalid_request. The surfaced error is "token exchange: invalid_request".
+// TestProcessCredentialOffer_HAIPAgainstNoneAuthIssuer is the regression for
+// the manual testing against the Procivis One and Animo trial issuers, whose
+// token endpoints advertise only the "none" auth method. HAIP 1.0 §4.4.1 wants
+// client authentication there, which those issuers do not offer.
 //
-// The point is that HAIP, not the validation mode, forces the attestation:
-// attestsClient returns true whenever RequireHAIP is set, whatever the
-// authorization server advertises. Debug mode does not relax it. Turning HAIP
-// off is what lets a non-HAIP issuer complete the flow.
-func TestProcessCredentialOffer_HAIPForcesAttestationAgainstNoneAuthIssuer(t *testing.T) {
-	t.Run("HAIP on: attestation forced, issuer rejects it", func(t *testing.T) {
+//   - HAIP + debug (the public demo): the wallet notes the profile violation as
+//     a warning and proceeds without client authentication, so issuance
+//     completes. This is what the demo needs to work gracefully.
+//   - HAIP + strict: the wallet still authenticates and the exchange fails at
+//     the token endpoint, the honest result for a wallet asserting HAIP.
+//   - no HAIP: a plain request completes.
+func TestProcessCredentialOffer_HAIPAgainstNoneAuthIssuer(t *testing.T) {
+	run := func(t *testing.T, mode ValidationMode, haip bool) (*IssuanceResult, *bool, *Wallet, error) {
+		t.Helper()
 		w := generateTestWallet(t)
-		w.ValidationMode = ValidationModeDebug
-		w.RequireHAIP = true
+		w.ValidationMode = mode
+		w.RequireHAIP = haip
 		w.IssuerURL = "https://wallet.example"
 		w.BaseURL = "https://wallet.example"
 
 		sentAttestation := false
 		srv, offerURI := setupNoneAuthIssuer(t, w, &sentAttestation)
-		defer srv.Close()
+		t.Cleanup(srv.Close)
 
 		oldClient := httpClient
 		httpClient = srv.Client()
-		defer func() { httpClient = oldClient }()
+		t.Cleanup(func() { httpClient = oldClient })
 
-		_, err := w.ProcessCredentialOffer(offerURI)
-		if err == nil {
-			t.Fatal("expected issuance to fail against a none-auth issuer under HAIP")
+		result, err := w.ProcessCredentialOffer(offerURI)
+		return result, &sentAttestation, w, err
+	}
+
+	t.Run("HAIP + debug: warn and proceed without attestation", func(t *testing.T) {
+		result, sent, w, err := run(t, ValidationModeDebug, true)
+		if err != nil {
+			t.Fatalf("HAIP + debug should complete against a none-auth issuer, got %v", err)
 		}
-		if !strings.Contains(err.Error(), "token exchange") || !strings.Contains(err.Error(), "invalid_request") {
-			t.Fatalf("expected a token exchange invalid_request error, got %v", err)
+		if *sent {
+			t.Fatal("wallet must not send client attestation to a none-auth token endpoint in debug")
 		}
-		if !sentAttestation {
-			t.Fatal("expected the wallet to send a client attestation the issuer never asked for")
+		if result == nil || result.CredentialID == "" {
+			t.Fatal("expected a credential to be imported")
+		}
+		if !hasWarningContaining(w, "unauthenticated access") {
+			t.Error("expected a warning that the issuer offers only unauthenticated access")
 		}
 	})
 
-	t.Run("HAIP off: no attestation, issuance completes", func(t *testing.T) {
-		w := generateTestWallet(t)
-		w.ValidationMode = ValidationModeDebug
-		w.RequireHAIP = false
-
-		sentAttestation := false
-		srv, offerURI := setupNoneAuthIssuer(t, w, &sentAttestation)
-		defer srv.Close()
-
-		oldClient := httpClient
-		httpClient = srv.Client()
-		defer func() { httpClient = oldClient }()
-
-		result, err := w.ProcessCredentialOffer(offerURI)
-		if err != nil {
-			t.Fatalf("expected issuance to complete with HAIP off, got %v", err)
+	t.Run("HAIP + strict: attest and fail", func(t *testing.T) {
+		_, sent, _, err := run(t, ValidationModeStrict, true)
+		if err == nil {
+			t.Fatal("HAIP + strict should fail against a none-auth issuer")
 		}
-		if sentAttestation {
-			t.Fatal("wallet must not authenticate at a none-auth token endpoint when HAIP is off")
+		if !*sent {
+			t.Fatal("HAIP + strict should still send a client attestation")
+		}
+	})
+
+	t.Run("no HAIP: plain request completes", func(t *testing.T) {
+		result, sent, _, err := run(t, ValidationModeDebug, false)
+		if err != nil {
+			t.Fatalf("expected issuance to complete without HAIP, got %v", err)
+		}
+		if *sent {
+			t.Fatal("wallet must not authenticate at a none-auth token endpoint")
 		}
 		if result == nil || result.CredentialID == "" {
 			t.Fatal("expected a credential to be imported")
 		}
 	})
+}
+
+func hasWarningContaining(w *Wallet, substr string) bool {
+	for _, e := range w.GetLog() {
+		if e.Severity == severityWarning && strings.Contains(e.Detail, substr) {
+			return true
+		}
+	}
+	return false
 }

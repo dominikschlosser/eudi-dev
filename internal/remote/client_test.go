@@ -451,22 +451,3 @@ func TestClientReturnsRawBytesUnparsed(t *testing.T) {
 		t.Error("the PEM was parsed as JSON")
 	}
 }
-
-func TestClientSendsHeaders(t *testing.T) {
-	var got string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("X-Eudi-Dev-Mode")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"version":"test"}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL)
-	c.Headers = map[string]string{"X-Eudi-Dev-Mode": "debug"}
-	if _, err := c.Version(); err != nil {
-		t.Fatalf("Version: %v", err)
-	}
-	if got != "debug" {
-		t.Fatalf("server received X-Eudi-Dev-Mode = %q, want debug", got)
-	}
-}

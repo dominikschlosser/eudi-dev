@@ -247,12 +247,6 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 		URI         string `json:"uri"`
 		TxCode      string `json:"tx_code,omitempty"`
 		Interactive bool   `json:"interactive,omitempty"`
-		// Same per-request overrides presentations accept: an explicit value
-		// turns HAIP enforcement on or off for this offer, an absent one
-		// inherits the server setting. Without them an issuer could not be
-		// exercised against a wallet configured the other way.
-		HAIP *bool  `json:"haip,omitempty"`
-		Mode string `json:"mode,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -266,21 +260,7 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	// later.
 	s.wallet.ClearLastError()
 
-	reqServer := s
-	opts := mergedConformanceOptions(r, presentationRequestOptions{
-		RequireHAIP:    body.HAIP,
-		ValidationMode: body.Mode,
-	})
-	if opts.hasConformanceOverride() {
-		reqWallet, err := cloneWalletForPresentation(s.wallet, opts)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		reqServer = s.cloneWithWallet(reqWallet)
-	}
-
-	reqServer.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
+	s.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
 }
 
 // processOfferURI runs the credential offer flow for an offer delivered as a
