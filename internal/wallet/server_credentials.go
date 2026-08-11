@@ -89,6 +89,15 @@ func (s *Server) handleImportCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	label := imported.VCT
+	if label == "" {
+		label = imported.DocType
+	}
+	if label == "" {
+		label = imported.ID
+	}
+	s.wallet.AddLog("management", fmt.Sprintf("Imported %s credential %s", imported.Format, label), true)
+
 	s.triggerSave()
 	writeJSON(w, http.StatusCreated, CredentialSummary(*imported))
 }

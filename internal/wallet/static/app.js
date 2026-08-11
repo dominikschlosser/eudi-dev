@@ -433,13 +433,17 @@
       // Submitting an offer here may lead to an issuer login, and this tab
       // asked for it, so it is the one allowed to follow.
       if (isVCI) authorizeClaim.expect();
+      // This tab pasted the request, so it reviews it: claim the consent so the
+      // dialog opens here (on a shared demo it would otherwise show only the
+      // banner) rather than auto-accepting.
+      consentClaim.expect();
       // Whatever goes wrong with this submission is this tab's to report.
       expectError();
 
       const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uri: uri })
+        body: JSON.stringify({ uri: uri, interactive: true })
       });
 
       const result = await resp.json();

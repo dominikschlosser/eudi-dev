@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.4] - 2026-08-12
+
+### Fixed
+
+- **The Process button did not ask for consent.** Pasting an offer or request and pressing Process submitted it as an auto-accepted API call, so the flow completed without a chance to review it. Because pasting the request is this tab's own action, it now submits interactively and opens the consent dialog here, the same as a scanned or clicked request.
+- **Importing a credential left no activity-log entry.** Pasting a credential into Import Credential added it silently. It now records an entry, the same as issuing or deleting one.
+
 ## [1.21.3] - 2026-08-12
 
 ### Fixed

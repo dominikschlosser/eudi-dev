@@ -346,9 +346,12 @@ test.describe("Demo mode consent visibility", () => {
     page.on("dialog", (d) => d.dismiss().catch(() => {}));
     await page.goto(`${BASE}/?focus=overview`);
 
+    // A presentation request whose request_uri cannot be fetched fails to
+    // parse, so the tab that submitted it sees the error dialog (unlike an
+    // uninvolved tab, above).
     await page
       .locator("#offer-input")
-      .fill("openid-credential-offer://?credential_offer_uri=http://127.0.0.1:1/gone");
+      .fill("openid4vp://authorize?client_id=x509_hash:abc&request_uri=http://127.0.0.1:1/gone");
     await page.locator("#process-btn").click();
 
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/, {
@@ -387,6 +390,18 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page).toHaveURL(/\?request=/);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#pending-banner")).toBeHidden();
+  });
+
+  test("the Process button opens the consent dialog for a pasted request", async ({ page }) => {
+    await page.goto(BASE);
+    await expect(page.locator("#demo-note")).toBeVisible();
+
+    // Pasting a request and pressing Process is this tab's own request: it must
+    // review it in a dialog, not auto-accept it silently.
+    const req = await createVerificationRequest();
+    await page.locator("#offer-input").fill(req.schemeURI);
+    await page.locator("#process-btn").click();
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
   });
 
   test("another visitor's tab is not hijacked by a pending request", async ({
