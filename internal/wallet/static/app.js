@@ -1011,7 +1011,7 @@
         '<span class="log-chevron">' + (hasDetails ? '▸' : '') + '</span>' +
         '<span class="log-time">' + time + '</span>' +
         '<span class="log-action ' + entry.action + '">' + escHtml(entry.action) + '</span>' +
-        '<span class="log-detail">' + escHtml(entry.detail) + '</span>' +
+        '<span class="log-detail" title="' + escHtml(entry.detail) + '">' + escHtml(entry.detail) + '</span>' +
         '<span class="log-status ' + statusClass + '">' + statusLabel + '</span>' +
         '</div>';
       if (hasDetails) {

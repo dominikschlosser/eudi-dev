@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.3] - 2026-08-12
+
+### Fixed
+
+- **A presentation's profile-violation warnings were logged twice.** A request submitted through `/api/presentations` was validated once for the API response and again in the shared flow handler, so every profile warning appeared twice for a single flow. The API path no longer logs them, and the flow handler logs each once.
+- **A long activity-log message is readable on hover.** Log entries are truncated to one line with an ellipsis. Hovering over one now shows the full text as a tooltip.
+
 ## [1.21.2] - 2026-08-12
 
 ### Fixed

@@ -166,9 +166,12 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		Source:           "api",
 	}
 
+	// Validate here only to answer the API caller with a 400 on a hard failure.
+	// The profile-violation warnings are not logged here: handleAuthFlow runs
+	// the same validation and logs them, so doing it here too would double every
+	// warning for one request.
 	vpMode, vpHAIP, _ := reqServer.wallet.ConformanceSettings()
-	findings, err := ValidateAuthorizationRequest(vpMode, vpHAIP, authReq)
-	if err != nil {
+	if _, err := ValidateAuthorizationRequest(vpMode, vpHAIP, authReq); err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
 		reqServer.wallet.NotifyError(WalletError{
@@ -177,10 +180,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		})
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
-	}
-	for _, finding := range findings {
-		reqServer.log("  WARNING: %s", finding)
-		reqServer.wallet.AddWarning("presentation", fmt.Sprintf("Request does not follow the profile: %s", finding), nil)
 	}
 
 	if body.Interactive {
