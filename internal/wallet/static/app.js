@@ -1104,13 +1104,19 @@
           return;
         }
         // The request may already have been created while this page loaded.
-        // A tab the scheme handler opened still owns it.
-        if (!demoMode || consentClaim.take()) {
+        // A tab the scheme handler opened still owns it and opens it directly,
+        // whether or not config has told us this is a demo yet.
+        if (consentClaim.take()) {
           showConsentDialog(requests[0]);
           return;
         }
-        // Demo mode: offer it instead of forcing it open, for tabs that had
-        // nothing to do with the request.
+        // Config known and this is a local wallet: every flow is this user's.
+        if (configLoaded && !demoMode) {
+          showConsentDialog(requests[0]);
+          return;
+        }
+        // Demo, or config not yet known: offer it in the banner rather than
+        // forcing a dialog for a tab that had nothing to do with the request.
         updatePendingBanner(requests);
         return;
       }
@@ -1136,8 +1142,11 @@
         // Shared demo: consent dialogs belong to the browser that started
         // the flow (it arrives via redirect, or opened this tab itself for a
         // scheme dispatch), not to every open tab. Other tabs get the
-        // unobtrusive banner instead.
-        if (demoMode && !consentClaim.take()) {
+        // unobtrusive banner instead. Until config has loaded we treat the tab
+        // as a demo visitor, so a stranger's request never flashes a dialog
+        // before we know this is a demo; a local wallet re-opens it once
+        // config settles.
+        if ((!configLoaded || demoMode) && !consentClaim.take()) {
           refreshPendingBanner();
           return;
         }
@@ -1533,6 +1542,10 @@
   // Templates button and template-write controls (the server rejects
   // writes with 403 anyway).
   let demoMode = false;
+  // Until /api/config resolves we do not know whether this is a demo, so the
+  // dialog-vs-banner decision waits for it: a request arriving in that window
+  // is never forced into a dialog it might not belong to.
+  let configLoaded = false;
   async function loadAppConfig() {
     try {
       const resp = await fetch('/api/config');
@@ -1600,6 +1613,12 @@
       }
     } catch (e) {
       /* footer extras are optional */
+    } finally {
+      // demoMode is settled now (or defaulted to false on a failed load, which
+      // reads as a local wallet). Re-evaluate any request that arrived while
+      // config was still loading, so a local wallet still opens its dialog.
+      configLoaded = true;
+      loadPendingRequests();
     }
   }
 

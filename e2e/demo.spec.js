@@ -326,6 +326,9 @@ test.describe("Demo mode consent visibility", () => {
     const bystander = await context.newPage();
     await bystander.goto(`${BASE}/?focus=overview`);
     await expect(bystander.locator("#credentials")).toBeVisible();
+    // Ensure the tab knows it is a demo tab before the failing flow runs, so it
+    // classifies the error as a banner rather than a dialog.
+    await expect(bystander.locator("#demo-note")).toBeVisible();
 
     // An offer that cannot be resolved, submitted by nobody's tab.
     await postJSON("/api/offers", {
@@ -392,6 +395,11 @@ test.describe("Demo mode consent visibility", () => {
     const starter = await browser.newPage();
     const bystander = await browser.newPage();
     await bystander.goto(BASE);
+    // The bystander must finish loading its config (which marks it a demo tab)
+    // before the request arrives. Otherwise demoMode is still false when the
+    // pending request lands and the tab classifies it as a dialog instead of a
+    // banner. #demo-note becomes visible only once that config has loaded.
+    await expect(bystander.locator("#demo-note")).toBeVisible();
 
     const req = await createVerificationRequest();
     await starter.goto(req.walletURL);

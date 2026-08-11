@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.1] - 2026-08-11
+
+### Fixed
+
+- **A demo tab could briefly show a stranger's request as a consent dialog while it was still loading.** The dialog-versus-banner decision depends on whether the wallet is a demo, which is only known once `/api/config` has resolved. A request that arrived in that window was treated as this tab's own and opened directly. The decision now waits for config: a request arriving first is offered in the banner (unless the tab explicitly claimed it through a scheme dispatch) and re-evaluated once the wallet knows whether it is a demo. A local wallet still opens its dialog.
+
 ## [1.21.0] - 2026-08-11
 
 ### Changed
