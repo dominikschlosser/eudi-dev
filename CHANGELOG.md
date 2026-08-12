@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.5] - 2026-08-12
+
+### Fixed
+
+- **The Conformance popup was wordy and its read-only demo controls were hard to read.** The trailing explainer and note lines are gone (the intro carries the one line that matters, and says when the settings are fixed on the demo). The HAIP and encrypted-request checkboxes dropped the `checked` and `required` words that read oddly next to a disabled, unticked box, and the controls now use an accent colour so a fixed demo setting stays legible.
+
 ## [1.21.4] - 2026-08-12
 
 ### Fixed

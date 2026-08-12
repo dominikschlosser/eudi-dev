@@ -143,7 +143,7 @@ test.describe("Demo mode conformance panel", () => {
     await expect(page.locator("#conf-haip-input")).toBeDisabled();
     await expect(page.locator("#conf-encrypted-input")).toBeDisabled();
     await expect(page.locator("#conf-reset")).toBeHidden();
-    await expect(page.locator("#conf-override-note")).toContainText("locally");
+    await expect(page.locator("#conf-intro")).toContainText("fixed on the public demo");
 
     // No per-visitor cookie is written, and PUT is refused for the demo.
     expect(await page.evaluate(() => document.cookie)).not.toContain("eudi_conformance");
@@ -611,7 +611,7 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conf-haip-input")).toBeChecked();
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
     await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
-    await expect(page.locator("#conf-explainer")).toContainText("HAIP 1.0 checked");
+    await expect(page.locator("#conf-intro")).toContainText("debug mode");
 
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);

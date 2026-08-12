@@ -1034,8 +1034,21 @@ header h1 {
   color: var(--text);
   cursor: pointer;
 }
+/* Keep the read-only demo controls legible: an accent-coloured box reads
+   clearly checked or unchecked, and the label text stays full strength rather
+   than the browser's greyed-out default. */
+.conf-toggle input,
+.conf-input {
+  accent-color: var(--accent);
+}
 .conf-toggle input {
   cursor: pointer;
+}
+.conf-toggle:has(input:disabled),
+.conf-input:disabled {
+  cursor: default;
+  color: var(--text);
+  opacity: 1;
 }
 
 /* Credential offer details in the consent dialog. */

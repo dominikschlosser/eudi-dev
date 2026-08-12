@@ -137,7 +137,7 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint">How this wallet checks incoming requests. Violations are warnings in debug mode, errors in strict.</p>
+      <p class="dialog-hint" id="conf-intro">How this wallet checks incoming requests. A failed check is a warning in debug mode and rejects the request in strict mode.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
@@ -146,16 +146,14 @@
           </select>
         </td></tr>
         <tr><td>HAIP 1.0</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-haip-input"> checked (presentation and issuance)</label>
+          <label class="conf-toggle"><input type="checkbox" id="conf-haip-input"> presentation and issuance</label>
         </td></tr>
         <tr><td>Encrypted requests</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> required</label>
+          <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> request objects</label>
         </td></tr>
         <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
         <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
       </table>
-      <p class="dialog-hint" id="conf-explainer"></p>
-      <p class="dialog-hint" id="conf-override-note">Changes this wallet’s settings. Reset restores the defaults.</p>
       <div class="consent-buttons">
         <button class="btn" id="conf-reset">Reset to defaults</button>
         <button class="btn" id="conformance-close">Close</button>

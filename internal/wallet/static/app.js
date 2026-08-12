@@ -1674,7 +1674,6 @@
       if (resp.ok) conformanceDefaults = Object.assign({}, conformanceDefaults, await resp.json());
     } catch (e) { /* leave the controls as the user set them */ }
     applyConformanceToControls();
-    renderConformanceExplainer();
   }
 
   function onConformanceChange() {
@@ -1687,20 +1686,8 @@
     if (demoMode) return;
     fetch('/api/config/conformance', { method: 'DELETE' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((c) => { if (c) conformanceDefaults = Object.assign({}, conformanceDefaults, c); applyConformanceToControls(); renderConformanceExplainer(); })
-      .catch(() => { applyConformanceToControls(); renderConformanceExplainer(); });
-  }
-
-  function renderConformanceExplainer() {
-    const eff = effectiveConformance();
-    const parts = [];
-    parts.push(eff.mode === 'strict'
-      ? 'Strict: a failed check rejects the request.'
-      : 'Debug: a failed check is a warning, the flow continues.');
-    if (eff.haip) parts.push('HAIP 1.0 checked.');
-    if (eff.encrypted) parts.push('Request objects must be encrypted.');
-    const explainer = document.getElementById('conf-explainer');
-    if (explainer) explainer.textContent = parts.join(' ');
+      .then((c) => { if (c) conformanceDefaults = Object.assign({}, conformanceDefaults, c); applyConformanceToControls(); })
+      .catch(() => { applyConformanceToControls(); });
   }
 
   function renderConformance(config) {
@@ -1716,15 +1703,15 @@
     set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
     set('conf-format', config.preferred_format || 'no preference',
       config.preferred_format ? 'neutral' : 'off');
-    const note = document.getElementById('conf-override-note');
-    if (note) {
-      note.textContent = demoMode
-        ? 'Fixed for the demo. Run the wallet locally to change these.'
-        : 'Changes this wallet’s settings. Reset restores the defaults.';
+    // The demo's settings are read-only; say so in the intro so the disabled
+    // controls make sense, rather than trailing the popup with more text.
+    const intro = document.getElementById('conf-intro');
+    if (intro) {
+      const base = 'How this wallet checks incoming requests. A failed check is a warning in debug mode and rejects the request in strict mode.';
+      intro.textContent = demoMode ? base + ' These are fixed on the public demo.' : base;
     }
     const reset = document.getElementById('conf-reset');
     if (reset) reset.hidden = demoMode;
-    renderConformanceExplainer();
   }
 
   function describeReset(demo) {
