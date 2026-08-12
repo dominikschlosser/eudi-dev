@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.6] - 2026-08-12
+
+### Fixed
+
+- **`wallet accept` auto-accepted silently when routed to a running or remote wallet.** When the command routed the request through a running wallet server (same wallet directory) or a `wallet instances use` remote, it submitted to that wallet's API without asking for consent, so the wallet treated the CLI call as the consent and accepted the request without showing its dialog. It now submits interactively (unless `--auto-accept`) and opens the wallet UI at that request, so the presentation or offer is reviewed there, the same as this command's own local flow and the macOS URL handler already do.
+
 ## [1.21.5] - 2026-08-12
 
 ### Fixed

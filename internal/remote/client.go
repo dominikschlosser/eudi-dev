@@ -249,17 +249,33 @@ func (c *Client) Certificate(kind, format string) ([]byte, error) {
 	return out, err
 }
 
-// Present sends a presentation request URI to the remote wallet.
-func (c *Client) Present(uri string) (map[string]any, error) {
+// interactiveTimeout is how long a call waits when the wallet is asked to show
+// the consent dialog rather than auto-accept: the wallet holds the response
+// until the user decides (up to ConsentTimeout), plus room for the submission
+// or a deferred credential afterwards.
+const interactiveTimeout = config.ConsentTimeout + config.SlowRequestTimeout
+
+// Present sends a presentation request URI to the remote wallet. With
+// interactive set, the wallet shows its consent dialog and holds the response
+// until the user decides, instead of auto-accepting the request.
+func (c *Client) Present(uri string, interactive bool) (map[string]any, error) {
 	var out map[string]any
-	err := c.do(http.MethodPost, "/api/presentations", map[string]any{"uri": uri}, &out)
+	body := map[string]any{"uri": uri}
+	timeout := time.Duration(0)
+	if interactive {
+		body["interactive"] = true
+		timeout = interactiveTimeout
+	}
+	err := c.doWithTimeout(timeout, http.MethodPost, "/api/presentations", body, &out)
 	return out, err
 }
 
 // AcceptOffer sends a credential offer URI to the remote wallet. An offer
 // whose pre-authorized grant requires a transaction code needs txCode. An
-// empty one is left out so the wallet keeps whatever it already holds.
-func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
+// empty one is left out so the wallet keeps whatever it already holds. With
+// interactive set, the wallet shows its consent dialog rather than importing
+// the credential silently.
+func (c *Client) AcceptOffer(uri, txCode string, interactive bool) (map[string]any, error) {
 	var out map[string]any
 	body := map[string]any{"uri": uri}
 	if txCode != "" {
@@ -267,7 +283,12 @@ func (c *Client) AcceptOffer(uri, txCode string) (map[string]any, error) {
 	}
 	// An issuer can defer the credential, and the wallet polls for it, so this
 	// call waits as long as the wallet server is willing to.
-	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/offers", body, &out)
+	timeout := config.SlowRequestTimeout
+	if interactive {
+		body["interactive"] = true
+		timeout = interactiveTimeout
+	}
+	err := c.doWithTimeout(timeout, http.MethodPost, "/api/offers", body, &out)
 	return out, err
 }
 

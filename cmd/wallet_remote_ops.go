@@ -266,14 +266,20 @@ func remoteGeneratePID(c *remote.Client, claims map[string]any, vct string) erro
 	return nil
 }
 
-func remoteAccept(c *remote.Client, uri, txCode string) error {
+func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error {
 	isVCI := isCredentialOfferURI(uri)
+	// Open the wallet UI so the consent dialog it is about to show is visible.
+	// consent=await marks this tab as the one that started the flow, so a shared
+	// demo opens the dialog here instead of only the pending banner.
+	if interactive && !noOpen {
+		openBrowser(strings.TrimRight(c.BaseURL, "/") + "/?focus=overview&consent=await")
+	}
 	var result map[string]any
 	var err error
 	if isVCI {
-		result, err = c.AcceptOffer(uri, txCode)
+		result, err = c.AcceptOffer(uri, txCode, interactive)
 	} else {
-		result, err = c.Present(uri)
+		result, err = c.Present(uri, interactive)
 	}
 	if err != nil {
 		return err

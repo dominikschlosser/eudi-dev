@@ -198,19 +198,19 @@ func TestClientEndpoints(t *testing.T) {
 		},
 		{
 			name:       "Present",
-			call:       func(c *Client) error { _, err := c.Present("openid4vp://request"); return err },
+			call:       func(c *Client) error { _, err := c.Present("openid4vp://request", false); return err },
 			wantMethod: http.MethodPost, wantPath: "/api/presentations",
 			wantBody: `{"uri":"openid4vp://request"}`,
 		},
 		{
 			name:       "AcceptOffer",
-			call:       func(c *Client) error { _, err := c.AcceptOffer("openid-credential-offer://x", ""); return err },
+			call:       func(c *Client) error { _, err := c.AcceptOffer("openid-credential-offer://x", "", false); return err },
 			wantMethod: http.MethodPost, wantPath: "/api/offers",
 			wantBody: `{"uri":"openid-credential-offer://x"}`,
 		},
 		{
 			name:       "AcceptOffer with a transaction code",
-			call:       func(c *Client) error { _, err := c.AcceptOffer("offer://x", "123456"); return err },
+			call:       func(c *Client) error { _, err := c.AcceptOffer("offer://x", "123456", false); return err },
 			wantMethod: http.MethodPost, wantPath: "/api/offers",
 			wantBody: `{"tx_code":"123456","uri":"offer://x"}`,
 		},
@@ -449,5 +449,27 @@ func TestClientReturnsRawBytesUnparsed(t *testing.T) {
 	var asJSON any
 	if json.Unmarshal(out, &asJSON) == nil {
 		t.Error("the PEM was parsed as JSON")
+	}
+}
+
+// An interactive accept must tell the wallet to show its consent dialog rather
+// than auto-accept the request.
+func TestPresentAndAcceptOfferSendInteractive(t *testing.T) {
+	r := &recorder{reply: "{}"}
+	c, closeFn := r.server(t)
+	defer closeFn()
+
+	if _, err := c.Present("openid4vp://x", true); err != nil {
+		t.Fatalf("Present: %v", err)
+	}
+	if !strings.Contains(r.body, `"interactive":true`) {
+		t.Errorf("interactive Present body = %q, want interactive:true", r.body)
+	}
+
+	if _, err := c.AcceptOffer("openid-credential-offer://x", "", true); err != nil {
+		t.Fatalf("AcceptOffer: %v", err)
+	}
+	if !strings.Contains(r.body, `"interactive":true`) {
+		t.Errorf("interactive AcceptOffer body = %q, want interactive:true", r.body)
 	}
 }

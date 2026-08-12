@@ -122,7 +122,10 @@ request boundaries, so later presentation requests see the new credential.`,
 			if c, err := remoteClientIfConfigured(); err != nil {
 				return err
 			} else if c != nil {
-				return remoteAccept(c, args[0], txCode)
+				// A running or remote wallet shows its own consent dialog unless
+				// the user asked to auto-accept, the same as this command's local
+				// flow and the macOS URL handler.
+				return remoteAccept(c, args[0], txCode, !autoAccept)
 			}
 			return dispatchURI(args[0], dispatchOID4Opts{
 				port:              port,
