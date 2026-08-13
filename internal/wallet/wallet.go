@@ -623,9 +623,23 @@ func (w *Wallet) removeMDocsByNamespace(docType string, namespaces []string) int
 }
 
 // credentialNamespaces returns the mdoc namespaces a stored credential holds
-// elements in. Its claim keys are "namespace:element", and a namespace never
-// contains a colon itself.
+// elements in.
+//
+// NameSpaces comes from the credential itself and is rebuilt on every load, so
+// it says what the credential really carries. The claim keys are only a
+// derived view of the same thing ("namespace:element", and a namespace never
+// contains a colon itself), and a wallet file written before those keys
+// carried the prefix stores them bare: reading only those would report no
+// namespaces at all, and the credential would never be recognized as the PID
+// it is.
 func credentialNamespaces(c StoredCredential) []string {
+	if len(c.NameSpaces) > 0 {
+		names := make([]string, 0, len(c.NameSpaces))
+		for ns := range c.NameSpaces {
+			names = append(names, ns)
+		}
+		return names
+	}
 	seen := make(map[string]bool)
 	var names []string
 	for key := range c.Claims {

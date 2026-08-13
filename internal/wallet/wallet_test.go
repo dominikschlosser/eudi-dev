@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -891,6 +892,56 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 	}
 	if mdocs != 2 {
 		t.Errorf("regenerating one PID type left %d mdoc PIDs, want 2", mdocs)
+	}
+}
+
+// A wallet file written before mdoc claim keys carried their namespace stores
+// them bare, and the credential is still the PID it always was. Regenerating
+// has to replace it rather than leave a second one behind: the duplicate is
+// silent, and both PIDs then answer every mdoc request.
+func TestGenerateDefaultCredentials_ReplacesAMDocStoredWithoutNamespacedClaims(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+
+	var raw string
+	for i := range w.Credentials {
+		c := &w.Credentials[i]
+		if c.Format != "mso_mdoc" {
+			continue
+		}
+		raw = c.Raw
+		bare := make(map[string]any, len(c.Claims))
+		for key, value := range c.Claims {
+			_, element, found := strings.Cut(key, ":")
+			if !found {
+				element = key
+			}
+			bare[element] = value
+		}
+		c.Claims = bare
+	}
+	if raw == "" {
+		t.Fatal("no mdoc PID to age")
+	}
+	// Loading the wallet rebuilds what the file does not carry, which is
+	// where the namespaces come back from.
+	for i := range w.Credentials {
+		if err := w.Credentials[i].Rehydrate(); err != nil {
+			t.Fatalf("rehydrating: %v", err)
+		}
+	}
+
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatalf("GenerateDefaultCredentials: %v", err)
+	}
+
+	var mdocs int
+	for _, c := range w.GetCredentials() {
+		if c.Format == "mso_mdoc" {
+			mdocs++
+		}
+	}
+	if mdocs != 1 {
+		t.Errorf("wallet holds %d mdoc PIDs, want the regenerated one alone", mdocs)
 	}
 }
 
