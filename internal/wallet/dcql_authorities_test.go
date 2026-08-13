@@ -317,6 +317,43 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 	}
 }
 
+// An mdoc whose issuer certificate chains up to a CA named in an ETSI trust
+// list is accepted; one from an unrelated authority is refused. The end-to-end
+// TestEvaluateDCQL_TrustedAuthorities_* tests cover this for SD-JWT; mdoc runs
+// a separate chain-validation path (ExtractAndValidateMDOCX5Chain), so it needs
+// its own coverage.
+func TestCheckETSITrustListMDOC(t *testing.T) {
+	caCert, leafCert, _, _ := authorityChain(t)
+	tlJWT, err := GenerateTrustListJWT(mustGenerateKey(t), caCert)
+	if err != nil {
+		t.Fatalf("GenerateTrustListJWT: %v", err)
+	}
+	ts := serveTrustList(t, tlJWT)
+
+	otherCA, otherLeaf, _, _ := authorityChain(t)
+
+	t.Run("an mdoc chaining to the trust list", func(t *testing.T) {
+		if !checkETSITrustList(mdocWithChain(t, leafCert, caCert), ts.URL) {
+			t.Error("an mdoc whose issuer is in the trust list was refused")
+		}
+	})
+
+	t.Run("an mdoc from another authority", func(t *testing.T) {
+		if checkETSITrustList(mdocWithChain(t, otherLeaf, otherCA), ts.URL) {
+			t.Error("an mdoc from an authority not in the trust list was accepted")
+		}
+	})
+}
+
+func mustGenerateKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
 // An etsi_tl entry pointing nowhere must refuse the credential rather than
 // treat an unreachable trust list as satisfied.
 func TestCheckETSITrustListWithAnUnreachableList(t *testing.T) {
