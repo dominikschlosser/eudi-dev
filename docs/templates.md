@@ -19,6 +19,8 @@ The German SD-JWT PID carries an `aka_vcts` claim naming `urn:eudi:pid:1`. That 
 
 The German mdoc PID spans two namespaces, as the rulebook prescribes: the European elements in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Its doctype stays `eu.europa.ec.eudi.pid.1`, because ISO 18013-5 has no inheritance between document types. Any mdoc claim key may carry a `namespace:element` prefix to place it in a specific namespace. Everything else lands in the template's namespace. Dates are CBOR tagged the way ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
 
+Because the two mdoc PIDs share a doctype, what tells them apart when a PID is regenerated is the set of namespaces its elements sit in. Overriding `german-pid-mdoc` with a claim set that has no `eu.europa.ec.eudi.pid.de.1` element (or adding one to `pid-mdoc`) makes them indistinguishable, and regenerating one then replaces the other.
+
 The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates, picking the pair that matches the requested type: the `pid-*` templates by default, the `german-pid-*` ones for `--vct urn:eudi:pid:de:1`. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
 
 ## Template files and storage

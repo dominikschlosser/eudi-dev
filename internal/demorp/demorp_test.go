@@ -678,6 +678,94 @@ func TestVerifierAcceptsAnExtendingCredentialType(t *testing.T) {
 	}
 }
 
+// The German PID request asks for the national type and a national attribute,
+// so only the German PID can answer it. The country-independent PID must not:
+// inheritance runs one way, and a verifier asking for the German type wants
+// the German attributes.
+func TestVerifierGermanPIDRequestRefusesTheCountryIndependentPID(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerificationWith(t, h, `{"type":"german-pid"}`)
+
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	eu, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       mock.DefaultPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    mock.SDJWTPIDClaims,
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing the country-independent PID: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, eu, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "german-pid", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "failed" {
+		t.Fatalf("status = %v, want failed for the extended type answering its extension (checks: %v)", status["status"], status["checks"])
+	}
+}
+
+func TestVerifierGermanPIDRequestAcceptsTheGermanPID(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerificationWith(t, h, `{"type":"german-pid"}`)
+
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       mock.GermanPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    mock.SDJWTGermanPIDClaims,
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing the German PID: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, german, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "german-pid", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
+	}
+	claims, _ := status["claims"].(map[string]any)
+	if _, ok := claims["birth_name"]; !ok {
+		t.Errorf("the national attribute the request asked for is missing: %v", claims)
+	}
+}
+
+// The German PID exists only as an SD-JWT VC type. Asking for it as an mdoc
+// would be answered by either mdoc PID, since they share a doctype, so the
+// request is refused instead of quietly meaning something else.
+func TestVerifierGermanPIDHasNoMDocForm(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	code, body := doJSON(t, h, "POST", "/api/requests", `{"type":"german-pid","format":"mdoc"}`, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("POST /api/requests = %d, want 400 (body: %v)", code, body)
+	}
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "no document type of its own") {
+		t.Errorf("error = %q, want it to say the German PID has no doctype of its own", msg)
+	}
+}
+
 // TestVerifierRejectsReplay: the nonce is fixed per request, so a captured
 // response would verify again unless the request is single use.
 func TestVerifierRejectsReplay(t *testing.T) {

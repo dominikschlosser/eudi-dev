@@ -33,7 +33,9 @@ The issuer page has a status list toggle. With it on, the ticket carries a refer
 
 The wallet UI pages the credential list (ten per page), so a demo that accumulated hundreds of credentials between resets stays usable and does not ship the whole list to every visitor on load.
 
-The demo seeds four PID credentials: the country-independent EUDI PID (`urn:eudi:pid:1`) and the German PID that extends it (`urn:eudi:pid:de:1`), each as an SD-JWT VC and an mdoc. Holding both is what makes [credential type inheritance](wallet.md#credential-type-inheritance) visible: the demo verifier's PID request asks for the country-independent type, and either credential can answer it. The two carry different attributes, each following its own rulebook.
+The demo seeds four PID credentials: the country-independent EUDI PID (`urn:eudi:pid:1`) and the German PID that extends it (`urn:eudi:pid:de:1`), each as an SD-JWT VC and an mdoc. The two carry different attributes, each following its own rulebook.
+
+The verifier page asks for either. Its PID request names `urn:eudi:pid:1`, which both credentials answer (that is [credential type inheritance](wallet.md#credential-type-inheritance) at work, and the wallet log names the German PID as a candidate), and the wallet presents one of them. Its German PID request names `urn:eudi:pid:de:1` and a national attribute, so only the German credential can answer it, which is the other half of the rule: inheritance runs one way. The German request has no format toggle, because the German PID is a type only in SD-JWT VC.
 
 All four are marked protected: the UI, the API and the CLI refuse to delete or revoke them, so a visitor emptying the wallet cannot leave the demo without a baseline. Everything a visitor issues afterwards behaves normally and can be deleted. Clearing the flag needs direct access to `wallet.json`.
 

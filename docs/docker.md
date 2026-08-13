@@ -127,7 +127,7 @@ walletURL, _ := wallet.Endpoint(ctx, "http")
 
 ## Custom PID claims
 
-The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) containing standard attributes (`given_name`, `family_name`, `birth_date`, `age_over_18`, etc.). To customize what gets issued, mount a folder of [credential templates](templates.md) and override the pre-defined PID templates (or add your own):
+The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) carrying the attributes of the EUDI PID Rulebook (`given_name`, `family_name`, `birth_date`, `place_of_birth`, `nationality`, etc.). To customize what gets issued, mount a folder of [credential templates](templates.md) and override the pre-defined PID templates (or add your own):
 
 ```bash
 # my-templates/german-pid-sdjwt.json overrides the pre-defined PID template

@@ -38,12 +38,13 @@ import (
 )
 
 // PIDVCT and PIDDocType are what a PID request asks for, in each of the two
-// formats the demo wallet holds a PID in. The country-independent type is
-// deliberately the one requested: the demo wallet also holds a German PID,
-// which extends it and answers the same request.
+// formats the demo wallet holds a PID in. GermanPIDVCT is the national type
+// that extends PIDVCT, which a request can ask for instead: a credential of
+// it answers a request for PIDVCT, and never the other way round.
 const (
-	PIDVCT     = credtype.PIDVCT
-	PIDDocType = credtype.PIDDocType
+	PIDVCT       = credtype.PIDVCT
+	GermanPIDVCT = credtype.GermanPIDVCT
+	PIDDocType   = credtype.PIDDocType
 )
 
 // requestState tracks one verification request from creation to result.
@@ -130,7 +131,7 @@ func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
 }
 
 type createRequestBody struct {
-	Type string `json:"type"` // "ticket" (default) or "pid"
+	Type string `json:"type"` // "ticket" (default), "pid", or "german-pid"
 	// Format narrows a PID request to one credential format: "sd-jwt",
 	// "mdoc", or "both" (the default). It does not apply to the ticket,
 	// which the demo issuer only ever issues as an SD-JWT VC.
@@ -197,8 +198,28 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			docType = PIDDocType
 			mdocClaims = []string{"given_name", "family_name"}
 		}
+	case "german-pid":
+		// The German PID is a credential type of its own, and only in SD-JWT
+		// VC: ISO/IEC 18013-5 has no inheritance between document types, so a
+		// national mdoc PID carries the doctype of the country-independent one
+		// and is told apart only by the namespace its national elements sit
+		// in. A doctype request for "the German PID" would therefore be
+		// answered by either mdoc, which would teach the opposite of the truth.
+		wantSDJWT, wantMDOC, err := normalizePIDFormat(body.Format)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if wantMDOC && !wantSDJWT {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the German PID has no document type of its own: ask for the PID in mdoc instead"})
+			return
+		}
+		vct = GermanPIDVCT
+		// birth_name is one of the national additions, so this request reaches
+		// the German PID and nothing else.
+		claims = []string{"given_name", "family_name", "birth_name"}
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket or pid"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket, pid or german-pid"})
 		return
 	}
 
