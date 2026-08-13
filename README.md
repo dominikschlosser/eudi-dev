@@ -21,6 +21,7 @@ An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, is
 - **QR Screen Capture**: scan a QR code straight from your screen to decode credentials or OpenID requests ([decode --screen](#decode))
 - **Offline Decode & Validate**: SD-JWT, JWT VC, mDOC, JWT with signature verification and trust list support
 - **DCQL Generation**: generate Digital Credentials Query Language queries from existing credentials
+- **Credential Type Inheritance**: a request for `urn:eudi:pid:1` is answered by a domestic PID such as `urn:eudi:pid:de:1` ([inheritance](docs/wallet.md#credential-type-inheritance))
 
 ## Compared to other EUDI tooling
 

@@ -26,7 +26,7 @@ A reusable, named claim set and issuance settings that a credential can be minte
 _Avoid_: Preset, profile
 
 **PID**:
-Person Identification Data, the EUDI-defined identity credential. It comes in two types here, and which one is meant usually matters: the country-independent **EUDI PID** of the ARF rulebook and the **German PID** that extends it. "PID" unqualified means the credential, not either type. Never abbreviate process id this way in code that also touches credentials, because the collision has already produced one shadowing bug.
+Person Identification Data, the EUDI-defined identity credential. It comes as the country-independent **EUDI PID** of the ARF rulebook and as domestic types that extend it, such as the **German PID**. Say which one is meant when it matters. "PID" unqualified means the credential, not a type. Never abbreviate process id this way in code that also touches credentials, because the collision has already produced one shadowing bug.
 _Avoid_: PID as process id (write `processID`)
 
 ### Roles

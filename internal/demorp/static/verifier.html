@@ -93,13 +93,11 @@
     <button class="btn" id="request-pid" data-type="pid">Request the PID</button>
     <button class="btn" id="request-pid-de" data-type="pid" data-vct="urn:eudi:pid:de:1">Request the German PID</button>
     <p class="format-hint">
-      The PID request asks for <code>urn:eudi:pid:1</code>, which a national PID
-      answers as well because it extends that type. The German request asks for
-      <code>urn:eudi:pid:de:1</code>, which only a credential of that type can
-      answer, since inheritance runs one way. A national type is asked for in
-      SD-JWT VC alone: ISO/IEC 18013-5 has no inheritance between document types,
-      so every PID carries the same doctype and keeps its national elements in a
-      second namespace.
+      The PID request asks for <code>urn:eudi:pid:1</code>. A national PID answers
+      it too, because it extends that type. The German request asks for
+      <code>urn:eudi:pid:de:1</code>, which the German PID answers. It is SD-JWT VC
+      only, since every PID shares the mdoc doctype
+      <code>eu.europa.ec.eudi.pid.1</code>.
     </p>
     <div class="result" id="request-box">
       <div class="label">Open in the wallet on this host</div>

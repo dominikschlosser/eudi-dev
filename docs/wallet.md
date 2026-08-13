@@ -96,18 +96,18 @@ The macOS URL handler honors the active remote wallet. While a remote target is 
 
 ## Credential type inheritance
 
-A national PID extends the country-independent one. The ARF requires it: PID_14 in Annex 2 (v3.0.0) says the vct "SHALL be `urn:eudi:pid:1` for the type defined in this document or a domestic type that extends it". `urn:eudi:pid:de:1` therefore carries every attribute `urn:eudi:pid:1` defines and adds the German ones, so a verifier asking for the general type is answered by the national credential. That is a rule, not a list: any type in the `urn:eudi:pid:` namespace whose next segment is a country or region rather than a version extends the country-independent PID, so `urn:eudi:pid:fr:1` behaves the same without anything here knowing about France. The wallet matches a DCQL `vct_values` entry against the credential's own type and against every type it extends, and its `[DCQL]` server log says when a credential matched under a type other than its own.
+A domestic PID extends the country-independent one. ARF Annex 2 (v3.0.0) PID_14 requires the vct to be "`urn:eudi:pid:1` for the type defined in this document or a domestic type that extends it", so `urn:eudi:pid:de:1` carries every attribute `urn:eudi:pid:1` defines plus the German ones.
 
-Inheritance runs one way. A request for `urn:eudi:pid:de:1` is not answered by a country-independent PID, which has not got the German attributes.
+The wallet matches a DCQL `vct_values` entry against the credential's own type and every type it extends. A request for `urn:eudi:pid:1` is answered by any PID, a request for `urn:eudi:pid:de:1` by a German PID. The `[DCQL]` server log names the requested type whenever a credential matched under a type other than its own.
 
-What the ARF does not say is how anyone discovers that relationship. The machine-readable form of it, a Type Metadata Document with an `extends` property ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §4.4), is only a "SHOULD consider defining" (ARB_31), and it needs the document to be retrievable, which a `vct` that is a URN is not. So the wallet learns the relationship from two places instead:
+The relationship comes from two places:
 
-- the rule above, for PID types. This is what resolves real credentials today, since none of them carry `aka_vcts` yet
-- the `aka_vcts` claim of the credential (§2.2.2.2, added in draft-18 of 3 August 2026), which puts the statement in the credential itself. This is the general mechanism, and the only one for types outside `urn:eudi:pid:`: a credential of any type answers a request for every type it lists there. No EUDI rulebook requires it yet, so reading it is what makes the wallet work with issuers that adopt it. The German PID this tool issues carries it, to show the mechanism
+- the PID type itself. A segment after `urn:eudi:pid:` that is a country or region code (`urn:eudi:pid:de:1`, `urn:eudi:pid:fr:1`) marks a domestic type, which extends `urn:eudi:pid:1`. A segment that is a version number (`urn:eudi:pid:1`, `urn:eudi:pid:2`) marks the country-independent type
+- the `aka_vcts` claim ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §2.2.2.2), which lists further types a credential is also of. It applies to every credential type, and the German PID this tool issues carries it
 
-None of this is a trust decision. Inheritance says what a credential is, never who may issue it (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so"). Issuer authorization is decided by the signature and trust list checks, unchanged.
+Inheritance states what a credential is, not who may issue it (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so"). Issuer authorization stays with the signature and trust list checks.
 
-mdoc has no equivalent, and the ARF does not invent one. ISO 18013-5 defines no inheritance between document types, so PID_05 fixes the doctype and namespace at `eu.europa.ec.eudi.pid.1` for every PID and PID_06 puts national elements in a domestic namespace built by appending the country code, `eu.europa.ec.eudi.pid.de.1` for Germany. A `doctype_value` request therefore reaches both PIDs already, and a claim query addresses a national element by its namespace: `"path": ["eu.europa.ec.eudi.pid.de.1", "birth_name"]`.
+In mdoc every PID carries the doctype `eu.europa.ec.eudi.pid.1` (PID_05), and national elements sit in a domestic namespace built by appending the country or region code to it (`eu.europa.ec.eudi.pid.de.1`, PID_06). A `doctype_value` request therefore reaches every PID, and a claim query addresses a national element by its namespace: `"path": ["eu.europa.ec.eudi.pid.de.1", "birth_name"]`.
 
 ## Storage
 
@@ -201,7 +201,7 @@ The server exposes:
 
 The consent dialog for a credential offer shows the issuer's name and origin, the flow the offer uses, whether a transaction code will be required, and for each offered credential its format, type, display name, description and declared claims. Everything beyond the offer itself is read from the issuer's metadata and is optional. An offer delivered as a `credential_offer_uri` is dereferenced for the dialog too, and fetched again when the offer is approved. If it cannot be retrieved, the dialog names the issuer it points at and approving retries.
 
-A credential card lists what the credential carries. For an mdoc that means each namespace by name with a few of its elements, because two credentials can share a doctype and differ only in the namespaces they use, as the two PIDs do.
+A credential card lists a few of the claims the credential carries. An mdoc element outside the doctype's own namespace is grouped under that namespace, labelled with the segments it adds (`+de.1` for `eu.europa.ec.eudi.pid.de.1` next to `eu.europa.ec.eudi.pid.1`, full identifier on hover). This is what tells two credentials of the same doctype apart, such as the two PIDs.
 
 Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. Selecting a credential template (for example the pre-defined `german-pid-sdjwt`) fills all fields so they can be reviewed and edited before issuing. A status list selector controls the embedded status reference (the wallet's own list when configured, none, or a custom URI and index).
 
