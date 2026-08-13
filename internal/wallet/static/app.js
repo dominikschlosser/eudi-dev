@@ -216,13 +216,15 @@
     loadCredentials();
   });
 
-  // What a credential carries, in the shape the credential has it. mdoc
-  // elements are keyed "namespace:element", and two PIDs can share a doctype
-  // while differing only by the namespaces they use (the German PID keeps its
-  // national elements in eu.europa.ec.eudi.pid.de.1), so a flat list of names
-  // makes two different credentials look identical. Each namespace is named,
-  // with a few of its elements as examples. SD-JWT claims have no namespace
-  // and stay a plain list.
+  // What a credential carries, in the shape the credential has it.
+  //
+  // mdoc elements are keyed "namespace:element", and two credentials can share
+  // a doctype while differing only in the namespaces they use: the German PID
+  // keeps its national elements in eu.europa.ec.eudi.pid.de.1 beside the
+  // eu.europa.ec.eudi.pid.1 elements every PID has. So the extra namespaces are
+  // what the card has to show, and only those: the credential's own namespace
+  // is the doctype in the headline already, and repeating it says nothing.
+  // SD-JWT claims have no namespace and stay a plain list.
   function claimTagsFor(cred) {
     const names = Object.keys(cred.claims || {});
     if (names.length === 0) return '';
@@ -235,17 +237,51 @@
       if (!groups.has(ns)) groups.set(ns, []);
       groups.get(ns).push(element);
     }
-    if (groups.size === 1 && groups.has('')) {
-      return claimTagList(groups.get(''), 6);
-    }
-    // Longest namespace last: the national additions extend the base one, and
-    // reading them in that order says which is which.
-    return [...groups.entries()]
-      .sort((a, b) => a[0].length - b[0].length || a[0].localeCompare(b[0]))
-      .map(([ns, elements]) =>
-        '<span class="claim-namespace" title="' + escHtml(elements.length + ' element' + (elements.length === 1 ? '' : 's') + ' in ' + (ns || 'no namespace')) + '">' +
-          escHtml(ns || 'no namespace') + '</span>' + claimTagList(elements, 3))
-      .join('');
+    if (groups.size === 1 && groups.has('')) return claimTagList(groups.get(''), 6);
+
+    // Shortest first: a domestic namespace extends the one it is built from
+    // (eu.europa.ec.eudi.pid.1 then eu.europa.ec.eudi.pid.de.1), and reading
+    // them in that order says which is which.
+    const namespaces = [...groups.keys()].sort((a, b) => a.length - b.length || a.localeCompare(b));
+    const base = namespaces.includes(cred.doctype) ? cred.doctype : namespaces[0];
+
+    return namespaces.map(ns => {
+      const elements = groups.get(ns).sort();
+      // The doctype namespace needs no label, the headline is it. Any other
+      // primary one does, because then the elements are not where the doctype
+      // says (an mDL keeps org.iso.18013.5.1.mDL elements in org.iso.18013.5.1).
+      if (ns === base) {
+        const label = ns === cred.doctype ? '' : namespaceChip(ns, ns, elements);
+        return label + claimTagList(elements, namespaces.length > 1 ? 4 : 6);
+      }
+      return namespaceChip(ns, base, elements) + claimTagList(elements, 3);
+    }).join('');
+  }
+
+  // A namespace beside the credential's own, named by what it adds to it:
+  // "+de.1" for eu.europa.ec.eudi.pid.de.1 next to eu.europa.ec.eudi.pid.1.
+  // Spelling it out in full would repeat the base namespace, which is what
+  // made two different credentials look alike in the first place.
+  function namespaceChip(ns, base, elements) {
+    const title = elements.length + (elements.length === 1 ? ' element in ' : ' elements in ') + ns;
+    return '<span class="claim-namespace" title="' + escHtml(title) + '" data-namespace="' + escHtml(ns) + '">' +
+      escHtml(namespaceDelta(ns, base)) + '</span>';
+  }
+
+  // What a namespace adds to the one it is built from, by dotted segment. A
+  // domestic namespace either appends to the full identifier
+  // (org.iso.18013.5.1 -> org.iso.18013.5.1.US) or replaces its version
+  // (eu.europa.ec.eudi.pid.1 -> eu.europa.ec.eudi.pid.de.1), and the segments
+  // they share cover both. Namespaces that only happen to start alike are not
+  // in that relationship, so they keep their full name.
+  function namespaceDelta(ns, base) {
+    if (ns === base) return ns;
+    const parts = ns.split('.');
+    const baseParts = base.split('.');
+    let shared = 0;
+    while (shared < parts.length && shared < baseParts.length && parts[shared] === baseParts[shared]) shared++;
+    if (shared < 2 || shared < baseParts.length - 1) return ns;
+    return '+' + parts.slice(shared).join('.');
   }
 
   // Up to max names, then a count of what is left.

@@ -28,8 +28,8 @@
 // an SD-JWT VC Type Metadata Document with an extends property
 // (draft-ietf-oauth-sd-jwt-vc-18 §4.4), is only ARB_31 "SHOULD consider
 // defining", and it needs the document to be retrievable, which a vct that is
-// a URN is not. Hence the table below: it holds the relationships the EUDI
-// rulebooks define, and it is what actually resolves today's credentials.
+// a URN is not. Extends therefore applies the rule PID_14 states directly,
+// which is what resolves today's credentials.
 //
 // The aka_vcts claim (§2.2.2.2, new in draft-18 of 3 August 2026) closes that
 // gap by putting the statement in the credential itself: "An SD-JWT VC
@@ -46,6 +46,8 @@
 // to do so"). Nothing here grants trust; issuer authorization is decided
 // where it always was, by signature and trust list checks.
 package credtype
+
+import "strings"
 
 // The EUDI PID, country-independent and German.
 //
@@ -67,18 +69,46 @@ const (
 // is also of (draft-ietf-oauth-sd-jwt-vc-18 §2.2.2.2).
 const AkaVCTsClaim = "aka_vcts"
 
-// extends maps a credential type to the type it extends. It holds what the
-// EUDI rulebooks define, so a credential from another issuer answers a
-// request for its general type even when it carries no aka_vcts claim, which
-// today is every real one.
-var extends = map[string]string{
-	GermanPIDVCT: PIDVCT,
-}
+// PIDVCTPrefix is the URN namespace every PID type lives in.
+const PIDVCTPrefix = "urn:eudi:pid:"
 
 // Extends returns the type vct extends, and whether there is one.
+//
+// This is a rule rather than a list of known types, because the ARF states
+// one: PID_14 says the vct "SHALL be a URN within the urn:eudi:pid: namespace"
+// and "SHALL be urn:eudi:pid:1 for the type defined in this document or a
+// domestic type that extends it". So every domestic PID type extends the
+// country-independent one, whether or not this tool has heard of the country.
+//
+// What separates a domestic type from the country-independent one is the
+// segment after the prefix: a number names a version of the type the rulebook
+// defines (urn:eudi:pid:1, and whatever a later rulebook numbers), anything
+// else names a country or region, the same convention PID_06 spells out for
+// mdoc namespaces. urn:eudi:pid:de:1 is German, urn:eudi:pid:fr:1 is French,
+// and neither had to be known here in advance.
+//
+// Types outside that namespace state their own relationships in aka_vcts,
+// which is where the general mechanism lives (see AkaVCTs).
 func Extends(vct string) (string, bool) {
-	parent, ok := extends[vct]
-	return parent, ok
+	rest, ok := strings.CutPrefix(vct, PIDVCTPrefix)
+	if !ok || rest == "" {
+		return "", false
+	}
+	country, _, _ := strings.Cut(rest, ":")
+	if country == "" || isNumber(country) {
+		return "", false
+	}
+	return PIDVCT, true
+}
+
+// isNumber reports whether s is a run of digits and nothing else.
+func isNumber(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // Chain returns every type a credential of type vct is also of, vct first:
@@ -100,12 +130,12 @@ func Chain(vct string, akaVCTs []string) []string {
 	for _, aka := range akaVCTs {
 		add(aka)
 	}
-	// Walk the known inheritance from every type reached so far, so a
-	// credential naming only its immediate parent in aka_vcts still answers
-	// for that parent's own parent. seen bounds the walk, so a table that
-	// ever gained a cycle would stop rather than hang.
+	// Walk the inheritance from every type reached so far, so a credential
+	// naming only its immediate parent in aka_vcts still answers for that
+	// parent's own parent. seen bounds the walk, so a rule that ever produced
+	// a cycle would stop rather than hang.
 	for i := 0; i < len(chain); i++ {
-		if parent, ok := extends[chain[i]]; ok {
+		if parent, ok := Extends(chain[i]); ok {
 			add(parent)
 		}
 	}

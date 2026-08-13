@@ -131,11 +131,16 @@ func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
 }
 
 type createRequestBody struct {
-	Type string `json:"type"` // "ticket" (default), "pid", or "german-pid"
+	Type string `json:"type"` // "ticket" (default) or "pid"
 	// Format narrows a PID request to one credential format: "sd-jwt",
 	// "mdoc", or "both" (the default). It does not apply to the ticket,
 	// which the demo issuer only ever issues as an SD-JWT VC.
 	Format string `json:"format"`
+	// VCT names the PID type to ask for. Empty means the country-independent
+	// urn:eudi:pid:1, which every PID answers. A domestic type such as
+	// urn:eudi:pid:de:1 is answered only by a credential of that type, since
+	// inheritance runs the other way.
+	VCT string `json:"vct"`
 }
 
 // normalizePIDFormat maps what the API accepts onto the two formats a PID
@@ -151,6 +156,21 @@ func normalizePIDFormat(format string) (sdjwt, mdoc bool, err error) {
 	default:
 		return false, false, fmt.Errorf("format must be sd-jwt, mdoc or both")
 	}
+}
+
+// normalizePIDVCT checks the PID type a request asks for. An empty value is
+// the country-independent PID. Anything outside the urn:eudi:pid: namespace is
+// refused: PID_14 in Annex 2 of the ARF puts every PID type in it, so a value
+// outside is not a PID type at all and nothing in this demo could answer it.
+func normalizePIDVCT(vct string) (string, error) {
+	vct = strings.TrimSpace(vct)
+	if vct == "" {
+		return PIDVCT, nil
+	}
+	if !strings.HasPrefix(vct, credtype.PIDVCTPrefix) {
+		return "", fmt.Errorf("vct must be a PID type in %s", credtype.PIDVCTPrefix)
+	}
+	return vct, nil
 }
 
 func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
@@ -190,36 +210,33 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if wantSDJWT {
-			vct = PIDVCT
-			claims = []string{"given_name", "family_name"}
-		}
-		if wantMDOC {
-			docType = PIDDocType
-			mdocClaims = []string{"given_name", "family_name"}
-		}
-	case "german-pid":
-		// The German PID is a credential type of its own, and only in SD-JWT
-		// VC: ISO/IEC 18013-5 has no inheritance between document types, so a
-		// national mdoc PID carries the doctype of the country-independent one
-		// and is told apart only by the namespace its national elements sit
-		// in. A doctype request for "the German PID" would therefore be
-		// answered by either mdoc, which would teach the opposite of the truth.
-		wantSDJWT, wantMDOC, err := normalizePIDFormat(body.Format)
+		requested, err := normalizePIDVCT(body.VCT)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if wantMDOC && !wantSDJWT {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the German PID has no document type of its own: ask for the PID in mdoc instead"})
+		// A domestic PID type exists only in SD-JWT VC. ISO/IEC 18013-5 has no
+		// inheritance between document types, so every PID carries the same
+		// doctype and the national elements sit in a second namespace: a
+		// doctype request for a national PID would be answered by any PID at
+		// all, which would teach the opposite of the truth.
+		domestic := requested != PIDVCT
+		if domestic && wantMDOC && !wantSDJWT {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "a credential type has no mdoc form: every PID carries the doctype " + PIDDocType + ", so ask for the PID in mdoc instead",
+			})
 			return
 		}
-		vct = GermanPIDVCT
-		// birth_name is one of the national additions, so this request reaches
-		// the German PID and nothing else.
-		claims = []string{"given_name", "family_name", "birth_name"}
+		if wantSDJWT {
+			vct = requested
+			claims = []string{"given_name", "family_name"}
+		}
+		if wantMDOC && !domestic {
+			docType = PIDDocType
+			mdocClaims = []string{"given_name", "family_name"}
+		}
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket, pid or german-pid"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket or pid"})
 		return
 	}
 

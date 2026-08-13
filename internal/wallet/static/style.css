@@ -259,14 +259,18 @@ header h1 {
   border: 1px solid var(--border);
 }
 
-/* The namespace an mdoc credential's following elements sit in. Two PIDs can
-   share a doctype and differ only here, so it leads the group it names. */
+/* A namespace beside the credential's own, leading the elements it holds.
+   Two mdoc PIDs can share a doctype and differ only here, so this is the one
+   thing on the card that tells them apart. */
 .claim-namespace {
   font-family: var(--font-mono, monospace);
-  color: var(--text);
-  background: transparent;
-  padding: 1px 0;
-  margin-left: 4px;
+  font-weight: 600;
+  color: var(--purple);
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--purple);
+  margin-left: 6px;
 }
 
 .claim-namespace:first-child {

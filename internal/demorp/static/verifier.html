@@ -89,16 +89,17 @@
     <p class="format-hint" id="format-hint">
       The request asks for either format and the wallet answers with the one it holds.
     </p>
-    <button class="btn primary" data-type="ticket">Request the demo ticket</button>
-    <button class="btn" data-type="pid">Request the PID</button>
-    <button class="btn" data-type="german-pid">Request the German PID</button>
+    <button class="btn primary" id="request-ticket" data-type="ticket">Request the demo ticket</button>
+    <button class="btn" id="request-pid" data-type="pid">Request the PID</button>
+    <button class="btn" id="request-pid-de" data-type="pid" data-vct="urn:eudi:pid:de:1">Request the German PID</button>
     <p class="format-hint">
-      The PID request asks for <code>urn:eudi:pid:1</code>, which the German PID
+      The PID request asks for <code>urn:eudi:pid:1</code>, which a national PID
       answers as well because it extends that type. The German request asks for
-      <code>urn:eudi:pid:de:1</code> and a national attribute, so only the German
-      PID can answer it. It has no mdoc form: ISO/IEC 18013-5 has no inheritance
-      between document types, so a national mdoc PID carries the same doctype and
-      keeps its national elements in a second namespace.
+      <code>urn:eudi:pid:de:1</code>, which only a credential of that type can
+      answer, since inheritance runs one way. A national type is asked for in
+      SD-JWT VC alone: ISO/IEC 18013-5 has no inheritance between document types,
+      so every PID carries the same doctype and keeps its national elements in a
+      second namespace.
     </p>
     <div class="result" id="request-box">
       <div class="label">Open in the wallet on this host</div>

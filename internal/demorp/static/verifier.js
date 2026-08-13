@@ -150,7 +150,17 @@ for (const btn of document.querySelectorAll(".btn[data-type]")) {
   btn.addEventListener("click", async () => {
     stopPolling();
     const request = { type: btn.dataset.type };
-    if (btn.dataset.type === "pid") request.format = pidFormat;
+    if (btn.dataset.type === "pid") {
+      request.format = pidFormat;
+      // A button may name the PID type it asks for. Without one the request
+      // is for urn:eudi:pid:1, which every PID answers.
+      if (btn.dataset.vct) {
+        request.vct = btn.dataset.vct;
+        // A national type has no mdoc form, so the format toggle does not
+        // apply to it.
+        request.format = "sd-jwt";
+      }
+    }
     const resp = await fetch("api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

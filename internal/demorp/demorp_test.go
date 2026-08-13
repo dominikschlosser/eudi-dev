@@ -678,15 +678,14 @@ func TestVerifierAcceptsAnExtendingCredentialType(t *testing.T) {
 	}
 }
 
-// The German PID request asks for the national type and a national attribute,
-// so only the German PID can answer it. The country-independent PID must not:
-// inheritance runs one way, and a verifier asking for the German type wants
-// the German attributes.
-func TestVerifierGermanPIDRequestRefusesTheCountryIndependentPID(t *testing.T) {
+// A request naming a national type is answered only by a credential of that
+// type. The country-independent PID must not answer it: inheritance runs one
+// way, and a verifier asking for the national type wants what it adds.
+func TestVerifierDomesticPIDRequestRefusesTheCountryIndependentPID(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	id, params := startVerificationWith(t, h, `{"type":"german-pid"}`)
+	id, params := startVerificationWith(t, h, `{"type":"pid","vct":"urn:eudi:pid:de:1"}`)
 
 	chain, err := d.wallet.DefaultSigningCertChain()
 	if err != nil {
@@ -706,7 +705,7 @@ func TestVerifierGermanPIDRequestRefusesTheCountryIndependentPID(t *testing.T) {
 	}
 
 	presentation := presentCredential(t, holderKey, eu, params.Get("client_id"), params.Get("nonce"))
-	postPresentation(t, h, id, "german-pid", presentation)
+	postPresentation(t, h, id, "pid", presentation)
 
 	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 	if status["status"] != "failed" {
@@ -714,11 +713,11 @@ func TestVerifierGermanPIDRequestRefusesTheCountryIndependentPID(t *testing.T) {
 	}
 }
 
-func TestVerifierGermanPIDRequestAcceptsTheGermanPID(t *testing.T) {
+func TestVerifierDomesticPIDRequestAcceptsThatType(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	id, params := startVerificationWith(t, h, `{"type":"german-pid"}`)
+	id, params := startVerificationWith(t, h, `{"type":"pid","vct":"urn:eudi:pid:de:1"}`)
 
 	chain, err := d.wallet.DefaultSigningCertChain()
 	if err != nil {
@@ -738,31 +737,78 @@ func TestVerifierGermanPIDRequestAcceptsTheGermanPID(t *testing.T) {
 	}
 
 	presentation := presentCredential(t, holderKey, german, params.Get("client_id"), params.Get("nonce"))
-	postPresentation(t, h, id, "german-pid", presentation)
+	postPresentation(t, h, id, "pid", presentation)
 
 	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 	if status["status"] != "verified" {
 		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
 	}
 	claims, _ := status["claims"].(map[string]any)
-	if _, ok := claims["birth_name"]; !ok {
-		t.Errorf("the national attribute the request asked for is missing: %v", claims)
+	if claims["vct"] != mock.GermanPIDVCT {
+		t.Errorf("vct presented = %v, want %v", claims["vct"], mock.GermanPIDVCT)
 	}
 }
 
-// The German PID exists only as an SD-JWT VC type. Asking for it as an mdoc
-// would be answered by either mdoc PID, since they share a doctype, so the
+// A credential type exists only in SD-JWT VC. Asking for a national PID as an
+// mdoc would be answered by any PID at all, since they share a doctype, so the
 // request is refused instead of quietly meaning something else.
-func TestVerifierGermanPIDHasNoMDocForm(t *testing.T) {
+func TestVerifierDomesticPIDHasNoMDocForm(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	code, body := doJSON(t, h, "POST", "/api/requests", `{"type":"german-pid","format":"mdoc"}`, nil)
+	code, body := doJSON(t, h, "POST", "/api/requests", `{"type":"pid","vct":"urn:eudi:pid:de:1","format":"mdoc"}`, nil)
 	if code != http.StatusBadRequest {
 		t.Fatalf("POST /api/requests = %d, want 400 (body: %v)", code, body)
 	}
-	if msg, _ := body["error"].(string); !strings.Contains(msg, "no document type of its own") {
-		t.Errorf("error = %q, want it to say the German PID has no doctype of its own", msg)
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "no mdoc form") {
+		t.Errorf("error = %q, want it to say a credential type has no mdoc form", msg)
+	}
+}
+
+// The type is not a free-text field: PID_14 in Annex 2 of the ARF puts every
+// PID type in urn:eudi:pid:, so anything else is not a PID type at all.
+func TestVerifierPIDRequestRefusesATypeOutsideThePIDNamespace(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	code, body := doJSON(t, h, "POST", "/api/requests", `{"type":"pid","vct":"urn:example:membership:1"}`, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("POST /api/requests = %d, want 400 (body: %v)", code, body)
+	}
+}
+
+// Nothing here knows the countries: a type PID_14 makes domestic is asked for
+// and answered like any other, whether or not this tool ever heard of it.
+func TestVerifierPIDRequestTakesAnyDomesticType(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	const frenchPID = "urn:eudi:pid:fr:1"
+	id, params := startVerificationWith(t, h, `{"type":"pid","vct":"`+frenchPID+`"}`)
+
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	french, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       frenchPID,
+		ExpiresIn: time.Hour,
+		Claims:    mock.SDJWTPIDClaims,
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing the French PID: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, french, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "pid", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
 	}
 }
 

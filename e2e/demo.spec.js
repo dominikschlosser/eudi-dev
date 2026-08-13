@@ -451,6 +451,28 @@ test.describe("Demo mode consent visibility", () => {
   });
 });
 
+test.describe("Verifier request types", () => {
+  // The page asks for a credential type, and a national PID is one: the button
+  // differs from the PID button only in the vct it names, so both have to
+  // reach the wallet and come back verified.
+  test("the German PID button is answered by the German PID", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator("#request-pid-de").click();
+    await expect(page.locator("#status")).toHaveText(/Waiting/);
+
+    // Hand the request to the wallet the way an API caller would: the
+    // submission is the consent, so no dialog is involved.
+    const uri = await page.locator("#scheme-uri").textContent();
+    const answered = await postJSON("/api/presentations", { uri });
+    expect(answered.status).toBe(200);
+
+    await expect(page.locator("#status")).toHaveText(/verified/i, { timeout: 15000 });
+    // The country-independent PID cannot answer this request, so the type
+    // that came back says the wallet picked the German credential.
+    await expect(page.locator("#claims")).toContainText("urn:eudi:pid:de:1");
+  });
+});
+
 test.describe("Protected baseline credentials", () => {
   test("the seeded PIDs are marked and offer no destructive actions", async ({
     page,
@@ -480,19 +502,22 @@ test.describe("Protected baseline credentials", () => {
     await expect(mdocCards).toHaveCount(2, { timeout: 5000 });
 
     // Both carry the same doctype, because ISO 18013-5 has no inheritance
-    // between document types. The namespaces are what says which is which.
+    // between document types. The extra namespace is what says which is which,
+    // named by what it adds rather than spelled out: the full identifier would
+    // repeat the doctype in the headline above it.
     const german = mdocCards.filter({
-      has: page.locator(".claim-namespace", { hasText: "eu.europa.ec.eudi.pid.de.1" }),
+      has: page.locator(".claim-namespace[data-namespace='eu.europa.ec.eudi.pid.de.1']"),
     });
     await expect(german).toHaveCount(1);
-    await expect(
-      german.locator(".claim-namespace", { hasText: /^eu\.europa\.ec\.eudi\.pid\.1$/ })
-    ).toHaveCount(1);
+    await expect(german.locator(".claim-namespace")).toHaveText(["+de.1"]);
     await expect(german.locator(".claim-tag", { hasText: "academic_title" })).toHaveCount(1);
 
-    // The country-independent one uses the PID namespace alone.
-    const eu = mdocCards.filter({ hasNot: page.locator(".claim-namespace", { hasText: "de.1" }) });
-    await expect(eu.locator(".claim-namespace")).toHaveCount(1);
+    // The country-independent one keeps every element in the doctype's own
+    // namespace, so it needs no label at all.
+    const eu = mdocCards.filter({
+      hasNot: page.locator(".claim-namespace[data-namespace='eu.europa.ec.eudi.pid.de.1']"),
+    });
+    await expect(eu.locator(".claim-namespace")).toHaveCount(0);
   });
 
   test("the API refuses to delete or revoke them", async () => {
@@ -600,7 +625,7 @@ test.describe("Verifier polling", () => {
 
   test("a hidden tab does not poll", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
-    await page.locator(".btn[data-type='pid']").click();
+    await page.locator("#request-pid").click();
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
     // Nobody is looking at this tab any more. Chromium will not background a
@@ -618,7 +643,7 @@ test.describe("Verifier polling", () => {
   test("a visible tab backs off instead of hammering", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
     const polls = countPolls(page);
-    await page.locator(".btn[data-type='pid']").click();
+    await page.locator("#request-pid").click();
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
     // Ten seconds of the old fixed 1.5s interval was 6 polls and stayed

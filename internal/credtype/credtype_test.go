@@ -121,13 +121,60 @@ func TestAkaVCTs(t *testing.T) {
 	}
 }
 
-// Inheritance says what a credential is, not who may issue it. Nothing here
-// may grow into a trust decision (draft-ietf-oauth-sd-jwt-vc-18 §6.6).
+// PID_14 makes every domestic PID type an extension of the
+// country-independent one, so this holds for countries nothing here has heard
+// of. Inheritance says what a credential is, not who may issue it: nothing
+// here may grow into a trust decision (draft-ietf-oauth-sd-jwt-vc-18 §6.6).
 func TestExtends(t *testing.T) {
-	if parent, ok := Extends(GermanPIDVCT); !ok || parent != PIDVCT {
-		t.Errorf("Extends(%q) = %q, %t; want %q, true", GermanPIDVCT, parent, ok, PIDVCT)
+	tests := []struct {
+		vct    string
+		parent string
+	}{
+		{GermanPIDVCT, PIDVCT},
+		// A country this tool was never told about, which is the point of
+		// reading the requirement instead of listing the types.
+		{"urn:eudi:pid:fr:1", PIDVCT},
+		{"urn:eudi:pid:es:2", PIDVCT},
+		// A region code, which PID_06 allows for the mdoc namespace and
+		// PID_14 leaves open for the type.
+		{"urn:eudi:pid:de-by:1", PIDVCT},
+		// Not domestic: the country-independent type itself, and whatever a
+		// later rulebook numbers.
+		{PIDVCT, ""},
+		{"urn:eudi:pid:2", ""},
+		// Outside the PID namespace nothing is implied. Such a type states
+		// its own relationships in aka_vcts.
+		{"urn:eudi:mdl:1", ""},
+		{"https://credentials.example.com/membership", ""},
+		{"", ""},
 	}
-	if _, ok := Extends(PIDVCT); ok {
-		t.Errorf("the country-independent PID should extend nothing")
+	for _, tt := range tests {
+		parent, ok := Extends(tt.vct)
+		if tt.parent == "" {
+			if ok {
+				t.Errorf("Extends(%q) = %q, true; want no parent", tt.vct, parent)
+			}
+			continue
+		}
+		if !ok || parent != tt.parent {
+			t.Errorf("Extends(%q) = %q, %t; want %q, true", tt.vct, parent, ok, tt.parent)
+		}
+	}
+}
+
+// A national PID from any country answers a request for the type it extends,
+// which is the behaviour PID_14 describes and the reason this is a rule.
+func TestAnswers_AnyDomesticPIDType(t *testing.T) {
+	for _, vct := range []string{GermanPIDVCT, "urn:eudi:pid:fr:1", "urn:eudi:pid:nl:1"} {
+		if !Answers(vct, nil, PIDVCT) {
+			t.Errorf("%q does not answer a request for %q", vct, PIDVCT)
+		}
+		if Answers(PIDVCT, nil, vct) {
+			t.Errorf("%q answered a request for %q, but inheritance runs one way", PIDVCT, vct)
+		}
+	}
+	// Two domestic types are siblings, not relatives.
+	if Answers(GermanPIDVCT, nil, "urn:eudi:pid:fr:1") {
+		t.Error("the German PID answered a request for the French one")
 	}
 }
