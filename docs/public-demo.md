@@ -141,7 +141,7 @@ The compose example ships an optional usage report, so you can tell whether the 
 
 Then open `https://your-domain/stats/`. Remove the `handle_path /stats*` block from the Caddyfile (and the `stats` service) to turn the whole thing off. If your imprint claims that no access data is processed, adjust it: the log exists, even anonymized.
 
-Read the numbers with care. Your own testing counts too, and a single browser tab produces far more requests than a visit: every page load opens an event stream and the UI reloads credentials, log and trust lists whenever anything changes. `deploy.sh stats` therefore lists page requests only (the `/api/` paths are the UI talking to itself). Distinct visitors are approximated from masked addresses, so everyone behind the same `/24` counts once.
+Read the numbers with care. Your own testing counts too, and a single browser tab produces far more requests than a visit: every page load opens an event stream and the UI reloads credentials, log and trust lists whenever anything changes. `deploy.sh stats` therefore lists pages and API calls separately, and among the API calls it repeats the ones that changed something (`POST`, `PUT`, `PATCH`, `DELETE`). Those are the interesting number: reads are mostly the UI polling itself, while a write is somebody issuing, presenting, importing or deleting a credential, whether from the UI, an external wallet, or a test suite. Distinct visitors are approximated from masked addresses, so everyone behind the same `/24` counts once.
 
 ### Log bounds
 

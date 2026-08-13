@@ -19,7 +19,7 @@
 #   status    container status and the version the site reports
 #   logs      follow the wallet log
 #   verify    check that the deployed endpoints respond
-#   stats     print a usage summary from the access log
+#   stats     print a usage summary from the access log (pages and API calls)
 #   stats-reset     discard the access log and rebuild the report from zero
 #   stats-password  generate credentials for the /stats report
 set -euo pipefail
@@ -215,12 +215,30 @@ case "${COMMAND}" in
       grep -E 'requests|visitors|log_size' |
       while read -r name value; do printf '%-18s %s\n' "${name}" "${value}"; done
     echo
-    # Pages only. The API paths are the UI polling itself (one open tab
-    # produces hundreds of them), so they say nothing about visitors.
+    # Pages only. The API paths are listed separately below, because a single
+    # open tab produces hundreds of them and would bury every page.
     echo "Top pages (bots excluded, API calls omitted):"
     sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" |
-      grep -v ' /api/\| /verifier/api/\| /issuer/api/' |
+      grep -v '/api/' |
       head -10 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
+
+    # The API is where the demo is actually used: every credential issued,
+    # presented, imported or deleted goes through it, whether it came from the
+    # UI, from an external wallet, or from someone's test suite.
+    api="$(sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" | grep '/api/' || true)"
+    if [[ -n "${api}" ]]; then
+      echo
+      echo "Top API calls (bots excluded):"
+      echo "${api}" | head -10 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
+      # Reads are mostly the UI polling itself. What is left is what somebody
+      # did, which is the number worth reading.
+      writes="$(echo "${api}" | grep -E '^[0-9]+ +(POST|PUT|PATCH|DELETE)\b' || true)"
+      if [[ -n "${writes}" ]]; then
+        echo
+        echo "API calls that changed something:"
+        echo "${writes}" | head -10 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
+      fi
+    fi
     rm -f "${summary}"
     [[ -n "${DEMO_URL:-}" ]] && echo && echo "Full report: ${DEMO_URL%/}/stats/"
     ;;
