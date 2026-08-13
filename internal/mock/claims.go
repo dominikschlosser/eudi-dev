@@ -217,6 +217,32 @@ func PIDIssuanceDate() string {
 	return time.Now().UTC().Format(time.DateOnly)
 }
 
+// pidDateClaims are the claims whose value is a date computed at issuance,
+// under the names each encoding gives them.
+var pidDateClaims = map[string]func() string{
+	"date_of_issuance": PIDIssuanceDate,
+	"issuance_date":    PIDIssuanceDate,
+	"date_of_expiry":   PIDExpiryDate,
+	"expiry_date":      PIDExpiryDate,
+}
+
+// RefreshPIDDates recomputes the dated claims of a PID claim set in place.
+//
+// The claim sets above are package variables, so their dates are those of the
+// moment the process started. That is invisible in a CLI run and wrong in a
+// server that stays up: a wallet running for a month would hand out PIDs
+// issued the day it booted, and expiring five years after that day rather
+// than five years from now. Claims the set does not carry are not added,
+// since the German PID deliberately has no issuance date.
+func RefreshPIDDates(claims map[string]any) map[string]any {
+	for name, value := range pidDateClaims {
+		if _, ok := claims[name]; ok {
+			claims[name] = value()
+		}
+	}
+	return claims
+}
+
 // PIDExpiryDate is the administrative expiry of the PID: the German rulebook
 // puts it five years after issuance (§10a (2) PAuswG), separate from the
 // technical validity of the credential itself. It is a calendar day with no

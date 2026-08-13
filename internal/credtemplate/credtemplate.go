@@ -102,7 +102,9 @@ func NormalizeFormat(format string) (string, error) {
 }
 
 // PredefinedTemplates returns the pre-defined templates compiled into the binary. Claims are deep
-// copies, so callers may modify them freely.
+// copies, so callers may modify them freely, and their dated claims are
+// recomputed per call so a long-running server does not keep issuing PIDs
+// dated the day it started.
 func PredefinedTemplates() []Template {
 	return []Template{
 		{
@@ -111,7 +113,7 @@ func PredefinedTemplates() []Template {
 			Format:      "sdjwt",
 			VCT:         mock.DefaultPIDVCT,
 			Exp:         "720h",
-			Claims:      deepCopyClaims(mock.SDJWTPIDClaims),
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTPIDClaims)),
 			Predefined:  true,
 		},
 		{
@@ -121,7 +123,7 @@ func PredefinedTemplates() []Template {
 			DocType:     mock.PIDNamespace,
 			Namespace:   mock.PIDNamespace,
 			Exp:         "720h",
-			Claims:      deepCopyClaims(mock.MDOCPIDClaims),
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCPIDClaims)),
 			Predefined:  true,
 		},
 		{
@@ -130,7 +132,7 @@ func PredefinedTemplates() []Template {
 			Format:      "sdjwt",
 			VCT:         mock.GermanPIDVCT,
 			Exp:         "720h",
-			Claims:      deepCopyClaims(mock.SDJWTGermanPIDClaims),
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTGermanPIDClaims)),
 			Predefined:  true,
 		},
 		{
@@ -140,7 +142,7 @@ func PredefinedTemplates() []Template {
 			DocType:     mock.PIDNamespace,
 			Namespace:   mock.PIDNamespace,
 			Exp:         "720h",
-			Claims:      deepCopyClaims(mock.MDOCGermanPIDClaims),
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCGermanPIDClaims)),
 			Predefined:  true,
 		},
 	}

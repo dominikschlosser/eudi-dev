@@ -84,6 +84,36 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	}
 }
 
+// The claim sets are package variables, so their dates are those of the
+// moment the process started. Materializing a template has to recompute them,
+// or a server that stays up for a month hands out PIDs issued the day it
+// booted.
+func TestPredefinedTemplates_RecomputeDatedClaims(t *testing.T) {
+	stale := "2000-01-01"
+	original := mock.SDJWTPIDClaims["date_of_issuance"]
+	mock.SDJWTPIDClaims["date_of_issuance"] = stale
+	t.Cleanup(func() { mock.SDJWTPIDClaims["date_of_issuance"] = original })
+
+	tpl, err := Load("pid-sdjwt", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if got := tpl.Claims["date_of_issuance"]; got == stale {
+		t.Error("date_of_issuance was carried over from process start instead of recomputed")
+	}
+	if got, want := tpl.Claims["date_of_issuance"], mock.PIDIssuanceDate(); got != want {
+		t.Errorf("date_of_issuance = %v, want %v", got, want)
+	}
+	// The German PID carries no issuance date, and refreshing must not invent one.
+	german, err := Load("german-pid-sdjwt", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if _, ok := german.Claims["date_of_issuance"]; ok {
+		t.Error("the German PID gained an issuance date its rulebook does not define")
+	}
+}
+
 func TestPIDTemplateNames(t *testing.T) {
 	tests := []struct {
 		vct         string
