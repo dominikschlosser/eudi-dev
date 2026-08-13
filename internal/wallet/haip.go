@@ -133,7 +133,7 @@ func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid
 	}
 	var violations []string
 
-	if finding := VerifyRequestObjectSignature(reqObj); finding != "" {
+	if finding := VerifyRequestObjectSignature(params.ClientID, reqObj); finding != "" {
 		violations = append(violations, "HAIP: "+finding)
 	}
 	if strings.HasPrefix(params.ClientID, "x509_hash:") {

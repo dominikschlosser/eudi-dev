@@ -82,7 +82,7 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 	if finding := ValidateRequestObject(clientID, reqObj); finding != "" {
 		findings = append(findings, finding)
 	}
-	if finding := VerifyRequestObjectSignature(reqObj); finding != "" {
+	if finding := VerifyRequestObjectSignature(clientID, reqObj); finding != "" {
 		findings = append(findings, finding)
 	}
 	findings = append(findings, authorizationFindings(params, payload)...)

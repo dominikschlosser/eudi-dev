@@ -28,9 +28,18 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
-// VerifyRequestObjectSignature verifies the Request Object JWS using the leaf x5c certificate.
-// If an x5c chain is present, it also verifies that the supplied chain is internally consistent.
-func VerifyRequestObjectSignature(reqObj *oid4vc.RequestObjectJWT) string {
+// VerifyRequestObjectSignature verifies the Request Object JWS.
+//
+// The x509 client_id prefixes (x509_san_dns:, x509_hash:) carry the signing
+// certificate in the JWS x5c header, so for those the signature is verified
+// against the leaf certificate and the supplied chain is checked for internal
+// consistency. The other prefixes that sign the Request Object
+// (verifier_attestation:, decentralized_identifier:) take the signing key from
+// the attestation JWT or the resolved DID instead, so a signed Request Object
+// legitimately carries no x5c and there is nothing to verify against a
+// certificate here. Requiring x5c for those would be a false finding, so the
+// x5c requirement is scoped to the x509 prefixes.
+func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	if reqObj == nil {
 		return ""
 	}
@@ -46,6 +55,15 @@ func VerifyRequestObjectSignature(reqObj *oid4vc.RequestObjectJWT) string {
 		return fmt.Sprintf("Request Object has unsupported signing algorithm %q", alg)
 	}
 	if alg == "none" {
+		return ""
+	}
+
+	if len(jsonutil.GetArray(reqObj.Header, "x5c")) == 0 {
+		if clientIDVerifiesViaX5C(clientID) {
+			return "Request Object signature verification requires an x5c header"
+		}
+		// A non-x509 prefix verifies against a key this function does not hold,
+		// so there is nothing to check here.
 		return ""
 	}
 
@@ -65,6 +83,14 @@ func VerifyRequestObjectSignature(reqObj *oid4vc.RequestObjectJWT) string {
 	}
 
 	return ""
+}
+
+// clientIDVerifiesViaX5C reports whether the client_id prefix carries the
+// Request Object signing certificate in the JWS x5c header. Only the x509
+// prefixes do; the others resolve the key elsewhere (or leave the request
+// unsigned).
+func clientIDVerifiesViaX5C(clientID string) bool {
+	return strings.HasPrefix(clientID, "x509_san_dns:") || strings.HasPrefix(clientID, "x509_hash:")
 }
 
 // VerifyClientID validates the client_id prefix against the request object and

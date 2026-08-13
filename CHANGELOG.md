@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.7] - 2026-08-13
+
+### Fixed
+
+- **A signed request object without an x5c header was wrongly flagged for every client_id.** The request-object signature check demanded an x5c header from any signed request, so a `verifier_attestation:` or `decentralized_identifier:` request (which take the signing key from the attestation JWT or the DID, not from a certificate) drew a spurious "Request Object signature verification requires an x5c header" warning, and in strict mode failed outright. The x5c requirement is now scoped to the x509 prefixes (`x509_san_dns:`, `x509_hash:`), where the certificate really does travel in the x5c header. HAIP is unaffected (it mandates an x509 prefix, so x5c stays required there).
+
 ## [1.21.6] - 2026-08-12
 
 ### Fixed

@@ -458,14 +458,51 @@ func TestVerifyRequestObjectSignature(t *testing.T) {
 		Header:  parsedHeader,
 		Payload: parsedPayload,
 	}
-	if warning := VerifyRequestObjectSignature(reqObj); warning != "" {
+	if warning := VerifyRequestObjectSignature("x509_san_dns:example.com", reqObj); warning != "" {
 		t.Fatalf("expected valid signature, got %s", warning)
 	}
 
 	parts := strings.Split(raw, ".")
 	reqObj.Raw = parts[0] + "." + parts[1] + ".AAAA"
-	if warning := VerifyRequestObjectSignature(reqObj); warning == "" {
+	if warning := VerifyRequestObjectSignature("x509_san_dns:example.com", reqObj); warning == "" {
 		t.Fatal("expected signature verification failure")
+	}
+}
+
+// The x5c requirement applies only to the x509 client_id prefixes, whose
+// signing certificate travels in the x5c header. A signed Request Object under
+// verifier_attestation:/decentralized_identifier: takes its key from the
+// attestation JWT or the DID, so it carries no x5c and must not draw a finding.
+// An x509 prefix without x5c still must.
+func TestVerifyRequestObjectSignature_X5CScopedToX509Prefixes(t *testing.T) {
+	header := map[string]any{
+		"alg": "ES256",
+		"typ": "oauth-authz-req+jwt",
+	}
+	payload := map[string]any{"response_type": "vp_token", "nonce": "n"}
+	headerJSON, _ := json.Marshal(header)
+	payloadJSON, _ := json.Marshal(payload)
+	raw := format.EncodeBase64URL(headerJSON) + "." + format.EncodeBase64URL(payloadJSON) + ".AAAA"
+	reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
+
+	tests := []struct {
+		name       string
+		clientID   string
+		wantx5cReq bool
+	}{
+		{"verifier_attestation without x5c", "verifier_attestation:https://verifier.example", false},
+		{"decentralized_identifier without x5c", "decentralized_identifier:did:web:verifier.example", false},
+		{"x509_san_dns without x5c", "x509_san_dns:verifier.example", true},
+		{"x509_hash without x5c", "x509_hash:abc", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warning := VerifyRequestObjectSignature(tt.clientID, reqObj)
+			gotX5CReq := warning == "Request Object signature verification requires an x5c header"
+			if gotX5CReq != tt.wantx5cReq {
+				t.Errorf("x5c-required finding = %v (warning %q), want %v", gotX5CReq, warning, tt.wantx5cReq)
+			}
+		})
 	}
 }
 
@@ -487,7 +524,7 @@ func TestVerifyRequestObjectSignature_AllowsAlgNone(t *testing.T) {
 		Header:  header,
 		Payload: payload,
 	}
-	if warning := VerifyRequestObjectSignature(reqObj); warning != "" {
+	if warning := VerifyRequestObjectSignature("redirect_uri:https://verifier.example/cb", reqObj); warning != "" {
 		t.Fatalf("expected alg=none request object to bypass signature verification, got %s", warning)
 	}
 }
