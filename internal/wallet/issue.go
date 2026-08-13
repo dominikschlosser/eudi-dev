@@ -307,16 +307,17 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 }
 
 // resolveIssueTemplate loads the template referenced by opts: an explicit
-// Template name or path, or the pre-defined german-pid template matching the
-// format when PID is set without explicit claims.
+// Template name or path, or the pre-defined PID template matching the format
+// and the requested PID type when PID is set without explicit claims.
 func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (*credtemplate.Template, error) {
 	if name := strings.TrimSpace(opts.Template); name != "" {
 		return credtemplate.Load(name, w.TemplatesDir)
 	}
 	if opts.PID && opts.Claims == nil {
-		name := "german-pid-sdjwt"
+		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT)
+		name := sdName
 		if format, _ := normalizeIssueFormat(opts.Format); format == "mdoc" {
-			name = "german-pid-mdoc"
+			name = mdocName
 		}
 		return credtemplate.Load(name, w.TemplatesDir)
 	}

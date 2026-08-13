@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
@@ -360,6 +361,12 @@ func matchesFormat(cred StoredCredential, queryFormat string) bool {
 // meta is REQUIRED by §6.1 and an empty object is how a Verifier places no
 // constraints, so an absent meta is reported by DCQLQueryFindings. As with
 // format, treating it as unconstrained here is the debug-mode reading.
+//
+// A vct_values entry is answered by a credential of that type and by one of a
+// type extending it (see internal/credtype), which is how a request for
+// urn:eudi:pid:1 is satisfied by a German PID. doctype_value takes no such
+// rule: ISO/IEC 18013-5 has no inheritance between document types, and a
+// national mdoc PID carries the same doctype anyway.
 func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 	meta, ok := cqMap["meta"].(map[string]any)
 	if !ok {
@@ -371,15 +378,29 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 		if cred.VCT == "" {
 			return false
 		}
-		found := false
+		types := credtype.Chain(cred.VCT, credtype.AkaVCTs(cred.Claims))
+		found := ""
 		for _, v := range vctValues {
-			if s, ok := v.(string); ok && s == cred.VCT {
-				found = true
+			s, ok := v.(string)
+			if !ok {
+				continue
+			}
+			for _, t := range types {
+				if t == s {
+					found = s
+					break
+				}
+			}
+			if found != "" {
 				break
 			}
 		}
-		if !found {
+		if found == "" {
 			return false
+		}
+		if found != cred.VCT {
+			log.Printf("[DCQL]   credential %s: vct %s answers the requested %s (an extending type answers for the type it extends)",
+				cred.ID, cred.VCT, found)
 		}
 	}
 

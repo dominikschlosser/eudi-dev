@@ -167,9 +167,9 @@ func TestIssueSaveAsTemplate(t *testing.T) {
 func TestIssuePIDUsesTemplateOverride(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Override the pre-defined german-pid-sdjwt template with a tiny claim set.
+	// Override the pre-defined pid-sdjwt template with a tiny claim set.
 	body := `{"format": "sdjwt", "vct": "urn:custom:pid", "claims": {"given_name": "OVERRIDDEN"}}`
-	if resp := serverRequest(t, srv, http.MethodPut, "/api/templates/german-pid-sdjwt", body); resp.Code != http.StatusOK {
+	if resp := serverRequest(t, srv, http.MethodPut, "/api/templates/pid-sdjwt", body); resp.Code != http.StatusOK {
 		t.Fatalf("PUT template: %d: %s", resp.Code, resp.Body.String())
 	}
 

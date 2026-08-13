@@ -144,6 +144,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 	tests := []struct {
 		name      string
 		claim     map[string]any
+		german    bool
 		wantMatch bool
 	}{
 		{
@@ -164,16 +165,19 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 		{
 			name:      "boolean value matches",
 			claim:     map[string]any{"path": []any{"age_equal_or_over", "18"}, "values": []any{true}},
+			german:    true,
 			wantMatch: true,
 		},
 		{
 			name:      "boolean value differs",
 			claim:     map[string]any{"path": []any{"age_equal_or_over", "18"}, "values": []any{false}},
+			german:    true,
 			wantMatch: false,
 		},
 		{
 			name:      "string does not answer a boolean claim",
 			claim:     map[string]any{"path": []any{"age_equal_or_over", "18"}, "values": []any{"true"}},
+			german:    true,
 			wantMatch: false,
 		},
 		{
@@ -195,9 +199,18 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w := generateTestWalletWithPID(t)
+			// The nested booleans are the age thresholds, which only the
+			// German PID carries: its rulebook still defines them.
+			vct := mock.DefaultPIDVCT
+			if tt.german {
+				vct = mock.GermanPIDVCT
+			}
+			w := generateTestWallet(t)
+			if err := w.GenerateDefaultCredentials(nil, vct); err != nil {
+				t.Fatalf("generating the PID: %v", err)
+			}
 			query := map[string]any{
-				"credentials": []any{sdjwtQuery("pid", mock.DefaultPIDVCT, tt.claim)},
+				"credentials": []any{sdjwtQuery("pid", vct, tt.claim)},
 			}
 
 			matches := w.EvaluateDCQL(query)
@@ -211,13 +224,18 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 	}
 }
 
-// The same restriction applies to mdoc data elements.
+// The same restriction applies to mdoc data elements. The age thresholds live
+// in the German PID, whose rulebook still defines them.
 func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
-	w := generateTestWalletWithPID(t)
+	w := generateTestWallet(t)
+	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {
+		t.Fatalf("generating the German PID: %v", err)
+	}
+	ageNamespace := mock.GermanPIDNamespace
 
 	matching := map[string]any{
 		"credentials": []any{mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",
-			map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "age_over_18"}, "values": []any{true}})},
+			map[string]any{"path": []any{ageNamespace, "age_over_18"}, "values": []any{true}})},
 	}
 	if got := w.EvaluateDCQL(matching); len(got) != 1 {
 		t.Fatalf("expected the mdoc to answer age_over_18 = true, got %d matches", len(got))
@@ -225,7 +243,7 @@ func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
 
 	differing := map[string]any{
 		"credentials": []any{mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",
-			map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "age_over_65"}, "values": []any{true}})},
+			map[string]any{"path": []any{ageNamespace, "age_over_65"}, "values": []any{true}})},
 	}
 	if got := w.EvaluateDCQL(differing); len(got) != 0 {
 		t.Fatalf("expected no match for age_over_65 = true, got %d: %+v", len(got), got)
@@ -297,13 +315,18 @@ func TestEvaluateDCQL_ClaimsQueryHasNoRequiredMember(t *testing.T) {
 // §7.2.1: "Select the data element referenced by the second component. If the
 // data element does not exist in the Credential then abort processing and
 // return an error."
+//
+// birth_place is the data identifier the PID Rulebook lists in its
+// encoding-independent attribute table, never an mdoc element: the attribute
+// identifier on the wire is place_of_birth. A wallet that treated the two as
+// interchangeable would disclose an element the request did not cover.
 func TestEvaluateDCQL_MDocDataElementIsNotAliased(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
 	query := map[string]any{
 		"credentials": []any{
 			mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",
-				map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}}),
+				map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "birth_place"}}),
 		},
 	}
 

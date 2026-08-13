@@ -20,6 +20,7 @@ examples/      Keycloak and web-wallet integration examples
 |---|---|
 | `config` | Defaults (ports, timeouts) |
 | `credtemplate` | Credential templates, pre-defined and user-supplied |
+| `credtype` | The EUDI credential type identifiers and which type extends which |
 | `dcql` | DCQL query parsing, evaluation, generation |
 | `demorp` | The demo issuer and verifier the wallet hosts |
 | `format` | Format detection, base64url, and the outbound fetch policy (ADR-0004) |
@@ -49,7 +50,7 @@ Described in domain terms rather than function names, which go stale.
 
 **Decode and validate.** Input arrives from a file, URL, stdin or a QR scan. Format detection picks the parser, the parser produces a token or document, and the result is either printed or carried into verification (signature, validity period, revocation).
 
-**Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, which may itself be fetched by reference and encrypted. A request object replaces the parameter set rather than being merged into it, so what the verifier signed is what the wallet acts on. The request is validated (client identifier, request object, signature, required parameters) with the findings handled by the active validation mode (ADR-0001), optionally checked against HAIP, whose violations are errors either way, and then matched against held credentials with DCQL. The user consents or the wallet auto-accepts, a VP token is built (SD-JWT with a key binding JWT, or an mdoc DeviceResponse), and the response goes to the verifier, encrypted when the response mode asks for it.
+**Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, which may itself be fetched by reference and encrypted. A request object replaces the parameter set rather than being merged into it, so what the verifier signed is what the wallet acts on. The request is validated (client identifier, request object, signature, required parameters) with the findings handled by the active validation mode (ADR-0001), optionally checked against HAIP, whose violations are errors either way, and then matched against held credentials with DCQL, where a requested type is answered by a credential of that type or of one extending it. The user consents or the wallet auto-accepts, a VP token is built (SD-JWT with a key binding JWT, or an mdoc DeviceResponse), and the response goes to the verifier, encrypted when the response mode asks for it.
 
 **Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata, then runs either the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata demands). It proves possession of its holder key, receives the credential, and imports it. An issuer that defers hands back a transaction id, and collection continues in the background.
 

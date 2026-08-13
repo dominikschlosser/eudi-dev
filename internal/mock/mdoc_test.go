@@ -137,17 +137,17 @@ func TestGenerateMDOC_PIDClaims(t *testing.T) {
 	}
 	var birthPlace any
 	for _, item := range ns {
-		if item.ElementIdentifier == "birth_place" {
+		if item.ElementIdentifier == "place_of_birth" {
 			birthPlace = item.ElementValue
 			break
 		}
 	}
 	bp, ok := birthPlace.(map[string]any)
 	if !ok {
-		t.Fatalf("expected birth_place map, got %T", birthPlace)
+		t.Fatalf("expected place_of_birth map, got %T", birthPlace)
 	}
 	if bp["locality"] != "BERLIN" {
-		t.Errorf("expected birth_place.locality BERLIN, got %v", bp["locality"])
+		t.Errorf("expected place_of_birth.locality BERLIN, got %v", bp["locality"])
 	}
 
 	verifyResult := mdoc.Verify(doc, &key.PublicKey)

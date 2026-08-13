@@ -19,6 +19,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -36,7 +37,10 @@ func walletGeneratePIDCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate-pid",
 		Short: "Generate default EUDI PID credentials (SD-JWT + mDoc) (deprecated)",
-		Long:  "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined german-pid-sdjwt and german-pid-mdoc credential templates instead. If PID credentials already exist, they are replaced. Use --claims to override specific claim values.",
+		Long: "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined PID credential templates instead. " +
+			"If PID credentials of the same type already exist, they are replaced. Use --claims to override specific claim values.\n\n" +
+			"--vct selects the PID type and with it the claim set: " + mock.DefaultPIDVCT + " is the country-independent EUDI PID, " +
+			mock.GermanPIDVCT + " the German PID that extends it. Any other value generates the country-independent claim set under that type.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printGeneratePIDDeprecation(cmd, claimsFlag, vctFlag)
 			if c, err := remoteClientIfConfigured(); err != nil {
@@ -136,7 +140,8 @@ func walletGeneratePIDCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&claimsFlag, "claims", "", "Claim overrides as JSON (e.g. '{\"given_name\":\"Max\"}')")
 	cmd.Flags().StringVar(&keyPath, "key", "", "Path to PEM-encoded EC private key for signing (default: auto-generated)")
-	cmd.Flags().StringVar(&vctFlag, "vct", mock.DefaultPIDVCT, "Verifiable Credential Type for SD-JWT PID")
+	cmd.Flags().StringVar(&vctFlag, "vct", mock.DefaultPIDVCT, "PID type to generate (selects the claim set)")
+	_ = cmd.RegisterFlagCompletionFunc("vct", staticCompletion(mock.DefaultPIDVCT, mock.GermanPIDVCT))
 	cmd.Flags().BoolVar(&statusList, "status-list", true, "Embed status list references in generated credentials")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL for status list endpoint (default: http://localhost:8085)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for --base-url")
@@ -145,15 +150,20 @@ func walletGeneratePIDCmd() *cobra.Command {
 
 // printGeneratePIDDeprecation warns that generate-pid is deprecated and
 // prints the equivalent template-based issue commands, carrying over the
-// claim and VCT flags the user passed.
+// claim and VCT flags the user passed. The templates named are the ones the
+// requested PID type is generated from, so the printed commands produce the
+// same credentials the deprecated one would.
 func printGeneratePIDDeprecation(cmd *cobra.Command, claimsFlag, vctFlag string) {
-	sdEquiv := binaryName() + " issue sdjwt --wallet --template german-pid-sdjwt"
-	mdocEquiv := binaryName() + " issue mdoc --wallet --template german-pid-mdoc"
+	sdTemplate, mdocTemplate, known := credtemplate.PIDTemplateNames(vctFlag)
+	sdEquiv := binaryName() + " issue sdjwt --wallet --template " + sdTemplate
+	mdocEquiv := binaryName() + " issue mdoc --wallet --template " + mdocTemplate
 	if claimsFlag != "" {
 		sdEquiv += " --claims '" + claimsFlag + "'"
 		mdocEquiv += " --claims '" + claimsFlag + "'"
 	}
-	if cmd.Flags().Changed("vct") {
+	// A type with templates of its own carries its vct already, and repeating
+	// it would suggest the flag is what picks the claim set.
+	if cmd.Flags().Changed("vct") && !known {
 		sdEquiv += " --vct " + vctFlag
 	}
 	fmt.Fprintln(cmd.ErrOrStderr(), "Warning: `wallet generate-pid` is deprecated and will be removed in a future release.")

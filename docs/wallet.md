@@ -20,7 +20,7 @@ For GitHub-rendered interaction diagrams of the implemented OID4VP and OID4VCI f
 | `show`         | Show a stored credential by ID (raw or decoded)                 |
 | `import`       | Import a credential from file, stdin, or raw string (SD-JWT, JWT VC, mDoc) |
 | `remove`       | Remove a credential by ID                                       |
-| `generate-pid` | Deprecated. Generate default EUDI PID credentials (SD-JWT + mDoc) from the pre-defined PID templates. Use `issue ... --wallet --template german-pid-sdjwt|german-pid-mdoc` instead |
+| `generate-pid` | Deprecated. Generate default EUDI PID credentials (SD-JWT + mDoc) from the pre-defined PID templates, of the type `--vct` names. Use `issue ... --wallet --template pid-sdjwt|pid-mdoc` (or the `german-pid-*` ones) instead |
 | `accept`       | Accept an OID4VP presentation request or OID4VCI credential offer (auto-detects) |
 | `scan`         | Scan a QR code and auto-dispatch to accept/import               |
 | `logs`         | Show persisted wallet-side OID4VP/OID4VCI interaction logs      |
@@ -38,9 +38,13 @@ All wallet management operations (list, show, import, remove, issue, generate-pi
 
 ```bash
 # Issue PID credentials from the pre-defined templates and list them
+eudi issue sdjwt --wallet --template pid-sdjwt
+eudi issue mdoc --wallet --template pid-mdoc
+eudi wallet list
+
+# The German PID, which extends the country-independent one
 eudi issue sdjwt --wallet --template german-pid-sdjwt
 eudi issue mdoc --wallet --template german-pid-mdoc
-eudi wallet list
 
 # Deprecated equivalent (issues both PIDs at once, will be removed later)
 eudi wallet generate-pid
@@ -89,6 +93,21 @@ eudi wallet register --auto-accept
 On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `eudi wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
 
 The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet instances use <url>`, clicked links are submitted to that instance instead of the local listener (useful when the wallet runs in a Docker container). Because a remote instance cannot open a browser on this desktop, the handler also opens the remote consent UI after submitting the link. The handler never restarts or replaces a remote instance. `wallet instances use local` switches link handling back to the local wallet server.
+
+## Credential type inheritance
+
+A national PID extends the country-independent one. The ARF requires it: PID_14 in Annex 2 (v3.0.0) says the vct "SHALL be `urn:eudi:pid:1` for the type defined in this document or a domestic type that extends it". `urn:eudi:pid:de:1` therefore carries every attribute `urn:eudi:pid:1` defines and adds the German ones, so a verifier asking for the general type is answered by the national credential. The wallet matches a DCQL `vct_values` entry against the credential's own type and against every type it extends, and its `[DCQL]` server log says when a credential matched under a type other than its own.
+
+Inheritance runs one way. A request for `urn:eudi:pid:de:1` is not answered by a country-independent PID, which has not got the German attributes.
+
+What the ARF does not say is how anyone discovers that relationship. The machine-readable form of it, a Type Metadata Document with an `extends` property ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §4.4), is only a "SHOULD consider defining" (ARB_31), and it needs the document to be retrievable, which a `vct` that is a URN is not. So the wallet learns the relationship from two places instead:
+
+- a table of the types the EUDI rulebooks define. This is what resolves real credentials today
+- the `aka_vcts` claim of the credential (§2.2.2.2, added in draft-18 of 3 August 2026), which puts the statement in the credential itself. No EUDI rulebook requires it yet, so reading it is what makes the wallet work with issuers that adopt it. The German PID this tool issues carries it, to show the mechanism
+
+None of this is a trust decision. Inheritance says what a credential is, never who may issue it (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so"). Issuer authorization is decided by the signature and trust list checks, unchanged.
+
+mdoc has no equivalent, and the ARF does not invent one. ISO 18013-5 defines no inheritance between document types, so PID_05 fixes the doctype and namespace at `eu.europa.ec.eudi.pid.1` for every PID and PID_06 puts national elements in a domestic namespace built by appending the country code, `eu.europa.ec.eudi.pid.de.1` for Germany. A `doctype_value` request therefore reaches both PIDs already, and a claim query addresses a national element by its namespace: `"path": ["eu.europa.ec.eudi.pid.de.1", "birth_name"]`.
 
 ## Storage
 
@@ -722,7 +741,7 @@ curl -X POST http://localhost:8085/api/issue \
   -d '{"format": "sdjwt", "nbf": "-48h", "exp": "24h"}'
 ```
 
-`POST /api/generate-pid` regenerates the default EUDI PID credentials (SD-JWT + mDoc) and replaces existing PIDs. It is the HTTP equivalent of `wallet generate-pid`. **Deprecated**: like the CLI command it will be removed in a future release. Use `POST /api/issue` with the pre-defined PID templates instead (`{"template": "german-pid-sdjwt"}`). The PID contents come from the pre-defined `german-pid-sdjwt` and `german-pid-mdoc` credential templates (user overrides of those templates apply). The body is optional. `claims` merges overrides into the template claims and `vct` sets the SD-JWT VCT. Returns `201` with the full credential list.
+`POST /api/generate-pid` regenerates the default EUDI PID credentials (SD-JWT + mDoc) and replaces existing PIDs of the same type. It is the HTTP equivalent of `wallet generate-pid`. **Deprecated**: like the CLI command it will be removed in a future release. Use `POST /api/issue` with the pre-defined PID templates instead (`{"template": "pid-sdjwt"}`). The body is optional. `claims` merges overrides into the template claims, and `vct` selects the PID type and with it the claim set: the country-independent `pid-sdjwt` and `pid-mdoc` templates by default, `german-pid-sdjwt` and `german-pid-mdoc` for `urn:eudi:pid:de:1` (user overrides of those templates apply). Returns `201` with the full credential list.
 
 ```bash
 curl -X POST http://localhost:8085/api/generate-pid \

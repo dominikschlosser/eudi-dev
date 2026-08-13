@@ -15,7 +15,8 @@
 // Package credtemplate manages credential templates: named, reusable claim
 // sets with per-format defaults (VCT, doc type, namespace, expiry) and a list
 // of claims that are embedded plainly instead of being selectively
-// disclosable. Pre-defined templates compiled into the binary cover the German EUDI PID;
+// disclosable. Pre-defined templates compiled into the binary cover the EUDI
+// PID and the German PID that extends it;
 // user templates are JSON files in the wallet directory's templates/
 // subdirectory (the wallet directory's templates/ subdirectory by default). A user template
 // with the same name as a pre-defined one replaces it.
@@ -105,8 +106,8 @@ func NormalizeFormat(format string) (string, error) {
 func PredefinedTemplates() []Template {
 	return []Template{
 		{
-			Name:        "german-pid-sdjwt",
-			Description: "EUDI PID (SD-JWT, German rulebook sample data)",
+			Name:        "pid-sdjwt",
+			Description: "EUDI PID (SD-JWT, EU rulebook sample data)",
 			Format:      "sdjwt",
 			VCT:         mock.DefaultPIDVCT,
 			Exp:         "720h",
@@ -114,8 +115,8 @@ func PredefinedTemplates() []Template {
 			Predefined:  true,
 		},
 		{
-			Name:        "german-pid-mdoc",
-			Description: "EUDI PID (mDoc, German rulebook sample data)",
+			Name:        "pid-mdoc",
+			Description: "EUDI PID (mDoc, EU rulebook sample data)",
 			Format:      "mdoc",
 			DocType:     mock.PIDNamespace,
 			Namespace:   mock.PIDNamespace,
@@ -123,6 +124,40 @@ func PredefinedTemplates() []Template {
 			Claims:      deepCopyClaims(mock.MDOCPIDClaims),
 			Predefined:  true,
 		},
+		{
+			Name:        "german-pid-sdjwt",
+			Description: "German PID (SD-JWT, extends the EUDI PID)",
+			Format:      "sdjwt",
+			VCT:         mock.GermanPIDVCT,
+			Exp:         "720h",
+			Claims:      deepCopyClaims(mock.SDJWTGermanPIDClaims),
+			Predefined:  true,
+		},
+		{
+			Name:        "german-pid-mdoc",
+			Description: "German PID (mDoc, EUDI PID doctype plus the German namespace)",
+			Format:      "mdoc",
+			DocType:     mock.PIDNamespace,
+			Namespace:   mock.PIDNamespace,
+			Exp:         "720h",
+			Claims:      deepCopyClaims(mock.MDOCGermanPIDClaims),
+			Predefined:  true,
+		},
+	}
+}
+
+// PIDTemplateNames returns the SD-JWT and mdoc template names that hold the
+// claim set of the PID type vct, and whether that type has pre-defined
+// templates at all. Callers that generate a PID for an unknown type fall back
+// to the country-independent claim set under the type they were given.
+func PIDTemplateNames(vct string) (sdjwt, mdoc string, ok bool) {
+	switch vct {
+	case "", mock.DefaultPIDVCT:
+		return "pid-sdjwt", "pid-mdoc", true
+	case mock.GermanPIDVCT:
+		return "german-pid-sdjwt", "german-pid-mdoc", true
+	default:
+		return "pid-sdjwt", "pid-mdoc", false
 	}
 }
 

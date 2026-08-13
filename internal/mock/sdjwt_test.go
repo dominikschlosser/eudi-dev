@@ -96,6 +96,46 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 	}
 }
 
+// The German PID states the country-independent type it is also of in
+// aka_vcts, and that claim has to be readable without a Disclosure: a
+// verifier decides whether the credential answers its request before the
+// holder has agreed to disclose anything (SD-JWT VC §2.2.2.3 forbids
+// disclosing it, which is what forcePlainClaims implements).
+func TestGenerateSDJWT_GermanPIDCarriesAkaVCTsPlainly(t *testing.T) {
+	key, err := GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	result, err := GenerateSDJWT(SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       GermanPIDVCT,
+		ExpiresIn: 24 * time.Hour,
+		Claims:    SDJWTGermanPIDClaims,
+		Key:       key,
+	})
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	token, err := sdjwt.Parse(result)
+	if err != nil {
+		t.Fatalf("sdjwt.Parse: %v", err)
+	}
+
+	aka, ok := token.Payload["aka_vcts"].([]any)
+	if !ok {
+		t.Fatalf("aka_vcts missing from the payload: %v", token.Payload["aka_vcts"])
+	}
+	if len(aka) != 1 || aka[0] != DefaultPIDVCT {
+		t.Errorf("aka_vcts = %v, want [%q]", aka, DefaultPIDVCT)
+	}
+	for _, d := range token.Disclosures {
+		if d.Name == "aka_vcts" {
+			t.Error("aka_vcts must not be selectively disclosable")
+		}
+	}
+}
+
 func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	key, err := GenerateKey()
 	if err != nil {
@@ -153,11 +193,11 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	if pob["locality"] != "BERLIN" {
 		t.Errorf("expected place_of_birth.locality BERLIN, got %v", pob["locality"])
 	}
-	if _, ok := pob["no_place_info"]; !ok {
-		t.Error("place_of_birth missing subclaim \"no_place_info\"")
+	if pob["country"] != "DE" {
+		t.Errorf("expected place_of_birth.country DE, got %v", pob["country"])
 	}
 	if len(pob) != 2 {
-		t.Errorf("expected place_of_birth to contain locality and no_place_info, got %d entries", len(pob))
+		t.Errorf("expected place_of_birth to contain locality and country, got %d entries", len(pob))
 	}
 
 	var foundPOB bool
@@ -172,7 +212,7 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 			}
 			sdEntries, ok := value["_sd"].([]any)
 			if !ok || len(sdEntries) != 2 {
-				t.Fatalf("place_of_birth disclosure should carry _sd digests for locality and no_place_info, got %v", value["_sd"])
+				t.Fatalf("place_of_birth disclosure should carry _sd digests for locality and country, got %v", value["_sd"])
 			}
 		case "locality":
 			if disclosure.Value == "BERLIN" {

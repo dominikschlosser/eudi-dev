@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
@@ -36,11 +37,13 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
-// PIDVCT and PIDDocType are the PID the demo wallet holds by default, in each
-// of the two formats it holds it in.
+// PIDVCT and PIDDocType are what a PID request asks for, in each of the two
+// formats the demo wallet holds a PID in. The country-independent type is
+// deliberately the one requested: the demo wallet also holds a German PID,
+// which extends it and answers the same request.
 const (
-	PIDVCT     = "urn:eudi:pid:1"
-	PIDDocType = "eu.europa.ec.eudi.pid.1"
+	PIDVCT     = credtype.PIDVCT
+	PIDDocType = credtype.PIDDocType
 )
 
 // requestState tracks one verification request from creation to result.
@@ -563,10 +566,14 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	}
 
 	// Trusting the wallet to return the requested type would let any held
-	// credential satisfy the request.
+	// credential satisfy the request. A type extending the requested one is
+	// accepted, because that is what the request asked for: a German PID
+	// answers a request for the country-independent one, and says so in its
+	// aka_vcts claim.
 	gotVCT, _ := token.ResolvedClaims["vct"].(string)
+	gotAka := credtype.AkaVCTs(token.ResolvedClaims)
 	if err = check("credential type matches the request",
-		errIf(gotVCT != req.vct, "vct is %q, requested %q", gotVCT, req.vct)); err != nil {
+		errIf(!credtype.Answers(gotVCT, gotAka, req.vct), "vct is %q, requested %q", gotVCT, req.vct)); err != nil {
 		return nil, log.entries, err
 	}
 

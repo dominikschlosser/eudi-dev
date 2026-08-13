@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -408,11 +409,15 @@ func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error
 }
 
 // GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials from
-// the german-pid-sdjwt and german-pid-mdoc credential templates (user
-// overrides of those templates in the wallet's template directory apply).
-// If PID credentials already exist, they are replaced. Optional claimOverrides
-// are merged on top of the template claims. vct specifies the SD-JWT VCT. If
-// empty, the template's VCT (mock.DefaultPIDVCT by default) is used.
+// the pre-defined PID credential templates (user overrides of those templates
+// in the wallet's template directory apply). If PID credentials already
+// exist, they are replaced. Optional claimOverrides are merged on top of the
+// template claims.
+//
+// vct selects the PID type, and with it the claim set: the country-independent
+// EUDI PID when empty or mock.DefaultPIDVCT, the German PID for
+// mock.GermanPIDVCT. Any other type is generated with the country-independent
+// claim set under the type given.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
 	return w.generateDefaultCredentials(claimOverrides, vct, true)
 }
@@ -423,13 +428,14 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 // drops its own previous baseline separately and must keep whatever visitors
 // issued (see GenerateProtectedDefaults).
 func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, dropExisting bool) error {
-	sdTpl, err := credtemplate.Load("german-pid-sdjwt", w.TemplatesDir)
+	sdName, mdocName, _ := credtemplate.PIDTemplateNames(vct)
+	sdTpl, err := credtemplate.Load(sdName, w.TemplatesDir)
 	if err != nil {
-		return fmt.Errorf("loading german-pid-sdjwt template: %w", err)
+		return fmt.Errorf("loading %s template: %w", sdName, err)
 	}
-	mdocTpl, err := credtemplate.Load("german-pid-mdoc", w.TemplatesDir)
+	mdocTpl, err := credtemplate.Load(mdocName, w.TemplatesDir)
 	if err != nil {
-		return fmt.Errorf("loading german-pid-mdoc template: %w", err)
+		return fmt.Errorf("loading %s template: %w", mdocName, err)
 	}
 	if vct == "" {
 		vct = sdTpl.VCT
@@ -439,7 +445,7 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 	}
 	mdocDocType := mdocTpl.DocType
 	if mdocDocType == "" {
-		mdocDocType = "eu.europa.ec.eudi.pid.1"
+		mdocDocType = mock.PIDNamespace
 	}
 	mdocNamespace := mdocTpl.Namespace
 	if mdocNamespace == "" {
@@ -454,13 +460,14 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 
 	sdClaims := credtemplate.MergeClaims(sdTpl.Claims, claimOverrides)
 	mdocClaims := credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides)
+	mdocNamespaces := splitClaimsByNamespace(mdocClaims, mdocNamespace)
 
 	// A protected one is kept instead of removed, and then there is nothing to
 	// regenerate: it is the baseline and must not be duplicated.
 	var keptSD, keptMDoc bool
 	if dropExisting {
-		keptSD = w.removeByType("dc+sd-jwt", vct, "") > 0
-		keptMDoc = w.removeByType("mso_mdoc", "", mdocDocType) > 0
+		keptSD = w.removeByType("dc+sd-jwt", vct) > 0
+		keptMDoc = w.removeMDocsByNamespace(mdocDocType, namespaceNames(mdocNamespaces)) > 0
 		if keptSD || keptMDoc {
 			log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
 		}
@@ -519,7 +526,7 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		Namespace: mdocNamespace,
 		// The German PID keeps its national additions in a second namespace,
 		// which claim keys carry as a "namespace:element" prefix.
-		NamespaceClaims: splitClaimsByNamespace(mdocClaims, mdocNamespace),
+		NamespaceClaims: mdocNamespaces,
 		Key:             issuerKey,
 		HolderKey:       holderPubKey,
 		ExpiresIn:       30 * 24 * time.Hour,
@@ -549,9 +556,19 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		}
 	}
 
-	w.IssuedAttestations = []IssuedAttestationSpec{
-		pidSpec,
-		applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType}),
+	mdocSpec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType})
+	if dropExisting {
+		// This call replaced the wallet's PIDs, so it owns what the wallet
+		// says it issues.
+		w.IssuedAttestations = []IssuedAttestationSpec{pidSpec, mdocSpec}
+		return nil
+	}
+	// A baseline is built from several PID types in turn, and each of them is
+	// something this wallet issues, so they add up instead of replacing.
+	for _, spec := range []IssuedAttestationSpec{pidSpec, mdocSpec} {
+		if err := w.RegisterIssuedAttestation(spec); err != nil {
+			return fmt.Errorf("registering PID attestation metadata: %w", err)
+		}
 	}
 
 	return nil
@@ -561,13 +578,13 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 // credentials survive: regenerating the defaults must not be a way around the
 // rule that only direct access to the wallet file can remove them. It returns
 // how many protected credentials it kept.
-func (w *Wallet) removeByType(format, vct, docType string) int {
+func (w *Wallet) removeByType(format, vct string) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var keptProtected int
 	filtered := w.Credentials[:0]
 	for _, c := range w.Credentials {
-		if c.Format == format && (vct == "" || c.VCT == vct) && (docType == "" || c.DocType == docType) {
+		if c.Format == format && (vct == "" || c.VCT == vct) {
 			if !c.Protected {
 				continue
 			}
@@ -577,6 +594,65 @@ func (w *Wallet) removeByType(format, vct, docType string) int {
 	}
 	w.Credentials = filtered
 	return keptProtected
+}
+
+// removeMDocsByNamespace drops every mdoc credential of the given doctype
+// whose elements sit in exactly the given namespaces. ISO/IEC 18013-5 has no
+// inheritance between document types, so the German PID and the
+// country-independent one share the doctype eu.europa.ec.eudi.pid.1 and are
+// told apart by the namespaces alone: regenerating one by doctype would drop
+// the other. Protected credentials survive as in removeByType, and how many
+// were kept is returned.
+func (w *Wallet) removeMDocsByNamespace(docType string, namespaces []string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	wanted := namespaceKey(namespaces)
+	var keptProtected int
+	filtered := w.Credentials[:0]
+	for _, c := range w.Credentials {
+		if c.Format == "mso_mdoc" && c.DocType == docType && namespaceKey(credentialNamespaces(c)) == wanted {
+			if !c.Protected {
+				continue
+			}
+			keptProtected++
+		}
+		filtered = append(filtered, c)
+	}
+	w.Credentials = filtered
+	return keptProtected
+}
+
+// credentialNamespaces returns the mdoc namespaces a stored credential holds
+// elements in. Its claim keys are "namespace:element", and a namespace never
+// contains a colon itself.
+func credentialNamespaces(c StoredCredential) []string {
+	seen := make(map[string]bool)
+	var names []string
+	for key := range c.Claims {
+		ns, _, found := strings.Cut(key, ":")
+		if !found || seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		names = append(names, ns)
+	}
+	return names
+}
+
+// namespaceNames returns the keys of a namespace-keyed claim map.
+func namespaceNames(claims map[string]map[string]any) []string {
+	names := make([]string, 0, len(claims))
+	for ns := range claims {
+		names = append(names, ns)
+	}
+	return names
+}
+
+// namespaceKey is an order-independent identity for a set of namespaces.
+func namespaceKey(namespaces []string) string {
+	sorted := append([]string(nil), namespaces...)
+	sort.Strings(sorted)
+	return strings.Join(sorted, "\x00")
 }
 
 // removeProtected drops every credential of the previous baseline.
@@ -636,6 +712,12 @@ func (w *Wallet) IsProtected(id string) bool {
 	return false
 }
 
+// BaselinePIDVCTs are the PID types a protected baseline holds, in each of
+// the two credential formats. Both are there because the German PID extends
+// the country-independent one: holding only one of them would leave the
+// inheritance the wallet implements with nothing to show.
+var BaselinePIDVCTs = []string{mock.DefaultPIDVCT, mock.GermanPIDVCT}
+
 // GenerateProtectedDefaults generates the default PID credentials and marks
 // exactly those as protected. Credentials that were already in the wallet
 // keep their current state, so a restart never protects visitor data.
@@ -652,9 +734,12 @@ func (w *Wallet) GenerateProtectedDefaults() error {
 	}
 	// removeProtected above dropped the old baseline; regenerate a fresh one
 	// (marked protected below) so it never freezes on an old release's claim
-	// set. dropExisting is false: a visitor's own PID of the same type stays.
-	if err := w.generateDefaultCredentials(nil, "", false); err != nil {
-		return err
+	// set. dropExisting is false: a visitor's own PID of the same type stays,
+	// and one baseline type must not drop the one generated before it.
+	for _, vct := range BaselinePIDVCTs {
+		if err := w.generateDefaultCredentials(nil, vct, false); err != nil {
+			return err
+		}
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.0] - 2026-08-13
+
+### Added
+
+- **Credential types inherit.** A national PID extends the country-independent one (ARF v3.0.0 Annex 2, PID_14: the vct "SHALL be `urn:eudi:pid:1` for the type defined in this document or a domestic type that extends it"), so a verifier asking for `urn:eudi:pid:1` is now answered by a `urn:eudi:pid:de:1` credential. The wallet matches a DCQL `vct_values` entry against the credential's own type, the types the EUDI rulebooks define it as extending, and the types its `aka_vcts` claim names (SD-JWT VC §2.2.2.2, new in draft-18). Inheritance runs one way only (a request for the German PID is not answered by the country-independent one) and is never a trust decision: who may issue a type is still decided by the signature and trust list checks (§6.6). The demo verifier accepts an extending type for the same reason. Type Metadata's `extends` is not used: the EUDI PID types are URNs, so nothing resolves them, and the ARF only asks a Scheme Provider to "consider defining" a Type Metadata Document (ARB_31)
+- **The German PID is a credential type of its own.** New pre-defined templates `german-pid-sdjwt` (vct `urn:eudi:pid:de:1`, carrying `aka_vcts`) and `german-pid-mdoc`, which keeps the doctype `eu.europa.ec.eudi.pid.1` and puts its national elements in `eu.europa.ec.eudi.pid.de.1`, as ISO 18013-5 has no inheritance between document types. `wallet generate-pid --vct`, `issue --pid --vct` and `POST /api/generate-pid` select the type, and with it the claim set
+- **The demo seeds both PIDs.** Its protected baseline is now four credentials, the country-independent PID and the German one in each format, so the inheritance above is visible in the demo: the verifier's PID request asks for the country-independent type and either credential answers it
+
+### Changed
+
+- **The default PID follows the EU rulebook, not the German one.** The claim set behind `urn:eudi:pid:1` was the German provider's all along, which made every default PID claim a rulebook it did not follow. `pid-sdjwt` and `pid-mdoc` (new names for the pre-defined country-independent templates, which `--pid` and `generate-pid` use by default) now follow the EUDI PID Rulebook attribute for attribute: `birth_family_name` and `sex` and `personal_administrative_number` and `document_number` and `date_of_issuance` are in, the national additions (`birth_name`, `title`, `also_known_as`, `source_document_type`, `no_place_info`) are out, and so are all age attributes, which that rulebook removed in version 1.1 following CIR 2024/2977. The SD-JWT address gained `address.house_number`, the mdoc place of birth is now the `place_of_birth` element the rulebook names (it was `birth_place`, a data identifier of the encoding-independent table), and the mdoc elements all sit in `eu.europa.ec.eudi.pid.1`. The German claim set is unchanged, and now issued under the German type. The sample identity stays ERIKA MUSTERMANN. Anything asserting on the old default claim set, or issuing from `german-pid-sdjwt` and expecting `urn:eudi:pid:1`, has to be updated
+
 ## [1.21.7] - 2026-08-13
 
 ### Fixed

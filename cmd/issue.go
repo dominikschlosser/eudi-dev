@@ -139,7 +139,7 @@ func init() {
 	issueMDOCCmd.Flags().StringVar(&issueExpires, "exp", "720h", "Expiration duration (e.g. 720h, 24h)")
 	issueMDOCCmd.Flags().StringVar(&issueNBF, "nbf", "", "Not-before time (RFC3339 e.g. 2025-01-15T00:00:00Z, or duration e.g. -1h)")
 	issueMDOCCmd.Flags().BoolVar(&issuePID, "pid", false, "Use full EUDI PID Rulebook claims")
-	issueMDOCCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. birth_place,sex)")
+	issueMDOCCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. place_of_birth,sex)")
 	issueMDOCCmd.Flags().BoolVar(&issueToWallet, "wallet", false, "Import the issued credential into the wallet")
 	issueMDOCCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueMDOCCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
@@ -418,19 +418,20 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 }
 
 // resolveIssueTemplate loads the credential template selected by --template,
-// or the pre-defined german-pid template when --pid is set without --claims. It
-// applies the template's VCT, doc type, namespace, and expiry to flags the
-// user did not set explicitly.
+// or the pre-defined PID template of the type --vct names when --pid is set
+// without --claims. It applies the template's VCT, doc type, namespace, and
+// expiry to flags the user did not set explicitly.
 func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Template, error) {
 	var name string
 	switch {
 	case issueTemplate != "":
 		name = issueTemplate
 	case issuePID && issueClaims == "":
+		sdName, mdocName, _ := credtemplate.PIDTemplateNames(issueVCT)
 		if format == "mdoc" {
-			name = "german-pid-mdoc"
+			name = mdocName
 		} else {
-			name = "german-pid-sdjwt"
+			name = sdName
 		}
 	default:
 		return nil, nil

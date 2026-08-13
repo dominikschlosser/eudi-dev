@@ -456,8 +456,10 @@ test.describe("Protected baseline credentials", () => {
     page,
   }) => {
     await page.goto(BASE);
+    // One SD-JWT and one mdoc PID for each of the two PID types the demo
+    // seeds: the country-independent one and the German one extending it.
     const cards = page.locator(".credential-card[data-protected='true']");
-    await expect(cards).toHaveCount(2, { timeout: 5000 });
+    await expect(cards).toHaveCount(4, { timeout: 5000 });
 
     const first = cards.first();
     await expect(first.locator(".status-protected")).toHaveText("Protected");
@@ -505,10 +507,10 @@ test.describe("Protected baseline credentials", () => {
     await expect(card.locator("[data-delete]")).toHaveCount(1);
 
     const cleared = await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
-    expect((await cleared.json()).kept_protected).toBe(2);
+    expect((await cleared.json()).kept_protected).toBe(4);
 
     const remaining = await (await fetch(`${BASE}/api/credentials`)).json();
-    expect(remaining).toHaveLength(2);
+    expect(remaining).toHaveLength(4);
     expect(remaining.every((c) => c.protected)).toBe(true);
   });
 });
@@ -517,7 +519,7 @@ test.describe("Credential paging", () => {
   test("pages through a long credential list", async ({ page }) => {
     // Start from the baseline, then add enough to need three pages.
     await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
-    for (let i = 0; i < 23; i++) {
+    for (let i = 0; i < 21; i++) {
       await postJSON("/api/issue", { format: "sdjwt", vct: `urn:example:page-${i}` });
     }
 
@@ -546,7 +548,7 @@ test.describe("Credential paging", () => {
   test("the pager stays hidden when everything fits on one page", async ({ page }) => {
     await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
     await page.goto(BASE);
-    await expect(page.locator(".credential-card")).toHaveCount(2, { timeout: 5000 });
+    await expect(page.locator(".credential-card")).toHaveCount(4, { timeout: 5000 });
     await expect(page.locator("#cred-pager")).toBeHidden();
   });
 });

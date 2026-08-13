@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -492,10 +493,41 @@ func TestWalletGeneratePID_PrintsDeprecationWarning(t *testing.T) {
 	if !strings.Contains(out, "deprecated") {
 		t.Errorf("expected deprecation warning, got %q", out)
 	}
-	if !strings.Contains(out, "issue sdjwt --wallet --template german-pid-sdjwt --claims '{\"given_name\":\"MAX\"}'") {
+	if !strings.Contains(out, "issue sdjwt --wallet --template pid-sdjwt --claims '{\"given_name\":\"MAX\"}'") {
 		t.Errorf("expected equivalent sdjwt command with claims, got %q", out)
 	}
-	if !strings.Contains(out, "issue mdoc --wallet --template german-pid-mdoc") {
+	if !strings.Contains(out, "issue mdoc --wallet --template pid-mdoc") {
 		t.Errorf("expected equivalent mdoc command, got %q", out)
+	}
+}
+
+// The equivalent command has to name the templates the requested PID type is
+// actually generated from, or following it produces a different credential.
+func TestWalletGeneratePID_DeprecationWarningNamesTheGermanTemplates(t *testing.T) {
+	wDir := t.TempDir()
+	prevDir := walletDir
+	walletDir = wDir
+	t.Cleanup(func() { walletDir = prevDir })
+
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetErr(errBuf)
+	t.Cleanup(func() { rootCmd.SetErr(nil) })
+
+	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--vct", mock.GermanPIDVCT})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("generate-pid: %v", err)
+	}
+
+	out := errBuf.String()
+	if !strings.Contains(out, "issue sdjwt --wallet --template german-pid-sdjwt") {
+		t.Errorf("expected the German sdjwt template, got %q", out)
+	}
+	if !strings.Contains(out, "issue mdoc --wallet --template german-pid-mdoc") {
+		t.Errorf("expected the German mdoc template, got %q", out)
+	}
+	// The template carries the vct, so repeating the flag would suggest the
+	// flag is what picks the claim set.
+	if strings.Contains(out, "--vct") {
+		t.Errorf("the equivalent command should not repeat --vct, got %q", out)
 	}
 }

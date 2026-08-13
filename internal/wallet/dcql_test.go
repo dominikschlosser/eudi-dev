@@ -400,7 +400,7 @@ func TestEvaluateDCQL_DefaultPIDMatchesVerifierQueries(t *testing.T) {
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "resident_city"}},
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "expiry_date"}},
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "issuing_country"}},
-					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "birth_place"}},
+					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}},
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "resident_street"}},
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "resident_country"}},
 					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.1", "issuing_authority"}},
@@ -441,8 +441,8 @@ func TestEvaluateDCQL_DefaultPIDMatchesVerifierQueries(t *testing.T) {
 	for _, match := range matches {
 		switch match.QueryID {
 		case "cred1":
-			if _, ok := match.Claims["eu.europa.ec.eudi.pid.1:birth_place"]; !ok {
-				t.Error("expected mDoc match to include birth_place")
+			if _, ok := match.Claims["eu.europa.ec.eudi.pid.1:place_of_birth"]; !ok {
+				t.Error("expected mDoc match to include place_of_birth")
 			}
 		case "cred2":
 			if _, ok := match.Claims["place_of_birth.locality"]; !ok {
@@ -798,8 +798,8 @@ func TestClaimKeyFromPath(t *testing.T) {
 	mdocCred := StoredCredential{
 		Format: "mso_mdoc",
 		Claims: map[string]any{
-			"eu.europa.ec.eudi.pid.1:given_name":  "Max",
-			"eu.europa.ec.eudi.pid.1:birth_place": "Berlin",
+			"eu.europa.ec.eudi.pid.1:given_name":     "Max",
+			"eu.europa.ec.eudi.pid.1:place_of_birth": "Berlin",
 		},
 	}
 
@@ -827,13 +827,14 @@ func TestClaimKeyFromPath(t *testing.T) {
 		{"mdoc valid", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "given_name"}, "eu.europa.ec.eudi.pid.1:given_name"},
 		{"mdoc missing", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "missing"}, ""},
 		// §7.2.1 selects the data element the second component names and
-		// errors out when it does not exist, so the SD-JWT name of the same
-		// idea does not reach the mdoc element that carries it.
-		{"mdoc no aliasing", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}, ""},
-		{"mdoc native", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place"}, "eu.europa.ec.eudi.pid.1:birth_place"},
-		{"mdoc nested alias unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth", "locality"}, ""},
-		{"mdoc nested native unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place", "locality"}, ""},
-		{"mdoc element-first unsupported", mdocCred, []any{"birth_place"}, ""},
+		// errors out when it does not exist, so the encoding-independent data
+		// identifier of the rulebook (birth_place) does not reach the mdoc
+		// element that carries it (place_of_birth).
+		{"mdoc no aliasing", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place"}, ""},
+		{"mdoc native", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth"}, "eu.europa.ec.eudi.pid.1:place_of_birth"},
+		{"mdoc nested alias unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "birth_place", "locality"}, ""},
+		{"mdoc nested native unsupported", mdocCred, []any{"eu.europa.ec.eudi.pid.1", "place_of_birth", "locality"}, ""},
+		{"mdoc element-first unsupported", mdocCred, []any{"place_of_birth"}, ""},
 		{"mdoc short path", mdocCred, []any{"eu.europa.ec.eudi.pid.1"}, ""},
 		{"mdoc non-string ns", mdocCred, []any{42, "given_name"}, ""},
 	}

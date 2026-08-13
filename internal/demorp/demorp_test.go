@@ -643,6 +643,41 @@ func TestVerifierRejectsWrongCredentialType(t *testing.T) {
 	}
 }
 
+// A request for the country-independent PID is answered by the German PID,
+// which extends it. Refusing that credential would make the demo verifier
+// reject exactly what a German wallet holds.
+func TestVerifierAcceptsAnExtendingCredentialType(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "pid")
+
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       mock.GermanPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    mock.SDJWTGermanPIDClaims,
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing the German PID: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, german, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "pid", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified for a type extending the requested one (checks: %v)", status["status"], status["checks"])
+	}
+}
+
 // TestVerifierRejectsReplay: the nonce is fixed per request, so a captured
 // response would verify again unless the request is single use.
 func TestVerifierRejectsReplay(t *testing.T) {

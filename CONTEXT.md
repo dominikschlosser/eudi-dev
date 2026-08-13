@@ -14,6 +14,10 @@ _Avoid_: Attestation (see below), document, VC
 What a credential is, named by its `vct` (SD-JWT VC) or `doctype` (mdoc). A wallet holds many credentials of one type.
 _Avoid_: Credential configuration, schema
 
+**Extending type**:
+A credential type that carries everything another one defines and adds to it, the way the German PID (`urn:eudi:pid:de:1`) extends the country-independent EUDI PID (`urn:eudi:pid:1`). A credential of an extending type answers a request for the type it extends, never the other way round. Say **extending** and **extended type** rather than sub- or supertype, and never call it a trust relationship: it says what a credential is, not who may issue it.
+_Avoid_: Subtype, derived type, inherited credential
+
 **Attestation**:
 Ambiguous on its own and never to be used unqualified. Three unrelated things wear this name: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (this wallet's record that it issues a given credential type, which is what registers that type on a trust list). In EUDI prose "attestation" is also a synonym for credential. Always say which.
 
@@ -22,7 +26,7 @@ A reusable, named claim set and issuance settings that a credential can be minte
 _Avoid_: Preset, profile
 
 **PID**:
-Person Identification Data, the EUDI-defined identity credential. Never abbreviate process id this way in code that also touches credentials, because the collision has already produced one shadowing bug.
+Person Identification Data, the EUDI-defined identity credential. It comes in two types here, and which one is meant usually matters: the country-independent **EUDI PID** of the ARF rulebook and the **German PID** that extends it. "PID" unqualified means the credential, not either type. Never abbreviate process id this way in code that also touches credentials, because the collision has already produced one shadowing bug.
 _Avoid_: PID as process id (write `processID`)
 
 ### Roles

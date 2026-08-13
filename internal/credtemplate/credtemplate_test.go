@@ -24,11 +24,13 @@ import (
 
 func TestPredefinedTemplates(t *testing.T) {
 	predefined := PredefinedTemplates()
-	if len(predefined) != 2 {
-		t.Fatalf("expected 2 pre-defined templates, got %d", len(predefined))
+	// A PID template per format, for the country-independent PID and the
+	// German one that extends it.
+	if len(predefined) != 4 {
+		t.Fatalf("expected 4 pre-defined templates, got %d", len(predefined))
 	}
 
-	sdjwt, err := Load("german-pid-sdjwt", t.TempDir())
+	sdjwt, err := Load("pid-sdjwt", t.TempDir())
 	if err != nil {
 		t.Fatalf("loading pre-defined template: %v", err)
 	}
@@ -51,6 +53,56 @@ func TestPredefinedTemplates(t *testing.T) {
 	}
 	if mock.SDJWTPIDClaims["address"].(map[string]any)["country"] != "DE" {
 		t.Error("built-in template shares nested claims with mock.SDJWTPIDClaims")
+	}
+}
+
+// The German PID is its own credential type, with its own claim set, and the
+// templates are how anything in this tool reaches either of them.
+func TestPredefinedGermanPIDTemplates(t *testing.T) {
+	sdjwt, err := Load("german-pid-sdjwt", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if sdjwt.VCT != mock.GermanPIDVCT {
+		t.Errorf("german-pid-sdjwt vct = %q, want %q", sdjwt.VCT, mock.GermanPIDVCT)
+	}
+	if len(sdjwt.Claims) != len(mock.SDJWTGermanPIDClaims) {
+		t.Errorf("expected %d claims, got %d", len(mock.SDJWTGermanPIDClaims), len(sdjwt.Claims))
+	}
+
+	mdoc, err := Load("german-pid-mdoc", t.TempDir())
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	// ISO/IEC 18013-5 has no inheritance between document types, so the
+	// German PID shares the doctype and differs by its second namespace.
+	if mdoc.DocType != mock.PIDNamespace {
+		t.Errorf("german-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
+	}
+	if _, ok := mdoc.Claims[mock.GermanPIDNamespace+":birth_name"]; !ok {
+		t.Errorf("german-pid-mdoc is missing %s:birth_name", mock.GermanPIDNamespace)
+	}
+}
+
+func TestPIDTemplateNames(t *testing.T) {
+	tests := []struct {
+		vct         string
+		sdjwt, mdoc string
+		known       bool
+	}{
+		{"", "pid-sdjwt", "pid-mdoc", true},
+		{mock.DefaultPIDVCT, "pid-sdjwt", "pid-mdoc", true},
+		{mock.GermanPIDVCT, "german-pid-sdjwt", "german-pid-mdoc", true},
+		// A type nothing knows still gets a claim set, the
+		// country-independent one, under the type it was asked for.
+		{"urn:example:custom:1", "pid-sdjwt", "pid-mdoc", false},
+	}
+	for _, tt := range tests {
+		sdjwt, mdoc, known := PIDTemplateNames(tt.vct)
+		if sdjwt != tt.sdjwt || mdoc != tt.mdoc || known != tt.known {
+			t.Errorf("PIDTemplateNames(%q) = %q, %q, %t; want %q, %q, %t",
+				tt.vct, sdjwt, mdoc, known, tt.sdjwt, tt.mdoc, tt.known)
+		}
 	}
 }
 

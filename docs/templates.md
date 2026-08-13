@@ -2,18 +2,24 @@
 
 Credential templates are named, reusable claim sets for issuing test credentials. A template carries the credential type (VCT or doc type), a default claim set, an optional expiry, and an optional list of claims that are issued without selective disclosure. Templates work in the CLI, the HTTP API, and the wallet UI.
 
-Two pre-defined templates ship with the binary:
+Four pre-defined templates ship with the binary, a PID per format for each of the two PID types:
 
 | Name | Format | Contents |
 |------|--------|----------|
-| `german-pid-sdjwt` | sdjwt | German EUDI PID (`urn:eudi:pid:1`) |
-| `german-pid-mdoc` | mdoc | German EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
+| `pid-sdjwt` | sdjwt | EUDI PID (`urn:eudi:pid:1`) |
+| `pid-mdoc` | mdoc | EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
+| `german-pid-sdjwt` | sdjwt | German PID (`urn:eudi:pid:de:1`), which extends the EUDI PID |
+| `german-pid-mdoc` | mdoc | German PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.de.1`) |
 
-Both carry the claim set of the [German PID Rulebook](https://demo.pid-provider.bundesdruckerei.de/credential-claims), with the values of that provider's ERIKA MUSTERMANN test identity. Claims the rulebook lists as unused (portrait, sex, email, phone number, document number, personal administrative number, issuing jurisdiction, issuance date, age_in_years, age_birth_year, birth given and family name) are absent, because the German eID does not supply them.
+The `pid-*` templates follow the attribute tables of the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md), which now lives in the attestation rulebooks catalog rather than in the ARF annex it was taken out of. The `german-pid-*` templates follow the claim table of the [German PID Rulebook](https://demo.pid-provider.bundesdruckerei.de/credential-claims). All four describe that provider's ERIKA MUSTERMANN test identity, so what separates them is the rulebook rather than the person.
 
-The mdoc PID spans two namespaces, as the rulebook prescribes: the European claims in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Any mdoc claim key may carry a `namespace:element` prefix to place it in a specific namespace. Everything else lands in the template's namespace. Dates are CBOR tagged the way ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
+The German PID is not a superset of the country-independent one. It adds national attributes (`birth_name`, `title`, `also_known_as`, `source_document_type`, `no_place_info`, and the age thresholds, which the EU rulebook dropped in version 1.1 following CIR 2024/2977), leaves out claims the German eID does not supply (portrait, sex, email, phone number, document number, personal administrative number, issuing jurisdiction, issuance date, age_in_years, age_birth_year, birth given and family name), and encodes some shared attributes differently: a birth name under `birth_name` rather than `birth_family_name`, and a street address with the house number folded into it.
 
-The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
+The German SD-JWT PID carries an `aka_vcts` claim naming `urn:eudi:pid:1`. That is what tells a verifier the credential is also of the type it extends ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §2.2.2.2), so a request for the country-independent PID is answered by it. See [credential type inheritance](wallet.md#credential-type-inheritance).
+
+The German mdoc PID spans two namespaces, as the rulebook prescribes: the European elements in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Its doctype stays `eu.europa.ec.eudi.pid.1`, because ISO 18013-5 has no inheritance between document types. Any mdoc claim key may carry a `namespace:element` prefix to place it in a specific namespace. Everything else lands in the template's namespace. Dates are CBOR tagged the way ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
+
+The PID convenience paths (`issue ... --pid`, `wallet generate-pid`, and `POST /api/generate-pid`) resolve through these templates, picking the pair that matches the requested type: the `pid-*` templates by default, the `german-pid-*` ones for `--vct urn:eudi:pid:de:1`. Saving a user template under the same name overrides the pre-defined version everywhere, including those paths. A local instance can change what the pre-defined PID templates issue (delete the override to restore the original). `wallet generate-pid` and `POST /api/generate-pid` are deprecated. Issue with the template names instead.
 
 ## Template files and storage
 
@@ -76,7 +82,7 @@ eudi templates list
 eudi templates show german-pid-sdjwt
 
 # Issue from a template, optionally overriding individual claims
-eudi issue sdjwt --template german-pid-sdjwt
+eudi issue sdjwt --template pid-sdjwt
 eudi issue sdjwt --template german-pid-sdjwt --claims '{"given_name": "MAX"}'
 
 # Make claims non disclosable at issuance time

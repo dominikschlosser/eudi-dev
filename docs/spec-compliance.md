@@ -19,6 +19,7 @@ Two independent settings decide what a finding does to a flow:
 | `request_uri_method=post` | Implemented | Sends `wallet_metadata` and `wallet_nonce`. Strict mode rejects missing `wallet_nonce` in the response |
 | Encrypted request objects (JWE) | Implemented | `--require-encrypted-request` flag |
 | DCQL query evaluation | Implemented | Including `credential_sets` constraints. Debug mode warns and continues when some required claim paths are missing from an otherwise matching credential, while strict mode treats that credential as non-matching |
+| `vct_values` matching across extending types | Implemented | A credential answers a `vct_values` entry naming its own type, a type its `aka_vcts` claim lists, or a type it is known to extend, so a request for `urn:eudi:pid:1` is answered by a `urn:eudi:pid:de:1` credential. Never the other way round, and never a trust decision (see [credential type inheritance](wallet.md#credential-type-inheritance)) |
 | One credential per credential query | Implemented | A credential query asks for one credential, and `multiple` is not implemented, so the wallet presents the most recently issued credential that answers each query. The consent dialog and the activity log show exactly what is sent |
 | `direct_post` response mode | Implemented | |
 | `direct_post.jwt` response mode | Implemented | JARM-encrypted responses |
@@ -110,6 +111,8 @@ Selective disclosure itself is RFC 9901. The credential profile on top of it is 
 | SD-JWT VC `typ` header | Implemented | Generated credentials carry `dc+sd-jwt`. Reading one accepts that value and `vc+sd-jwt`, which SD-JWT VC §2.2.1 keeps valid for a transitional period, and nothing else |
 | Credentials with no selectively disclosable claims | Implemented | `_sd` is omitted from the payload and the serialization ends in a single tilde (SD-JWT VC §2.2.2.5 and RFC 9901 §4) |
 | Registered claims that cannot be selectively disclosed | Enforced | `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status` are embedded plainly when generating a credential (SD-JWT VC §2.2.2.3), and `iat` with them because the generator writes one itself |
+| `aka_vcts` claim | Implemented | Read when deciding whether a credential answers a requested type (§2.2.2.2), and written into the credentials this tool issues for a type that extends another. Never treated as evidence of issuer authorization (§6.6) |
+| Type Metadata `extends` | Not implemented | The relationship is resolved from a table of the EUDI rulebook types, and from `aka_vcts`, instead. Retrieving Type Metadata (§4.4) says nothing about the EUDI PID types, whose `vct` values are URNs, and the ARF only asks a Scheme Provider to "consider defining" a Type Metadata Document (Annex 2 v3.0.0, ARB_31) |
 | JWT VC Issuer Metadata key resolution | Implemented | `/.well-known/jwt-vc-issuer` is inserted between the host and the path of `iss` (SD-JWT VC §3), so a tenant-scoped issuer resolves. The document must carry `issuer` identical to `iss` and either `jwks` or `jwks_uri`, never both (§3.2 and §3.3) |
 
 ## mDOC / ISO 18013-5

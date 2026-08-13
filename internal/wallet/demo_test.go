@@ -161,8 +161,9 @@ func TestDemoReset(t *testing.T) {
 	}
 
 	creds := srv.wallet.GetCredentials()
-	if len(creds) != 2 {
-		t.Fatalf("after reset: %d credentials (before %d), want the 2 default PIDs", len(creds), before)
+	// One SD-JWT and one mdoc PID per baseline type.
+	if want := 2 * len(BaselinePIDVCTs); len(creds) != want {
+		t.Fatalf("after reset: %d credentials (before %d), want the %d default PIDs", len(creds), before, want)
 	}
 	for _, c := range creds {
 		if c.VCT == "urn:example:extra" {
@@ -177,8 +178,8 @@ func TestDemoReset(t *testing.T) {
 	if err := srv.reloadFromStore(); err != nil {
 		t.Fatalf("reload after reset: %v", err)
 	}
-	if got := len(srv.wallet.GetCredentials()); got != 2 {
-		t.Fatalf("after reload: %d credentials, want 2", got)
+	if got, want := len(srv.wallet.GetCredentials()), 2*len(BaselinePIDVCTs); got != want {
+		t.Fatalf("after reload: %d credentials, want %d", got, want)
 	}
 }
 
@@ -267,8 +268,8 @@ func TestProtectedCredentials(t *testing.T) {
 		t.Fatalf("saving baseline: %v", err)
 	}
 	baseline := srv.wallet.GetCredentials()
-	if len(baseline) != 2 {
-		t.Fatalf("expected 2 baseline credentials, got %d", len(baseline))
+	if want := 2 * len(BaselinePIDVCTs); len(baseline) != want {
+		t.Fatalf("expected %d baseline credentials, got %d", want, len(baseline))
 	}
 	for _, c := range baseline {
 		if !c.Protected {
@@ -320,12 +321,13 @@ func TestProtectedCredentials(t *testing.T) {
 			t.Fatalf("DELETE all = %d", rec.Code)
 		}
 		result := decodeJSON(t, rec)
-		if result["kept_protected"] != float64(2) {
-			t.Errorf("kept_protected = %v, want 2", result["kept_protected"])
+		want := 2 * len(BaselinePIDVCTs)
+		if result["kept_protected"] != float64(want) {
+			t.Errorf("kept_protected = %v, want %d", result["kept_protected"], want)
 		}
 		remaining := srv.wallet.GetCredentials()
-		if len(remaining) != 2 {
-			t.Fatalf("after delete-all: %d credentials, want the 2 protected ones", len(remaining))
+		if len(remaining) != want {
+			t.Fatalf("after delete-all: %d credentials, want the %d protected ones", len(remaining), want)
 		}
 		for _, c := range remaining {
 			if !c.Protected {
@@ -355,11 +357,12 @@ func TestProtectedCredentials(t *testing.T) {
 func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// A baseline from an earlier release, under the old country-specific vct.
+	// A baseline from an earlier release, under a PID type no longer issued.
+	const retiredVCT = "urn:eudi:pid:xx:0"
 	w.Credentials = append(w.Credentials, StoredCredential{
 		ID:        "stale-baseline",
 		Format:    "dc+sd-jwt",
-		VCT:       "urn:eudi:pid:de:1",
+		VCT:       retiredVCT,
 		Protected: true,
 	})
 	if err := w.GenerateProtectedDefaults(); err != nil {
@@ -370,7 +373,7 @@ func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
 		if c.ID == "stale-baseline" {
 			t.Fatal("the previous baseline survived under its old vct")
 		}
-		if c.VCT == "urn:eudi:pid:de:1" {
+		if c.VCT == retiredVCT {
 			t.Errorf("a credential still carries the old vct: %s", c.ID)
 		}
 	}
@@ -380,8 +383,9 @@ func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
 			protectedSDJWT++
 		}
 	}
-	if protectedSDJWT != 1 {
-		t.Errorf("wallet holds %d protected SD-JWT PIDs, want exactly 1", protectedSDJWT)
+	// One per baseline type, and nothing left over from the retired one.
+	if want := len(BaselinePIDVCTs); protectedSDJWT != want {
+		t.Errorf("wallet holds %d protected SD-JWT PIDs, want exactly %d", protectedSDJWT, want)
 	}
 }
 
