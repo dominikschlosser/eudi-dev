@@ -226,12 +226,11 @@ func (s *Server) handleSetPreferredFormat(w http.ResponseWriter, r *http.Request
 // handleSetConformance changes the wallet's runtime conformance settings
 // (validation mode, HAIP, encrypted requests). On a local wallet every flow —
 // the UI, the macOS URL-scheme handler and the CLI — hits this same wallet, so
-// the change reaches all of them without a per-request override. Refused in
-// demo mode, where the settings are shared: a visitor's per-browser choice
-// belongs in the eudi_conformance cookie instead.
+// the change reaches all of them. Refused in demo mode, where the settings are
+// shared and fixed (HAIP in debug mode); run the wallet locally to change them.
 func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 	if s.demo != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode; use the per-browser override"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode; run the wallet locally to change them"})
 		return
 	}
 	var body struct {
