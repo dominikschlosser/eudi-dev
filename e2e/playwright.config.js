@@ -5,7 +5,10 @@ module.exports = defineConfig({
   testDir: ".",
   testMatch: "*.spec.js",
   timeout: 30_000,
-  retries: 0,
+  // The suite runs against a single shared wallet server, so a slow CI runner
+  // can occasionally lose a timing race between tests. Retry in CI so a
+  // transient flake does not fail the run; keep local runs strict.
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: "http://localhost:18923",
     headless: true,

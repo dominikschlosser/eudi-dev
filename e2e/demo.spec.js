@@ -396,6 +396,13 @@ test.describe("Demo mode consent visibility", () => {
     await page.goto(BASE);
     await expect(page.locator("#demo-note")).toBeVisible();
 
+    // The interactive submission behind Process stays open until the consent is
+    // resolved. When the page closes at test end (or the shared server times the
+    // request out) it can surface a late error alert. Handle dialogs explicitly
+    // so one never races page teardown, which otherwise shows up as a
+    // "session closed" protocol error and takes the whole worker down with it.
+    page.on("dialog", (d) => d.dismiss().catch(() => {}));
+
     // Pasting a request and pressing Process is this tab's own request: it must
     // review it in a dialog, not auto-accept it silently.
     const req = await createVerificationRequest();
