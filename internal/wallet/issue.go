@@ -45,8 +45,9 @@ type IssueOptions struct {
 	// unset. Templates are resolved against the wallet's template directory.
 	Template string
 	// Claims are the credential claims. When nil and no template is given,
-	// PID selects the full EUDI PID Rulebook claim set (the german-pid
-	// templates), otherwise a small default claim set is used.
+	// PID selects the full EUDI PID Rulebook claim set (the pre-defined PID
+	// templates of the type VCT names), otherwise a small default claim set
+	// is used.
 	Claims map[string]any
 	PID    bool
 	// AlwaysDisclosed lists claims (dotted paths for nested claims) that are
@@ -107,7 +108,7 @@ type IssueResult struct {
 // issued-attestation metadata. The caller is responsible for persisting the
 // wallet afterwards.
 func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
-	tpl, err := w.resolveIssueTemplate(opts)
+	tpl, pidTemplate, err := w.resolveIssueTemplate(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +121,11 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tpl != nil && tpl.Format != "" {
+	// A template the caller named has to match the format they asked for. One
+	// PID picked for them is a claim set rather than a choice of format: the
+	// SD-JWT PID template is what a jwt request with PID is asking for too,
+	// since a JWT VC carries the same claims plainly.
+	if tpl != nil && tpl.Format != "" && !pidTemplate {
 		tplFormat, err := credtemplate.NormalizeFormat(tpl.Format)
 		if err != nil {
 			return nil, err
@@ -309,9 +314,13 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 // resolveIssueTemplate loads the template referenced by opts: an explicit
 // Template name or path, or the pre-defined PID template matching the format
 // and the requested PID type when PID is set without explicit claims.
-func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (*credtemplate.Template, error) {
+//
+// resolveIssueTemplate reports pidTemplate for a template it picked itself
+// from opts.PID, which the caller asked for by claim set rather than by name.
+func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (tpl *credtemplate.Template, pidTemplate bool, err error) {
 	if name := strings.TrimSpace(opts.Template); name != "" {
-		return credtemplate.Load(name, w.TemplatesDir)
+		tpl, err = credtemplate.Load(name, w.TemplatesDir)
+		return tpl, false, err
 	}
 	if opts.PID && opts.Claims == nil {
 		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT)
@@ -319,9 +328,10 @@ func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (*credtemplate.Template
 		if format, _ := normalizeIssueFormat(opts.Format); format == "mdoc" {
 			name = mdocName
 		}
-		return credtemplate.Load(name, w.TemplatesDir)
+		tpl, err = credtemplate.Load(name, w.TemplatesDir)
+		return tpl, true, err
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 // mergeAlwaysDisclosed combines two always-disclosed lists without duplicates.

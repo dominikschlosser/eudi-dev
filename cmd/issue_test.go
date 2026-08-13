@@ -405,6 +405,24 @@ func TestIssueSDJWT_WithPID(t *testing.T) {
 	}
 }
 
+// A JWT VC carries the PID claim set plainly, so --pid has to work there too.
+// It used to fail with "template \"pid-sdjwt\" is for format sdjwt, not jwt",
+// because the template --pid picks for the caller was held to the same format
+// rule as one they named themselves.
+func TestIssueJWT_WithPID(t *testing.T) {
+	buf := new(bytes.Buffer)
+	rootCmd.SetOut(buf)
+
+	issueClaims = ""
+	issueKeyPath = ""
+	issueOmit = nil
+
+	rootCmd.SetArgs([]string{"issue", "jwt", "--pid"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("issue jwt --pid: %v", err)
+	}
+}
+
 func TestIssueSDJWT_WithPIDAndOmit(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)

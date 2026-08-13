@@ -423,6 +423,11 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 // expiry to flags the user did not set explicitly.
 func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Template, error) {
 	var name string
+	// A template the user named has to match the format they asked for. One
+	// --pid picked for them is a claim set rather than a choice of format:
+	// the SD-JWT PID template is what `issue jwt --pid` is asking for too,
+	// since a JWT VC carries the same claims plainly.
+	pidTemplate := false
 	switch {
 	case issueTemplate != "":
 		name = issueTemplate
@@ -433,6 +438,7 @@ func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Temp
 		} else {
 			name = sdName
 		}
+		pidTemplate = true
 	default:
 		return nil, nil
 	}
@@ -441,7 +447,7 @@ func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Temp
 	if err != nil {
 		return nil, err
 	}
-	if tpl.Format != "" {
+	if tpl.Format != "" && !pidTemplate {
 		tplFormat, err := credtemplate.NormalizeFormat(tpl.Format)
 		if err != nil {
 			return nil, err
