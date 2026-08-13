@@ -459,8 +459,8 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 	// regenerate: it is the baseline and must not be duplicated.
 	var keptSD, keptMDoc bool
 	if dropExisting {
-		keptSD = w.removeByType("dc+sd-jwt", vct, "", false) > 0
-		keptMDoc = w.removeByType("mso_mdoc", "", mdocDocType, false) > 0
+		keptSD = w.removeByType("dc+sd-jwt", vct, "") > 0
+		keptMDoc = w.removeByType("mso_mdoc", "", mdocDocType) > 0
 		if keptSD || keptMDoc {
 			log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
 		}
@@ -561,14 +561,14 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 // credentials survive: regenerating the defaults must not be a way around the
 // rule that only direct access to the wallet file can remove them. It returns
 // how many protected credentials it kept.
-func (w *Wallet) removeByType(format, vct, docType string, includeProtected bool) int {
+func (w *Wallet) removeByType(format, vct, docType string) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var keptProtected int
 	filtered := w.Credentials[:0]
 	for _, c := range w.Credentials {
 		if c.Format == format && (vct == "" || c.VCT == vct) && (docType == "" || c.DocType == docType) {
-			if includeProtected || !c.Protected {
+			if !c.Protected {
 				continue
 			}
 			keptProtected++
