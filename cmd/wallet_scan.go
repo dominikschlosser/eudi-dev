@@ -93,6 +93,23 @@ func stdinIsTerminal() bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
+// acceptOID4URI processes an OID4VP presentation request or OID4VCI credential
+// offer the way `wallet accept` does. It resolves any transaction code, then
+// routes to a running or remote wallet when one is configured, which shows its
+// own consent dialog unless the user asked to auto-accept (the same as the
+// local flow and the macOS URL handler); otherwise it runs the local flow.
+// `wallet scan` shares it, so a scanned request behaves exactly like a supplied
+// one.
+func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
+	opts.txCode = resolveTxCode(uri, opts.txCode)
+	if c, err := remoteClientIfConfigured(); err != nil {
+		return err
+	} else if c != nil {
+		return remoteAccept(c, uri, opts.txCode, !opts.autoAccept)
+	}
+	return dispatchURI(uri, opts)
+}
+
 func walletAcceptCmd() *cobra.Command {
 	var (
 		port              int
@@ -118,16 +135,7 @@ stores it locally. A running wallet server reloads the same wallet store at
 request boundaries, so later presentation requests see the new credential.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			txCode = resolveTxCode(args[0], txCode)
-			if c, err := remoteClientIfConfigured(); err != nil {
-				return err
-			} else if c != nil {
-				// A running or remote wallet shows its own consent dialog unless
-				// the user asked to auto-accept, the same as this command's local
-				// flow and the macOS URL handler.
-				return remoteAccept(c, args[0], txCode, !autoAccept)
-			}
-			return dispatchURI(args[0], dispatchOID4Opts{
+			return acceptOID4URI(args[0], dispatchOID4Opts{
 				port:              port,
 				portExplicit:      cmd.Flags().Changed("port"),
 				autoAccept:        autoAccept,
@@ -153,6 +161,8 @@ func walletScanCmd() *cobra.Command {
 		screen            bool
 		autoAccept        bool
 		sessionTranscript string
+		txCode            string
+		haip              bool
 	)
 
 	cmd := &cobra.Command{
@@ -193,12 +203,16 @@ func walletScanCmd() *cobra.Command {
 				return nil
 			}
 
-			// For OID4 URIs, use the shared dispatch
-			return dispatchURI(content, dispatchOID4Opts{
+			// For OID4 URIs, accept the scanned request exactly like `wallet
+			// accept`: route to a running or remote wallet when one is
+			// configured, otherwise run the local flow.
+			return acceptOID4URI(content, dispatchOID4Opts{
 				port:              port,
 				portExplicit:      cmd.Flags().Changed("port"),
 				autoAccept:        autoAccept,
 				sessionTranscript: sessionTranscript,
+				txCode:            txCode,
+				haip:              haip,
 				mode:              walletValidationMode,
 			})
 		},
@@ -208,5 +222,7 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&screen, "screen", false, "Interactive screen capture (macOS)")
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve presentations")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
+	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
+	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	return cmd
 }

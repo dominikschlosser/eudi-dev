@@ -367,7 +367,7 @@ eudi wallet scan --screen              # macOS interactive screen capture
 eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 ```
 
-`wallet scan` honors the persistent `wallet --mode` flag when it dispatches OID4VP/VCI flows.
+For OID4VP requests and OID4VCI offers, `wallet scan` behaves exactly like `wallet accept` (it is the same flow with a scan step first). It routes the scanned request to a running or remote wallet when one is configured (opening that wallet's consent UI), and otherwise runs the local flow. It honors the persistent `wallet --mode` flag and takes the same `--auto-accept`, `--tx-code`, and `--haip` flags as `accept`.
 
 ## `wallet trust-list`
 
