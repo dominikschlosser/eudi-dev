@@ -472,6 +472,29 @@ test.describe("Protected baseline credentials", () => {
     await expect(first.locator("[data-revoke]")).toHaveCount(0);
   });
 
+  test("the two mdoc PIDs are told apart by the namespaces they use", async ({
+    page,
+  }) => {
+    await page.goto(BASE);
+    const mdocCards = page.locator(".credential-card[data-format='mdoc']");
+    await expect(mdocCards).toHaveCount(2, { timeout: 5000 });
+
+    // Both carry the same doctype, because ISO 18013-5 has no inheritance
+    // between document types. The namespaces are what says which is which.
+    const german = mdocCards.filter({
+      has: page.locator(".claim-namespace", { hasText: "eu.europa.ec.eudi.pid.de.1" }),
+    });
+    await expect(german).toHaveCount(1);
+    await expect(
+      german.locator(".claim-namespace", { hasText: /^eu\.europa\.ec\.eudi\.pid\.1$/ })
+    ).toHaveCount(1);
+    await expect(german.locator(".claim-tag", { hasText: "academic_title" })).toHaveCount(1);
+
+    // The country-independent one uses the PID namespace alone.
+    const eu = mdocCards.filter({ hasNot: page.locator(".claim-namespace", { hasText: "de.1" }) });
+    await expect(eu.locator(".claim-namespace")).toHaveCount(1);
+  });
+
   test("the API refuses to delete or revoke them", async () => {
     const res = await fetch(`${BASE}/api/credentials`);
     const creds = await res.json();

@@ -216,6 +216,46 @@
     loadCredentials();
   });
 
+  // What a credential carries, in the shape the credential has it. mdoc
+  // elements are keyed "namespace:element", and two PIDs can share a doctype
+  // while differing only by the namespaces they use (the German PID keeps its
+  // national elements in eu.europa.ec.eudi.pid.de.1), so a flat list of names
+  // makes two different credentials look identical. Each namespace is named,
+  // with a few of its elements as examples. SD-JWT claims have no namespace
+  // and stay a plain list.
+  function claimTagsFor(cred) {
+    const names = Object.keys(cred.claims || {});
+    if (names.length === 0) return '';
+
+    const groups = new Map();
+    for (const name of names) {
+      const sep = name.indexOf(':');
+      const ns = sep === -1 ? '' : name.slice(0, sep);
+      const element = sep === -1 ? name : name.slice(sep + 1);
+      if (!groups.has(ns)) groups.set(ns, []);
+      groups.get(ns).push(element);
+    }
+    if (groups.size === 1 && groups.has('')) {
+      return claimTagList(groups.get(''), 6);
+    }
+    // Longest namespace last: the national additions extend the base one, and
+    // reading them in that order says which is which.
+    return [...groups.entries()]
+      .sort((a, b) => a[0].length - b[0].length || a[0].localeCompare(b[0]))
+      .map(([ns, elements]) =>
+        '<span class="claim-namespace" title="' + escHtml(elements.length + ' element' + (elements.length === 1 ? '' : 's') + ' in ' + (ns || 'no namespace')) + '">' +
+          escHtml(ns || 'no namespace') + '</span>' + claimTagList(elements, 3))
+      .join('');
+  }
+
+  // Up to max names, then a count of what is left.
+  function claimTagList(names, max) {
+    const shown = names.slice(0, max)
+      .map(name => '<span class="claim-tag">' + escHtml(name) + '</span>').join('');
+    const rest = names.length - Math.min(names.length, max);
+    return shown + (rest > 0 ? '<span class="claim-tag">+' + rest + ' more</span>' : '');
+  }
+
   function renderCredentials() {
     if (credentials.length === 0) {
       credEmpty.style.display = '';
@@ -235,10 +275,7 @@
       const typeLabel = cred.vct || cred.doctype || cred.format;
       const isProtected = cred.protected === true;
 
-      const claimKeys = Object.keys(cred.claims || {}).slice(0, 6);
-      const claimTags = claimKeys.map(k => '<span class="claim-tag">' + escHtml(k) + '</span>').join('');
-      const moreCount = Object.keys(cred.claims || {}).length - claimKeys.length;
-      const moreTag = moreCount > 0 ? '<span class="claim-tag">+' + moreCount + ' more</span>' : '';
+      const claimSummary = claimTagsFor(cred);
 
       // Stable identity and selection hooks for UI automation
       card.id = 'credential-' + cred.id;
@@ -288,7 +325,7 @@
       card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
         '<div class="credential-info" title="Open in decoder">' +
           '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + '</div>' +
-          '<div class="credential-claims">' + claimTags + moreTag + '</div>' +
+          '<div class="credential-claims">' + claimSummary + '</div>' +
         '</div>' +
         '<div class="credential-actions">' +
           revokeBtn +
