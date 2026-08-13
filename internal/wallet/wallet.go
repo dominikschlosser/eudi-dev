@@ -414,13 +414,15 @@ func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error
 // are merged on top of the template claims. vct specifies the SD-JWT VCT. If
 // empty, the template's VCT (mock.DefaultPIDVCT by default) is used.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
-	return w.generateDefaultCredentials(claimOverrides, vct, false)
+	return w.generateDefaultCredentials(claimOverrides, vct, true)
 }
 
-// generateDefaultCredentials generates the default PIDs. replaceProtected
-// allows it to replace a protected baseline, which only the server's own
-// baseline generation may do (see GenerateProtectedDefaults).
-func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, replaceProtected bool) error {
+// generateDefaultCredentials generates the default PIDs. dropExisting removes
+// any current default PID of the same type first, so a local wallet replaces
+// its default rather than keeping two. The demo baseline path passes false: it
+// drops its own previous baseline separately and must keep whatever visitors
+// issued (see GenerateProtectedDefaults).
+func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, dropExisting bool) error {
 	sdTpl, err := credtemplate.Load("german-pid-sdjwt", w.TemplatesDir)
 	if err != nil {
 		return fmt.Errorf("loading german-pid-sdjwt template: %w", err)
@@ -453,13 +455,15 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 	sdClaims := credtemplate.MergeClaims(sdTpl.Claims, claimOverrides)
 	mdocClaims := credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides)
 
-	// Remove existing PID credentials before generating new ones. A protected
-	// one is kept instead, and then there is nothing to replace: it is the
-	// baseline, and regenerating must not quietly duplicate or discard it.
-	keptSD := w.removeByType("dc+sd-jwt", vct, "", replaceProtected) > 0
-	keptMDoc := w.removeByType("mso_mdoc", "", mdocDocType, replaceProtected) > 0
-	if keptSD || keptMDoc {
-		log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
+	// A protected one is kept instead of removed, and then there is nothing to
+	// regenerate: it is the baseline and must not be duplicated.
+	var keptSD, keptMDoc bool
+	if dropExisting {
+		keptSD = w.removeByType("dc+sd-jwt", vct, "", false) > 0
+		keptMDoc = w.removeByType("mso_mdoc", "", mdocDocType, false) > 0
+		if keptSD || keptMDoc {
+			log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
+		}
 	}
 
 	// Generate SD-JWT PID
@@ -646,11 +650,10 @@ func (w *Wallet) GenerateProtectedDefaults() error {
 	for _, c := range w.GetCredentials() {
 		existing[c.ID] = true
 	}
-	// This replaces its own previous baseline, protection included. It runs
-	// on startup and on the periodic reset, never from a request, so it is
-	// the one path that may. Without it the baseline would freeze on the
-	// claim set of whichever release first created it.
-	if err := w.generateDefaultCredentials(nil, "", true); err != nil {
+	// removeProtected above dropped the old baseline; regenerate a fresh one
+	// (marked protected below) so it never freezes on an old release's claim
+	// set. dropExisting is false: a visitor's own PID of the same type stays.
+	if err := w.generateDefaultCredentials(nil, "", false); err != nil {
 		return err
 	}
 	w.mu.Lock()

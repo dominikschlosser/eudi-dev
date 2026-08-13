@@ -870,6 +870,59 @@ func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
 	}
 }
 
+// Refreshing the baseline (on startup or the periodic reset) must keep a
+// visitor's own credential even when it shares the baseline's type. Regression:
+// the refresh used to drop every PID-typed credential, so restarting a demo
+// silently lost a visitor-issued PID with no deletion in the activity log.
+func TestGenerateProtectedDefaults_KeepsVisitorCredentialOfBaselineType(t *testing.T) {
+	w := generateTestWallet(t)
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("first GenerateProtectedDefaults: %v", err)
+	}
+
+	// Match the baseline SD-JWT's own type, whatever vct the templates use, so
+	// the collision is real regardless of release.
+	var baselineVCT string
+	for _, c := range w.GetCredentials() {
+		if c.Format == "dc+sd-jwt" {
+			baselineVCT = c.VCT
+		}
+	}
+	if baselineVCT == "" {
+		t.Fatal("no baseline SD-JWT PID to match against")
+	}
+	w.Credentials = append(w.Credentials, StoredCredential{
+		ID:     "visitor-pid",
+		Format: "dc+sd-jwt",
+		VCT:    baselineVCT,
+	})
+
+	// A restart refreshes the baseline.
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("second GenerateProtectedDefaults: %v", err)
+	}
+
+	var foundVisitor bool
+	var protectedCount int
+	for _, c := range w.GetCredentials() {
+		if c.ID == "visitor-pid" {
+			foundVisitor = true
+			if c.Protected {
+				t.Error("the visitor credential was marked protected by the refresh")
+			}
+		}
+		if c.Protected {
+			protectedCount++
+		}
+	}
+	if !foundVisitor {
+		t.Error("the visitor's PID was dropped by the baseline refresh")
+	}
+	if protectedCount != 2 {
+		t.Errorf("expected 2 protected baseline credentials, got %d", protectedCount)
+	}
+}
+
 // The request-driven path still must not touch a protected baseline: that is
 // the whole point of the flag.
 func TestGenerateDefaultCredentials_APIPathCannotReplaceProtected(t *testing.T) {
