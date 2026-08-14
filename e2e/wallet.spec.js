@@ -562,6 +562,30 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator(".credential-card")).toHaveCount(2);
   });
 
+  // Namespaces are an mdoc idea, and the card groups mdoc elements by them.
+  // An SD-JWT claim name may contain a colon of its own (a URI claim name is
+  // ordinary), and splitting that into a namespace would show half a name.
+  test("an SD-JWT claim name containing a colon stays whole on the card", async ({
+    page,
+  }) => {
+    const claimName = "https://example.org/claims/role";
+    const issued = await jsonPost(`${WALLET_URL}/api/issue`, {
+      format: "sdjwt",
+      vct: "urn:example:colon-claim",
+      claims: { [claimName]: "admin", given_name: "ERIKA" },
+    });
+    expect(issued.status).toBe(201);
+
+    await page.goto(WALLET_URL);
+    const card = page.locator(`#credential-${issued.body.id}`);
+    await expect(card).toBeVisible();
+    await expect(card.locator(".claim-namespace")).toHaveCount(0);
+    await expect(card.locator(".claim-tag", { hasText: claimName })).toHaveCount(1);
+
+    await page.locator(`#delete-${issued.body.id}`).click();
+    await expect(card).toHaveCount(0);
+  });
+
   test("manages templates and issues from one with a non-disclosable claim", async ({
     page,
   }) => {

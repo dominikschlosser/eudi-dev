@@ -228,6 +228,10 @@
   function claimTagsFor(cred) {
     const names = Object.keys(cred.claims || {});
     if (names.length === 0) return '';
+    // Namespaces are an mdoc idea. An SD-JWT or JWT VC claim name may well
+    // contain a colon (https://example.org/claims/role is a claim name), and
+    // reading that as a namespace would split the name in half.
+    if (cred.format !== 'mso_mdoc') return claimTagList(names, 6);
 
     const groups = new Map();
     for (const name of names) {
