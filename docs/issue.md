@@ -104,6 +104,8 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 
 When no `--claims` are provided, a minimal set of PID-like claims is used (given_name, family_name, birthdate). With `--pid`, the full PID claim set of the requested type is generated: fourteen top-level claims for SD-JWT (including the nested `address` and `place_of_birth` objects) and eighteen mdoc elements, following the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
 
+The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` carries the same claim set in a plain JWT VC, which is a test artifact for exercising a verifier rather than a credential the EUDI ecosystem defines.
+
 `--vct urn:eudi:pid:de:1` selects the German PID, which follows the German PID Rulebook: fifteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-four mdoc elements across the two namespaces that rulebook defines. A credential from this tool and one from the German PID provider are interchangeable. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` credential templates, so a user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
 
 With `--template`, the template supplies the claim set and any type, namespace, and expiry defaults for flags that were not set explicitly. `--claims` then overrides individual top level claims and `--omit` removes claims from the merged result. See [templates](templates.md) for the template file format and the `templates` management commands.
