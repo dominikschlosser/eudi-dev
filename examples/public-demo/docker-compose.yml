@@ -17,7 +17,10 @@ x-logging: &logging
 
 services:
   caddy:
-    image: caddy:2
+    # Built from the Dockerfile next to this file: the standard caddy image
+    # has no rate limiting, which the Caddyfile configures.
+    build: .
+    image: eudi-demo-caddy
     restart: unless-stopped
     logging: *logging
     ports:

@@ -41,7 +41,17 @@ The verifier page has a button for each. The PID request (`#request-pid`) names 
 
 All four are marked protected: the UI, the API and the CLI refuse to delete or revoke them, so a visitor emptying the wallet cannot leave the demo without a baseline. Everything a visitor issues afterwards behaves normally and can be deleted. Clearing the flag needs direct access to `wallet.json`.
 
-The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess. The wallet also fetches visitor supplied public URLs (that is what a wallet does), so put rate limiting in front if abuse becomes a concern.
+The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess.
+
+The compose example rate limits per client address in Caddy, which is the component that sees the real address (the wallet behind it sees the proxy). Its image is built from the `Dockerfile` next to the compose file, because the plugin that does this is not in the standard Caddy image. Two limits apply, both answering `429` with `Retry-After`:
+
+| Zone | Requests | What it covers |
+|---|---|---|
+| `flows_burst` | 120 per minute | The endpoints that make the wallet fetch a URL somebody handed it or grow state until the next reset: presentations, offers, issuance, imports, refreshes, deferred collection, demo issuer offers, verification requests |
+| `flows_hour` | 2000 per hour | The same endpoints, so a loop left running stays bounded between resets |
+| `site` | 1200 per minute | Everything else, including the UI and the stats report |
+
+They are ceilings against abuse rather than traffic shaping. An idle wallet page is about 14 requests (updates arrive over one long-lived event stream) and a busy visitor with three tabs open, issuing and presenting, produced 36 in a minute, so a browser, a test suite driving the HTTP API, and everyone behind a single office address fit under them together. A deployment that puts something other than this Caddy in front should carry the same limits there.
 
 ## Base URL and issuer URL
 

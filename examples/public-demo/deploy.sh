@@ -51,7 +51,7 @@ compose() {
 copy_stack() {
   echo "Copying the stack to ${DEMO_HOST}:${DEMO_DIR}..."
   ssh "${DEMO_HOST}" "mkdir -p ${DEMO_DIR}"
-  scp -q Caddyfile docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
+  scp -q Caddyfile Dockerfile docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
   # The imprint carries the operator's real address, so it is never taken from
   # the repository (which only holds a placeholder). Keep yours in
   # imprint.local.html (gitignored); without it the host's copy is left alone.
@@ -98,7 +98,10 @@ set_wallet_tag() {
 
 apply_stack() {
   compose "pull -q wallet" >/dev/null
-  compose "up -d --quiet-pull" >/dev/null
+  # --build keeps the Caddy image in step with the Dockerfile (the rate
+  # limiting plugin is compiled into it). Layer caching makes it a no-op when
+  # nothing changed.
+  compose "up -d --build --quiet-pull" >/dev/null
   sleep 3
   compose "ps --format '{{.Name}} {{.Status}}'"
   local version
@@ -139,7 +142,7 @@ case "${COMMAND}" in
     # root, which makes the wallet crash-loop on a fresh host.
     echo "Preparing the wallet data volume..."
     remote "docker volume create eudi-demo_wallet-data >/dev/null && docker run --rm -v eudi-demo_wallet-data:/d alpine chown 1000:1000 /d >/dev/null"
-    compose "up -d"
+    compose "up -d --build"
     echo
     echo "Deployed. Point your domain's A and AAAA records at this host if you have not yet:"
     ssh "${DEMO_HOST}" "hostname -I 2>/dev/null || true"
