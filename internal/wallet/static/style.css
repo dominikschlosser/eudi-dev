@@ -264,12 +264,12 @@ header h1 {
    thing on the card that tells them apart. */
 .claim-namespace {
   font-family: var(--font-mono, monospace);
-  font-weight: 600;
-  color: var(--purple);
-  background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--purple);
+  color: var(--text);
+  background: transparent;
+  padding: 1px 6px 1px 0;
+  border: none;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
   margin-left: 6px;
 }
 

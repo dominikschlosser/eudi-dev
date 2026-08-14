@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.1] - 2026-08-14
+
+### Changed
+
+- **The namespace label on an mdoc credential card reads as a group divider.** It was a filled chip in the accent colour, which made it the loudest element on the page. It is now the card's own text colour with a thin rule to its left, so it separates one namespace's elements from the next without competing with the credential type above it
+
 ## [1.22.0] - 2026-08-14
 
 ### Added
