@@ -553,7 +553,7 @@ func TestImportAdoptsNothingWithoutAStatusList(t *testing.T) {
 }
 
 // A credential that points at this wallet's status list has its index adopted
-// on import, so the number is whoever minted the credential. A negative one
+// on import, so the number is whoever issued the credential. A negative one
 // used to be stored and then panic with "negative shift amount" every time
 // the bitstring was built, which is on every request for the status list.
 // On a demo instance both importing and reading the list are open.

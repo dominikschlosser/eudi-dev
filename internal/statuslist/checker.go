@@ -444,7 +444,7 @@ func parseJWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 	}
 
 	// Section 5.1: "typ: REQUIRED. The JWT type MUST be statuslist+jwt."
-	// Without it a JWT minted for some other purpose, and signed by a key the
+	// Without it a JWT issued for some other purpose, and signed by a key the
 	// Relying Party already trusts, is accepted as a status list.
 	typ, _ := header["typ"].(string)
 	if !isStatusListTyp(typ, TypJWT) {
@@ -599,7 +599,7 @@ const maxBitstringBytes = 16 << 20
 // missing and a raw DEFLATE stream was read instead.
 //
 // The compressed bytes come from a URL in the credential's own status claim,
-// so whoever minted the credential chooses them, and deflate happily turns a
+// so whoever issued the credential chooses them, and deflate happily turns a
 // few hundred kilobytes into hundreds of megabytes. Reading that without a
 // limit let a credential decide how much memory the party checking it would
 // allocate, which the demo verifier does for every presentation it is shown.

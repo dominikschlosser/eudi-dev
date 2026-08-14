@@ -22,7 +22,7 @@ _Avoid_: Subtype, derived type, inherited credential
 Ambiguous on its own and never to be used unqualified. Three unrelated things wear this name: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (this wallet's record that it issues a given credential type, which is what registers that type on a trust list). In EUDI prose "attestation" is also a synonym for credential. Always say which.
 
 **Template**:
-A reusable, named claim set and issuance settings that a credential can be minted from. A template is not a credential and is not a credential type.
+A reusable, named claim set and issuance settings that a credential can be issued from. A template is not a credential and is not a credential type.
 _Avoid_: Preset, profile
 
 **PID**:

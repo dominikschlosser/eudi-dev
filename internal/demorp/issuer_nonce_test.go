@@ -283,7 +283,7 @@ func TestVerifyProofJWTAcceptsANonceFromTheNonceEndpoint(t *testing.T) {
 
 // The Nonce Endpoint is this issuer's only source of a challenge, per §8.2:
 // "The c_nonce value is retrieved from the Nonce Endpoint as defined in
-// Section 7." A nonce it minted with a token response is not one of its own.
+// Section 7." A nonce it issued with a token response is not one of its own.
 func TestVerifyProofJWTRejectsANonceItNeverHandedOut(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 
@@ -317,7 +317,7 @@ func TestVerifyProofJWTRejectsAProofWithNoNonce(t *testing.T) {
 
 // Appendix F.1 makes aud "REQUIRED (string). The value of this claim MUST be
 // the Credential Issuer Identifier", and F.4 makes checking it the issuer's
-// job. Without the check, a proof the holder minted for another issuer, and
+// job. Without the check, a proof the holder created for another issuer, and
 // which that issuer may have logged or leaked, is accepted here.
 func TestVerifyProofJWTRejectsAProofMintedForAnotherIssuer(t *testing.T) {
 	d, _, _ := newDemoRP(t)

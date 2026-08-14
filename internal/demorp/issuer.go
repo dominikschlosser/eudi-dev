@@ -534,7 +534,7 @@ const proofClockSkew = 5 * time.Minute
 // The audience check is what stops a proof from travelling: Appendix F.1 makes
 // aud "REQUIRED (string). The value of this claim MUST be the Credential Issuer
 // Identifier", and an issuer that does not check it accepts a proof the holder
-// minted for somebody else.
+// issued for somebody else.
 func (d *DemoRP) verifyProofJWT(raw string) (*ecdsa.PublicKey, *proofError) {
 	proof, err := parseCompactJWT(raw)
 	if err != nil {

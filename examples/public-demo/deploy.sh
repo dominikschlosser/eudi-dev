@@ -218,8 +218,8 @@ case "${COMMAND}" in
       grep -E 'requests|visitors|log_size' |
       while read -r name value; do printf '%-18s %s\n' "${name}" "${value}"; done
     echo
-    # Pages only. The API paths are listed separately below, because a single
-    # open tab produces hundreds of them and would bury every page.
+    # Pages only. The API paths are listed separately below, because they
+    # outnumber page requests and would bury them.
     echo "Top pages (bots excluded, API calls omitted):"
     sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" |
       grep -v '/api/' |

@@ -407,7 +407,7 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 	var statusSrv *httptest.Server
 	statusSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// The sub claim has to be the URI the credential references, so the
-		// token is minted for the URL this server is actually reachable at.
+		// token is issued for the URL this server is actually reachable at.
 		jwt, err := statuslist.GenerateStatusListJWT(bitstring, key, statuslist.StatusListConfig{
 			URI: statusSrv.URL,
 		})

@@ -6,4 +6,4 @@ File modes still apply (`0600` for keys, `0700` for directories, atomic write-th
 
 ## Consequences
 
-The CA key is an unprotected trust anchor. Anyone who can read it can mint credentials the verifiers you configured will accept. That is fine for a test CA on a developer machine and is not fine anywhere else, which is one more reason the tool states plainly that it is not for real credentials or real identity data. Adding encryption later would change the store format and the `--wallet-dir` contract that CI setups and the Docker image depend on, so it is not a drop-in change.
+The CA key is an unprotected trust anchor. Anyone who can read it can issue credentials the verifiers you configured will accept. That is fine for a test CA on a developer machine and is not fine anywhere else, which is one more reason the tool states plainly that it is not for real credentials or real identity data. Adding encryption later would change the store format and the `--wallet-dir` contract that CI setups and the Docker image depend on, so it is not a drop-in change.

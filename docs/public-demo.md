@@ -43,7 +43,7 @@ All four are marked protected: the UI, the API and the CLI refuse to delete or r
 
 The demo is a shared environment by design. Anyone can issue credentials, delete them and watch the activity log. State is shared between all visitors and the periodic reset bounds the mess.
 
-The compose example rate limits per client address in Caddy, which is the component that sees the real address (the wallet behind it sees the proxy). Its image is built from the `Dockerfile` next to the compose file, because the plugin that does this is not in the standard Caddy image. Two limits apply, both answering `429` with `Retry-After`:
+The compose example rate limits per client address in Caddy, which is the component that sees the real address (the wallet behind it sees the proxy). Its image is built from the `Dockerfile` next to the compose file, because the plugin that does this is not in the standard Caddy image. Three zones apply, each answering `429` with `Retry-After`:
 
 | Zone | Requests | What it covers |
 |---|---|---|
@@ -153,7 +153,7 @@ The compose example ships an optional usage report, so you can tell whether the 
 
 Then open `https://your-domain/stats/`. Remove the `handle_path /stats*` block from the Caddyfile (and the `stats` service) to turn the whole thing off. If your imprint claims that no access data is processed, adjust it: the log exists, even anonymized.
 
-Read the numbers with care. Your own testing counts too, and a single browser tab produces far more requests than a visit: every page load opens an event stream and the UI reloads credentials, log and trust lists whenever anything changes. `deploy.sh stats` therefore lists pages and API calls separately, and among the API calls it repeats the ones that changed something (`POST`, `PUT`, `PATCH`, `DELETE`). Those are the interesting number: reads are mostly the UI polling itself, while a write is somebody issuing, presenting, importing or deleting a credential, whether from the UI, an external wallet, or a test suite. Distinct visitors are approximated from masked addresses, so everyone behind the same `/24` counts once.
+Read the numbers with care. Your own testing counts too, and one page load is about a dozen requests (the assets, the state the UI reads, and the event stream it keeps open for updates). `deploy.sh stats` therefore lists pages and API calls separately, and among the API calls it repeats the ones that changed something (`POST`, `PUT`, `PATCH`, `DELETE`). Those are the interesting number: a write is somebody issuing, presenting, importing or deleting a credential, whether from the UI, an external wallet, or a test suite. Distinct visitors are approximated from masked addresses, so everyone behind the same `/24` counts once.
 
 ### Log bounds
 
