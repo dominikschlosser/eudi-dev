@@ -89,13 +89,7 @@ func TestParsePublicKey_PEM_RSA(t *testing.T) {
 func TestParseJWK_EC(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 
-	jwk := map[string]any{
-		"kty": "EC",
-		"crv": "P-256",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
-	}
-	data, _ := json.Marshal(jwk)
+	data := ecJWK(t, &key.PublicKey, "P-256")
 
 	pub, err := ParseJWK(data)
 	if err != nil {
@@ -234,14 +228,7 @@ func TestLoadPrivateKey_FileNotFound(t *testing.T) {
 
 func TestParseJWKPrivate_EC(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	jwk := map[string]any{
-		"kty": "EC",
-		"crv": "P-256",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
-		"d":   format.EncodeBase64URL(key.D.Bytes()),
-	}
-	data, _ := json.Marshal(jwk)
+	data := ecPrivateJWK(t, key, "P-256")
 
 	priv, err := ParseJWKPrivate(data)
 	if err != nil {
@@ -258,13 +245,7 @@ func TestParseJWKPrivate_EC(t *testing.T) {
 
 func TestParseJWKPrivate_EC_MissingD(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	jwk := map[string]any{
-		"kty": "EC",
-		"crv": "P-256",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
-	}
-	data, _ := json.Marshal(jwk)
+	data := ecJWK(t, &key.PublicKey, "P-256")
 
 	_, err := ParseJWKPrivate(data)
 	if err == nil {
@@ -377,14 +358,7 @@ func TestParsePublicKey_Certificate(t *testing.T) {
 
 func TestParsePrivateKey_JWK(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	jwk := map[string]any{
-		"kty": "EC",
-		"crv": "P-256",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
-		"d":   format.EncodeBase64URL(key.D.Bytes()),
-	}
-	data, _ := json.Marshal(jwk)
+	data := ecPrivateJWK(t, key, "P-256")
 
 	priv, err := ParsePrivateKey(data)
 	if err != nil {
@@ -403,13 +377,7 @@ func TestParseJWK_EC_P384(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	jwk := map[string]any{
-		"kty": "EC",
-		"crv": "P-384",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.Bytes()),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.Bytes()),
-	}
-	data, _ := json.Marshal(jwk)
+	data := ecJWK(t, &key.PublicKey, "P-384")
 
 	pub, err := ParseJWK(data)
 	if err != nil {

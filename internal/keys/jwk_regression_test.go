@@ -47,6 +47,25 @@ func ecJWK(t *testing.T, key *ecdsa.PublicKey, crv string) []byte {
 	return out
 }
 
+// ecPrivateJWK is ecJWK with the private component, padded the same way: RFC
+// 7518 section 6.2.2.1 gives d the curve width too.
+func ecPrivateJWK(t *testing.T, key *ecdsa.PrivateKey, crv string) []byte {
+	t.Helper()
+	size := (key.Curve.Params().BitSize + 7) / 8
+	doc := map[string]string{
+		"kty": "EC",
+		"crv": crv,
+		"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, size))),
+		"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, size))),
+		"d":   base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, size))),
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 // Every curve the parser claims to support must survive a round trip with
 // its coordinates intact.
 func TestParseJWK_ECCurves(t *testing.T) {
