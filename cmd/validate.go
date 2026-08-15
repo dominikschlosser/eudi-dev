@@ -37,6 +37,7 @@ var (
 	trustListFile  string
 	statusListFlag bool
 	allowExpired   bool
+	validateHAIP   bool
 )
 
 var validateCmd = &cobra.Command{
@@ -48,6 +49,7 @@ var validateCmd = &cobra.Command{
   - Signature verification (requires --key or --trust-list)
   - Expiry check (use --allow-expired to skip)
   - Revocation status via status list when the credential contains a status reference
+  - With --haip, the rules HAIP 1.0 adds on top, reported without failing
 
 If neither --key nor --trust-list is provided, signature verification is skipped
 and only expiry/status checks are performed. This is useful for quick revocation
@@ -61,6 +63,7 @@ func init() {
 	validateCmd.Flags().StringVar(&trustListFile, "trust-list", "", "ETSI trust list JWT (file path or URL)")
 	validateCmd.Flags().BoolVar(&statusListFlag, "status-list", true, "Check revocation via status list when the credential contains a status reference")
 	validateCmd.Flags().BoolVar(&allowExpired, "allow-expired", false, "Don't fail on expired credentials")
+	validateCmd.Flags().BoolVar(&validateHAIP, "haip", false, "Also check the credential against HAIP 1.0 and report what it breaks")
 	rootCmd.AddCommand(validateCmd)
 }
 
@@ -117,6 +120,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("parsing SD-JWT: %w", err)
 		}
 		output.PrintSDJWT(token, opts)
+
+		if validateHAIP {
+			printHAIPFindings(haipCredentialFindings(token), opts)
+		}
 
 		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
 			output.PrintVerifyResultSDJWT(bestResult, opts)
@@ -333,4 +340,35 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 		return fmt.Errorf("credential status is %s", result.StatusName)
 	}
 	return nil
+}
+
+// haipCredentialFindings collects what HAIP 1.0 asks of a credential beyond
+// what the credential format itself requires. Today that is section 6.1.1:
+// an issuer key taken from the x5c header is bound to the credential by the
+// leaf's subject alternative names.
+func haipCredentialFindings(token *sdjwt.Token) []string {
+	certs, err := validate.X5CCertificates(token.Header)
+	if err != nil || len(certs) == 0 {
+		return nil
+	}
+	iss, _ := token.ResolvedClaims["iss"].(string)
+	return validate.HAIPIssuerBinding(iss, certs)
+}
+
+// printHAIPFindings reports profile findings without failing the command.
+// Asking for the profile is asking what a credential breaks, and the answer is
+// worth reading whether or not the credential is otherwise valid. Holding the
+// exit code to it belongs with a strict mode, which this command has not got.
+func printHAIPFindings(findings []string, opts output.Options) {
+	if opts.JSON {
+		return
+	}
+	if len(findings) == 0 {
+		fmt.Println("\n  HAIP 1.0: no findings")
+		return
+	}
+	fmt.Println("\n  HAIP 1.0 findings:")
+	for _, f := range findings {
+		fmt.Printf("    - %s\n", f)
+	}
 }

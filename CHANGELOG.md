@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.22.2] - 2026-08-15
+
+### Fixed
+
+- **Credentials this wallet issued were refused by verifiers that resolve the issuer key from the x5c header.** The signing leaf carried no subject alternative name, so nothing in it named the issuer, while the credentials it signs carry the wallet's issuer URL as `iss`. HAIP 1.0 section 6.1.1 binds the two ("the iss value MUST be an URL with a FQDN matching a dNSName Subject Alternative Name (SAN) entry in the leaf certificate"), and the Animo playground refuses a credential where they do not match. The leaf now names the issuer URL as a `dNSName` and as a `uniformResourceIdentifier`, or as an `iPAddress` when the wallet is reached by address
+
 ## [1.22.1] - 2026-08-14
 
 ### Changed

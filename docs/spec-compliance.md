@@ -5,7 +5,7 @@ Status of implemented features against the relevant specifications.
 Two independent settings decide what a finding does to a flow:
 
 - `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each one and carries on so the rest of the exchange stays observable.
-- `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, so a violation is an error whenever `--haip` is on, whatever the validation mode says. Asking for HAIP is asserting that the counterparty follows it.
+- `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run at all. What a violation then does is the validation mode's decision, as for every other finding: strict stops the flow, debug reports it and carries on.
 
 ## OID4VP 1.0 (OpenID for Verifiable Presentations)
 

@@ -33,6 +33,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/output"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/internal/validate"
@@ -486,5 +487,81 @@ func TestValidateCommand_OfflineViaEmbeddedX5C(t *testing.T) {
 	rootCmd.SetArgs([]string{"validate", mdocFile})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("offline mdoc validate must pass via the embedded x5chain leaf: %v", err)
+	}
+}
+
+// --haip reports what the profile adds without failing the command: asking
+// for the profile is asking what a credential breaks, and the answer is worth
+// reading whether or not the credential is otherwise valid.
+func TestValidateHAIPFindings(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	credential := func(t *testing.T, leaf *x509.Certificate) *sdjwt.Token {
+		t.Helper()
+		raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+			Issuer:    "https://issuer.example",
+			VCT:       mock.DefaultPIDVCT,
+			ExpiresIn: time.Hour,
+			Claims:    map[string]any{"given_name": "ERIKA"},
+			Key:       issuerKey,
+			CertChain: []*x509.Certificate{leaf, caCert},
+		})
+		if err != nil {
+			t.Fatalf("generating a credential: %v", err)
+		}
+		token, err := sdjwt.Parse(raw)
+		if err != nil {
+			t.Fatalf("parsing: %v", err)
+		}
+		return token
+	}
+
+	unnamed, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings := haipCredentialFindings(credential(t, unnamed)); len(findings) != 1 {
+		t.Errorf("a leaf naming nobody produced %v", findings)
+	}
+
+	named, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, mock.LeafCertOptions{
+		DNSNames: []string{"issuer.example"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings := haipCredentialFindings(credential(t, named)); len(findings) != 0 {
+		t.Errorf("a leaf naming the issuer produced %v", findings)
+	}
+
+	// A credential whose issuer key comes from metadata carries no chain, and
+	// this is not the check that binds it.
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       mock.DefaultPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    map[string]any{"given_name": "ERIKA"},
+		Key:       issuerKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := sdjwt.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings := haipCredentialFindings(token); len(findings) != 0 {
+		t.Errorf("a credential without x5c produced %v", findings)
 	}
 }

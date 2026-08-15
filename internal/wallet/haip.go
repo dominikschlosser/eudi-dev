@@ -23,6 +23,8 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/internal/validate"
 )
 
 // ValidateHAIPCompliance checks an authorization request against HAIP 1.0.
@@ -387,4 +389,20 @@ func isSelfSignedCert(cert *x509.Certificate) bool {
 		return false
 	}
 	return cert.CheckSignatureFrom(cert) == nil
+}
+
+// haipCredentialIssuerViolations reads the pieces validate.HAIPIssuerBinding
+// compares out of a received credential. A credential in another format, or
+// one this wallet cannot parse, is left to the checks that own it.
+func (w *Wallet) haipCredentialIssuerViolations(raw string) []string {
+	token, err := sdjwt.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil
+	}
+	chain, err := validate.X5CCertificates(token.Header)
+	if err != nil || len(chain) == 0 {
+		return nil
+	}
+	iss, _ := token.Payload["iss"].(string)
+	return validate.HAIPIssuerBinding(iss, chain)
 }

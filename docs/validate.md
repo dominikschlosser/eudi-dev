@@ -16,6 +16,7 @@ So a credential that carries its certificate chain validates without any network
 eudi validate --key issuer-key.pem credential.txt
 eudi validate --trust-list trust-list.jwt credential.txt
 eudi validate --key key.pem --allow-expired credential.txt
+eudi validate --haip credential.txt
 
 # Expiry + revocation check without signature verification
 eudi validate credential.txt
@@ -29,6 +30,7 @@ eudi validate credential.txt
 | `--trust-list`    | ETSI trust list JWT (file path or URL), optional   |
 | `--status-list`   | Check revocation via status list when the credential contains a status reference (enabled by default) |
 | `--allow-expired` | Don't fail on expired credentials                  |
+| `--haip` | Also check the credential against HAIP 1.0 and report what it breaks |
 
 ## Revocation status
 
@@ -65,3 +67,9 @@ eudi validate --trust-list http://localhost:8085/api/trustlist credential.txt
 # Validate against the German PID provider trust list
 eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-trust-lists/pid-provider.jwt credential.txt
 ```
+
+## HAIP 1.0
+
+`--haip` adds the rules the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) puts on a credential, on top of what the credential format itself requires. Today that is section 6.1.1: a credential carrying an `x5c` chain must be bound to its issuer by the leaf certificate, where the host of an https `iss` appears as a `dNSName`, another kind of `iss` as a `uniformResourceIdentifier`, and an address as an `iPAddress`. A verifier holding the issuer to the profile refuses a credential where they do not match, which is what this reports before one does.
+
+Findings are printed and the exit code is left to the credential's own validity (signature, expiry, revocation), so `--haip` answers what a credential breaks whether or not it is otherwise valid.

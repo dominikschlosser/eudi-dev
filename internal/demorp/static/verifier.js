@@ -31,9 +31,14 @@ function renderResult(doc) {
     doc.status === "expired" ? "Request expired, create a new one" :
     "Waiting for the wallet…";
   const checks = document.getElementById("checks");
-  checks.innerHTML = (doc.checks || []).map((c) =>
-    `<div class="${c.ok ? "ok" : "fail"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`
-  ).join("");
+  checks.innerHTML = (doc.checks || []).map((c) => {
+    // A check can pass with something to say: a profile rule the presentation
+    // breaks without breaking the protocol.
+    if (c.ok && c.warning) {
+      return `<div class="warn">! ${esc(c.name)}: ${esc(c.warning)}</div>`;
+    }
+    return `<div class="${c.ok ? "ok" : "fail"}">${c.ok ? "✓" : "✗"} ${esc(c.name)}${c.error ? ": " + esc(c.error) : ""}</div>`;
+  }).join("");
   const claims = document.getElementById("claims");
   const label = document.getElementById("claims-label");
   if (doc.status === "verified" && doc.claims) {

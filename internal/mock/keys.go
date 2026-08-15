@@ -25,6 +25,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -134,6 +136,13 @@ func GenerateLeafCert(caKey *ecdsa.PrivateKey, caCert *x509.Certificate, leafPub
 type LeafCertOptions struct {
 	CommonName   string
 	SerialNumber *big.Int
+	// DNSNames, URIs and IPAddresses become the subject alternative names.
+	// A verifier resolving an issuer key from the x5c header checks the
+	// credential's iss against them (HAIP 1.0), so a signing leaf without
+	// them signs credentials that verifier refuses.
+	DNSNames    []string
+	URIs        []*url.URL
+	IPAddresses []net.IP
 }
 
 // GenerateLeafCertWithOptions creates a leaf certificate signed by the CA.
@@ -153,6 +162,9 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
+		DNSNames:              opts.DNSNames,
+		URIs:                  opts.URIs,
+		IPAddresses:           opts.IPAddresses,
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, caCert, leafPubKey, caKey)

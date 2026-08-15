@@ -355,7 +355,9 @@ func (w *Wallet) SetCertificateAuthority(caKey *ecdsa.PrivateKey, caCert *x509.C
 	if w == nil || w.IssuerKey == nil || caKey == nil || caCert == nil {
 		return fmt.Errorf("wallet CA configuration requires issuer key, CA key, and CA certificate")
 	}
-	leafCert, err := mock.GenerateLeafCert(caKey, caCert, &w.IssuerKey.PublicKey)
+	opts := mock.LeafCertOptions{}
+	opts.DNSNames, opts.IPAddresses, opts.URIs = issuerSubjectAltNames(w.IssuerURL)
+	leafCert, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &w.IssuerKey.PublicKey, opts)
 	if err != nil {
 		return fmt.Errorf("generating issuer leaf certificate: %w", err)
 	}

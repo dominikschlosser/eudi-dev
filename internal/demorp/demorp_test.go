@@ -19,6 +19,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -809,6 +810,56 @@ func TestVerifierPIDRequestTakesAnyDomesticType(t *testing.T) {
 	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
 	if status["status"] != "verified" {
 		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
+	}
+}
+
+// HAIP 1.0 section 6.1.1 asks the issuer certificate to name the issuer. The
+// demo says when it does not and accepts the presentation anyway: the rule
+// comes from the profile, and a wallet still being brought into line is who
+// this demo is for.
+func TestVerifierWarnsWhenTheCertificateDoesNotNameTheIssuer(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	id, params := startVerification(t, h, "pid")
+
+	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	unnamedLeaf, err := mock.GenerateLeafCert(d.wallet.CAKey, caCert, &d.wallet.IssuerKey.PublicKey)
+	if err != nil {
+		t.Fatalf("generating a leaf without names: %v", err)
+	}
+	cred, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       mock.DefaultPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    mock.SDJWTPIDClaims,
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: []*x509.Certificate{unnamedLeaf, caCert},
+	})
+	if err != nil {
+		t.Fatalf("signing a credential with an unnamed leaf: %v", err)
+	}
+
+	presentation := presentCredential(t, holderKey, cred, params.Get("client_id"), params.Get("nonce"))
+	postPresentation(t, h, id, "pid", presentation)
+
+	_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+	if status["status"] != "verified" {
+		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
+	}
+	var warned bool
+	for _, entry := range status["checks"].([]any) {
+		check := entry.(map[string]any)
+		if warning, ok := check["warning"].(string); ok && strings.Contains(warning, "subject alternative name") {
+			warned = true
+			if check["ok"] != true {
+				t.Error("a warning must not mark the check as failed")
+			}
+		}
+	}
+	if !warned {
+		t.Errorf("no warning about the unnamed issuer: %v", status["checks"])
 	}
 }
 

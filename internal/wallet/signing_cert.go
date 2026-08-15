@@ -19,6 +19,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"math/big"
+	"net"
+	"net/url"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -54,10 +56,12 @@ func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.C
 		return nil, fmt.Errorf("wallet has no issuer certificate chain")
 	}
 	caCert := chain[len(chain)-1]
-	leafCert, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, mock.LeafCertOptions{
+	opts := mock.LeafCertOptions{
 		CommonName:   signingLeafCommonName(profile),
 		SerialNumber: signingLeafSerial(profile),
-	})
+	}
+	opts.DNSNames, opts.IPAddresses, opts.URIs = issuerSubjectAltNames(w.IssuerURL)
+	leafCert, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, opts)
 	if err != nil {
 		return nil, fmt.Errorf("generating signing leaf certificate: %w", err)
 	}
@@ -75,6 +79,37 @@ func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 		return append([]*x509.Certificate(nil), w.CertChain...), nil
 	}
 	return w.SigningCertChainForGroup(group)
+}
+
+// issuerSubjectAltNames are the subject alternative names a signing leaf needs
+// to carry so the credentials it signs can be verified from their x5c header.
+//
+// HAIP 1.0 section 6.1.1 ties the two together: "the iss value MUST be an URL
+// with a FQDN matching a dNSName Subject Alternative Name (SAN) entry in the
+// leaf certificate", and a value that is not such a URL "MUST match a
+// uniformResourceIdentifier SAN entry". Credentials this wallet issues carry
+// its issuer URL as iss, so that URL is what the leaf has to name. Both forms
+// are written, since a verifier is free to check either one.
+//
+// A host that is an IP address goes into an iPAddress SAN, where an address
+// belongs, and leaves the dNSName list empty.
+func issuerSubjectAltNames(issuerURL string) (dnsNames []string, ips []net.IP, uris []*url.URL) {
+	raw := strings.TrimRight(strings.TrimSpace(issuerURL), "/")
+	if raw == "" {
+		return nil, nil, nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return nil, nil, nil
+	}
+	if host := parsed.Hostname(); host != "" {
+		if ip := net.ParseIP(host); ip != nil {
+			ips = append(ips, ip)
+		} else {
+			dnsNames = append(dnsNames, host)
+		}
+	}
+	return dnsNames, ips, []*url.URL{parsed}
 }
 
 func signingLeafCommonName(profile trustListProfile) string {

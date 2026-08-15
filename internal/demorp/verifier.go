@@ -615,6 +615,19 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, log.entries, err
 	}
 
+	// HAIP 1.0 section 6.1.1 asks the issuer certificate to name the issuer,
+	// so a verifier can tell that this certificate speaks for this iss. The
+	// demo says so and carries on: the rule comes from the profile, and a
+	// wallet still being brought into line is exactly who this demo is for.
+	if certs, err := validate.X5CCertificates(token.Header); err == nil && len(certs) > 0 {
+		iss, _ := token.ResolvedClaims["iss"].(string)
+		if violations := validate.HAIPIssuerBinding(iss, certs); len(violations) > 0 {
+			log.warn("issuer named in the signing certificate", fmt.Errorf("%s", strings.Join(violations, "; ")))
+		} else {
+			log.warn("issuer named in the signing certificate", nil)
+		}
+	}
+
 	// Issuer signature, anchored in the wallet CA via the x5c chain.
 	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
 	tlCerts := []trustlist.CertInfo{{
@@ -881,4 +894,15 @@ func (c *checklist) record(name string, err error) error {
 	}
 	c.entries = append(c.entries, entry)
 	return err
+}
+
+// warn records a check that says something without refusing the presentation.
+// It is for rules a profile adds rather than the protocol: worth naming so a
+// developer sees them, not worth failing a demo over.
+func (c *checklist) warn(name string, err error) {
+	entry := map[string]any{"name": name, "ok": true}
+	if err != nil {
+		entry["warning"] = err.Error()
+	}
+	c.entries = append(c.entries, entry)
 }

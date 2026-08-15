@@ -367,6 +367,28 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		return nil, err
 	}
 
+	// The profile decides whether this runs, the mode decides what it does,
+	// as with the offer above. A credential whose issuer the certificate does
+	// not name is one a verifier holding the issuer to HAIP will refuse, so
+	// saying so here is what turns a rejection later into a finding now.
+	if w.RequireHAIP {
+		if violations := w.haipCredentialIssuerViolations(credential); len(violations) > 0 {
+			detail := fmt.Sprintf("Credential does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
+			details := map[string]any{
+				"issuer":     offer.CredentialIssuer,
+				"violations": violations,
+			}
+			if w.Mode() == ValidationModeStrict {
+				w.addProtocolLog("issuance", "haip_violation", detail, false, details)
+				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
+			}
+			w.addProtocolWarning("issuance", "haip_violation", detail, details)
+			for _, v := range violations {
+				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
+			}
+		}
+	}
+
 	// Import the received credential
 	imported, err := w.ImportCredential(credential)
 	if err != nil {
