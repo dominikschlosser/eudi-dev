@@ -44,24 +44,19 @@ var DefaultClaims = map[string]any{
 	"birthdate":   "1964-08-12",
 }
 
-// The country-independent claim sets below follow the attribute tables of the
-// EUDI PID Rulebook, version 1.7, which lives in the attestation rulebooks
-// catalog (github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog,
-// rulebooks/pid/pid-rulebook.md) rather than in the ARF annex it was taken
-// out of. The German ones follow the claim table of the German PID provider
-// (https://demo.pid-provider.bundesdruckerei.de/credential-claims), which
-// applies the German PID Rulebook.
+// The country-independent claim sets follow the EUDI PID Rulebook v1.7
+// (github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog,
+// rulebooks/pid/pid-rulebook.md). The German ones follow the German PID
+// provider's claim table
+// (https://demo.pid-provider.bundesdruckerei.de/credential-claims).
 //
-// Both describe the same ERIKA MUSTERMANN test identity, so what separates
-// them is the rulebook rather than the person: the German PID adds national
-// attributes, and encodes some shared ones differently (a birth name under
-// birth_name rather than birth_family_name, a street address with the house
-// number folded in).
+// Both describe the same ERIKA MUSTERMANN identity, so only the rulebook
+// separates them: the German PID adds national attributes and encodes some
+// shared ones differently (birth_name rather than birth_family_name, the
+// house number folded into the street).
 //
-// Note that the data identifiers of the rulebook's own attribute table are
-// not the identifiers of either encoding (its §2.1 says so), which is why
-// birth_place appears here as place_of_birth in both, and why the SD-JWT and
-// mdoc names differ from each other throughout.
+// The rulebook's own data identifiers are not the identifiers of either
+// encoding (its §2.1), which is why birth_place appears as place_of_birth.
 
 // SDJWTPIDClaims holds the SD-JWT VC claims of the country-independent EUDI
 // PID (vct urn:eudi:pid:1). address and place_of_birth are nested objects
@@ -101,14 +96,10 @@ var SDJWTPIDClaims = map[string]any{
 }
 
 // SDJWTGermanPIDClaims holds the SD-JWT VC claims of the German PID (vct
-// urn:eudi:pid:de:1). Every claim the German claim table lists as present is
-// here, including the ones it defines as always present but empty when the
-// eID does not carry them (title, also_known_as). Claims it lists as unused
-// (portrait, sex, email, phone number, document number, personal
-// administrative number, issuing jurisdiction, issuance_date, trust_anchor,
-// age_in_years, age_birth_year, birth given/family name, resident_address,
-// resident_house_number) are absent, which is why this set is not a superset
-// of the country-independent one.
+// urn:eudi:pid:de:1): every claim the German claim table lists as present,
+// including those it defines as present but empty (title, also_known_as). The
+// ones it lists as unused are absent, which is why this is not a superset of
+// the country-independent set.
 var SDJWTGermanPIDClaims = map[string]any{
 	// The country-independent type this credential is also of. A verifier
 	// asking for urn:eudi:pid:1 is answered by this credential
@@ -151,12 +142,10 @@ var SDJWTGermanPIDClaims = map[string]any{
 	"source_document_type": "ID",
 }
 
-// MDOCPIDClaims holds the ISO 18013-5 elements of the country-independent
-// EUDI PID (eu.europa.ec.eudi.pid.1). The same identity as SDJWTPIDClaims,
-// under the attribute identifiers of the mdoc encoding: the address is flat
-// here and carries its house number in the street, as the rulebook defines
-// resident_street, while place_of_birth stays structured. All of it sits in
-// the PID namespace, with no national additions.
+// MDOCPIDClaims holds the ISO 18013-5 elements of the country-independent EUDI
+// PID (eu.europa.ec.eudi.pid.1): the same identity as SDJWTPIDClaims under the
+// mdoc attribute identifiers, with a flat address carrying the house number in
+// resident_street and no national additions.
 var MDOCPIDClaims = map[string]any{
 	"family_name":                    "MUSTERMANN",
 	"given_name":                     "ERIKA",
@@ -227,13 +216,9 @@ var pidDateClaims = map[string]func() string{
 }
 
 // RefreshPIDDates recomputes the dated claims of a PID claim set in place.
-//
-// The claim sets above are package variables, so their dates are those of the
-// moment the process started. That is invisible in a CLI run and wrong in a
-// server that stays up: a wallet running for a month would hand out PIDs
-// issued the day it booted, and expiring five years after that day rather
-// than five years from now. Claims the set does not carry are not added,
-// since the German PID deliberately has no issuance date.
+// The sets are package variables dated at process start, so a long-running
+// server would otherwise hand out PIDs issued the day it booted. Claims the
+// set does not carry are not added: the German PID has no issuance date.
 func RefreshPIDDates(claims map[string]any) map[string]any {
 	for name, value := range pidDateClaims {
 		if _, ok := claims[name]; ok {

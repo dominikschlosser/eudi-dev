@@ -216,10 +216,11 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 	return EncryptJWE(payloadJSON, keyInfo.Key, keyInfo.Kid, keyInfo.Alg, enc, apu, apv)
 }
 
-// EncryptResponse encrypts vp_token, optional id_token, and state as a JWE for direct_post.jwt response mode.
-// Returns the JWE string and the derived content encryption key (CEK) for debugging.
+// EncryptResponse encrypts vp_token, optional id_token, and state as a JWE, for
+// the response modes that carry an encrypted response. Returns the JWE and the
+// derived content encryption key (CEK) for debugging.
 func (w *Wallet) EncryptResponse(vpToken any, idToken, state string, mdocNonce string, params PresentationParams) (string, []byte, error) {
-	log.Printf("[VP] Encrypting response: response_mode=direct_post.jwt")
+	log.Printf("[VP] Encrypting response: response_mode=%s", params.ResponseMode)
 	payload := map[string]any{}
 	// OID4VP 1.0 Appendix A.2: "since the state parameter is not defined for
 	// the DC API, the Verifier cannot expect it to be included in the
@@ -237,11 +238,11 @@ func (w *Wallet) EncryptResponse(vpToken any, idToken, state string, mdocNonce s
 	return w.encryptDirectPostJWTPayload(payload, mdocNonce, params)
 }
 
-// EncryptErrorResponse encrypts an authorization error response for direct_post.jwt.
-// The encrypted payload includes error, optional error_description, and state as
-// top-level JSON members per OID4VP 1.0.
+// EncryptErrorResponse encrypts an authorization error response. The payload
+// carries error, optional error_description, and state as top-level members per
+// OID4VP 1.0.
 func (w *Wallet) EncryptErrorResponse(errorCode, errorDescription, state string, params PresentationParams) (string, []byte, error) {
-	log.Printf("[VP] Encrypting error response: response_mode=direct_post.jwt error=%s", errorCode)
+	log.Printf("[VP] Encrypting error response: response_mode=%s error=%s", params.ResponseMode, errorCode)
 	payload := map[string]any{
 		"error": errorCode,
 	}

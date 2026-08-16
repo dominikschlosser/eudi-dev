@@ -40,12 +40,9 @@ import (
 const clockSkew = time.Minute
 
 // ExtractStatusRef extracts the status list reference from SD-JWT claims or
-// mDOC MSO status.
-//
-// A credential with no status claim at all returns nil. A credential that
-// carries a status_list object which does not meet Section 6.2 ("idx:
-// REQUIRED ... uri: REQUIRED") returns a reference with Invalid set, so the
-// caller reports a broken reference rather than a missing one.
+// mDOC MSO status. No status claim returns nil; a status_list object missing
+// the idx or uri Section 6.2 requires returns a reference with Invalid set, so
+// a broken reference is not reported as a missing one.
 func ExtractStatusRef(claims map[string]any) *StatusRef {
 	status, ok := claims["status"].(map[string]any)
 	if !ok {
@@ -224,12 +221,8 @@ func fetchStatusListToken(uri string) ([]byte, string, error) {
 }
 
 // detectFormat picks the representation from the response content type,
-// falling back to the shape of the body.
-//
-// Section 8.2 makes the content type mandatory ("the Status Provider MUST use
-// the following content-type"), so a response that declares something else,
-// or nothing, is a conformance problem worth naming even when the body is
-// still readable.
+// falling back to the shape of the body. Section 8.2 makes the content type
+// mandatory, so anything else is worth naming even when the body reads.
 func detectFormat(contentType string, body []byte) (string, string) {
 	mediaType := ""
 	if contentType != "" {
@@ -347,13 +340,10 @@ type keyCandidates struct {
 }
 
 // resolveKeys picks the verification keys for a Status List Token.
-//
-// Section 5.1 and 5.2 both state that "Relying Parties MUST reject JWTs with
-// an invalid signature", with no exception for a Relying Party that has no
-// trust list. Verification therefore always runs. A caller-supplied trust
-// anchor only decides whether the key is also trusted, which is reported
-// separately so a status that was verified against the token's own key is
-// never mistaken for one anchored in a trust list.
+// Verification always runs: Sections 5.1 and 5.2 say "Relying Parties MUST
+// reject JWTs with an invalid signature", with no exception for a party
+// holding no trust list. A trust anchor only decides whether the key is also
+// trusted, which is reported separately.
 func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, opts CheckOptions) (*keyCandidates, error) {
 	if len(opts.TrustListCerts) > 0 {
 		if len(certs) == 0 {
@@ -598,11 +588,9 @@ const maxBitstringBytes = 16 << 20
 // return value reports whether the ZLIB header Section 4.1 requires was
 // missing and a raw DEFLATE stream was read instead.
 //
-// The compressed bytes come from a URL in the credential's own status claim,
-// so whoever issued the credential chooses them, and deflate happily turns a
-// few hundred kilobytes into hundreds of megabytes. Reading that without a
-// limit let a credential decide how much memory the party checking it would
-// allocate, which the demo verifier does for every presentation it is shown.
+// The cap matters because the compressed bytes come from a URL in the
+// credential's own status claim: without one, a credential decides how much
+// memory the party checking it allocates.
 func zlibDecompress(data []byte) ([]byte, bool, error) {
 	r, err := zlib.NewReader(bytes.NewReader(data))
 	if err == nil {
@@ -633,17 +621,11 @@ func readBounded(r io.Reader) ([]byte, error) {
 
 // extractStatus reads one entry out of the decompressed bitstring.
 //
-// Both idx and bits arrive from documents somebody else wrote: idx from the
-// credential's own status claim and bits from the fetched status list. A
-// negative idx reaching the shift below panics with "negative shift amount",
-// which a credential could therefore do to whoever checked whether it was
-// revoked. A bits value outside the four the specification allows produces a
-// mask that reads the whole byte and reports it as a status.
-//
-// The range check runs against idx itself rather than against idx*bits: the
-// product overflows for an idx a credential is free to choose, and a wrapped
-// negative product passes a check written on the byte offset and then panics
-// on the negative index.
+// idx and bits both come from documents somebody else wrote, so both are
+// checked: a negative idx would panic on the shift below, and a bits value
+// outside the four allowed would read the whole byte as a status. The range
+// check runs against idx itself rather than idx*bits, whose product overflows
+// for an idx a credential is free to choose.
 func extractStatus(bitstring []byte, idx, bits int) (int, error) {
 	if idx < 0 {
 		return 0, fmt.Errorf("status list index %d is negative", idx)

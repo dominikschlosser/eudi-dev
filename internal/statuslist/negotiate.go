@@ -19,14 +19,10 @@ import (
 	"strings"
 )
 
-// NegotiateMediaType picks the Status List Token representation to serve for
-// an HTTP Accept header.
-//
-// Section 8.1: "The default Status List request and response mechanism uses
-// HTTP semantics and Content negotiation as defined in [RFC9110]", with
-// application/statuslist+jwt and application/statuslist+cwt as the two media
-// types. A client that asks for neither, or asks for both equally, gets the
-// JWT form: it is what every existing consumer of this endpoint reads.
+// NegotiateMediaType picks the Status List Token representation for an HTTP
+// Accept header. Section 8.1 uses "Content negotiation as defined in
+// [RFC9110]" over application/statuslist+jwt and application/statuslist+cwt. A
+// client asking for neither, or for both equally, gets the JWT form.
 func NegotiateMediaType(accept string) string {
 	jwtQ := acceptQuality(accept, MediaTypeJWT)
 	cwtQ := acceptQuality(accept, MediaTypeCWT)

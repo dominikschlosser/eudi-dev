@@ -146,15 +146,10 @@ func BuildFragmentRedirect(redirectURI, state string, vpToken any, idToken strin
 }
 
 // appendFragmentParams adds authorization response parameters to the fragment
-// component of a redirect URI.
-//
-// RFC 6749 §4.2.2, which OID4VP 1.0 §5.6 inherits for the default fragment
-// Response Mode, has the wallet "add the following parameters to the fragment
-// component of the redirection URI". Adding means merging: a redirect_uri that
-// already carries a fragment keeps it, because concatenating a second "#"
-// would put the response parameters inside the existing fragment's value and
-// leave the verifier unable to read either. RFC 3986 §3.5 makes the fragment
-// everything after the first "#", so that is where the split goes.
+// of a redirect URI. RFC 6749 §4.2.2 has the wallet "add the following
+// parameters to the fragment component of the redirection URI", and adding
+// means merging: RFC 3986 §3.5 makes the fragment everything after the first
+// "#", so a second one would nest the response inside the existing value.
 func appendFragmentParams(redirectURI string, params url.Values) string {
 	encoded := params.Encode()
 	base, existing, hadFragment := strings.Cut(redirectURI, "#")

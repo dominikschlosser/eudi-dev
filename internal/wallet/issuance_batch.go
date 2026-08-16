@@ -54,14 +54,11 @@ func advertisedBatchSize(metadata map[string]any) int {
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).
 func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, configID string) ([]*ecdsa.PrivateKey, error) {
 	keys := []*ecdsa.PrivateKey{holderKey}
-	// Where a key attestation is involved, the batch is counted from the
-	// attestation rather than from the proofs: OpenID4VCI 1.0 Appendix F.1 and
-	// F.3 both say the issuer "SHOULD issue a Credential for each cryptographic
-	// public key specified in the attested_keys claim within the
-	// key_attestation parameter". Several proofs each carrying an attestation
-	// over the same keys would have the issuer issue for those keys once per
-	// proof, which is not a shape the specification defines. The attestation is
-	// the requirement, so it wins and the request stays at one proof.
+	// With a key attestation the batch is counted from the attestation rather
+	// than the proofs: Appendix F.1 and F.3 have the issuer "issue a Credential
+	// for each cryptographic public key specified in the attested_keys claim".
+	// Several proofs over the same keys is not a shape the spec defines, so the
+	// request stays at one proof.
 	if _, required := credentialKeyAttestationRequirement(metadata, configID); required {
 		return keys, nil
 	}
@@ -144,14 +141,9 @@ func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateK
 }
 
 // credentialStringsFromResponse extracts the credentials from a credential
-// response.
-//
-// One shape is read, the one OpenID4VCI 1.0 §8.3 defines: "credentials:
-// OPTIONAL. Contains an array of one or more issued Credentials. [...] The
-// elements of the array MUST be objects", each with a "credential: REQUIRED.
-// Contains one issued Credential." A top-level credential string and an array
-// of bare strings are draft shapes, and reading them lets a response the
-// wallet's own checks were written against slip past unnoticed.
+// response, reading only the shape §8.3 defines: a credentials array whose
+// "elements of the array MUST be objects", each with a credential member. A
+// top-level credential string and an array of bare strings are draft shapes.
 func credentialStringsFromResponse(resp map[string]any) []string {
 	rawCreds, ok := resp["credentials"].([]any)
 	if !ok {

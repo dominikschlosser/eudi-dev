@@ -204,20 +204,15 @@ func (s *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.R
 // handleStatusList generates and serves the wallet's Status List Token, in
 // the JWT or the CWT representation depending on what the client asks for.
 func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
-	// draft-ietf-oauth-status-list section 8.1: "The HTTP endpoint SHOULD
-	// support the use of Cross-Origin Resource Sharing (CORS) [CORS] and/or
-	// other methods as appropriate to enable Browser-based clients to access
-	// it". The validate UI in this toolkit is exactly such a client. Only GET
-	// is routed here and Accept is a CORS-safelisted request header, so a
-	// browser never sends a preflight and the response header is enough.
+	// draft-ietf-oauth-status-list §8.1: the endpoint "SHOULD support the use
+	// of Cross-Origin Resource Sharing [...] to enable Browser-based clients
+	// to access it", such as the validate UI here. Only GET is routed here and
+	// Accept is CORS-safelisted, so no preflight is ever sent.
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	// Section 8.4 defines the time query parameter for historical resolution
-	// and says "If the Server does not support the additional query
-	// parameter, it SHOULD return a status code of 501 (Not Implemented)".
-	// This wallet rebuilds its list from current state on every request and
-	// keeps no history, so answering with the current list would hand back a
-	// token for a moment the client did not ask about.
+	// §8.4 defines the time parameter for historical resolution: "If the
+	// Server does not support the additional query parameter, it SHOULD return
+	// a status code of 501 (Not Implemented)". This wallet keeps no history.
 	if r.URL.Query().Has("time") {
 		http.Error(w, "historical status list resolution (the time query parameter) is not implemented", http.StatusNotImplemented)
 		return

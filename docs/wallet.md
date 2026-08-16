@@ -676,7 +676,56 @@ What 1.1 selects:
 
 | Feature | 1.0 | 1.1 |
 |---------|-----|-----|
-| Interactive Authorization (1.1 §6), where the issuer publishes `authorization_challenge_endpoint` | Not used. The offer is recorded in the activity log naming the flag that would use it, and the redirect flow of §5 runs as before | Recorded in the activity log (using it is being added, see [spec compliance](spec-compliance.md)) |
+| Interactive Authorization (1.1 §6), where the issuer publishes `authorization_challenge_endpoint` | Not used. The offer is recorded in the activity log naming the flag that would use it, and the redirect flow of §5 runs as before | Used. See [interactive authorization](#interactive-authorization) |
+
+### Interactive authorization
+
+An issuer can make presenting a credential a condition of issuing one. Instead of sending the user to a browser, the wallet talks to the issuer's Authorization Challenge Endpoint. The issuer answers that the authorization is not sufficient yet and sends an OpenID4VP request with it, the wallet asks the user and presents what was asked for, and the issuer verifies that presentation as a verifier would. Only then does it hand over an authorization code, and everything after that is the ordinary token and credential exchange.
+
+```
+Wallet                                    Authorization Server (acting as Verifier)
+  |                                                     |
+  |-- 1. challenge request ---------------------------->|  response_type=code,
+  |                                                     |  interaction_types_supported
+  |                                                     |
+  |<-- 2. 403 insufficient_authorization ---------------|  interaction_type_required,
+  |                                                     |  auth_session, openid4vp_request
+  |                                                     |
+  |   the user consents, the wallet builds the vp_token |
+  |                                                     |
+  |-- 3. challenge request ---------------------------->|  auth_session,
+  |                                                     |  openid4vp_response
+  |                                                     |
+  |                        verifies the presentation:   |
+  |                        signature, binding to this   |
+  |                        endpoint, nonce, status      |
+  |                                                     |
+  |<-- 4. 200 -----------------------------------------|  authorization_code
+  |                                                     |
+  |-- 5. token request -------------------------------->|  grant_type=authorization_code
+```
+
+Steps 2 and 3 repeat while the issuer asks for further interactions. A wallet that cannot satisfy one answers with an OpenID4VP error rather than going silent, so the issuer can say why it is refusing.
+
+The presentation asks for consent like any other. Consenting to receive a credential is not consenting to disclose one, so the wallet asks separately even though the issuance is already under way. A wallet in auto-accept mode answers for the user, as it does everywhere else.
+
+This flow needs no `--vci-redirect-uri` (nothing is redirected anywhere), and it is the only way to use an issuer that sets `require_interactive_authorization`. The presentation is bound to the challenge endpoint itself: an SD-JWT key binding JWT carries it as `ia:<endpoint>` in `aud`, and an mdoc signs over the `OpenID4VCIIAEHandover` session transcript. If the request carries `expected_origins`, it must name the challenge endpoint's own origin, which is what stops one authorization server from forwarding another's request.
+
+The wallet offers the presentation interaction (`urn:openid:dcp:ia:openid4vp_presentation`) and no other. A server asking for the browser interaction (`urn:openid:dcp:ia:auth_via_web`) or a custom one is refused, which is what §6.2.1 requires of a wallet asked for an interaction it does not support.
+
+#### Trying it against the built-in demo issuer
+
+The built-in demo issuer implements the other side, so the exchange runs against a single `wallet serve` with no external issuer. It asks for a PID, verifies the presentation itself, and issues a ticket naming that PID's holder.
+
+```bash
+eudi wallet serve --pid --auto-accept --vci-version 1.1 --vci-client-id demo-wallet
+
+# an ordinary authorization code offer: what makes it interactive is the wallet
+curl -X POST 'http://localhost:8085/issuer/api/offers?grant=authorization_code' -d '{}'
+curl -X POST http://localhost:8085/api/offers -d '{"uri": "<scheme_uri from above>"}'
+```
+
+The same offer redeemed at `--vci-version 1.0` goes through the browser sign-in instead: the demo issuer publishes `authorization_challenge_endpoint` only at 1.1, so one setting decides both halves of what an installation does.
 
 ## Changing the conformance settings
 

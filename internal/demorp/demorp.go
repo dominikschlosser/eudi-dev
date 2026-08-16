@@ -12,21 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package demorp provides a minimal demo issuer (OpenID4VCI) and demo
-// verifier (OpenID4VP) that run against the wallet server they are mounted
-// on. They exist so a wallet deployment (in particular the shared public
-// demo) can demonstrate complete protocol flows out of the box: the issuer
-// hands out credential offers redeemable by any OID4VCI wallet, and the
-// verifier requests and cryptographically verifies presentations.
+// Package demorp provides a minimal demo issuer (OpenID4VCI) and demo verifier
+// (OpenID4VP) mounted on the wallet server, so a deployment can demonstrate
+// complete protocol flows out of the box.
 //
-// Both are deliberately small: on the issuer side a pre-authorized code
-// grant plus an authorization code grant served by the issuer itself as
-// authorization server (one hardcoded demo account), plain-parameter
-// authorization requests with direct_post on the verifier side, SD-JWT VC
-// only. Credentials are signed with the wallet's
-// issuer key under a leaf certificate issued by the wallet CA, so the
-// wallet's own trust list covers them and verification closes the loop
-// without extra trust setup.
+// Both are deliberately small: pre-authorized and authorization code grants
+// with the issuer as its own authorization server (one hardcoded demo
+// account), plain-parameter authorization requests with direct_post, SD-JWT VC
+// only. Credentials are signed with the wallet's issuer key under a leaf from
+// the wallet CA, so the wallet's own trust list closes the loop.
 package demorp
 
 import (
@@ -77,6 +71,9 @@ type DemoRP struct {
 	// request_uri, and the codes issued from them once the user signed in.
 	authRequests map[string]*authRequestState
 	codes        map[string]*authRequestState
+	// interactive holds the Authorization Challenge conversations of
+	// OpenID4VCI 1.1 §6, keyed by auth_session.
+	interactive map[string]*interactiveSession
 	// nonces are the challenges handed out by the Nonce Endpoint, each held
 	// until it expires. It is where a wallet built to OpenID4VCI 1.0 asks for
 	// the challenge it signs into a key proof.
@@ -95,6 +92,7 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		requests:     make(map[string]*requestState),
 		authRequests: make(map[string]*authRequestState),
 		codes:        make(map[string]*authRequestState),
+		interactive:  make(map[string]*interactiveSession),
 		nonces:       make(map[string]time.Time),
 	}
 }
@@ -157,6 +155,11 @@ func (d *DemoRP) pruneLocked() {
 	for nonce, expires := range d.nonces {
 		if now.After(expires) {
 			delete(d.nonces, nonce)
+		}
+	}
+	for id, session := range d.interactive {
+		if now.After(session.expires) {
+			delete(d.interactive, id)
 		}
 	}
 }

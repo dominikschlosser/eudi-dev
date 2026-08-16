@@ -39,13 +39,9 @@ func EncryptJWEWithContentType(payload []byte, recipientKey *ecdsa.PublicKey, ki
 	return encryptJWE(payload, recipientKey, kid, alg, enc, cty, apu, apv)
 }
 
-// encryptJWE encrypts payload as a compact JWE using ECDH-ES with AES-GCM or AES-CBC-HS.
-// recipientKey is the verifier's public EC key, kid identifies it,
-// alg is the JWE key agreement algorithm from the JWK (e.g. "ECDH-ES"),
-// enc is the content encryption algorithm (e.g. "A128GCM", "A256GCM", "A128CBC-HS256"),
-// cty is the optional JWE content type, apu is the Agreement PartyUInfo, and apv is the
-// Agreement PartyVInfo. Returns the JWE compact serialization and the derived content
-// encryption key (CEK).
+// encryptJWE encrypts payload as a compact JWE using ECDH-ES with AES-GCM or
+// AES-CBC-HS, to the verifier's public key. It returns the compact
+// serialization and the derived content encryption key.
 func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg string, enc string, cty string, apu, apv []byte) (string, []byte, error) {
 	keyBitLen, err := jwe.EncKeyBitLen(enc)
 	if err != nil {
@@ -211,14 +207,10 @@ func unmarshalECDHPublicKey(pub *ecdh.PublicKey) (x, y []byte) {
 	return raw[1 : 1+coordLen], raw[1+coordLen:]
 }
 
-// ecdsaPublicKeyFromJWK reads a peer's P-256 encryption key from the x and y
-// a JWK carried.
-//
-// mode decides what happens to a coordinate narrower than the curve, which
-// RFC 7518 does not allow. Strict refuses it, because a wallet held to the
-// specification should not quietly accept a document that breaks it. Debug
-// repairs it and reports that it did, so the flow reaches the step worth
-// watching and the violation is still visible in the finding.
+// ecdsaPublicKeyFromJWK reads a peer's P-256 encryption key from a JWK. mode
+// decides what happens to a coordinate narrower than the curve, which RFC 7518
+// does not allow: strict refuses it, debug repairs it and reports the
+// violation as a finding.
 func ecdsaPublicKeyFromJWK(mode ValidationMode, xB64, yB64 string) (*ecdsa.PublicKey, string, error) {
 	doc, err := json.Marshal(map[string]string{
 		"kty": "EC", "crv": "P-256", "x": xB64, "y": yB64,

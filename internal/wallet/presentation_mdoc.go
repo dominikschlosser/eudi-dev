@@ -18,6 +18,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
@@ -27,10 +28,6 @@ import (
 
 // createMDocPresentation creates an mDoc DeviceResponse with selected data elements.
 func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams) (VPTokenResult, error) {
-	nonce := params.Nonce
-	clientID := params.ClientID
-	requestOrigin := params.RequestOrigin
-	responseURI := params.ResponseURI
 	// Build set of selected namespace:element pairs
 	selected := make(map[string]bool, len(selectedKeys))
 	for _, k := range selectedKeys {
@@ -93,7 +90,7 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 	}
 
 	jwkThumbprint := extractJWKThumbprint(params.RequestObject, params.ClientMetadata)
-	sessionTranscriptBytes, err := w.buildSessionTranscript(clientID, requestOrigin, responseURI, params.ResponseMode, nonce, mdocNonce, jwkThumbprint)
+	sessionTranscriptBytes, err := w.buildSessionTranscript(params, mdocNonce, jwkThumbprint)
 	if err != nil {
 		return VPTokenResult{}, fmt.Errorf("building SessionTranscript: %w", err)
 	}
@@ -143,7 +140,19 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 
 // buildSessionTranscript constructs the SessionTranscript CBOR bytes using the
 // configured mode (ISO 18013-7 or OID4VP).
-func (w *Wallet) buildSessionTranscript(clientID, requestOrigin, responseURI, responseMode, nonce, mdocNonce string, jwkThumbprint []byte) ([]byte, error) {
+func (w *Wallet) buildSessionTranscript(params PresentationParams, mdocNonce string, jwkThumbprint []byte) ([]byte, error) {
+	// Interactive Authorization has its own handover whichever transcript mode
+	// is configured (OpenID4VCI 1.1 Appendix A.2.5): the presentation is bound
+	// to the challenge endpoint, not to a client_id or a response_uri.
+	if isInteractiveAuthorizationResponseMode(params.ResponseMode) {
+		// A.2.5: "If the Response Mode is ia_post, the third element MUST be
+		// null", even where client_metadata carried an encryption key.
+		if params.ResponseMode == "ia_post" {
+			jwkThumbprint = nil
+		}
+		return buildSessionTranscriptOID4VCIIAE(params.InteractiveAuthorizationEndpoint, params.Nonce, jwkThumbprint)
+	}
+
 	mode := w.SessionTranscript
 	if mode == "" {
 		mode = SessionTranscriptOID4VP // default
@@ -151,15 +160,49 @@ func (w *Wallet) buildSessionTranscript(clientID, requestOrigin, responseURI, re
 
 	switch mode {
 	case SessionTranscriptISO:
-		return buildSessionTranscriptISO(clientID, responseURI, nonce, mdocNonce)
+		return buildSessionTranscriptISO(params.ClientID, params.ResponseURI, params.Nonce, mdocNonce)
 	case SessionTranscriptOID4VP:
-		if responseMode == "dc_api" || responseMode == "dc_api.jwt" {
-			return buildSessionTranscriptOID4VPDCAPI(requestOrigin, nonce, jwkThumbprint)
+		if params.ResponseMode == "dc_api" || params.ResponseMode == "dc_api.jwt" {
+			return buildSessionTranscriptOID4VPDCAPI(params.RequestOrigin, params.Nonce, jwkThumbprint)
 		}
-		return buildSessionTranscriptOID4VP(clientID, nonce, jwkThumbprint, responseURI)
+		return buildSessionTranscriptOID4VP(params.ClientID, params.Nonce, jwkThumbprint, params.ResponseURI)
 	default:
 		return nil, fmt.Errorf("unknown session transcript mode: %s", mode)
 	}
+}
+
+// BuildOID4VCIIAESessionTranscript lets a verifier rebuild the value the
+// holder signed over.
+func BuildOID4VCIIAESessionTranscript(challengeEndpoint, nonce string, jwkThumbprint []byte) ([]byte, error) {
+	return buildSessionTranscriptOID4VCIIAE(challengeEndpoint, nonce, jwkThumbprint)
+}
+
+// buildSessionTranscriptOID4VCIIAE builds the session transcript of OpenID4VCI
+// 1.1 Appendix A.2.5.
+//
+//	OpenID4VCIIAEHandoverInfo = [iae, nonce, jwkThumbprint]
+//	OpenID4VCIIAEHandover     = ["OpenID4VCIIAEHandover", SHA256(HandoverInfo)]
+//	SessionTranscript         = [null, null, OpenID4VCIIAEHandover]
+//
+// iae is the challenge endpoint and "MUST NOT be prefixed with ia:", unlike a
+// Key Binding JWT audience.
+func buildSessionTranscriptOID4VCIIAE(challengeEndpoint, nonce string, jwkThumbprint []byte) ([]byte, error) {
+	if strings.TrimSpace(challengeEndpoint) == "" {
+		return nil, fmt.Errorf("interactive authorization session transcript needs the authorization challenge endpoint")
+	}
+	var thumbprintValue any
+	if len(jwkThumbprint) > 0 {
+		thumbprintValue = jwkThumbprint
+	}
+	handoverInfo, err := cbor.Marshal([]any{challengeEndpoint, nonce, thumbprintValue})
+	if err != nil {
+		return nil, fmt.Errorf("encoding OpenID4VCIIAEHandoverInfo: %w", err)
+	}
+	hash := sha256.Sum256(handoverInfo)
+
+	handover := []any{"OpenID4VCIIAEHandover", hash[:]}
+	sessionTranscript := []any{nil, nil, handover}
+	return cbor.Marshal(sessionTranscript)
 }
 
 // buildSessionTranscriptISO builds the ISO 18013-7 Annex B.4.4 session transcript.

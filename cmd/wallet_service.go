@@ -26,17 +26,14 @@ import (
 
 // walletService is the single surface the wallet management commands operate
 // on. Both backends speak the wallet server's API document shapes, so every
-// command formats its output exactly once and managing the local store and a
-// running instance behave identically.
+// command formats its output once and the local store and a running instance
+// behave identically.
 //
-// Identity model: a wallet IS its store (the wallet directory). An instance
-// is that store plus the URL it is exposed at. The same store can be reached
-// both ways (for example a server started by the registry script serving the
-// local wallet directory). The store has exactly one writer at a time, so
-// managedWallet prefers the URL whenever a live server owns the store: an
-// explicit target (--remote, `wallet instances use`) first, then a running
-// instance discovered to serve the local wallet directory. Only when no
-// server owns the store does the CLI write it directly.
+// A wallet IS its store (the wallet directory); an instance is that store plus
+// the URL it is exposed at, and the same store can be reached both ways. The
+// store has one writer at a time, so managedWallet prefers the URL whenever a
+// live server owns it: an explicit target (--remote, `wallet instances use`)
+// first, then a discovered instance serving the local directory.
 type walletService interface {
 	// URL is the managed instance's base URL, empty for the local store.
 	URL() string

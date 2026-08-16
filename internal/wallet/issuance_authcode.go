@@ -51,34 +51,37 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 	clientID := strings.TrimSpace(w.VCIClientID)
 	redirectURI := strings.TrimSpace(w.VCIRedirectURI)
-	if clientID == "" || redirectURI == "" {
-		return nil, fmt.Errorf("OID4VCI authorization_code flow requires configured wallet client_id and redirect_uri")
+	if clientID == "" {
+		return nil, fmt.Errorf("OID4VCI authorization_code flow requires a configured wallet client_id")
 	}
 
-	// Pushed Authorization Requests are used where the Authorization Server
-	// offers them and skipped where it does not. RFC 9126 §2 asks a server
-	// that supports PAR to publish the endpoint ("Authorization servers
-	// supporting PAR SHOULD include the URL of their pushed authorization
-	// request endpoint in their authorization server metadata document"), so
-	// its absence is the server saying it takes the request at the
-	// authorization endpoint instead. OpenID4VCI requires neither, and HAIP
-	// asks for PAR through FAPI 2.0, which the profile checks separately.
+	// Interactive Authorization replaces the redirect flow below where the
+	// server offers it and the feature level allows it. It needs no redirect
+	// URI, since nothing is redirected anywhere.
+	challengeEndpoint := interactiveAuthorizationEndpoint(oauthMeta)
+	useInteractive := challengeEndpoint != "" && w.VCIFeatureVersion().UsesInteractiveAuthorization()
+	if !useInteractive {
+		w.noteDeclinedInteractiveAuthorization(oauthMeta, challengeEndpoint)
+		if redirectURI == "" {
+			return nil, fmt.Errorf("OID4VCI authorization_code flow requires configured wallet client_id and redirect_uri")
+		}
+	}
+
+	// PAR is used where the server publishes the endpoint. RFC 9126 §2 makes
+	// publishing it a SHOULD, so its absence means the request goes to the
+	// authorization endpoint instead. OpenID4VCI requires neither.
 	parEndpoint, _ := oauthMeta["pushed_authorization_request_endpoint"].(string)
 	authorizationEndpoint, _ := oauthMeta["authorization_endpoint"].(string)
-	if authorizationEndpoint == "" {
+	if authorizationEndpoint == "" && !useInteractive {
 		return nil, fmt.Errorf("authorization server metadata did not include authorization_endpoint")
 	}
-	w.noteInteractiveAuthorization(oauthMeta)
 
 	clientAuthMethod := detectTokenEndpointAuthMethod(oauthMeta)
 	switch clientAuthMethod {
 	case "", unauthenticatedClientMethod, "private_key_jwt", "attest_jwt_client_auth":
 	case unregisteredPublicClientMethod:
-		// RFC 8414 takes the values of token_endpoint_auth_methods_supported
-		// from the IANA "OAuth Token Endpoint Authentication Methods" registry,
-		// where a client that does not authenticate is "none". "public" is not
-		// registered, so a server naming it is describing itself in a value no
-		// client is obliged to understand.
+		// RFC 8414 takes these values from the IANA registry, where an
+		// unauthenticated client is "none". "public" is not registered.
 		if err := w.reportServerDeviation(fmt.Sprintf("authorization server advertises the unregistered token endpoint auth method %q; RFC 8414 takes these values from the OAuth Token Endpoint Authentication Methods registry, where an unauthenticated client is %q", unregisteredPublicClientMethod, unauthenticatedClientMethod)); err != nil {
 			return nil, err
 		}
@@ -87,10 +90,8 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		// as the client secret the client_secret_* methods sign or send.
 		return nil, fmt.Errorf("unsupported token endpoint auth method %q", clientAuthMethod)
 	}
-	// A sender-constrained token is used where the server advertises DPoP.
-	// RFC 9449 leaves the metadata optional, and an Authorization Server that
-	// names no signing algorithms is one that issues bearer tokens, which is
-	// what the request then carries.
+	// DPoP where the server advertises it. RFC 9449 leaves the metadata
+	// optional, so a server naming no algorithms issues bearer tokens.
 	var dpopKey *ecdsa.PrivateKey
 	if supportsDPoP(oauthMeta) {
 		dpopKey = w.HolderKey
@@ -127,6 +128,40 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	clientAuth := w.resolveClientAuthentication(clientAuthMethod, authCtx)
 	if err := applyClientAuthentication(parForm, clientAuth, w.HolderKey); err != nil {
 		return nil, err
+	}
+
+	setup := authorizationCodeSetup{
+		clientID:      clientID,
+		redirectURI:   redirectURI,
+		scope:         scope,
+		codeVerifier:  codeVerifier,
+		codeChallenge: codeChallenge,
+		clientAuth:    clientAuth,
+		dpopKey:       dpopKey,
+		nonces:        nonces,
+	}
+	issuance := authorizationCodeIssuance{
+		offer:              offer,
+		metadata:           metadata,
+		tokenEndpoint:      tokenEndpoint,
+		credentialEndpoint: credentialEndpoint,
+		clientID:           clientID,
+		codeVerifier:       codeVerifier,
+		clientAuth:         clientAuth,
+		dpopKey:            dpopKey,
+		nonces:             nonces,
+		configID:           configID,
+	}
+
+	if useInteractive {
+		code, err := w.obtainInteractiveAuthorizationCode(challengeEndpoint, setup, offer)
+		if err != nil {
+			return nil, err
+		}
+		// first-party-apps §6: "the redirect_uri parameter will not be
+		// included in this request, because no redirect_uri parameter was
+		// included in the authorization request."
+		return w.completeAuthorizationCodeIssuance(issuance, code)
 	}
 
 	// requestURI is empty when the request goes to the authorization endpoint
@@ -176,37 +211,34 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("authorization callback missing code in values %q", callbackValues.Encode())
 	}
 
-	return w.completeAuthorizationCodeIssuance(authorizationCodeIssuance{
-		offer:              offer,
-		metadata:           metadata,
-		tokenEndpoint:      tokenEndpoint,
-		credentialEndpoint: credentialEndpoint,
-		clientID:           clientID,
-		redirectURI:        redirectURI,
-		codeVerifier:       codeVerifier,
-		clientAuth:         clientAuth,
-		dpopKey:            dpopKey,
-		nonces:             nonces,
-		configID:           configID,
-	}, code)
+	issuance.redirectURI = redirectURI
+	return w.completeAuthorizationCodeIssuance(issuance, code)
+}
+
+// authorizationCodeSetup is what both routes to an authorization code need:
+// the client's identity to the authorization server, and the keys and nonces
+// the exchange uses.
+type authorizationCodeSetup struct {
+	clientID      string
+	redirectURI   string
+	scope         string
+	codeVerifier  string
+	codeChallenge string
+	clientAuth    *ClientAuthentication
+	dpopKey       *ecdsa.PrivateKey
+	nonces        *dpopNonceState
 }
 
 // authorizationCodeIssuance carries what the second half of an authorization
-// code issuance needs: everything the wallet established while obtaining the
-// code, and nothing about how it obtained it.
-//
-// How the code was obtained is the part that varies. Today it is the redirect
-// flow of OpenID4VCI 1.0 §5, and the same exchange follows a code from any
-// other route to one.
+// code issuance needs, and nothing about how the code was obtained.
 type authorizationCodeIssuance struct {
 	offer              *oid4vc.CredentialOffer
 	metadata           map[string]any
 	tokenEndpoint      string
 	credentialEndpoint string
 	clientID           string
-	// redirectURI is empty where the flow that produced the code had none.
-	// The token request then omits it, which RFC 6749 §4.1.3 asks for ("if the
-	// redirect_uri parameter was included in the authorization request").
+	// redirectURI is empty where the flow that produced the code had none, and
+	// the token request then omits it (RFC 6749 §4.1.3).
 	redirectURI  string
 	codeVerifier string
 	clientAuth   *ClientAuthentication
@@ -374,22 +406,14 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 	}, nil
 }
 
-// detectTokenEndpointAuthMethod picks the client authentication method to use
-// from the ones the authorization server offers.
-//
-// Attestation wins wherever it is offered, even against a method that asks
-// nothing of the client. Signing a wallet attestation is something this wallet
-// can do for itself, so it does it and leaves the counterparty to decide what
-// the attestation is worth: an issuer that trusts no attester it has not been
-// given refuses this one, and that refusal is the accurate answer to a wallet
-// nobody registered, not a reason to present as a client that claims less.
-// The methods that ask nothing are read so that a server offering only those
-// is usable, rather than answered with "unsupported token endpoint auth
-// method".
-// unauthenticatedClientMethod is the registered token endpoint authentication
-// method of a client that does not authenticate. RFC 8414 takes the values of
-// token_endpoint_auth_methods_supported from the IANA "OAuth Token Endpoint
-// Authentication Methods" registry, and this is the one that appears there.
+// detectTokenEndpointAuthMethod picks the client authentication method from
+// the ones the authorization server offers. Attestation wins wherever it is
+// offered, since the wallet can sign one itself and the counterparty decides
+// what it is worth. The methods that ask nothing are read too, so a server
+// offering only those stays usable.
+
+// unauthenticatedClientMethod is the registered method of a client that does
+// not authenticate (RFC 8414, via the IANA registry).
 const unauthenticatedClientMethod = "none"
 
 // unregisteredPublicClientMethod is a value some deployments publish for the
@@ -397,19 +421,10 @@ const unauthenticatedClientMethod = "none"
 // before the wallet acts on what it evidently means.
 const unregisteredPublicClientMethod = "public"
 
-// noteInteractiveAuthorization records what the authorization server offers by
-// way of Interactive Authorization (OpenID4VCI 1.1 §6) and what this wallet
-// does with it.
-//
-// The offer is the endpoint's presence, which §13.3 makes the whole of the
-// server's half of the negotiation ("the presence of
-// authorization_challenge_endpoint is sufficient for a Wallet to determine that
-// it can use Interactive Authorization"). A wallet at 1.0 declines it and takes
-// the redirect flow, which is correct but silent, and silence is the wrong
-// answer for a tool people use to find out why a flow behaved as it did. This
-// says it out loud, and names the flag that changes it.
-func (w *Wallet) noteInteractiveAuthorization(oauthMeta map[string]any) {
-	endpoint, _ := oauthMeta["authorization_challenge_endpoint"].(string)
+// noteDeclinedInteractiveAuthorization records an offer of Interactive
+// Authorization (OpenID4VCI 1.1 §6) the wallet is not taking up, and names the
+// flag that would.
+func (w *Wallet) noteDeclinedInteractiveAuthorization(oauthMeta map[string]any, endpoint string) {
 	if endpoint == "" {
 		return
 	}
@@ -417,11 +432,6 @@ func (w *Wallet) noteInteractiveAuthorization(oauthMeta map[string]any) {
 	required, _ := oauthMeta["require_interactive_authorization"].(bool)
 	if required {
 		details["require_interactive_authorization"] = true
-	}
-	if w.VCIFeatureVersion().UsesInteractiveAuthorization() {
-		w.addProtocolLog("issuance", "interactive_authorization_offered",
-			fmt.Sprintf("Authorization server offers interactive authorization at %s", endpoint), true, details)
-		return
 	}
 	detail := fmt.Sprintf("authorization server offers interactive authorization (OpenID4VCI 1.1 §6) at %s, and this wallet is set to OpenID4VCI 1.0, so the redirect flow is used; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
 	if required {
@@ -500,29 +510,19 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 	return fallback
 }
 
-// attestsClient reports whether to authenticate with the wallet attestation
-// against this authorization server.
+// attestsClient reports whether to authenticate with the wallet attestation.
 //
-// The wallet always attests when the server advertises it
-// (draft-ietf-oauth-attestation-based-client-auth §8), or when
-// ForceClientAttestation was set.
+// It always attests when the server advertises it
+// (draft-ietf-oauth-attestation-based-client-auth §8) or when
+// ForceClientAttestation was set. HAIP 1.0 §4.4.1 goes further ("Wallets MUST
+// use, and Issuers MUST require, an OAuth2 Client authentication mechanism"),
+// so under HAIP the remaining cases turn on the metadata:
 //
-// HAIP 1.0 §4.4.1 is stronger: "Wallets MUST use, and Issuers MUST require, an
-// OAuth2 Client authentication mechanism". Under HAIP the remaining cases turn
-// on what the metadata says and, in debug, on which way an issuer's silence
-// most likely breaks:
-//
-//   - The issuer advertises no client authentication method at all. It may
-//     still require an attestation without announcing it, since §10.1 makes
-//     advertising only a SHOULD. The wallet attests (and warns about the
-//     missing advertisement), so an issuer like the Animo playground works.
-//   - The issuer explicitly advertises only unauthenticated access (none or
-//     public). Attesting would just be refused, so in debug the wallet takes
-//     it at its word and does not attest, letting a non-HAIP issuer like
-//     Procivis One complete the flow. In strict it attests anyway and the
-//     exchange fails, the honest outcome for a wallet asserting HAIP.
-//
-// resolveClientAuthentication records the deviation either way.
+//   - No method advertised at all: attest anyway, since §10.1 makes
+//     advertising only a SHOULD (this is what the Animo playground needs).
+//   - Only unauthenticated access advertised: debug takes the server at its
+//     word and does not attest (Procivis One), strict attests and lets the
+//     exchange fail.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false
@@ -551,9 +551,9 @@ type clientAuthContext struct {
 }
 
 // resolveClientAuthentication reads how this authorization server wants the
-// client authenticated. Nil means it asked for nothing. The answer is kept
-// with the credential, because a refresh is another request to the same
-// endpoint long after this metadata is gone.
+// client authenticated; nil means it asked for nothing. The answer is kept
+// with the credential, since a refresh is another request to the same
+// endpoint.
 func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContext) *ClientAuthentication {
 	if method == ClientAuthPrivateKeyJWT {
 		return &ClientAuthentication{
@@ -563,10 +563,8 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 		}
 	}
 	if w.attestsClient(ctx.oauthMeta) {
-		// Under HAIP+debug the wallet attests an issuer that advertised no
-		// client authentication method at all. Attesting is the right call
-		// (§10.1 lets an issuer require it without advertising it), but the
-		// missing advertisement is a deviation worth surfacing.
+		// §10.1 lets an issuer require attestation without advertising it, so
+		// the wallet attests, but the missing advertisement is a deviation.
 		if w != nil && w.RequireHAIP && w.Mode() != ValidationModeStrict &&
 			!w.ForceClientAttestation &&
 			detectTokenEndpointAuthMethod(ctx.oauthMeta) == "" {
@@ -745,13 +743,11 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 		"exp":           time.Now().Add(5 * time.Minute).Unix(),
 		"attested_keys": attestedKeys,
 	}
-	// OID4VCI 1.0 Appendix D has the attestation state how well the key
-	// storage and the user authentication resist attack. An issuer that names
-	// the values it wants in key_attestations_required checks them, and
-	// rejects an attestation that claims nothing, so mirror what it asks for.
-	// This is a test wallet: the claim describes a software key, not a
-	// certified secure element, which is why it only ever repeats the
-	// issuer's own requirement.
+	// OID4VCI 1.0 Appendix D: the attestation states how well key storage and
+	// user authentication resist attack. An issuer naming values in
+	// key_attestations_required rejects an attestation claiming nothing, so
+	// mirror what it asks for. This is a test wallet with a software key, so
+	// it only ever repeats the issuer's own requirement.
 	for _, claim := range []string{"key_storage", "user_authentication"} {
 		if values, ok := requirement[claim].([]any); ok && len(values) > 0 {
 			payload[claim] = values
@@ -768,11 +764,9 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 }
 
 // credentialKeyAttestationRequirement reports whether a credential
-// configuration requires a key attestation in the proof, and returns what it
-// requires. key_attestations_required is an object in OID4VCI 1.0, but its
-// presence alone is what makes the attestation mandatory, so an issuer that
-// sends an empty one (or a non-object, which some do) still gets an
-// attestation, just without claims it never asked for.
+// configuration requires a key attestation, and what it requires. The presence
+// of key_attestations_required alone makes it mandatory, so an empty one (or a
+// non-object, which some issuers send) still gets an attestation.
 func credentialKeyAttestationRequirement(metadata map[string]any, configID string) (map[string]any, bool) {
 	if configID == "" {
 		return nil, false
@@ -889,10 +883,9 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 }
 
 // accessTokenScheme picks the HTTP authorization scheme for an access token.
-// RFC 9449 §5 has an authorization server return token_type "DPoP" for a
-// DPoP-bound token, so a wallet that sent a proof and got "Bearer" back holds
-// a plain bearer token and has to say so. A server that omits token_type
-// after accepting a proof is taken at the flow's word.
+// RFC 9449 §5 returns token_type "DPoP" for a DPoP-bound token, so a proof
+// answered with "Bearer" yields a plain bearer token. A server omitting
+// token_type after accepting a proof is taken at the flow's word.
 func accessTokenScheme(tokenResp map[string]any, sentDPoP bool) string {
 	tokenType, _ := tokenResp["token_type"].(string)
 	if strings.EqualFold(tokenType, "DPoP") {
@@ -965,9 +958,8 @@ func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, end
 	respBody, _, reqErr := doDPoPRequest("POST", endpoint, contentType, credentialAccept(credentialResponseEncryption), body, authScheme, accessToken, dpopKey, nonce, nil)
 	out, parseErr := parseCredentialResponseBody(respBody, holderKey)
 	if parseErr == nil {
-		// A Credential Error Response is reported by its code rather than as an
-		// HTTP failure, because the code decides what happens next: §8.3.1.2
-		// asks for another attempt on invalid_nonce and for none at all on
+		// The code decides what happens next, so it is reported instead of the
+		// HTTP failure: §8.3.1.2 retries on invalid_nonce and stops on
 		// credential_request_denied.
 		if code, _ := out["error"].(string); code != "" {
 			desc, _ := out["error_description"].(string)
@@ -1027,14 +1019,12 @@ type deferredContext struct {
 }
 
 // resolveDeferredCredential completes an issuance the issuer deferred. A
-// response carrying a transaction_id and no credential means it is not ready,
-// and that transaction_id claims it later from the deferred endpoint. A
-// response that already has the credential is returned untouched, so both
-// issuance flows can call this unconditionally.
+// response with a transaction_id and no credential is not ready yet; one that
+// already carries the credential is returned untouched, so both flows can call
+// this unconditionally.
 //
-// A short deferral is waited out here, so the caller gets its credential from
-// the call it made. A longer one returns a DeferredIssuance for the background
-// poller: not finished, but not failed either.
+// A short deferral is waited out here. A longer one returns a DeferredIssuance
+// for the background poller.
 func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferredContext) (map[string]any, *DeferredIssuance, error) {
 	txID, _ := credResp["transaction_id"].(string)
 	if txID == "" {
@@ -1045,10 +1035,8 @@ func (w *Wallet) resolveDeferredCredential(credResp map[string]any, ctx deferred
 		return nil, nil, fmt.Errorf("issuer deferred the credential but published no deferred_credential_endpoint")
 	}
 
-	// Hand it straight to the poller rather than waiting here. Whoever started
-	// the issuance is waiting on this call (a consent dialog, a CLI run), and
-	// holding them for the issuer's interval tells them nothing they cannot be
-	// told now: the credential is coming, and here is the ticket for it.
+	// Hand it to the poller rather than holding the caller (a consent dialog,
+	// a CLI run) for the issuer's interval.
 	interval := deferredPollInterval
 	if seconds, ok := numericValue(credResp["interval"]); ok && seconds >= 1 {
 		interval = time.Duration(seconds) * time.Second
@@ -1119,13 +1107,8 @@ func deferredCredentialAttempt(mode ValidationMode, metadata map[string]any, end
 }
 
 // deferredIssuancePending reports whether a deferred credential response says
-// the credential is not ready yet, and how long to wait before asking again.
-//
-// OpenID4VCI 1.0 §9.2: "If the Credential Issuer still requires more time, the
-// Deferred Credential Response MUST use the interval and transaction_id
-// parameters as defined in Section 8.3 and it MUST respond with the HTTP status
-// code 202". Not ready is therefore a successful response carrying the
-// transaction back with no credentials, not an error code.
+// the credential is not ready yet, and how long to wait. OpenID4VCI 1.0 §9.2
+// makes that a 202 carrying interval and transaction_id, not an error.
 func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 	interval := deferredPollInterval
 	if seconds, ok := numericValue(out["interval"]); ok && seconds >= 1 {
@@ -1137,11 +1120,9 @@ func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 	return false, 0
 }
 
-// notifyCredentialAccepted reports a stored credential back to the issuer's
-// Notification Endpoint. OpenID4VCI 1.0 §11.1 leaves this to the wallet ("the
-// Wallet MAY send one or more Notification Requests per notification_id value
-// received"); this wallet sends one whenever the issuer offers the endpoint and
-// the Credential Response carries a notification_id, on every grant type.
+// notifyCredentialAccepted reports a stored credential to the issuer's
+// Notification Endpoint. §11.1 makes it a MAY; this wallet sends one whenever
+// the issuer offers the endpoint and the response carries a notification_id.
 func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
 	notificationID, _ := credResp["notification_id"].(string)
 	notificationEndpoint, _ := metadata["notification_endpoint"].(string)
@@ -1191,13 +1172,10 @@ func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID 
 	return nil
 }
 
-// fetchNonce asks the Nonce Endpoint for a challenge.
-//
-// Nothing is presented with the request: §7.1 says "The Nonce Endpoint is not a
-// protected resource, meaning the Wallet does not need to supply an access
-// token to access it", so neither the access token nor a DPoP proof belongs on
-// it. The DPoP nonce state is still carried in, because §7.2 lets the issuer
-// hand out a DPoP nonce here for the Credential Endpoint to use.
+// fetchNonce asks the Nonce Endpoint for a challenge. Nothing is presented
+// with it: §7.1 says "The Nonce Endpoint is not a protected resource". The
+// DPoP nonce state is still carried in, since §7.2 lets the issuer hand out a
+// DPoP nonce here.
 func fetchNonce(metadata map[string]any, nonce *string) string {
 	ep, _ := metadata["nonce_endpoint"].(string)
 	if ep == "" {
@@ -1349,23 +1327,16 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 		"client_id":   {clientID},
 		"request_uri": {requestURI},
 	}.Encode()
-	// The authorization endpoint comes from an issuer's metadata, and this
-	// URL is about to be navigated to. A javascript: or data: endpoint would
-	// run in the wallet's own origin, so refuse anything but http(s) before
-	// handing it anywhere. (The call above would already have failed on such
-	// a scheme. This does not depend on that ordering.)
+	// This URL comes from issuer metadata and is about to be navigated to. A
+	// javascript: or data: endpoint would run in the wallet's own origin.
 	if err := validateAbsoluteURI("authorization_endpoint", authURL); err != nil {
 		return nil, err
 	}
 
-	// The user authenticates at the issuer as part of this flow, which only a
-	// browser can do. The wallet never opens one itself: the browser that
-	// matters belongs to the user, and a hosted wallet opening a browser on
-	// its own server reaches nobody. It hands the URL to whoever is holding
-	// the user's attention (an open UI tab, or the API caller) and waits.
-	//
-	// The callback that resumes this flow is matched by state alone, so it
-	// does not matter which browser performs the sign-in.
+	// The wallet never opens a browser itself: a hosted wallet opening one on
+	// its own server reaches nobody. It hands the URL to whoever holds the
+	// user's attention (a UI tab, or the API caller) and waits. The callback
+	// is matched by state, so any browser can perform the sign-in.
 	if !w.NotifyAuthorization(authURL) {
 		return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
 	}
@@ -1415,12 +1386,8 @@ func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, e
 	return nil
 }
 
-// callAuthorizationEndpoint starts the authorization request.
-//
-// A request that went through PAR is referred to by its request_uri, and the
-// Authorization Server already holds everything else. Without PAR the same
-// parameters travel in the query string, which is the plain authorization
-// request of RFC 6749 §4.1.1.
+// callAuthorizationEndpoint starts the authorization request: by request_uri
+// after PAR, or with the parameters in the query string (RFC 6749 §4.1.1).
 func callAuthorizationEndpoint(endpoint, clientID, requestURI string, params url.Values) (string, string, error) {
 	values := url.Values{}
 	if requestURI != "" {

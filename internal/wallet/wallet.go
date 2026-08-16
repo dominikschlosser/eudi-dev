@@ -79,11 +79,9 @@ type Wallet struct {
 	// the 1.1 draft adds where an issuer offers it.
 	VCIVersion VCIVersion `json:"-"`
 	// ForceClientAttestation sends the wallet attestation on OID4VCI token
-	// requests even when the authorization server does not advertise
-	// attest_jwt_client_auth. Advertising it is only a SHOULD, so its absence
-	// does not prove the issuer will not check one, and this is the operator
-	// saying they know it does. Off by default: an attestation reused across
-	// issuers is a correlation handle.
+	// requests even where the server does not advertise attest_jwt_client_auth
+	// (advertising it is only a SHOULD). Off by default: an attestation reused
+	// across issuers is a correlation handle.
 	ForceClientAttestation bool
 	ValidationMode         ValidationMode `json:"-"`
 	Credentials            []StoredCredential
@@ -416,15 +414,12 @@ func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error
 }
 
 // GenerateDefaultCredentials generates SD-JWT and mDoc PID credentials from
-// the pre-defined PID credential templates (user overrides of those templates
-// in the wallet's template directory apply). If PID credentials already
-// exist, they are replaced. Optional claimOverrides are merged on top of the
-// template claims.
+// the pre-defined PID templates, replacing any that exist. claimOverrides are
+// merged on top of the template claims.
 //
-// vct selects the PID type, and with it the claim set: the country-independent
-// EUDI PID when empty or mock.DefaultPIDVCT, the German PID for
-// mock.GermanPIDVCT. Any other type is generated with the country-independent
-// claim set under the type given.
+// vct selects the PID type and its claim set: the country-independent EUDI PID
+// when empty or mock.DefaultPIDVCT, the German PID for mock.GermanPIDVCT, and
+// the country-independent claim set under any other type given.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
 	return w.generateDefaultCredentials(claimOverrides, vct, true)
 }
@@ -603,13 +598,11 @@ func (w *Wallet) removeByType(format, vct string) int {
 	return keptProtected
 }
 
-// removeMDocsByNamespace drops every mdoc credential of the given doctype
-// whose elements sit in exactly the given namespaces. ISO/IEC 18013-5 has no
-// inheritance between document types, so the German PID and the
-// country-independent one share the doctype eu.europa.ec.eudi.pid.1 and are
-// told apart by the namespaces alone: regenerating one by doctype would drop
-// the other. Protected credentials survive as in removeByType, and how many
-// were kept is returned.
+// removeMDocsByNamespace drops every mdoc of the given doctype whose elements
+// sit in exactly the given namespaces. The German PID and the
+// country-independent one share doctype eu.europa.ec.eudi.pid.1 and differ
+// only by namespace, so removing by doctype would drop both. Protected
+// credentials survive as in removeByType, and the count kept is returned.
 func (w *Wallet) removeMDocsByNamespace(docType string, namespaces []string) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -629,16 +622,10 @@ func (w *Wallet) removeMDocsByNamespace(docType string, namespaces []string) int
 	return keptProtected
 }
 
-// credentialNamespaces returns the mdoc namespaces a stored credential holds
-// elements in.
-//
-// NameSpaces comes from the credential itself and is rebuilt on every load, so
-// it says what the credential really carries. The claim keys are only a
-// derived view of the same thing ("namespace:element", and a namespace never
-// contains a colon itself), and a wallet file written before those keys
-// carried the prefix stores them bare: reading only those would report no
-// namespaces at all, and the credential would never be recognized as the PID
-// it is.
+// credentialNamespaces returns the mdoc namespaces a credential holds elements
+// in. NameSpaces is rebuilt from the credential on every load, so it is
+// authoritative; the claim keys are a derived "namespace:element" view, and a
+// wallet file written before that prefix existed stores them bare.
 func credentialNamespaces(c StoredCredential) []string {
 	if len(c.NameSpaces) > 0 {
 		names := make([]string, 0, len(c.NameSpaces))
@@ -886,12 +873,9 @@ func (w *Wallet) AddWarning(action, detail string, details map[string]any) {
 }
 
 // maxLogEntries is how much activity history a wallet keeps. The log is
-// persisted with the wallet and re-read at every request boundary, so an
-// unbounded one costs disk and a growing parse on each of those reloads, not
-// just memory. A thousand entries is the same depth the proxy keeps.
-//
-// logTrimSlack lets the log run past the cap before it is trimmed, so the
-// copy happens once every few hundred entries rather than on every append.
+// persisted and re-read at every request boundary, so an unbounded one costs a
+// growing parse on each reload. logTrimSlack lets it run past the cap before
+// trimming, so the copy happens rarely rather than on every append.
 const (
 	maxLogEntries = 1000
 	logTrimSlack  = 256

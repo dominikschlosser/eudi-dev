@@ -41,17 +41,14 @@ const (
 	preAuthGrant          = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 )
 
-// ticketClaims returns the ticket's test data. An authorization code flow
-// authenticates an account first, so the ticket carries that holder's name
-// instead of the generic one.
+// ticketClaims returns the ticket's test data, carrying the signed-in holder's
+// name for an authorization code flow.
 //
-// It also carries how the wallet authenticated at the token endpoint, because
-// this issuer accepts an attester it was never given and a credential that was
-// collected that way should not be indistinguishable from one that came with a
-// trusted wallet attestation. The pre-authorized code grant authenticates no
-// client at all (OpenID4VCI 1.0 §6.1: "authentication of the Client is
-// OPTIONAL"), so there the claim is left off rather than reported as none.
-func ticketClaims(subject string, auth *clientAuthentication) map[string]any {
+// It also records how the wallet authenticated, since this issuer accepts an
+// attester it was never given and such a credential should be distinguishable
+// from one backed by a trusted attestation. The pre-authorized grant
+// authenticates no client at all (§6.1), so the claim is left off there.
+func ticketClaims(subject string, holder map[string]any, auth *clientAuthentication) map[string]any {
 	claims := map[string]any{
 		"event":       "EUDI Interop Fest",
 		"tier":        "backstage",
@@ -62,6 +59,14 @@ func ticketClaims(subject string, auth *clientAuthentication) map[string]any {
 	if subject == demoAccountUsername {
 		claims["given_name"] = demoAccountGivenName
 		claims["family_name"] = demoAccountFamily
+	}
+	// Interactive authorization identifies the holder by the credential they
+	// presented rather than by an account they signed in to, so the ticket
+	// names that holder.
+	for _, name := range []string{"given_name", "family_name"} {
+		if value, ok := holder[name].(string); ok && value != "" {
+			claims[name] = value
+		}
 	}
 	if auth != nil {
 		claims["wallet_attestation"] = auth.ticketClaim()
@@ -78,7 +83,10 @@ type offerState struct {
 	preAuthCode string
 	issuerState string
 	subject     string
-	accessToken string
+	// holderClaims are the claims of the credential presented to authorize
+	// this issuance (OpenID4VCI 1.1 §6), empty for every other flow.
+	holderClaims map[string]any
+	accessToken  string
 	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
 	// the pre-authorized flow, which uses a bearer token.
 	jkt string
@@ -113,6 +121,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("POST /nonce", d.handleNonce)
 	mux.HandleFunc("POST /par", d.handlePushedAuthorizationRequest)
 	mux.HandleFunc("GET /authorize", d.handleAuthorize)
+	mux.HandleFunc("POST /authorize-challenge", d.handleAuthorizationChallenge)
 	mux.HandleFunc("POST /authorize", d.handleAuthorizeSubmit)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", d.AuthorizationServerMetadataHandler())
 	// Only /api/ is guarded, which is what the page itself calls. The
@@ -154,23 +163,15 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"credential_issuer":   issuer,
 		"credential_endpoint": issuer + "/credential",
-		// This issuer is its own Authorization Server, and says so rather than
-		// leaving it to be inferred. OpenID4VCI 1.0 §12.2.4 allows the
-		// inference ("If this parameter is omitted, the entity providing the
-		// Credential Issuer is also acting as the Authorization Server"), but
-		// then a wallet only reaches the Authorization Server metadata by
-		// implementing that fallback, and one that does not never sees what the
-		// token endpoint accepts. Naming the server points every wallet at the
-		// document that carries attest_jwt_client_auth, PAR and DPoP.
+		// This issuer is its own Authorization Server and says so rather than
+		// leaving it to the §12.2.4 inference, so that a wallet which does not
+		// implement that fallback still reaches the metadata carrying
+		// attest_jwt_client_auth, PAR and DPoP.
 		"authorization_servers": []string{issuer},
-		// No token_endpoint here: §12.2.4 does not define one among the
-		// Credential Issuer Metadata parameters, and publishing one invites a
-		// wallet to read this document for what the token endpoint accepts,
-		// which it does not describe.
-		// The Nonce Endpoint of OpenID4VCI 1.0 §7, which is the only place a
-		// wallet built to that specification looks for the challenge its key
-		// proof must carry. A wallet that finds none sends a proof with no
-		// nonce, and every credential request it makes is refused.
+		// No token_endpoint here: §12.2.4 defines none among the Credential
+		// Issuer Metadata parameters.
+		// The Nonce Endpoint of §7 is the only place a 1.0 wallet looks for the
+		// challenge its key proof must carry.
 		"nonce_endpoint": issuer + "/nonce",
 		"display": []map[string]any{
 			{"name": "EUDI Test Demo Issuer", "locale": "en-US"},
@@ -186,13 +187,10 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 				"proof_types_supported": map[string]any{
 					"jwt": map[string]any{"proof_signing_alg_values_supported": []string{"ES256"}},
 				},
-				// What the credential is called and which claims it carries go
-				// one level down. OpenID4VCI 1.0 §12.2.4 defines
-				// credential_metadata as the "Object containing information
-				// relevant to the usage and display of issued Credentials",
-				// holding display and claims. A wallet built to 1.0 looks
-				// nowhere else, and one that finds nothing here asks the user to
-				// consent to a credential with no name and no claims.
+				// §12.2.4 puts display and claims one level down, in
+				// credential_metadata. A 1.0 wallet looks nowhere else, and one
+				// that finds nothing asks the user to consent to a credential
+				// with no name and no claims.
 				"credential_metadata": map[string]any{
 					"display": []map[string]any{
 						{"name": "Demo Event Ticket", "description": "A sample event ticket issued by the demo issuer", "locale": "en-US"},
@@ -216,11 +214,9 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateOffer creates a credential offer. ?grant=authorization_code
-// produces an offer the wallet redeems through the authorization code flow,
-// where the user signs in at the authorization endpoint as part of the
-// redemption. Anything else produces a pre-authorized code offer, which
-// carries its own authorization and needs no login at all. ?status=true issues
-// the ticket with a status list reference, so it can be revoked afterwards.
+// makes one redeemed through the authorization code flow (with a sign-in);
+// anything else makes a pre-authorized code offer. ?status=true issues the
+// ticket with a status list reference so it can be revoked.
 func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	authCode := r.URL.Query().Get("grant") == authCodeGrant
 	withStatus := r.URL.Query().Get("status") == "true"
@@ -366,10 +362,11 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	var granted ticketGrant
 	if known {
 		granted = ticketGrant{
-			subject:    offer.subject,
-			jkt:        offer.jkt,
-			withStatus: offer.withStatus,
-			clientAuth: offer.clientAuth,
+			subject:      offer.subject,
+			holderClaims: offer.holderClaims,
+			jkt:          offer.jkt,
+			withStatus:   offer.withStatus,
+			clientAuth:   offer.clientAuth,
 		}
 	}
 	d.mu.Unlock()
@@ -426,17 +423,14 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkRequestedCredential holds the request to what §8.2 says may name the
-// credential: credential_identifier is "REQUIRED when an Authorization Details
-// of type openid_credential was returned from the Token Response. It MUST NOT
-// be used otherwise [...] When this parameter is used, the
-// credential_configuration_id MUST NOT be present", and
-// credential_configuration_id is "REQUIRED if a credential_identifiers
-// parameter was not returned from the Token Response".
+// checkRequestedCredential holds the request to §8.2, where
+// credential_identifier is "REQUIRED when an Authorization Details of type
+// openid_credential was returned from the Token Response [...] MUST NOT be
+// used otherwise" and excludes credential_configuration_id.
 //
-// This issuer returns no authorization_details, so the configuration id is the
-// only way to ask it for anything, and it knows exactly one configuration. The
-// error codes are those §8.3.1.2 defines for the case.
+// This issuer returns no authorization_details and knows one configuration, so
+// the configuration id is the only way to ask it for anything. The error codes
+// are those of §8.3.1.2.
 func (d *DemoRP) checkRequestedCredential(req credentialRequest) (int, map[string]string) {
 	switch {
 	case req.CredentialIdentifier != "" && req.CredentialConfigurationID != "":
@@ -455,12 +449,9 @@ func (d *DemoRP) checkRequestedCredential(req credentialRequest) (int, map[strin
 	return 0, nil
 }
 
-// handleNonce is the Nonce Endpoint of OpenID4VCI 1.0 §7. A wallet posts here
-// to obtain the challenge it signs into its key proof.
-//
-// This is the only source of that challenge for a wallet built to 1.0: the
-// c_nonce a token response may also carry belongs to the earlier drafts, and
-// such a wallet does not read it.
+// handleNonce is the Nonce Endpoint of OpenID4VCI 1.0 §7, the only source of
+// the key proof challenge for a 1.0 wallet: a c_nonce in the token response
+// belongs to the earlier drafts.
 func (d *DemoRP) handleNonce(w http.ResponseWriter, r *http.Request) {
 	nonce := randToken()
 
@@ -521,20 +512,14 @@ func invalidProof(format string, args ...any) *proofError {
 // clock difference between two machines that are trying.
 const proofClockSkew = 5 * time.Minute
 
-// verifyProofJWT validates a jwt key proof against Appendix F.4, which requires
-// the issuer to ensure "all required claims for that proof type are contained
-// as defined in Appendix F, the key proof is explicitly typed using header
-// parameters as defined for that proof type, the header parameter indicates a
-// registered asymmetric digital signature algorithm [...] the signature on the
-// key proof verifies with the public key contained in the header parameter,
-// [...] if the server has a Nonce Endpoint, the nonce in the key proof matches
-// the server-provided c_nonce value, the creation time of the JWT [...] is
-// within an acceptable window".
+// verifyProofJWT validates a jwt key proof against Appendix F.4: the required
+// claims, the explicit typ, a registered asymmetric alg, a signature that
+// verifies with the key in the header, a nonce matching the one this server
+// issued, and a creation time within an acceptable window.
 //
-// The audience check is what stops a proof from travelling: Appendix F.1 makes
-// aud "REQUIRED (string). The value of this claim MUST be the Credential Issuer
-// Identifier", and an issuer that does not check it accepts a proof the holder
-// issued for somebody else.
+// The audience check is what stops a proof from travelling: F.1 makes aud the
+// Credential Issuer Identifier, and an issuer that skips it accepts a proof
+// the holder made for somebody else.
 func (d *DemoRP) verifyProofJWT(raw string) (*ecdsa.PublicKey, *proofError) {
 	proof, err := parseCompactJWT(raw)
 	if err != nil {
@@ -585,13 +570,10 @@ func (d *DemoRP) verifyProofJWT(raw string) (*ecdsa.PublicKey, *proofError) {
 	return holderKey, nil
 }
 
-// proofKeyMaterial reads the key a proof is bound to. Appendix F.1 offers three
-// header parameters and allows exactly one: jwk "MUST NOT be present if kid or
-// x5c is present", and kid and x5c say the same of the others.
-//
-// kid names a key this issuer would have to look up somewhere (Appendix F.1
-// points at a DID URL), and a demo issuer has nowhere to look, so it is refused
-// with a reason rather than treated as a malformed proof.
+// proofKeyMaterial reads the key a proof is bound to. Appendix F.1 allows
+// exactly one of jwk, kid and x5c. kid names a key this issuer would have to
+// resolve (F.1 points at a DID URL), so it is refused with a reason rather
+// than treated as malformed.
 func proofKeyMaterial(header map[string]any) (*ecdsa.PublicKey, *proofError) {
 	jwk, hasJWK := header["jwk"].(map[string]any)
 	x5c, hasX5C := header["x5c"]
@@ -669,6 +651,9 @@ func (d *DemoRP) statusListURI() string {
 // is now asking for, read out of the shared offer state under the lock.
 type ticketGrant struct {
 	subject string
+	// holderClaims are the claims of a credential presented to authorize this
+	// issuance, empty for a flow that authorized an account instead.
+	holderClaims map[string]any
 	// jkt is the DPoP key the access token is bound to, empty for a bearer
 	// token from the pre-authorized code grant.
 	jkt        string
@@ -688,7 +673,7 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (st
 		Issuer:    d.issuerID(),
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
-		Claims:    ticketClaims(granted.subject, granted.clientAuth),
+		Claims:    ticketClaims(granted.subject, granted.holderClaims, granted.clientAuth),
 		Key:       d.wallet.IssuerKey,
 		HolderKey: holderKey,
 		CertChain: chain,

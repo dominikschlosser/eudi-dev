@@ -28,14 +28,10 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/qr"
 )
 
-// resolveTxCode returns the transaction code for an offer. A code passed on
-// the command line wins. Otherwise, if the offer requires one and there is a
-// terminal to type it into, ask: the issuer delivers it out of band, so the
-// person running the command is the only source.
-//
-// Anything that goes wrong (not a VCI offer, an offer that cannot be fetched,
-// no terminal) leaves the code empty and lets the flow run, because the
-// issuer's own error is clearer than a guess.
+// resolveTxCode returns the transaction code for an offer: the one passed on
+// the command line, or one typed at the terminal when the offer requires it,
+// since the issuer delivers it out of band. Anything that goes wrong leaves
+// the code empty and lets the flow run, where the issuer's error is clearer.
 func resolveTxCode(uri, given string) string {
 	if strings.TrimSpace(given) != "" {
 		return given
@@ -93,13 +89,10 @@ func stdinIsTerminal() bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// acceptOID4URI processes an OID4VP presentation request or OID4VCI credential
-// offer the way `wallet accept` does. It resolves any transaction code, then
-// routes to a running or remote wallet when one is configured, which shows its
-// own consent dialog unless the user asked to auto-accept (the same as the
-// local flow and the macOS URL handler); otherwise it runs the local flow.
-// `wallet scan` shares it, so a scanned request behaves exactly like a supplied
-// one.
+// acceptOID4URI processes an OID4VP request or OID4VCI offer the way `wallet
+// accept` does: resolve any transaction code, then route to a running or
+// remote wallet when one is configured, otherwise run the local flow. `wallet
+// scan` shares it, so a scanned request behaves like a supplied one.
 func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
 	opts.txCode = resolveTxCode(uri, opts.txCode)
 	if c, err := remoteClientIfConfigured(); err != nil {

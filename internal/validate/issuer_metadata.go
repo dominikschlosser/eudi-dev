@@ -196,22 +196,12 @@ func fetchIssuerMetadataDocument(metadataURL string) (map[string]any, error) {
 const wellKnownJWTVCIssuer = "/.well-known/jwt-vc-issuer"
 
 // JWTVCIssuerMetadataURL builds the location of an issuer's JWT VC Issuer
-// Metadata configuration.
-//
-// SD-JWT VC §3: "Issuers publishing JWT VC Issuer Metadata MUST make a JWT VC
-// Issuer Metadata configuration available at the location formed by inserting
-// the well-known string /.well-known/jwt-vc-issuer between the host component
-// and the path component (if any) of the iss claim value in the JWT. The iss
-// MUST be a case-sensitive URL using the HTTPS scheme that contains scheme,
-// host and, optionally, port number and path components, but no query or
-// fragment components." §3.1 adds: "If the iss value contains a path
-// component, any terminating / MUST be removed before inserting /.well-known/
-// and the well-known URI suffix between the host component and the path
-// component."
-//
-// So iss https://example.com/tenant/1234 is queried at
-// https://example.com/.well-known/jwt-vc-issuer/tenant/1234, and appending
-// instead of inserting would miss every tenant-scoped issuer.
+// Metadata configuration. SD-JWT VC §3 forms it "by inserting the well-known
+// string /.well-known/jwt-vc-issuer between the host component and the path
+// component (if any) of the iss claim value", so iss
+// https://example.com/tenant/1234 is queried at
+// https://example.com/.well-known/jwt-vc-issuer/tenant/1234. Appending instead
+// would miss every tenant-scoped issuer.
 func JWTVCIssuerMetadataURL(iss string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(iss))
 	if err != nil {
@@ -231,13 +221,9 @@ func JWTVCIssuerMetadataURL(iss string) (string, error) {
 	return parsed.Scheme + "://" + parsed.Host + wellKnownJWTVCIssuer + path, nil
 }
 
-// issuerMetadataJWKSet returns the Issuer's JWK Set, whether the metadata
-// carries it by value or by reference.
-//
-// SD-JWT VC §3.2: "JWT VC Issuer Metadata MUST include either jwks_uri or
-// jwks in their JWT VC Issuer Metadata, but not both." jwks_uri is a "URL
-// string referencing the Issuer's JSON Web Key (JWK) Set [RFC7517] document
-// which contains the Issuer's public keys".
+// issuerMetadataJWKSet returns the Issuer's JWK Set, by value or by reference.
+// SD-JWT VC §3.2: metadata "MUST include either jwks_uri or jwks [...] but not
+// both".
 func issuerMetadataJWKSet(doc map[string]any) ([]any, error) {
 	rawURI, hasURI := doc["jwks_uri"]
 	rawJWKS, hasJWKS := doc["jwks"]

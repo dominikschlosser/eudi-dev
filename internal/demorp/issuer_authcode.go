@@ -29,6 +29,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // The demo authorization server authenticates exactly one hardcoded account.
@@ -56,13 +57,10 @@ const (
 	// are created per request, so this only has to cover the trip.
 	dpopProofMaxAge = 5 * time.Minute
 
-	// The client authentication methods of
-	// draft-ietf-oauth-attestation-based-client-auth-10: one carrying a
-	// dedicated Client Attestation PoP JWT, one where "a request using the
-	// mechanism carries only one PoP, the DPoP proof, instead of two separate
-	// PoP JWTs" (§5.2). unauthenticatedClientAuth is the registered name of a
-	// client that authenticates with nothing. RFC 8414 takes all three from the
-	// IANA "OAuth Token Endpoint Authentication Methods" registry.
+	// The two methods of draft-ietf-oauth-attestation-based-client-auth-10:
+	// one with a dedicated PoP JWT, one where the DPoP proof is the only PoP
+	// (§5.2). unauthenticatedClientAuth is the registered name of a client
+	// that authenticates with nothing.
 	attestationClientAuth     = "attest_jwt_client_auth"
 	attestationDPoPClientAuth = "attest_jwt_client_auth_dpop"
 	unauthenticatedClientAuth = "none"
@@ -81,13 +79,9 @@ const (
 	// requirement is most of why this authorization server exists.
 	ClientAuthRequired ClientAuthMode = "required"
 	// ClientAuthOptional also serves a wallet that authenticates with nothing,
-	// which OpenID4VCI 1.0 §6.1 leaves open ("Requirements around how the
-	// Wallet identifies and, if applicable, authenticates itself with the
-	// Authorization Server in the Token Request depend on the Client type").
-	// It exists so a wallet with no wallet attestation to send can still be
-	// driven through the whole authorization code flow against this issuer,
-	// which is what an interoperability test needs and what the profile
-	// forbids. An attestation is still verified wherever one is presented.
+	// which OpenID4VCI 1.0 §6.1 leaves open and HAIP forbids. It exists so a
+	// wallet with no attestation can still be driven through the whole flow.
+	// An attestation is still verified wherever one is presented.
 	ClientAuthOptional ClientAuthMode = "optional"
 )
 
@@ -122,26 +116,24 @@ type authRequestState struct {
 	code          string
 	codeUsed      bool
 	subject       string
-	expires       time.Time
+	// holderClaims are the claims of a credential presented to obtain this
+	// code, which only interactive authorization produces.
+	holderClaims map[string]any
+	expires      time.Time
 }
 
 // authorizationServerMetadata describes this issuer in its authorization
-// server role. It satisfies HAIP 1.0: PAR required, PKCE S256, DPoP, and
-// client authentication through attestation-based client authentication.
-//
-// The client authentication methods are the two of
-// draft-ietf-oauth-attestation-based-client-auth-10, joined by the
-// unauthenticated client when this server was started with
-// ClientAuthOptional. The list is the only place a wallet can read whether it
-// has to authenticate here, so what the endpoints accept and what this
-// document says have to be the same thing.
+// server role, satisfying HAIP 1.0: PAR required, PKCE S256, DPoP and
+// attestation-based client authentication. The method list is the only place a
+// wallet reads whether it must authenticate, so it has to match what the
+// endpoints accept.
 func (d *DemoRP) authorizationServerMetadata() map[string]any {
 	issuer := d.issuerID()
 	authMethods := []string{attestationClientAuth, attestationDPoPClientAuth}
 	if d.clientAuthMode() == ClientAuthOptional {
 		authMethods = append(authMethods, unauthenticatedClientAuth)
 	}
-	return map[string]any{
+	metadata := map[string]any{
 		"issuer":                                           issuer,
 		"authorization_endpoint":                           issuer + "/authorize",
 		"pushed_authorization_request_endpoint":            issuer + "/par",
@@ -166,6 +158,15 @@ func (d *DemoRP) authorizationServerMetadata() map[string]any {
 		// JWT, or the DPoP proof standing in for one.
 		"client_attestation_pop_methods_supported": []string{"attestation_pop_jwt", "dpop_combined"},
 	}
+	// Published only at the feature level that has it, so a wallet set to
+	// OpenID4VCI 1.0 sees exactly the document it saw before. The endpoint's
+	// presence is the whole of this server's half of the negotiation (§13.3),
+	// and require_interactive_authorization stays out: the redirect flow still
+	// works here, so this server does not "only accept" the interactive one.
+	if d.wallet != nil && d.wallet.VCIFeatureVersion() == wallet.VCIVersion11 {
+		metadata["authorization_challenge_endpoint"] = d.challengeEndpoint()
+	}
+	return metadata
 }
 
 // AuthorizationServerMetadataHandler serves the OAuth authorization server
@@ -380,13 +381,14 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	}
 
 	offer := &offerState{
-		id:          randToken(),
-		issuerState: granted.issuerState,
-		subject:     granted.subject,
-		accessToken: randToken(),
-		jkt:         jkt,
-		clientAuth:  &clientAuth,
-		expires:     time.Now().Add(entryTTL),
+		id:           randToken(),
+		issuerState:  granted.issuerState,
+		subject:      granted.subject,
+		holderClaims: granted.holderClaims,
+		accessToken:  randToken(),
+		jkt:          jkt,
+		clientAuth:   &clientAuth,
+		expires:      time.Now().Add(entryTTL),
 	}
 	// This is a second state for the same offer, so what the offer was created
 	// with has to travel with it: the issuer_state is the only thing tying the
@@ -531,41 +533,30 @@ type clientAuthError struct {
 }
 
 // attestationFailed reports something wrong with an attestation that was
-// presented. draft-ietf-oauth-attestation-based-client-auth-10 §6.2 defines
-// the code for exactly this case: invalid_client_attestation "MAY be used in
-// addition to the more general invalid_client error code as defined in
-// [RFC6749] if the attestation or its proof of possession could not be
-// successfully verified". A client that presented no attestation at all is
-// answered with invalid_client instead, because there is nothing to fault.
+// presented, using the invalid_client_attestation of
+// draft-ietf-oauth-attestation-based-client-auth-10 §6.2. A client that
+// presented none is answered with invalid_client instead.
 func attestationFailed(format string, args ...any) *clientAuthError {
 	return &clientAuthError{code: "invalid_client_attestation", description: fmt.Sprintf(format, args...)}
 }
 
 // authenticateClient runs attestation-based client authentication
-// (draft-ietf-oauth-attestation-based-client-auth-10, the HAIP wallet
-// attestation): the OAuth-Client-Attestation JWT names the client and its key,
-// and possession of that key is proven for this request, either by a dedicated
-// OAuth-Client-Attestation-PoP JWT or by the DPoP proof the request already
-// carries, which is the attest_jwt_client_auth_dpop method. jkt is the
-// thumbprint of the key that signed that DPoP proof.
+// (draft-ietf-oauth-attestation-based-client-auth-10): the
+// OAuth-Client-Attestation JWT names the client and its key, and possession is
+// proven either by a dedicated PoP JWT or by the DPoP proof already on the
+// request (attest_jwt_client_auth_dpop). jkt is that proof key's thumbprint.
 //
-// Two things are deliberately weaker here than in a production authorization
-// server, and both are what makes this issuer usable as a counterparty for
-// wallets it was not built alongside:
+// Two deliberate weakenings make this issuer usable by wallets it was not
+// built alongside:
 //
-// An attestation whose certificate does not chain to a known wallet provider
-// CA is accepted and marked untrusted rather than refused. The demo knows one
-// wallet provider, the wallet this issuer is mounted on, whose CA it can read
-// directly. Every other wallet in the world signs with an attester nobody
-// handed this issuer, and refusing all of them would mean the flow can only
-// ever be completed by ourselves. A real issuer resolves the wallet provider's
-// trust list instead (this wallet publishes one at
-// /api/trustlists/wallet-provider) and pins the CA it finds there, and what
-// this one does instead travels with the credential (see clientAuthentication.
-// ticketClaim).
-//
-// A client that authenticates with nothing is accepted when this server runs
-// with ClientAuthOptional, which HAIP forbids and OpenID4VCI permits.
+//   - an attestation that does not chain to a known wallet provider CA is
+//     accepted and marked untrusted rather than refused, since every wallet
+//     but this one signs with an attester nobody handed this issuer. What it
+//     did instead travels with the credential (clientAuthentication.
+//     ticketClaim). A real issuer would pin the CA from the provider's trust
+//     list, which this wallet publishes at /api/trustlists/wallet-provider.
+//   - a client that authenticates with nothing is accepted under
+//     ClientAuthOptional, which HAIP forbids and OpenID4VCI permits.
 func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clientAuthentication, *clientAuthError) {
 	rawAttestation := strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation"))
 	rawPoP := strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation-PoP"))
@@ -622,12 +613,10 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 		trusted:  attester.trusted,
 	}
 	if rawPoP == "" {
-		// attest_jwt_client_auth_dpop: the DPoP proof is the only proof of
-		// possession, so §7.3 asks of it what the PoP JWT would otherwise
-		// answer, that "the public key in the jwk header parameter of the DPoP
+		// attest_jwt_client_auth_dpop: the DPoP proof is the only PoP, so §7.3
+		// asks that "the public key in the jwk header parameter of the DPoP
 		// proof MUST be identical to the public key in the cnf claim of the
-		// Client Attestation JWT". Everything else about that proof was
-		// checked before this function was reached.
+		// Client Attestation JWT".
 		authenticated.method = attestationDPoPClientAuth
 		if jkt == "" {
 			return clientAuthentication{}, attestationFailed("no OAuth-Client-Attestation-PoP and no DPoP proof, so nothing proves possession of the attested key")
@@ -689,11 +678,9 @@ func (s attestationSigner) name(payload map[string]any) string {
 }
 
 // attestationSigner reads the signing key of a wallet attestation out of its
-// x5c header and reports whether that certificate chains to the wallet
-// provider CA. Trust and key resolution are out of scope for the draft, which
-// leaves how the key is found to the deployment: this one takes the leaf the
-// attestation carries and treats the chain as the trust question, not the key
-// question.
+// x5c header and reports whether it chains to the wallet provider CA. The
+// draft leaves key resolution to the deployment; this one takes the leaf the
+// attestation carries and treats the chain as the trust question.
 func (d *DemoRP) attestationSigner(header map[string]any) (attestationSigner, error) {
 	rawChain, _ := header["x5c"].([]any)
 	if len(rawChain) == 0 {

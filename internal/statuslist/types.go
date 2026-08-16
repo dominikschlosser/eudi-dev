@@ -60,14 +60,11 @@ const (
 	coseHeaderX5Chain = 33
 )
 
-// StatusRef is a reference to a status list entry in a credential.
-//
-// Invalid is set when the credential carries a status_list object that cannot
-// be used. Section 6.2 makes both members REQUIRED ("idx: REQUIRED", "uri:
-// REQUIRED"), so a reference missing either one is a broken credential rather
-// than a credential without status information. Reporting it as absent would
-// turn a malformed reference into a silent pass at every call site that only
-// branches on a nil reference.
+// StatusRef is a reference to a status list entry in a credential. Invalid is
+// set when the status_list object cannot be used: Section 6.2 makes idx and
+// uri REQUIRED, so a reference missing either is a broken credential rather
+// than one without status information, and reporting it as absent would be a
+// silent pass wherever a nil reference is the only branch.
 type StatusRef struct {
 	URI     string `json:"uri"`
 	Idx     int    `json:"idx"`
@@ -101,12 +98,10 @@ type StatusResult struct {
 
 // CheckOptions configures validation behavior for status list checks.
 type CheckOptions struct {
-	// TrustListCerts are the trust list CA certificates the Status List
-	// Token's certificate chain must validate against. When empty, the key is
-	// resolved from the token itself and the result is marked as not trust
-	// anchored, but the signature is still verified: Section 5.1 and Section
-	// 5.2 both say "Relying Parties MUST reject JWTs with an invalid
-	// signature" with no opt-out.
+	// TrustListCerts are the CA certificates the token's chain must validate
+	// against. When empty the key comes from the token itself and the result
+	// is marked as not trust anchored, but the signature is still verified:
+	// "Relying Parties MUST reject JWTs with an invalid signature" (§5.1).
 	TrustListCerts []TrustCert
 
 	// Keys are public keys resolved out of band. Section 11.3 leaves key
@@ -131,12 +126,9 @@ type TrustCert struct {
 	Raw []byte
 }
 
-// StatusName names a Status Type value from Section 7.1.
-//
-// Reporting every non-zero value as "revoked" is wrong for a list wider than
-// one bit: 0x02 is SUSPENDED ("temporarily invalid ... This status is usually
-// temporary"), which is a different statement about the credential than 0x01
-// INVALID, and an unregistered value is no statement at all.
+// StatusName names a Status Type value from Section 7.1. Reporting every
+// non-zero value as revoked is wrong for a list wider than one bit: 0x02 is
+// SUSPENDED, a different statement from 0x01 INVALID.
 func StatusName(value int) string {
 	switch {
 	case value == 0:

@@ -109,14 +109,9 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		return parseMultiSignedBrowserAuthorizationRequest(requestObject, opts, requestOrigin)
 	case BrowserAPIProtocolOpenID4VPUnsigned:
 		payload := data
-		// OpenID4VP 1.0 Appendix A.2: "The client_id parameter MUST be
-		// omitted in unsigned requests defined in Appendix A.3.1. The Wallet
-		// MUST ignore any client_id parameter that is present in an unsigned
-		// request." The same paragraph says expected_origins "is not for use
-		// in unsigned requests and therefore a Wallet MUST ignore this
-		// parameter if it is present". Both are dropped here rather than
-		// further in, so nothing downstream can be steered by a value a page
-		// put in a request it does not sign.
+		// OpenID4VP 1.0 Appendix A.2 has the wallet ignore both client_id and
+		// expected_origins in an unsigned request. They are dropped here so
+		// nothing downstream can be steered by a value a page did not sign.
 		if requestMap, ok := data.(map[string]any); ok {
 			cloned := make(map[string]any, len(requestMap))
 			for key, value := range requestMap {
@@ -226,16 +221,9 @@ func parseMultiSignedBrowserAuthorizationRequest(requestObject map[string]any, o
 }
 
 // dcAPIData shapes an unencrypted authorization response for the data property
-// of a Digital Credentials API result.
-//
-// An error response is cut down to its error code. OpenID4VP 1.0 Appendix A.4:
-// "Protocol error responses are returned as an object within the data property.
-// This object has a single property with the name error and a value containing
-// the error response code as defined in Section 8.5." So the error_description
-// and state a direct_post error response carries have no place here, and state
-// is not a DC API parameter in the first place (Appendix A.2: "since the state
-// parameter is not defined for the DC API, the Verifier cannot expect it to be
-// included in the response").
+// of a Digital Credentials API result. An error is cut down to its code:
+// Appendix A.4 gives the object "a single property with the name error", and
+// state is not a DC API parameter at all (Appendix A.2).
 func dcAPIData(plain map[string]any) any {
 	errorCode, isError := plain["error"].(string)
 	if !isError {

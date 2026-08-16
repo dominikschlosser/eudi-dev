@@ -25,14 +25,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
-// Parse splits and decodes an SD-JWT token and processes its Disclosures
-// according to RFC 9901 §7.1. Every MUST-reject condition listed there is an
-// error here: "If any step fails, the SD-JWT is not valid, and processing
-// MUST be aborted." Callers therefore either get a Token whose ResolvedClaims
-// are the Processed SD-JWT Payload, or an error naming the rule that failed.
+// Parse splits and decodes an SD-JWT and processes its Disclosures per RFC
+// 9901 §7.1, where every MUST-reject condition is an error: "If any step
+// fails, the SD-JWT is not valid, and processing MUST be aborted."
 //
-// The Issuer-signed JWT signature is not checked here (see Verify). Parse
-// covers steps 3 to 5, the part that turns Disclosures into claims.
+// It covers steps 3 to 5, which turn Disclosures into claims. The
+// Issuer-signed JWT signature is not checked here (see Verify).
 func Parse(raw string) (*Token, error) {
 	token, err := parseStructure(raw)
 	if err != nil {
@@ -55,16 +53,14 @@ func Parse(raw string) (*Token, error) {
 // splitComponents assigns the tilde-separated components after the
 // Issuer-signed JWT to Disclosures and to the optional Key Binding JWT.
 //
-// RFC 9901 §4 gives the ABNF as SD-JWT = JWT "~" *(DISCLOSURE "~") with
-// DISCLOSURE = 1*(ALPHA / DIGIT / "-" / "_"), so no component that a tilde
-// follows may be empty. The component after the final tilde is the Key
-// Binding JWT slot: "In the case that there is no Key Binding JWT, the last
-// element MUST be an empty string and the last separating tilde character
-// MUST NOT be omitted."
+// RFC 9901 §4 gives SD-JWT = JWT "~" *(DISCLOSURE "~"), so no component a
+// tilde follows may be empty, and the slot after the final tilde is the
+// KB-JWT: "In the case that there is no Key Binding JWT, the last element MUST
+// be an empty string and the last separating tilde character MUST NOT be
+// omitted."
 //
 // A single non-empty trailing component that is not a KB-JWT is read as a
-// Disclosure whose trailing tilde was dropped, which keeps this decoder
-// useful against issuers that emit that form.
+// Disclosure whose trailing tilde was dropped, for issuers that emit that.
 func splitComponents(components []string) ([]string, *JWT, error) {
 	if len(components) == 0 {
 		return nil, nil, nil
@@ -314,17 +310,12 @@ func collectDigests(value any, out map[string]bool) {
 }
 
 // Inspect decodes an SD-JWT for display without applying the rejection rules
-// of RFC 9901 §7.1.
+// of RFC 9901 §7.1. A decoder is asked the opposite question from a wallet:
+// the credential is already suspected of being wrong, and the point is to see
+// what it contains. It returns whatever it could decode, with Violation naming
+// the rule that would have rejected it and ResolvedClaims left empty.
 //
-// Parse refuses a credential that breaks a MUST, which is what a wallet
-// deciding whether to hold or present one needs. A decoder is asked the
-// opposite question: the credential is already suspected of being wrong, and
-// the point is to see what it contains and be told why it is wrong. Inspect
-// returns whatever it could decode, with Violation naming the rule that would
-// have rejected it and ResolvedClaims left empty, because resolving claims
-// under those conditions is exactly what produces a misleading reading.
-//
-// Nothing that decides trust may use this. It exists for the decoder.
+// Nothing that decides trust may use this.
 func Inspect(raw string) (*Token, error) {
 	token, err := Parse(raw)
 	if err == nil {

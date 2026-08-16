@@ -91,16 +91,13 @@ func (s *Server) lookupPendingOffer(id string) *pendingOffer {
 	return s.pendingOffers[id]
 }
 
-// runOffer processes a credential offer and applies the outcome to the wallet:
-// activity log, stored credential, saved store. It returns either that outcome
-// or, when the issuer wants the user to sign in first, the pending offer
-// carrying the authorization URL.
+// runOffer processes a credential offer and applies the outcome to the wallet
+// (activity log, stored credential, saved store). When the issuer wants a
+// sign-in first it returns a pending offer carrying the authorization URL.
 //
-// The flow is not cancelled in that case, it keeps running in the background.
-// The user signs in wherever they are, the issuer redirects to /callback, and
-// the flow resumes there and finishes the issuance. Nothing here opens a
-// browser: the browser that matters belongs to the user, and on a hosted
-// wallet it is not on this machine.
+// The flow keeps running in the background: the user signs in wherever they
+// are, the issuer redirects to /callback, and it resumes there. Nothing here
+// opens a browser, which on a hosted wallet would reach nobody.
 func (s *Server) runOffer(uri string, logDetails map[string]any) (*IssuanceResult, *pendingOffer, error) {
 	// Subscribing on the caller's behalf is what makes the wallet hand over
 	// the URL instead of failing for want of anyone to show it to.
@@ -231,13 +228,11 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 		})
 		return
 	}
-	// The browser came back from the issuer's login. The flow it belongs to
-	// is still running server-side and finishes on its own, so send the
-	// visitor back to the wallet rather than leaving them on a dead end. The
-	// credential shows up there as soon as it lands.
-	// The marker claims the outcome for this tab. The sign-in navigated it to
-	// the issuer, so whatever claim it held is gone, and without one it would
-	// miss the report for the very flow it just completed.
+	// The browser came back from the issuer's login. The flow finishes
+	// server-side on its own, so send the visitor back to the wallet rather
+	// than to a dead end.
+	// The marker reclaims the outcome for this tab, whose earlier claim was
+	// lost when the sign-in navigated it away.
 	http.Redirect(w, r, "/?focus=overview&signin=done", http.StatusSeeOther)
 }
 

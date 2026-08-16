@@ -48,18 +48,14 @@ func dialControl(network, address string, _ syscall.RawConn) error {
 	return policy(network, address)
 }
 
-// AllowOwnOrigins wraps a policy so the wallet can always reach its own
-// advertised origins, whatever they resolve to.
-//
-// A wallet legitimately fetches from itself: a request_uri or a response_uri
-// belonging to its own demo verifier, or a credential offer pointing at its
-// own issuer. Those URLs are operator configuration, not visitor input, so
-// exempting them is not an SSRF hole. While without the exemption a demo
-// instance on localhost cannot complete its own flows, because every one of
-// them resolves to loopback and is refused at dial time.
+// AllowOwnOrigins wraps a policy so the wallet can reach its own advertised
+// origins, whatever they resolve to. A wallet legitimately fetches from itself
+// (its own demo verifier's response_uri, its own issuer's offer), and those
+// URLs are operator configuration rather than visitor input, while without the
+// exemption a demo on localhost cannot complete its own flows.
 //
 // The allowance is by exact resolved address and port, so a visitor-supplied
-// URL that merely happens to point at loopback is still blocked.
+// URL that merely points at loopback is still blocked.
 func AllowOwnOrigins(next FetchPolicy, urls ...string) FetchPolicy {
 	allowed := make(map[string]bool)
 	for _, raw := range urls {

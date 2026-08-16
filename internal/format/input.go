@@ -36,14 +36,9 @@ import (
 const DefaultRemoteTimeout = 15 * time.Second
 
 // remoteTimeoutEnv names the environment variable that overrides it, as a Go
-// duration ("45s", "2m").
-//
-// The value is not always the wallet's to pick. A counterparty run on the same
-// machine as the wallet, which is what a conformance harness does, competes
-// with it for the CPU and can take tens of seconds to answer a request it
-// would normally serve at once. Giving up there costs the whole exchange, and
-// the flow cannot be resumed, so the run that was measuring something ends up
-// measuring the machine instead.
+// duration ("45s", "2m"). A counterparty sharing the machine, which is what a
+// conformance harness does, can take tens of seconds to answer, and giving up
+// there costs the whole exchange.
 const remoteTimeoutEnv = "EUDI_REMOTE_TIMEOUT"
 
 // remoteTimeout resolves the timeout once, at startup.
@@ -243,14 +238,9 @@ func ReadRemoteBody(r io.Reader, what string) ([]byte, error) {
 const maxFetchBytes = 10 << 20
 
 // fetchAttempts is how many times a remote read is tried when the server does
-// not answer at all.
-//
-// Only a request that got no response is repeated. A server that answered,
-// whatever it answered, has said something, and OpenID4VP 1.0 §5.10.2 is
-// explicit for the request_uri case that comes through here: "If the Verifier
-// responds with any HTTP error response, the Wallet MUST terminate the
-// process." A connection that timed out is not a response, so trying it again
-// stops a moment of unresponsiveness from ending a flow.
+// not answer at all. Only a request that got no response is repeated: OpenID4VP
+// 1.0 §5.10.2 says "If the Verifier responds with any HTTP error response, the
+// Wallet MUST terminate the process", and a timeout is not a response.
 const fetchAttempts = 3
 
 // fetchRetryDelay spaces those attempts out.

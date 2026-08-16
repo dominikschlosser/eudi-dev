@@ -74,13 +74,9 @@ func parsePEMPrivateBlock(block *pem.Block) (crypto.PrivateKey, error) {
 	return nil, fmt.Errorf("unable to parse PEM private key (tried PKCS#8, EC, PKCS#1)")
 }
 
-// ParseJWKPrivate reads a private key from a JWK document.
-//
-// Padding is repaired here rather than refused. A private JWK is always the
-// operator's own key file, never a document from a peer, so there is no
-// conformance question to answer: a scalar whose leading byte is zero encodes
-// one byte short, and failing to load somebody's own key over that helps
-// nobody. Public keys arrive from peers and are held to the spec instead, see
+// ParseJWKPrivate reads a private key from a JWK document, repairing short
+// coordinates rather than refusing them: a private JWK is the operator's own
+// key file, not a document from a peer. Public keys are held to the spec in
 // ParseJWK.
 func ParseJWKPrivate(data []byte) (crypto.PrivateKey, error) {
 	var jwk josev4.JSONWebKey
@@ -130,14 +126,9 @@ func parsePEMBlock(block *pem.Block) (crypto.PublicKey, error) {
 }
 
 // ParseJWKLenient reads a public key from a JWK whose EC coordinates may be
-// shorter than the curve requires, and reports whether it had to repair one.
-//
-// RFC 7518 section 6.2.1.2 wants coordinates at full width and ParseJWK holds
-// callers to that. This exists for the debug path only: refusing to decode a
-// credential because a coordinate is a byte short tells whoever is debugging
-// the issuer nothing, so the padding is repaired and the caller is told, which
-// is the finding worth reporting. Strict mode must call ParseJWK instead, or a
-// non-conformant document passes silently.
+// shorter than RFC 7518 §6.2.1.2 requires, and reports whether it repaired
+// one. Debug path only: the repair plus the finding is more useful than
+// refusing to decode. Strict mode must call ParseJWK instead.
 func ParseJWKLenient(data []byte) (crypto.PublicKey, bool, error) {
 	key, err := ParseJWK(data)
 	if err == nil {
@@ -158,14 +149,10 @@ func ParseJWKLenient(data []byte) (crypto.PublicKey, bool, error) {
 // ecCurveSizes is the byte width each curve's coordinates must have in a JWK.
 var ecCurveSizes = map[string]int{"P-256": 32, "P-384": 48, "P-521": 66}
 
-// padECCoordinates left pads short EC coordinates to the curve width, and is
-// the repair the lenient readings above apply.
-//
-// A coordinate whose leading byte is zero encodes one byte short from
-// anything that writes big.Int.Bytes() directly. RFC 7518 section 6.2.1.2
-// does not allow that and go-jose enforces it, so this repairs the padding
-// and nothing else. Whether repairing is the right answer is the caller's
-// decision, not this function's.
+// padECCoordinates left pads short EC coordinates to the curve width. A
+// coordinate whose leading byte is zero encodes one byte short from anything
+// writing big.Int.Bytes() directly, which RFC 7518 §6.2.1.2 disallows and
+// go-jose enforces. Whether to repair is the caller's decision.
 func padECCoordinates(data []byte) []byte {
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
@@ -204,14 +191,9 @@ func padECCoordinates(data []byte) []byte {
 	return repaired
 }
 
-// ParseJWK reads a public key from a JWK document.
-//
-// go-jose does the decoding. Four hand-written parsers used to split this by
-// key type and rebuild the big integers by hand, each with its own idea of
-// which curves counted. The type switch afterwards keeps the contract this
-// function always had: EC and RSA only. go-jose also understands OKP and
-// symmetric keys, and letting those through here would hand callers a key
-// type none of them are written for.
+// ParseJWK reads a public key from a JWK document. go-jose does the decoding;
+// the type switch keeps this function's contract of EC and RSA only, since
+// go-jose also understands OKP and symmetric keys that no caller handles.
 func ParseJWK(data []byte) (crypto.PublicKey, error) {
 	var jwk josev4.JSONWebKey
 	if err := jwk.UnmarshalJSON(data); err != nil {

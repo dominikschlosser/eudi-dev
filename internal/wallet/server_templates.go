@@ -42,16 +42,11 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, templates)
 }
 
-// handleGetTemplate returns a single template by name.
-//
-// The name has to be a bare name, which is what the write and delete handlers
-// already required. credtemplate.Load takes a name *or a path*, on purpose:
-// the CLI documents `templates show ./some-template.json`. Handing it a URL
-// segment made that a file read over HTTP, and it answered with whatever the
-// file held that looked like a template, so any JSON the process could open
-// came back. A missing path answered 404 and a present one 200, which located
-// files even when their contents did not survive the decode. None of it was
-// disabled by the demo profile.
+// handleGetTemplate returns a single template by name, which must be a bare
+// name as the write and delete handlers already required. credtemplate.Load
+// takes a name or a path on purpose (the CLI documents `templates show
+// ./some-template.json`), so handing it a URL segment would make this an
+// arbitrary file read over HTTP.
 func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name != filepath.Base(name) || strings.HasPrefix(name, ".") {

@@ -20,13 +20,10 @@ type Query struct {
 	Credentials []CredentialQuery `json:"credentials"`
 }
 
-// CredentialQuery defines a single credential request.
-//
-// id, format and meta are all REQUIRED by OID4VP 1.0 Section 6.1, so meta is
-// written even when it constrains nothing: "If empty, no specific constraints
-// are placed on the metadata or validity of the requested Credential." claims
-// is OPTIONAL but "a non-empty array" when present, so an empty one is left
-// out rather than written as null.
+// CredentialQuery defines a single credential request. OID4VP 1.0 §6.1 makes
+// id, format and meta REQUIRED, so meta is written even when empty ("If empty,
+// no specific constraints are placed on the metadata"). claims is optional but
+// "a non-empty array" when present, so an empty one is left out.
 type CredentialQuery struct {
 	ID     string         `json:"id"`
 	Format string         `json:"format"`

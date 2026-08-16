@@ -237,14 +237,10 @@ func (w *Wallet) recordDeferredIssuance(pending *DeferredIssuance) *IssuanceResu
 }
 
 // AdoptDeferredIssuances takes over deferred credentials recorded on another
-// wallet, skipping any this one already tracks.
-//
-// A request that overrides the profile (haip, mode) runs on a clone of the
-// wallet, which is thrown away when the request ends. A credential is safe
-// there because it is written straight to the shared store, but a deferred
-// issuance is a promise to come back later, and only the server's own wallet
-// is polled. Left on the clone it was recorded, reported to the caller, and
-// then never collected.
+// wallet, skipping any this one already tracks. A request that overrides the
+// profile runs on a clone that is thrown away afterwards: a credential is safe
+// there because it goes straight to the shared store, but a deferred issuance
+// is a promise to come back, and only the server's own wallet is polled.
 func (w *Wallet) AdoptDeferredIssuances(from *Wallet) int {
 	if w == nil || from == nil || w == from {
 		return 0

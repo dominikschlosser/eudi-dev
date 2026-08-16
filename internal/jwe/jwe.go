@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package jwe decrypts compact JSON Web Encryption using ECDH-ES.
-//
-// The wallet decrypts request objects a verifier encrypted to it, and the
-// proxy decrypts traffic it is shown a key for. Both agree a shared secret,
-// run it through the Concat KDF and open an AEAD, and both used to carry
-// their own copy of all three. The key derivation in particular has no margin
-// for a copy that drifts: a wrong length prefix or a missing round counter
-// yields a key that decrypts nothing, and the failure looks like a bad
-// ciphertext rather than a bug here.
+// Package jwe decrypts compact JSON Web Encryption using ECDH-ES, for the
+// wallet (request objects encrypted to it) and the proxy (traffic it holds a
+// key for). Both agree a shared secret, run it through the Concat KDF and open
+// an AEAD, which is kept in one place because a drifting copy of the key
+// derivation fails as a bad ciphertext rather than as a bug.
 package jwe
 
 import (
@@ -215,12 +211,8 @@ func EncKeyBitLen(enc string) (int, error) {
 }
 
 // ParsePublicKeyJWK reads a P-256 public key from a JWK map, as carried in an
-// epk header.
-//
-// The decoding is shared with the rest of the toolkit rather than rebuilding
-// the coordinates into an uncompressed point here. The off-curve check is
-// unchanged: crypto/ecdh made it before and go-jose makes it now, so this is
-// one less copy of the same reading, not a new guarantee.
+// epk header. The decoding is shared with the rest of the toolkit, including
+// the off-curve check go-jose makes.
 func ParsePublicKeyJWK(m map[string]any) (*ecdh.PublicKey, error) {
 	if crv, _ := m["crv"].(string); crv != "P-256" {
 		return nil, fmt.Errorf("unsupported curve: %s", crv)

@@ -1,0 +1,154 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package wallet
+
+import (
+	"encoding/hex"
+	"strings"
+	"testing"
+)
+
+// The values are the worked example of OpenID4VCI 1.1 Appendix A.2.5, so this
+// checks the encoding against the draft itself rather than against what this
+// wallet happens to produce.
+const (
+	iaeExampleEndpoint = "https://example.com/iae"
+	iaeExampleNonce    = "exc7gBkxjx1rdc9udRrveKvSsJIq80avlXeLHhGwqtA"
+	iaeExampleThumb    = "4283ec927ae0f208daaa2d026a814f2b22dca52cf85ffa8f3f8626c6bd669047"
+	// SessionTranscript = [null, null, ["OpenID4VCIIAEHandover", <hash>]]
+	iaeExampleTranscript = "83f6f682754f70656e49443456434949414548616e646f7665725820" +
+		"df679426cc1bf8996e8eb549ee078815a87a97c5e95c1c5a8ec39eedca28a838"
+)
+
+func TestBuildSessionTranscriptOID4VCIIAEMatchesTheDraftExample(t *testing.T) {
+	thumbprint, err := hex.DecodeString(iaeExampleThumb)
+	if err != nil {
+		t.Fatalf("decoding the example thumbprint: %v", err)
+	}
+
+	transcript, err := buildSessionTranscriptOID4VCIIAE(iaeExampleEndpoint, iaeExampleNonce, thumbprint)
+	if err != nil {
+		t.Fatalf("buildSessionTranscriptOID4VCIIAE() error = %v", err)
+	}
+	if got := hex.EncodeToString(transcript); got != iaeExampleTranscript {
+		t.Errorf("SessionTranscript =\n  %s\nwant\n  %s", got, iaeExampleTranscript)
+	}
+}
+
+// "If the Response Mode is ia_post, the third element MUST be null", so an
+// unencrypted response produces a different transcript from an encrypted one
+// even when the request carried an encryption key.
+func TestBuildSessionTranscriptOID4VCIIAEOmitsTheThumbprintForIAPost(t *testing.T) {
+	thumbprint, err := hex.DecodeString(iaeExampleThumb)
+	if err != nil {
+		t.Fatalf("decoding the example thumbprint: %v", err)
+	}
+	w := generateTestWallet(t)
+
+	encrypted, err := w.buildSessionTranscript(PresentationParams{
+		ResponseMode:                     "ia_post.jwt",
+		Nonce:                            iaeExampleNonce,
+		InteractiveAuthorizationEndpoint: iaeExampleEndpoint,
+	}, "", thumbprint)
+	if err != nil {
+		t.Fatalf("encrypted transcript: %v", err)
+	}
+	if got := hex.EncodeToString(encrypted); got != iaeExampleTranscript {
+		t.Errorf("ia_post.jwt transcript = %s, want the draft example", got)
+	}
+
+	plain, err := w.buildSessionTranscript(PresentationParams{
+		ResponseMode:                     "ia_post",
+		Nonce:                            iaeExampleNonce,
+		InteractiveAuthorizationEndpoint: iaeExampleEndpoint,
+	}, "", thumbprint)
+	if err != nil {
+		t.Fatalf("plain transcript: %v", err)
+	}
+	if hex.EncodeToString(plain) == iaeExampleTranscript {
+		t.Error("ia_post transcript kept the encryption key thumbprint")
+	}
+
+	withoutKey, err := buildSessionTranscriptOID4VCIIAE(iaeExampleEndpoint, iaeExampleNonce, nil)
+	if err != nil {
+		t.Fatalf("transcript without a key: %v", err)
+	}
+	if hex.EncodeToString(plain) != hex.EncodeToString(withoutKey) {
+		t.Error("ia_post transcript differs from one built with no key at all")
+	}
+}
+
+// The ISO transcript mode is a setting for OpenID4VP presentations. A
+// presentation made during Interactive Authorization has one handover defined
+// for it, so the setting must not change what is signed.
+func TestInteractiveAuthorizationTranscriptIgnoresTheSessionTranscriptMode(t *testing.T) {
+	params := PresentationParams{
+		ResponseMode:                     "ia_post",
+		Nonce:                            iaeExampleNonce,
+		InteractiveAuthorizationEndpoint: iaeExampleEndpoint,
+	}
+
+	oid4vpWallet := generateTestWallet(t)
+	oid4vpWallet.SessionTranscript = SessionTranscriptOID4VP
+	fromOID4VP, err := oid4vpWallet.buildSessionTranscript(params, "", nil)
+	if err != nil {
+		t.Fatalf("oid4vp mode: %v", err)
+	}
+
+	isoWallet := generateTestWallet(t)
+	isoWallet.SessionTranscript = SessionTranscriptISO
+	fromISO, err := isoWallet.buildSessionTranscript(params, "mdoc-nonce", nil)
+	if err != nil {
+		t.Fatalf("iso mode: %v", err)
+	}
+
+	if hex.EncodeToString(fromOID4VP) != hex.EncodeToString(fromISO) {
+		t.Error("the session transcript mode changed an interactive authorization transcript")
+	}
+}
+
+// Without the endpoint there is nothing to bind the presentation to, and a
+// transcript built over an empty string would be one an authorization server
+// cannot reproduce. Failing here is better than signing it.
+func TestBuildSessionTranscriptOID4VCIIAERefusesAnEmptyEndpoint(t *testing.T) {
+	if _, err := buildSessionTranscriptOID4VCIIAE("  ", iaeExampleNonce, nil); err == nil {
+		t.Fatal("built a transcript without an authorization challenge endpoint")
+	}
+}
+
+// Appendix A.3.5 binds an SD-JWT presentation by the Key Binding JWT audience
+// instead, and the ia: prefix is what separates it from a client_id.
+func TestSDJWTAudienceForInteractiveAuthorization(t *testing.T) {
+	audience := sdJWTAudience(PresentationParams{
+		ResponseMode:                     "ia_post",
+		ClientID:                         "x509_hash:something-else",
+		InteractiveAuthorizationEndpoint: "https://issuer.example/authorize-challenge",
+	})
+	if audience != "ia:https://issuer.example/authorize-challenge" {
+		t.Errorf("aud = %q, want the challenge endpoint with the ia: prefix", audience)
+	}
+	if !strings.HasPrefix(audience, "ia:") {
+		t.Errorf("aud = %q, want an ia: prefix", audience)
+	}
+
+	// Every other flow is untouched.
+	plain := sdJWTAudience(PresentationParams{
+		ResponseMode: "direct_post",
+		ClientID:     "x509_hash:verifier",
+	})
+	if plain != "x509_hash:verifier" {
+		t.Errorf("direct_post aud = %q, want the client_id", plain)
+	}
+}

@@ -74,14 +74,8 @@ var walletPresentationFormats = map[string]bool{
 }
 
 // unsatisfiableQueryError picks the §8.5 error code for a DCQL query no stored
-// credential matched, and the description that goes with it.
-//
-// §8.5 defines access_denied for "The Wallet did not have the requested
-// Credentials to satisfy the Authorization Request" and vp_formats_not_supported
-// for "The Wallet does not support any of the formats requested by the
-// Verifier". The query decides which is true: when every Credential Query names
-// a Credential Format the wallet cannot present, the holdings never came into
-// it and the format is the reason.
+// credential matched: vp_formats_not_supported when every Credential Query
+// names a format the wallet cannot present, access_denied otherwise.
 func unsatisfiableQueryError(query map[string]any) (string, string) {
 	credQueries, _ := query["credentials"].([]any)
 	unsupported := map[string]bool{}
@@ -175,14 +169,9 @@ type AuthorizationRequestParams struct {
 	RequestPayload map[string]any
 	Source         string
 	// UnsignedDCAPI marks a request that arrived unsigned over the Digital
-	// Credentials API (OpenID4VP 1.0 Appendix A.3.1).
-	//
-	// Such a request carries no client_id: "The client_id parameter MUST be
-	// omitted in unsigned requests defined in Appendix A.3.1. The Wallet MUST
-	// ignore any client_id parameter that is present in an unsigned request"
-	// (Appendix A.2). What identifies the caller is the origin the platform
-	// reports, which no web page can forge, so the flag records what the
-	// absent client_id cannot.
+	// Credentials API (OpenID4VP 1.0 Appendix A.3.1). Such a request carries
+	// no client_id (Appendix A.2), and the platform-reported origin identifies
+	// the caller instead.
 	UnsignedDCAPI bool
 	// BrowserRedirect is set when the request came from a browser navigation
 	// (GET with an HTML Accept header): after submission the browser is
@@ -224,16 +213,12 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 			Detail:  err.Error(),
 		})
 		s.triggerUIRequest()
-		// Nothing is sent to the response endpoint here. §8.5 says the error
-		// response "follows the rules as defined in [RFC6749]", and RFC 6749
-		// §4.1.2.1 is explicit that when the client identifier or the
-		// redirection URI is missing or invalid the server "SHOULD inform the
-		// resource owner of the error and MUST NOT automatically redirect the
-		// user-agent to the invalid redirection URI". A request that fails
-		// validation is exactly that case: its signature did not verify, its
-		// client_id did not match, or it was malformed, so the destination it
-		// names is not one the wallet has any reason to trust. The refusal is
-		// reported to whoever asked this wallet instead.
+		// Nothing is sent to the response endpoint. §8.5 follows RFC 6749, and
+		// §4.1.2.1 says that where the client identifier or redirection URI is
+		// missing or invalid the server "SHOULD inform the resource owner of
+		// the error and MUST NOT automatically redirect the user-agent to the
+		// invalid redirection URI". A request that failed validation names a
+		// destination the wallet has no reason to trust.
 		errorCode := refusalCodeForRequest(authReq, err)
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":             errorCode,
@@ -487,12 +472,9 @@ func (s *Server) buildBrowserAuthorizationErrorResult(authReq *AuthorizationRequ
 }
 
 // canDeliverAuthorizationError reports whether an Authorization Error Response
-// has anywhere to go.
-//
-// A Digital Credentials API Response Mode hands its response back through the
-// API call rather than to a URL (Appendix A.4: "Protocol error responses are
-// returned as an object within the data property"), and a request carrying
-// neither response_uri nor redirect_uri named no destination at all.
+// has anywhere to go. A Digital Credentials API response goes back through the
+// API call (Appendix A.4), and a request with neither response_uri nor
+// redirect_uri named no destination at all.
 func canDeliverAuthorizationError(authReq *AuthorizationRequestParams) bool {
 	if authReq == nil || isDCAPIResponseMode(authReq.ResponseMode) {
 		return false
@@ -501,12 +483,8 @@ func canDeliverAuthorizationError(authReq *AuthorizationRequestParams) bool {
 }
 
 // deliverAuthorizationError returns an OpenID4VP 1.0 §8.5 Authorization Error
-// Response to the verifier over the Response Mode of the request.
-//
-// §5.6: "Both successful and error responses SHOULD be returned using the
-// supplied Response Mode, or if none is supplied, using the default Response
-// Mode." A verifier that hears nothing is left waiting on its Response URI
-// until it times out, with no way to tell a refusal from a broken wallet.
+// Response over the Response Mode of the request. §5.6: "Both successful and
+// error responses SHOULD be returned using the supplied Response Mode."
 func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, errorCode, errorDescription string) (*DirectPostResult, error) {
 	responseURI := authReq.ResponseURI
 	if responseURI == "" {
@@ -556,12 +534,10 @@ func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, 
 	return result, nil
 }
 
-// reportRefusalToVerifier tells the verifier why the wallet is not answering
-// its request. The local HTTP caller gets its own answer separately; this is
-// the copy §5.6 owes the verifier, so a refusal the wallet decided on its own
-// (a malformed request, a profile violation, nothing to present) ends the
-// verifier's wait instead of hanging it. A delivery failure is logged and
-// swallowed: the wallet's refusal stands either way.
+// reportRefusalToVerifier tells the verifier why the wallet is not answering,
+// which is the copy §5.6 owes it: a refusal the wallet decided on its own ends
+// the verifier's wait instead of hanging it. A delivery failure is logged and
+// swallowed, since the refusal stands either way.
 func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) {
 	if !canDeliverAuthorizationError(authReq) {
 		return

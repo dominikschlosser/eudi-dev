@@ -21,13 +21,10 @@ import (
 	"time"
 )
 
-// RefreshCredential asks a credential's issuer for a fresh copy, using the
-// refresh token it handed over at issuance.
-//
-// The credential keeps its id. A verifier query, a UI selection and the
-// activity log all refer to credentials by id, so replacing one with a new
-// entry would read as the old one being deleted and an unrelated one
-// appearing, when what happened is that the same credential was renewed.
+// RefreshCredential asks a credential's issuer for a fresh copy with the
+// refresh token from issuance. The credential keeps its id: queries, UI
+// selections and the activity log all refer to credentials by id, so a new
+// entry would read as a deletion plus an unrelated arrival.
 func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	cred, ok := w.GetCredential(id)
 	if !ok {
@@ -65,14 +62,10 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	}
 	authScheme := accessTokenScheme(tokenResp, renewal.UseDPoP)
 
-	// A renewal is an ordinary credential request, so it needs what every
-	// credential request needs: the Nonce Endpoint the challenge comes from
-	// (§8.2: "The c_nonce value is retrieved from the Nonce Endpoint as defined
-	// in Section 7"), and the encryption the issuer requires. Both live in the
-	// Credential Issuer Metadata, which is read again from the Credential Issuer
-	// Identifier the credential was stored with, because §12.2.2 makes the
-	// identifier the address of that document. A renewal that skipped this sent
-	// a proof with no nonce and was refused by every 1.0 issuer.
+	// A renewal is an ordinary credential request, so it needs the Nonce
+	// Endpoint the challenge comes from (§8.2) and the encryption the issuer
+	// requires. Both live in the Credential Issuer Metadata, read again from
+	// the identifier the credential was stored with (§12.2.2).
 	metadata, metadataErr := fetchIssuerMetadata(renewal.Issuer)
 	if metadataErr != nil {
 		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
@@ -88,13 +81,10 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	// batch to match back to several ephemeral keys.
 	proofKeys := []*ecdsa.PrivateKey{w.HolderKey}
 
-	// §8.2 gives the two ways to name what is being requested and lets neither
-	// stand in for the other: credential_identifier is "REQUIRED when an
-	// Authorization Details of type openid_credential was returned from the
-	// Token Response. It MUST NOT be used otherwise", and
-	// credential_configuration_id is "REQUIRED if a credential_identifiers
-	// parameter was not returned from the Token Response [...] It MUST NOT be
-	// used otherwise." The refresh token response is the one that decides here.
+	// §8.2 gives two ways to name what is requested and lets neither stand in
+	// for the other: credential_identifier "when an Authorization Details of
+	// type openid_credential was returned from the Token Response",
+	// credential_configuration_id otherwise. The refresh response decides.
 	credentialIdentifier := resolveCredentialIdentifier(tokenResp, nil)
 	credentialConfigurationID := ""
 	if credentialIdentifier == "" {

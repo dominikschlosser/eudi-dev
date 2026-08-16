@@ -203,38 +203,34 @@ func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *
 	}
 }
 
-// At 1.1 the offer is recorded as what it is, without the note about the
-// wallet declining it.
-func TestNoteInteractiveAuthorizationAtVCI11RecordsTheOffer(t *testing.T) {
+// A server that requires interactive authorization says so in the note, since
+// the redirect flow the wallet is about to attempt will probably be refused.
+func TestNoteDeclinedInteractiveAuthorizationNamesARequirement(t *testing.T) {
 	w := generateTestWallet(t)
-	w.VCIVersion = VCIVersion11
+	w.VCIVersion = VCIVersion10
 
-	w.noteInteractiveAuthorization(map[string]any{
-		"authorization_challenge_endpoint": "https://issuer.example/authorize-challenge",
-	})
+	w.noteDeclinedInteractiveAuthorization(map[string]any{
+		"require_interactive_authorization": true,
+	}, "https://issuer.example/authorize-challenge")
 
 	entry, ok := findInteractiveAuthorizationNote(w)
 	if !ok {
 		t.Fatalf("no interactive authorization entry, log: %v", w.Log)
 	}
-	if strings.Contains(entry.Detail, "--vci-version") {
-		t.Errorf("entry names the flag at 1.1, where nothing needs changing: %q", entry.Detail)
+	if !strings.Contains(entry.Detail, "requires interactive authorization") {
+		t.Errorf("entry does not say the server requires it: %q", entry.Detail)
 	}
-	if got := entry.Details["authorization_challenge_endpoint"]; got != "https://issuer.example/authorize-challenge" {
-		t.Errorf("entry details endpoint = %v, want the advertised endpoint", got)
+	if entry.Details["require_interactive_authorization"] != true {
+		t.Errorf("entry details = %v, want require_interactive_authorization", entry.Details)
 	}
 }
 
-// An authorization server with no challenge endpoint gets no note at all, at
-// either level.
-func TestNoteInteractiveAuthorizationStaysQuietWithoutAnEndpoint(t *testing.T) {
-	for _, version := range []VCIVersion{VCIVersion10, VCIVersion11} {
-		w := generateTestWallet(t)
-		w.VCIVersion = version
-		w.noteInteractiveAuthorization(map[string]any{"issuer": "https://issuer.example"})
-		if _, ok := findInteractiveAuthorizationNote(w); ok {
-			t.Errorf("%s: logged an interactive authorization note for a server that offers none", version)
-		}
+// An authorization server with no challenge endpoint gets no note at all.
+func TestNoteDeclinedInteractiveAuthorizationStaysQuietWithoutAnEndpoint(t *testing.T) {
+	w := generateTestWallet(t)
+	w.noteDeclinedInteractiveAuthorization(map[string]any{"issuer": "https://issuer.example"}, "")
+	if _, ok := findInteractiveAuthorizationNote(w); ok {
+		t.Error("logged an interactive authorization note for a server that offers none")
 	}
 }
 

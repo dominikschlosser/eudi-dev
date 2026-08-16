@@ -46,19 +46,14 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 				"deviceauth_alg_values": []int{-7},
 			},
 		},
-		// §10.1: "A non-empty array of strings containing the values of the
-		// Client Identifier Prefixes that the Wallet supports ... If omitted,
-		// the default value is pre-registered." A Verifier reads this to
-		// choose a prefix (§5.9.1), so a wallet that says nothing is taken to
-		// support only pre-registered clients and cannot be sent x509_hash.
+		// §10.1: the Client Identifier Prefixes the wallet supports, which a
+		// Verifier reads to choose one (§5.9.1). "If omitted, the default
+		// value is pre-registered", so saying nothing rules out x509_hash.
 		//
-		// Only the prefixes whose requests this wallet can actually verify
-		// are listed. Request Object signatures are checked against the leaf
-		// of an x5c chain, so verifier_attestation and
-		// decentralized_identifier, which carry their key elsewhere, would
-		// name a prefix whose signature nothing here can confirm. Naming one
-		// invites a Verifier to choose it and have its request refused in
-		// strict mode, or accepted unverified in debug mode.
+		// Only prefixes whose requests this wallet can verify are listed.
+		// verifier_attestation and decentralized_identifier carry their key
+		// elsewhere than the x5c leaf, so naming them would invite a request
+		// nothing here can confirm.
 		"client_id_prefixes_supported": []string{
 			"pre-registered",
 			"redirect_uri",

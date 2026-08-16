@@ -648,8 +648,19 @@ func TestProcessCredentialOffer_AuthCodeRequiresClientConfiguration(t *testing.T
 	if err == nil {
 		t.Fatal("expected error when authorization_code flow has no wallet client configuration")
 	}
-	if !strings.Contains(err.Error(), "configured wallet client_id and redirect_uri") {
-		t.Errorf("expected error about missing client configuration, got: %v", err)
+	if !strings.Contains(err.Error(), "configured wallet client_id") {
+		t.Errorf("expected error about the missing client_id, got: %v", err)
+	}
+
+	// The redirect flow also needs somewhere to be redirected back to. Only
+	// interactive authorization can do without one.
+	w.VCIClientID = "wallet-client"
+	_, err = w.ProcessCredentialOffer(offerURI)
+	if err == nil {
+		t.Fatal("expected error when the authorization_code flow has no redirect_uri")
+	}
+	if !strings.Contains(err.Error(), "redirect_uri") {
+		t.Errorf("expected error about the missing redirect_uri, got: %v", err)
 	}
 }
 

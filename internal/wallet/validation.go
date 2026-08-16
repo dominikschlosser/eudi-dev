@@ -22,15 +22,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
-// ValidateAuthorizationRequest evaluates request syntax, verifier metadata, and
-// request-object checks for the full authorization request the wallet received.
+// ValidateAuthorizationRequest evaluates request syntax, verifier metadata and
+// request-object checks.
 //
-// The two switches a caller has are separate. requireHAIP decides how many
-// checks run, adding everything the High Assurance Interoperability Profile
-// asks of a Verifier on top of what OpenID4VP asks of any of them. The mode
-// decides what a finding does: strict stops the flow, debug reports it and
-// carries on. Neither implies the other, so a HAIP run in debug mode names
-// every profile violation it sees without refusing the request.
+// The two switches are separate: requireHAIP decides how many checks run, the
+// mode decides what a finding does (strict stops, debug reports and carries
+// on).
 func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP bool, params *AuthorizationRequestParams) ([]string, error) {
 	if err := validateAuthorizationRequestSyntax(params); err != nil {
 		return nil, fmt.Errorf("authorization request validation failed: %w", err)
@@ -98,13 +95,8 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 }
 
 // authorizationFindings collects what an authorization request gets wrong
-// against OpenID4VP 1.0.
-//
-// Findings are gathered in every mode. What the mode decides is what happens
-// to them: strict stops the flow, debug reports them and carries on so a
-// developer can watch the rest of the exchange. Collecting them only in strict
-// mode meant a debug run said nothing at all about a malformed request, which
-// is the run where saying something matters most.
+// against OpenID4VP 1.0. Findings are gathered in every mode; only what
+// happens to them differs.
 func authorizationFindings(params *AuthorizationRequestParams, payload map[string]any) []string {
 	if params == nil {
 		return nil
@@ -141,9 +133,7 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 	// wrong rather than a credential the wallet lacks.
 	findings = append(findings, DCQLQueryFindings(params.DCQLQuery)...)
 	// §5: "Wallets that do not support this parameter MUST reject requests
-	// that contain it." Answering without transaction_data_hashes instead
-	// produces a presentation the Verifier has to refuse, for a reason it
-	// cannot see.
+	// that contain it."
 	if payloadHasKey(payload, "transaction_data") {
 		findings = append(findings, "transaction_data is not supported by this wallet")
 	}
@@ -163,17 +153,22 @@ func requestRequiresNonce(responseType string) bool {
 	return responseType == "" || ResponseTypeRequiresVP(responseType) || ResponseTypeContains(responseType, "id_token")
 }
 
+// unsignedInteractiveAuthorizationRequest reports whether this is an
+// openid4vp_request that arrived as parameters rather than as a signed Request
+// Object (OpenID4VCI 1.1 §6.2.1.1).
+func unsignedInteractiveAuthorizationRequest(params *AuthorizationRequestParams) bool {
+	return isInteractiveAuthorizationResponseMode(params.ResponseMode) && params.RequestObject == nil
+}
+
 func responseModeUsesDirectPost(responseMode string) bool {
 	return responseMode == "direct_post" || responseMode == "direct_post.jwt"
 }
 
 // hasKnownClientIDPrefix reports whether a Client Identifier is one this
-// wallet can make sense of.
-//
-// OID4VP 1.0 §5.9.2: "If a : character is not present in the Client
-// Identifier, the Wallet MUST treat the Client Identifier as referencing a
-// pre-registered client." So a bare identifier is legal rather than
-// prefix-less, and only an unrecognised prefix is worth reporting.
+// wallet can make sense of. OID4VP 1.0 §5.9.2: "If a : character is not
+// present in the Client Identifier, the Wallet MUST treat the Client
+// Identifier as referencing a pre-registered client", so a bare identifier is
+// legal and only an unrecognised prefix is reported.
 func hasKnownClientIDPrefix(clientID string) bool {
 	if !strings.Contains(clientID, ":") {
 		return true
@@ -204,12 +199,11 @@ func validateAuthorizationRequestSyntax(params *AuthorizationRequestParams) erro
 	if params == nil {
 		return fmt.Errorf("authorization request is missing")
 	}
-	// An unsigned request over the Digital Credentials API is the one shape
-	// that carries no client_id. OID4VP 1.0 Appendix A.2: "The client_id
-	// parameter MUST be omitted in unsigned requests defined in Appendix
-	// A.3.1." Demanding one there refuses the only kind of caller that
-	// endpoint has.
-	if params.ClientID == "" && !params.UnsignedDCAPI {
+	// OID4VP 1.0 Appendix A.2: "The client_id parameter MUST be omitted in
+	// unsigned requests defined in Appendix A.3.1." That covers the Digital
+	// Credentials API and, through OpenID4VCI 1.1 §6.2.1.1, an unsigned
+	// openid4vp_request.
+	if params.ClientID == "" && !params.UnsignedDCAPI && !unsignedInteractiveAuthorizationRequest(params) {
 		return fmt.Errorf("missing client_id")
 	}
 	if err := validateResponseType(params.ResponseType); err != nil {
@@ -266,6 +260,11 @@ func validateResponseMode(responseMode, responseURI, redirectURI string) error {
 		}
 	case "dc_api", "dc_api.jwt":
 		return nil
+	case "ia_post", "ia_post.jwt":
+		// The response goes to the Authorization Challenge Endpoint the wallet
+		// called, so there is no response_uri to require (OpenID4VCI 1.1
+		// §6.2.1.1).
+		return nil
 	case "fragment":
 		if redirectURI == "" {
 			return fmt.Errorf("response_mode %q requires redirect_uri", responseMode)
@@ -276,11 +275,10 @@ func validateResponseMode(responseMode, responseURI, redirectURI string) error {
 	return nil
 }
 
-// validateAbsoluteURI checks a URI the wallet will send a browser to. "Absolute"
-// alone is not enough: url.Parse reports javascript: and data: as absolute, and
-// a verifier that answers a presentation with
-// {"redirect_uri":"javascript:..."} would then get script execution on the
-// wallet's own origin. Only http and https can be navigated to safely.
+// validateAbsoluteURI checks a URI the wallet will send a browser to. Absolute
+// is not enough: url.Parse reports javascript: and data: as absolute, so a
+// verifier could answer with {"redirect_uri":"javascript:..."} and get script
+// execution on the wallet's origin. Only http and https pass.
 func validateAbsoluteURI(field, raw string) error {
 	if raw == "" {
 		return nil

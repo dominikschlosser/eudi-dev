@@ -14,12 +14,10 @@
 
 // Package jws signs JSON Web Signatures with ES256.
 //
-// This toolkit signs a lot of different things (credentials, presentations,
-// trust lists, status lists, issuer metadata, client attestations) and they
-// all end up at the same three steps. Having those steps in one place is what
-// keeps them from drifting: the signature encoding below is easy to get
-// subtly wrong, and wrong here means a credential that some verifiers accept
-// and others reject.
+// Everything this toolkit signs (credentials, presentations, trust lists,
+// status lists, issuer metadata, client attestations) ends up here, so the
+// signature encoding cannot drift between them: wrong here means a credential
+// some verifiers accept and others reject.
 package jws
 
 import (

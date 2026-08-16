@@ -119,14 +119,11 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 	}
 }
 
-// SubscribeAuthorization returns a channel carrying authorization URLs the
-// user has to visit to finish an issuance, plus an unsubscribe function.
-//
-// The authorization code flow authenticates the user at the issuer, which
-// only a browser can do. A wallet running on the user's own machine opens
-// one. A hosted wallet has no browser of its own, so it hands the URL to the
-// open UI instead and that tab navigates. Either way the login happens inside
-// the flow, between the pushed authorization request and the token exchange.
+// SubscribeAuthorization returns a channel carrying authorization URLs the user
+// must visit to finish an issuance, plus an unsubscribe function. A local
+// wallet opens one; a hosted wallet hands the URL to the open UI tab. Either
+// way the login happens inside the flow, between the authorization request and
+// the token exchange.
 func (w *Wallet) SubscribeAuthorization() (<-chan string, func()) {
 	ch := make(chan string, 4)
 	rt := w.runtimeState()

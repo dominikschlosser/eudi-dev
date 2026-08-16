@@ -39,6 +39,18 @@ type PresentationParams struct {
 	ResponseMode   string // e.g. "direct_post.jwt", "direct_post", "fragment"
 	ClientMetadata map[string]any
 	RequestObject  *oid4vc.RequestObjectJWT // optional, used to extract JWK thumbprint for mDoc
+	// InteractiveAuthorizationEndpoint is the Authorization Challenge Endpoint
+	// the presentation is bound to (OpenID4VCI 1.1 §6.2.1.1). Empty for every
+	// other flow, and always the endpoint the wallet called rather than a
+	// value read out of the request.
+	InteractiveAuthorizationEndpoint string
+}
+
+// isInteractiveAuthorizationResponseMode reports whether a response mode is
+// one of the two of OpenID4VCI 1.1 §6.2.1.1, which go back to the
+// Authorization Challenge Endpoint rather than to a response_uri.
+func isInteractiveAuthorizationResponseMode(mode string) bool {
+	return mode == "ia_post" || mode == "ia_post.jwt"
 }
 
 // VPTokenResult holds the result of VP token creation.
@@ -54,12 +66,9 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 		return VPTokenResult{}, fmt.Errorf("credential %s not found", match.CredentialID)
 	}
 
-	// Renew on the way out when the credential is about to expire. The
-	// background task only runs on a wallet server, and a credential that
-	// lapses between two presentations would otherwise be sent for the
-	// verifier to reject. A renewal that fails is not fatal: the credential in
-	// hand may still be accepted, and refusing to present it certainly is not
-	// better.
+	// Renew on the way out when the credential is about to expire: the
+	// background task only runs on a wallet server. A failed renewal is not
+	// fatal, since the credential in hand may still be accepted.
 	if cred.CanRenew() && CredentialNeedsRenewal(cred, time.Now()) {
 		if renewed, err := w.RefreshCredential(cred.ID); err != nil {
 			log.Printf("[VP] renewing %s before presenting it failed, sending the credential as it is: %v", cred.ID, err)
@@ -100,10 +109,26 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 }
 
 func sdJWTAudience(params PresentationParams) string {
+	if isInteractiveAuthorizationResponseMode(params.ResponseMode) && params.InteractiveAuthorizationEndpoint != "" {
+		return interactiveAuthorizationAudience(params.InteractiveAuthorizationEndpoint)
+	}
 	if (params.ResponseMode == "dc_api" || params.ResponseMode == "dc_api.jwt") && params.RequestOrigin != "" {
 		return "origin:" + params.RequestOrigin
 	}
 	return params.ClientID
+}
+
+// interactiveAuthorizationAudience binds a Key Binding JWT to the
+// Authorization Challenge Endpoint (Appendix A.3.5).
+//
+// A.3.5 is the one binding section that says "the derived Origin ... of the
+// Authorization Challenge Endpoint". A.1.1.5, A.1.2.5 and A.2.5 all bind the
+// endpoint itself, and §6.2.1.5 names the mechanism as "binding the
+// Authorization Challenge Endpoint to the Verifiable Presentation", which an
+// origin cannot do between two endpoints sharing a host. So the endpoint is
+// sent. A.3.5's own example agrees.
+func interactiveAuthorizationAudience(endpoint string) string {
+	return "ia:" + endpoint
 }
 
 // createSDJWTPresentation creates an SD-JWT presentation with selective disclosure and KB-JWT.
@@ -291,7 +316,7 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 	plain := buildPlainAuthorizationResponse(vpToken, idToken, state)
 
 	switch responseMode {
-	case "direct_post.jwt", "dc_api.jwt":
+	case "direct_post.jwt", "dc_api.jwt", "ia_post.jwt":
 		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
 			return nil, fmt.Errorf("response_mode is %s but no encryption key found in client_metadata.jwks — verifier must provide JWK per OID4VP 1.0", responseMode)
 		}
@@ -318,7 +343,7 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 			ResponseMode: responseMode,
 			RedirectURI:  redirectURL,
 		}, nil
-	case "direct_post", "dc_api":
+	case "direct_post", "dc_api", "ia_post":
 		return &AuthorizationResponseEnvelope{
 			ResponseMode: responseMode,
 			Plain:        plain,
@@ -337,11 +362,8 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 	}
 
 	// A Digital Credentials API error is never encrypted, whichever response
-	// mode was asked for. Appendix A.4: "Protocol error responses are returned
-	// as an object within the data property. This object has a single property
-	// with the name error and a value containing the error response code as
-	// defined in Section 8.5." Encrypting it hands the Verifier a JWE where it
-	// expects that object, which reads as a response rather than as a refusal.
+	// mode was asked for: Appendix A.4 has it returned "as an object within
+	// the data property". A JWE there reads as a response, not a refusal.
 	if isDCAPIResponseMode(responseMode) {
 		return &AuthorizationResponseEnvelope{
 			ResponseMode: responseMode,
@@ -350,7 +372,7 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 	}
 
 	switch responseMode {
-	case "direct_post.jwt":
+	case "direct_post.jwt", "ia_post.jwt":
 		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
 			return nil, fmt.Errorf("response_mode is %s but no encryption key found in client_metadata.jwks — verifier must provide JWK per OID4VP 1.0", responseMode)
 		}
@@ -372,7 +394,7 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 			ResponseMode: responseMode,
 			RedirectURI:  BuildFragmentErrorRedirect(redirectURI, state, errorCode, errorDescription),
 		}, nil
-	case "direct_post", "dc_api":
+	case "direct_post", "dc_api", "ia_post":
 		return &AuthorizationResponseEnvelope{
 			ResponseMode: responseMode,
 			Plain:        buildPlainAuthorizationErrorResponse(errorCode, errorDescription, state),
@@ -401,6 +423,8 @@ func (w *Wallet) SubmitPresentation(vpResult *VPTokenMapResult, idToken, state, 
 		return SubmitDirectPostObject(responseURI, response.Plain)
 	case "dc_api", "dc_api.jwt":
 		return nil, fmt.Errorf("response_mode %q must be returned via Browser API, not direct submission", response.ResponseMode)
+	case "ia_post", "ia_post.jwt":
+		return nil, fmt.Errorf("response_mode %q goes back to the Authorization Challenge Endpoint, not to a response_uri", response.ResponseMode)
 	default:
 		return nil, fmt.Errorf("unsupported response_mode %q", response.ResponseMode)
 	}
@@ -424,6 +448,8 @@ func (w *Wallet) SubmitAuthorizationError(errorCode, errorDescription, state, re
 		return SubmitDirectPostObject(responseURI, response.Plain)
 	case "dc_api", "dc_api.jwt":
 		return nil, fmt.Errorf("response_mode %q must be returned via Browser API, not direct submission", response.ResponseMode)
+	case "ia_post", "ia_post.jwt":
+		return nil, fmt.Errorf("response_mode %q goes back to the Authorization Challenge Endpoint, not to a response_uri", response.ResponseMode)
 	default:
 		return nil, fmt.Errorf("unsupported response_mode %q", response.ResponseMode)
 	}

@@ -19,13 +19,10 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 )
 
-// SetCredentialStatus sets the status value for a credential.
-//
-// Section 7 of draft-ietf-oauth-status-list bounds a Status Type: "Status
-// Types MUST have a numeric value between 0 and 255 for their representation
-// in the Status List." A value outside that range has no encoding in any of
-// the four widths the specification allows, so it is refused here rather than
-// stored and then silently truncated when the list is published.
+// SetCredentialStatus sets the status value for a credential. Section 7 of
+// draft-ietf-oauth-status-list bounds it: "Status Types MUST have a numeric
+// value between 0 and 255." A value outside that has no encoding in any
+// allowed width, so it is refused rather than truncated when published.
 func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bool) {
 	if status < 0 || status > 255 {
 		return StatusEntry{}, false
@@ -47,17 +44,11 @@ func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bo
 	return entry, true
 }
 
-// BuildStatusList builds the published status list: the number of bits each
-// entry occupies and the packed bitstring.
-//
-// The width follows the largest status value the wallet actually holds. A
-// list fixed at one bit per entry can only say VALID or INVALID, so a
-// credential the wallet marked SUSPENDED (0x02, "temporarily invalid ...
-// usually temporary" per section 7.1) was published as INVALID and every
-// external verifier read a different status than this wallet's own API
-// reported. Section 4.1 requires the Status Issuer to pick a width that fits
-// ("The Status Issuer MUST choose an adequate bits value (bit size) to be
-// able to describe the required Status Types for its application", section 7).
+// BuildStatusList builds the published status list: the bits per entry and the
+// packed bitstring. The width follows the largest status value held, as
+// section 7 requires ("The Status Issuer MUST choose an adequate bits value
+// [...] to describe the required Status Types"). Fixed at one bit, a
+// SUSPENDED credential would be published as INVALID.
 func (w *Wallet) BuildStatusList() (int, []byte) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -123,12 +114,9 @@ func (w *Wallet) NextStatusIndex() int {
 	return w.nextStatusIndex()
 }
 
-// registerStatusEntry records a status entry for a credential.
-//
-// A negative index is dropped rather than stored. Import adopts the index out
-// of the credential's own status claim when it points at this wallet's list,
-// so the number is whoever issued the credential, and a stored negative one
-// would be read back by everything that builds or serves the bitstring.
+// registerStatusEntry records a status entry for a credential. A negative
+// index is dropped: import adopts the index from the credential's own status
+// claim, so the number comes from whoever issued it.
 func (w *Wallet) registerStatusEntry(credID string, idx int) {
 	if idx < 0 {
 		return

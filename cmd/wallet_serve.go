@@ -126,22 +126,13 @@ so the wallet automatically receives incoming protocol requests.`,
 }
 
 // applyDemoProfileDefaults applies what --demo implies, each setting only
-// where the operator did not give one explicitly.
+// where the operator gave none explicitly:
 //
-// A public demo needs a known baseline: the periodic reset restores exactly
-// the --pid state. Consent stays interactive for browser flows (API
-// submissions auto-accept anyway), so visitors see the real wallet UX.
-//
-// Demo mode is the EUDI profile held in debug: a wallet hosted publicly as a
-// counterparty checks callers against the same HAIP rules a real EUDI wallet
-// does, but debug mode reports a violation as a warning and carries on rather
-// than refusing it, so the demo stays usable against issuers and verifiers
-// still being brought into line.
-//
-// The demo also selects the newer OpenID4VCI level, because showing what the
-// drafts do next is what it is for, and because every 1.1 feature is
-// negotiated in metadata, so an issuer that publishes none of them sees no
-// difference.
+//   - --pid, so the periodic reset has a known baseline to restore
+//   - HAIP in debug mode, the EUDI profile held to a warning, so the demo
+//     stays usable against counterparties still being brought into line
+//   - OpenID4VCI 1.1, since showing what the drafts do next is what a demo is
+//     for and every 1.1 feature is negotiated in metadata anyway
 func applyDemoProfileDefaults(cmd *cobra.Command, opts *walletServeOptions, w *wallet.Wallet) {
 	opts.PID = true
 	if !cmd.Flags().Changed("mode") {
@@ -672,12 +663,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		fmt.Printf(format+"\n", args...)
 	})
 
-	// Point the user at the consent UI when an interactive
-	// presentation or issuance arrives. On a desktop that means
-	// opening it. On a headless host the URL is all there is to give,
-	// so say where it is rather than claiming to open something.
-	// Not on a demo host: visitors get the consent UI through the
-	// browser redirect instead.
+	// Point the user at the consent UI when an interactive request arrives: by
+	// opening it on a desktop, by printing the URL on a headless host. Not on
+	// a demo host, where visitors reach it through the browser redirect.
 	if !w.AutoAccept && !opts.Demo {
 		srv.SetOnUIRequest(func() {
 			url := fmt.Sprintf("http://localhost:%d/?focus=overview", opts.Port)

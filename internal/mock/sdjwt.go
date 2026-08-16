@@ -42,12 +42,9 @@ type SDJWTConfig struct {
 	StatusListURI string              // optional: status list URI for revocation
 	StatusListIdx int                 // optional: index in the status list
 	CertChain     []*x509.Certificate // optional: x5c certificate chain [leaf, CA]
-	// AlwaysDisclosed lists claims that are embedded plainly instead of
-	// becoming selective disclosures. Entries name top-level claims
-	// ("family_name") or nested subclaims via dotted paths
-	// ("address.country"). A top-level entry embeds the whole claim value
-	// plainly. A dotted entry embeds that subclaim plainly inside its
-	// parent's disclosure value. Entries that match no claim are ignored.
+	// AlwaysDisclosed lists claims embedded plainly instead of becoming
+	// selective disclosures, as top-level names ("family_name") or dotted
+	// paths ("address.country"). Entries matching no claim are ignored.
 	AlwaysDisclosed []string
 }
 
@@ -163,12 +160,9 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		return "", err
 	}
 
-	// RFC 9901 §4: "The order of the concatenated parts MUST be the
-	// Issuer-signed JWT, a tilde character, zero or more Disclosures each
-	// followed by a tilde character, and lastly the optional Key Binding
-	// JWT." Its ABNF (DISCLOSURE = 1*(ALPHA / DIGIT / "-" / "_")) permits no
-	// empty component, so a credential with no Disclosures is jwt~ and not
-	// jwt~~.
+	// RFC 9901 §4 orders the parts JWT, tilde, disclosures each followed by a
+	// tilde, then the optional KB-JWT. Its ABNF permits no empty component, so
+	// a credential with no disclosures is jwt~ and not jwt~~.
 	var serialized strings.Builder
 	serialized.WriteString(jwt)
 	serialized.WriteString("~")
@@ -179,16 +173,11 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 	return serialized.String(), nil
 }
 
-// forcePlainClaims are the claim names that go into the payload plainly even
-// when the caller asks for everything to be selectively disclosable.
-//
-// SD-JWT VC §2.2.2.3 lists most of them: "The following registered JWT claims
-// are used within the SD-JWT component of the SD-JWT VC and MUST NOT be
-// included in the Disclosures, i.e., cannot be selectively disclosed: iss,
-// nbf, exp, cnf, vct, vct#integrity, aka_vcts, status". iat joins them
-// because this generator writes one into the payload itself, and a Disclosure
-// for a claim name that already exists at the level of the _sd key makes the
-// credential rejectable under RFC 9901 §7.1 step 3.c.ii.3.
+// forcePlainClaims are the claim names embedded plainly even when the caller
+// asks for everything to be selectively disclosable. SD-JWT VC §2.2.2.3 lists
+// most of them (iss, nbf, exp, cnf, vct, vct#integrity, aka_vcts, status). iat
+// joins them because this generator writes one itself, and a disclosure for a
+// name already present alongside _sd is rejectable under RFC 9901 §7.1.
 var forcePlainClaims = map[string]bool{
 	"iss":           true,
 	"nbf":           true,
@@ -202,11 +191,9 @@ var forcePlainClaims = map[string]bool{
 }
 
 // checkClaimName refuses the keys RFC 9901 reserves for the selective
-// disclosure machinery. §4.2.1 says of a Disclosure's claim name: "It MUST be
-// a string and MUST NOT be _sd, ..., or a claim name existing in the object
-// as a permanently disclosed claim." §4.1 adds that the payload "MUST NOT
-// contain the claims _sd or ... except for the purpose of conveying digests",
-// and §4.1.1 reserves _sd_alg for the top level of the payload.
+// disclosure machinery: a disclosure name "MUST NOT be _sd, ..., or a claim
+// name existing in the object as a permanently disclosed claim" (§4.2.1), and
+// §4.1.1 reserves _sd_alg for the top level of the payload.
 func checkClaimName(name string) error {
 	switch name {
 	case "_sd", "_sd_alg", "...":
@@ -215,12 +202,9 @@ func checkClaimName(name string) error {
 	return nil
 }
 
-// hideDigestOrder returns the digests in an order that does not depend on the
-// order the claims were given in. RFC 9901 §4.2.4.1: "The Issuer MUST hide the
-// original order of the claims in the array. To ensure this, it is RECOMMENDED
-// to shuffle the array of hashes, e.g., by sorting it alphanumerically or
-// randomly". Sorting is the deterministic half of that recommendation, and a
-// digest carries no trace of its claim.
+// hideDigestOrder returns the digests in an order independent of the claim
+// order. RFC 9901 §4.2.4.1: "The Issuer MUST hide the original order of the
+// claims in the array [...] e.g., by sorting it alphanumerically or randomly".
 func hideDigestOrder(digests []string) []string {
 	sorted := make([]string, len(digests))
 	copy(sorted, digests)
@@ -228,13 +212,10 @@ func hideDigestOrder(digests []string) []string {
 	return sorted
 }
 
-// makeDisclosure handles nested structures. It returns any sub-disclosures and
-// the (possibly transformed) value to use in the parent disclosure.
-// For plain values, it returns no sub-disclosures and the value as-is.
-// For map values, it creates sub-disclosures and returns an object with _sd.
-// For slice values, it creates element disclosures and returns an array with {"...": digest}.
-// path is the dotted path of the claim. Subclaims whose path is in always are
-// embedded plainly in the transformed value instead of becoming disclosures.
+// makeDisclosure handles nested structures, returning any sub-disclosures and
+// the value to use in the parent disclosure: the value as-is for plain values,
+// an object with _sd for maps, an array of {"...": digest} for slices.
+// Subclaims whose dotted path is in always are embedded plainly.
 func makeDisclosure(name string, value any, path string, always map[string]bool) (subDisclosures []string, transformedValue any, err error) {
 	switch v := value.(type) {
 	case map[string]any:

@@ -51,13 +51,9 @@ func (s *Server) backgroundTasks() []backgroundTask {
 }
 
 // StartBackgroundTasks runs the wallet's own work on one loop and returns a
-// function that stops it.
-//
-// One loop rather than a goroutine per job: they all reduce to "is anything
-// due", they all touch the same wallet, and a single place to look is what
-// makes it possible to say what the wallet does when nobody is asking. Each
-// task carries its own interval instead of throttling itself inside its body,
-// which is how the certificate check used to hide its schedule.
+// function that stops it. One loop rather than a goroutine per job: they all
+// reduce to "is anything due" and touch the same wallet. Each task carries its
+// own interval rather than throttling itself inside its body.
 func (s *Server) StartBackgroundTasks() func() {
 	done := make(chan struct{})
 	tasks := s.backgroundTasks()
@@ -217,14 +213,12 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	}
 
 	// §9.1 holds a Deferred Credential Request to the same encryption as the
-	// request that started the issuance, and what the issuer requires is in its
-	// metadata. The flow that knew it is gone by the time the poller runs, so
-	// the metadata is read again from the Credential Issuer Identifier. A
-	// document that cannot be reached leaves the request unencrypted rather than
-	// costing the credential: an issuer that required encryption refuses that
-	// attempt, and the next one is a poll away.
-	// Snapshot the validation mode once: this runs on the background poller
-	// goroutine, which can race a local PUT /api/config/conformance.
+	// request that started the issuance, so the metadata is read again here:
+	// the flow that knew it is gone by the time the poller runs. Metadata that
+	// cannot be reached leaves the request unencrypted rather than costing the
+	// credential, since the next poll is minutes away.
+	// Snapshot the validation mode once: this runs on the poller goroutine,
+	// which can race a local PUT /api/config/conformance.
 	mode := s.wallet.Mode()
 	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer)
 	if metadataErr != nil {
@@ -306,16 +300,11 @@ func (s *Server) handleDeferredAttemptError(pending DeferredIssuance, err error)
 	return s.abandonDeferred(pending, err.Error())
 }
 
-// isRetryableDeferredError reports whether an error is worth another attempt.
-// A network hiccup or a server-side fault is. A refused token or an unknown
-// transaction is not.
-//
-// A rejected authorization is the case a long deferral runs into: the access
-// token was issued for the credential request and expires in minutes, while
-// the issuer may ask the wallet back in an hour. Asking again with the same
-// dead token cannot succeed, so it is not worth another 24 hours of hourly
-// requests. The wallet cannot yet obtain a new one, which is what refresh token
-// support will add.
+// isRetryableDeferredError reports whether an error is worth another attempt: a
+// network hiccup or server fault is, a refused token or unknown transaction is
+// not. A long deferral runs into the second case, since the access token
+// expires in minutes while the issuer may ask the wallet back in an hour.
+
 // isAuthorizationRejected reports whether the issuer refused the credentials
 // the request carried, rather than the request itself.
 func isAuthorizationRejected(err error) bool {

@@ -55,25 +55,18 @@ func doIssuanceRequest(req *http.Request) (*http.Response, error) {
 }
 
 // metadataFetchAttempts is how many times a metadata document is asked for
-// before the wallet gives up on it.
-//
-// Metadata is read from somebody else's server at the start of every flow, and
-// a single slow answer there is not evidence that the issuer cannot be talked
-// to. Giving up on the first one ends the flow with a message about what the
-// metadata did not contain, which points at the issuer's configuration rather
-// than at the read that never completed.
+// before the wallet gives up. Giving up on the first slow answer ends the flow
+// with a message about missing metadata, which points at the issuer's
+// configuration rather than at the read that never completed.
 const metadataFetchAttempts = 3
 
 // metadataRetryDelay spaces the attempts out enough to outlast a moment of
 // unresponsiveness without holding a flow up for long.
 var metadataRetryDelay = 500 * time.Millisecond
 
-// fetchMetadataDocument performs a metadata GET, retrying a request that could
-// not be completed or that the server could not answer.
-//
-// Only the transport failing and the 5xx range are retried. A 404 is the
-// server saying it publishes nothing there, which is an answer, and every
-// other 4xx is about the request rather than the moment it was made.
+// fetchMetadataDocument performs a metadata GET, retrying only a failed
+// transport or a 5xx. A 404 is an answer, and every other 4xx is about the
+// request rather than the moment it was made.
 func fetchMetadataDocument(newRequest func() (*http.Request, error)) (*http.Response, error) {
 	var lastErr error
 	for attempt := 1; attempt <= metadataFetchAttempts; attempt++ {
@@ -124,9 +117,7 @@ type IssuanceResult struct {
 
 // ProcessCredentialOffer processes an OID4VCI credential offer URI. An offer
 // delivered by reference is dereferenced here even when the consent dialog
-// already fetched it once to show the user what they were approving: fetching
-// a credential_offer_uri more than once is allowed, and it keeps this the
-// single entry point to the flow.
+// already fetched it, which is allowed and keeps this the single entry point.
 func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error) {
 	reqType, result, err := oid4vc.Parse(offerURI)
 	if err != nil {
@@ -211,13 +202,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint)
 	}
 
-	// Token exchange (pre-authorized code flow).
-	//
-	// An issuer may protect this flow like the authorization code flow:
-	// DPoP-bound tokens (RFC 9449), client authentication by wallet attestation
-	// (OAuth 2.0 Attestation-Based Client Authentication), and key attestation
-	// in the proof. Each follows the issuer's metadata, so an issuer that asks
-	// for none of them sees the same plain request as before.
+	// Token exchange (pre-authorized code flow). An issuer may protect it like
+	// the authorization code flow (DPoP, attestation-based client
+	// authentication, key attestation), each following its own metadata.
 	nonces := &dpopNonceState{}
 	var dpopKey *ecdsa.PrivateKey
 	if supportsDPoP(oauthMeta) {
@@ -459,13 +446,8 @@ type metadataFetch struct {
 }
 
 // fetchLoggedMetadata fetches a metadata document and records the request and
-// whichever response it produced.
-//
-// Both callers wrote this out inline, twenty lines each of the same three
-// log calls with the details map spelled out per branch, which is how a field
-// comes to be recorded on one fetch and not the other. The error is returned
-// rather than acted on: one caller gives up on it and the other carries on
-// with what the issuer's own metadata says.
+// whichever response it produced. The error is returned rather than acted on:
+// one caller gives up on it, the other carries on with the issuer's metadata.
 func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
 	url, _ := wellKnownURL(f.issuer, f.wellKnown)
 	w.addProtocolLog("issuance", f.event+"_request", fmt.Sprintf("Fetch %s from %s", f.fetchLabel, f.issuer), true, map[string]any{
@@ -504,13 +486,10 @@ func fetchIssuerMetadata(issuer string) (map[string]any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("creating metadata request: %w", err)
 		}
-		// OpenID4VCI 1.0 §12.2.2 gives the issuer two forms to answer in: "an
-		// unsigned JSON document using the media type application/json, or a
-		// signed JSON Web Token (JWT) containing the Credential Issuer Metadata
-		// in its payload using the media type application/jwt". Naming both
-		// signals that signed metadata is supported. There is no
-		// application/openidvci-issuer-metadata+jwt media type: that string is
-		// the typ header value of the signed form (§12.2.3).
+		// §12.2.2 gives the issuer two forms, application/json and
+		// application/jwt, so naming both signals that signed metadata is
+		// supported. There is no application/openidvci-issuer-metadata+jwt
+		// media type: that string is the signed form's typ header (§12.2.3).
 		req.Header.Set("Accept", "application/json, application/jwt")
 		return req, nil
 	})
@@ -636,24 +615,14 @@ var issuerMetadataTrustAnchors *x509.CertPool
 const signedIssuerMetadataTyp = "openidvci-issuer-metadata+jwt"
 
 // verifySignedIssuerMetadata checks signed Credential Issuer Metadata against
-// §12.2.3 before any of it is read.
+// §12.2.3: typ openidvci-issuer-metadata+jwt, an asymmetric alg, a sub
+// matching the Credential Issuer Identifier, and the signature.
 //
-// The section requires typ to be openidvci-issuer-metadata+jwt, an alg that is
-// neither none nor a symmetric algorithm, and a sub "matching the Credential
-// Issuer Identifier". It also requires more than a valid signature: "When
-// requesting signed metadata, the Wallet MUST establish trust in the signer of
-// the metadata. Otherwise, the Wallet MUST reject the signed metadata." The
-// mechanism is out of scope of the specification, so this wallet takes the one
-// the header can carry: an x5c chain ending in a trusted root.
-//
-// Rejecting a signer it cannot place would make every ecosystem issuer
-// unreachable: an issuer CA is not a WebPKI root, and this wallet has no way to
-// be given one. A check that nothing can satisfy is not enforcement, so the
-// signer that anchors nowhere is named in the log and the metadata is read.
-// That is no weaker than the unsigned form the same issuer serves on request,
-// which carries no signature at all. What the wallet can check without being
-// given anything is enforced: the typ, an asymmetric alg, a sub matching the
-// Credential Issuer Identifier, and the signature itself.
+// §12.2.3 also asks the wallet to "establish trust in the signer", by a
+// mechanism it leaves out of scope. This wallet tries an x5c chain to a
+// trusted root, but does not reject a signer it cannot place: it holds no
+// issuer CAs and could never satisfy the check, and reading the metadata
+// anyway is no weaker than the unsigned form the same issuer serves.
 func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 	if token == nil {
 		return fmt.Errorf("signed issuer metadata token is nil")
@@ -800,16 +769,11 @@ func offerAuthorizationServer(offer *oid4vc.CredentialOffer) string {
 	return ""
 }
 
-// selectAuthorizationServer picks the authorization server this offer is to be
-// redeemed at.
-//
-// §12.2.4: "When the Wallet is using authorization_server parameter in the
-// Credential Offer as a hint to determine which Authorization Server to use out
-// of multiple, the Wallet MUST NOT proceed with the flow if the
+// selectAuthorizationServer picks the authorization server this offer is
+// redeemed at. §12.2.4: the wallet "MUST NOT proceed with the flow if the
 // authorization_server Credential Offer parameter value does not match any of
-// the entries in the authorization_servers array." A hint that matches nothing
-// is therefore an error rather than something to fall back from: the issuer
-// named a server this metadata does not vouch for.
+// the entries in the authorization_servers array", so a hint matching nothing
+// is an error rather than something to fall back from.
 func selectAuthorizationServer(metadata map[string]any, offer *oid4vc.CredentialOffer) (string, error) {
 	servers := authorizationServersFromMetadata(metadata)
 	hint := offerAuthorizationServer(offer)
@@ -851,14 +815,10 @@ func normalizeIssuerURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
-// getTokenEndpoint resolves the token endpoint of the authorization server.
-//
-// token_endpoint is an authorization server metadata parameter (RFC 8414 §2),
-// and OpenID4VCI 1.0 §12.2.4 defines no such Credential Issuer Metadata
-// parameter, so the authorization server document is what decides. An issuer
-// that publishes one in its own metadata anyway is read only when no
-// authorization server metadata was reachable, which is the case the URL guess
-// below also covers.
+// getTokenEndpoint resolves the token endpoint. token_endpoint is an
+// authorization server metadata parameter (RFC 8414 §2) and §12.2.4 defines no
+// Credential Issuer Metadata equivalent, so an issuer publishing one anyway is
+// read only when no authorization server metadata was reachable.
 func getTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer string) string {
 	if ep, ok := oauthMeta["token_endpoint"].(string); ok && ep != "" {
 		return ep
@@ -987,14 +947,10 @@ func resolveCredentialIdentifier(tokenResp map[string]any, configIDs []string) s
 
 // buildCredentialResponseEncryptionRequest builds the
 // credential_response_encryption object of §8.2, or nil when the wallet must
-// not ask for an encrypted response.
-//
-// The parameter never travels on its own: §8.2 says "Credential Request
-// encryption MUST be used if the credential_response_encryption parameter is
-// included, to prevent it being substituted by an attacker." An issuer that
-// offers no usable request encryption key therefore gets no encryption request
-// either, and one that requires an encrypted response while offering no way to
-// encrypt the request cannot be satisfied at all.
+// not ask for an encrypted response. The parameter never travels on its own:
+// "Credential Request encryption MUST be used if the
+// credential_response_encryption parameter is included", so an issuer offering
+// no usable request encryption key gets no encryption request either.
 func buildCredentialResponseEncryptionRequest(mode ValidationMode, metadata map[string]any, holderKey *ecdsa.PrivateKey) (map[string]any, error) {
 	if holderKey == nil {
 		return nil, nil
@@ -1175,16 +1131,10 @@ func credentialRequestEncryptionRequired(raw map[string]any) bool {
 	return required
 }
 
-// issuanceChallenge obtains the c_nonce the key proofs of this flow are signed
-// over.
-//
-// §8.2 leaves one source: "The c_nonce value is retrieved from the Nonce
-// Endpoint as defined in Section 7." A c_nonce in the token response is a
-// pre-1.0 issuer showing through, and a wallet that reads it signs its proof
-// over a challenge the specification does not define. Strict mode therefore
-// ignores it outright, and debug mode says whose issuer is behind the times
-// before using it, because being able to complete the flow is what the mode is
-// for.
+// issuanceChallenge obtains the c_nonce the key proofs are signed over. §8.2
+// leaves one source: "The c_nonce value is retrieved from the Nonce Endpoint
+// as defined in Section 7." A c_nonce in the token response is a pre-1.0
+// issuer showing through, which strict ignores and debug uses after saying so.
 func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer string, dpopNonce *string) string {
 	if cNonce := fetchNonce(metadata, dpopNonce); cNonce != "" {
 		return cNonce
@@ -1237,15 +1187,9 @@ func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string
 	return proofs, nil
 }
 
-// requestCredentialWithNonceRetry sends a credential request and, when the
-// issuer says the challenge was no good, fetches a fresh one and sends it once
-// more.
-//
-// §8.3.1.2 on invalid_nonce: "The proofs parameter in the Credential Request
-// uses an invalid nonce: at least one of the key proofs contains an invalid
-// c_nonce value. The wallet should retrieve a new c_nonce value (refer to
-// Section 7)." One retry: a second rejection of a challenge the issuer just
-// handed out is the issuer disagreeing with itself, and asking again would loop.
+// requestCredentialWithNonceRetry sends a credential request and, on
+// invalid_nonce, fetches a fresh challenge and sends it once more (§8.3.1.2).
+// One retry only: a second rejection is the issuer disagreeing with itself.
 func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, proofJWTs []string) (map[string]any, error) {
 	credResp, err := w.sendCredentialRequest(a, proofJWTs)
 	if err == nil || !isInvalidNonceError(err) {

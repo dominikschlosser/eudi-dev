@@ -82,17 +82,12 @@ func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 }
 
 // issuerSubjectAltNames are the subject alternative names a signing leaf needs
-// to carry so the credentials it signs can be verified from their x5c header.
+// so credentials it signs verify from their x5c header. HAIP 1.0 §6.1.1: "the
+// iss value MUST be an URL with a FQDN matching a dNSName Subject Alternative
+// Name (SAN) entry in the leaf certificate", or a uniformResourceIdentifier
+// SAN. Both forms are written, since a verifier may check either.
 //
-// HAIP 1.0 section 6.1.1 ties the two together: "the iss value MUST be an URL
-// with a FQDN matching a dNSName Subject Alternative Name (SAN) entry in the
-// leaf certificate", and a value that is not such a URL "MUST match a
-// uniformResourceIdentifier SAN entry". Credentials this wallet issues carry
-// its issuer URL as iss, so that URL is what the leaf has to name. Both forms
-// are written, since a verifier is free to check either one.
-//
-// A host that is an IP address goes into an iPAddress SAN, where an address
-// belongs, and leaves the dNSName list empty.
+// A host that is an IP address goes into an iPAddress SAN instead.
 func issuerSubjectAltNames(issuerURL string) (dnsNames []string, ips []net.IP, uris []*url.URL) {
 	raw := strings.TrimRight(strings.TrimSpace(issuerURL), "/")
 	if raw == "" {

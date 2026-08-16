@@ -23,19 +23,13 @@ import (
 )
 
 // HAIPIssuerBinding checks that a credential names its issuer in the
-// certificate it is verified with.
+// certificate it is verified with. HAIP 1.0 §6.1.1: "the iss value MUST be an
+// URL with a FQDN matching a dNSName Subject Alternative Name (SAN) entry in
+// the leaf certificate", or match a uniformResourceIdentifier SAN. Without it
+// any certificate the chain accepts could sign for any issuer.
 //
-// HAIP 1.0 section 6.1.1 ties the two together for x509-based key resolution:
-// "the iss value MUST be an URL with a FQDN matching a dNSName Subject
-// Alternative Name (SAN) entry in the leaf certificate", and an iss that is
-// not such a URL "MUST match a uniformResourceIdentifier SAN entry of the leaf
-// certificate". Without the binding, any certificate the chain accepts can
-// sign for any issuer, so a verifier holding the issuer to the profile refuses
-// the credential.
-//
-// Only credentials that carry x5c are checked. An issuer whose key is found
-// through its metadata is bound to iss by where that document was fetched
-// from, which is a different check.
+// Only credentials carrying x5c are checked: a key found through issuer
+// metadata is bound to iss by where that document was fetched from.
 func HAIPIssuerBinding(iss string, chain []*x509.Certificate) []string {
 	if len(chain) == 0 || chain[0] == nil {
 		return nil

@@ -378,14 +378,10 @@ func (s *Server) triggerSave() {
 }
 
 // saveIssuedCredential persists a credential an issuance flow just imported.
-//
-// A flow can stay open for a long time (an authorization code flow waits for
-// the user to sign in at the issuer), and every request meanwhile reloads the
-// wallet from disk, which replaces the in-memory credential list. A reload
-// landing between the import and the save would drop the new credential
-// silently: issuance reports success and the credential is nowhere. So the
-// credential is put back if it went missing, and both steps happen under the
-// same lock the reload takes.
+// A long-running flow (an authorization code sign-in) is interleaved with
+// requests that reload the wallet from disk, and a reload landing between the
+// import and the save would drop the credential silently. So it is put back if
+// it went missing, under the same lock the reload takes.
 func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 	if result != nil && result.Imported != nil {
 		s.storeSyncMu.Lock()

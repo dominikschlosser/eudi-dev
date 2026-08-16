@@ -22,38 +22,28 @@ import (
 
 // GuardAPI refuses a request under /api/ that a page on another site sent.
 //
-// These APIs have no authentication on purpose, and the usual answer (keep
-// them on localhost) does not cover the browser: every page a developer
-// visits can reach localhost too. Nothing here is preflighted either, because
-// a POST carrying text/plain is a CORS simple request, so a page could hand
-// the wallet a presentation request and have credentials posted to a
-// response_uri of its choosing. Reading the reply is what CORS stops, and
-// this attack never needs to read it.
+// These APIs have no authentication on purpose, and localhost is no defence:
+// every page a developer visits can reach it, and a POST carrying text/plain
+// is a CORS simple request, so a page could hand the wallet a presentation
+// request and have credentials posted to a response_uri of its choosing. CORS
+// only stops it reading the reply, which such an attack does not need.
 //
-// The Origin header is what separates the two callers. A browser attaches it
-// to exactly the requests in question and a page cannot forge it, while a
-// CLI, a curl invocation or a test harness sends none at all and is let
-// through untouched. Only /api/ is guarded: the protocol endpoints are meant
-// to be reached from elsewhere, and a browser navigation to them carries no
-// Origin to judge anyway.
+// The Origin header separates the two callers: a browser attaches it and
+// cannot forge it, while a CLI or test harness sends none and passes through.
+// Only /api/ is guarded, since the protocol endpoints are meant to be reached
+// from elsewhere.
 //
 // ownOrigins names additional origins to treat as this server's own, for a
-// deployment whose public URL is not the Host it receives (a reverse proxy
-// that rewrites it).
+// deployment behind a proxy that rewrites the Host.
 func GuardAPI(next http.Handler, ownOrigins ...string) http.Handler {
 	return GuardAPIExcept(next, nil, ownOrigins...)
 }
 
 // GuardAPIExcept is GuardAPI with a list of paths that are cross-origin by
-// contract rather than by accident.
-//
-// One endpoint genuinely is: the Digital Credentials API. A verifier's web
-// page calls it from its own origin, which is the whole mechanism, and the
-// wallet identifies that caller by the origin the request arrived with, which
-// is what OpenID4VP over the Digital Credentials API authenticates an
-// unsigned request by. Guarding it by origin refuses the only kind of caller
-// it has. The protection there is that check plus the consent dialog, not
-// this one.
+// contract. One endpoint genuinely is: the Digital Credentials API, where a
+// verifier's page calls from its own origin and that origin is what
+// authenticates an unsigned request. Guarding it would refuse its only caller;
+// its protection is that origin check plus the consent dialog.
 func GuardAPIExcept(next http.Handler, crossOriginByContract []string, ownOrigins ...string) http.Handler {
 	allowed := hostSet(ownOrigins)
 	exempt := make(map[string]bool, len(crossOriginByContract))

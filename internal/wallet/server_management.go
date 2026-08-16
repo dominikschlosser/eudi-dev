@@ -15,12 +15,10 @@
 package wallet
 
 // Management API handlers mirroring the wallet CLI commands (show, remove,
-// issue, generate-pid, ca-cert, tls-cert) so a hosted wallet instance can be
-// driven entirely over HTTP. Like the rest of the wallet server, these
-// endpoints have no authentication: the wallet is a testing tool, so keep it
-// on localhost or an isolated network. Internet-facing deployments run the
-// demo profile (see demo.go), which disables the destructive endpoints and
-// treats all wallet state as public and disposable.
+// issue, generate-pid, ca-cert, tls-cert), so a hosted instance can be driven
+// over HTTP. Like the rest of the server they have no authentication:
+// internet-facing deployments run the demo profile (demo.go), which disables
+// the destructive ones.
 
 import (
 	"encoding/json"
@@ -84,13 +82,10 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// This path runs for credentials the wallet did not issue, so there is no
-	// trust anchor to hold their Status Issuer to: the wallet's own CA would
-	// reject every honest external list. The check still verifies the
-	// token's signature against the key the token resolves to, and reports
-	// whether that key was anchored anywhere, so a caller can tell a
-	// self-asserted list from a trusted one instead of reading an unverified
-	// status as authoritative.
+	// This runs for credentials the wallet did not issue, where there is no
+	// anchor to hold the Status Issuer to. The signature is still verified
+	// against the key the token resolves to, and whether that key was anchored
+	// is reported, so a self-asserted list is distinguishable.
 	result, err := statuslist.Check(ref)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
@@ -250,12 +245,11 @@ type generatePIDRequest struct {
 	VCT    string         `json:"vct"`
 }
 
-// handleGeneratePID regenerates the default EUDI PID credentials (SD-JWT +
-// mDoc), mirroring `wallet generate-pid`.
+// handleGeneratePID regenerates the default EUDI PID credentials, mirroring
+// `wallet generate-pid`.
 //
-// Deprecated: use POST /api/issue with the pre-defined german-pid-sdjwt and
-// german-pid-mdoc templates instead. The endpoint will be removed together
-// with `wallet generate-pid` in a future release.
+// Deprecated: use POST /api/issue with the pre-defined PID templates. This
+// goes away with `wallet generate-pid` in a future release.
 func (s *Server) handleGeneratePID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Deprecation", "true")
 	var req generatePIDRequest

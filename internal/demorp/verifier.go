@@ -60,8 +60,13 @@ type requestState struct {
 	want        []string // claim names the request asked for
 	nonce       string
 	clientID    string
-	expires     time.Time
-	answered    bool // a response was accepted, further ones are replays
+	// interactiveEndpoint is set when this request was sent inside an
+	// OpenID4VCI 1.1 §6 exchange. The presentation is then bound to that
+	// Authorization Challenge Endpoint rather than to a client_id and a
+	// response_uri (Appendix A.2.5, Appendix A.3.5).
+	interactiveEndpoint string
+	expires             time.Time
+	answered            bool // a response was accepted, further ones are replays
 
 	// requestObject is the signed JAR served from /verifier/request/{id}, and
 	// encKey decrypts the direct_post.jwt response. Both are per request and
@@ -363,6 +368,45 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"wallet_url": base + "/authorize?" + params,
 		"scheme_uri": "openid4vp://?" + params,
 	})
+}
+
+// checkPresentationAudience holds a Key Binding JWT to the party that asked for
+// it: the client_id over OpenID4VP, the Authorization Challenge Endpoint inside
+// an Interactive Authorization exchange.
+//
+// Both `ia:` forms are accepted there. OpenID4VCI 1.1 Appendix A.3.5 asks for
+// "the derived Origin ... of the Authorization Challenge Endpoint" while its
+// own example, its sibling appendices and §6.2.1.5 all name the endpoint, so a
+// wallet reading either sentence is answered rather than refused. What this
+// does not accept is an audience naming somebody else.
+func checkPresentationAudience(req *requestState, aud string) error {
+	if req.interactiveEndpoint == "" {
+		return errIf(aud != req.clientID, "aud is %q, want %q", aud, req.clientID)
+	}
+	endpoint := "ia:" + req.interactiveEndpoint
+	origin := "ia:" + originOf(req.interactiveEndpoint)
+	return errIf(aud != endpoint && aud != origin, "aud is %q, want %q", aud, endpoint)
+}
+
+// rebuildSessionTranscript recomputes what the holder signed over, which for an
+// Interactive Authorization presentation is the handover of OpenID4VCI 1.1
+// Appendix A.2.5 rather than the OpenID4VP one.
+func (d *DemoRP) rebuildSessionTranscript(req *requestState) ([]byte, error) {
+	if req.interactiveEndpoint != "" {
+		// ia_post: the response is unencrypted, so the third element is null.
+		return wallet.BuildOID4VCIIAESessionTranscript(req.interactiveEndpoint, req.nonce, nil)
+	}
+	return wallet.BuildOID4VPSessionTranscript(
+		req.clientID, req.nonce, encryptionJWKThumbprint(req.encKey), d.baseURL()+"/verifier/response/"+req.id)
+}
+
+// originOf is the derived origin of a URL as RFC 6454 §4 defines it.
+func originOf(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 // responseEncryptionMetadata publishes the public half of the per-request
@@ -694,7 +738,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, log.entries, err
 	}
 	aud, _ := kbJWT.payload["aud"].(string)
-	if err = check("audience is this verifier", errIf(aud != req.clientID, "aud is %q, want %q", aud, req.clientID)); err != nil {
+	if err = check("audience is this verifier", checkPresentationAudience(req, aud)); err != nil {
 		return nil, log.entries, err
 	}
 
@@ -713,12 +757,10 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	return disclosed, log.entries, nil
 }
 
-// checkDisclosuresReferenced enforces the SD-JWT rule that every disclosure
-// in a presentation must be referenced by a digest in the issuer-signed
-// payload (directly, or from inside another disclosure's value). An
-// unreferenced or duplicated disclosure means the presentation was altered
-// after issuance, and the spec requires rejecting it rather than quietly
-// dropping the claim.
+// checkDisclosuresReferenced enforces the SD-JWT rule that every disclosure be
+// referenced by a digest in the issuer-signed payload, directly or from inside
+// another disclosure. An unreferenced or duplicated one means the presentation
+// was altered after issuance and must be rejected.
 func checkDisclosuresReferenced(token *sdjwt.Token) error {
 	referenced := sdjwt.ReferencedDigests(token)
 
@@ -838,8 +880,7 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	// The holder signs the session transcript, which binds the response to
 	// this request. Rebuilding it here is what makes a captured response
 	// useless anywhere else.
-	transcript, err := wallet.BuildOID4VPSessionTranscript(
-		req.clientID, req.nonce, encryptionJWKThumbprint(req.encKey), d.baseURL()+"/verifier/response/"+req.id)
+	transcript, err := d.rebuildSessionTranscript(req)
 	if err = check("session transcript rebuilds", err); err != nil {
 		return nil, log.entries, err
 	}

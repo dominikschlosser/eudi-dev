@@ -46,13 +46,11 @@ func activeRemoteURL() (string, error) {
 }
 
 // remoteClientIfConfigured returns a client for the wallet the CLI should
-// manage over HTTP, or nil when the CLI manages the local store directly.
-// The target is resolved in order: the --remote flag, the target persisted
-// by `wallet instances use`, then a running local instance that serves the
-// same wallet directory. The last rule keeps a single writer per wallet
-// directory (a running server and a CLI writing the same files diverge,
-// because the server holds its state in memory). `--remote local` or an
-// explicit --templates-dir forces direct local store access.
+// manage over HTTP, or nil when it manages the local store directly. The
+// target is resolved in order: --remote, the target persisted by `wallet
+// instances use`, then a running instance serving the same wallet directory.
+// The last rule keeps one writer per directory, since a running server holds
+// its state in memory. `--remote local` or --templates-dir forces local access.
 func remoteClientIfConfigured() (*remote.Client, error) {
 	url, err := activeRemoteURL()
 	if err != nil {

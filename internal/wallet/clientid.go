@@ -30,15 +30,12 @@ import (
 
 // VerifyRequestObjectSignature verifies the Request Object JWS.
 //
-// The x509 client_id prefixes (x509_san_dns:, x509_hash:) carry the signing
-// certificate in the JWS x5c header, so for those the signature is verified
-// against the leaf certificate and the supplied chain is checked for internal
-// consistency. The other prefixes that sign the Request Object
-// (verifier_attestation:, decentralized_identifier:) take the signing key from
-// the attestation JWT or the resolved DID instead, so a signed Request Object
-// legitimately carries no x5c and there is nothing to verify against a
-// certificate here. Requiring x5c for those would be a false finding, so the
-// x5c requirement is scoped to the x509 prefixes.
+// The x509 prefixes (x509_san_dns:, x509_hash:) carry the signing certificate
+// in the x5c header, so the signature is checked against the leaf and the
+// chain for internal consistency. verifier_attestation: and
+// decentralized_identifier: take the key from the attestation or the resolved
+// DID, so they legitimately carry no x5c and requiring one would be a false
+// finding.
 func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	if reqObj == nil {
 		return ""
@@ -103,12 +100,10 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 	case strings.HasPrefix(clientID, "x509_hash:"):
 		return verifyX509Hash(clientID, reqObj)
 	case strings.HasPrefix(clientID, "origin:"):
-		// OID4VP 1.0 §5.9.3 reserves this prefix: "The Wallet MUST NOT accept
-		// this Client Identifier Prefix in requests." It names the audience a
-		// Digital Credentials API presentation is bound to, which the wallet
-		// derives from the origin the platform reports. Accepting it in a
-		// request would let a verifier on one channel ask for a presentation
-		// audienced to another.
+		// OID4VP 1.0 §5.9.3: "The Wallet MUST NOT accept this Client Identifier
+		// Prefix in requests." It names the audience a Digital Credentials API
+		// presentation is bound to, which the wallet derives from the origin
+		// the platform reports.
 		return "origin: is a reserved Client Identifier Prefix and MUST NOT be accepted in a request"
 	case strings.HasPrefix(clientID, "openid_federation:"):
 		// §5.9.3 defers to OpenID Federation for this prefix, and its
@@ -338,11 +333,9 @@ func ValidateRequestObject(clientID string, reqObj *oid4vc.RequestObjectJWT) str
 	typ := jsonutil.GetString(reqObj.Header, "typ")
 
 	// An unsigned ("alg": "none") Request Object satisfies none of the prefixes
-	// that OID4VP 1.0 requires to be signed. Catch it here, where the client_id
+	// OID4VP 1.0 requires to be signed. It is caught here, where the client_id
 	// is in scope: VerifyRequestObjectSignature has nothing to verify for
-	// alg=none, and without this a forged unsigned request against a
-	// signing-required prefix would raise no finding at all (and so pass strict
-	// mode). redirect_uri:, which is allowed to be unsigned, is not in the set.
+	// alg=none. redirect_uri:, which may be unsigned, is not in the set.
 	if alg == "none" && prefixRequiresSigning(clientID) {
 		return "client_id prefix requires a signed Request Object but the Request Object is unsigned (alg \"none\")"
 	}

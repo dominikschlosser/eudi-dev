@@ -21,27 +21,18 @@ import (
 	josev4 "github.com/go-jose/go-jose/v4"
 )
 
-// SupportedAlgorithms are the signature algorithms this toolkit verifies.
-//
-// The list is passed to every parse rather than inferred from the token,
-// which is what stops a token naming its own algorithm from choosing how it
-// gets checked. "none" is deliberately absent: callers that accept an
-// unsigned request object decide that before asking for verification, and
-// nothing reaches here expecting a signature check to pass without one.
+// SupportedAlgorithms are the signature algorithms this toolkit verifies. The
+// list is passed to every parse rather than inferred from the token, so a
+// token cannot choose how it is checked. "none" is deliberately absent.
 var SupportedAlgorithms = []josev4.SignatureAlgorithm{
 	josev4.ES256, josev4.ES384, josev4.ES512,
 	josev4.RS256, josev4.RS384, josev4.RS512,
 	josev4.PS256, josev4.PS384, josev4.PS512,
 }
 
-// Verify checks a compact JWS against key and returns its payload.
-//
-// Four packages used to carry their own copy of this: split the compact
-// form, hash the signing input per algorithm, slice the raw r||s signature at
-// the curve size, and call ecdsa.Verify. Every copy had to get the fixed
-// width encoding and the algorithm-to-hash mapping right on its own, and one
-// of them supported a different set of algorithms than its neighbours. This
-// is the same consolidation the signing side already had.
+// Verify checks a compact JWS against key and returns its payload. It is the
+// one copy of this: the fixed-width r||s encoding and the algorithm-to-hash
+// mapping are easy to get subtly wrong per package.
 func Verify(compact string, key crypto.PublicKey) ([]byte, error) {
 	if key == nil {
 		return nil, fmt.Errorf("verification requires a public key")

@@ -28,12 +28,8 @@ import (
 const renewalMargin = time.Minute
 
 // CredentialExpiry reports when a credential stops being valid, or the zero
-// time when it says nothing about its own lifetime.
-//
-// The two formats put it in different places, which is the whole reason this
-// exists in one function: an SD-JWT carries `exp` in its payload, an mdoc
-// carries validUntil in the MSO its issuer signed. A caller deciding whether
-// to renew must not have to know which it is holding.
+// time when it says nothing. The formats differ: an SD-JWT carries exp in its
+// payload, an mdoc validUntil in its MSO.
 func CredentialExpiry(cred StoredCredential) time.Time {
 	switch cred.Format {
 	case "mso_mdoc":
@@ -70,12 +66,9 @@ func CredentialNeedsRenewal(cred StoredCredential, now time.Time) bool {
 	return now.Add(renewalMargin).After(expiry)
 }
 
-// CredentialIssuedAt is when a credential says it was issued, or the zero
-// time when it says nothing.
-//
-// Same split as CredentialExpiry: an SD-JWT or JWT VC carries `iat` in its
-// payload, an mdoc carries signed in the MSO its issuer put its signature
-// over. A caller ordering a list must not have to know which it is holding.
+// CredentialIssuedAt is when a credential says it was issued, or the zero time
+// when it says nothing. Same split as CredentialExpiry: iat in a JWT payload,
+// signed in an mdoc MSO.
 func CredentialIssuedAt(cred StoredCredential) time.Time {
 	switch cred.Format {
 	case "mso_mdoc":
@@ -101,19 +94,11 @@ func CredentialIssuedAt(cred StoredCredential) time.Time {
 	}
 }
 
-// SortCredentialsNewestFirst orders credentials by when they were issued,
-// newest first.
-//
-// The stored order is the order they arrived, so the newest credential was
-// at the bottom of a list that pages ten at a time, which put a freshly
-// issued one out of sight. Credentials that state no issuance time sort
-// last.
-//
-// Ties keep the order they arrived in. The sort is stable, so that is
-// already settled without comparing anything else, and comparing the id
-// would be worse than useless: ids are random, so two wallets holding the
-// same credentials issued in the same second would order them differently,
-// which is the arbitrariness this is meant to remove.
+// SortCredentialsNewestFirst orders credentials by issuance time, newest
+// first, so a freshly issued one is not at the bottom of a paged list.
+// Credentials stating no issuance time sort last, and ties keep the order they
+// arrived in: the sort is stable, and ids are random, so comparing them would
+// order the same credentials differently in two wallets.
 func SortCredentialsNewestFirst(creds []StoredCredential) {
 	issued := make(map[string]time.Time, len(creds))
 	for _, c := range creds {

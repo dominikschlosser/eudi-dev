@@ -232,19 +232,14 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 }
 
 // applyRequestObjectPayload replaces the request parameters with the claims of
-// the Request Object.
-//
-// OID4VP 1.0 §5.10.1: "The Wallet MUST extract the set of Authorization
-// Request parameters from the Request Object. The Wallet MUST only use the
+// the Request Object. OID4VP 1.0 §5.10.1: "The Wallet MUST only use the
 // parameters in this Request Object, even if the same parameter was provided
-// in an Authorization Request query parameter." So a parameter the signed
-// object leaves out is absent rather than inherited from the URL. Merging the
-// two instead let anyone who can append to the invocation URL decide what the
-// wallet discloses, with the Verifier's signature still verifying over
-// something else entirely.
+// in an Authorization Request query parameter", so a parameter the signed
+// object omits is absent rather than inherited. Merging would let anyone who
+// can append to the invocation URL decide what the wallet discloses.
 //
-// The transport stays outside this: request_uri and request_uri_method say
-// how the object was fetched rather than what was asked for.
+// request_uri and request_uri_method stay outside: they describe the
+// transport, not the request.
 func applyRequestObjectPayload(req *AuthorizationRequest, payload map[string]any) error {
 	innerClientID, _ := payload["client_id"].(string)
 	// "The Client Identifier value in the client_id Authorization Request

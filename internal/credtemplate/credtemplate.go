@@ -13,13 +13,11 @@
 // limitations under the License.
 
 // Package credtemplate manages credential templates: named, reusable claim
-// sets with per-format defaults (VCT, doc type, namespace, expiry) and a list
-// of claims that are embedded plainly instead of being selectively
-// disclosable. Pre-defined templates compiled into the binary cover the EUDI
-// PID and the German PID that extends it;
-// user templates are JSON files in the wallet directory's templates/
-// subdirectory (the wallet directory's templates/ subdirectory by default). A user template
-// with the same name as a pre-defined one replaces it.
+// sets with per-format defaults (VCT, doc type, namespace, expiry) and the
+// claims embedded plainly instead of selectively disclosable. Pre-defined
+// templates compiled into the binary cover the EUDI PID and the German PID
+// that extends it. User templates are JSON files under the wallet directory's
+// templates/, and one with the same name replaces a pre-defined template.
 package credtemplate
 
 import (

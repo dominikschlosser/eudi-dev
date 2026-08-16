@@ -21,14 +21,10 @@ import (
 )
 
 // stableBinaryPath prefers a package manager's stable symlink over the
-// versioned file it resolves to. Homebrew installs the binary under
-// …/Cellar/<name>/<version>/bin and exposes it through a stable symlink such as
-// /opt/homebrew/bin/eudi. Baking the resolved (versioned) path into the URL
-// handler pins it to one version, so `brew upgrade` deletes that file and the
-// handler stops working until the user registers again. Keeping the symlink
-// lets an upgrade swap the target underneath it, so registering once is enough.
-// Any other layout uses the resolved path, since a bare symlink in a temporary
-// or build directory is not a stable launch point.
+// versioned file it resolves to. Homebrew exposes …/Cellar/<name>/<version>/bin
+// through /opt/homebrew/bin/eudi, and baking the versioned path into the URL
+// handler would break it on the next `brew upgrade`. Any other layout uses the
+// resolved path, since a symlink in a build directory is no launch point.
 func stableBinaryPath(executable string) string {
 	resolved, err := filepath.EvalSymlinks(executable)
 	if err != nil {
