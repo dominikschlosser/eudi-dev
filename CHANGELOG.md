@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.0] - 2026-08-16
+
+### Added
+
+- **The wallet has an OpenID4VCI feature level, selected with `--vci-version`.** It speaks OpenID4VCI 1.0, the published final version, and `1.0` stays the default, so an existing setup behaves exactly as it did. `1.1` says the wallet is willing to use what the [1.1 draft](https://openid.github.io/OpenID4VCI/openid-4-verifiable-credential-issuance-1_1-wg-draft.html) adds on top of it. Every one of those features is negotiated in the issuer's metadata, so the level is what the wallet is willing to use rather than what it demands, and against an issuer that publishes none of them the two levels are indistinguishable. That is what makes it safe on a wallet that also talks to 1.0 issuers. The level sits with the other conformance settings: `GET /api/config` reports it as `vci_version`, `PUT /api/config/conformance` changes it on a locally-hosted wallet, the Conformance panel has a control for it, and `--demo` selects `1.1` (overridable, like the validation mode and HAIP defaults it already implied). Which features `1.1` selects is listed in [spec compliance](docs/spec-compliance.md)
+- **An issuer offering interactive authorization is no longer declined without a word.** An authorization server publishes `authorization_challenge_endpoint` to say it supports Interactive Authorization (OpenID4VCI 1.1 §6, §13.3: "the presence of authorization_challenge_endpoint is sufficient for a Wallet to determine that it can use Interactive Authorization"). A wallet at feature level 1.0 takes the redirect flow the server also published, which is correct but silent, and silence is the wrong answer from a tool people use to find out why a flow went the way it did. The activity log now records the offer, and at 1.0 the entry names the flag that would use it. An authorization server that sets `require_interactive_authorization` says so in the entry too, since the redirect flow it is about to attempt is likely to be refused
+
 ## [1.22.2] - 2026-08-15
 
 ### Fixed

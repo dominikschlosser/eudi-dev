@@ -137,7 +137,7 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint" id="conf-intro">How this wallet checks incoming requests. A failed check is a warning in debug mode and rejects the request in strict mode.</p>
+      <p class="dialog-hint" id="conf-intro">How this wallet checks incoming requests, and which OpenID4VCI version it uses when it asks an issuer for a credential. A failed check is a warning in debug mode and rejects the request in strict mode.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
@@ -150,6 +150,12 @@
         </td></tr>
         <tr><td>Encrypted requests</td><td>
           <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> request objects</label>
+        </td></tr>
+        <tr><td>OpenID4VCI</td><td>
+          <select id="conf-vci-version-select" class="conf-input">
+            <option value="1.0">1.0</option>
+            <option value="1.1">1.1 draft</option>
+          </select>
         </td></tr>
         <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
         <tr><td>Preferred format</td><td id="conf-format">—</td></tr>

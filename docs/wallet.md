@@ -333,10 +333,11 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--docker`              | `false`  | Use `host.docker.internal` instead of `localhost` when deriving new HTTP and HTTPS wallet endpoint URLs |
 | `--vci-client-id`       | —        | Client ID to use for OID4VCI authorization-code flows |
 | `--vci-redirect-uri`    | —        | Redirect URI to use for OID4VCI authorization-code flows |
+| `--vci-version`         | `1.0`    | OpenID4VCI feature level the wallet uses as a client: `1.0` (the published version) or `1.1` (also uses what the 1.1 draft adds, where an issuer offers it). See [OpenID4VCI feature level](#openid4vci-feature-level) |
 | `--haip`                | `false`  | Enforce HAIP 1.0 on incoming presentations and credential offers. Violations are errors whatever `--mode` says |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](#wallet-attestation)) |
 | `--require-encrypted-request` | `false` | Require verifiers to encrypt request objects (sends encryption key in `wallet_metadata`) |
-| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug` and `--haip` (both overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
+| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](public-demo.md)) |
 | `--demo-issuer-client-auth` | `required` | What the built-in demo issuer's authorization server demands at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also serves wallets that send no wallet attestation (see [public demo hosting](public-demo.md)) |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
@@ -657,9 +658,29 @@ eudi wallet accept --haip 'openid4vp://authorize?...'
 
 Conformance is the wallet's own setting, not a per-request option: every request to a given wallet is held to the same validation mode, HAIP and encrypted-request settings.
 
+## OpenID4VCI feature level
+
+The wallet speaks [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html), the published final version, and that does not change. `--vci-version` decides whether it also uses what the [1.1 draft](https://openid.github.io/OpenID4VCI/openid-4-verifiable-credential-issuance-1_1-wg-draft.html) adds on top.
+
+```bash
+eudi wallet serve --vci-version 1.1
+```
+
+`1.0` is the default. `1.1` is what the public demo runs (`--demo` selects it, and `--vci-version 1.0` overrides that).
+
+Every 1.1 feature is negotiated in the issuer's metadata, so the level is the wallet saying what it is willing to use, not what it demands. Against an issuer that publishes none of them the two levels behave identically, which is why selecting 1.1 is safe on a wallet that also talks to 1.0 issuers.
+
+The level is a conformance setting like the others, so it is also changeable at runtime on a locally-hosted wallet (see [changing the conformance settings](#changing-the-conformance-settings)) and reported as `vci_version` by `GET /api/config`.
+
+What 1.1 selects:
+
+| Feature | 1.0 | 1.1 |
+|---------|-----|-----|
+| Interactive Authorization (1.1 §6), where the issuer publishes `authorization_challenge_endpoint` | Not used. The offer is recorded in the activity log naming the flag that would use it, and the redirect flow of §5 runs as before | Recorded in the activity log (using it is being added, see [spec compliance](spec-compliance.md)) |
+
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet header shows three settings: validation mode (strict/debug), HAIP, and encrypted requests.
+The **Conformance** panel in the wallet header shows four settings: validation mode (strict/debug), HAIP, encrypted requests, and the [OpenID4VCI feature level](#openid4vci-feature-level).
 
 **A locally-hosted wallet** changes them from that panel, which calls `PUT /api/config/conformance` (`DELETE` restores the startup values). The change is process-level, not reloaded per request, so it holds until the process restarts, and every flow reaching this wallet then honors it: the UI, a scanned QR, and `openid4vp://` or credential-offer links routed here by the CLI or the macOS handler.
 
@@ -1100,4 +1121,4 @@ Discovery only sees instances running directly on this system. A wallet server i
 
 ### Introspection
 
-`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`. In demo mode those host details are replaced by a `demo` object. `POST /api/shutdown` stops the instance (the response is sent before the process exits).
+`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `vci_version`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`. In demo mode those host details are replaced by a `demo` object. `POST /api/shutdown` stops the instance (the response is sent before the process exits).

@@ -68,6 +68,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	if authorizationEndpoint == "" {
 		return nil, fmt.Errorf("authorization server metadata did not include authorization_endpoint")
 	}
+	w.noteInteractiveAuthorization(oauthMeta)
 
 	clientAuthMethod := detectTokenEndpointAuthMethod(oauthMeta)
 	switch clientAuthMethod {
@@ -175,12 +176,66 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		return nil, fmt.Errorf("authorization callback missing code in values %q", callbackValues.Encode())
 	}
 
+	return w.completeAuthorizationCodeIssuance(authorizationCodeIssuance{
+		offer:              offer,
+		metadata:           metadata,
+		tokenEndpoint:      tokenEndpoint,
+		credentialEndpoint: credentialEndpoint,
+		clientID:           clientID,
+		redirectURI:        redirectURI,
+		codeVerifier:       codeVerifier,
+		clientAuth:         clientAuth,
+		dpopKey:            dpopKey,
+		nonces:             nonces,
+		configID:           configID,
+	}, code)
+}
+
+// authorizationCodeIssuance carries what the second half of an authorization
+// code issuance needs: everything the wallet established while obtaining the
+// code, and nothing about how it obtained it.
+//
+// How the code was obtained is the part that varies. Today it is the redirect
+// flow of OpenID4VCI 1.0 §5, and the same exchange follows a code from any
+// other route to one.
+type authorizationCodeIssuance struct {
+	offer              *oid4vc.CredentialOffer
+	metadata           map[string]any
+	tokenEndpoint      string
+	credentialEndpoint string
+	clientID           string
+	// redirectURI is empty where the flow that produced the code had none.
+	// The token request then omits it, which RFC 6749 §4.1.3 asks for ("if the
+	// redirect_uri parameter was included in the authorization request").
+	redirectURI  string
+	codeVerifier string
+	clientAuth   *ClientAuthentication
+	dpopKey      *ecdsa.PrivateKey
+	nonces       *dpopNonceState
+	configID     string
+}
+
+// completeAuthorizationCodeIssuance exchanges an authorization code for an
+// access token and takes the flow through to an imported credential.
+func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance, code string) (*IssuanceResult, error) {
+	offer := ctx.offer
+	metadata := ctx.metadata
+	tokenEndpoint := ctx.tokenEndpoint
+	credentialEndpoint := ctx.credentialEndpoint
+	clientID := ctx.clientID
+	clientAuth := ctx.clientAuth
+	dpopKey := ctx.dpopKey
+	nonces := ctx.nonces
+	configID := ctx.configID
+
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", "authorization_code")
 	tokenForm.Set("code", code)
 	tokenForm.Set("client_id", clientID)
-	tokenForm.Set("redirect_uri", redirectURI)
-	tokenForm.Set("code_verifier", codeVerifier)
+	if ctx.redirectURI != "" {
+		tokenForm.Set("redirect_uri", ctx.redirectURI)
+	}
+	tokenForm.Set("code_verifier", ctx.codeVerifier)
 	if err := applyClientAuthentication(tokenForm, clientAuth, w.HolderKey); err != nil {
 		return nil, err
 	}
@@ -341,6 +396,40 @@ const unauthenticatedClientMethod = "none"
 // same thing. It is not in the registry, so it is reported as a deviation
 // before the wallet acts on what it evidently means.
 const unregisteredPublicClientMethod = "public"
+
+// noteInteractiveAuthorization records what the authorization server offers by
+// way of Interactive Authorization (OpenID4VCI 1.1 §6) and what this wallet
+// does with it.
+//
+// The offer is the endpoint's presence, which §13.3 makes the whole of the
+// server's half of the negotiation ("the presence of
+// authorization_challenge_endpoint is sufficient for a Wallet to determine that
+// it can use Interactive Authorization"). A wallet at 1.0 declines it and takes
+// the redirect flow, which is correct but silent, and silence is the wrong
+// answer for a tool people use to find out why a flow behaved as it did. This
+// says it out loud, and names the flag that changes it.
+func (w *Wallet) noteInteractiveAuthorization(oauthMeta map[string]any) {
+	endpoint, _ := oauthMeta["authorization_challenge_endpoint"].(string)
+	if endpoint == "" {
+		return
+	}
+	details := map[string]any{"authorization_challenge_endpoint": endpoint}
+	required, _ := oauthMeta["require_interactive_authorization"].(bool)
+	if required {
+		details["require_interactive_authorization"] = true
+	}
+	if w.VCIFeatureVersion().UsesInteractiveAuthorization() {
+		w.addProtocolLog("issuance", "interactive_authorization_offered",
+			fmt.Sprintf("Authorization server offers interactive authorization at %s", endpoint), true, details)
+		return
+	}
+	detail := fmt.Sprintf("authorization server offers interactive authorization (OpenID4VCI 1.1 §6) at %s, and this wallet is set to OpenID4VCI 1.0, so the redirect flow is used; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+	if required {
+		detail = fmt.Sprintf("authorization server requires interactive authorization (OpenID4VCI 1.1 §6, require_interactive_authorization) at %s, and this wallet is set to OpenID4VCI 1.0, so the redirect flow is attempted and is likely to be refused; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+	}
+	w.addProtocolLog("issuance", "interactive_authorization_offered", detail, true, details)
+	log.Printf("[VCI] %s", detail)
+}
 
 // reportServerDeviation records something the counterparty got wrong. Strict
 // refuses to go on, debug names it and continues, which is the difference

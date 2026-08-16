@@ -74,6 +74,10 @@ type Wallet struct {
 	RequireEncryptedRequest bool                  // when true, sends encryption keys in wallet_metadata
 	RequestEncryptionKey    *ecdsa.PrivateKey     // key for decrypting encrypted request objects
 	RequireHAIP             bool                  // when true, enforce HAIP 1.0 compliance checks
+	// VCIVersion is the OpenID4VCI feature level the wallet uses as a client.
+	// "1.0" (the default) is the published final version, "1.1" also uses what
+	// the 1.1 draft adds where an issuer offers it.
+	VCIVersion VCIVersion `json:"-"`
 	// ForceClientAttestation sends the wallet attestation on OID4VCI token
 	// requests even when the authorization server does not advertise
 	// attest_jwt_client_auth. Advertising it is only a SHOULD, so its absence
@@ -321,6 +325,7 @@ func New(holderKey, issuerKey *ecdsa.PrivateKey, autoAccept bool) *Wallet {
 		IssuerKey:      issuerKey,
 		AutoAccept:     autoAccept,
 		ValidationMode: ValidationModeDebug,
+		VCIVersion:     VCIVersion10,
 		runtime:        newWalletRuntime(),
 	}
 
@@ -808,6 +813,19 @@ func (w *Wallet) Mode() ValidationMode {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.ValidationMode
+}
+
+// VCIFeatureVersion returns the OpenID4VCI feature level under the read lock,
+// for the same reason Mode does: it is runtime-mutable on a local wallet. An
+// unset value reads as the default rather than as an empty version, so a
+// wallet built by a test that never set one behaves like 1.0.
+func (w *Wallet) VCIFeatureVersion() VCIVersion {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.VCIVersion == "" {
+		return VCIVersion10
+	}
+	return w.VCIVersion
 }
 
 // ConformanceSettings returns the three runtime-mutable conformance fields

@@ -7,6 +7,8 @@ Two independent settings decide what a finding does to a flow:
 - `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each one and carries on so the rest of the exchange stays observable.
 - `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run at all. What a violation then does is the validation mode's decision, as for every other finding: strict stops the flow, debug reports it and carries on.
 
+A third setting decides which document the wallet behaves like as an OpenID4VCI client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` also uses the features of the 1.1 draft listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet.md#openid4vci-feature-level)).
+
 ## OID4VP 1.0 (OpenID for Verifiable Presentations)
 
 | Feature | Status | Notes |
@@ -67,6 +69,14 @@ Two independent settings decide what a finding does to a flow:
 | Credential Issuer metadata publication | Implemented | Wallet serves `/.well-known/openid-credential-issuer` as unsigned `application/json` by default and as signed `application/jwt` to a client that asks for it (§12.2.2), with `issuer_info` / `registrar_dataset` |
 | Registrar-style issuer authorization data | Implemented | Wallet serves `/api/registrar/wrp` with dynamic `entitlements` and `providesAttestations` filters for PID and non-PID attestation sets |
 | HTTPS JWT VC issuer metadata publication | Implemented | Wallet serves `/.well-known/jwt-vc-issuer` with JWKS for wallet-issued SD-JWTs |
+
+## OID4VCI 1.1 draft (selected with `--vci-version 1.1`)
+
+The 1.1 draft is not final, so nothing here is used at the default feature level. Each row is negotiated in the issuer's metadata as well, so an issuer that offers none of these sees no difference between the two levels.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Interactive Authorization (§6) | Not implemented | The wallet records an authorization server that publishes `authorization_challenge_endpoint` (§13.3) in the activity log at either level, and at 1.0 the entry names the flag that would use it. Using the endpoint is being added |
 
 ## HAIP 1.0 (Current wallet coverage)
 

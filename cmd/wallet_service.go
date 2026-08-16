@@ -413,6 +413,7 @@ func (l *localWallet) Config() (map[string]any, error) {
 		"status_list_url":           w.StatusListURL(),
 		"preferred_format":          w.PreferredFormat,
 		"validation_mode":           string(w.ValidationMode),
+		"vci_version":               string(w.VCIFeatureVersion()),
 		"auto_accept":               w.AutoAccept,
 		"session_transcript":        string(w.SessionTranscript),
 		"require_haip":              w.RequireHAIP,

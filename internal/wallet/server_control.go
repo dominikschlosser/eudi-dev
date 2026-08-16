@@ -148,6 +148,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"status_list_url":    s.wallet.StatusListURL(),
 		"preferred_format":   s.wallet.PreferredFormat,
 		"validation_mode":    string(mode),
+		"vci_version":        string(s.wallet.VCIFeatureVersion()),
 		"auto_accept":        s.wallet.AutoAccept,
 		"session_transcript": string(s.wallet.SessionTranscript),
 		"require_haip":       requireHAIP,
@@ -234,9 +235,10 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Mode      *string `json:"mode,omitempty"`
-		HAIP      *bool   `json:"haip,omitempty"`
-		Encrypted *bool   `json:"encrypted,omitempty"`
+		Mode       *string `json:"mode,omitempty"`
+		HAIP       *bool   `json:"haip,omitempty"`
+		Encrypted  *bool   `json:"encrypted,omitempty"`
+		VCIVersion *string `json:"vci_version,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -251,9 +253,21 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 		}
 		mode = parsed
 	}
+	var vciVersion VCIVersion
+	if body.VCIVersion != nil {
+		parsed, err := ParseVCIVersion(*body.VCIVersion)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		vciVersion = parsed
+	}
 	s.wallet.mu.Lock()
 	if body.Mode != nil {
 		s.wallet.ValidationMode = mode
+	}
+	if body.VCIVersion != nil {
+		s.wallet.VCIVersion = vciVersion
 	}
 	if body.HAIP != nil {
 		s.wallet.RequireHAIP = *body.HAIP
@@ -276,6 +290,7 @@ func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) 
 	s.wallet.ValidationMode = s.defaultValidationMode
 	s.wallet.RequireHAIP = s.defaultRequireHAIP
 	s.wallet.RequireEncryptedRequest = s.defaultRequireEncryptedRequest
+	s.wallet.VCIVersion = s.defaultVCIVersion
 	s.wallet.mu.Unlock()
 	s.writeConformanceConfig(w)
 }
@@ -284,10 +299,15 @@ func (s *Server) writeConformanceConfig(w http.ResponseWriter) {
 	// Direct field reads: already inside the lock, so calling the locking
 	// accessor here would self-deadlock (RWMutex is not reentrant).
 	s.wallet.mu.RLock()
+	vciVersion := s.wallet.VCIVersion
+	if vciVersion == "" {
+		vciVersion = VCIVersion10
+	}
 	resp := map[string]any{
 		"validation_mode":           string(s.wallet.ValidationMode),
 		"require_haip":              s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
+		"vci_version":               string(vciVersion),
 	}
 	s.wallet.mu.RUnlock()
 	writeJSON(w, http.StatusOK, resp)

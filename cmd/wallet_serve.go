@@ -56,6 +56,7 @@ type walletServeOptions struct {
 	PreferredFormat         string
 	RequireEncryptedRequest bool
 	HAIP                    bool
+	VCIVersion              string
 	ClientAttestation       bool
 	DemoIssuerClientAuth    string
 	VCIClientID             string
@@ -67,6 +68,14 @@ type walletServeOptions struct {
 }
 
 func walletServeCmd() *cobra.Command {
+	cmd, _ := walletServeCmdWithOptions()
+	return cmd
+}
+
+// walletServeCmdWithOptions builds the command and hands back the options its
+// flags write into, so a test can drive the same flag parsing and the same
+// profile resolution the command does instead of restating them.
+func walletServeCmdWithOptions() (*cobra.Command, *walletServeOptions) {
 	var opts walletServeOptions
 
 	cmd := &cobra.Command{
@@ -105,14 +114,45 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it)")
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug and --haip (both overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVarP(&opts.Detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
-	return cmd
+	return cmd, &opts
+}
+
+// applyDemoProfileDefaults applies what --demo implies, each setting only
+// where the operator did not give one explicitly.
+//
+// A public demo needs a known baseline: the periodic reset restores exactly
+// the --pid state. Consent stays interactive for browser flows (API
+// submissions auto-accept anyway), so visitors see the real wallet UX.
+//
+// Demo mode is the EUDI profile held in debug: a wallet hosted publicly as a
+// counterparty checks callers against the same HAIP rules a real EUDI wallet
+// does, but debug mode reports a violation as a warning and carries on rather
+// than refusing it, so the demo stays usable against issuers and verifiers
+// still being brought into line.
+//
+// The demo also selects the newer OpenID4VCI level, because showing what the
+// drafts do next is what it is for, and because every 1.1 feature is
+// negotiated in metadata, so an issuer that publishes none of them sees no
+// difference.
+func applyDemoProfileDefaults(cmd *cobra.Command, opts *walletServeOptions, w *wallet.Wallet) {
+	opts.PID = true
+	if !cmd.Flags().Changed("mode") {
+		w.ValidationMode = wallet.ValidationModeDebug
+	}
+	if !cmd.Flags().Changed("haip") {
+		opts.HAIP = true
+	}
+	if !cmd.Flags().Changed("vci-version") {
+		opts.VCIVersion = string(wallet.VCIVersion11)
+	}
 }
 
 // servingConfigWarnings flags persisted serving config that cannot work in
@@ -327,25 +367,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		return fmt.Errorf("invalid --demo-reset %q: %w", opts.DemoReset, err)
 	}
 	if opts.Demo {
-		// A public demo needs a known baseline: the periodic reset
-		// restores exactly the --pid state. Consent stays interactive
-		// for browser flows (API submissions auto-accept anyway), so
-		// visitors see the real wallet UX.
-		opts.PID = true
-
-		// Demo mode is the EUDI profile held in debug: a wallet hosted
-		// publicly as a counterparty checks callers against the same
-		// HAIP rules a real EUDI wallet does, but debug mode reports a
-		// violation as a warning and carries on rather than refusing it,
-		// so the demo stays usable against issuers and verifiers still
-		// being brought into line. Both are overridable, so a self-hosted
-		// demo can be stricter or looser.
-		if !cmd.Flags().Changed("mode") {
-			w.ValidationMode = wallet.ValidationModeDebug
-		}
-		if !cmd.Flags().Changed("haip") {
-			opts.HAIP = true
-		}
+		applyDemoProfileDefaults(cmd, opts, w)
 	}
 
 	if opts.AutoAccept {
@@ -354,6 +376,10 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 
 	if err := applySessionTranscriptMode(w, opts.SessionTranscript); err != nil {
 		return err
+	}
+
+	if err := applyVCIVersion(w, opts.VCIVersion); err != nil {
+		return fmt.Errorf("--vci-version: %w", err)
 	}
 
 	if opts.PreferredFormat != "" {
@@ -517,6 +543,11 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		fmt.Printf("  Mode:        interactive (consent UI)\n")
 	}
 	fmt.Printf("  Transcript:  %s\n", w.SessionTranscript)
+	// Only worth a line when it is not the published version: the banner
+	// should say what is unusual about this wallet, not restate the default.
+	if w.VCIFeatureVersion() == wallet.VCIVersion11 {
+		fmt.Printf("  OID4VCI:     1.1 draft features used where an issuer offers them\n")
+	}
 	if w.PreferredFormat != "" {
 		fmt.Printf("  Preferred:   %s\n", w.PreferredFormat)
 	}

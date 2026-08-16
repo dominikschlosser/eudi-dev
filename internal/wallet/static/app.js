@@ -1648,7 +1648,7 @@
       // and browser-only warning both branch on it.
       demoMode = !!(config.demo && config.demo.enabled);
       renderConformance(config);
-      ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input'].forEach((id) => {
+      ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input', 'conf-vci-version-select'].forEach((id) => {
         const el = document.getElementById(id);
         if (el && !el.dataset.wired) {
           el.dataset.wired = '1';
@@ -1710,13 +1710,14 @@
   // Conformance is the wallet's own process-level setting, reported by
   // /api/config. Only a locally-hosted wallet can change it (PUT/DELETE
   // /api/config/conformance); the public demo shows it read-only.
-  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false };
+  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false, vci_version: '1.0' };
 
   function effectiveConformance() {
     return {
       mode: conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug',
       haip: !!conformanceDefaults.require_haip,
       encrypted: !!conformanceDefaults.require_encrypted_request,
+      vciVersion: conformanceDefaults.vci_version === '1.1' ? '1.1' : '1.0',
     };
   }
 
@@ -1725,19 +1726,23 @@
     const mode = document.getElementById('conf-mode-select');
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
+    const vci = document.getElementById('conf-vci-version-select');
     if (mode) { mode.value = eff.mode === 'strict' ? 'strict' : 'debug'; mode.disabled = demoMode; }
     if (haip) { haip.checked = eff.haip; haip.disabled = demoMode; }
     if (enc) { enc.checked = eff.encrypted; enc.disabled = demoMode; }
+    if (vci) { vci.value = eff.vciVersion; vci.disabled = demoMode; }
   }
 
   function currentControlValues() {
     const mode = document.getElementById('conf-mode-select');
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
+    const vci = document.getElementById('conf-vci-version-select');
     return {
       mode: mode ? mode.value : undefined,
       haip: haip ? haip.checked : undefined,
       encrypted: enc ? enc.checked : undefined,
+      vci_version: vci ? vci.value : undefined,
     };
   }
 
@@ -1784,7 +1789,7 @@
     // controls make sense, rather than trailing the popup with more text.
     const intro = document.getElementById('conf-intro');
     if (intro) {
-      const base = 'How this wallet checks incoming requests. A failed check is a warning in debug mode and rejects the request in strict mode.';
+      const base = 'How this wallet checks incoming requests, and which OpenID4VCI version it uses when it asks an issuer for a credential. A failed check is a warning in debug mode and rejects the request in strict mode.';
       intro.textContent = demoMode ? base + ' These are fixed on the public demo.' : base;
     }
     const reset = document.getElementById('conf-reset');

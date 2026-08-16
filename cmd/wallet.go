@@ -144,6 +144,17 @@ func applyValidationMode(w *wallet.Wallet, raw string) error {
 	return nil
 }
 
+// applyVCIVersion sets the OpenID4VCI feature level the wallet uses as a
+// client.
+func applyVCIVersion(w *wallet.Wallet, raw string) error {
+	version, err := wallet.ParseVCIVersion(raw)
+	if err != nil {
+		return err
+	}
+	w.VCIVersion = version
+	return nil
+}
+
 // warnIssuedEndpointsOffline notes after a direct (unrouted) issuance that
 // the issuer and status list URLs embedded in the new credential only
 // resolve once a wallet server runs for this wallet directory.

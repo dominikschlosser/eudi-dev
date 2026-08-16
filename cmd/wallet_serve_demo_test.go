@@ -27,66 +27,100 @@ import (
 // self-hosted demo can opt out.
 func TestDemoModeImpliesEUDIProfile(t *testing.T) {
 	tests := []struct {
-		name       string
-		args       []string
-		wantMode   wallet.ValidationMode
-		wantHAIP   bool
-		wantDemoOn bool
+		name           string
+		args           []string
+		wantMode       wallet.ValidationMode
+		wantHAIP       bool
+		wantVCIVersion wallet.VCIVersion
 	}{
 		{
-			name:     "plain serve keeps the permissive defaults",
-			args:     []string{"--port", "0"},
-			wantMode: wallet.ValidationModeDebug,
-			wantHAIP: false,
+			name:           "plain serve keeps the permissive defaults",
+			args:           []string{"--port", "0"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       false,
+			wantVCIVersion: wallet.VCIVersion10,
 		},
 		{
-			name:       "demo implies strict and HAIP",
-			args:       []string{"--port", "0", "--demo"},
-			wantMode:   wallet.ValidationModeStrict,
-			wantHAIP:   true,
-			wantDemoOn: true,
+			name:           "demo implies HAIP in debug and the 1.1 feature level",
+			args:           []string{"--port", "0", "--demo"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       true,
+			wantVCIVersion: wallet.VCIVersion11,
 		},
 		{
-			name:       "explicit mode wins over the demo default",
-			args:       []string{"--port", "0", "--demo", "--mode", "debug"},
-			wantMode:   wallet.ValidationModeDebug,
-			wantHAIP:   true,
-			wantDemoOn: true,
+			name:           "explicit mode wins over the demo default",
+			args:           []string{"--port", "0", "--demo", "--mode", "strict"},
+			wantMode:       wallet.ValidationModeStrict,
+			wantHAIP:       true,
+			wantVCIVersion: wallet.VCIVersion11,
 		},
 		{
-			name:       "explicit haip=false wins over the demo default",
-			args:       []string{"--port", "0", "--demo", "--haip=false"},
-			wantMode:   wallet.ValidationModeStrict,
-			wantHAIP:   false,
-			wantDemoOn: true,
+			name:           "explicit haip=false wins over the demo default",
+			args:           []string{"--port", "0", "--demo", "--haip=false"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       false,
+			wantVCIVersion: wallet.VCIVersion11,
 		},
 		{
-			name:     "haip without demo is still available on its own",
-			args:     []string{"--port", "0", "--haip"},
-			wantMode: wallet.ValidationModeDebug,
-			wantHAIP: true,
+			name:           "explicit vci-version wins over the demo default",
+			args:           []string{"--port", "0", "--demo", "--vci-version", "1.0"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       true,
+			wantVCIVersion: wallet.VCIVersion10,
+		},
+		{
+			name:           "haip without demo is still available on its own",
+			args:           []string{"--port", "0", "--haip"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       true,
+			wantVCIVersion: wallet.VCIVersion10,
+		},
+		{
+			name:           "the 1.1 feature level is available without demo",
+			args:           []string{"--port", "0", "--vci-version", "1.1"},
+			wantMode:       wallet.ValidationModeDebug,
+			wantHAIP:       false,
+			wantVCIVersion: wallet.VCIVersion11,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			mode, haip := resolveServeProfile(t, tc.args)
-			if mode != tc.wantMode {
-				t.Errorf("validation mode = %q, want %q", mode, tc.wantMode)
+			w := resolveServeProfile(t, tc.args)
+			if w.ValidationMode != tc.wantMode {
+				t.Errorf("validation mode = %q, want %q", w.ValidationMode, tc.wantMode)
 			}
-			if haip != tc.wantHAIP {
-				t.Errorf("RequireHAIP = %v, want %v", haip, tc.wantHAIP)
+			if w.RequireHAIP != tc.wantHAIP {
+				t.Errorf("RequireHAIP = %v, want %v", w.RequireHAIP, tc.wantHAIP)
+			}
+			if got := w.VCIFeatureVersion(); got != tc.wantVCIVersion {
+				t.Errorf("VCIVersion = %q, want %q", got, tc.wantVCIVersion)
 			}
 		})
 	}
 }
 
-// resolveServeProfile applies the serve flags the way RunE does, without
-// starting a server.
-func resolveServeProfile(t *testing.T, args []string) (wallet.ValidationMode, bool) {
+// TestServeRejectsAnUnknownVCIVersion keeps the failure at flag-resolution
+// time, where the operator sees it, rather than at the first issuance.
+func TestServeRejectsAnUnknownVCIVersion(t *testing.T) {
+	cmd, opts := walletServeCmdWithOptions()
+	if err := cmd.ParseFlags([]string{"--port", "0", "--vci-version", "1.2"}); err != nil {
+		t.Fatalf("parsing flags: %v", err)
+	}
+	w := newTestServeWallet(t)
+	if err := applyVCIVersion(w, opts.VCIVersion); err == nil {
+		t.Fatal("applyVCIVersion accepted an unknown version")
+	}
+}
+
+// resolveServeProfile applies the serve flags the way RunE does, through the
+// same helpers, without starting a server. Restating that resolution here
+// instead would test the copy: an earlier version of this test did, and went
+// on asserting a demo default the command had stopped applying.
+func resolveServeProfile(t *testing.T, args []string) *wallet.Wallet {
 	t.Helper()
 
-	cmd := walletServeCmd()
+	cmd, opts := walletServeCmdWithOptions()
 	// --mode is a persistent flag on the parent command.
 	cmd.Flags().StringVar(&walletValidationMode, "mode", string(wallet.ValidationModeDebug), "")
 	t.Cleanup(func() { walletValidationMode = string(wallet.ValidationModeDebug) })
@@ -94,6 +128,25 @@ func resolveServeProfile(t *testing.T, args []string) (wallet.ValidationMode, bo
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("parsing %v: %v", args, err)
 	}
+
+	w := newTestServeWallet(t)
+	if err := applyValidationMode(w, walletValidationMode); err != nil {
+		t.Fatalf("applying validation mode: %v", err)
+	}
+	if opts.Demo {
+		applyDemoProfileDefaults(cmd, opts, w)
+	}
+	if err := applyVCIVersion(w, opts.VCIVersion); err != nil {
+		t.Fatalf("applying vci version: %v", err)
+	}
+	if opts.HAIP {
+		w.RequireHAIP = true
+	}
+	return w
+}
+
+func newTestServeWallet(t *testing.T) *wallet.Wallet {
+	t.Helper()
 
 	holderKey, err := mock.GenerateKey()
 	if err != nil {
@@ -103,30 +156,5 @@ func resolveServeProfile(t *testing.T, args []string) (wallet.ValidationMode, bo
 	if err != nil {
 		t.Fatalf("generating issuer key: %v", err)
 	}
-	w := wallet.New(holderKey, issuerKey, false)
-	if err := applyValidationMode(w, walletValidationMode); err != nil {
-		t.Fatalf("applying validation mode: %v", err)
-	}
-
-	demo, err := cmd.Flags().GetBool("demo")
-	if err != nil {
-		t.Fatalf("reading --demo: %v", err)
-	}
-	haip, err := cmd.Flags().GetBool("haip")
-	if err != nil {
-		t.Fatalf("reading --haip: %v", err)
-	}
-
-	if demo {
-		if !cmd.Flags().Changed("mode") {
-			w.ValidationMode = wallet.ValidationModeStrict
-		}
-		if !cmd.Flags().Changed("haip") {
-			haip = true
-		}
-	}
-	if haip {
-		w.RequireHAIP = true
-	}
-	return w.ValidationMode, w.RequireHAIP
+	return wallet.New(holderKey, issuerKey, false)
 }

@@ -78,6 +78,7 @@ type Server struct {
 	defaultValidationMode          ValidationMode
 	defaultRequireHAIP             bool
 	defaultRequireEncryptedRequest bool
+	defaultVCIVersion              VCIVersion
 }
 
 // NewServer creates a new wallet HTTP server.
@@ -91,6 +92,7 @@ func NewServer(w *Wallet, port int, onSave func()) *Server {
 		defaultValidationMode:          w.ValidationMode,
 		defaultRequireHAIP:             w.RequireHAIP,
 		defaultRequireEncryptedRequest: w.RequireEncryptedRequest,
+		defaultVCIVersion:              w.VCIFeatureVersion(),
 	}
 	w.SetLogSink(func(LogEntry) {
 		s.triggerSave()

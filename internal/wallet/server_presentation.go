@@ -213,6 +213,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		RequestEncryptionKey:    src.RequestEncryptionKey,
 		RequireHAIP:             srcHAIP,
 		ValidationMode:          srcMode,
+		VCIVersion:              src.VCIFeatureVersion(),
 		Credentials:             append([]StoredCredential(nil), src.Credentials...),
 		StatusEntries:           cloneStatusEntries(src.StatusEntries),
 		StatusListCounter:       src.StatusListCounter,

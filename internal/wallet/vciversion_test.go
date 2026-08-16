@@ -1,0 +1,309 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package wallet
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"testing"
+)
+
+func TestParseVCIVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    VCIVersion
+		wantErr bool
+	}{
+		{name: "empty selects the published version", raw: "", want: VCIVersion10},
+		{name: "1.0", raw: "1.0", want: VCIVersion10},
+		{name: "1.1", raw: "1.1", want: VCIVersion11},
+		{name: "a version nobody published", raw: "1.2", wantErr: true},
+		{name: "not a version at all", raw: "latest", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseVCIVersion(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("ParseVCIVersion(%q) = %q, want an error", tc.raw, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseVCIVersion(%q) error = %v", tc.raw, err)
+			}
+			if got != tc.want {
+				t.Errorf("ParseVCIVersion(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+// Interactive Authorization is the wallet's half of a negotiation, so the
+// feature level is the only thing that decides whether the wallet is willing.
+func TestVCIVersionUsesInteractiveAuthorization(t *testing.T) {
+	if VCIVersion10.UsesInteractiveAuthorization() {
+		t.Error("1.0 must not use interactive authorization")
+	}
+	if !VCIVersion11.UsesInteractiveAuthorization() {
+		t.Error("1.1 must use interactive authorization")
+	}
+}
+
+// A wallet built without a feature level behaves like the published version
+// rather than like an empty one, so nothing has to remember to set it.
+func TestVCIFeatureVersionDefaultsToThePublishedVersion(t *testing.T) {
+	w := &Wallet{}
+	if got := w.VCIFeatureVersion(); got != VCIVersion10 {
+		t.Errorf("VCIFeatureVersion() = %q, want %q", got, VCIVersion10)
+	}
+}
+
+// The feature level decides what the wallet uses, not what it tolerates: an
+// authorization server that offers Interactive Authorization to a wallet set
+// to 1.0 still gets the redirect flow it also published, and the credential
+// still arrives. Everything about the flow below is what the wallet did
+// before interactive authorization existed.
+func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+	w.VCIVersion = VCIVersion10
+
+	credRaw := generateTestCredential(t, w)
+	var (
+		serverURL       string
+		parState        string
+		challengeCalled bool
+		tokenCalled     bool
+	)
+
+	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":     serverURL,
+				"authorization_servers": []string{serverURL},
+				"credential_endpoint":   serverURL + "/credential",
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{
+						"format": "dc+sd-jwt",
+						"scope":  "test-scope",
+					},
+				},
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"issuer":                                serverURL,
+				"authorization_endpoint":                serverURL + "/authorize",
+				"pushed_authorization_request_endpoint": serverURL + "/par",
+				"token_endpoint":                        serverURL + "/token",
+				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":     []string{"ES256"},
+				// OpenID4VCI 1.1 §13.3, offered alongside the redirect flow.
+				"authorization_challenge_endpoint":  serverURL + "/authorize-challenge",
+				"require_interactive_authorization": false,
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/par":
+			body, _ := io.ReadAll(r.Body)
+			form, _ := url.ParseQuery(string(body))
+			parState = form.Get("state")
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"request_uri": serverURL + "/request-uri/example",
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
+			redirect := w.VCIRedirectURI + "?code=issued-code&state=" + url.QueryEscape(parState)
+			http.Redirect(rw, r, redirect, http.StatusFound)
+		case r.URL.Path == "/authorize-challenge":
+			challengeCalled = true
+			rw.WriteHeader(http.StatusForbidden)
+		case r.Method == http.MethodPost && r.URL.Path == "/token":
+			tokenCalled = true
+			body, _ := io.ReadAll(r.Body)
+			form, _ := url.ParseQuery(string(body))
+			// The redirect flow's token request carries the redirect_uri it
+			// authorized with (RFC 6749 §4.1.3).
+			if got := form.Get("redirect_uri"); got != w.VCIRedirectURI {
+				t.Errorf("token request redirect_uri = %q, want %q", got, w.VCIRedirectURI)
+			}
+			if got := form.Get("code"); got != "issued-code" {
+				t.Errorf("token request code = %q, want issued-code", got)
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"access_token": "test-access-token",
+				"token_type":   "Bearer",
+				"c_nonce":      "test-c-nonce",
+			})
+		case r.Method == http.MethodPost && r.URL.Path == "/credential":
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer issuer.Close()
+	serverURL = issuer.URL
+
+	oldClient := httpClient
+	httpClient = issuer.Client()
+	defer func() { httpClient = oldClient }()
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"authorization_code": map[string]any{
+				"issuer_state": "issuer-state-1",
+			},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer() error = %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("expected imported credential ID")
+	}
+	if challengeCalled {
+		t.Error("wallet used the authorization challenge endpoint at feature level 1.0")
+	}
+	if !tokenCalled {
+		t.Error("wallet did not reach the token endpoint")
+	}
+
+	// Declining it silently would leave an operator guessing why a flow they
+	// expected to be interactive was not.
+	if !hasInteractiveAuthorizationNote(w, "--vci-version 1.1") {
+		t.Errorf("no log entry named the declined interactive authorization offer, log: %v", w.Log)
+	}
+}
+
+// At 1.1 the offer is recorded as what it is, without the note about the
+// wallet declining it.
+func TestNoteInteractiveAuthorizationAtVCI11RecordsTheOffer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.VCIVersion = VCIVersion11
+
+	w.noteInteractiveAuthorization(map[string]any{
+		"authorization_challenge_endpoint": "https://issuer.example/authorize-challenge",
+	})
+
+	entry, ok := findInteractiveAuthorizationNote(w)
+	if !ok {
+		t.Fatalf("no interactive authorization entry, log: %v", w.Log)
+	}
+	if strings.Contains(entry.Detail, "--vci-version") {
+		t.Errorf("entry names the flag at 1.1, where nothing needs changing: %q", entry.Detail)
+	}
+	if got := entry.Details["authorization_challenge_endpoint"]; got != "https://issuer.example/authorize-challenge" {
+		t.Errorf("entry details endpoint = %v, want the advertised endpoint", got)
+	}
+}
+
+// An authorization server with no challenge endpoint gets no note at all, at
+// either level.
+func TestNoteInteractiveAuthorizationStaysQuietWithoutAnEndpoint(t *testing.T) {
+	for _, version := range []VCIVersion{VCIVersion10, VCIVersion11} {
+		w := generateTestWallet(t)
+		w.VCIVersion = version
+		w.noteInteractiveAuthorization(map[string]any{"issuer": "https://issuer.example"})
+		if _, ok := findInteractiveAuthorizationNote(w); ok {
+			t.Errorf("%s: logged an interactive authorization note for a server that offers none", version)
+		}
+	}
+}
+
+// The feature level is a conformance setting like the others: reported by
+// GET /api/config, changed at runtime on a local wallet, and restored by the
+// reset that restores the rest.
+func TestConformanceAPICarriesTheVCIFeatureVersion(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.defaultVCIVersion = VCIVersion10
+	srv.wallet.VCIVersion = VCIVersion10
+
+	if got := conformanceVCIVersion(t, srv, http.MethodGet, "/api/config", ""); got != "1.0" {
+		t.Fatalf("GET /api/config vci_version = %q, want 1.0", got)
+	}
+
+	if got := conformanceVCIVersion(t, srv, http.MethodPut, "/api/config/conformance", `{"vci_version":"1.1"}`); got != "1.1" {
+		t.Fatalf("PUT vci_version = %q, want 1.1", got)
+	}
+	if got := srv.wallet.VCIFeatureVersion(); got != VCIVersion11 {
+		t.Fatalf("wallet feature version = %q, want 1.1", got)
+	}
+
+	// A version nobody published is refused, and leaves the setting alone.
+	req := httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"vci_version":"2.0"}`))
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT of an unknown version = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+	if got := srv.wallet.VCIFeatureVersion(); got != VCIVersion11 {
+		t.Fatalf("wallet feature version after a refused change = %q, want 1.1", got)
+	}
+
+	if got := conformanceVCIVersion(t, srv, http.MethodDelete, "/api/config/conformance", ""); got != "1.0" {
+		t.Fatalf("after reset vci_version = %q, want the startup 1.0", got)
+	}
+}
+
+func conformanceVCIVersion(t *testing.T, srv *Server, method, path, body string) string {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%s %s = %d, want 200: %s", method, path, rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decoding %s %s: %v", method, path, err)
+	}
+	version, _ := out["vci_version"].(string)
+	return version
+}
+
+func findInteractiveAuthorizationNote(w *Wallet) (LogEntry, bool) {
+	for _, entry := range w.Log {
+		if entry.Details["event"] == "interactive_authorization_offered" {
+			return entry, true
+		}
+	}
+	return LogEntry{}, false
+}
+
+func hasInteractiveAuthorizationNote(w *Wallet, contains string) bool {
+	entry, ok := findInteractiveAuthorizationNote(w)
+	return ok && strings.Contains(entry.Detail, contains)
+}
