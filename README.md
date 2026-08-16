@@ -8,6 +8,15 @@
 [![codecov](https://codecov.io/gh/dominikschlosser/eudi-dev/graph/badge.svg)](https://codecov.io/gh/dominikschlosser/eudi-dev)
 [![Release](https://img.shields.io/github/v/release/dominikschlosser/eudi-dev)](https://github.com/dominikschlosser/eudi-dev/releases/latest)
 
+[![OpenID4VP](https://img.shields.io/badge/OpenID4VP-1.0-blue)](docs/spec-compliance.md#oid4vp-10-openid-for-verifiable-presentations)
+[![OpenID4VCI](https://img.shields.io/badge/OpenID4VCI-1.0%20%2B%201.1%20draft-blue)](docs/spec-compliance.md#oid4vci-10-openid-for-verifiable-credential-issuance)
+[![HAIP](https://img.shields.io/badge/HAIP-1.0-blue)](docs/spec-compliance.md#haip-10-current-wallet-coverage)
+[![SD-JWT](https://img.shields.io/badge/SD--JWT-RFC%209901-blue)](docs/spec-compliance.md#sd-jwt-selective-disclosure-jwt)
+[![SD-JWT VC](https://img.shields.io/badge/SD--JWT%20VC-draft--18-blue)](docs/spec-compliance.md#sd-jwt-selective-disclosure-jwt)
+[![mdoc](https://img.shields.io/badge/mdoc-ISO%2018013--5-blue)](docs/spec-compliance.md#mdoc--iso-18013-5)
+[![Token Status List](https://img.shields.io/badge/Token%20Status%20List-draft--21-blue)](docs/spec-compliance.md#token-status-list-draft-ietf-oauth-status-list)
+[![ETSI](https://img.shields.io/badge/ETSI-TS%20119%20602-blue)](docs/spec-compliance.md#etsi-ts-119-602-trusted-entity-lists)
+
 An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, issue, and present verifiable credentials, run a testing wallet, or proxy live wallet traffic for debugging. The CLI command is `eudi`.
 
 > **Try it online:** a shared public demo of the wallet and decoder runs at **<https://eudi-test.dev>**, no install needed. Issue, present, and decode test credentials right in the browser (state is shared between all visitors and resets daily, so do not enter personal data).

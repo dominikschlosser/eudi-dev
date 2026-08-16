@@ -162,7 +162,7 @@ The implementation target for the EUDI wallet trust infrastructure is ETSI TS 11
 
 ## Token Status List (`draft-ietf-oauth-status-list`)
 
-An Internet-Draft with no RFC number, so nothing here cites one. The version tracked is the editor's copy at <https://drafts.oauth.net/draft-ietf-oauth-status-list/draft-ietf-oauth-status-list.html>, and the section numbers below are its.
+An Internet-Draft with no RFC number, so nothing here cites one. The revision tracked is **draft-ietf-oauth-status-list-21**, which is what the editor's copy at <https://drafts.oauth.net/draft-ietf-oauth-status-list/draft-ietf-oauth-status-list.html> currently renders, and the section numbers below are its.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
