@@ -138,8 +138,7 @@ const FORMAT_HINTS = {
 };
 
 let pidFormat = "both";
-// Which credential the request asks for. The German PID exists only as an
-// SD-JWT VC, so the format toggle applies to the country-independent one.
+// Which credential the request asks for.
 let credential = "ticket";
 
 for (const option of document.querySelectorAll("#credential-toggle .toggle-option")) {
@@ -150,7 +149,9 @@ for (const option of document.querySelectorAll("#credential-toggle .toggle-optio
       other.classList.toggle("selected", selected);
       other.setAttribute("aria-checked", String(selected));
     }
-    const showsFormat = credential === "pid";
+    // Both PID requests take a format. The German one has no mdoc form, and
+    // asking for it that way is answered with the reason why.
+    const showsFormat = credential !== "ticket";
     document.getElementById("format-row").hidden = !showsFormat;
     document.getElementById("format-hint").hidden = !showsFormat;
   });
@@ -171,13 +172,11 @@ for (const option of document.querySelectorAll("#format-toggle .toggle-option"))
 document.getElementById("create-request").addEventListener("click", async () => {
   stopPolling();
   const request = { type: credential === "ticket" ? "ticket" : "pid" };
-  if (credential === "pid") {
+  if (credential !== "ticket") {
     request.format = pidFormat;
   }
   if (credential === "pid-de") {
     request.vct = "urn:eudi:pid:de:1";
-    // A national type has no mdoc form.
-    request.format = "sd-jwt";
   }
   const resp = await fetch("api/requests", {
     method: "POST",

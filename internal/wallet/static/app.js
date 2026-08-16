@@ -1149,16 +1149,22 @@
   async function refreshPendingBanner() {
     try {
       const resp = await fetch('/api/requests');
-      updatePendingBanner(await resp.json());
+      updatePendingBanner(reviewableRequests(await resp.json()));
     } catch (e) {
       /* leave the banner as it is */
     }
   }
 
+  // What the banner may offer a visitor who did not start the flow. A
+  // presentation asked for during someone else's issuance is not on that list.
+  function reviewableRequests(requests) {
+    return (requests || []).filter((req) => req.type !== 'issuance_presentation');
+  }
+
   document.getElementById('pending-review').addEventListener('click', async () => {
     try {
       const resp = await fetch('/api/requests');
-      const requests = await resp.json();
+      const requests = reviewableRequests(await resp.json());
       if (requests && requests.length > 0) {
         showConsentDialog(requests[0]);
         document.getElementById('pending-banner').hidden = true;
@@ -1174,7 +1180,12 @@
   async function loadPendingRequests() {
     try {
       const resp = await fetch('/api/requests');
-      const requests = await resp.json();
+      // A tab that opens mid-flow may pick up its own consent by id or claim,
+      // but never someone else's mid-issuance presentation.
+      const all = await resp.json();
+      const requests = (all || []).filter(
+        (req) => req.type !== 'issuance_presentation' || !demoMode
+      );
       if (requests && requests.length > 0) {
         // Prefer the request this browser was redirected here for. On a
         // shared demo instance, never auto-open other visitors' requests.
@@ -1198,7 +1209,7 @@
         }
         // Demo, or config not yet known: offer it in the banner rather than
         // forcing a dialog for a tab that had nothing to do with the request.
-        updatePendingBanner(requests);
+        updatePendingBanner(reviewableRequests(requests));
         return;
       }
     } catch (e) {
@@ -1227,6 +1238,16 @@
         // as a demo visitor, so a stranger's request never flashes a dialog
         // before we know this is a demo; a local wallet re-opens it once
         // config settles.
+        // A presentation the issuer asked for mid-issuance belongs to the
+        // flow one visitor started. On a shared wallet the other tabs are not
+        // offered it at all, not even in the banner: it is not theirs to
+        // answer, and answering it would finish somebody else's issuance.
+        if (req.type === 'issuance_presentation') {
+          if (consentClaim.take() || (configLoaded && !demoMode)) {
+            showConsentDialog(req);
+          }
+          return;
+        }
         if ((!configLoaded || demoMode) && !consentClaim.take()) {
           refreshPendingBanner();
           return;
@@ -1546,8 +1567,14 @@
       approveBtn.disabled = true;
       approveBtn.textContent = 'Submitting...';
       // Approving an issuance is what may lead to an issuer login, so this
-      // tab is the one allowed to follow it.
-      if (isIssuance) authorizeClaim.expect();
+      // tab is the one allowed to follow it. The issuer may also ask for a
+      // presentation before it issues (OpenID4VCI 1.1 §6), which is a second
+      // consent in the same flow: claim that one too, or it would open
+      // nowhere and sit in the pending banner of every tab.
+      if (isIssuance) {
+        authorizeClaim.expect();
+        consentClaim.expect();
+      }
       expectError();
       denyBtn.disabled = true;
 

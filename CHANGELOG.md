@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.2] - 2026-08-16
+
+### Fixed
+
+- **The presentation an issuer asks for mid-issuance now opens where it belongs.** A wallet UI submitting such an offer appeared to hang: the flow reached "Issuer asked for a presentation before issuing" and stopped there, because the tab's consent claim is single use and the issuance consent had already spent it, so the second consent of the same flow landed in the pending banner instead of a dialog. Approving an issuance now also claims the presentation that may follow it
+- **A presentation asked for during someone else's issuance is no longer shown to every visitor.** On a shared wallet it reached every open UI, where answering it would have finished a stranger's flow with the shared wallet's PID. It has its own consent type now (`issuance_presentation`), which the browser that started the issuance opens and no other browser is offered, in a dialog or in the banner
+- **The presentation consent named nobody.** An unsigned request carries no `client_id` (OpenID4VP Appendix A.2), so the dialog read "Verifier:" and nothing else. It names the Authorization Challenge Endpoint's origin, which is the party the presentation is bound to and goes back to
+- **The demo verifier applies the PID format to the German PID too.** The format toggle was hidden for it and silently forced to SD-JWT. Both PID requests take a format now, and asking for the national type as an mdoc is answered with the reason it cannot exist
+
 ## [1.23.1] - 2026-08-16
 
 ### Fixed 

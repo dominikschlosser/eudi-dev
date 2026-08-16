@@ -243,9 +243,19 @@ func (c StoredCredential) CanRenew() bool {
 }
 
 // ConsentRequest represents a pending presentation or issuance consent.
+// Consent request types. ConsentTypeIssuancePresentation is a presentation an
+// issuer asked for during an issuance (OpenID4VCI 1.1 §6): it is answered like
+// a presentation, but it belongs to the flow that triggered it rather than to
+// whoever happens to have the wallet open.
+const (
+	ConsentTypePresentation         = "presentation"
+	ConsentTypeIssuance             = "issuance"
+	ConsentTypeIssuancePresentation = "issuance_presentation"
+)
+
 type ConsentRequest struct {
 	ID           string                       `json:"id"`
-	Type         string                       `json:"type"` // "presentation" or "issuance"
+	Type         string                       `json:"type"` // presentation, issuance, or issuance_presentation
 	AuthRequest  *oid4vc.AuthorizationRequest `json:"-"`
 	OfferURI     string                       `json:"-"`
 	MatchedCreds []CredentialMatch            `json:"matched_credentials"`

@@ -522,6 +522,40 @@ test.describe("Demo issuer authorization choice", () => {
     expect(events).toContain("interactive_authorization_presentation");
   });
 
+  // The wallet is shared, and a presentation the issuer asks for belongs to
+  // the visitor whose issuance it is. Another visitor must not be offered it:
+  // answering would finish somebody else's flow with the shared wallet's PID.
+  test("the presentation is put only to the visitor whose issuance it is", async ({ browser }) => {
+    const driverContext = await browser.newContext();
+    const otherContext = await browser.newContext();
+    const driver = await driverContext.newPage();
+    const bystander = await otherContext.newPage();
+
+    const { body: offer } = await postJSON(
+      "/issuer/api/offers?grant=authorization_code&authorization=presentation",
+      {}
+    );
+    await bystander.goto(`${BASE}/`);
+    await driver.goto(`${BASE}/`);
+
+    await driver.fill("#offer-input", offer.scheme_uri);
+    await driver.locator("#process-btn").click();
+    await driver.waitForSelector("#consent-overlay.active", { timeout: 15_000 });
+    await driver.locator("#consent-approve").click();
+
+    // The issuer asks for a PID, and it is this visitor's dialog.
+    await expect(driver.locator("#consent-dialog")).toContainText(/Presentation Request/i, {
+      timeout: 15_000,
+    });
+
+    // The other visitor is not offered it, in a dialog or in the banner.
+    await expect(bystander.locator("#consent-overlay.active")).toHaveCount(0);
+    await expect(bystander.locator("#pending-banner")).toBeHidden();
+
+    await driverContext.close();
+    await otherContext.close();
+  });
+
   test("an offer authorized by a sign-in asks for the browser instead", async ({ page }) => {
     const uri = await createIssuerOffer(page, {
       grant: "authorization_code",
@@ -542,7 +576,7 @@ test.describe("Demo issuer authorization choice", () => {
 });
 
 test.describe("Verifier request types", () => {
-  // The format applies to the PID request and to nothing else, so the toggle
+  // The format applies to both PID requests and to nothing else, so the toggle
   // follows the credential rather than sitting there for the ticket.
   test("the PID format toggle follows what is being requested", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
@@ -551,9 +585,19 @@ test.describe("Verifier request types", () => {
     await page.locator('#credential-toggle [data-credential="pid"]').click();
     await expect(page.locator("#format-row")).toBeVisible();
 
-    // The German PID exists only as an SD-JWT VC, so there is no format to pick.
     await page.locator('#credential-toggle [data-credential="pid-de"]').click();
-    await expect(page.locator("#format-row")).toBeHidden();
+    await expect(page.locator("#format-row")).toBeVisible();
+  });
+
+  // A national PID has no mdoc form, and asking for one that way is answered
+  // with the reason rather than with a request no wallet could satisfy.
+  test("asking for the German PID as an mdoc is refused with the reason", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator('#credential-toggle [data-credential="pid-de"]').click();
+    await page.locator('#format-toggle [data-format="mdoc"]').click();
+    await page.locator("#create-request").click();
+
+    await expect(page.locator("#status, #checks").first()).toContainText(/no mdoc form/i);
   });
 
   // The page asks for a credential type, and a national PID is one: the button

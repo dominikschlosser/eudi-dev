@@ -328,7 +328,7 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		return w.interactionErrorResponse(params, "access_denied", "no credential in this wallet satisfies the request")
 	}
 
-	approved, err := w.awaitInteractivePresentationConsent(authReq, matches, setup.presentationConsented)
+	approved, err := w.awaitInteractivePresentationConsent(endpoint, authReq, matches, setup.presentationConsented)
 	if err != nil {
 		return nil, err
 	}
@@ -509,20 +509,30 @@ func derivedOrigin(rawURL string) string {
 // presentation the issuer made a condition of issuance. It is asked separately
 // from the issuance consent: agreeing to receive a credential is not agreeing
 // to disclose one.
-func (w *Wallet) awaitInteractivePresentationConsent(authReq *AuthorizationRequestParams, matches []CredentialMatch, consented bool) (bool, error) {
+func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *AuthorizationRequestParams, matches []CredentialMatch, consented bool) (bool, error) {
 	if w.AutoAccept || consented {
 		return true, nil
 	}
 
+	// An unsigned request carries no client_id (Appendix A.2), so the party to
+	// name is the endpoint this presentation is bound to and goes back to. A
+	// consent dialog that names nobody is one the user cannot answer.
+	asking := authReq.ClientID
+	if asking == "" {
+		asking = derivedOrigin(endpoint)
+	}
 	consentReq := &ConsentRequest{
-		ID:           newConsentID(),
-		Type:         "presentation",
+		ID: newConsentID(),
+		// Its own type: this presentation belongs to an issuance one visitor
+		// started, so a shared wallet must not put it in front of everybody
+		// else. It is rendered as the presentation request it is.
+		Type:         ConsentTypeIssuancePresentation,
 		MatchedCreds: matches,
 		Status:       "pending",
 		ResultCh:     make(chan ConsentResult, 1),
 		SubmissionCh: make(chan SubmissionResult, 1),
 		CreatedAt:    time.Now(),
-		ClientID:     authReq.ClientID,
+		ClientID:     asking,
 		Nonce:        authReq.Nonce,
 		DCQLQuery:    authReq.DCQLQuery,
 	}
