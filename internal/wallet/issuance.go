@@ -115,10 +115,28 @@ type IssuanceResult struct {
 	Imported *StoredCredential `json:"-"`
 }
 
-// ProcessCredentialOffer processes an OID4VCI credential offer URI. An offer
-// delivered by reference is dereferenced here even when the consent dialog
-// already fetched it, which is allowed and keeps this the single entry point.
+// OfferOptions carries what the caller settled before the flow started.
+type OfferOptions struct {
+	// PresentationConsented says the caller has already consented on the
+	// user's behalf, so a presentation the issuer asks for mid-flow
+	// (OpenID4VCI 1.1 §6) is not put to the user again. A programmatic
+	// submission is the caller's consent, which is the rule the presentation
+	// endpoint applies to its own API callers.
+	PresentationConsented bool
+}
+
+// ProcessCredentialOffer processes an OID4VCI credential offer URI for a user
+// who is present, so an interaction the issuer asks for mid-flow is put to
+// them.
 func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error) {
+	return w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{})
+}
+
+// ProcessCredentialOfferWithOptions is ProcessCredentialOffer with what the
+// caller already settled. An offer delivered by reference is dereferenced here
+// even when the consent dialog already fetched it, which is allowed and keeps
+// this the single entry point.
+func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (*IssuanceResult, error) {
 	reqType, result, err := oid4vc.Parse(offerURI)
 	if err != nil {
 		return nil, fmt.Errorf("parsing credential offer: %w", err)
@@ -199,7 +217,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 				return nil, err
 			}
 		}
-		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint)
+		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint, opts)
 	}
 
 	// Token exchange (pre-authorized code flow). An issuer may protect it like

@@ -98,7 +98,7 @@ func (s *Server) lookupPendingOffer(id string) *pendingOffer {
 // The flow keeps running in the background: the user signs in wherever they
 // are, the issuer redirects to /callback, and it resumes there. Nothing here
 // opens a browser, which on a hosted wallet would reach nobody.
-func (s *Server) runOffer(uri string, logDetails map[string]any) (*IssuanceResult, *pendingOffer, error) {
+func (s *Server) runOffer(uri string, logDetails map[string]any, opts OfferOptions) (*IssuanceResult, *pendingOffer, error) {
 	// Subscribing on the caller's behalf is what makes the wallet hand over
 	// the URL instead of failing for want of anyone to show it to.
 	authCh, unsubscribe := s.wallet.SubscribeAuthorization()
@@ -107,7 +107,7 @@ func (s *Server) runOffer(uri string, logDetails map[string]any) (*IssuanceResul
 
 	go func() {
 		defer unsubscribe()
-		result, err := s.wallet.ProcessCredentialOffer(uri)
+		result, err := s.wallet.ProcessCredentialOfferWithOptions(uri, opts)
 		s.applyOfferOutcome(uri, result, err, logDetails)
 		p.complete(result, err)
 		close(done)
@@ -311,7 +311,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 		return
 	}
 
-	s.processOfferDirectly(w, uri, browserRedirect)
+	s.processOfferDirectly(w, uri, browserRedirect, apiInitiated)
 }
 
 // awaitOfferConsent waits for the user's decision on an issuance consent
@@ -341,9 +341,11 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 			s.wallet.TxCode = consent.TxCode
 			s.wallet.mu.Unlock()
 		}
+		// The user is at the dialog, so a presentation the issuer asks for
+		// mid-flow is put to them as well.
 		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
 			"credential_requested": consentReq.OfferConfigs,
-		})
+		}, OfferOptions{})
 		if err != nil {
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -382,8 +384,8 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 
 // processOfferDirectly runs the credential offer flow without a consent step
 // (auto-accept mode).
-func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browserRedirect bool) {
-	result, pending, err := s.runOffer(uri, nil)
+func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browserRedirect, apiInitiated bool) {
+	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated})
 	if err != nil {
 		if !s.wallet.AutoAccept {
 			s.triggerUIRequest()

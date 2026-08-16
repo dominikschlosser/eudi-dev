@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The demo issuer asks how an authorization code offer should be authorized.** Its page now offers "Browser sign-in" or "Presentation during issuance" next to the grant, and the offer carries that choice. Until now a wallet using interactive authorization always got the presentation, which left the sign-in unreachable from the demo. An offer that wants the browser tells such a wallet so with `redirect_to_web` (Section 5.2.2.1.1 of the OAuth 2.0 for First-Party Applications specification), handing back a pushed authorization request for it to continue with, and the wallet falls back to the redirect flow instead of failing. A wallet that does not use interactive authorization sees the sign-in either way
 - **The specification versions this toolkit implements are shown as README badges**, each linking to its section of the [spec compliance](docs/spec-compliance.md) document
+- **An offer submitted through the API hung until it timed out when the issuer asked for a presentation.** A programmatic submission is the caller's consent, which is how the offer and presentation endpoints have always treated one, but the consent for a presentation asked for mid-flow (OpenID4VCI 1.1 §6) was put to a user who was not there. It bit any wallet not running with `--auto-accept`, the public demo profile among them
 
 ### Changed
 

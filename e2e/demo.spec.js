@@ -84,6 +84,33 @@ async function postJSON(pathname, body) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
+/**
+ * Picks a credential on the demo verifier page and creates the request, which
+ * is two steps since the page became a toggle plus one button.
+ */
+async function createVerifierRequest(page, credential) {
+  await page.locator(`#credential-toggle [data-credential="${credential}"]`).click();
+  await page.locator("#create-request").click();
+}
+
+/**
+ * Creates an offer on the demo issuer page. authorization is only offered for
+ * the authorization code grant, and decides whether redeeming it asks for a
+ * presentation or a browser sign-in.
+ */
+async function createIssuerOffer(page, { grant, authorization } = {}) {
+  await page.goto(`${BASE}/issuer/`);
+  if (grant) {
+    await page.locator(`#grant-toggle [data-grant="${grant}"]`).click();
+  }
+  if (authorization) {
+    await page.locator(`#authorization-toggle [data-authorization="${authorization}"]`).click();
+  }
+  await page.locator("#create-btn").click();
+  await expect(page.locator("#result")).toBeVisible();
+  return (await page.locator("#scheme-uri").textContent()) || "";
+}
+
 /** Creates a demo verifier request and returns its authorization parameters. */
 async function createVerificationRequest() {
   const { body } = await postJSON("/verifier/api/requests", { type: "pid" });
@@ -451,13 +478,90 @@ test.describe("Demo mode consent visibility", () => {
   });
 });
 
+// The demo issuer offers a choice the protocol makes real: an authorization
+// code offer is authorized either by a presentation at the challenge endpoint
+// (OpenID4VCI 1.1 §6) or by the browser sign-in. Both have to stay reachable
+// from the page, which is what broke when interactive authorization arrived and
+// silently took over every authorization code offer.
+test.describe("Demo issuer authorization choice", () => {
+  test("the choice is offered for the grant that asks the user, and no other", async ({ page }) => {
+    await page.goto(`${BASE}/issuer/`);
+
+    // A pre-authorized offer was authorized before the wallet ever saw it
+    // (§3.5), so there is nothing to choose.
+    await expect(page.locator("#authorization-row")).toBeHidden();
+
+    await page.locator('#grant-toggle [data-grant="authorization_code"]').click();
+    await expect(page.locator("#authorization-row")).toBeVisible();
+    await expect(
+      page.locator('#authorization-toggle [data-authorization="browser"]')
+    ).toHaveClass(/selected/);
+
+    // And it goes away again, rather than applying to an offer it cannot.
+    await page.locator('#grant-toggle [data-grant=""]').click();
+    await expect(page.locator("#authorization-row")).toBeHidden();
+  });
+
+  test("an offer authorized by a presentation is redeemed without a browser", async ({ page }) => {
+    const uri = await createIssuerOffer(page, {
+      grant: "authorization_code",
+      authorization: "presentation",
+    });
+    expect(uri).toContain("openid-credential-offer://");
+
+    // An API submission is the caller's consent, so this completes on its own.
+    const redeemed = await postJSON("/api/offers", { uri });
+    expect(redeemed.status, JSON.stringify(redeemed.body)).toBe(200);
+    expect(redeemed.body.credential_id).toBeTruthy();
+
+    // The exchange went through the challenge endpoint, and the presentation
+    // the issuer asked for was made.
+    const log = await (await fetch(`${BASE}/api/log`)).json();
+    const events = log.map((entry) => (entry.details || {}).event);
+    expect(events).toContain("authorization_challenge_request");
+    expect(events).toContain("interactive_authorization_presentation");
+  });
+
+  test("an offer authorized by a sign-in asks for the browser instead", async ({ page }) => {
+    const uri = await createIssuerOffer(page, {
+      grant: "authorization_code",
+      authorization: "browser",
+    });
+
+    // The wallet is told to continue in a browser (redirect_to_web), so it
+    // hands back the sign-in URL rather than finishing the issuance.
+    const redeemed = await postJSON("/api/offers", { uri });
+    expect(redeemed.status, JSON.stringify(redeemed.body)).toBe(202);
+    expect(redeemed.body.status).toBe("authorization_required");
+    expect(redeemed.body.authorization_url).toContain("/issuer/authorize");
+
+    const log = await (await fetch(`${BASE}/api/log`)).json();
+    const events = log.map((entry) => (entry.details || {}).event);
+    expect(events).toContain("interactive_authorization_redirect_to_web");
+  });
+});
+
 test.describe("Verifier request types", () => {
+  // The format applies to the PID request and to nothing else, so the toggle
+  // follows the credential rather than sitting there for the ticket.
+  test("the PID format toggle follows what is being requested", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await expect(page.locator("#format-row")).toBeHidden();
+
+    await page.locator('#credential-toggle [data-credential="pid"]').click();
+    await expect(page.locator("#format-row")).toBeVisible();
+
+    // The German PID exists only as an SD-JWT VC, so there is no format to pick.
+    await page.locator('#credential-toggle [data-credential="pid-de"]').click();
+    await expect(page.locator("#format-row")).toBeHidden();
+  });
+
   // The page asks for a credential type, and a national PID is one: the button
   // differs from the PID button only in the vct it names, so both have to
   // reach the wallet and come back verified.
   test("the German PID button is answered by the German PID", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#request-pid-de").click();
+    await createVerifierRequest(page, "pid-de");
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
     // Hand the request to the wallet the way an API caller would: the
@@ -625,7 +729,7 @@ test.describe("Verifier polling", () => {
 
   test("a hidden tab does not poll", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#request-pid").click();
+    await createVerifierRequest(page, "pid");
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
     // Nobody is looking at this tab any more. Chromium will not background a
@@ -643,7 +747,7 @@ test.describe("Verifier polling", () => {
   test("a visible tab backs off instead of hammering", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
     const polls = countPolls(page);
-    await page.locator("#request-pid").click();
+    await createVerifierRequest(page, "pid");
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
     // Ten seconds of the old fixed 1.5s interval was 6 polls and stayed

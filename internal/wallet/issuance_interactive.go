@@ -283,7 +283,7 @@ func (w *Wallet) runAuthorizationInteraction(endpoint string, response map[strin
 	interaction := jsonutil.GetString(response, "interaction_type_required")
 	switch interaction {
 	case interactionTypePresentation:
-		return w.runPresentationInteraction(endpoint, response)
+		return w.runPresentationInteraction(endpoint, response, setup)
 	case "":
 		return nil, fmt.Errorf("authorization server asked for an interaction without naming its type (OpenID4VCI 1.1 §6.2.1 makes interaction_type_required REQUIRED)")
 	case interactionTypeAuthViaWeb:
@@ -299,7 +299,7 @@ func (w *Wallet) runAuthorizationInteraction(endpoint string, response map[strin
 
 // runPresentationInteraction answers a Require Presentation response
 // (§6.2.1.1), where the authorization server acts as the Verifier.
-func (w *Wallet) runPresentationInteraction(endpoint string, response map[string]any) (url.Values, error) {
+func (w *Wallet) runPresentationInteraction(endpoint string, response map[string]any, setup authorizationCodeSetup) (url.Values, error) {
 	request, ok := response["openid4vp_request"].(map[string]any)
 	if !ok || len(request) == 0 {
 		return nil, fmt.Errorf("authorization server asked for a presentation without an openid4vp_request (OpenID4VCI 1.1 §6.2.1.1)")
@@ -328,7 +328,7 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		return w.interactionErrorResponse(params, "access_denied", "no credential in this wallet satisfies the request")
 	}
 
-	approved, err := w.awaitInteractivePresentationConsent(authReq, matches)
+	approved, err := w.awaitInteractivePresentationConsent(authReq, matches, setup.presentationConsented)
 	if err != nil {
 		return nil, err
 	}
@@ -509,8 +509,8 @@ func derivedOrigin(rawURL string) string {
 // presentation the issuer made a condition of issuance. It is asked separately
 // from the issuance consent: agreeing to receive a credential is not agreeing
 // to disclose one.
-func (w *Wallet) awaitInteractivePresentationConsent(authReq *AuthorizationRequestParams, matches []CredentialMatch) (bool, error) {
-	if w.AutoAccept {
+func (w *Wallet) awaitInteractivePresentationConsent(authReq *AuthorizationRequestParams, matches []CredentialMatch, consented bool) (bool, error) {
+	if w.AutoAccept || consented {
 		return true, nil
 	}
 

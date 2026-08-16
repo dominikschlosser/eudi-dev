@@ -45,6 +45,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	oauthMeta map[string]any,
 	tokenEndpoint string,
 	credentialEndpoint string,
+	opts OfferOptions,
 ) (*IssuanceResult, error) {
 	if w == nil {
 		return nil, fmt.Errorf("wallet is nil")
@@ -140,6 +141,8 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		clientAuth:    clientAuth,
 		dpopKey:       dpopKey,
 		nonces:        nonces,
+
+		presentationConsented: opts.PresentationConsented,
 	}
 	issuance := authorizationCodeIssuance{
 		offer:              offer,
@@ -241,6 +244,9 @@ type authorizationCodeSetup struct {
 	clientAuth    *ClientAuthentication
 	dpopKey       *ecdsa.PrivateKey
 	nonces        *dpopNonceState
+	// presentationConsented skips the consent for a presentation the issuer
+	// asks for, because the caller already gave it.
+	presentationConsented bool
 }
 
 // authorizationCodeIssuance carries what the second half of an authorization
