@@ -17,6 +17,7 @@ package demorp
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
@@ -52,9 +53,7 @@ func TestInteractiveAuthorizationEndToEnd(t *testing.T) {
 	w := interactiveTestWallet(t)
 	d, ts := serveDemoStack(t, w)
 
-	// Any authorization code offer is redeemed this way by a wallet at 1.1:
-	// the offer says nothing about how the code is obtained.
-	offer := postJSONTo(t, ts.URL+"/issuer/api/offers?grant="+authCodeGrant, `{}`)
+	offer := postJSONTo(t, ts.URL+"/issuer/api/offers?grant="+authCodeGrant+"&authorization="+authorizationPresentation, `{}`)
 	uri, _ := offer["scheme_uri"].(string)
 	if uri == "" {
 		t.Fatalf("unexpected offer response: %v", offer)
@@ -96,6 +95,52 @@ func TestInteractiveAuthorizationEndToEnd(t *testing.T) {
 		}
 	}
 	t.Errorf("no log entry recorded the presentation, log: %v", w.GetLog())
+}
+
+// The issuer decides per offer. An offer that wants the browser sign-in tells
+// a wallet using interactive authorization so with redirect_to_web (Section
+// 5.2.2.1.1 of the first-party-apps specification), which is what keeps both
+// flows reachable from one demo.
+func TestOfferCanAskForTheBrowserSignInInstead(t *testing.T) {
+	w := interactiveTestWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	offer := postJSONTo(t, ts.URL+"/issuer/api/offers?grant="+authCodeGrant+"&authorization="+authorizationBrowser, `{}`)
+	uri, _ := offer["scheme_uri"].(string)
+	if uri == "" {
+		t.Fatalf("unexpected offer response: %v", offer)
+	}
+
+	// The wallet publishes the sign-in URL rather than finishing on its own,
+	// which is the redirect flow taking over.
+	authCh, unsubscribe := w.SubscribeAuthorization()
+	defer unsubscribe()
+	done := make(chan error, 1)
+	go func() {
+		_, err := w.ProcessCredentialOffer(uri)
+		done <- err
+	}()
+
+	select {
+	case authURL := <-authCh:
+		if !strings.Contains(authURL, "/issuer/authorize") {
+			t.Errorf("sign-in URL = %q, want the issuer's authorization endpoint", authURL)
+		}
+		if !strings.Contains(authURL, "request_uri=") {
+			t.Errorf("sign-in URL = %q, want the pushed request the challenge endpoint handed back", authURL)
+		}
+	case err := <-done:
+		t.Fatalf("the flow ended without asking for a sign-in: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the sign-in URL")
+	}
+
+	for _, entry := range w.GetLog() {
+		if entry.Details != nil && entry.Details["event"] == "interactive_authorization_redirect_to_web" {
+			return
+		}
+	}
+	t.Errorf("no log entry recorded the handover to the browser, log: %v", w.GetLog())
 }
 
 // A wallet at 1.0 is offered the same credential by the same issuer and takes

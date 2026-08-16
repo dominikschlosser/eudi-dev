@@ -52,6 +52,8 @@
     table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 6px; }
     td { border: 1px solid var(--border); padding: 4px 8px; }
     td:first-child { color: var(--text-dim); }
+    /* A row sets its own display, which outranks the hidden attribute. */
+    [hidden] { display: none !important; }
     .format-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
     .format-label { font-size: 11px; color: var(--text-dim); }
     .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
@@ -80,6 +82,14 @@
       nonce and audience.
     </p>
     <div class="format-row">
+      <span class="format-label">Credential</span>
+      <div class="toggle" id="credential-toggle" role="radiogroup" aria-label="Credential to request">
+        <button type="button" class="toggle-option selected" data-credential="ticket" role="radio" aria-checked="true">Demo ticket</button>
+        <button type="button" class="toggle-option" data-credential="pid" role="radio" aria-checked="false">PID</button>
+        <button type="button" class="toggle-option" data-credential="pid-de" role="radio" aria-checked="false">German PID</button>
+      </div>
+    </div>
+    <div class="format-row" id="format-row" hidden>
       <span class="format-label">PID format</span>
       <div class="toggle" id="format-toggle" role="radiogroup" aria-label="Requested PID format">
         <button type="button" class="toggle-option selected" data-format="both" role="radio" aria-checked="true">Both</button>
@@ -87,19 +97,10 @@
         <button type="button" class="toggle-option" data-format="mdoc" role="radio" aria-checked="false">mDoc</button>
       </div>
     </div>
-    <p class="format-hint" id="format-hint">
+    <p class="format-hint" id="format-hint" hidden>
       The request asks for either format and the wallet answers with the one it holds.
     </p>
-    <button class="btn primary" id="request-ticket" data-type="ticket">Request the demo ticket</button>
-    <button class="btn" id="request-pid" data-type="pid">Request the PID</button>
-    <button class="btn" id="request-pid-de" data-type="pid" data-vct="urn:eudi:pid:de:1">Request the German PID</button>
-    <p class="format-hint">
-      The PID request asks for <code>urn:eudi:pid:1</code>. A national PID answers
-      it too, because it extends that type. The German request asks for
-      <code>urn:eudi:pid:de:1</code>, which the German PID answers. It is SD-JWT VC
-      only, since every PID shares the mdoc doctype
-      <code>eu.europa.ec.eudi.pid.1</code>.
-    </p>
+    <button class="btn primary" id="create-request">Create request</button>
     <div class="result" id="request-box">
       <div class="label">Open in the wallet on this host</div>
       <pre><a href="#" id="wallet-link">…</a></pre>

@@ -138,6 +138,23 @@ const FORMAT_HINTS = {
 };
 
 let pidFormat = "both";
+// Which credential the request asks for. The German PID exists only as an
+// SD-JWT VC, so the format toggle applies to the country-independent one.
+let credential = "ticket";
+
+for (const option of document.querySelectorAll("#credential-toggle .toggle-option")) {
+  option.addEventListener("click", () => {
+    credential = option.dataset.credential;
+    for (const other of document.querySelectorAll("#credential-toggle .toggle-option")) {
+      const selected = other === option;
+      other.classList.toggle("selected", selected);
+      other.setAttribute("aria-checked", String(selected));
+    }
+    const showsFormat = credential === "pid";
+    document.getElementById("format-row").hidden = !showsFormat;
+    document.getElementById("format-hint").hidden = !showsFormat;
+  });
+}
 
 for (const option of document.querySelectorAll("#format-toggle .toggle-option")) {
   option.addEventListener("click", () => {
@@ -151,42 +168,37 @@ for (const option of document.querySelectorAll("#format-toggle .toggle-option"))
   });
 }
 
-for (const btn of document.querySelectorAll(".btn[data-type]")) {
-  btn.addEventListener("click", async () => {
-    stopPolling();
-    const request = { type: btn.dataset.type };
-    if (btn.dataset.type === "pid") {
-      request.format = pidFormat;
-      // A button may name the PID type it asks for. Without one the request
-      // is for urn:eudi:pid:1, which every PID answers.
-      if (btn.dataset.vct) {
-        request.vct = btn.dataset.vct;
-        // A national type has no mdoc form, so the format toggle does not
-        // apply to it.
-        request.format = "sd-jwt";
-      }
-    }
-    const resp = await fetch("api/requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
-    });
-    const doc = await resp.json();
-    if (!resp.ok) {
-      renderResult({ status: "failed", error: doc.error });
-      return;
-    }
-    const link = document.getElementById("wallet-link");
-    link.href = doc.wallet_url;
-    link.textContent = doc.wallet_url;
-    const scheme = document.getElementById("scheme-uri");
-    scheme.textContent = doc.scheme_uri;
-    scheme.href = doc.scheme_uri;
-    document.getElementById("request-box").style.display = "block";
-    renderResult({ status: "pending" });
-    startPolling(doc.id);
+document.getElementById("create-request").addEventListener("click", async () => {
+  stopPolling();
+  const request = { type: credential === "ticket" ? "ticket" : "pid" };
+  if (credential === "pid") {
+    request.format = pidFormat;
+  }
+  if (credential === "pid-de") {
+    request.vct = "urn:eudi:pid:de:1";
+    // A national type has no mdoc form.
+    request.format = "sd-jwt";
+  }
+  const resp = await fetch("api/requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
   });
-}
+  const doc = await resp.json();
+  if (!resp.ok) {
+    renderResult({ status: "failed", error: doc.error });
+    return;
+  }
+  const link = document.getElementById("wallet-link");
+  link.href = doc.wallet_url;
+  link.textContent = doc.wallet_url;
+  const scheme = document.getElementById("scheme-uri");
+  scheme.textContent = doc.scheme_uri;
+  scheme.href = doc.scheme_uri;
+  document.getElementById("request-box").style.display = "block";
+  renderResult({ status: "pending" });
+  startPolling(doc.id);
+  });
 
 // Returning from the wallet redirect: show that request's result.
 const resultID = new URLSearchParams(location.search).get("result");

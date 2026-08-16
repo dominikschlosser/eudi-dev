@@ -34,6 +34,26 @@ const (
 	challengePath = "/authorize-challenge"
 )
 
+// What an authorization code offer asks of the user. The choice belongs to the
+// issuer and travels with the offer, so one demo instance can show both.
+const (
+	// authorizationPresentation requires a PID at the Authorization Challenge
+	// Endpoint (OpenID4VCI 1.1 §6).
+	authorizationPresentation = "presentation"
+	// authorizationBrowser sends the user to the sign-in page, which a wallet
+	// using interactive authorization is told about with redirect_to_web.
+	authorizationBrowser = "browser"
+)
+
+// normalizeAuthorizationMode reads the mode from the offer API. The browser
+// sign-in is the default, since it is the flow that works with every wallet.
+func normalizeAuthorizationMode(value string) string {
+	if strings.TrimSpace(value) == authorizationPresentation {
+		return authorizationPresentation
+	}
+	return authorizationBrowser
+}
+
 // interactiveSession is one Authorization Challenge conversation: what the
 // wallet asked for in its initial request, and the presentation this issuer
 // asked for in return.
@@ -100,6 +120,16 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 	codeChallenge := r.PostFormValue("code_challenge")
 	if codeChallenge == "" || r.PostFormValue("code_challenge_method") != "S256" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "code_challenge with code_challenge_method S256 is required"))
+		return
+	}
+
+	// An offer whose issuer chose the browser sign-in is sent there, which is
+	// what Section 5.2.2.1.1 of the first-party-apps specification defines
+	// redirect_to_web for: "The request is not able to be fulfilled with any
+	// further direct interaction with the user."
+	issuerState := r.PostFormValue("issuer_state")
+	if d.offerAuthorization(issuerState) == authorizationBrowser {
+		d.redirectChallengeToWeb(w, r, clientID, codeChallenge, issuerState)
 		return
 	}
 
@@ -204,6 +234,57 @@ func (d *DemoRP) continueInteractiveAuthorization(w http.ResponseWriter, r *http
 
 	log.Printf("[Demo issuer] interactive authorization: presentation verified, issuing an authorization code to %s", session.clientID)
 	writeJSON(w, http.StatusOK, map[string]any{"authorization_code": code})
+}
+
+// offerAuthorization reports what the offer behind an issuer_state asks of the
+// user. An unknown issuer_state gets the browser sign-in, which every wallet
+// can complete.
+func (d *DemoRP) offerAuthorization(issuerState string) string {
+	if issuerState == "" {
+		return authorizationBrowser
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, offer := range d.offers {
+		if offer.issuerState == issuerState {
+			return normalizeAuthorizationMode(offer.authorization)
+		}
+	}
+	return authorizationBrowser
+}
+
+// redirectChallengeToWeb answers with redirect_to_web and the pushed
+// authorization request the wallet is to continue with, so the sign-in happens
+// in a browser and the flow finishes at the authorization endpoint.
+func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
+	redirectURI := r.PostFormValue("redirect_uri")
+	if redirectURI == "" {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
+			"this offer is redeemed with a browser sign-in, which needs a redirect_uri in the authorization challenge request"))
+		return
+	}
+
+	request := &authRequestState{
+		requestURI:    requestURIPrefix + randToken(),
+		clientID:      clientID,
+		redirectURI:   redirectURI,
+		state:         r.PostFormValue("state"),
+		scope:         r.PostFormValue("scope"),
+		codeChallenge: codeChallenge,
+		issuerState:   issuerState,
+		expires:       time.Now().Add(authRequestTTL),
+	}
+	d.mu.Lock()
+	d.pruneLocked()
+	d.authRequests[request.requestURI] = request
+	d.mu.Unlock()
+
+	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, answering redirect_to_web")
+	writeJSON(w, http.StatusForbidden, map[string]any{
+		"error":       "redirect_to_web",
+		"request_uri": request.requestURI,
+		"expires_in":  int(authRequestTTL.Seconds()),
+	})
 }
 
 // newInteractivePIDRequest builds the presentation this issuer asks for: a PID

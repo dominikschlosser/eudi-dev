@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.1] - 2026-08-16
+
+### Fixed 
+
+- **The demo issuer asks how an authorization code offer should be authorized.** Its page now offers "Browser sign-in" or "Presentation during issuance" next to the grant, and the offer carries that choice. Until now a wallet using interactive authorization always got the presentation, which left the sign-in unreachable from the demo. An offer that wants the browser tells such a wallet so with `redirect_to_web` (Section 5.2.2.1.1 of the OAuth 2.0 for First-Party Applications specification), handing back a pushed authorization request for it to continue with, and the wallet falls back to the redirect flow instead of failing. A wallet that does not use interactive authorization sees the sign-in either way
+- **The specification versions this toolkit implements are shown as README badges**, each linking to its section of the [spec compliance](docs/spec-compliance.md) document
+
+### Changed
+
+- **The demo verifier picks what to request with a toggle.** Three buttons asked for the ticket, the PID and the German PID while a blue border sat permanently on the first one, so nothing showed what was selected. It is now a Credential toggle in the style of the demo issuer, with one "Create request" button, and the PID format toggle appears only for the request it applies to. The paragraph explaining PID type inheritance is gone: what it described is visible in the request itself
+
 ## [1.23.0] - 2026-08-16
 
 ### Fixed

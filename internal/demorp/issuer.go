@@ -86,7 +86,10 @@ type offerState struct {
 	// holderClaims are the claims of the credential presented to authorize
 	// this issuance (OpenID4VCI 1.1 §6), empty for every other flow.
 	holderClaims map[string]any
-	accessToken  string
+	// authorization is what an authorization code offer asks of the user:
+	// authorizationPresentation or authorizationBrowser.
+	authorization string
+	accessToken   string
 	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
 	// the pre-authorized flow, which uses a bearer token.
 	jkt string
@@ -214,9 +217,14 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateOffer creates a credential offer. ?grant=authorization_code
-// makes one redeemed through the authorization code flow (with a sign-in);
-// anything else makes a pre-authorized code offer. ?status=true issues the
-// ticket with a status list reference so it can be revoked.
+// makes one redeemed through the authorization code flow; anything else makes a
+// pre-authorized code offer. ?status=true issues the ticket with a status list
+// reference so it can be revoked.
+//
+// ?authorization decides what the authorization code flow asks of the user:
+// "presentation" requires a PID at the Authorization Challenge Endpoint
+// (OpenID4VCI 1.1 §6), anything else the browser sign-in. A wallet that does
+// not use interactive authorization gets the sign-in either way.
 func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	authCode := r.URL.Query().Get("grant") == authCodeGrant
 	withStatus := r.URL.Query().Get("status") == "true"
@@ -235,9 +243,10 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	offer := &offerState{
-		id:         randToken(),
-		withStatus: withStatus,
-		expires:    time.Now().Add(entryTTL),
+		id:            randToken(),
+		withStatus:    withStatus,
+		authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
+		expires:       time.Now().Add(entryTTL),
 	}
 	if authCode {
 		offer.issuerState = randToken()

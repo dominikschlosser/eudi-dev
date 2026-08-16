@@ -134,6 +134,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		clientID:      clientID,
 		redirectURI:   redirectURI,
 		scope:         scope,
+		state:         state,
 		codeVerifier:  codeVerifier,
 		codeChallenge: codeChallenge,
 		clientAuth:    clientAuth,
@@ -153,21 +154,33 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		configID:           configID,
 	}
 
-	if useInteractive {
-		code, err := w.obtainInteractiveAuthorizationCode(challengeEndpoint, setup, offer)
-		if err != nil {
-			return nil, err
-		}
-		// first-party-apps §6: "the redirect_uri parameter will not be
-		// included in this request, because no redirect_uri parameter was
-		// included in the authorization request."
-		return w.completeAuthorizationCodeIssuance(issuance, code)
-	}
-
 	// requestURI is empty when the request goes to the authorization endpoint
 	// directly, and the parameters travel in the query string instead.
 	var requestURI string
-	if parEndpoint != "" {
+
+	if useInteractive {
+		code, err := w.obtainInteractiveAuthorizationCode(challengeEndpoint, setup, offer)
+		switch {
+		case err == nil:
+			// first-party-apps §6: "the redirect_uri parameter will not be
+			// included in this request, because no redirect_uri parameter was
+			// included in the authorization request."
+			return w.completeAuthorizationCodeIssuance(issuance, code)
+		case isRedirectToWeb(err):
+			// The server sent this exchange to a browser after all, so the
+			// redirect flow below finishes it, with the pushed request the
+			// server offered where it offered one.
+			if err := w.noteRedirectToWeb(challengeEndpoint, redirectURI, authorizationEndpoint); err != nil {
+				return nil, err
+			}
+			requestURI = redirectToWebRequestURI(err)
+			issuance.redirectURI = redirectURI
+		default:
+			return nil, err
+		}
+	}
+
+	if requestURI == "" && parEndpoint != "" {
 		w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
 		parResp, err := postFormWithDPoP(parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
 		w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
@@ -222,6 +235,7 @@ type authorizationCodeSetup struct {
 	clientID      string
 	redirectURI   string
 	scope         string
+	state         string
 	codeVerifier  string
 	codeChallenge string
 	clientAuth    *ClientAuthentication

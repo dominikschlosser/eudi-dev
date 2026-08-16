@@ -1,10 +1,12 @@
-async function createOffer(grant, status) {
+async function createOffer(grant, status, authorization) {
   const errEl = document.getElementById("error");
   errEl.hidden = true;
   try {
     const params = new URLSearchParams();
     if (grant) params.set("grant", grant);
     if (status) params.set("status", status);
+    // Only the authorization code grant asks the user for anything.
+    if (grant && authorization) params.set("authorization", authorization);
     const query = params.toString() ? "?" + params.toString() : "";
     const resp = await fetch("api/offers" + query, { method: "POST" });
     const doc = await resp.json();
@@ -27,9 +29,17 @@ async function createOffer(grant, status) {
 const GRANT_HINTS = {
   "": "The offer carries the code, so the wallet redeems it without any sign-in.",
   authorization_code:
-    "You sign in here (alice / alice) while the wallet redeems the offer. " +
     "The wallet uses PAR, PKCE, DPoP and a wallet attestation on the way. " +
     "This issuer is its own authorization server.",
+};
+
+// How the user authorizes an authorization code issuance.
+const AUTHORIZATION_HINTS = {
+  browser: "You sign in here (alice / alice) while the wallet redeems the offer.",
+  presentation:
+    "The issuer asks the wallet for a PID before it issues, and verifies that " +
+    "presentation itself, so no browser is involved (OpenID4VCI 1.1 interactive " +
+    "authorization). A wallet that does not support it is sent to the sign-in instead.",
 };
 
 // What a status list reference buys: without one there is nothing to revoke,
@@ -43,6 +53,7 @@ const STATUS_HINTS = {
 
 let grant = "";
 let status = "";
+let authorization = "browser";
 
 // Each toggle owns its own options, so the selection is scoped to the group
 // the clicked option belongs to.
@@ -66,13 +77,20 @@ function bindToggle(id, key, hintID, hints, onChange) {
 
 bindToggle("grant-toggle", "grant", "grant-hint", GRANT_HINTS, (value) => {
   grant = value;
+  // The authorization choice only exists for the grant that asks the user.
+  const shown = value === "authorization_code";
+  document.getElementById("authorization-row").hidden = !shown;
+  document.getElementById("authorization-hint").hidden = !shown;
+});
+bindToggle("authorization-toggle", "authorization", "authorization-hint", AUTHORIZATION_HINTS, (value) => {
+  authorization = value;
 });
 bindToggle("status-toggle", "status", "status-hint", STATUS_HINTS, (value) => {
   status = value;
 });
 
 document.getElementById("create-btn")
-  .addEventListener("click", () => createOffer(grant, status));
+  .addEventListener("click", () => createOffer(grant, status, authorization));
 
 // The imprint is the wallet's, and it is only served when the operator
 // configured one, so the link appears only then. The status list toggle needs

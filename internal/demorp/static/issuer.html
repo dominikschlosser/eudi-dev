@@ -41,6 +41,8 @@
     .disclaimer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
       font-size: 10px; line-height: 1.5; color: var(--text-dim); }
     .error { color: #f7768e; font-size: 12px; margin-top: 12px; }
+    /* A row sets its own display, which outranks the hidden attribute. */
+    [hidden] { display: none !important; }
     .grant-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
     .grant-label { font-size: 11px; color: var(--text-dim); }
     .toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
@@ -74,6 +76,16 @@
     </div>
     <p class="grant-hint" id="grant-hint">
       The offer carries the code, so the wallet redeems it without any sign-in.
+    </p>
+    <div class="grant-row" id="authorization-row" hidden>
+      <span class="grant-label">Authorization</span>
+      <div class="toggle" id="authorization-toggle" role="radiogroup" aria-label="How the user authorizes the issuance">
+        <button type="button" class="toggle-option selected" data-authorization="browser" role="radio" aria-checked="true">Browser sign-in</button>
+        <button type="button" class="toggle-option" data-authorization="presentation" role="radio" aria-checked="false">Presentation during issuance</button>
+      </div>
+    </div>
+    <p class="grant-hint" id="authorization-hint" hidden>
+      You sign in here (alice / alice) while the wallet redeems the offer.
     </p>
     <div class="grant-row" id="status-row" hidden>
       <span class="grant-label">Status list</span>

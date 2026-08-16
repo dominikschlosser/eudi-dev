@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -45,7 +46,55 @@ const (
 	// once, but its examples, first-party-apps §5.2.2 and RFC 6749 §5.2 agree
 	// on error.
 	errorInsufficientAuthorization = "insufficient_authorization"
+
+	// errorRedirectToWeb is the authorization server saying this exchange
+	// cannot be finished with the wallet and belongs in a browser (Section
+	// 5.2.2.1.1 of the first-party-apps specification).
+	errorRedirectToWeb = "redirect_to_web"
 )
+
+// redirectToWebError carries a redirect_to_web response back to the caller,
+// which owns the redirect flow this falls back to. requestURI is the pushed
+// request the server offered, empty when it offered none and the wallet starts
+// its own authorization request instead.
+type redirectToWebError struct {
+	requestURI string
+}
+
+func (e *redirectToWebError) Error() string {
+	return "the authorization server asked for the authorization to continue in a browser (redirect_to_web)"
+}
+
+func isRedirectToWeb(err error) bool {
+	var target *redirectToWebError
+	return errors.As(err, &target)
+}
+
+func redirectToWebRequestURI(err error) string {
+	var target *redirectToWebError
+	if errors.As(err, &target) {
+		return target.requestURI
+	}
+	return ""
+}
+
+// noteRedirectToWeb records the handover to the browser, and refuses it where
+// this wallet has nothing to hand over to: the redirect flow needs a redirect
+// URI it can be called back at, which interactive authorization did not.
+func (w *Wallet) noteRedirectToWeb(endpoint, redirectURI, authorizationEndpoint string) error {
+	if redirectURI == "" {
+		return fmt.Errorf("the authorization server asked for a browser sign-in (redirect_to_web), which needs a redirect URI: run the wallet with --vci-redirect-uri")
+	}
+	if authorizationEndpoint == "" {
+		return fmt.Errorf("the authorization server asked for a browser sign-in (redirect_to_web) but published no authorization_endpoint")
+	}
+	w.addProtocolLog("issuance", "interactive_authorization_redirect_to_web",
+		"Authorization server sent the sign-in to a browser", true, map[string]any{
+			"authorization_challenge_endpoint": endpoint,
+			"authorization_endpoint":           authorizationEndpoint,
+		})
+	return nil
+}
 
 // maxInteractiveAuthorizationRounds bounds the conversation, so a server that
 // keeps asking for interactions is eventually walked away from.
@@ -101,6 +150,9 @@ func (w *Wallet) obtainInteractiveAuthorizationCode(endpoint string, setup autho
 		}
 
 		errorCode := jsonutil.GetString(response, "error")
+		if errorCode == errorRedirectToWeb {
+			return "", &redirectToWebError{requestURI: jsonutil.GetString(response, "request_uri")}
+		}
 		if errorCode != errorInsufficientAuthorization {
 			return "", authorizationChallengeError(response)
 		}
@@ -134,6 +186,10 @@ func (w *Wallet) initialAuthorizationChallengeForm(setup authorizationCodeSetup,
 	form.Set("response_type", "code")
 	form.Set("client_id", setup.clientID)
 	form.Set("scope", setup.scope)
+	// Carried so a server that answers redirect_to_web can put it in the
+	// authorization request it hands back, which is what the callback of the
+	// redirect flow is then matched by.
+	form.Set("state", setup.state)
 	form.Set("code_challenge", setup.codeChallenge)
 	form.Set("code_challenge_method", "S256")
 	form.Set("interaction_types_supported", strings.Join(w.interactionTypesSupported(), ","))
