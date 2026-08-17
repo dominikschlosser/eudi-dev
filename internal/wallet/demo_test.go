@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -578,5 +580,39 @@ func TestLocalWalletStillClearsItsLog(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code == http.StatusForbidden {
 		t.Error("a local wallet was refused permission to clear its own log")
+	}
+}
+
+// The demo baseline follows the pre-defined PID templates through the same
+// resolution every issuance uses, so a user template saved under the same
+// name (or a --templates-dir) decides what the demo seeds and what every
+// reset restores.
+func TestProtectedDefaultsFollowTemplateOverrides(t *testing.T) {
+	w := generateTestWallet(t)
+	dir := t.TempDir()
+	override := `{"name":"pid-sdjwt","format":"sdjwt","vct":"urn:eudi:pid:1","claims":{"given_name":"CUSTOM","family_name":"TEMPLATE","birthdate":"1990-01-01"}}`
+	if err := os.WriteFile(filepath.Join(dir, "pid-sdjwt.json"), []byte(override), 0600); err != nil {
+		t.Fatalf("writing template override: %v", err)
+	}
+	w.TemplatesDir = dir
+
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("generating protected defaults: %v", err)
+	}
+
+	found := false
+	for _, c := range w.GetCredentials() {
+		if c.VCT == "urn:eudi:pid:1" && c.Format == "dc+sd-jwt" {
+			found = true
+			if got, _ := c.Claims["given_name"].(string); got != "CUSTOM" {
+				t.Errorf("seeded PID given_name = %q, want the override's CUSTOM", got)
+			}
+			if !c.Protected {
+				t.Error("the seeded baseline credential is not protected")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no SD-JWT PID was seeded")
 	}
 }

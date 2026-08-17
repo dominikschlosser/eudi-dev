@@ -118,6 +118,11 @@ func TestServeRejectsAnUnknownVCIVersion(t *testing.T) {
 // instead would test the copy: an earlier version of this test did, and went
 // on asserting a demo default the command had stopped applying.
 func resolveServeProfile(t *testing.T, args []string) *wallet.Wallet {
+	w, _ := resolveServeProfileWithOptions(t, args)
+	return w
+}
+
+func resolveServeProfileWithOptions(t *testing.T, args []string) (*wallet.Wallet, *walletServeOptions) {
 	t.Helper()
 
 	cmd, opts := walletServeCmdWithOptions()
@@ -142,7 +147,24 @@ func resolveServeProfile(t *testing.T, args []string) *wallet.Wallet {
 	if opts.HAIP {
 		w.RequireHAIP = true
 	}
-	return w
+	return w, opts
+}
+
+// The demo baseline is a default like the others: an explicit --pid=false
+// starts the demo without seeding one.
+func TestDemoModePIDBaselineIsOverridable(t *testing.T) {
+	_, withDefault := resolveServeProfileWithOptions(t, []string{"--port", "0", "--demo"})
+	if !withDefault.PID {
+		t.Error("demo did not imply the PID baseline")
+	}
+	_, disabled := resolveServeProfileWithOptions(t, []string{"--port", "0", "--demo", "--pid=false"})
+	if disabled.PID {
+		t.Error("explicit --pid=false did not win over the demo default")
+	}
+	_, plain := resolveServeProfileWithOptions(t, []string{"--port", "0"})
+	if plain.PID {
+		t.Error("plain serve seeded a PID baseline nobody asked for")
+	}
 }
 
 func newTestServeWallet(t *testing.T) *wallet.Wallet {

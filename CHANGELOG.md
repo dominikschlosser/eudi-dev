@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.2] - 2026-08-17
+
+### Fixed
+
+- **Every demo default yields to its explicit flag.** `--demo --pid=false` starts the demo without seeding a baseline, completing the rule the other implied settings already followed (`--mode`, `--haip`, `--vci-version`). The docs now also say that the baseline follows the pre-defined PID templates, so a template override decides what the demo seeds and what every reset restores
+
 ## [1.24.1] - 2026-08-17
 
 ### Added

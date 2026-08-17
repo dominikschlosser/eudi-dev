@@ -134,7 +134,9 @@ so the wallet automatically receives incoming protocol requests.`,
 //   - OpenID4VCI 1.1, since showing what the drafts do next is what a demo is
 //     for and every 1.1 feature is negotiated in metadata anyway
 func applyDemoProfileDefaults(cmd *cobra.Command, opts *walletServeOptions, w *wallet.Wallet) {
-	opts.PID = true
+	if !cmd.Flags().Changed("pid") {
+		opts.PID = true
+	}
 	if !cmd.Flags().Changed("mode") {
 		w.ValidationMode = wallet.ValidationModeDebug
 	}

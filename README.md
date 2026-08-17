@@ -48,7 +48,7 @@ Most EUDI test tooling is an issuer or a verifier that you point a wallet at. Th
 | [Paradym debuggers](https://paradym.id/articles/developer-tool-sdjwtvc-debugger) | one credential, decoded | no | no |
 | SDKs: [walt.id](https://docs.walt.id/), [Sphereon](https://github.com/Sphereon-Opensource/OID4VC), [Credo](https://github.com/openwallet-foundation/credo-ts), [Procivis One](https://github.com/procivis/one-core) | whatever you build | yes | as you write it |
 
-Use something else in these cases. For certification, the OIDF suite is the authority (this repository runs its plans, see [conformance](docs/conformance.md), but a passing run is not a certification). To test a wallet, point it at the Animo or EUDI services. To ship a product, use an SDK (everything here is under `internal/`). For proximity flows, use Multipaz (this tool speaks OID4VP over HTTP only, not BLE or NFC). To read a single credential, a hosted decoder needs no install. Never use real credentials: see [SECURITY.md](SECURITY.md).
+Use something else in these cases: For certification, the OIDF suite is the authority (this repository runs its plans, see [conformance](docs/conformance.md), but a passing run is not a certification). To test a wallet, point it at the Animo or EUDI services. To ship a product, use an SDK (everything here is under `internal/`). For proximity flows, use Multipaz (this tool speaks OID4VP over HTTP only, not BLE or NFC). To read a single credential, a hosted decoder needs no install. Never use real credentials: see [SECURITY.md](SECURITY.md).
 
 ## Install
 
