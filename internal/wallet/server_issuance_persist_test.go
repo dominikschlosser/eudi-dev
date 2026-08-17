@@ -117,3 +117,61 @@ func TestSaveIssuedCredential_DoesNotDuplicate(t *testing.T) {
 		t.Fatalf("credential count changed from %d to %d", before, got)
 	}
 }
+
+// A renewal has the same reload race as an issuance. The renewed copy
+// replaces a credential that still exists on disk, so a reload between the
+// replacement and the save reverts it and drops the rotated refresh token.
+func TestSaveRenewedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
+	srv := newTestServer(t, true)
+	saved := 0
+	srv.onSave = func() { saved++ }
+	srv.wallet.BaseURL = "https://wallet.example"
+
+	stale := StoredCredential{
+		ID:     "renewed-mid-reload",
+		Format: "dc+sd-jwt",
+		VCT:    "urn:test:ticket:1",
+		Raw:    "old.payload.signature",
+	}
+	srv.wallet.RestoreCredential(stale)
+
+	renewed := stale
+	renewed.Raw = "new.payload.signature"
+	renewed.Claims = map[string]any{
+		"status": map[string]any{
+			"status_list": map[string]any{
+				"uri": srv.wallet.StatusListURL(),
+				"idx": 7,
+			},
+		},
+	}
+	renewed.Renewal = &CredentialRenewal{
+		RefreshToken:       "rotated-token",
+		TokenEndpoint:      "https://issuer.example/token",
+		CredentialEndpoint: "https://issuer.example/credential",
+	}
+
+	// What the flow did in memory, then a concurrent reload reverting it.
+	srv.wallet.PutCredential(renewed)
+	srv.applyPersistedWalletState(&Wallet{Credentials: []StoredCredential{stale}})
+
+	srv.saveRenewedCredential(&renewed)
+
+	got, ok := srv.wallet.GetCredential(renewed.ID)
+	if !ok {
+		t.Fatal("the renewed credential is gone")
+	}
+	if got.Raw != "new.payload.signature" {
+		t.Error("the reload reverted the renewal to the stale copy")
+	}
+	if got.Renewal == nil || got.Renewal.RefreshToken != "rotated-token" {
+		t.Error("the rotated refresh token was lost")
+	}
+	entry, ok := srv.wallet.StatusEntryFor(renewed.ID)
+	if !ok || entry.Index != 7 {
+		t.Errorf("status entry = %+v (present %v), want the renewed credential's idx 7", entry, ok)
+	}
+	if saved != 1 {
+		t.Fatalf("expected exactly one save, got %d", saved)
+	}
+}
