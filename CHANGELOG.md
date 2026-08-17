@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The demo issuer accepts the auth_session its auth_via_web answer hands out.** The session id was never stored, so a wallet returning with it (OpenID4VCI 1.1 §6.2.1 has it sent on every further request) was refused with `invalid_grant`. The session is stored now and the wallet gets the interaction again with a fresh pushed request
 - **The challenge endpoint caps its pushed requests like PAR.** The browser sign-in answers (`redirect_to_web` and auth_via_web) stored pushed authorization requests without the 500-entry cap the PAR endpoint enforces. A full map answers 429
 - **A purpose from an unverifiable registration certificate is not shown.** A certificate without a readable x5c skipped the signature check and its purpose was displayed anyway. It now leaves a warning in the activity log and stays out of the dialog, like a certificate whose signature fails
 - **A purpose also shows for a request sent as plain parameters.** `verifier_info` was only read from a request's payload document, which a bare query-parameter request does not have. The raw parameter is now kept and read. Outer parameters of a signed request stay ignored (OpenID4VP 1.0 §5.10.1)

@@ -61,9 +61,9 @@ func normalizeAuthorizationMode(value string) string {
 	return authorizationBrowser
 }
 
-// interactiveSession is one Authorization Challenge conversation: what the
-// wallet asked for in its initial request, and the presentation this issuer
-// asked for in return.
+// interactiveSession is one Authorization Challenge conversation. A
+// presentation session carries the request to verify. A browser session
+// carries what a repeated auth_via_web answer needs instead.
 type interactiveSession struct {
 	id            string
 	clientID      string
@@ -72,6 +72,13 @@ type interactiveSession struct {
 	issuerState   string
 	request       *requestState
 	expires       time.Time
+
+	// browser marks an auth_via_web session (§6.2.1.2). The sign-in finishes
+	// at the authorization endpoint, so a wallet returning here with this
+	// auth_session wants the interaction again.
+	browser     bool
+	redirectURI string
+	state       string
 }
 
 // challengeEndpoint is the URL wallets are told to use, and the value every
@@ -198,6 +205,12 @@ func (d *DemoRP) continueInteractiveAuthorization(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_grant", "client_id does not match the authorization session"))
 		return
 	}
+	// A browser session finishes at the authorization endpoint. A wallet
+	// returning here with its auth_session gets the interaction again.
+	if session.browser {
+		d.answerAuthViaWeb(w, session)
+		return
+	}
 
 	var response map[string]any
 	if err := json.Unmarshal([]byte(r.PostFormValue("openid4vp_response")), &response); err != nil {
@@ -273,13 +286,13 @@ func (d *DemoRP) offerAuthorization(issuerState string) string {
 // wallet redeems it at the authorization endpoint, so the code lands at its
 // redirect URI like in any redirect flow. It reports false when the state map
 // is full, the same cap the PAR endpoint enforces.
-func (d *DemoRP) pushChallengeAuthRequest(r *http.Request, clientID, codeChallenge, issuerState, redirectURI string) (*authRequestState, bool) {
+func (d *DemoRP) pushChallengeAuthRequest(clientID, codeChallenge, issuerState, redirectURI, state, scope string) (*authRequestState, bool) {
 	request := &authRequestState{
 		requestURI:    requestURIPrefix + randToken(),
 		clientID:      clientID,
 		redirectURI:   redirectURI,
-		state:         r.PostFormValue("state"),
-		scope:         r.PostFormValue("scope"),
+		state:         state,
+		scope:         scope,
 		codeChallenge: codeChallenge,
 		issuerState:   issuerState,
 		expires:       time.Now().Add(authRequestTTL),
@@ -308,16 +321,47 @@ func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	request, ok := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	// The session is stored because §6.2.1 has the wallet send auth_session
+	// on every further challenge request. A wallet that comes back with it
+	// (after an abandoned sign-in) gets the interaction again.
+	session := &interactiveSession{
+		id:            randToken(),
+		clientID:      clientID,
+		scope:         r.PostFormValue("scope"),
+		codeChallenge: codeChallenge,
+		issuerState:   issuerState,
+		expires:       time.Now().Add(entryTTL),
+		browser:       true,
+		redirectURI:   redirectURI,
+		state:         r.PostFormValue("state"),
+	}
+	d.mu.Lock()
+	d.pruneLocked()
+	if len(d.interactive) >= maxEntries {
+		d.mu.Unlock()
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization sessions, try again later"})
+		return
+	}
+	d.interactive[session.id] = session
+	d.mu.Unlock()
+
+	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, asking for the auth_via_web interaction")
+	d.answerAuthViaWeb(w, session)
+}
+
+// answerAuthViaWeb answers a browser session with the Interaction Required
+// Response of §6.2.1.2, pushing a fresh authorization request for the wallet
+// to take to the authorization endpoint.
+func (d *DemoRP) answerAuthViaWeb(w http.ResponseWriter, session *interactiveSession) {
+	request, ok := d.pushChallengeAuthRequest(session.clientID, session.codeChallenge, session.issuerState, session.redirectURI, session.state, session.scope)
 	if !ok {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
 		return
 	}
-	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, asking for the auth_via_web interaction")
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":                     "insufficient_authorization",
 		"interaction_type_required": interactionTypeAuthViaWeb,
-		"auth_session":              randToken(),
+		"auth_session":              session.id,
 		"request_uri":               request.requestURI,
 		"expires_in":                int(authRequestTTL.Seconds()),
 	})
@@ -335,7 +379,7 @@ func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	request, ok := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	request, ok := d.pushChallengeAuthRequest(clientID, codeChallenge, issuerState, redirectURI, r.PostFormValue("state"), r.PostFormValue("scope"))
 	if !ok {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
 		return
