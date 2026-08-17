@@ -562,8 +562,9 @@ test.describe("Demo issuer authorization choice", () => {
       authorization: "browser",
     });
 
-    // The wallet is told to continue in a browser (redirect_to_web), so it
-    // hands back the sign-in URL rather than finishing the issuance.
+    // The issuer asks for the auth_via_web interaction (OpenID4VCI 1.1
+    // section 6.2.1.2), so the wallet hands back the sign-in URL rather than
+    // finishing the issuance.
     const redeemed = await postJSON("/api/offers", { uri });
     expect(redeemed.status, JSON.stringify(redeemed.body)).toBe(202);
     expect(redeemed.body.status).toBe("authorization_required");
@@ -571,7 +572,7 @@ test.describe("Demo issuer authorization choice", () => {
 
     const log = await (await fetch(`${BASE}/api/log`)).json();
     const events = log.map((entry) => (entry.details || {}).event);
-    expect(events).toContain("interactive_authorization_redirect_to_web");
+    expect(events).toContain("interactive_authorization_auth_via_web");
   });
 });
 
