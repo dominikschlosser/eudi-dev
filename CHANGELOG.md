@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A purpose also shows for a request sent as plain parameters.** `verifier_info` was only read from a request's payload document, which a bare query-parameter request does not have. The raw parameter is now kept and read. Outer parameters of a signed request stay ignored (OpenID4VP 1.0 §5.10.1)
 - **The demo reads its signing key and certificate chain in one step.** The chain was fetched under the wallet lock but the key in a separate read, so a reload or demo reset in between produced signatures the embedded x5c leaf cannot verify. Both now come from one locked read
 - **A renewal is no longer lost to a concurrent store reload.** The refresh flow replaced the credential in memory and then saved. A request reloading the store in between reverted the renewal, including the rotated refresh token, while the API reported success. The renewed copy is now written back under the same lock the reload takes, like the issuance flow
 

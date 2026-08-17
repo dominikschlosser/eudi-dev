@@ -17,9 +17,13 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"encoding/json"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
 // signTestRegistrationCertificate issues an rc-wrp+jwt with the wallet's own
@@ -194,4 +198,62 @@ func TestDefaultSigningMaterialPairsKeyAndChain(t *testing.T) {
 	if !leafKey.Equal(&key.PublicKey) {
 		t.Error("the leaf certificate does not wrap the returned signing key")
 	}
+}
+
+// A request sent as plain parameters has no payload document, so its
+// verifier_info used to be dropped: the same certificate showed its purpose
+// in a signed request object but not on the bare query string.
+func TestPlainParameterRequestShowsThePurpose(t *testing.T) {
+	srv := newTestServer(t, false)
+	cert := signTestRegistrationCertificate(t, srv.wallet, "Checking who you are")
+	verifierInfo, err := json.Marshal([]map[string]any{{"format": "registration_cert", "data": cert}})
+	if err != nil {
+		t.Fatalf("encoding verifier_info: %v", err)
+	}
+
+	dcql, err := json.Marshal(map[string]any{
+		"credentials": []any{map[string]any{
+			"id":     "pid",
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+			"claims": []any{map[string]any{"path": []any{"given_name"}}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("encoding dcql: %v", err)
+	}
+
+	params := url.Values{
+		"client_id":     {"https://verifier.example"},
+		"response_type": {"vp_token"},
+		"nonce":         {"purpose-nonce"},
+		"response_uri":  {"https://verifier.example/response"},
+		"dcql_query":    {string(dcql)},
+		"verifier_info": {string(verifierInfo)},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		req := httptest.NewRequest("GET", "/authorize?"+params.Encode(), nil)
+		srv.mux.ServeHTTP(httptest.NewRecorder(), req)
+		close(done)
+	}()
+
+	var pending []*ConsentRequest
+	for i := 0; i < 100; i++ {
+		time.Sleep(10 * time.Millisecond)
+		if pending = srv.wallet.GetPendingRequests(); len(pending) > 0 {
+			break
+		}
+	}
+	if len(pending) == 0 {
+		t.Fatal("no pending consent request appeared")
+	}
+	if len(pending[0].Purposes) != 1 || pending[0].Purposes[0] != "Checking who you are" {
+		t.Errorf("Purposes = %v, want the certificate's purpose", pending[0].Purposes)
+	}
+
+	denyReq := httptest.NewRequest("POST", "/api/requests/"+pending[0].ID+"/deny", nil)
+	srv.mux.ServeHTTP(httptest.NewRecorder(), denyReq)
+	<-done
 }

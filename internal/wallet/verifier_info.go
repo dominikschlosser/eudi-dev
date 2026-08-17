@@ -75,8 +75,18 @@ func verifierInfoPurposes(payload map[string]any) (purposes []string, findings [
 }
 
 // consentPurposes reads the verifier's registered purposes for the consent
-// dialog and logs the certificates that could not be used.
-func (w *Wallet) consentPurposes(scope string, payload map[string]any) []string {
+// dialog and logs the certificates that could not be used. A request sent as
+// plain parameters has no payload document, so its verifier_info survives
+// only as the raw parameter. A signed request's outer parameters stay
+// ignored (OID4VP 1.0 §5.10.1).
+func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestParams) []string {
+	if authReq == nil {
+		return nil
+	}
+	payload := authReq.RequestPayload
+	if payload == nil && authReq.RequestObject == nil && strings.TrimSpace(authReq.VerifierInfo) != "" {
+		payload = map[string]any{"verifier_info": authReq.VerifierInfo}
+	}
 	purposes, findings := verifierInfoPurposes(payload)
 	for _, finding := range findings {
 		w.AddWarning(scope, finding, nil)

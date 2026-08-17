@@ -148,7 +148,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
-		Purposes:     reqServer.wallet.consentPurposes("presentation", authReq.RequestPayload),
+		Purposes:     reqServer.wallet.consentPurposes("presentation", authReq),
 	}
 
 	reqServer.wallet.CreateConsentRequest(consentReq)
