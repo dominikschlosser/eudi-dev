@@ -85,8 +85,11 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 				},
 			},
 		}
-		meta["authorization_encryption_alg_values_supported"] = []string{"ECDH-ES"}
-		meta["authorization_encryption_enc_values_supported"] = []string{"A128GCM", "A256GCM"}
+		// §5.10.5 puts the request encryption keys in jwks. The algorithms
+		// for them are the request_object_encryption_* pair of OpenID
+		// Connect Discovery, with the wallet in the server role.
+		meta["request_object_encryption_alg_values_supported"] = []string{"ECDH-ES"}
+		meta["request_object_encryption_enc_values_supported"] = []string{"A128GCM", "A256GCM"}
 	}
 
 	return meta

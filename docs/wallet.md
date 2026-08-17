@@ -1057,7 +1057,7 @@ When enabled, the wallet:
 
 1. Generates an ECDSA P-256 encryption key at startup
 2. When `request_uri_method=post` is set in the authorization request, POSTs to the `request_uri` with:
-   - `wallet_metadata`. JSON object containing `vp_formats_supported`, `request_object_signing_alg_values_supported`, and `jwks` with the wallet's public encryption key
+   - `wallet_metadata`. JSON object containing `vp_formats_supported`, `request_object_signing_alg_values_supported`, `jwks` with the wallet's public encryption key, and the `request_object_encryption_alg/enc_values_supported` algorithms for it
    - `wallet_nonce`. Base64url-encoded random nonce for replay protection
 3. Expects the verifier to encrypt the request object as a JWE (ECDH-ES + A128GCM or A256GCM) using the wallet's public key
 4. Decrypts the received JWE to extract the signed JWT request object

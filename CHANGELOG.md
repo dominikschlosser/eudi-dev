@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The wallet advertises request object encryption under its proper name.** The `wallet_metadata` sent with `request_uri_method=post` announced the encryption algorithms as `authorization_encryption_*_values_supported`, which is the pair for encrypting the authorization response. A verifier looking for the request object pair found nothing next to the `jwks`. The algorithms now travel as `request_object_encryption_alg_values_supported` and `request_object_encryption_enc_values_supported`
+
 - **Every demo default yields to its explicit flag.** `--demo --pid=false` starts the demo without seeding a baseline, completing the rule the other implied settings already followed (`--mode`, `--haip`, `--vci-version`). The docs now also say that the baseline follows the pre-defined PID templates, so a template override decides what the demo seeds and what every reset restores
 
 ## [1.24.1] - 2026-08-17

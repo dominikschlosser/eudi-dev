@@ -85,11 +85,11 @@ func TestBuildWalletMetadata_WithEncryption(t *testing.T) {
 		t.Errorf("expected alg ECDH-ES, got %s", jwk["alg"])
 	}
 
-	algSupported := meta["authorization_encryption_alg_values_supported"].([]string)
+	algSupported := meta["request_object_encryption_alg_values_supported"].([]string)
 	if len(algSupported) != 1 || algSupported[0] != "ECDH-ES" {
 		t.Errorf("unexpected alg_values_supported: %v", algSupported)
 	}
-	encSupported := meta["authorization_encryption_enc_values_supported"].([]string)
+	encSupported := meta["request_object_encryption_enc_values_supported"].([]string)
 	if len(encSupported) != 2 {
 		t.Errorf("expected 2 enc values, got %d", len(encSupported))
 	}
