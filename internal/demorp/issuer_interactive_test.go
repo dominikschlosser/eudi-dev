@@ -154,6 +154,7 @@ func TestOfferCanAskForTheBrowserSignInInstead(t *testing.T) {
 // interaction support from the wallet.
 func TestBrowserOfferFallsBackToRedirectToWeb(t *testing.T) {
 	d, _, _ := newDemoRP(t)
+	issuerState := createOfferState(t, d, authorizationBrowser)
 	provider := foreignWalletProvider(t)
 	clientKey, err := mock.GenerateKey()
 	if err != nil {
@@ -162,7 +163,10 @@ func TestBrowserOfferFallsBackToRedirectToWeb(t *testing.T) {
 	rec := postAuthorizationChallenge(t, d, map[string]string{
 		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
 		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
-	}, url.Values{"interaction_types_supported": {interactionTypePresentation}})
+	}, url.Values{
+		"issuer_state":                {issuerState},
+		"interaction_types_supported": {interactionTypePresentation},
+	})
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 (%s)", rec.Code, rec.Body.String())
@@ -178,6 +182,7 @@ func TestBrowserOfferFallsBackToRedirectToWeb(t *testing.T) {
 // takes to the authorization endpoint.
 func TestBrowserOfferAsksForTheAuthViaWebInteraction(t *testing.T) {
 	d, _, _ := newDemoRP(t)
+	issuerState := createOfferState(t, d, authorizationBrowser)
 	provider := foreignWalletProvider(t)
 	clientKey, err := mock.GenerateKey()
 	if err != nil {
@@ -186,7 +191,10 @@ func TestBrowserOfferAsksForTheAuthViaWebInteraction(t *testing.T) {
 	rec := postAuthorizationChallenge(t, d, map[string]string{
 		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
 		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
-	}, url.Values{"interaction_types_supported": {interactionTypePresentation + "," + interactionTypeAuthViaWeb}})
+	}, url.Values{
+		"issuer_state":                {issuerState},
+		"interaction_types_supported": {interactionTypePresentation + "," + interactionTypeAuthViaWeb},
+	})
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 (%s)", rec.Code, rec.Body.String())
@@ -236,7 +244,7 @@ func TestInteractiveAuthorizationIsNotOfferedAtFeatureLevel10(t *testing.T) {
 // asked for one it cannot do.
 func TestAuthorizationChallengeReportsAMissingInteractionType(t *testing.T) {
 	d, _, _ := newDemoRP(t)
-	issuerState := createPresentationOfferState(t, d)
+	issuerState := createOfferState(t, d, authorizationPresentation)
 	provider := foreignWalletProvider(t)
 	clientKey, err := mock.GenerateKey()
 	if err != nil {
@@ -262,11 +270,12 @@ func TestAuthorizationChallengeReportsAMissingInteractionType(t *testing.T) {
 	}
 }
 
-// createPresentationOfferState creates an authorization code offer that wants
-// the presentation, and returns its issuer_state.
-func createPresentationOfferState(t *testing.T, d *DemoRP) string {
+// createOfferState creates an authorization code offer with the given
+// authorization mode and returns its issuer_state, so a challenge request can
+// name a real offer instead of falling back to the no-offer default.
+func createOfferState(t *testing.T, d *DemoRP, authorization string) string {
 	t.Helper()
-	status, created := doJSON(t, d.IssuerHandler(), http.MethodPost, "/api/offers?grant="+authCodeGrant+"&authorization="+authorizationPresentation, "{}", nil)
+	status, created := doJSON(t, d.IssuerHandler(), http.MethodPost, "/api/offers?grant="+authCodeGrant+"&authorization="+authorization, "{}", nil)
 	if status != http.StatusCreated {
 		t.Fatalf("creating the offer: status %d (%v)", status, created)
 	}
@@ -534,7 +543,7 @@ func startInteractiveSession(t *testing.T, d *DemoRP, provider walletProvider, c
 // wrong.
 func TestInteractiveAuthorizationVerifiesThePresentation(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
-	issuerState := createPresentationOfferState(t, d)
+	issuerState := createOfferState(t, d, authorizationPresentation)
 	provider := foreignWalletProvider(t)
 	clientKey, err := mock.GenerateKey()
 	if err != nil {
