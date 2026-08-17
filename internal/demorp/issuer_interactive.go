@@ -271,8 +271,9 @@ func (d *DemoRP) offerAuthorization(issuerState string) string {
 // pushChallengeAuthRequest stores the pushed authorization request a browser
 // sign-in continues with, built from the challenge request's parameters. The
 // wallet redeems it at the authorization endpoint, so the code lands at its
-// redirect URI like in any redirect flow.
-func (d *DemoRP) pushChallengeAuthRequest(r *http.Request, clientID, codeChallenge, issuerState, redirectURI string) *authRequestState {
+// redirect URI like in any redirect flow. It reports false when the state map
+// is full, the same cap the PAR endpoint enforces.
+func (d *DemoRP) pushChallengeAuthRequest(r *http.Request, clientID, codeChallenge, issuerState, redirectURI string) (*authRequestState, bool) {
 	request := &authRequestState{
 		requestURI:    requestURIPrefix + randToken(),
 		clientID:      clientID,
@@ -284,10 +285,13 @@ func (d *DemoRP) pushChallengeAuthRequest(r *http.Request, clientID, codeChallen
 		expires:       time.Now().Add(authRequestTTL),
 	}
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	d.pruneLocked()
+	if len(d.authRequests) >= maxEntries {
+		return nil, false
+	}
 	d.authRequests[request.requestURI] = request
-	d.mu.Unlock()
-	return request
+	return request, true
 }
 
 // startAuthViaWebInteraction answers with the browser interaction of
@@ -304,7 +308,11 @@ func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	request := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	request, ok := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	if !ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
+		return
+	}
 	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, asking for the auth_via_web interaction")
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":                     "insufficient_authorization",
@@ -327,7 +335,11 @@ func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	request := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	request, ok := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	if !ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open authorization requests, try again later"})
+		return
+	}
 	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, answering redirect_to_web")
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":       "redirect_to_web",
