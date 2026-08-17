@@ -209,7 +209,7 @@ The whole UI is built for browser automation. Every interactive control has a st
 
 ![Issue credential dialog](./wallet-issue-ui.png)
 
-The UI header links to the project on GitHub and to CLI install instructions. Below the action buttons the UI lists the wallet's trust list URLs with copy buttons, each labelled with the provider profile it describes, plus direct downloads for the CA, signing and HTTPS keys. The **Trust & certificates** dialog covers both counterparties: a verifier trusting the wallet's self-issued credentials, and an issuer verifying the wallet attestation and key attestation the wallet sends during issuance. Both chain to the same CA.
+The UI header links to the project on GitHub and to CLI install instructions. The header also has an Auto-accept toggle button (filled while active, since consent dialogs never appear then). It flips the setting at runtime on a locally-hosted wallet. The demo refuses the change, like its other fixed settings. Below the action buttons the UI lists the wallet's trust list URLs with copy buttons, each labelled with the provider profile it describes, plus direct downloads for the CA, signing and HTTPS keys. The **Trust & certificates** dialog covers both counterparties: a verifier trusting the wallet's self-issued credentials, and an issuer verifying the wallet attestation and key attestation the wallet sends during issuance. Both chain to the same CA.
 
 By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. An https `--base-url` is used as the issuer URL directly instead, so issuer metadata, trust lists, and status lists live on the public origin and an external TLS terminator serves them (see [public demo hosting](public-demo.md)). If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
 
@@ -927,6 +927,7 @@ curl -X PUT http://localhost:8085/api/config/preferred-format \
 | `PUT`  | `/api/config/preferred-format` | `{"format": "mso_mdoc"}`   | Prefer mDoc when multiple match   |
 | `PUT`  | `/api/config/preferred-format` | `{"format": "jwt_vc_json"}` | Prefer JWT VC when multiple match |
 | `PUT`  | `/api/config/preferred-format` | `{"format": ""}`            | Clear preference (default)        |
+| `PUT`  | `/api/config/auto-accept`      | `{"enabled": true}`         | Approve every presentation and offer without asking, until the process restarts. `false` restores consent. Refused in demo mode |
 
 The preference can also be set at startup via `--preferred-format`:
 

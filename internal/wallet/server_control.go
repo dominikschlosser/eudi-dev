@@ -220,6 +220,24 @@ func (s *Server) handleSetPreferredFormat(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]string{"format": body.Format})
 }
 
+// handleSetAutoAccept flips auto-accept at runtime. The change is
+// process-level like the conformance settings: it holds until the process
+// restarts and applies to every flow reaching this wallet. Refused in demo
+// mode, where a shared instance keeps its consent rules.
+func (s *Server) handleSetAutoAccept(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	s.wallet.mu.Lock()
+	s.wallet.AutoAccept = body.Enabled
+	s.wallet.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]bool{"auto_accept": body.Enabled})
+}
+
 // handleSetConformance changes the wallet's runtime conformance settings
 // (validation mode, HAIP, encrypted requests). On a local wallet every flow —
 // the UI, the macOS URL-scheme handler and the CLI — hits this same wallet, so

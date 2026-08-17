@@ -879,6 +879,9 @@ test.describe("Demo mode hardening", () => {
     await expect(page.locator("#decoder-link")).toBeVisible();
     // The shared-instance warning has to be there.
     await expect(page.locator("#demo-banner")).toBeVisible();
+    // Browser flows keep their consent dialog on the demo, and the shared
+    // setting cannot be changed, so no auto-accept control.
+    await expect(page.locator("#auto-accept-toggle")).toBeHidden();
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {

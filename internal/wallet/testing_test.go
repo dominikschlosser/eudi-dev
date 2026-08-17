@@ -361,3 +361,23 @@ func bothFormatDCQLQuery() map[string]any {
 		},
 	}
 }
+
+func TestAutoAccept_API(t *testing.T) {
+	srv := newTestServer(t, false)
+
+	rec := serverRequest(t, srv, "PUT", "/api/config/auto-accept", `{"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !srv.wallet.AutoAccept {
+		t.Error("auto-accept was not enabled")
+	}
+
+	rec2 := serverRequest(t, srv, "PUT", "/api/config/auto-accept", `{"enabled":false}`)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+	if srv.wallet.AutoAccept {
+		t.Error("auto-accept was not disabled")
+	}
+}

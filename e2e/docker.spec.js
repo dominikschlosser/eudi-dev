@@ -84,6 +84,9 @@ test.describe("Docker Image", () => {
     const response = await page.goto(WALLET_URL);
     expect(response.status()).toBe(200);
     await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
+    // The default CMD runs --auto-accept, and the header says so: consent
+    // dialogs never appear here, which would otherwise look broken.
+    await expect(page.locator("#auto-accept-toggle")).toHaveAttribute("aria-pressed", "true");
   });
 
   test("wallet has PID credentials pre-loaded", async () => {
