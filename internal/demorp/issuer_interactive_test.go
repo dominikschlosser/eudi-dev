@@ -15,6 +15,7 @@
 package demorp
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -472,4 +473,130 @@ func TestAuthViaWebFlowEndToEnd(t *testing.T) {
 	if got := ticket.Claims["given_name"]; got != demoAccountGivenName {
 		t.Errorf("ticket given_name = %v, want %q from the logged-in account", got, demoAccountGivenName)
 	}
+}
+
+// signPID issues a holder-bound PID under the wallet's CA, the credential the
+// interactive request asks for.
+func signPID(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey) string {
+	t.Helper()
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    d.issuerID(),
+		VCT:       PIDVCT,
+		ExpiresIn: 24 * time.Hour,
+		Claims:    map[string]any{"given_name": "ERIKA", "family_name": "MUSTERMANN"},
+		Key:       d.wallet.IssuerKey,
+		HolderKey: &holderKey.PublicKey,
+		CertChain: chain,
+	})
+	if err != nil {
+		t.Fatalf("signing PID: %v", err)
+	}
+	return raw
+}
+
+// startInteractiveSession runs an attested initial challenge request for a
+// presentation offer and returns the auth_session and the nonce of the
+// presentation request the issuer asked for.
+func startInteractiveSession(t *testing.T, d *DemoRP, provider walletProvider, clientKey *ecdsa.PrivateKey, issuerState string) (session, nonce string) {
+	t.Helper()
+	rec := postAuthorizationChallenge(t, d, map[string]string{
+		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	}, url.Values{
+		"issuer_state":                {issuerState},
+		"interaction_types_supported": {interactionTypePresentation},
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("initial challenge request: status %d, want 403 (%s)", rec.Code, rec.Body.String())
+	}
+	var response map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("parsing challenge response: %v", err)
+	}
+	session, _ = response["auth_session"].(string)
+	request, _ := response["openid4vp_request"].(map[string]any)
+	nonce, _ = request["nonce"].(string)
+	if session == "" || nonce == "" {
+		t.Fatalf("challenge response carries no session or nonce: %v", response)
+	}
+	return session, nonce
+}
+
+// The presentation an interactive session hands back is verified as a
+// verifier would verify it, and a presentation that fails any check is
+// answered with access_denied and no authorization code. The passing case
+// runs last, so the refusals cannot be the harness getting the exchange
+// wrong.
+func TestInteractiveAuthorizationVerifiesThePresentation(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	issuerState := createPresentationOfferState(t, d)
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	credential := signPID(t, d, holderKey)
+	audience := "ia:" + d.challengeEndpoint()
+
+	continueWith := func(t *testing.T, session, presentation string) *httptest.ResponseRecorder {
+		t.Helper()
+		vpToken, err := json.Marshal(map[string]any{"vp_token": map[string]any{"pid": []string{presentation}}})
+		if err != nil {
+			t.Fatalf("encoding openid4vp_response: %v", err)
+		}
+		return postAuthorizationChallenge(t, d, map[string]string{
+			"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+			"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+		}, url.Values{
+			"auth_session":       {session},
+			"openid4vp_response": {string(vpToken)},
+		})
+	}
+
+	refused := func(t *testing.T, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "access_denied") {
+			t.Errorf("body = %s, want access_denied", rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "authorization_code") {
+			t.Errorf("a refused presentation was answered with a code: %s", rec.Body.String())
+		}
+	}
+
+	t.Run("a wrong nonce is refused", func(t *testing.T) {
+		session, _ := startInteractiveSession(t, d, provider, clientKey, issuerState)
+		refused(t, continueWith(t, session, presentCredential(t, holderKey, credential, audience, "wrong-nonce")))
+	})
+
+	t.Run("an audience naming somebody else is refused", func(t *testing.T) {
+		session, nonce := startInteractiveSession(t, d, provider, clientKey, issuerState)
+		refused(t, continueWith(t, session, presentCredential(t, holderKey, credential, "https://verifier.example", nonce)))
+	})
+
+	t.Run("a key binding signed by another key is refused", func(t *testing.T) {
+		otherKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating key: %v", err)
+		}
+		session, nonce := startInteractiveSession(t, d, provider, clientKey, issuerState)
+		refused(t, continueWith(t, session, presentCredential(t, otherKey, credential, audience, nonce)))
+	})
+
+	t.Run("a presentation passing every check gets the code", func(t *testing.T) {
+		session, nonce := startInteractiveSession(t, d, provider, clientKey, issuerState)
+		rec := continueWith(t, session, presentCredential(t, holderKey, credential, audience, nonce))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "authorization_code") {
+			t.Errorf("body = %s, want an authorization code", rec.Body.String())
+		}
+	})
 }

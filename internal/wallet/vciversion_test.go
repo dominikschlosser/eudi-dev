@@ -77,33 +77,32 @@ func TestVCIFeatureVersionDefaultsToThePublishedVersion(t *testing.T) {
 	}
 }
 
-// The feature level decides what the wallet uses, not what it tolerates: an
-// authorization server that offers Interactive Authorization to a wallet set
-// to 1.0 still gets the redirect flow it also published, and the credential
-// still arrives. Everything about the flow below is what the wallet did
-// before interactive authorization existed.
-func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *testing.T) {
-	w := generateTestWallet(t)
-	w.VCIClientID = "wallet-client"
-	w.VCIRedirectURI = "https://wallet.example/callback"
-	w.VCIVersion = VCIVersion10
+// redirectFlowIssuer is a scripted issuer running the ordinary redirect flow:
+// PAR, an authorization endpoint that immediately redirects back with a code,
+// token and credential endpoints. withChallengeEndpoint also publishes an
+// authorization_challenge_endpoint alongside them.
+type redirectFlowIssuer struct {
+	url             string
+	parCalled       bool
+	challengeCalled bool
+	tokenCalled     bool
+}
 
+func newRedirectFlowIssuer(t *testing.T, w *Wallet, withChallengeEndpoint bool) *redirectFlowIssuer {
+	t.Helper()
+
+	issuer := &redirectFlowIssuer{}
 	credRaw := generateTestCredential(t, w)
-	var (
-		serverURL       string
-		parState        string
-		challengeCalled bool
-		tokenCalled     bool
-	)
+	var parState string
 
-	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"credential_issuer":     serverURL,
-				"authorization_servers": []string{serverURL},
-				"credential_endpoint":   serverURL + "/credential",
+				"credential_issuer":     issuer.url,
+				"authorization_servers": []string{issuer.url},
+				"credential_endpoint":   issuer.url + "/credential",
 				"credential_configurations_supported": map[string]any{
 					"test-config": map[string]any{
 						"format": "dc+sd-jwt",
@@ -112,34 +111,38 @@ func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *
 				},
 			})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
-			rw.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"issuer":                                serverURL,
-				"authorization_endpoint":                serverURL + "/authorize",
-				"pushed_authorization_request_endpoint": serverURL + "/par",
-				"token_endpoint":                        serverURL + "/token",
+			metadata := map[string]any{
+				"issuer":                                issuer.url,
+				"authorization_endpoint":                issuer.url + "/authorize",
+				"pushed_authorization_request_endpoint": issuer.url + "/par",
+				"token_endpoint":                        issuer.url + "/token",
 				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
 				"dpop_signing_alg_values_supported":     []string{"ES256"},
+			}
+			if withChallengeEndpoint {
 				// OpenID4VCI 1.1 §13.3, offered alongside the redirect flow.
-				"authorization_challenge_endpoint":  serverURL + "/authorize-challenge",
-				"require_interactive_authorization": false,
-			})
+				metadata["authorization_challenge_endpoint"] = issuer.url + "/authorize-challenge"
+				metadata["require_interactive_authorization"] = false
+			}
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(metadata)
 		case r.Method == http.MethodPost && r.URL.Path == "/par":
+			issuer.parCalled = true
 			body, _ := io.ReadAll(r.Body)
 			form, _ := url.ParseQuery(string(body))
 			parState = form.Get("state")
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"request_uri": serverURL + "/request-uri/example",
+				"request_uri": issuer.url + "/request-uri/example",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
 			redirect := w.VCIRedirectURI + "?code=issued-code&state=" + url.QueryEscape(parState)
 			http.Redirect(rw, r, redirect, http.StatusFound)
 		case r.URL.Path == "/authorize-challenge":
-			challengeCalled = true
+			issuer.challengeCalled = true
 			rw.WriteHeader(http.StatusForbidden)
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
-			tokenCalled = true
+			issuer.tokenCalled = true
 			body, _ := io.ReadAll(r.Body)
 			form, _ := url.ParseQuery(string(body))
 			// The redirect flow's token request carries the redirect_uri it
@@ -163,15 +166,19 @@ func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *
 			rw.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer issuer.Close()
-	serverURL = issuer.URL
+	t.Cleanup(server.Close)
+	issuer.url = server.URL
 
 	oldClient := httpClient
-	httpClient = issuer.Client()
-	defer func() { httpClient = oldClient }()
+	httpClient = server.Client()
+	t.Cleanup(func() { httpClient = oldClient })
 
+	return issuer
+}
+
+func redirectFlowOfferURI(issuerURL string) string {
 	offer := map[string]any{
-		"credential_issuer":            serverURL,
+		"credential_issuer":            issuerURL,
 		"credential_configuration_ids": []string{"test-config"},
 		"grants": map[string]any{
 			"authorization_code": map[string]any{
@@ -180,19 +187,33 @@ func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *
 		},
 	}
 	offerJSON, _ := json.Marshal(offer)
-	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+	return "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+}
 
-	result, err := w.ProcessCredentialOffer(offerURI)
+// The feature level decides what the wallet uses, not what it tolerates: an
+// authorization server that offers Interactive Authorization to a wallet set
+// to 1.0 still gets the redirect flow it also published, and the credential
+// still arrives. Everything about the flow below is what the wallet did
+// before interactive authorization existed.
+func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+	w.VCIVersion = VCIVersion10
+
+	issuer := newRedirectFlowIssuer(t, w, true)
+
+	result, err := w.ProcessCredentialOffer(redirectFlowOfferURI(issuer.url))
 	if err != nil {
 		t.Fatalf("ProcessCredentialOffer() error = %v", err)
 	}
 	if result.CredentialID == "" {
 		t.Fatal("expected imported credential ID")
 	}
-	if challengeCalled {
+	if issuer.challengeCalled {
 		t.Error("wallet used the authorization challenge endpoint at feature level 1.0")
 	}
-	if !tokenCalled {
+	if !issuer.tokenCalled {
 		t.Error("wallet did not reach the token endpoint")
 	}
 
@@ -200,6 +221,40 @@ func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *
 	// expected to be interactive was not.
 	if !hasInteractiveAuthorizationNote(w, "--vci-version 1.1") {
 		t.Errorf("no log entry named the declined interactive authorization offer, log: %v", w.Log)
+	}
+}
+
+// The other half of the negotiation: a 1.1 wallet against an authorization
+// server that publishes no challenge endpoint runs the redirect flow it
+// always ran, pushing its own authorization request via PAR. This is what
+// every issuer without interactive authorization looks like to a 1.1 wallet.
+func TestAuthorizationCodeOfferAtVCI11WorksWithoutAChallengeEndpoint(t *testing.T) {
+	w := generateTestWallet(t)
+	w.VCIClientID = "wallet-client"
+	w.VCIRedirectURI = "https://wallet.example/callback"
+	w.VCIVersion = VCIVersion11
+
+	issuer := newRedirectFlowIssuer(t, w, false)
+
+	result, err := w.ProcessCredentialOffer(redirectFlowOfferURI(issuer.url))
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer() error = %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("expected imported credential ID")
+	}
+	if issuer.challengeCalled {
+		t.Error("wallet called a challenge endpoint the server never published")
+	}
+	if !issuer.parCalled {
+		t.Error("wallet did not push its own authorization request")
+	}
+	if !issuer.tokenCalled {
+		t.Error("wallet did not reach the token endpoint")
+	}
+	// There was no interactive authorization to decline, so nothing is noted.
+	if _, ok := findInteractiveAuthorizationNote(w); ok {
+		t.Errorf("logged an interactive authorization note for a server that offers none, log: %v", w.Log)
 	}
 }
 
