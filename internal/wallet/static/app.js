@@ -1684,6 +1684,11 @@
       // Determine demo mode before rendering the conformance panel: its note
       // and browser-only warning both branch on it.
       demoMode = !!(config.demo && config.demo.enabled);
+      // An auto-accept wallet never opens a consent dialog, and without a
+      // hint the silence reads as a broken flow. A local wallet can flip the
+      // setting from the header. The demo keeps its consent rules, so there
+      // it only shows the state.
+      renderAutoAccept(!!config.auto_accept);
       renderConformance(config);
       ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input', 'conf-vci-version-select'].forEach((id) => {
         const el = document.getElementById(id);
@@ -1737,6 +1742,38 @@
       // config was still loading, so a local wallet still opens its dialog.
       configLoaded = true;
       loadPendingRequests();
+    }
+  }
+
+  function renderAutoAccept(enabled) {
+    const toggle = document.getElementById('auto-accept-toggle');
+    toggle.hidden = demoMode && !enabled;
+    toggle.disabled = demoMode;
+    toggle.classList.toggle('btn-primary', enabled);
+    toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    toggle.dataset.enabled = enabled ? '1' : '0';
+    toggle.title = enabled
+      ? 'This wallet approves every presentation and offer without asking.'
+      : 'This wallet asks for consent before presenting or accepting.';
+    if (!demoMode) {
+      toggle.title += ' Click to change.';
+    }
+    if (!toggle.dataset.wired) {
+      toggle.dataset.wired = '1';
+      toggle.addEventListener('click', async () => {
+        if (toggle.disabled) return;
+        const next = toggle.dataset.enabled !== '1';
+        try {
+          const resp = await fetch('/api/config/auto-accept', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: next }),
+          });
+          if (resp.ok) renderAutoAccept(next);
+        } catch (e) {
+          console.error('Changing auto-accept failed:', e);
+        }
+      });
     }
   }
 

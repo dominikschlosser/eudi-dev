@@ -188,6 +188,7 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/next-error", s.withFreshStore(s.handleSetNextError))
 	s.mux.HandleFunc("DELETE /api/next-error", s.withFreshStore(s.handleClearNextError))
 	s.mux.HandleFunc("PUT /api/config/preferred-format", s.withFreshStore(s.handleSetPreferredFormat))
+	s.mux.HandleFunc("PUT /api/config/auto-accept", s.withFreshStore(s.handleSetAutoAccept))
 	s.mux.HandleFunc("PUT /api/config/conformance", s.withFreshStore(s.handleSetConformance))
 	s.mux.HandleFunc("DELETE /api/config/conformance", s.withFreshStore(s.handleResetConformance))
 	s.mux.HandleFunc("GET /api/config", s.withFreshStore(s.handleGetConfig))

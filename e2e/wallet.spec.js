@@ -1014,3 +1014,22 @@ test.describe("Deferred issuance in the UI", () => {
     expect(res.body.error).toContain("no deferred issuance");
   });
 });
+
+test.describe("Auto-accept toggle", () => {
+  test("names the mode and flips it at runtime", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    const toggle = page.locator("#auto-accept-toggle");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    let config = await (await fetch(`${WALLET_URL}/api/config`)).json();
+    expect(config.auto_accept).toBe(true);
+
+    // Back to interactive, so the rest of the suite keeps its consent flows.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    config = await (await fetch(`${WALLET_URL}/api/config`)).json();
+    expect(config.auto_accept).toBe(false);
+  });
+});

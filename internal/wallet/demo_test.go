@@ -46,6 +46,7 @@ func TestDemoBlocksAdminEndpoints(t *testing.T) {
 		{"POST", "/api/next-error", `{"error":"access_denied"}`},
 		{"DELETE", "/api/next-error", ""},
 		{"PUT", "/api/config/preferred-format", `{"preferred_format":"dc+sd-jwt"}`},
+		{"PUT", "/api/config/auto-accept", `{"enabled":true}`},
 	}
 	for _, tt := range blocked {
 		w := serverRequest(t, srv, tt.method, tt.path, tt.body)
