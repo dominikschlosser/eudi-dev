@@ -257,3 +257,25 @@ func TestPlainParameterRequestShowsThePurpose(t *testing.T) {
 	srv.mux.ServeHTTP(httptest.NewRecorder(), denyReq)
 	<-done
 }
+
+// A certificate without a readable x5c cannot be signature-checked, so its
+// purpose is not shown.
+func TestVerifierInfoPurposesHidesAnUncheckableCertificate(t *testing.T) {
+	w := generateTestWallet(t)
+	cert, err := SignRegistrationCertificateJWT(map[string]any{
+		"sub":     "LEIEU-TEST-VERIFIER",
+		"purpose": "Checking your ticket",
+	}, w.IssuerKey, nil)
+	if err != nil {
+		t.Fatalf("signing certificate: %v", err)
+	}
+	purposes, findings := verifierInfoPurposes(verifierInfoPayload(
+		map[string]any{"format": "registration_cert", "data": cert},
+	))
+	if len(purposes) != 0 {
+		t.Errorf("purposes = %v, want none for a certificate without x5c", purposes)
+	}
+	if len(findings) != 1 || !strings.Contains(findings[0], "cannot be checked") {
+		t.Errorf("findings = %v, want one saying the signature cannot be checked", findings)
+	}
+}

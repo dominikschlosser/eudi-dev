@@ -40,12 +40,12 @@ const registrationCertificateTyp = "rc-wrp+jwt"
 // the data request is what the consent dialog needs.
 //
 // A certificate is recognized by its rc-wrp+jwt typ. Its sub is the
-// registered legal entity identifier, not the request's client_id, so the
-// only check made here is the certificate's signature against its own x5c
-// leaf: a failure leaves a finding and hides the purpose. The chain is
-// deliberately not anchored to a trust list, like every other x5c this
-// wallet checks (see SECURITY.md). Entries of other formats and JWTs of
-// other types are not this wallet's to read and are passed over.
+// registered legal entity, not the request's client_id, so the only check is
+// the signature against the embedded x5c leaf. A signature that fails or
+// cannot be checked (no readable x5c) leaves a finding and the purpose is
+// not shown. The chain is not anchored to a trust list, like every other x5c
+// this wallet checks (see SECURITY.md). Other formats and JWT types are
+// skipped.
 func verifierInfoPurposes(payload map[string]any) (purposes []string, findings []string) {
 	for _, entry := range verifierInfoEntries(payload) {
 		data, _ := entry["data"].(string)
@@ -59,11 +59,14 @@ func verifierInfoPurposes(payload map[string]any) (purposes []string, findings [
 		if typ, _ := header["typ"].(string); typ != registrationCertificateTyp {
 			continue
 		}
-		if key, err := validate.ExtractX5CLeafKey(header); err == nil && key != nil {
-			if _, err := jws.Verify(data, key); err != nil {
-				findings = append(findings, fmt.Sprintf("the registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
-				continue
-			}
+		key, err := validate.ExtractX5CLeafKey(header)
+		if err != nil || key == nil {
+			findings = append(findings, "the registration certificate carries no readable x5c certificate, so its signature cannot be checked and its purpose is not shown")
+			continue
+		}
+		if _, err := jws.Verify(data, key); err != nil {
+			findings = append(findings, fmt.Sprintf("the registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
+			continue
 		}
 		for _, purpose := range purposeStrings(claims["purpose"]) {
 			if !containsPurpose(purposes, purpose) {
