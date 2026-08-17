@@ -396,8 +396,8 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 	// (rc-wrp+jwt) in verifier_info (OpenID4VP 1.0 §5.1) like the demo
 	// verifier's requests. Best-effort: a request without one still verifies
 	// the same way.
-	chain, err := d.wallet.DefaultSigningCertChain()
-	if err == nil && len(chain) > 0 {
+	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
+	if err == nil && signingKey != nil && len(chain) > 0 {
 		registration, err := wallet.SignRegistrationCertificateJWT(map[string]any{
 			"sub":  "EUDI-DEV-DEMO-ISSUER",
 			"name": "Demo Issuer",
@@ -405,7 +405,7 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 			"purpose": []map[string]any{
 				{"lang": "en", "value": "Proving who you are before the ticket is issued"},
 			},
-		}, d.wallet.IssuerKey, chain)
+		}, signingKey, chain)
 		if err == nil {
 			request["verifier_info"] = []map[string]any{{
 				"format": "registration_cert",

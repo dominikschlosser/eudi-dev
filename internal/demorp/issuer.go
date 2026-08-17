@@ -674,7 +674,7 @@ type ticketGrant struct {
 // and signed with the wallet's issuer key under a leaf certificate from the
 // wallet CA, so the wallet's trust list covers the credential.
 func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	chain, err := d.wallet.DefaultSigningCertChain()
+	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
 	}
@@ -683,7 +683,7 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (st
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
 		Claims:    ticketClaims(granted.subject, granted.holderClaims, granted.clientAuth),
-		Key:       d.wallet.IssuerKey,
+		Key:       signingKey,
 		HolderKey: holderKey,
 		CertChain: chain,
 	}

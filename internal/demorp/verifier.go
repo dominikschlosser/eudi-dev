@@ -271,8 +271,8 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	// what makes it verifiable without a trust list and what HAIP requires
 	// (redirect_uri: is not an accepted prefix, and it cannot be combined
 	// with a signed request object anyway).
-	chain, err := d.wallet.DefaultSigningCertChain()
-	if err != nil || len(chain) == 0 {
+	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
+	if err != nil || signingKey == nil || len(chain) == 0 {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no signing certificate available"})
 		return
 	}
@@ -337,7 +337,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"name":    "Demo Verifier",
 		"iat":     now.Unix(),
 		"purpose": []map[string]any{{"lang": "en", "value": purpose}},
-	}, d.wallet.IssuerKey, chain)
+	}, signingKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
 		return
@@ -362,7 +362,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			"format": "registration_cert",
 			"data":   registration,
 		}},
-	}, d.wallet.IssuerKey, chain)
+	}, signingKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing request object: " + err.Error()})
 		return

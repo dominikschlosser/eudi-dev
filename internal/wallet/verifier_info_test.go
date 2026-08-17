@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -173,4 +174,24 @@ func TestVerifierInfoPurposes(t *testing.T) {
 			t.Errorf("purposes = %v findings = %v, want nothing", purposes, findings)
 		}
 	})
+}
+
+// The demo reset replaces key and chain together, so DefaultSigningMaterial
+// must return a pair whose leaf wraps the key.
+func TestDefaultSigningMaterialPairsKeyAndChain(t *testing.T) {
+	w := generateTestWallet(t)
+	key, chain, err := w.DefaultSigningMaterial()
+	if err != nil {
+		t.Fatalf("DefaultSigningMaterial() error = %v", err)
+	}
+	if key == nil || len(chain) == 0 {
+		t.Fatal("expected a key and a chain")
+	}
+	leafKey, ok := chain[0].PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatal("leaf certificate does not hold an EC key")
+	}
+	if !leafKey.Equal(&key.PublicKey) {
+		t.Error("the leaf certificate does not wrap the returned signing key")
+	}
 }

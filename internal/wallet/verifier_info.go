@@ -85,7 +85,7 @@ func (w *Wallet) consentPurposes(scope string, payload map[string]any) []string 
 }
 
 // SignRegistrationCertificateJWT signs a relying-party registration
-// certificate (typ rc-rp+jwt) with the given key, carrying the signer's leaf
+// certificate (typ rc-wrp+jwt) with the given key, carrying the signer's leaf
 // certificate in x5c. The demo verifier and issuer present one so the wallet
 // they run beside has a purpose to show.
 func SignRegistrationCertificateJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {

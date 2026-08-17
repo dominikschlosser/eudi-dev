@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
@@ -41,19 +42,26 @@ func (w *Wallet) SigningCertChainForGroup(group TrustListGroup) ([]*x509.Certifi
 
 // SigningCertChainForProfile returns a signing certificate chain for the given trust-list profile.
 func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.Certificate, error) {
+	_, chain, err := w.signingMaterialForProfile(profile)
+	return chain, err
+}
+
+// signingMaterialForProfile returns the signing key together with a chain
+// whose leaf wraps its public half. Key and chain are captured under one
+// lock: the demo reset replaces the CA key and the chain while requests are
+// in flight, and a leaf signed with one against a CA from the other chains to
+// nothing.
+func (w *Wallet) signingMaterialForProfile(profile trustListProfile) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	if w == nil {
-		return nil, fmt.Errorf("wallet has no issuer certificate chain")
+		return nil, nil, fmt.Errorf("wallet has no issuer certificate chain")
 	}
-	// Read together under the lock: the demo reset replaces the CA key and the
-	// chain while requests are in flight, and a leaf signed with one against a
-	// CA from the other chains to nothing.
 	w.mu.RLock()
 	issuerKey, caKey := w.IssuerKey, w.CAKey
 	chain := append([]*x509.Certificate(nil), w.CertChain...)
 	w.mu.RUnlock()
 
 	if issuerKey == nil || caKey == nil || len(chain) < 2 {
-		return nil, fmt.Errorf("wallet has no issuer certificate chain")
+		return nil, nil, fmt.Errorf("wallet has no issuer certificate chain")
 	}
 	caCert := chain[len(chain)-1]
 	opts := mock.LeafCertOptions{
@@ -63,22 +71,38 @@ func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.C
 	opts.DNSNames, opts.IPAddresses, opts.URIs = issuerSubjectAltNames(w.IssuerURL)
 	leafCert, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, opts)
 	if err != nil {
-		return nil, fmt.Errorf("generating signing leaf certificate: %w", err)
+		return nil, nil, fmt.Errorf("generating signing leaf certificate: %w", err)
 	}
-	return []*x509.Certificate{leafCert, caCert}, nil
+	return issuerKey, []*x509.Certificate{leafCert, caCert}, nil
 }
 
 // DefaultSigningCertChain returns the signing certificate chain used for wallet-wide
 // endpoints that do not yet select a profile explicitly.
 func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
+	_, chain, err := w.DefaultSigningMaterial()
+	return chain, err
+}
+
+// DefaultSigningMaterial returns the signing key together with the default
+// chain, read as one. Reading them separately can pair a fresh key with a
+// stale chain when a reload or the demo reset lands in between, and nothing
+// verifies a signature made from that pair.
+func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	group, ok := DefaultTrustListGroupForWallet(w)
 	if !ok {
-		if w == nil || len(w.CertChain) == 0 {
-			return nil, fmt.Errorf("wallet has no signing certificate chain")
+		if w == nil {
+			return nil, nil, fmt.Errorf("wallet has no signing certificate chain")
 		}
-		return append([]*x509.Certificate(nil), w.CertChain...), nil
+		w.mu.RLock()
+		issuerKey := w.IssuerKey
+		chain := append([]*x509.Certificate(nil), w.CertChain...)
+		w.mu.RUnlock()
+		if len(chain) == 0 {
+			return nil, nil, fmt.Errorf("wallet has no signing certificate chain")
+		}
+		return issuerKey, chain, nil
 	}
-	return w.SigningCertChainForGroup(group)
+	return w.signingMaterialForProfile(group.Profile)
 }
 
 // issuerSubjectAltNames are the subject alternative names a signing leaf needs
