@@ -1804,3 +1804,30 @@ func TestProcessCredentialOffer_AuthCodeWithoutPARorDPoP(t *testing.T) {
 		t.Error("the authorization request named a request_uri although nothing was pushed")
 	}
 }
+
+// A wallet started without --base-url still serves /callback: the serve
+// command records the origin it answers on, and the callback check falls
+// back to it. Without the fallback, the Docker image's default command could
+// not complete any authorization code flow.
+func TestCallbackIsAcceptedOnAWalletWithoutABaseURL(t *testing.T) {
+	w := generateTestWallet(t)
+	w.BaseURL = ""
+
+	if canUseInteractiveAuthorizationCallback(w, "http://localhost:8085/callback") {
+		t.Error("accepted a callback with neither a base URL nor a serving origin")
+	}
+
+	w.ServingOrigin = "http://localhost:8085"
+	if !canUseInteractiveAuthorizationCallback(w, "http://localhost:8085/callback") {
+		t.Error("rejected the callback the serving origin answers on")
+	}
+	if canUseInteractiveAuthorizationCallback(w, "http://localhost:9999/callback") {
+		t.Error("accepted a callback on a port this server does not answer on")
+	}
+
+	// An explicit base URL still wins.
+	w.BaseURL = "https://wallet.example"
+	if canUseInteractiveAuthorizationCallback(w, "http://localhost:8085/callback") {
+		t.Error("accepted a callback that does not match the configured base URL")
+	}
+}

@@ -443,6 +443,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		if w.VCIRedirectURI == "" {
 			w.VCIRedirectURI = base + "/callback"
 		}
+		w.ServingOrigin = base
 	}
 
 	if opts.Demo {

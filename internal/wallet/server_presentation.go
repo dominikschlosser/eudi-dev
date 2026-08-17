@@ -220,6 +220,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		StatusListCounter:       src.StatusListCounter,
 		BaseURL:                 src.BaseURL,
 		IssuerURL:               src.IssuerURL,
+		ServingOrigin:           src.ServingOrigin,
 		VCIClientID:             src.VCIClientID,
 		VCIRedirectURI:          src.VCIRedirectURI,
 		Log:                     append([]LogEntry(nil), src.Log...),

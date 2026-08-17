@@ -1479,14 +1479,24 @@ func parseRedirectQuery(location string) (url.Values, error) {
 }
 
 func canUseInteractiveAuthorizationCallback(w *Wallet, redirectURI string) bool {
-	if w == nil || strings.TrimSpace(w.BaseURL) == "" {
+	if w == nil {
+		return false
+	}
+	// A wallet started without --base-url still serves /callback: the serve
+	// command records the origin it answers on, which is also where it
+	// derived the default redirect URI from.
+	base := strings.TrimSpace(w.BaseURL)
+	if base == "" {
+		base = strings.TrimSpace(w.ServingOrigin)
+	}
+	if base == "" {
 		return false
 	}
 	redirectURL, err := url.Parse(redirectURI)
 	if err != nil {
 		return false
 	}
-	baseURL, err := url.Parse(w.BaseURL)
+	baseURL, err := url.Parse(base)
 	if err != nil {
 		return false
 	}
