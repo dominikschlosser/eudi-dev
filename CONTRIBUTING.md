@@ -72,3 +72,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and data flow.
 2. Ensure `go build ./...`, `go vet ./...`, and `go test ./...` pass
 3. Keep changes focused. One feature or fix per PR
 4. Update docs in `docs/` if adding or changing CLI flags
+
+## Sign-off (DCO)
+
+Every commit needs a [Developer Certificate of Origin](https://developercertificate.org/) sign-off, which `git commit -s` adds as a `Signed-off-by` trailer with your name and email. The DCO check on pull requests verifies it. To fix a branch with unsigned commits: `git rebase --signoff main`.
