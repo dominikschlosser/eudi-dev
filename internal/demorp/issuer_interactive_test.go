@@ -17,6 +17,7 @@ package demorp
 import (
 	"crypto/ecdsa"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -599,4 +600,31 @@ func TestInteractiveAuthorizationVerifiesThePresentation(t *testing.T) {
 			t.Errorf("body = %s, want an authorization code", rec.Body.String())
 		}
 	})
+}
+
+// The pushed requests a browser sign-in continues with live in the same
+// state map the PAR endpoint fills and get the same cap: a full map answers
+// 429.
+func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+
+	d.mu.Lock()
+	for i := 0; i < maxEntries; i++ {
+		uri := fmt.Sprintf("%sfill-%d", requestURIPrefix, i)
+		d.authRequests[uri] = &authRequestState{requestURI: uri, expires: time.Now().Add(authRequestTTL)}
+	}
+	d.mu.Unlock()
+
+	rec := postAuthorizationChallenge(t, d, map[string]string{
+		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	}, nil)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429 once the state map is full (%s)", rec.Code, rec.Body.String())
+	}
 }
