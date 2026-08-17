@@ -628,3 +628,58 @@ func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
 		t.Fatalf("status = %d, want 429 once the state map is full (%s)", rec.Code, rec.Body.String())
 	}
 }
+
+// §6.2.1 has the wallet send its auth_session on every further challenge
+// request. A wallet coming back with the one the auth_via_web answer handed
+// out gets the interaction again with a fresh request_uri, not
+// invalid_grant.
+func TestAuthViaWebSessionIsReOffered(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	attested := func() map[string]string {
+		return map[string]string{
+			"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+			"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+		}
+	}
+
+	first := postAuthorizationChallenge(t, d, attested(), url.Values{
+		"interaction_types_supported": {interactionTypeAuthViaWeb},
+	})
+	if first.Code != http.StatusForbidden {
+		t.Fatalf("initial answer: status %d, want 403 (%s)", first.Code, first.Body.String())
+	}
+	var initial map[string]any
+	if err := json.Unmarshal(first.Body.Bytes(), &initial); err != nil {
+		t.Fatalf("parsing initial answer: %v", err)
+	}
+	session, _ := initial["auth_session"].(string)
+	firstRequestURI, _ := initial["request_uri"].(string)
+	if session == "" || firstRequestURI == "" {
+		t.Fatalf("initial answer carries no session or request_uri: %v", initial)
+	}
+
+	retry := postAuthorizationChallenge(t, d, attested(), url.Values{
+		"auth_session": {session},
+	})
+	if retry.Code != http.StatusForbidden {
+		t.Fatalf("retry: status %d, want the interaction again (%s)", retry.Code, retry.Body.String())
+	}
+	var again map[string]any
+	if err := json.Unmarshal(retry.Body.Bytes(), &again); err != nil {
+		t.Fatalf("parsing retry answer: %v", err)
+	}
+	if got := again["interaction_type_required"]; got != interactionTypeAuthViaWeb {
+		t.Errorf("interaction_type_required = %v, want %s", got, interactionTypeAuthViaWeb)
+	}
+	if got, _ := again["auth_session"].(string); got != session {
+		t.Errorf("auth_session = %q, want the same session %q", got, session)
+	}
+	if got, _ := again["request_uri"].(string); got == "" || got == firstRequestURI {
+		t.Errorf("request_uri = %q, want a fresh pushed request (first was %q)", got, firstRequestURI)
+	}
+}
