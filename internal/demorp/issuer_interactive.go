@@ -30,6 +30,11 @@ import (
 const (
 	interactionTypePresentation = "urn:openid:dcp:ia:openid4vp_presentation"
 
+	// interactionTypeAuthViaWeb is the browser interaction of §6.2.1.2: the
+	// issuer hands the wallet a request_uri, and the sign-in happens at the
+	// authorization endpoint like any redirect flow.
+	interactionTypeAuthViaWeb = "urn:openid:dcp:ia:auth_via_web"
+
 	// challengePath is where the endpoint is mounted under the issuer.
 	challengePath = "/authorize-challenge"
 )
@@ -110,26 +115,34 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "client_id is required"))
 		return
 	}
-	// §6.2.2: the wallet offered no interaction type this server can finish
-	// the authorization with.
-	if !offersInteractionType(r.PostFormValue("interaction_types_supported"), interactionTypePresentation) {
-		writeJSON(w, http.StatusBadRequest, oauthError("missing_interaction_type",
-			"interaction_types_supported in the request is missing the required interaction type '"+interactionTypePresentation+"'"))
-		return
-	}
 	codeChallenge := r.PostFormValue("code_challenge")
 	if codeChallenge == "" || r.PostFormValue("code_challenge_method") != "S256" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "code_challenge with code_challenge_method S256 is required"))
 		return
 	}
 
-	// An offer whose issuer chose the browser sign-in is sent there, which is
-	// what Section 5.2.2.1.1 of the first-party-apps specification defines
-	// redirect_to_web for: "The request is not able to be fulfilled with any
-	// further direct interaction with the user."
+	// An offer whose issuer chose the browser sign-in is sent there: as the
+	// auth_via_web interaction (§6.2.1.2) when the wallet offers it, and
+	// otherwise with redirect_to_web (Section 5.2.2.1.1 of the
+	// first-party-apps specification: "The request is not able to be
+	// fulfilled with any further direct interaction with the user"), which
+	// needs no interaction support from the wallet.
 	issuerState := r.PostFormValue("issuer_state")
+	offered := r.PostFormValue("interaction_types_supported")
 	if d.offerAuthorization(issuerState) == authorizationBrowser {
+		if offersInteractionType(offered, interactionTypeAuthViaWeb) {
+			d.startAuthViaWebInteraction(w, r, clientID, codeChallenge, issuerState)
+			return
+		}
 		d.redirectChallengeToWeb(w, r, clientID, codeChallenge, issuerState)
+		return
+	}
+
+	// §6.2.2: the wallet offered no interaction type this server can finish
+	// the authorization with.
+	if !offersInteractionType(offered, interactionTypePresentation) {
+		writeJSON(w, http.StatusBadRequest, oauthError("missing_interaction_type",
+			"interaction_types_supported in the request is missing the required interaction type '"+interactionTypePresentation+"'"))
 		return
 	}
 
@@ -253,17 +266,11 @@ func (d *DemoRP) offerAuthorization(issuerState string) string {
 	return authorizationBrowser
 }
 
-// redirectChallengeToWeb answers with redirect_to_web and the pushed
-// authorization request the wallet is to continue with, so the sign-in happens
-// in a browser and the flow finishes at the authorization endpoint.
-func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
-	redirectURI := r.PostFormValue("redirect_uri")
-	if redirectURI == "" {
-		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
-			"this offer is redeemed with a browser sign-in, which needs a redirect_uri in the authorization challenge request"))
-		return
-	}
-
+// pushChallengeAuthRequest stores the pushed authorization request a browser
+// sign-in continues with, built from the challenge request's parameters. The
+// wallet redeems it at the authorization endpoint, so the code lands at its
+// redirect URI like in any redirect flow.
+func (d *DemoRP) pushChallengeAuthRequest(r *http.Request, clientID, codeChallenge, issuerState, redirectURI string) *authRequestState {
 	request := &authRequestState{
 		requestURI:    requestURIPrefix + randToken(),
 		clientID:      clientID,
@@ -278,7 +285,47 @@ func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, 
 	d.pruneLocked()
 	d.authRequests[request.requestURI] = request
 	d.mu.Unlock()
+	return request
+}
 
+// startAuthViaWebInteraction answers with the browser interaction of
+// §6.2.1.2: an Interaction Required Response whose request_uri the wallet
+// turns into an authorization request (RFC 9126 §4). The sign-in happens at
+// the authorization endpoint and the redirect back to the wallet carries the
+// authorization code, so this conversation never returns to the challenge
+// endpoint.
+func (d *DemoRP) startAuthViaWebInteraction(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
+	redirectURI := r.PostFormValue("redirect_uri")
+	if redirectURI == "" {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
+			"the auth_via_web interaction continues at the authorization endpoint, which needs a redirect_uri in the authorization challenge request"))
+		return
+	}
+
+	request := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
+	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, asking for the auth_via_web interaction")
+	writeJSON(w, http.StatusForbidden, map[string]any{
+		"error":                     "insufficient_authorization",
+		"interaction_type_required": interactionTypeAuthViaWeb,
+		"auth_session":              randToken(),
+		"request_uri":               request.requestURI,
+		"expires_in":                int(authRequestTTL.Seconds()),
+	})
+}
+
+// redirectChallengeToWeb answers with redirect_to_web and the pushed
+// authorization request the wallet is to continue with, for a wallet that did
+// not offer the auth_via_web interaction. The sign-in happens in a browser
+// and the flow finishes at the authorization endpoint.
+func (d *DemoRP) redirectChallengeToWeb(w http.ResponseWriter, r *http.Request, clientID, codeChallenge, issuerState string) {
+	redirectURI := r.PostFormValue("redirect_uri")
+	if redirectURI == "" {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request",
+			"this offer is redeemed with a browser sign-in, which needs a redirect_uri in the authorization challenge request"))
+		return
+	}
+
+	request := d.pushChallengeAuthRequest(r, clientID, codeChallenge, issuerState, redirectURI)
 	log.Printf("[Demo issuer] interactive authorization: this offer wants the browser sign-in, answering redirect_to_web")
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":       "redirect_to_web",

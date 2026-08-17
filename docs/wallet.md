@@ -705,9 +705,16 @@ The presentation asks for consent like any other, since consenting to receive a 
 
 Challenge requests carry the same wallet attestation headers as token requests, and the built-in demo issuer requires them there unless started with `--demo-issuer-client-auth optional`.
 
-This flow needs no `--vci-redirect-uri` (nothing is redirected anywhere), and it is the only way to use an issuer that sets `require_interactive_authorization`. The presentation is bound to the challenge endpoint itself: an SD-JWT key binding JWT carries it as `ia:<endpoint>` in `aud`, and an mdoc signs over the `OpenID4VCIIAEHandover` session transcript. If the request carries `expected_origins`, it must name the challenge endpoint's own origin, which stops one authorization server from forwarding another's request.
+The presentation flow needs no `--vci-redirect-uri` (nothing is redirected anywhere), and interactive authorization is the only way to use an issuer that sets `require_interactive_authorization`. The presentation is bound to the challenge endpoint itself: an SD-JWT key binding JWT carries it as `ia:<endpoint>` in `aud`, and an mdoc signs over the `OpenID4VCIIAEHandover` session transcript. If the request carries `expected_origins`, it must name the challenge endpoint's own origin, which stops one authorization server from forwarding another's request.
 
-The wallet offers the presentation interaction (`urn:openid:dcp:ia:openid4vp_presentation`) and no other. A server asking for the browser interaction (`urn:openid:dcp:ia:auth_via_web`) or a custom one is refused, as §6.2.1 requires for an unsupported interaction.
+The wallet offers two interactions and advertises only what it can complete (§6.2.1 makes it abort on an unsupported one):
+
+- The presentation interaction (`urn:openid:dcp:ia:openid4vp_presentation`), always.
+- The browser interaction (`urn:openid:dcp:ia:auth_via_web`, §6.2.1.2), when a redirect URI is configured and the server publishes an `authorization_endpoint`. The server answers the challenge with a `request_uri`, the wallet builds an authorization request from it (RFC 9126 §4) and hands the sign-in URL to the user's browser, exactly as in the redirect flow. The redirect back to the wallet carries the authorization code, or an `auth_session` when further steps remain at the challenge endpoint.
+
+A server asking for an interaction the wallet did not advertise, or a custom one, is refused.
+
+The built-in demo issuer uses both. An offer set to "Presentation during issuance" runs the presentation interaction. An offer set to "Browser sign-in" asks a wallet that advertises it for the auth_via_web interaction, and falls back to `redirect_to_web` (first-party-apps Section 5.2.2.1.1) for one that does not.
 
 #### Trying it against the built-in demo issuer
 

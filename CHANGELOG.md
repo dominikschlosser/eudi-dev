@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.23.3] - 2026-08-16
+## [1.24.0] - 2026-08-17
+
+### Added
+
+- **The browser interaction of interactive authorization (OpenID4VCI 1.1 §6.2.1.2).** The wallet now advertises `urn:openid:dcp:ia:auth_via_web` next to the presentation interaction, when a redirect URI is configured and the authorization server publishes an `authorization_endpoint` (it advertises only what it can complete, since §6.2.1 makes it abort on an unsupported interaction). A server answering the challenge with that interaction hands over a `request_uri`, which the wallet turns into an authorization request (RFC 9126 §4) and gives to the user's browser, as in the redirect flow. The redirect back to the wallet finishes the exchange with the authorization code, or continues it at the challenge endpoint when it carries an `auth_session` instead. The demo issuer asks for this interaction on a "Browser sign-in" offer redeemed by a wallet that advertises it, and keeps answering `redirect_to_web` (first-party-apps Section 5.2.2.1.1) for one that does not, so both kinds of wallet still reach the sign-in
 
 ### Fixed
 

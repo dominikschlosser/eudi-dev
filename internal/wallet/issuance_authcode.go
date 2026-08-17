@@ -132,15 +132,17 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	}
 
 	setup := authorizationCodeSetup{
-		clientID:      clientID,
-		redirectURI:   redirectURI,
-		scope:         scope,
-		state:         state,
-		codeVerifier:  codeVerifier,
-		codeChallenge: codeChallenge,
-		clientAuth:    clientAuth,
-		dpopKey:       dpopKey,
-		nonces:        nonces,
+		clientID:              clientID,
+		redirectURI:           redirectURI,
+		scope:                 scope,
+		state:                 state,
+		codeVerifier:          codeVerifier,
+		codeChallenge:         codeChallenge,
+		clientAuth:            clientAuth,
+		dpopKey:               dpopKey,
+		nonces:                nonces,
+		authorizationEndpoint: authorizationEndpoint,
+		issuer:                oauthIssuer(oauthMeta, ""),
 
 		presentationConsented: opts.PresentationConsented,
 	}
@@ -162,12 +164,17 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	var requestURI string
 
 	if useInteractive {
-		code, err := w.obtainInteractiveAuthorizationCode(challengeEndpoint, setup, offer)
+		code, viaWeb, err := w.obtainInteractiveAuthorizationCode(challengeEndpoint, setup, offer)
 		switch {
 		case err == nil:
-			// first-party-apps §6: "the redirect_uri parameter will not be
-			// included in this request, because no redirect_uri parameter was
-			// included in the authorization request."
+			// A code from the challenge conversation had no redirect, so the
+			// token request omits redirect_uri (first-party-apps §6). One from
+			// the auth_via_web browser redirect came through an authorization
+			// request that carried it, so the token request repeats it
+			// (RFC 6749 §4.1.3).
+			if viaWeb {
+				issuance.redirectURI = redirectURI
+			}
 			return w.completeAuthorizationCodeIssuance(issuance, code)
 		case isRedirectToWeb(err):
 			// The server sent this exchange to a browser after all, so the
@@ -244,6 +251,11 @@ type authorizationCodeSetup struct {
 	clientAuth    *ClientAuthentication
 	dpopKey       *ecdsa.PrivateKey
 	nonces        *dpopNonceState
+	// authorizationEndpoint and issuer are what the auth_via_web interaction
+	// of OpenID4VCI 1.1 §6.2.1.2 needs: the endpoint the request_uri is taken
+	// to, and the issuer the redirect back is checked against.
+	authorizationEndpoint string
+	issuer                string
 	// presentationConsented skips the consent for a presentation the issuer
 	// asks for, because the caller already gave it.
 	presentationConsented bool
@@ -1324,7 +1336,10 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 	if location != "" {
 		valuesOut, err := parseRedirectQuery(location)
 		if err == nil {
-			if valuesOut.Get("code") != "" || valuesOut.Get("error") != "" {
+			// auth_session is what an auth_via_web redirect carries when the
+			// authorization continues at the challenge endpoint (OpenID4VCI
+			// 1.1 §6.2.1.2).
+			if valuesOut.Get("code") != "" || valuesOut.Get("error") != "" || valuesOut.Get("auth_session") != "" {
 				if err := validateAuthorizationCodeResponse(mode, valuesOut, expectedState, expectedIssuer); err != nil {
 					return nil, err
 				}

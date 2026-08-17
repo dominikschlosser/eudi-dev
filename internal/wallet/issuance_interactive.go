@@ -36,9 +36,10 @@ const (
 	// §6.2.1.1.
 	interactionTypePresentation = "urn:openid:dcp:ia:openid4vp_presentation"
 
-	// interactionTypeAuthViaWeb is the browser interaction of §6.2.1.2. It is
-	// named here because it is read from what a server asks for, not because
-	// the wallet offers it.
+	// interactionTypeAuthViaWeb is the browser interaction of §6.2.1.2: the
+	// server hands over a request_uri, the wallet sends the user's browser to
+	// the authorization endpoint with it (RFC 9126 §4), and the redirect back
+	// carries the code or an auth_session to continue with.
 	interactionTypeAuthViaWeb = "urn:openid:dcp:ia:auth_via_web"
 
 	// errorInsufficientAuthorization is what an Interaction Required Response
@@ -114,24 +115,33 @@ func interactiveAuthorizationEndpoint(oauthMeta map[string]any) string {
 // interactionTypesSupported is what the wallet advertises in the initial
 // request (§6.1.1). Only what it can carry out is listed: §6.2.1 makes a
 // wallet abort on a type it does not support, so advertising more would only
-// invite the server to pick one.
-func (w *Wallet) interactionTypesSupported() []string {
-	return []string{interactionTypePresentation}
+// invite the server to pick one. The browser interaction needs a redirect URI
+// the server can send the user back to and an authorization endpoint to take
+// the request_uri to, so it is offered only where both exist.
+func (w *Wallet) interactionTypesSupported(setup authorizationCodeSetup) []string {
+	types := []string{interactionTypePresentation}
+	if setup.redirectURI != "" && setup.authorizationEndpoint != "" {
+		types = append(types, interactionTypeAuthViaWeb)
+	}
+	return types
 }
 
 // obtainInteractiveAuthorizationCode runs the Authorization Challenge
-// conversation of §6.1 and §6.2 and returns the authorization code.
-func (w *Wallet) obtainInteractiveAuthorizationCode(endpoint string, setup authorizationCodeSetup, offer *oid4vc.CredentialOffer) (string, error) {
+// conversation of §6.1 and §6.2 and returns the authorization code. viaWeb
+// reports that the code came through the auth_via_web browser redirect rather
+// than from the challenge endpoint, in which case the token request has to
+// repeat the redirect URI (RFC 6749 §4.1.3).
+func (w *Wallet) obtainInteractiveAuthorizationCode(endpoint string, setup authorizationCodeSetup, offer *oid4vc.CredentialOffer) (code string, viaWeb bool, err error) {
 	form := w.initialAuthorizationChallengeForm(setup, offer)
 	if err := applyClientAuthentication(form, setup.clientAuth, w.HolderKey); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	var authSession string
 	for round := 1; round <= maxInteractiveAuthorizationRounds; round++ {
 		response, err := w.postAuthorizationChallenge(endpoint, form, setup)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 
 		// §5.3.1 of the first-party-apps specification: "Every response
@@ -143,41 +153,64 @@ func (w *Wallet) obtainInteractiveAuthorizationCode(endpoint string, setup autho
 
 		code, err := w.authorizationChallengeCode(response)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if code != "" {
-			return code, nil
+			return code, false, nil
 		}
 
 		errorCode := jsonutil.GetString(response, "error")
 		if errorCode == errorRedirectToWeb {
-			return "", &redirectToWebError{requestURI: jsonutil.GetString(response, "request_uri")}
+			return "", false, &redirectToWebError{requestURI: jsonutil.GetString(response, "request_uri")}
 		}
 		if errorCode != errorInsufficientAuthorization {
-			return "", authorizationChallengeError(response)
+			return "", false, authorizationChallengeError(response)
 		}
 		// §6.2.1 makes auth_session REQUIRED here; without it the next
 		// request would start a new conversation.
 		if authSession == "" {
-			return "", fmt.Errorf("authorization server asked for an interaction without an auth_session (OpenID4VCI 1.1 §6.2.1)")
+			return "", false, fmt.Errorf("authorization server asked for an interaction without an auth_session (OpenID4VCI 1.1 §6.2.1)")
 		}
 
-		next, err := w.runAuthorizationInteraction(endpoint, response, setup)
+		outcome, err := w.runAuthorizationInteraction(endpoint, response, setup)
 		if err != nil {
-			return "", err
+			return "", false, err
+		}
+		// The browser interaction can finish the authorization on its own:
+		// the redirect back to the wallet carries the code (§6.2.1.2).
+		if outcome.code != "" {
+			return outcome.code, true, nil
+		}
+		if outcome.authSession != "" {
+			authSession = outcome.authSession
 		}
 
+		next := outcome.form
+		if next == nil {
+			next = url.Values{}
+		}
 		next.Set("auth_session", authSession)
 		if setup.clientID != "" {
 			next.Set("client_id", setup.clientID)
 		}
 		if err := applyClientAuthentication(next, setup.clientAuth, w.HolderKey); err != nil {
-			return "", err
+			return "", false, err
 		}
 		form = next
 	}
 
-	return "", fmt.Errorf("interactive authorization did not finish after %d rounds", maxInteractiveAuthorizationRounds)
+	return "", false, fmt.Errorf("interactive authorization did not finish after %d rounds", maxInteractiveAuthorizationRounds)
+}
+
+// interactionOutcome is what one performed interaction produced: the
+// parameters answering it in the next Intermediate Request (§6.1.2), or, for
+// the browser interaction, what the redirect back to the wallet carried
+// (§6.2.1.2): the authorization code, or an auth_session that replaces the
+// current one and continues the conversation.
+type interactionOutcome struct {
+	form        url.Values
+	code        string
+	authSession string
 }
 
 // initialAuthorizationChallengeForm builds the Initial Request of §6.1.1.
@@ -192,7 +225,7 @@ func (w *Wallet) initialAuthorizationChallengeForm(setup authorizationCodeSetup,
 	form.Set("state", setup.state)
 	form.Set("code_challenge", setup.codeChallenge)
 	form.Set("code_challenge_method", "S256")
-	form.Set("interaction_types_supported", strings.Join(w.interactionTypesSupported(), ","))
+	form.Set("interaction_types_supported", strings.Join(w.interactionTypesSupported(setup), ","))
 	// Nothing is redirected anywhere here, so a redirect URI is sent only
 	// where one was configured. It is what auth_via_web would come back to.
 	if setup.redirectURI != "" {
@@ -276,25 +309,68 @@ func authorizationChallengeError(response map[string]any) error {
 	return fmt.Errorf("authorization challenge failed: %s", code)
 }
 
-// runAuthorizationInteraction performs the interaction the server asked for
-// and returns the parameters answering it in the next Intermediate Request
-// (§6.1.2).
-func (w *Wallet) runAuthorizationInteraction(endpoint string, response map[string]any, setup authorizationCodeSetup) (url.Values, error) {
+// runAuthorizationInteraction performs the interaction the server asked for.
+func (w *Wallet) runAuthorizationInteraction(endpoint string, response map[string]any, setup authorizationCodeSetup) (*interactionOutcome, error) {
 	interaction := jsonutil.GetString(response, "interaction_type_required")
 	switch interaction {
 	case interactionTypePresentation:
-		return w.runPresentationInteraction(endpoint, response, setup)
+		form, err := w.runPresentationInteraction(endpoint, response, setup)
+		if err != nil {
+			return nil, err
+		}
+		return &interactionOutcome{form: form}, nil
+	case interactionTypeAuthViaWeb:
+		if setup.redirectURI == "" || setup.authorizationEndpoint == "" {
+			// The wallet did not advertise this type, so a server asking for
+			// it anyway ignored §6.2.1. The message says what is missing.
+			return nil, fmt.Errorf("authorization server asked for the %s interaction, which this wallet did not advertise (it needs a redirect URI and an authorization endpoint)", interactionTypeAuthViaWeb)
+		}
+		return w.runAuthViaWebInteraction(response, setup)
 	case "":
 		return nil, fmt.Errorf("authorization server asked for an interaction without naming its type (OpenID4VCI 1.1 §6.2.1 makes interaction_type_required REQUIRED)")
-	case interactionTypeAuthViaWeb:
-		// Named separately from the catch-all so the message says what is
-		// missing rather than that the type is unknown.
-		return nil, fmt.Errorf("authorization server asked for the %s interaction, which this wallet does not offer and did not advertise", interactionTypeAuthViaWeb)
 	default:
 		// §6.2.1: "If a Wallet receives an interaction_type_required value
 		// that it does not support, it MUST abort the issuance process."
 		return nil, fmt.Errorf("authorization server asked for the unsupported interaction type %q", interaction)
 	}
+}
+
+// runAuthViaWebInteraction performs the browser interaction of §6.2.1.2. The
+// server's response carries a request_uri, which "the Wallet MUST use ... to
+// build an Authorization Request as defined in Section 4 of RFC9126". The
+// wallet hands that URL to the user's browser and waits for the redirect
+// back, which carries the authorization code when the authorization is
+// complete, or an auth_session when further steps remain at the challenge
+// endpoint.
+func (w *Wallet) runAuthViaWebInteraction(response map[string]any, setup authorizationCodeSetup) (*interactionOutcome, error) {
+	requestURI := strings.TrimSpace(jsonutil.GetString(response, "request_uri"))
+	if requestURI == "" {
+		return nil, fmt.Errorf("authorization server asked for the %s interaction without a request_uri (OpenID4VCI 1.1 §6.2.1.2)", interactionTypeAuthViaWeb)
+	}
+
+	w.addProtocolLog("issuance", "interactive_authorization_auth_via_web",
+		"Authorization server asked for a browser sign-in (auth_via_web)", true, map[string]any{
+			"authorization_endpoint": setup.authorizationEndpoint,
+			"request_uri":            requestURI,
+		})
+
+	values, err := runAuthorizationCodeRequest(w, setup.authorizationEndpoint, setup.clientID, requestURI, nil, setup.redirectURI, setup.state, setup.issuer, w.Mode())
+	if err != nil {
+		return nil, err
+	}
+	if errorCode := values.Get("error"); errorCode != "" {
+		if description := values.Get("error_description"); description != "" {
+			return nil, fmt.Errorf("the browser sign-in failed: %s: %s", errorCode, description)
+		}
+		return nil, fmt.Errorf("the browser sign-in failed: %s", errorCode)
+	}
+	if code := values.Get("code"); code != "" {
+		return &interactionOutcome{code: code}, nil
+	}
+	if session := values.Get("auth_session"); session != "" {
+		return &interactionOutcome{form: url.Values{}, authSession: session}, nil
+	}
+	return nil, fmt.Errorf("the redirect back from the browser sign-in carried neither a code nor an auth_session (OpenID4VCI 1.1 §6.2.1.2)")
 }
 
 // runPresentationInteraction answers a Require Presentation response

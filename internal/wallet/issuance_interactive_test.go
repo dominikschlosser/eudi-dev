@@ -48,10 +48,16 @@ type interactiveIssuer struct {
 	interactionsToAsk    int
 	challengeError       map[string]any
 
+	// authorizeRedirect is what the authorization endpoint's redirect back to
+	// the wallet carries (for the auth_via_web interaction), e.g. "code=x".
+	// The initial request's state and this server's iss are appended.
+	authorizeRedirect string
+
 	// what the wallet sent, for assertions
 	initialForm      url.Values
 	intermediateForm url.Values
 	tokenForm        url.Values
+	authorizeQuery   url.Values
 	challengeRounds  int
 	sessionsSeen     []string
 }
@@ -84,14 +90,26 @@ func (s *interactiveIssuer) handler() http.HandlerFunc {
 				},
 			})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
-			writeTestJSON(rw, map[string]any{
+			metadata := map[string]any{
 				"issuer":                            s.url,
 				"token_endpoint":                    s.url + "/token",
 				"authorization_challenge_endpoint":  s.url + "/authorize-challenge",
 				"require_interactive_authorization": true,
-			})
+			}
+			// Only a server scripted for the browser interaction has an
+			// authorization endpoint: several tests depend on its absence.
+			if s.authorizeRedirect != "" {
+				metadata["authorization_endpoint"] = s.url + "/authorize"
+			}
+			writeTestJSON(rw, metadata)
 		case r.Method == http.MethodPost && r.URL.Path == "/authorize-challenge":
 			s.handleChallenge(rw, r)
+		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
+			s.authorizeQuery = r.URL.Query()
+			redirect := s.initialForm.Get("redirect_uri") + "?" + s.authorizeRedirect +
+				"&state=" + url.QueryEscape(s.initialForm.Get("state")) +
+				"&iss=" + url.QueryEscape(s.url)
+			http.Redirect(rw, r, redirect, http.StatusFound)
 		case r.Method == http.MethodPost && r.URL.Path == "/token":
 			body, _ := io.ReadAll(r.Body)
 			s.tokenForm, _ = url.ParseQuery(string(body))
@@ -146,6 +164,10 @@ func (s *interactiveIssuer) handleChallenge(rw http.ResponseWriter, r *http.Requ
 	}
 	if s.openid4vpRequest != nil {
 		response["openid4vp_request"] = s.openid4vpRequest
+	}
+	if s.interaction == interactionTypeAuthViaWeb {
+		response["request_uri"] = "urn:ietf:params:oauth:request_uri:test-1"
+		response["expires_in"] = 60
 	}
 	_ = json.NewEncoder(rw).Encode(response)
 }
@@ -597,4 +619,107 @@ func keyBindingClaims(t *testing.T, presentation string) map[string]any {
 		t.Fatalf("parsing key binding payload: %v", err)
 	}
 	return claims
+}
+
+// The browser interaction of §6.2.1.2: the server answers the challenge with
+// auth_via_web and a request_uri, the wallet builds an authorization request
+// from it (RFC 9126 §4), and the redirect back carries the code. The token
+// request then repeats the redirect URI, because the authorization request
+// carried one (RFC 6749 §4.1.3).
+func TestInteractiveAuthorizationAuthViaWeb(t *testing.T) {
+	w := newInteractiveWallet(t)
+	issuer := newInteractiveIssuer(t, w)
+	issuer.interaction = interactionTypeAuthViaWeb
+	issuer.openid4vpRequest = nil
+	issuer.authorizeRedirect = "code=web-code"
+	w.VCIRedirectURI = issuer.url + "/wallet-callback"
+
+	result, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer() error = %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("expected an imported credential")
+	}
+
+	// §6.1.1: a wallet that can complete the browser interaction advertises it.
+	offered := issuer.initialForm.Get("interaction_types_supported")
+	if !strings.Contains(offered, interactionTypeAuthViaWeb) || !strings.Contains(offered, interactionTypePresentation) {
+		t.Errorf("interaction_types_supported = %q, want both interaction types", offered)
+	}
+
+	// §6.2.1.2: "The Wallet MUST use the request_uri value to build an
+	// Authorization Request as defined in Section 4 of RFC9126."
+	if got := issuer.authorizeQuery.Get("request_uri"); got != "urn:ietf:params:oauth:request_uri:test-1" {
+		t.Errorf("authorization request request_uri = %q, want the one the challenge handed over", got)
+	}
+	if got := issuer.authorizeQuery.Get("client_id"); got != "wallet-client" {
+		t.Errorf("authorization request client_id = %q, want wallet-client", got)
+	}
+
+	// The flow never returned to the challenge endpoint: the redirect carried
+	// the code, and the token exchange used it with the redirect URI.
+	if issuer.challengeRounds != 1 {
+		t.Errorf("challenge rounds = %d, want 1", issuer.challengeRounds)
+	}
+	if got := issuer.tokenForm.Get("code"); got != "web-code" {
+		t.Errorf("token request code = %q, want the code from the redirect", got)
+	}
+	if got := issuer.tokenForm.Get("redirect_uri"); got != w.VCIRedirectURI {
+		t.Errorf("token request redirect_uri = %q, want %q", got, w.VCIRedirectURI)
+	}
+}
+
+// §6.2.1.2: the redirect back may carry an auth_session instead of a code,
+// which says further steps remain at the challenge endpoint. The wallet
+// continues the conversation with that auth_session.
+func TestInteractiveAuthorizationAuthViaWebContinuesWithAuthSession(t *testing.T) {
+	w := newInteractiveWallet(t)
+	issuer := newInteractiveIssuer(t, w)
+	issuer.interaction = interactionTypeAuthViaWeb
+	issuer.openid4vpRequest = nil
+	issuer.authorizeRedirect = "auth_session=web-session"
+	w.VCIRedirectURI = issuer.url + "/wallet-callback"
+
+	result, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer() error = %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("expected an imported credential")
+	}
+
+	if issuer.challengeRounds != 2 {
+		t.Fatalf("challenge rounds = %d, want an intermediate request after the redirect", issuer.challengeRounds)
+	}
+	if got := issuer.intermediateForm.Get("auth_session"); got != "web-session" {
+		t.Errorf("intermediate request auth_session = %q, want the one the redirect carried", got)
+	}
+	// This code came from the challenge endpoint, so the token request omits
+	// the redirect URI (first-party-apps §6).
+	if got := issuer.tokenForm.Get("redirect_uri"); got != "" {
+		t.Errorf("token request redirect_uri = %q, want none for a challenge endpoint code", got)
+	}
+}
+
+// A wallet without a redirect URI cannot complete the browser interaction, so
+// it does not advertise it (§6.2.1 would force it to abort when asked), and a
+// server that asks for it anyway is refused.
+func TestInteractiveAuthorizationAuthViaWebIsNotOfferedWithoutARedirectURI(t *testing.T) {
+	w := newInteractiveWallet(t)
+	issuer := newInteractiveIssuer(t, w)
+	issuer.interaction = interactionTypeAuthViaWeb
+	issuer.openid4vpRequest = nil
+	issuer.authorizeRedirect = "code=web-code"
+
+	_, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
+	if err == nil {
+		t.Fatal("expected the unadvertised interaction to end the flow")
+	}
+	if !strings.Contains(err.Error(), "did not advertise") {
+		t.Errorf("error = %v, want it to say the interaction was not advertised", err)
+	}
+	if got := issuer.initialForm.Get("interaction_types_supported"); got != interactionTypePresentation {
+		t.Errorf("interaction_types_supported = %q, want the presentation type alone", got)
+	}
 }
