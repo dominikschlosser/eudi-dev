@@ -9,14 +9,14 @@ The docs are split by purpose:
 
 ## Current State
 
-The harness targets a local OpenID Foundation conformance-suite server by default. The documented baseline is `release-v5.2.1` (released 2026-07-20). When the server exposes `/api/server`, the wrapper checks that its tag matches the runner/templates tag and fails early on a mismatch.
+The harness targets a local OpenID Foundation conformance-suite server by default. The documented baseline is `release-v5.2.2`. When the server exposes `/api/server`, the wrapper checks that its tag matches the runner/templates tag and fails early on a mismatch.
 
 Current local status:
 
 - VCI Final SD-JWT and mDoc wallet plans pass in strict mode, including the release-v5.2.1 batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key).
 - VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
 - VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the release-v5.2.1 unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` count as pass-equivalent for the local harness when the runner reports zero condition failures.
-- The wrapper passes explicit VP module lists per generated variant. Release-v5.2.1 suite-side not-applicable or broken modules then appear as documented exclusions instead of red result boxes.
+- The wrapper passes explicit VP module lists per generated variant. Suite-side not-applicable or broken modules then appear as documented exclusions instead of red result boxes.
 
 See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite-side exclusions.
 
