@@ -18,6 +18,20 @@ echo "eyJhbGci..." | docker run -i ghcr.io/dominikschlosser/eudi-dev decode
 docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://example.com/trustlist.jwt < credential.txt
 ```
 
+## Demo mode
+
+The container also runs the demo profile of the public instance at [eudi-test.dev](https://eudi-test.dev):
+
+```bash
+docker run -d --name eudi-demo -p 8085:8085 -p 8086:8086 \
+  ghcr.io/dominikschlosser/eudi-dev:latest \
+  wallet serve --demo --port 8085 --base-url http://localhost:8085
+```
+
+`--demo` seeds the four-PID baseline, runs HAIP in debug mode at OpenID4VCI feature level 1.1, disables the process and filesystem endpoints, and resets the wallet hourly (`--demo-reset` changes the schedule). The wallet UI is at `http://localhost:8085`, the demo issuer at `/issuer/`, the demo verifier at `/verifier/` and the decoder at `/decoder/`. The HTTPS issuer endpoints answer on port 8086 with a self-signed certificate.
+
+Without a volume the state is ephemeral: removing the container discards the keys, the CA and every credential. The full deployment (TLS termination, rate limiting, usage statistics, persistence) is the compose example in [examples/public-demo](../examples/public-demo/), described in [public demo hosting](public-demo.md).
+
 ## How it works
 
 1. The container starts with `--pid` (two pre-loaded EUDI PID credentials: one SD-JWT, one mDoc) and `--auto-accept` (automatically presents matching credentials without user consent)
