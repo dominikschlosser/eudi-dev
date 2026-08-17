@@ -611,6 +611,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		ClientID:     asking,
 		Nonce:        authReq.Nonce,
 		DCQLQuery:    authReq.DCQLQuery,
+		Purposes:     w.consentPurposes("issuance", authReq.RequestPayload),
 	}
 	w.CreateConsentRequest(consentReq)
 

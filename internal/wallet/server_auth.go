@@ -296,6 +296,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
+		Purposes:     s.wallet.consentPurposes("presentation", authReq.RequestPayload),
 	}
 
 	s.wallet.CreateConsentRequest(consentReq)

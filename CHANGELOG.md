@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.1] - 2026-08-17
+
+### Added
+
+- **The consent dialog shows the purpose the verifier registered for its request.** The wallet reads it from the wallet-relying-party registration certificate (typ `rc-wrp+jwt`, ETSI TS 119 475) in the request's `verifier_info` (format `registration_cert`, ETSI TS 119 472-2), which OpenID4VP 1.0 §5.1 defines for exactly this ("enrich the End-User consent dialog"). A plain purpose string and the localized `{lang, value}` form are both read (English preferred). A certificate whose signature fails against its own x5c leaf is not shown and leaves a warning in the activity log. The chain is not anchored to a trust list, like every other x5c this wallet checks, and the certificate's `sub` is the registered legal entity rather than the request's `client_id`, so it is not matched against one
+- **The demo verifier and the demo issuer present registration certificates.** Every demo verifier request and the demo issuer's presentation-during-issuance request now carry `verifier_info` with an `rc-wrp+jwt` signed under the wallet CA, naming the party and its purpose, so the consent dialog on the demo shows why a request is made
+
 ## [1.24.0] - 2026-08-17
 
 ### Added

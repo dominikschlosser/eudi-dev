@@ -744,6 +744,25 @@ header h1 {
   margin-bottom: 16px;
 }
 
+.consent-purpose {
+  font-size: 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.consent-purpose-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
 .consent-credential {
   border: 1px solid var(--border);
   border-radius: 6px;

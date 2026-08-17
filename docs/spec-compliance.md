@@ -44,6 +44,7 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 | Request object `typ` header | Enforced in strict mode | Debug mode logs a warning and continues |
 | `trusted_authorities` (`etsi_tl`, `aki`) | Implemented | Filters credentials by issuer certificate chain against ETSI trust lists or matching Authority Key Identifier values |
 | `transaction_data` | Enforced in strict mode | §5 obliges a wallet that does not support the parameter to reject a request carrying it. Strict mode does, debug mode logs a warning and continues |
+| `verifier_info` | Implemented | The purpose in a wallet-relying-party registration certificate (typ `rc-wrp+jwt` per ETSI TS 119 475, format `registration_cert` per ETSI TS 119 472-2) is shown in the consent dialog, which §5.1 names as a use of these attestations. The certificate's signature is checked against its own x5c leaf, without anchoring to a trust list. Its `sub` is the registered legal entity, not the request's client_id, so it is not matched against one. Other attestation formats are passed over |
 
 
 ## OID4VCI 1.0 (OpenID for Verifiable Credential Issuance)

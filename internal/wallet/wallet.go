@@ -270,6 +270,10 @@ type ConsentRequest struct {
 	Nonce        string                `json:"nonce,omitempty"`
 	ResponseURI  string                `json:"response_uri,omitempty"`
 	DCQLQuery    map[string]any        `json:"dcql_query,omitempty"`
+	// Purposes are the purposes the verifier registered for this data
+	// request, read from the registration certificates in verifier_info and
+	// shown in the consent dialog.
+	Purposes []string `json:"purposes,omitempty"`
 }
 
 // CredentialMatch links a credential to a DCQL query credential ID.
@@ -997,6 +1001,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if r.DCQLQuery != nil {
 		m["dcql_query"] = r.DCQLQuery
+	}
+	if len(r.Purposes) > 0 {
+		m["purposes"] = r.Purposes
 	}
 	if len(r.OfferConfigs) > 0 {
 		m["offer_configs"] = r.OfferConfigs

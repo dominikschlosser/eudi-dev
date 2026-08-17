@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // Interactive Authorization (OpenID4VCI 1.1 §6): this issuer asks for a PID
@@ -362,7 +364,7 @@ func (d *DemoRP) newInteractivePIDRequest() *requestState {
 // against the endpoint it called, and the presentation it signs names that
 // endpoint (§6.2.1.5).
 func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]any {
-	return map[string]any{
+	request := map[string]any{
 		"response_type":    "vp_token",
 		"response_mode":    "ia_post",
 		"nonce":            req.nonce,
@@ -389,6 +391,29 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 			}},
 		},
 	}
+
+	// The purpose of the request, carried in a registration certificate
+	// (rc-wrp+jwt) in verifier_info (OpenID4VP 1.0 §5.1) like the demo
+	// verifier's requests. Best-effort: a request without one still verifies
+	// the same way.
+	chain, err := d.wallet.DefaultSigningCertChain()
+	if err == nil && len(chain) > 0 {
+		registration, err := wallet.SignRegistrationCertificateJWT(map[string]any{
+			"sub":  "EUDI-DEV-DEMO-ISSUER",
+			"name": "Demo Issuer",
+			"iat":  time.Now().Unix(),
+			"purpose": []map[string]any{
+				{"lang": "en", "value": "Proving who you are before the ticket is issued"},
+			},
+		}, d.wallet.IssuerKey, chain)
+		if err == nil {
+			request["verifier_info"] = []map[string]any{{
+				"format": "registration_cert",
+				"data":   registration,
+			}}
+		}
+	}
+	return request
 }
 
 func claimPaths(names []string) []map[string]any {

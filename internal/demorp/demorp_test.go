@@ -1846,3 +1846,58 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 		t.Errorf("a signing failure was reported as %v, which tells the wallet to give up for good", doc["error"])
 	}
 }
+
+// The demo verifier presents a wallet-relying-party registration certificate in
+// verifier_info (OpenID4VP 1.0 §5.1), so the wallet's consent dialog has a
+// purpose to show. The certificate names the request's own client_id and is
+// signed under the wallet CA like everything else this demo signs.
+func TestVerifierRequestCarriesARegistrationCertificate(t *testing.T) {
+	d, w, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	_, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"pid"}`, map[string]string{"Content-Type": "application/json"})
+	walletURL, err := url.Parse(doc["wallet_url"].(string))
+	if err != nil {
+		t.Fatalf("parsing wallet_url: %v", err)
+	}
+	payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
+
+	entries, _ := payload["verifier_info"].([]any)
+	if len(entries) != 1 {
+		t.Fatalf("verifier_info = %v, want one attestation", payload["verifier_info"])
+	}
+	entry, _ := entries[0].(map[string]any)
+	if got, _ := entry["format"].(string); got != "registration_cert" {
+		t.Errorf("format = %q, want registration_cert (ETSI TS 119 472-2)", got)
+	}
+	data, _ := entry["data"].(string)
+	cert, err := parseCompactJWT(data)
+	if err != nil {
+		t.Fatalf("parsing registration certificate: %v", err)
+	}
+	if typ, _ := cert.header["typ"].(string); typ != "rc-wrp+jwt" {
+		t.Errorf("typ = %q, want rc-wrp+jwt (ETSI TS 119 475)", typ)
+	}
+	// The purpose is localized as {lang, value} entries, like the EUDI
+	// reference certificate.
+	entries2, _ := cert.payload["purpose"].([]any)
+	if len(entries2) != 1 {
+		t.Fatalf("purpose = %v, want one localized entry", cert.payload["purpose"])
+	}
+	localized, _ := entries2[0].(map[string]any)
+	if value, _ := localized["value"].(string); !strings.Contains(value, "identity") {
+		t.Errorf("purpose = %v, want the PID request's purpose", localized)
+	}
+
+	chain, err := w.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	leafKey, ok := chain[0].PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatal("leaf certificate does not hold an EC key")
+	}
+	if !verifyES256(leafKey, cert.signingInput, cert.signature) {
+		t.Error("the registration certificate is not signed by the wallet's signing key")
+	}
+}

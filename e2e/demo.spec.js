@@ -213,6 +213,23 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-approve")).toBeVisible();
   });
 
+  test("the verifier's registered purpose is shown in the consent dialog", async ({
+    page,
+  }) => {
+    // The demo verifier presents a registration certificate in verifier_info
+    // (OpenID4VP 1.0 section 5.1), and the wallet reads the purpose out of it.
+    const req = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", req.schemeURI);
+    await waitForPending(1);
+
+    await page.goto(`${BASE}/?focus=overview`);
+    await page.locator("#pending-review").click();
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#consent-purpose-0")).toContainText(
+      "Confirming your identity for the demo"
+    );
+  });
+
   test("the issuance consent dialog says what is being issued", async ({ page }) => {
     const { body: offer } = await postJSON("/issuer/api/offers", {});
     const offerDoc = await (await fetch(offer.offer_uri)).json();

@@ -1502,6 +1502,16 @@
       escHtml(issuerName || req.client_id) + '</div>' +
       (issuerName ? '<div class="offer-type" id="offer-issuer-origin">' + escHtml(req.client_id) + '</div>' : '');
 
+    // The purposes the verifier registered for this data request, read by the
+    // wallet from the registration certificates in verifier_info (OpenID4VP
+    // 1.0 section 5.1) and shown with the request they explain.
+    if (!isIssuance && req.purposes) {
+      req.purposes.forEach((text, idx) => {
+        html += '<div class="consent-purpose" id="consent-purpose-' + idx + '">' +
+          '<span class="consent-purpose-label">Purpose</span>' + escHtml(text) + '</div>';
+      });
+    }
+
     if (isIssuance) {
       html += renderOfferDetails(req);
     }

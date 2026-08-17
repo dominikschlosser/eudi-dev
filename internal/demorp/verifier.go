@@ -323,9 +323,28 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		}}
 	}
 
+	// The purpose this verifier registered for the request, carried in a
+	// wallet-relying-party registration certificate (rc-wrp+jwt, ETSI TS
+	// 119 475) in verifier_info (OpenID4VP 1.0 §5.1), which is where the
+	// wallet's consent dialog reads it from.
+	purpose := "Admission to the demo event: checking your ticket"
+	if body.Type == "pid" {
+		purpose = "Confirming your identity for the demo"
+	}
+	now := time.Now()
+	registration, err := wallet.SignRegistrationCertificateJWT(map[string]any{
+		"sub":     "EUDI-DEV-DEMO-VERIFIER",
+		"name":    "Demo Verifier",
+		"iat":     now.Unix(),
+		"purpose": []map[string]any{{"lang": "en", "value": purpose}},
+	}, d.wallet.IssuerKey, chain)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
+		return
+	}
+
 	// Signed request object. Everything the wallet needs is inside it,
 	// including the key it encrypts the response to.
-	now := time.Now()
 	jar, err := wallet.SignRequestObjectJWT(map[string]any{
 		"iss":             req.clientID,
 		"aud":             "https://self-issued.me/v2",
@@ -339,6 +358,10 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"state":           req.id,
 		"dcql_query":      dcql,
 		"client_metadata": responseEncryptionMetadata(encKey),
+		"verifier_info": []map[string]any{{
+			"format": "registration_cert",
+			"data":   registration,
+		}},
 	}, d.wallet.IssuerKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing request object: " + err.Error()})
