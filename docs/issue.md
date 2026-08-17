@@ -1,6 +1,6 @@
 # Issue
 
-Generate test SD-JWT, JWT, or mDOC credentials for development and testing. Produces valid, signed credentials using an ephemeral P-256 key by default (prints the public JWK to stderr).
+Generate test SD-JWT, JWT, or mDOC credentials for development and testing. Output is valid and signed, using an ephemeral P-256 key by default (the public JWK is printed to stderr).
 
 Use `--wallet-dir` on `issue` when `--wallet` should target a non-default wallet store.
 
@@ -102,29 +102,29 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 | `--status-list-uri` | —                       | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 
-When no `--claims` are provided, a minimal set of PID-like claims is used (given_name, family_name, birthdate). With `--pid`, the full PID claim set of the requested type is generated: fourteen top-level claims for SD-JWT (including the nested `address` and `place_of_birth` objects) and eighteen mdoc elements, following the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
+Without `--claims`, a minimal set of PID-like claims is used (given_name, family_name, birthdate). `--pid` generates the full PID claim set of the requested type: fourteen top-level SD-JWT claims (including the nested `address` and `place_of_birth` objects) and eighteen mdoc elements, matching the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
 
-The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` carries the same claim set in a plain JWT VC, which is a test artifact for exercising a verifier rather than a credential the EUDI ecosystem defines.
+The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` puts the same claim set in a plain JWT VC. That is a test artifact for exercising verifiers, not a credential the EUDI ecosystem defines.
 
-`--vct urn:eudi:pid:de:1` selects the German PID, which follows the German PID Rulebook: fifteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-four mdoc elements across the two namespaces that rulebook defines. A credential from this tool and one from the German PID provider are interchangeable. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` credential templates, so a user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
+`--vct urn:eudi:pid:de:1` selects the German PID, following the German PID Rulebook: fifteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-four mdoc elements across that rulebook's two namespaces. A credential from this tool is interchangeable with one from the German PID provider. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
 
-With `--template`, the template supplies the claim set and any type, namespace, and expiry defaults for flags that were not set explicitly. `--claims` then overrides individual top level claims and `--omit` removes claims from the merged result. See [templates](templates.md) for the template file format and the `templates` management commands.
+`--template` supplies the claim set plus type, namespace, and expiry defaults for flags not set explicitly. `--claims` overrides individual top level claims. `--omit` removes claims from the merged result. See [templates](templates.md) for the file format and the `templates` management commands.
 
-By default every SD-JWT claim is selectively disclosable, apart from the registered claims SD-JWT VC §2.2.2.3 says cannot be (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status`, plus `iat`, which the generator writes itself). Those are always embedded plainly. `_sd`, `_sd_alg` and `...` are reserved by RFC 9901 and rejected as claim names. `--always-disclosed` (or the template's `always_disclosed` list) embeds further named claims plainly in the signed payload, so they are always visible and cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). This is rejected for mdoc (every mdoc element is selectively disclosable by design) and ignored for jwt (all claims are plain there anyway).
+Every SD-JWT claim is selectively disclosable by default, apart from the registered claims SD-JWT VC §2.2.2.3 says cannot be (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status`, plus `iat`, which the generator writes itself). Those are always embedded plainly. `_sd`, `_sd_alg` and `...` are reserved by RFC 9901 and rejected as claim names. `--always-disclosed` (or the template's `always_disclosed` list) embeds further named claims plainly in the signed payload, so they cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). mdoc rejects the flag (every mdoc element is selectively disclosable by design). jwt ignores it (all claims are plain there).
 
 ## Wallet Registration Metadata
 
-When `--wallet` is used, the credential is issued with the wallet's issuer key and a trust-profile-specific leaf certificate chain under the shared wallet CA, then stored in the wallet together with an issued-attestation entry for that credential type. That stored entry is what later drives:
+With `--wallet`, the credential is issued with the wallet's issuer key and a trust-profile-specific leaf certificate chain under the shared wallet CA. It is stored in the wallet together with an issued-attestation entry for that credential type. That entry later drives:
 - `/.well-known/openid-credential-issuer`
 - `/api/registrar/wrp`
 - `/api/trustlist`
 - `/api/trustlists`
 
-Unless you explicitly override the status-list flags, `--wallet` also uses the wallet's own status-list endpoint and registers a wallet-managed status entry for the new credential.
+Unless you override the status-list flags, `--wallet` also uses the wallet's own status-list endpoint and registers a wallet-managed status entry for the new credential.
 
-When a wallet server is already running for the same wallet directory, `--wallet` issuance routes through that instance's REST API automatically so its state stays consistent (see [remote control](wallet.md#automatic-routing-single-writer)). Without a running server the command issues directly into the store, keeps any persisted issuer and base URLs untouched, and notes that the embedded URLs resolve once `wallet serve` runs.
+If a wallet server is already running for the same wallet directory, `--wallet` issuance routes through that instance's REST API to keep its state consistent (see [remote control](wallet.md#automatic-routing-single-writer)). Without a running server the command issues directly into the store, keeps any persisted issuer and base URLs untouched, and notes that the embedded URLs resolve once `wallet serve` runs.
 
-That means trust lists are created from the wallet's issued-attestation registry:
+Trust lists are created from the wallet's issued-attestation registry:
 - each issued or imported credential type contributes one registry entry
 - entries with the same trust-list profile fields are grouped into one trust list
 - the legacy `/api/trustlist` endpoint stays PID-first
@@ -134,7 +134,7 @@ If you do not pass any trust-metadata flags, the wallet derives defaults from th
 - PID attestation types default to the PID trust-list and entitlement profile
 - other attestation types default to `Non_Q_EAA_Provider` plus the local ETSI-shaped trust-list profile
 
-Use the following flags when you need explicit control over the stored trust or issuer metadata for that credential type:
+These flags give explicit control over the stored trust and issuer metadata for that credential type:
 
 | Flag | Default | Description |
 |------|---------|-------------|

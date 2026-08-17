@@ -1,6 +1,6 @@
 # Docker Verifier Testing Guide
 
-The primary use case for the Docker image is **automated integration testing of OID4VP verifiers**. The container acts as a fully functional EUDI wallet that your verifier can send presentation requests to.
+The Docker image is mainly for **automated integration testing of OID4VP verifiers**. The container is a fully functional EUDI wallet that your verifier can send presentation requests to.
 
 ## Quick start
 
@@ -9,7 +9,7 @@ docker pull ghcr.io/dominikschlosser/eudi-dev:latest
 docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 ```
 
-The default CMD starts the wallet server with pre-loaded PID credentials in headless mode. Ready for automated verifier testing out of the box.
+The default CMD starts the wallet server headless with pre-loaded PID credentials, ready for verifier testing.
 
 You can override the command to use any CLI feature:
 
@@ -53,9 +53,9 @@ docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://ex
 5. Your verifier receives the VP token and can validate its signing chain using the wallet's trust list from `/api/trustlist`
 6. If your verifier enforces current EUDI issuer authorization semantics, resolve provider entitlements and exact attestation types from the signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp` responses instead of expecting custom trust-list fields
 
-`/api/trustlist` stays certificate-centric and remains backward compatible as the legacy default endpoint. `/api/trustlists` is a local discovery helper for the available profile IDs and routes, while `/api/trustlists/<id>` serves the actual ETSI trust-list JWT for one profile.
+`/api/trustlist` is the legacy default endpoint. It stays certificate-centric and backward compatible. `/api/trustlists` lists the available profile IDs and routes. `/api/trustlists/<id>` serves the ETSI trust-list JWT for one profile.
 
-When you access the wallet through Docker port mappings or Testcontainers, prefer the relative `path` from `/api/trustlists` and resolve it against the URL you actually used to reach the wallet. `advertised_url` reflects the wallet's configured issuer URL and can differ from the externally reachable test URL.
+Behind Docker port mappings or Testcontainers, use the relative `path` from `/api/trustlists` and resolve it against the URL you actually used to reach the wallet. `advertised_url` is the wallet's configured issuer URL and can differ from the externally reachable test URL.
 
 ## Docker Compose example
 
@@ -127,7 +127,7 @@ walletURL, _ := wallet.Endpoint(ctx, "http")
 
 ## Custom PID claims
 
-The default CMD starts the wallet with two EUDI PID credentials (SD-JWT + mDoc) carrying the attributes of the EUDI PID Rulebook (`given_name`, `family_name`, `birth_date`, `place_of_birth`, `nationality`, etc.). To customize what gets issued, mount a folder of [credential templates](templates.md) and override the pre-defined PID templates (or add your own):
+The default CMD loads two EUDI PID credentials (SD-JWT + mDoc) with the EUDI PID Rulebook attributes (`given_name`, `family_name`, `birth_date`, `place_of_birth`, `nationality`, etc.). To customize them, mount a folder of [credential templates](templates.md) that overrides the pre-defined PID templates (or adds your own):
 
 ```bash
 # my-templates/german-pid-sdjwt.json overrides the pre-defined PID template
@@ -151,7 +151,7 @@ The wallet exposes additional API endpoints for controlling its behavior in auto
 
 ### Error simulation
 
-Pre-program a one-shot error response. The next OID4VP request returns the configured error instead of processing normally, then the wallet resumes normal behavior.
+Pre-program a one-shot error response. The next OID4VP request returns the configured error, then normal behavior resumes.
 
 ```bash
 # Set up error for next request
@@ -185,23 +185,23 @@ curl -X POST http://localhost:8085/api/credentials -d 'eyJhbGci...'
 
 ### Status list (revocation)
 
-When you use `wallet serve --pid`, generated credentials include a status list reference pointing to the wallet's HTTPS `/api/statuslist` endpoint on `https://<host>:<port+1>/api/statuslist`. You can also force the same behavior explicitly with `--status-list`.
+With `wallet serve --pid`, generated credentials include a status list reference pointing to `https://<host>:<port+1>/api/statuslist`. `--status-list` forces the same behavior explicitly.
 
-The wallet also derives its HTTPS issuer URL from the same host-selection mechanism. By default that issuer runs on `https://<host>:<port+1>` and serves `/.well-known/jwt-vc-issuer`, the signed `/.well-known/openid-credential-issuer` endpoint, and `/api/registrar/wrp`.
+The HTTPS issuer URL uses the same host selection. By default the issuer runs on `https://<host>:<port+1>` and serves `/.well-known/jwt-vc-issuer`, the signed `/.well-known/openid-credential-issuer` endpoint, and `/api/registrar/wrp`.
 
-For automated verifier tests that need to trust that HTTPS endpoint explicitly, export the persisted certificate with:
+For verifier tests that need to trust that HTTPS endpoint, export the persisted certificate:
 
 ```bash
 eudi wallet tls-cert --docker --out wallet-tls-cert.pem
 ```
 
-If the verifier should trust all spawned wallets from one root instead of pinning one leaf certificate, export the shared wallet CA instead:
+To trust all spawned wallets from one root instead of pinning one leaf certificate, export the shared wallet CA:
 
 ```bash
 eudi wallet ca-cert --out wallet-ca-cert.pem
 ```
 
-**Important:** The status list URI and issuer host are baked into generated credentials at generation time. When the verifier runs inside Docker and the wallet runs on the host (or vice versa), use `--docker` (or `--base-url` for a custom URL) so the status list URL, signed issuer metadata, and registrar endpoints are reachable from both sides:
+**Important:** The status list URI and issuer host are baked into credentials at generation time. When the verifier runs inside Docker and the wallet on the host (or vice versa), use `--docker` (or `--base-url` for a custom URL) so the status list URL, signed issuer metadata, and registrar endpoints are reachable from both sides:
 
 ```bash
 # Wallet on host, verifier in Docker

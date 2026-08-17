@@ -672,7 +672,10 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		}
 	}
 
-	// Issuer signature, anchored in the wallet CA via the x5c chain.
+	// Issuer signature. The CA this demo trusts is the one the built-in
+	// issuer signs under, which is the root of the wallet's signing chain.
+	// The check is named from the verifier's point of view: what it verifies
+	// is that the issuer certificate chains to a CA it trusts.
 	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
 	tlCerts := []trustlist.CertInfo{{
 		Subject:   caCert.Subject.String(),
@@ -683,7 +686,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if err == nil && issuerKey == nil {
 		err = fmt.Errorf("the credential carries no x5c certificate chain")
 	}
-	if err = check("issuer certificate chains to the wallet CA", err); err != nil {
+	if err = check("issuer certificate chains to a trusted CA", err); err != nil {
 		return nil, log.entries, err
 	}
 	result := sdjwt.Verify(token, issuerKey)
@@ -858,7 +861,7 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	if err == nil && issuerKey == nil {
 		err = fmt.Errorf("the credential carries no x5c certificate chain")
 	}
-	if err = check("issuer certificate chains to the wallet CA", err); err != nil {
+	if err = check("issuer certificate chains to a trusted CA", err); err != nil {
 		return nil, log.entries, err
 	}
 

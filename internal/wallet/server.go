@@ -388,6 +388,11 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 		if _, ok := s.wallet.GetCredential(result.Imported.ID); !ok {
 			s.wallet.RestoreCredential(*result.Imported)
 		}
+		// The same reload also wipes the status entry the import adopted for a
+		// credential on this wallet's own status list, leaving it labelled as
+		// externally governed with nothing able to flip its bit. Adoption is
+		// idempotent, so it is simply done again here.
+		s.wallet.adoptOwnStatusEntry(result.Imported)
 		if s.onSave != nil {
 			s.onSave()
 		}

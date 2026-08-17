@@ -2,7 +2,7 @@
 
 Runnable integration scenarios live under [`examples/`](../examples/README.md).
 
-These examples are meant to show complete local setups around `eudi-dev`, including any Docker compose files, bootstrap scripts, wallet preparation steps, exact versions, flow diagrams, and the concrete parameter values each scenario uses.
+Each scenario is a complete local setup around `eudi-dev`: Docker compose files, bootstrap scripts, wallet preparation steps, exact versions, flow diagrams, and the concrete parameter values it uses.
 
 ## Scenarios
 
@@ -37,7 +37,7 @@ It includes:
 
 Folder: [`examples/keycloak-issuer-verifier-app`](../examples/keycloak-issuer-verifier-app/README.md)
 
-Use this when you want a more complete local integration: one Keycloak `26.6.0` instance issues a credential, the same Keycloak instance verifies it through `keycloak-extension-oid4vp` with HAIP-style verifier settings, and a sample application drives both steps.
+Use this for a fuller local integration: one Keycloak `26.6.0` instance issues a credential and verifies it through `keycloak-extension-oid4vp` with HAIP-style verifier settings, and a sample application drives both steps.
 
 It includes:
 
@@ -53,7 +53,7 @@ It includes:
 
 Folder: [`examples/keycloak-web-wallet`](../examples/keycloak-web-wallet/README.md)
 
-Use this when you want the full triangle in containers with no host-side wallet and no custom URL schemes at all: one Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`), so verification is an ordinary browser OIDC login. The setup to copy for hosted environments, automated tests, and non-macOS platforms.
+Use this to run the full triangle in containers with no host-side wallet and no custom URL schemes at all. One Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`). Verification is then an ordinary browser OIDC login. This is the setup to copy for hosted environments, automated tests, and non-macOS platforms.
 
 It includes:
 
@@ -67,7 +67,7 @@ It includes:
 
 Folder: [`examples/keycloak-web-wallet-public`](../examples/keycloak-web-wallet-public/README.md)
 
-Use this when you want the web wallet scenario against the shared public demo instance at `https://eudi-test.dev` (or any other `--demo` deployment) instead of a local wallet container. Keycloak and the demo UI run locally, the wallet is the public one.
+Use this to run the web wallet scenario against the shared public demo instance at `https://eudi-test.dev` (or any other `--demo` deployment) instead of a local wallet container. Keycloak and the demo UI run locally. The wallet is the public one.
 
 It includes:
 

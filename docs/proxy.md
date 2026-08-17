@@ -1,6 +1,6 @@
 # Proxy
 
-Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server. Every request and response is captured, classified by protocol step, decoded, and displayed both in the terminal and a live web dashboard.
+Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server. Every request and response is captured, classified by protocol step, decoded, and shown in the terminal and a live web dashboard.
 
 ```bash
 eudi proxy --target http://localhost:8080
@@ -35,7 +35,7 @@ Traffic is automatically classified into protocol steps:
 | VCI Token Request   | POST to path ending `/token`                                      |
 | VCI Credential Req  | POST to path ending `/credential`                                 |
 
-By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, health checks, etc.) are still proxied but hidden from the output. Pass `--all-traffic` or toggle the "All traffic" checkbox in the dashboard to see everything.
+By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, health checks, etc.) are still proxied but hidden. Pass `--all-traffic` or toggle the "All traffic" checkbox in the dashboard to see everything.
 
 ## Features
 
@@ -81,9 +81,9 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 
 ## JWE decryption
 
-When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`direct_post.jwt`) through the proxy, the proxy automatically decrypts the payload and shows the contained `vp_token` and `state`.
+When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`direct_post.jwt`) through the proxy, the proxy decrypts the payload and shows the contained `vp_token` and `state`.
 
-This works via a debug header: the wallet includes the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding the request to the verifier, so the verifier never sees it.
+This works via a debug header. The wallet puts the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding, so the verifier never sees it.
 
 No configuration is needed. Route the wallet through the proxy:
 
@@ -94,7 +94,7 @@ eudi proxy --target http://verifier  # proxy intercepts, decrypts, forwards
 
 ### Automatic key detection from service stdout
 
-When using a **third-party wallet** (not the built-in one), the debug header won't be present. If you launch the verifier service as a subprocess (with `--`), the proxy scans its stdout for CEK values and uses them to decrypt JWE responses automatically:
+A **third-party wallet** does not send the debug header. If you launch the verifier service as a subprocess (with `--`), the proxy scans its stdout for CEK values and uses them to decrypt JWE responses:
 
 ```bash
 eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
@@ -104,11 +104,11 @@ The proxy detects lines matching patterns like:
 - `CEK: <base64url>` or `content encryption key: <base64url>`
 - JWK objects containing a `"d"` (private key) parameter
 
-This is best-effort. If no key is found, the proxy falls back to showing only the JWE header fields (`alg`, `enc`, `kid`, `epk`).
+This is best-effort. If no key is found, the proxy shows only the JWE header fields (`alg`, `enc`, `kid`, `epk`).
 
 ### Credential detection from service stdout
 
-When running as a subprocess, the proxy also scans the service's stdout for JWT/SD-JWT credentials. Detected credentials are added to the activity log with decode links:
+The proxy also scans the subprocess's stdout for JWT/SD-JWT credentials. Detected credentials are added to the activity log with decode links:
 
 ```
   → eudi decode 'eyJhbGci...'  (vp_token)

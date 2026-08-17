@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.23.3] - 2026-08-16
+
+### Fixed
+
+- **A credential from the demo issuer no longer shows "External status" on the wallet that serves its status list.** The status entry adopted when the credential was imported could be wiped by a concurrent request reloading the wallet from disk mid-flow. The save already put a wiped credential back, but not its status entry, so the credential looked externally governed and nothing could revoke it. On the public demo, whose UI polls while a flow runs, this happened almost every time. The entry is now re-adopted at save time, under the same lock the reload takes
+
+### Changed
+
+- **The documentation is shorter and plainer.** The README and the prose documents under docs/ were rewritten for brevity and clarity. No commands, flags or behaviors changed
+- **The demo verifier's trust check says what it checks.** Its checklist read "issuer certificate chains to the wallet CA", which sounded like issuers were expected to chain to a holder's wallet. It now reads "issuer certificate chains to a trusted CA". The trusted CA is unchanged: the root of the wallet's signing chain, which the built-in issuer signs under
+- **Client authentication at the Authorization Challenge Endpoint is documented and pinned by tests.** The wallet has always sent its wallet attestation (the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers) there, exactly as at the PAR and token endpoints, and the demo issuer has required it there in its default `required` mode. The wallet docs now say so, and a regression test holds the endpoint to it
+
 ## [1.23.2] - 2026-08-16
 
 ### Fixed

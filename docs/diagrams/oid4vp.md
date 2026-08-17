@@ -160,5 +160,5 @@ sequenceDiagram
 | No prefix (no `:` in the value) | Treated as a pre-registered client, per OpenID4VP §5.9.2. |
 | `origin:` | Refused. §5.9.3 reserves it and forbids a wallet to accept it in a request. |
 | `openid_federation:` | Refused. The trust chain resolution it requires is not implemented. |
-| `--haip` | Holds the counterparty to HAIP 1.0: `response_type=vp_token`, encrypted response modes, the `x509_hash` prefix with a verified request signature and certificate rules, JAR through `request_uri`, DCQL, the `mso_mdoc` and `dc+sd-jwt` formats, `A128GCM` plus `A256GCM` in the verifier's client metadata, and ES256. Violations are errors whatever the wallet mode is. |
+| `--haip` | Holds the counterparty to HAIP 1.0: `response_type=vp_token`, encrypted response modes, the `x509_hash` prefix with a verified request signature and certificate rules, JAR through `request_uri`, DCQL, the `mso_mdoc` and `dc+sd-jwt` formats, `A128GCM` plus `A256GCM` in the verifier's client metadata, and ES256. What a violation does follows the wallet mode: strict refuses the request, debug reports it and carries on. |
 | Wallet mode `debug` vs `strict` | Both collect request findings. `debug` reports them, keeps partially matching DCQL credentials and continues. `strict` turns the same findings into hard failures. |

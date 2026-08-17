@@ -1,6 +1,6 @@
 # Running OIDF Wallet Conformance
 
-Use this runbook to execute the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. The current status and result matrix live in [Current conformance results](./conformance-results.md).
+This runbook runs the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. Status and result matrix: [Current conformance results](./conformance-results.md).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ You need:
 - Maven
 - a local OpenID Foundation conformance-suite checkout
 
-The current documented suite baseline is `release-v5.2.1`, released on 2026-07-20. Use a newer release only when intentionally updating the conformance baseline and [results](./conformance-results.md).
+The documented suite baseline is `release-v5.2.1` (released 2026-07-20). Use a newer release only when intentionally updating the baseline and [results](./conformance-results.md).
 
 ## Start the Local Suite
 
@@ -26,9 +26,9 @@ git checkout release-v5.2.1
 mvn clean package
 ```
 
-The suite server has to run **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>`, and the suite fetches that URL itself. From inside a container `localhost` is the container, so every module that checks credential status fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, which is what makes `localhost` resolve to the same machine the wallet runs on.
+Run the suite server **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>` and the suite fetches that URL itself. Inside a container, `localhost` is the container. Every module that checks credential status then fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, so `localhost` resolves to the machine the wallet runs on.
 
-The `eudi-dev` wrapper also defaults to plain `localhost` URLs, so the server must advertise the same host rather than the upstream default of `localhost.emobix.co.uk`:
+The `eudi-dev` wrapper defaults to plain `localhost` URLs. The server must advertise the same host, not the upstream default of `localhost.emobix.co.uk`:
 
 ```bash
 cd ../conformance-suite
@@ -84,7 +84,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-At the current baseline the full matrix passes and the command exits zero. If a run reports failures, compare against the matrix and documented suite-side exclusions in [Current conformance results](./conformance-results.md) before treating the wallet as regressed.
+At the current baseline the full matrix passes and the command exits zero. If a run reports failures, first compare against the matrix and suite-side exclusions in [Current conformance results](./conformance-results.md) before treating the wallet as regressed.
 
 ## Rerun Selected Plans or Modules
 
@@ -103,7 +103,7 @@ The selector syntax is the official runner syntax:
 - `2:6` reruns one module
 - `1:6,2:6` reruns multiple modules
 
-The harness still generates all configs so the official runner keeps the same plan numbering, then filters execution to the requested plans or modules.
+The harness still generates all configs, so plan numbering stays the same. It then runs only the requested plans or modules.
 
 ## Result Artifacts
 
@@ -145,8 +145,8 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `OIDF_VCI_ALIAS`: convenience alias used by the default `OIDF_VCI_REDIRECT_URI`
 - `OIDF_SUITE_URL`: override the suite tarball URL. Defaults to the latest upstream release archive
 - `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the wrapper terminates a stuck module. Defaults to `180`, set `0` to disable
-- `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite shares this machine with the wallet and can take tens of seconds to answer under load. The wallet's own default is `15s`, which is short on purpose for interactive use. A value that cannot be parsed is ignored and the default applies
-- `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite's database after a run. The wrapper drops it otherwise, because a database carrying days of runs has the server pausing long enough to stall a run
+- `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite shares the machine with the wallet and can take tens of seconds to answer under load. The wallet's own default is `15s`, kept short for interactive use. An unparseable value is ignored and the default applies
+- `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite database after a run. Otherwise the wrapper drops it, because a database carrying days of runs makes the server pause long enough to stall a run
 
 ## Hosted Mode
 
@@ -160,4 +160,4 @@ CONFORMANCE_TOKEN="$OIDF_TOKEN" \
   scripts/oidf-wallet-conformance.sh
 ```
 
-If hosted-mode runs do not appear on the public OIDF pages, that is expected. Use the printed `plan-detail.html?plan=...` URLs, and make sure you are signed into the same OIDF account that owns the bearer token.
+Hosted-mode runs do not appear on the public OIDF pages. That is expected. Use the printed `plan-detail.html?plan=...` URLs while signed into the OIDF account that owns the bearer token.

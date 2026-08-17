@@ -4,10 +4,10 @@ Status of implemented features against the relevant specifications.
 
 Two independent settings decide what a finding does to a flow:
 
-- `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each one and carries on so the rest of the exchange stays observable.
-- `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run at all. What a violation then does is the validation mode's decision, as for every other finding: strict stops the flow, debug reports it and carries on.
+- `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each finding and continues so the rest of the exchange stays observable.
+- `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run. The validation mode then decides what a violation does, as for every other finding: strict stops the flow, debug reports it and continues.
 
-A third setting decides which document the wallet behaves like as an OpenID4VCI client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` also uses the features of the 1.1 draft listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet.md#openid4vci-feature-level)).
+A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follows as a client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` adds the 1.1 draft features listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet.md#openid4vci-feature-level)).
 
 ## OID4VP 1.0 (OpenID for Verifiable Presentations)
 
@@ -27,7 +27,7 @@ A third setting decides which document the wallet behaves like as an OpenID4VCI 
 | `direct_post.jwt` response mode | Implemented | JARM-encrypted responses |
 | `dc_api` response mode | Implemented | Browser API responses via `/api/dc-api` |
 | `dc_api.jwt` response mode | Implemented | Encrypted Browser API responses via `/api/dc-api` |
-| JAR (signed request objects) | Implemented | The JWS signature is verified with the leaf `x5c` key in every mode. Strict rejects a failure, debug reports it and continues, and `--haip` makes it an error. The chain is checked for internal consistency but not anchored to a pre-registered verifier CA (a test wallet has none), so this proves the request is self-consistent, not that it came from a trusted verifier (see [SECURITY.md](../SECURITY.md)) |
+| JAR (signed request objects) | Implemented | The JWS signature is verified with the leaf `x5c` key in every mode. Strict rejects a failure, debug reports it and continues. The chain is checked for internal consistency but not anchored to a pre-registered verifier CA (a test wallet has none). This proves the request is self-consistent, not that it came from a trusted verifier (see [SECURITY.md](../SECURITY.md)) |
 | `x509_san_dns:` client_id | Implemented | Verified against leaf cert SAN |
 | `x509_hash:` client_id | Implemented | SHA-256 of the leaf certificate matched against the prefix value |
 | `redirect_uri:` client_id | Implemented | Requires unsigned request objects and checks that the prefix value matches `response_uri` |
@@ -72,33 +72,33 @@ A third setting decides which document the wallet behaves like as an OpenID4VCI 
 
 ## OID4VCI 1.1 draft (selected with `--vci-version 1.1`)
 
-The 1.1 draft is not final, so nothing here is used at the default feature level. Each row is negotiated in the issuer's metadata as well, so an issuer that offers none of these sees no difference between the two levels.
+The 1.1 draft is not final, so none of this is used at the default feature level. Each row is also negotiated in the issuer's metadata, so an issuer that offers none of these sees no difference between the two levels.
 
-1.1 has no numbered draft: it exists as the editor's draft rendered from the specification repository's main branch, which moves without a version to cite. This implements the revision published **4 August 2026**, and with it `draft-ietf-oauth-first-party-apps-04`, which §6 profiles.
+1.1 has no numbered draft. It exists only as the editor's draft rendered from the specification repository's main branch, with no version to cite. This implements the revision published **4 August 2026**, and with it `draft-ietf-oauth-first-party-apps-04`, which §6 profiles.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Interactive Authorization (§6) | Implemented | Used where the authorization server publishes `authorization_challenge_endpoint` (§13.3). It replaces the redirect flow of §5, and needs no `--vci-redirect-uri`, since nothing is redirected anywhere. At feature level 1.0 the offer is recorded in the activity log naming the flag that would use it |
+| Interactive Authorization (§6) | Implemented | Used where the authorization server publishes `authorization_challenge_endpoint` (§13.3). It replaces the redirect flow of §5 and needs no `--vci-redirect-uri` (nothing is redirected). At feature level 1.0 the offer is recorded in the activity log naming the flag that would use it |
 | Authorization Challenge Request (§6.1) | Implemented | The initial request carries `interaction_types_supported`, PKCE S256, the credential scope and the offer's `issuer_state`. Intermediate requests carry `auth_session`, which is re-read from every response (§5.3.1 of the first-party-apps specification: clients "MUST NOT assume that auth_session values are static"). The code arrives in `authorization_code`, and the token request that follows sends no `redirect_uri` because the authorization request had none |
 | Presentation interaction (§6.2.1.1) | Implemented | `urn:openid:dcp:ia:openid4vp_presentation` is the only type the wallet advertises, so a server never selects one it would then have to abort on (§6.2.1). The `openid4vp_request` is read signed or unsigned, `response_mode` must be `ia_post` or `ia_post.jwt`, and the answer goes back as `openid4vp_response` in the next challenge request. A wallet holding nothing that matches answers with an OpenID4VP error rather than going quiet |
-| Presentation binding, SD-JWT VC (Appendix A.3.5) | Implemented, with a caveat | The Key Binding JWT `aud` is the Authorization Challenge Endpoint prefixed with `ia:`. A.3.5 is the only binding section that says "the derived **Origin** ... of the Authorization Challenge Endpoint": A.1.1.5 (JWT VC), A.1.2.5 (Data Integrity) and A.2.5 (mdoc) all bind the endpoint itself, §6.2.1.5 names the mechanism as "binding the Authorization Challenge Endpoint to the Verifiable Presentation" (which an origin cannot do between two endpoints on one host), and A.3.5's own example is the endpoint. So the endpoint is sent. A verifier that implements that one sentence literally computes `ia:https://host` and refuses the presentation |
+| Presentation binding, SD-JWT VC (Appendix A.3.5) | Implemented, with a caveat | The Key Binding JWT `aud` is the Authorization Challenge Endpoint prefixed with `ia:`. A.3.5 is the only binding section that says "the derived **Origin** ... of the Authorization Challenge Endpoint". A.1.1.5 (JWT VC), A.1.2.5 (Data Integrity) and A.2.5 (mdoc) all bind the endpoint itself. §6.2.1.5 names the mechanism as "binding the Authorization Challenge Endpoint to the Verifiable Presentation" (an origin cannot do that between two endpoints on one host). A.3.5's own example is the endpoint. So the endpoint is sent. A verifier that implements that one sentence literally computes `ia:https://host` and refuses the presentation |
 | Presentation binding, mdoc (Appendix A.2.5) | Implemented | `OpenID4VCIIAEHandover` over the challenge endpoint, the nonce, and the encryption key thumbprint for `ia_post.jwt` only. Checked against the worked example in the appendix |
 | `expected_origins` check (§6.2.1.1, §6.2.1.5) | Enforced | When present it must contain only the derived origin of the challenge endpoint. This is what lets the wallet detect a request one authorization server forwarded from another. It is checked on unsigned requests too, unlike the Digital Credentials API, where the platform reports the true origin and the parameter can only mislead |
-| `auth_session` beyond one issuance | Deliberate deviation | Section 5.3.1 of the first-party-apps specification says a client "MUST store the auth_session beyond the issuance of the authorization code to be able to use it in future requests". This wallet keeps it for the length of one exchange only. A stored session is a handle an authorization server can correlate later issuances by, and dropping it costs nothing but a repeated interaction |
-| The `presentation_during_issuance_session` extension | Not implemented | A community extension that predates §6 and was never part of any OpenID4VCI draft. It answers the challenge endpoint with HTTP 400, a `presentation` member carrying an `openid4vp://` request URI and no `interaction_type_required`, and expects the presentation at the verifier's own `response_uri` rather than back at the challenge endpoint. Since both publish `authorization_challenge_endpoint`, only the response tells such a server apart from a §6 one, and the wallet aborts there naming the member it did not find (§6.2.1). Observed against the Animo playground, August 2026 |
+| `auth_session` beyond one issuance | Deliberate deviation | Section 5.3.1 of the first-party-apps specification says a client "MUST store the auth_session beyond the issuance of the authorization code to be able to use it in future requests". This wallet keeps it for one exchange only. A stored session lets an authorization server correlate later issuances, and dropping it costs only a repeated interaction |
+| The `presentation_during_issuance_session` extension | Not implemented | A community extension that predates §6 and was never part of any OpenID4VCI draft. It answers the challenge endpoint with HTTP 400, a `presentation` member carrying an `openid4vp://` request URI and no `interaction_type_required`, and expects the presentation at the verifier's own `response_uri` rather than back at the challenge endpoint. Both publish `authorization_challenge_endpoint`, so only the response tells such a server apart from a §6 one. The wallet aborts there naming the member it did not find (§6.2.1). Observed against the Animo playground, August 2026 |
 | Authorization via web (§6.2.1.2) | Not implemented | `urn:openid:dcp:ia:auth_via_web` is not advertised, and a server that asks for it anyway is refused by name rather than as an unknown type |
 | Custom interaction types (§6.2.1.3) | Not implemented | An unsupported `interaction_type_required` aborts the issuance, which is what §6.2.1 requires |
 
 ## HAIP 1.0 (Current wallet coverage)
 
-Every row here is a MUST in the profile, so `--haip` makes each one an error on its own, independent of `--mode`. A request that fails any of them is answered with HTTP 400 naming the checks that failed.
+Every row here is a MUST in the profile, and `--haip` is what makes these checks run. What a violation then does follows `--mode`, as for any other finding. In strict mode a request that fails any of them is answered with HTTP 400 naming the failed checks. In debug mode the same findings are logged as warnings and the flow continues.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
 | VP `response_type` | Enforced | §5: "The Response type MUST be vp_token" |
 | VP response modes | Enforced | Only `direct_post.jwt` (§5.1) and `dc_api.jwt` (§5.2) |
 | VP Client Identifier Prefix | Enforced | §5 names `x509_hash` and only `x509_hash` for signed requests, so `x509_san_dns:` is refused even though OpenID4VP defines it |
-| VP request signature | Enforced | The Request Object signature is verified, and the `x509_hash` value must be the SHA-256 of the certificate that signed it. Checking the prefix string while accepting an unverifiable signature would be enforcement in name only |
+| VP request signature | Enforced | The Request Object signature is verified, and the `x509_hash` value must be the SHA-256 of the certificate that signed it |
 | VP signing certificate rules | Enforced | §5: the certificate signing the request must not be self-signed, and the trust anchor must not travel in the `x5c` header |
 | VP signed request object (JAR) | Enforced | §5.1 requires JAR with the `request_uri` parameter, so an inline request object over redirects is refused. Unsigned requests are accepted only over the Digital Credentials API, where §5.2 obliges the wallet to support them and they carry no `client_id` |
 | VP DCQL query | Enforced | §5: "The DCQL query and response MUST be used as defined in Section 6 of [OIDF.OID4VP]" |
@@ -109,7 +109,7 @@ Every row here is a MUST in the profile, so `--haip` makes each one an error on 
 | VCI authorization-code profile pieces | Enforced | The client uses PAR, PKCE S256 and DPoP. An offer that drives the authorization endpoint is rejected unless the authorization server supports the authorization code flow and offers a pushed authorization request endpoint. It is also rejected when the server advertises PKCE without `S256` or DPoP without `ES256`. Metadata that says nothing about PKCE, DPoP or client authentication is not a violation, because §4 defers those to FAPI 2.0, which puts the obligation on behaviour rather than on metadata. A pre-authorized code offer is held only to the https transport rule, per §4 |
 | VCI encrypted credential responses | Implemented | Requests `credential_response_encryption` and decrypts returned compact JWEs |
 
-This is the HAIP behavior currently exercised by the wallet and the current OIDF Final + HAIP wallet plans. It should not be read as a blanket claim that every HAIP deployment profile or auxiliary feature is implemented beyond those flows.
+This is the HAIP behavior exercised by the wallet and the current OIDF Final + HAIP wallet plans. It is not a claim that every HAIP deployment profile or auxiliary feature is implemented beyond those flows.
 
 ## SD-JWT (Selective Disclosure JWT)
 
@@ -158,11 +158,11 @@ Selective disclosure itself is RFC 9901. The credential profile on top of it is 
 | Trusted entity list JWT parsing | Implemented | Signature not verified (intentional for debugging). Requires the ETSI JSON-binding `LoTE` wrapper and accepts current EUDI-style fields such as `ListIssueDateTime` |
 | Certificate chain validation against trusted entity list | Implemented | In `validate` command |
 
-The implementation target for the EUDI wallet trust infrastructure is ETSI TS 119 602, which defines the EUDI trusted-entity list data model and LoTE structures. It does not implement the classic ETSI TS 119 612 XML trusted-list format used for eIDAS trust-service status lists.
+The implementation target is ETSI TS 119 602, which defines the EUDI trusted-entity list data model and LoTE structures. The classic ETSI TS 119 612 XML trusted-list format used for eIDAS trust-service status lists is not implemented.
 
 ## Token Status List (`draft-ietf-oauth-status-list`)
 
-An Internet-Draft with no RFC number, so nothing here cites one. The revision tracked is **draft-ietf-oauth-status-list-21**, which is what the editor's copy at <https://drafts.oauth.net/draft-ietf-oauth-status-list/draft-ietf-oauth-status-list.html> currently renders, and the section numbers below are its.
+An Internet-Draft with no RFC number, so nothing here cites one. The tracked revision is **draft-ietf-oauth-status-list-21**, currently rendered by the editor's copy at <https://drafts.oauth.net/draft-ietf-oauth-status-list/draft-ietf-oauth-status-list.html>. The section numbers below are its.
 
 | Feature | Status | Notes |
 |---------|--------|-------|

@@ -15,6 +15,9 @@
 package demorp
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -186,3 +189,79 @@ func TestAuthorizationChallengeReportsAMissingInteractionType(t *testing.T) {
 // interactionTypeAuthViaWebURN is the browser interaction this issuer does not
 // implement, used here to build a request that offers nothing usable.
 const interactionTypeAuthViaWebURN = "urn%3Aopenid%3Adcp%3Aia%3Aauth_via_web"
+
+// postAuthorizationChallenge sends a minimal challenge request with a valid
+// DPoP proof and whatever client authentication the headers carry. The form
+// deliberately omits interaction_types_supported: that check runs after client
+// authentication, so reaching its error is proof the authentication passed.
+func postAuthorizationChallenge(t *testing.T, d *DemoRP, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	dpopKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating DPoP key: %v", err)
+	}
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {"http://wallet.example"},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
+	}
+	req := httptest.NewRequest(http.MethodPost, challengePath, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("DPoP", dpopProof(t, dpopKey, "POST", demoIssuerID+challengePath))
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	rec := httptest.NewRecorder()
+	d.IssuerHandler().ServeHTTP(rec, req)
+	return rec
+}
+
+// The Authorization Challenge Endpoint is client-authenticated exactly like
+// the PAR and token endpoints (§6.1 notes the Wallet Attestation "has to be
+// included in this request" where the server requires one), so a wallet that
+// sends no OAuth-Client-Attestation headers is refused in the default
+// required mode and served in optional mode.
+func TestAuthorizationChallengeRequiresClientAttestation(t *testing.T) {
+	t.Run("required by default", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		rec := postAuthorizationChallenge(t, d, nil)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (%s)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"invalid_client"`) {
+			t.Errorf("body = %s, want an invalid_client error", rec.Body.String())
+		}
+	})
+
+	t.Run("an attested request passes authentication", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		provider := foreignWalletProvider(t)
+		clientKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating client key: %v", err)
+		}
+		rec := postAuthorizationChallenge(t, d, map[string]string{
+			"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+			"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+		})
+		if rec.Code == http.StatusUnauthorized {
+			t.Fatalf("an attested request was refused as unauthenticated: %s", rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "missing_interaction_type") {
+			t.Errorf("body = %s, want the missing_interaction_type error that follows authentication", rec.Body.String())
+		}
+	})
+
+	t.Run("optional", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		d.SetClientAuthMode(ClientAuthOptional)
+		rec := postAuthorizationChallenge(t, d, nil)
+		if rec.Code == http.StatusUnauthorized {
+			t.Fatalf("optional mode refused an unauthenticated client: %s", rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "missing_interaction_type") {
+			t.Errorf("body = %s, want the missing_interaction_type error that follows authentication", rec.Body.String())
+		}
+	})
+}

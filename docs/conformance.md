@@ -2,21 +2,21 @@
 
 This repository runs the current OpenID Foundation wallet plans for OID4VP 1.0 Final, OID4VCI 1.0 Final, and HAIP 1.0 Final variants against the local `eudi-dev` testing wallet.
 
-The conformance documentation is split by purpose:
+The docs are split by purpose:
 
 - [How to run the wallet conformance suite](./conformance-run.md)
 - [Current conformance results](./conformance-results.md)
 
 ## Current State
 
-The wallet conformance harness targets a locally running OpenID Foundation conformance-suite server by default. The current documented baseline is `release-v5.2.1`, released on 2026-07-20. The wrapper verifies that the local suite server tag matches the runner/templates tag when the server exposes `/api/server`.
+The harness targets a local OpenID Foundation conformance-suite server by default. The documented baseline is `release-v5.2.1` (released 2026-07-20). When the server exposes `/api/server`, the wrapper checks that its tag matches the runner/templates tag and fails early on a mismatch.
 
 Current local status:
 
 - VCI Final SD-JWT and mDoc wallet plans pass in strict mode, including the release-v5.2.1 batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key).
 - VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
-- VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the release-v5.2.1 unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` are tracked as pass-equivalent for the local harness when the runner reports zero condition failures.
-- The wrapper passes explicit VP module lists for each generated variant so release-v5.2.1 suite-side not-applicable or broken modules are visible as documented exclusions instead of red result boxes.
+- VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the release-v5.2.1 unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` count as pass-equivalent for the local harness when the runner reports zero condition failures.
+- The wrapper passes explicit VP module lists per generated variant. Release-v5.2.1 suite-side not-applicable or broken modules then appear as documented exclusions instead of red result boxes.
 
 See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite-side exclusions.
 
@@ -33,7 +33,7 @@ It does not use the older ID3 wallet plan.
 
 ## Default Matrix
 
-The default run covers the Final and HAIP scenarios tracked by this wallet harness:
+The default run covers these Final and HAIP scenarios:
 
 - VP Final: SD-JWT `direct_post`, signed `request_uri`, `x509_hash`
 - VP Final: SD-JWT `direct_post.jwt`, signed `request_uri`, `x509_hash`
@@ -74,7 +74,7 @@ Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallba
 - keeps the VCI suite alias aligned with the configured `redirect_uri` and helper-page paths
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
-- sets the wallet's own conformance before each submission through `PUT /api/config/conformance`, so the Final modules run non-HAIP and the HAIP modules run enforced regardless of how the wallet under test was started. This works against a locally-hosted wallet, which is what a conformance run targets
+- sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started. This works against a locally hosted wallet, which is what a conformance run targets
 - passes explicit VP module lists for each scenario so the suite runs executable coverage for that generated variant
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs
@@ -89,7 +89,7 @@ The wallet uses:
 - its normal issuer signing key and certificate chain for client attestation and key attestation
 - its normal shared wallet CA as the trust anchor
 
-That keeps the conformance run aligned with real wallet behavior instead of carrying suite-only signing paths.
+This keeps the run aligned with real wallet behavior. There are no suite-only signing paths.
 
 ## References
 

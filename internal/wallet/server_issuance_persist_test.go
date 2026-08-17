@@ -54,6 +54,54 @@ func TestSaveIssuedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	}
 }
 
+// The reload race also wiped the status entry adopted at import for a
+// credential on this wallet's own status list (the demo issuer's ticket is the
+// common case). The credential was put back, its entry was not, so the UI
+// showed "External status" on a list this wallet serves and nothing could
+// revoke the credential.
+func TestSaveIssuedCredential_KeepsTheAdoptedStatusEntry(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.onSave = func() {}
+	srv.wallet.BaseURL = "https://wallet.example"
+
+	issued := StoredCredential{
+		ID:     "ticket-with-own-status",
+		Format: "dc+sd-jwt",
+		VCT:    "urn:test:ticket:1",
+		Raw:    "header.payload.signature",
+		Claims: map[string]any{
+			"status": map[string]any{
+				"status_list": map[string]any{
+					"uri": srv.wallet.StatusListURL(),
+					"idx": 22,
+				},
+			},
+		},
+	}
+	// What the import did: stored the credential and adopted its entry.
+	srv.wallet.RestoreCredential(issued)
+	srv.wallet.adoptOwnStatusEntry(&issued)
+	if _, ok := srv.wallet.StatusEntryFor(issued.ID); !ok {
+		t.Fatal("precondition failed: the import should have adopted the status entry")
+	}
+
+	// A concurrent reload lands between the import and the save.
+	srv.applyPersistedWalletState(&Wallet{Credentials: []StoredCredential{}})
+	if _, ok := srv.wallet.StatusEntryFor(issued.ID); ok {
+		t.Fatal("precondition failed: the reload should have wiped the status entry")
+	}
+
+	srv.saveIssuedCredential(&IssuanceResult{CredentialID: issued.ID, Imported: &issued})
+
+	entry, ok := srv.wallet.StatusEntryFor(issued.ID)
+	if !ok {
+		t.Fatal("the adopted status entry was lost: the credential shows as externally governed")
+	}
+	if entry.Index != 22 {
+		t.Fatalf("status entry index = %d, want the credential's own idx 22", entry.Index)
+	}
+}
+
 // Restoring is idempotent: a credential still present must not be duplicated.
 func TestSaveIssuedCredential_DoesNotDuplicate(t *testing.T) {
 	srv := newTestServer(t, true)
