@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A wallet started without --base-url completes the browser sign-in.** The redirect flow refused its own `/callback` ("redirect_uri is not handled by the running wallet server") because the callback check required a configured base URL, while the default client id and redirect URI are derived from the serving port precisely when there is none. The serve command now records the origin it answers on and the check falls back to it. The Docker image's default command was the common victim
 - **The Docker guide shows the demo profile.** A single `docker run` with `wallet serve --demo` gives the public demo's setup locally, and the guide now says so, including where the full deployment with TLS and rate limiting lives
 - **The conformance docs name the v5.2.2 suite baseline.** The runbook and status page still said `release-v5.2.1` while the recorded results run on `release-v5.2.2`
 - **The demo issuer accepts the auth_session its auth_via_web answer hands out.** The session id was never stored, so a wallet returning with it (OpenID4VCI 1.1 §6.2.1 has it sent on every further request) was refused with `invalid_grant`. The session is stored now and the wallet gets the interaction again with a fresh pushed request

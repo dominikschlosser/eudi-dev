@@ -94,11 +94,16 @@ type Wallet struct {
 	IssuerURL         string                 // HTTPS issuer URL for JWT VC issuer metadata/JWKS
 	VCIClientID       string                 `json:"-"`
 	VCIRedirectURI    string                 `json:"-"`
-	TemplatesDir      string                 `json:"-"` // credential template directory; empty selects the default
-	TxCode            string                 `json:"-"` // one-shot tx_code for OID4VCI token request
-	Log               []LogEntry
-	mu                sync.RWMutex
-	logSink           func(LogEntry)
+	// ServingOrigin is the origin the running server answers on, set by the
+	// serve command and never persisted. It stands in for BaseURL when no
+	// --base-url was given, so the wallet can tell that its own /callback is
+	// reachable.
+	ServingOrigin string `json:"-"`
+	TemplatesDir  string `json:"-"` // credential template directory; empty selects the default
+	TxCode        string `json:"-"` // one-shot tx_code for OID4VCI token request
+	Log           []LogEntry
+	mu            sync.RWMutex
+	logSink       func(LogEntry)
 	// credentialSink forwards imports to the wallet a clone was made from.
 	credentialSink func(StoredCredential)
 	runtime        *WalletRuntime
