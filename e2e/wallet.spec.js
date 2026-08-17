@@ -1017,6 +1017,12 @@ test.describe("Deferred issuance in the UI", () => {
 
 test.describe("Auto-accept toggle", () => {
   test("names the mode and flips it at runtime", async ({ page }) => {
+    // Earlier tests can leave a pending consent behind, and a local wallet
+    // opens its dialog for it on page load, which would sit over the header.
+    const pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
+    for (const req of pending) {
+      await fetch(`${WALLET_URL}/api/requests/${req.id}/deny`, { method: "POST" });
+    }
     await page.goto(WALLET_URL);
     const toggle = page.locator("#auto-accept-toggle");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
