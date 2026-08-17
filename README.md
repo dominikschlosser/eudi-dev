@@ -158,7 +158,7 @@ For day-to-day use, the main commands are:
 
 When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you the available IDs and routes. Use the entry's relative `path` when you access the wallet through Docker port mappings or similar local indirection. The web UI lists the same trust-list URLs with copy buttons above the certificate downloads.
 
-![Wallet UI](docs/wallet-ui.png)
+![Wallet UI](docs/assets/wallet-ui.png)
 
 → [Full documentation](docs/wallet.md): subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
 → [Public demo hosting](docs/public-demo.md): run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
@@ -216,7 +216,7 @@ eudi serve credential.txt
 
 Opens a split-pane interface at `http://localhost:8080` (default) with auto-decode on paste, format detection, collapsible sections, signature verification, and dark/light theme. Pass a credential as an argument to pre-fill the input on load. Use `--imprint-file` to serve a legal notice at `/imprint` when hosting it publicly.
 
-![Web UI screenshot](docs/web-ui.png)
+![Web UI screenshot](docs/assets/web-ui.png)
 
 > **Warning:** Credentials are sent to the server for decoding. Run it locally, or see [public demo hosting](docs/public-demo.md) for an internet-facing setup.
 

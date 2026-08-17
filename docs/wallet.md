@@ -146,7 +146,7 @@ Each wallet keeps its own issuer key. Its credential-signing leaf certificate an
 
 Generated credentials expire in **30 days** by default. Use `--exp` to override (e.g. `--exp 720h` for 30 days, `--exp 24h` for 1 day). Use `--nbf` to set a not-before time (RFC3339 or duration, e.g. `--nbf 2025-01-15T00:00:00Z` or `--nbf -1h`).
 
-![Wallet UI](./wallet-ui.png)
+![Wallet UI](./assets/wallet-ui.png)
 
 ## `wallet show <id>`
 
@@ -209,7 +209,7 @@ Credential cards show the revocation status when a credential carries a status l
 
 The whole UI is built for browser automation. Every interactive control has a stable element id, and credential cards expose selection hooks as data attributes (`data-credential-id`, `data-format`, `data-vct`, `data-doctype`, `data-status`), so a test can select a card with `.credential-card[data-vct="urn:eudi:pid:1"]` and drive its buttons (`show-<id>`, `delete-<id>`, `revoke-<id>`, `status-check-<id>`). Template manager rows (`template-row-<name>`, `template-edit-<name>`, `template-delete-<name>`) and the consent dialog (`consent-approve`, `consent-deny`, `consent-credential-<id>`, claim checkboxes with `data-cred` and `data-claim`) follow the same pattern.
 
-![Issue credential dialog](./wallet-issue-ui.png)
+![Issue credential dialog](./assets/wallet-issue-ui.png)
 
 The UI header links to the project on GitHub and to CLI install instructions. The header also has an Auto-accept toggle button (filled while active, since consent dialogs never appear then). It flips the setting at runtime on a locally-hosted wallet. The demo refuses the change, like its other fixed settings. The **Trust & certificates** dialog (opened from the header) lists the wallet's trust list URLs with copy buttons, each labelled with the provider profile it describes, plus direct downloads for the CA, signing and HTTPS keys. It covers both counterparties: a verifier trusting the wallet's self-issued credentials, and an issuer verifying the wallet attestation and key attestation the wallet sends during issuance. Both chain to the same CA.
 
