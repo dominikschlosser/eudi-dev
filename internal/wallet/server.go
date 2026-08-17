@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -401,6 +402,31 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 		return
 	}
 	s.triggerSave()
+}
+
+// saveRenewedCredential persists a renewal. The flow holds no lock while it
+// talks to the issuer, so a concurrent store reload can put the stale copy
+// back before the save, losing the rotated refresh token with it. The
+// renewed copy is written back under the same lock the reload takes, like
+// saveIssuedCredential.
+func (s *Server) saveRenewedCredential(renewed *StoredCredential) {
+	if renewed == nil {
+		s.triggerSave()
+		return
+	}
+	s.storeSyncMu.Lock()
+	s.wallet.PutCredential(*renewed)
+	// Re-register the status entry from the renewed credential's own claim
+	// (a reload may have wiped or reverted it). A renewal is fresh, so
+	// status 0.
+	if ref := CredentialStatusRef(*renewed); ref != nil && ref.URI == strings.TrimSpace(s.wallet.StatusListURL()) {
+		s.wallet.RegisterStatusEntry(renewed.ID, ref.Idx)
+	}
+	if s.onSave != nil {
+		s.onSave()
+	}
+	s.storeSyncMu.Unlock()
+	s.wallet.NotifyStateChanged()
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

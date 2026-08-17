@@ -1056,3 +1056,17 @@ func (w *Wallet) RestoreCredential(cred StoredCredential) {
 	}
 	w.Credentials = append(w.Credentials, cred)
 }
+
+// PutCredential stores the credential under its id, replacing a stored copy
+// (unlike RestoreCredential, which keeps it).
+func (w *Wallet) PutCredential(cred StoredCredential) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if w.Credentials[i].ID == cred.ID {
+			w.Credentials[i] = cred
+			return
+		}
+	}
+	w.Credentials = append(w.Credentials, cred)
+}

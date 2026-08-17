@@ -145,7 +145,7 @@ func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 		return nil, err
 	}
 	s.log("  Renewed:       %s credential %s", renewed.Format, renewed.ID)
-	s.persistWallet()
+	s.saveRenewedCredential(renewed)
 	return renewed, nil
 }
 
