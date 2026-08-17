@@ -167,7 +167,12 @@ type AuthorizationRequestParams struct {
 	DCQLQuery      map[string]any
 	RequestObject  *oid4vc.RequestObjectJWT
 	RequestPayload map[string]any
-	Source         string
+	// VerifierInfo carries the raw verifier_info parameter of a request sent
+	// as plain parameters (a JSON-encoded array). A request delivered as a
+	// Request Object keeps its attestations in RequestPayload, and its outer
+	// parameters stay ignored (OID4VP 1.0 section 5.10.1).
+	VerifierInfo string
+	Source       string
 	// UnsignedDCAPI marks a request that arrived unsigned over the Digital
 	// Credentials API (OpenID4VP 1.0 Appendix A.3.1). Such a request carries
 	// no client_id (Appendix A.2), and the platform-reported origin identifies
@@ -296,7 +301,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
-		Purposes:     s.wallet.consentPurposes("presentation", authReq.RequestPayload),
+		Purposes:     s.wallet.consentPurposes("presentation", authReq),
 	}
 
 	s.wallet.CreateConsentRequest(consentReq)
@@ -669,6 +674,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		RedirectURI:      get("redirect_uri"),
 		ResponseURI:      get("response_uri"),
 		RequestURIMethod: get("request_uri_method"),
+		VerifierInfo:     get("verifier_info"),
 	}
 
 	if cm := get("client_metadata"); cm != "" {
