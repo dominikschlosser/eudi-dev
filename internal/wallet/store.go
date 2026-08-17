@@ -33,6 +33,17 @@ import (
 // WalletStore handles file-based persistence for the wallet.
 type WalletStore struct {
 	Dir string
+
+	// saveMu orders the writers of wallet.json. Save snapshots the wallet and
+	// then renames the file, and without the mutex a save that snapshotted
+	// earlier can rename later, so the file silently loses whatever only the
+	// newer snapshot had. The next reload then makes the loss permanent. The
+	// server's own lock does not cover every writer: the log sink and the
+	// demo issuer save through their own callbacks.
+	saveMu sync.Mutex
+
+	// saveDelay widens the snapshot-to-rename window in tests. Nil otherwise.
+	saveDelay func()
 }
 
 var walletRuntimeRegistry sync.Map
@@ -203,6 +214,8 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 
 // Save persists the wallet state to disk.
 func (s *WalletStore) Save(w *Wallet) error {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
 	if err := s.ensureDir(); err != nil {
 		return fmt.Errorf("creating wallet directory: %w", err)
 	}
@@ -231,6 +244,9 @@ func (s *WalletStore) Save(w *Wallet) error {
 	data, err := json.MarshalIndent(wj, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling wallet.json: %w", err)
+	}
+	if s.saveDelay != nil {
+		s.saveDelay()
 	}
 
 	// Write-then-rename so a concurrent writer or a crash never leaves a

@@ -17,9 +17,11 @@ package wallet
 import (
 	"bytes"
 	"crypto/x509"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -542,5 +544,70 @@ func TestLoadReadsTheLegacyPendingIssuancesField(t *testing.T) {
 	}
 	if strings.Contains(string(saved), `"pending_issuances"`) {
 		t.Error("save kept the legacy pending_issuances field")
+	}
+}
+
+// Two saves must land in snapshot order. The log sink saves without the
+// server lock, so a save that snapshotted before an import could rename
+// after the import's save, and the next store reload made the loss
+// permanent: the credential was imported, logged as received, and gone.
+func TestStoreSavesDoNotLoseConcurrentWrites(t *testing.T) {
+	store := NewWalletStore(t.TempDir())
+	w := generateTestWallet(t)
+	srv := NewServer(w, 0, func() { _ = store.Save(w) })
+	srv.SetStore(store)
+	store.saveDelay = func() { time.Sleep(2 * time.Millisecond) }
+	// A fat wallet widens the snapshot-to-rename window enough for the
+	// interleaving to show without the store mutex.
+	padding := strings.Repeat("x", 4096)
+	for i := 0; i < 100; i++ {
+		w.PutCredential(StoredCredential{ID: fmt.Sprintf("pad-%03d", i), Format: "dc+sd-jwt", Raw: padding})
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	// The log sink: every entry persists the wallet, off the server lock.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+				w.AddLog("test", fmt.Sprintf("noise %d", i), true)
+			}
+		}
+	}()
+	// The store reload every API request performs.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = srv.reloadFromStore()
+			}
+		}
+	}()
+
+	for i := 0; i < 40; i++ {
+		cred := StoredCredential{ID: fmt.Sprintf("cred-%02d", i), Format: "dc+sd-jwt", Raw: "a.b.c"}
+		w.PutCredential(cred)
+		srv.saveIssuedCredential(&IssuanceResult{CredentialID: cred.ID, Imported: &cred})
+	}
+	close(stop)
+	wg.Wait()
+
+	if err := srv.reloadFromStore(); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("cred-%02d", i)
+		if _, ok := w.GetCredential(id); !ok {
+			t.Fatalf("credential %s was lost by a concurrent save", id)
+		}
 	}
 }
