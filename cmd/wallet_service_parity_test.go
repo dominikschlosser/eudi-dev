@@ -171,15 +171,31 @@ type parityCase struct {
 	skip    string
 }
 
+// credentialID returns the id of the first credential in the given format.
+// A positional pick would be unstable: the listing orders by issuance time,
+// and two independently seeded wallets do not share timestamps, so whether
+// the SD-JWT or the mdoc PID comes first depends on when seeding crossed a
+// second boundary.
+func credentialID(t *testing.T, s walletService, format string) string {
+	t.Helper()
+	docs, err := s.Credentials()
+	if err != nil {
+		t.Fatalf("listing credentials: %v", err)
+	}
+	for _, doc := range docs {
+		if doc["format"] == format {
+			return doc["id"].(string)
+		}
+	}
+	t.Fatalf("no %s credential among %d stored", format, len(docs))
+	return ""
+}
+
 // importedCredential puts one deletable credential in the wallet and returns
 // its id. The PID baseline is protected and refuses deletion on both backends.
 func importedCredential(t *testing.T, s walletService) string {
 	t.Helper()
-	docs, err := s.Credentials()
-	if err != nil || len(docs) == 0 {
-		t.Fatalf("listing credentials: %v", err)
-	}
-	full, err := s.Credential(docs[0]["id"].(string))
+	full, err := s.Credential(credentialID(t, s, "dc+sd-jwt"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,11 +237,7 @@ func parityCases() []parityCase {
 			return docKeys(t, docs)
 		}},
 		{method: "Credential", observe: func(t *testing.T, s walletService) any {
-			docs, err := s.Credentials()
-			if err != nil || len(docs) == 0 {
-				t.Fatalf("listing credentials: %v", err)
-			}
-			doc, err := s.Credential(docs[0]["id"].(string))
+			doc, err := s.Credential(credentialID(t, s, "dc+sd-jwt"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -239,11 +251,7 @@ func parityCases() []parityCase {
 			return docKeys(t, docs)
 		}},
 		{method: "ImportCredential", observe: func(t *testing.T, s walletService) any {
-			docs, err := s.Credentials()
-			if err != nil || len(docs) == 0 {
-				t.Fatalf("listing credentials: %v", err)
-			}
-			full, err := s.Credential(docs[0]["id"].(string))
+			full, err := s.Credential(credentialID(t, s, "dc+sd-jwt"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -393,12 +401,21 @@ func TestWalletServiceBackendsAgree(t *testing.T) {
 	}
 }
 
+// docKeys reduces a listing to the key set each format exposes. Reading only
+// the first document would compare an SD-JWT against an mdoc whenever the two
+// wallets ordered their listings differently (see credentialID).
 func docKeys(t *testing.T, docs []map[string]any) any {
 	t.Helper()
-	if len(docs) == 0 {
-		return []string{}
+	byFormat := map[string][]string{}
+	for _, doc := range docs {
+		format, _ := doc["format"].(string)
+		keys := keysOf(doc)
+		if prev, ok := byFormat[format]; ok && !reflect.DeepEqual(prev, keys) {
+			t.Fatalf("two %s documents expose different keys: %v vs %v", format, prev, keys)
+		}
+		byFormat[format] = keys
 	}
-	return keysOf(docs[0])
+	return byFormat
 }
 
 func seedPID(w *wallet.Wallet) {
