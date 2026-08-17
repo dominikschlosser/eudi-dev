@@ -41,7 +41,7 @@ sequenceDiagram
 | `nonce` | Bound into SD-JWT key binding JWTs and self-issued `id_token`s. |
 | `state` | Reflected in the authorization response when present. |
 | `response_uri` | Required for `direct_post` and `direct_post.jwt`. |
-| `redirect_uri` | Required for `fragment`. |
+| `redirect_uri` | Used for `fragment`. When absent, the wallet falls back to `response_uri`. |
 | `dcql_query` | Practically required for credential selection in `eudi-dev`. This is how the wallet matches stored credentials. |
 | `request` or `request_uri` | Used when the verifier sends a request object directly or by reference. |
 | `client_metadata` | Important for format negotiation and mandatory for encrypted response modes because `client_metadata.jwks` carries the verifier encryption key. |

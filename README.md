@@ -119,6 +119,7 @@ eudi completion install
 | `serve`    | Web UI for decoding and validating credentials in the browser |
 | `decode`   | Auto-detect & inspect credentials, OpenID4VCI/VP, and trust lists. May auto-verify issuer metadata when resolvable |
 | `validate` | Verify signatures, check expiry, and check revocation status |
+| `templates` | Manage credential templates (`list`, `show`, `save`, `import`, `delete`) |
 | `dcql`     | Generate a DCQL query from a credential's claims            |
 | `completion` | Generate or install shell completion (`completion install`) |
 | `version`  | Print version                                               |
@@ -161,7 +162,7 @@ When a wallet exposes multiple trust-list profiles, `/api/trustlists` gives you 
 
 → [Full documentation](docs/wallet.md): subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
 → [Public demo hosting](docs/public-demo.md): run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
-→ [Flow diagrams](docs/diagrams/README.md): GitHub-rendered OID4VP / OID4VCI interaction diagrams and parameter checklists
+→ [Flow diagrams](docs/diagrams/README.md): OID4VP / OID4VCI interaction diagrams and parameter checklists
 
 ---
 
@@ -284,7 +285,7 @@ The wallet evaluates `credential_sets` constraints when processing DCQL queries,
 
 | Format | Description |
 |--------|-------------|
-| **SD-JWT** (`dc+sd-jwt`) | Header/payload, disclosures, `_sd` resolution, key binding JWT. Signature: ES256/384/512, RS256/384/512, PS256 |
+| **SD-JWT** (`dc+sd-jwt`) | Header/payload, disclosures, `_sd` resolution, key binding JWT. Signature: ES256/384/512, RS256/384/512, PS256/384/512 |
 | **JWT VC** (`jwt_vc_json`) | Plain JWT Verifiable Credentials (W3C JWT VC format). Presented as-is without selective disclosure |
 | **mDOC** (`mso_mdoc`) | CBOR IssuerSigned & DeviceResponse (hex/base64url), COSE_Sign1 issuerAuth, MSO |
 | **OpenID4VCI / VP** | Credential offers, authorization requests, URI schemes (`openid-credential-offer://`, `haip-vci://`, `openid4vp://`, `haip-vp://`, `eudi-openid4vp://`) |

@@ -9,7 +9,7 @@
 
 ```bash
 git clone https://github.com/dominikschlosser/eudi-dev.git
-cd oid4vc-dev
+cd eudi-dev
 go build ./...
 go test ./...
 ```
@@ -50,7 +50,7 @@ unavailable.
 ## Code Style
 
 - Run `go vet ./...` before committing
-- CI runs `golangci-lint` (errcheck, gofmt, goimports, govet, staticcheck)
+- CI runs `golangci-lint` (errcheck, errorlint, gosec, govet, staticcheck, unused, plus gofmt and goimports as formatters)
 - Imports: stdlib first, then external deps, then internal packages (enforced by goimports)
 - Use `internal/jsonutil` for type assertions on `map[string]any` instead of inline casts
 - Constants (ports, timeouts) go in `internal/config/defaults.go`

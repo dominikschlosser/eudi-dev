@@ -1,6 +1,6 @@
 # Flow Diagrams
 
-GitHub renders the diagrams in this section directly from Mermaid source, so the pages stay reviewable in plain text and do not depend on generated image assets.
+The diagrams in this section are written as Mermaid source, so the pages stay reviewable in plain text and do not depend on generated image assets.
 
 These diagrams intentionally treat `eudi-dev` as a single actor. They show the external interaction pattern and the request parameters or wallet flags that change behavior, not the internal package structure.
 
@@ -48,6 +48,8 @@ sequenceDiagram
         Wallet->>AS: token request with pre-authorized_code
     else authorization code
         Wallet->>AS: PAR, authorization, token request
+    else authorization challenge endpoint published (1.1)
+        Wallet->>AS: challenge request, answered by a presentation or a browser sign-in, then token request
     end
     Wallet->>Issuer: credential request with proofs.jwt
     opt transaction_id returned

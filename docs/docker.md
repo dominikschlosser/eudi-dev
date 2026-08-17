@@ -46,12 +46,12 @@ Without a volume the state is ephemeral: removing the container discards the key
 | `/api/trustlist` | GET | Legacy trust-list endpoint. Returns the PID trust list when one is registered, otherwise the first available trust-list profile |
 | `/api/trustlists` | GET | JSON index of all coherent trust-list profiles registered in the wallet. Each entry includes a relative `path` plus optional `advertised_url` / legacy `url` |
 | `/api/trustlists/<id>` | GET | ETSI trust list JWT for one specific trust-list profile |
-| `https://<wallet>:8086/.well-known/openid-credential-issuer` | GET | Signed OpenID Credential Issuer metadata (`application/openidvci-issuer-metadata+jwt`) with `issuer_info` / `registrar_dataset` authorization data |
+| `https://<wallet>:8086/.well-known/openid-credential-issuer` | GET | OpenID Credential Issuer metadata with `issuer_info` / `registrar_dataset` authorization data. JSON by default, the signed JWT form (`application/jwt`) when the Accept header asks for only that |
 | `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs. Exposes the signing key by `kid` and leaf `x5c` chain |
 | `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`. Supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
 | `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
-| `/api/statuslist` | GET | Status List Token on both HTTP and HTTPS (available when PID generation or `--status-list` is enabled). JWT by default, CWT for a client sending `Accept: application/statuslist+cwt` |
+| `/api/statuslist` | GET | Status List Token on both HTTP and HTTPS. JWT by default, CWT for a client sending `Accept: application/statuslist+cwt` (`--status-list` only controls whether generated credentials reference the list) |
 | `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage [credential templates](templates.md) |
 | `/api/next-error` | POST/DELETE | Set or clear a one-shot error override |
 | `/api/config/preferred-format` | PUT | Set credential format preference (`dc+sd-jwt` / `mso_mdoc` / `jwt_vc_json` / empty) |
@@ -149,13 +149,13 @@ docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eu
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
 
-Alternatively generate customized PIDs into a mounted wallet directory first (`wallet generate-pid` is deprecated, use the template based issuance):
+Alternatively generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/`, so the shared CA persists alongside the credentials (`wallet generate-pid` is deprecated, use the template based issuance):
 
 ```bash
-docker run --rm -v wallet-data:/root/.eudi-dev/wallet ghcr.io/dominikschlosser/eudi-dev \
+docker run --rm -v wallet-data:/home/app/.eudi-dev ghcr.io/dominikschlosser/eudi-dev \
   issue sdjwt --wallet --template german-pid-sdjwt --claims '{"given_name":"MAX","family_name":"POWER"}'
 
-docker run -p 8085:8085 -v wallet-data:/root/.eudi-dev/wallet ghcr.io/dominikschlosser/eudi-dev \
+docker run -p 8085:8085 -v wallet-data:/home/app/.eudi-dev ghcr.io/dominikschlosser/eudi-dev \
   wallet serve --auto-accept --port 8085
 ```
 

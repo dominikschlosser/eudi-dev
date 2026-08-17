@@ -14,7 +14,7 @@ eudi wallet serve --demo --base-url https://eudi-test.dev \
 
 1. It implies `--pid`, so the server runs headless with a known credential baseline. The baseline comes from the pre-defined PID templates through the ordinary template resolution, so a user template saved under the same name (or a `--templates-dir`) decides what the demo seeds and what every reset restores. Browser flows keep interactive consent (visitors approve offer and authorize links in the wallet UI). API submissions auto-accept, so the demo stays a reliable counterparty for external issuers, verifiers, and CLI clients.
    A consent dialog opens only in the browser tab that started the flow: the tab a request redirected to (`/?request=<id>`), or the tab the OS scheme handler opened for a dispatched `openid4vp://` link (marked `consent=await`, valid once and for 90 seconds). Other tabs show a "N requests are waiting for consent" bar with a Review button, so no tab gets hijacked and requests stay reachable.
-2. It disables the admin endpoints. `POST /api/shutdown`, `PUT/DELETE /api/templates/{name}`, `POST/DELETE /api/next-error` and `PUT /api/config/preferred-format` return 403. Saving templates through `POST /api/issue` is rejected too. `GET /api/config` stops reporting host paths and the process id.
+2. It disables the admin endpoints. `POST /api/shutdown`, `PUT/DELETE /api/templates/{name}`, `POST/DELETE /api/next-error`, `PUT /api/config/preferred-format`, `PUT /api/config/auto-accept`, `PUT/DELETE /api/config/conformance` and `DELETE /api/log` / `/api/error` return 403. Saving templates through `POST /api/issue` is rejected too. `GET /api/config` stops reporting host paths and the process id.
 3. It blocks outbound requests to internal networks. Visitor supplied URLs (credential offers, `request_uri`, trust lists, status lists) are still fetched from the public internet. Connections to loopback, RFC 1918, link local (including cloud metadata endpoints), CGNAT and unique local addresses are refused at dial time. The check runs on resolved IP addresses, so DNS tricks do not bypass it. The wallet's own advertised origins are exempt by exact address and port, so it can fetch a `request_uri` or post to a `response_uri` of its own demo verifier. A visitor-supplied URL that merely points at loopback is still refused.
 4. It checks the EUDI profile in debug mode. `--haip` holds incoming presentations to HAIP 1.0: `response_type=vp_token`, a signed request object delivered through `request_uri` with an `x509_hash:` client id whose value is the SHA-256 of the signing certificate, `direct_post.jwt` or `dc_api.jwt`, DCQL asking only for `mso_mdoc` or `dc+sd-jwt`, both `A128GCM` and `A256GCM` in the verifier's `encrypted_response_enc_values_supported`, and ES256. An unsigned request is accepted over the Digital Credentials API alone. There it carries no `client_id` at all and the platform-reported origin identifies the caller. Issuance is checked too: an offer that drives the authorization endpoint must find an authorization server that supports the authorization code flow, offers a pushed authorization request endpoint, and does not advertise PKCE without `S256` or DPoP without `ES256`. A pre-authorized code offer is not rejected for its grant type. **In debug mode a broken rule produces a warning in the activity log and the flow continues**, so the demo stays usable against non-conforming issuers and verifiers. That includes an issuer that requires HAIP of the wallet but offers only unauthenticated access at its token endpoint: the wallet notes the violation and proceeds without client authentication. When self-hosting, `--mode strict` refuses violations and `--haip=false` drops the profile checks. The built-in demo verifier and issuer are themselves HAIP-compliant. The active settings are visible, read-only, under **Conformance** in the wallet UI header. Only a locally-hosted wallet can change them.
 5. It resets the wallet periodically. `--demo-reset` takes an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables it. A wall-clock schedule fires at the same local time every day (no drift across restarts, DST followed). Resets restore the clean baseline (fresh PID credentials, empty activity log). Keys, certificates and URLs survive, so trust list and status list URLs stay stable. The UI footer shows the schedule.
@@ -35,7 +35,7 @@ The wallet UI pages the credential list (ten per page). A demo with hundreds of 
 
 The demo seeds four PID credentials: the country-independent EUDI PID (`urn:eudi:pid:1`) and the German PID that extends it (`urn:eudi:pid:de:1`), each as an SD-JWT VC and an mdoc. The two carry different attributes, each following its own rulebook.
 
-The verifier page has a button for each. The PID request (`#request-pid`) names `urn:eudi:pid:1`, which both credentials answer, and the wallet presents one of them. The German PID request (`#request-pid-de`) names `urn:eudi:pid:de:1`, which the German credential answers. This is [credential type inheritance](wallet.md#credential-type-inheritance) in both directions.
+The verifier page offers both through its credential toggle. The PID request names `urn:eudi:pid:1`, which both credentials answer, and the wallet presents one of them. The German PID request names `urn:eudi:pid:de:1`, which the German credential answers. This is [credential type inheritance](wallet.md#credential-type-inheritance) in both directions.
 
 `POST /verifier/api/requests` takes the type as `vct`, and accepts any type in `urn:eudi:pid:` (`urn:eudi:pid:fr:1` works the same). A request naming a domestic type is SD-JWT VC only, since every PID shares the mdoc doctype `eu.europa.ec.eudi.pid.1`.
 
@@ -59,13 +59,13 @@ With an https base URL the issuer URL equals the base URL. Status list URIs, `is
 
 ## Client identity for authorization-code issuance
 
-External issuers should be able to use the demo as a wallet, and HAIP issuance runs the authorization code flow. That flow needs both `--vci-client-id` and `--vci-redirect-uri`. Without them the wallet rejects the offer before the pushed authorization request and the issuer never sees a wallet attestation. The example deployment uses the demo origin as the client id and the wallet's own callback endpoint as the redirect URI:
+External issuers should be able to use the demo as a wallet, and HAIP issuance runs the authorization code flow. That flow needs a client id and a redirect URI, which default to the wallet's own origin and its `/callback` endpoint. The example deployment sets them explicitly to the demo origin:
 
 ```
 --vci-client-id https://eudi-test.dev --vci-redirect-uri https://eudi-test.dev/callback
 ```
 
-Issuers that require registration should register exactly those two values. Pre-authorized code offers work without either flag and carry no client attestation.
+Issuers that require registration should register exactly those two values. Pre-authorized code offers work without either flag (an attestation is still sent where the issuer's metadata asks for one).
 
 Both flags default to the wallet's own origin (`--base-url`, plus `/callback`), so an authorization code offer works without configuration. Pass them explicitly when an issuer registered you under a different client id.
 
@@ -142,7 +142,7 @@ ENV
 
 ## Usage statistics
 
-The compose example ships an optional usage report that shows whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every five minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, the report sets no cookies, and no third party is involved.
+The compose example ships an optional usage report that shows whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every two minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, the report sets no cookies, and no third party is involved.
 
 ```bash
 ./deploy.sh stats-password   # writes stats.env with a bcrypt hash (gitignored)
@@ -170,7 +170,7 @@ Nothing here grows without bound:
 - Run exactly one replica. The wallet store is a single-writer file.
 - Do not set `HTTP_PROXY`/`HTTPS_PROXY` in the container. A proxy would carry the requests and bypass the dial time network checks.
 - Self-fetches of the public origin (for example a pasted offer pointing at the demo itself) resolve through public DNS. On typical cloud hosts hairpin NAT makes this work. Do not add a compose network alias for the public hostname (it would resolve to a private address and be blocked).
-- Consider rate limiting in the proxy. The compose example includes a commented Caddy snippet.
+- Keep the rate limiting in the proxy. The compose example's Caddyfile ships active `rate_limit` zones (described above).
 
 ## Pointing the CLI at the demo
 

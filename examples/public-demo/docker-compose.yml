@@ -59,9 +59,9 @@ services:
       - "8085"
       - --base-url
       - https://eudi-test.dev
-      # Client identity for OID4VCI authorization-code offers. Without both,
-      # such an offer fails before PAR, so an external HAIP issuer never gets
-      # to see the wallet attestation the demo would send.
+      # Client identity for OID4VCI authorization-code offers. Both default
+      # to the wallet origin and its /callback; set explicitly so issuers
+      # that registered the demo see the same values every deployment.
       - --vci-client-id
       - https://eudi-test.dev
       - --vci-redirect-uri

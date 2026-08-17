@@ -17,7 +17,7 @@ Command used:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.1 \
+OIDF_SUITE_TAG=release-v5.2.2 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
@@ -82,7 +82,7 @@ Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet
 - `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet sends 2 proofs with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
   The 5 mdoc variants are `SKIPPED`. Those plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations, and there the wallet sends a single proof, which the module skips as "batch behavior cannot be evaluated". Appendix F.1 and F.3 both put the batch count on the attestation rather than the proofs, so where an attestation is required the request holds one proof and the issuer issues for each key in `attested_keys`. The suite's credential builder counts `proof_jwts` for the `jwt` proof type and reads `attested_keys` only for the `attestation` proof type, so this module expects a shape an issuer applying those appendices answers `invalid_proof` to.
-- `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 7, 8, 9, 10).
+- `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 9, 10, 11, 12).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet now strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, while continuing to preserve the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
 
@@ -115,9 +115,9 @@ Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screen
 
 ## Passing VCI Coverage
 
-- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass, including the batch credential issuance module.
-- VCI Final SD-JWT and mDoc pre-authorized code flows pass, including batch issuance and the notification endpoint.
-- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
+- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass. The SD-JWT plan includes the batch credential issuance module (the mdoc batch modules are the deliberate skips described above).
+- VCI Final SD-JWT and mDoc pre-authorized code flows pass, including the notification endpoint and, for SD-JWT, batch issuance.
+- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for SD-JWT.
 - Strict mode rejects issuer mismatch in authorization server metadata, invalid authorization-response `iss`, removed authorization-response `iss`, invalid `state`, and missing `state`.
 
 ## Debug Mode Reference Run
@@ -147,8 +147,8 @@ Current `no-claims-in-dcql-query` status:
 
 - VP Final SD-JWT `no-claims-in-dcql-query` passes for plans 1, 2, and 3.
 - VP Final mDoc `no-claims-in-dcql-query` passes for plan 4.
-- VP HAIP SD-JWT `no-claims-in-dcql-query` passes for plans 7 and 9.
-- VP HAIP mDoc `no-claims-in-dcql-query` passes for plans 8 and 10.
+- VP HAIP SD-JWT `no-claims-in-dcql-query` passes for plans 9 and 11.
+- VP HAIP mDoc `no-claims-in-dcql-query` passes for plans 10 and 12.
 
 ## Visual Evidence
 

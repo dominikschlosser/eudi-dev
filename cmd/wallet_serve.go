@@ -105,7 +105,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.KeyPath, "key", "", "Holder private key file (PEM/JWK); uses stored key or auto-generates")
 	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
 	cmd.Flags().StringVar(&opts.SessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
-	cmd.Flags().BoolVar(&opts.Register, "register", false, "Register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)")
+	cmd.Flags().BoolVar(&opts.Register, "register", false, "Register OS URL scheme handlers (openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)")
 	cmd.Flags().BoolVar(&opts.NoRegister, "no-register", false, "Skip URL scheme registration (overrides --register)")
 	cmd.Flags().BoolVar(&opts.StatusList, "status-list", false, "Embed status list references in generated credentials")
 	cmd.Flags().StringVar(&opts.BaseURL, "base-url", "", "Base URL for the wallet's HTTP endpoints; its host is also reused for HTTPS wallet endpoints")

@@ -28,7 +28,7 @@ examples/      Keycloak and web-wallet integration examples
 | `imprint` | Operator-supplied legal notice page |
 | `jsonutil` | Type-safe accessors for `map[string]any` |
 | `jwe` | Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM) |
-| `jws` | ES256 JWS signing and verification, shared so neither can drift (ADR-0008) |
+| `jws` | JWS signing (ES256) and verification (ES, RS and PS families), shared so neither can drift (ADR-0008) |
 | `keys` | PEM and JWK key loading and conversion |
 | `mdoc` | mdoc parsing (CBOR) and COSE_Sign1 verification |
 | `mock` | Test credential generators |
@@ -52,7 +52,7 @@ Described in domain terms rather than function names, which go stale.
 
 **Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, which may itself be fetched by reference and encrypted. A request object replaces the parameter set rather than being merged into it, so what the verifier signed is what the wallet acts on. The request is validated (client identifier, request object, signature, required parameters) with the findings handled by the active validation mode (ADR-0001), optionally checked against HAIP, whose violations are errors either way, and then matched against held credentials with DCQL, where a requested type is answered by a credential of that type or of one extending it. The user consents or the wallet auto-accepts, a VP token is built (SD-JWT with a key binding JWT, or an mdoc DeviceResponse), and the response goes to the verifier, encrypted when the response mode asks for it.
 
-**Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata, then runs either the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata demands). It proves possession of its holder key, receives the credential, and imports it. An issuer that defers hands back a transaction id, and collection continues in the background.
+**Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata, then runs either the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata demands). At OpenID4VCI feature level 1.1, an issuer publishing an authorization challenge endpoint gets the interactive flow instead: the wallet answers the challenge with an OpenID4VP presentation or hands the user to a browser sign-in (`auth_via_web`) and exchanges the resulting code as usual. It proves possession of its holder key, receives the credential, and imports it. An issuer that defers hands back a transaction id, and collection continues in the background.
 
 **Proxy.** The wallet talks to a verifier or issuer through the proxy, which classifies each exchange as an OID4VP or OID4VCI step and shows it on a dashboard.
 

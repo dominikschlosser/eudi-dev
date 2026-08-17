@@ -88,7 +88,7 @@ This works via a debug header. The wallet puts the AES content encryption key (C
 No configuration is needed. Route the wallet through the proxy:
 
 ```
-eudi wallet                          # wallet sends to response_uri
+eudi wallet serve                    # wallet sends to response_uri
 eudi proxy --target http://verifier  # proxy intercepts, decrypts, forwards
 ```
 

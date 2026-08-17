@@ -13,8 +13,8 @@ The harness targets a local OpenID Foundation conformance-suite server by defaul
 
 Current local status:
 
-- VCI Final SD-JWT and mDoc wallet plans pass in strict mode, including the release-v5.2.1 batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key).
-- VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, batch issuance, FAPI happy-path modules, and FAPI negative authorization-response modules.
+- VCI Final SD-JWT and mDoc wallet plans pass in strict mode. The SD-JWT plans include the release-v5.2.1 batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key). The mdoc batch modules are skipped deliberately under the single-proof rule of the key attestation appendices (see [conformance results](conformance-results.md)).
+- VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for SD-JWT (the mdoc batch modules are the same deliberate skips).
 - VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the release-v5.2.1 unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` count as pass-equivalent for the local harness when the runner reports zero condition failures.
 - The wrapper passes explicit VP module lists per generated variant. Suite-side not-applicable or broken modules then appear as documented exclusions instead of red result boxes.
 
@@ -45,6 +45,8 @@ The default run covers these Final and HAIP scenarios:
 - VP HAIP: mDoc `dc_api.jwt`, covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules
 - VCI Final: SD-JWT authorization-code issuer-initiated flow with client attestation and DPoP
 - VCI Final: mDoc authorization-code issuer-initiated flow with client attestation and DPoP
+- VCI Final: SD-JWT pre-authorized code flow
+- VCI Final: mDoc pre-authorized code flow
 - VCI HAIP: SD-JWT, covering immediate plain, deferred plain, and immediate encrypted responses
 - VCI HAIP: mDoc, covering immediate plain, deferred plain, and immediate encrypted responses
 

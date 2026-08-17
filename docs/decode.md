@@ -94,7 +94,7 @@ SD-JWT Credential
   [3] birth_date: 1984-08-12
 ```
 
-`decode` is an inspection tool. It still verifies JWT or SD-JWT signatures automatically when issuer metadata can be resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
+`decode` is an inspection tool. It still verifies JWT or SD-JWT signatures automatically, against the embedded `x5c` certificate when the credential carries one, otherwise against issuer metadata resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
 
 An SD-JWT that breaks an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is still printed. The violated rule is named above the output. A decoder exists to show broken credentials. Anything that decides trust, including the wallet's import path, rejects such a credential instead.
 
