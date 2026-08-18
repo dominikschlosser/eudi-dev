@@ -279,6 +279,9 @@ type ConsentRequest struct {
 	// request, read from the registration certificates in verifier_info and
 	// shown in the consent dialog.
 	Purposes []string `json:"purposes,omitempty"`
+	// CredentialOptions are the alternatives the consent dialog can offer
+	// in its Edit view. MatchedCreds stays the auto-selection.
+	CredentialOptions *ConsentCredentialOptions `json:"credential_options,omitempty"`
 }
 
 // CredentialMatch links a credential to a DCQL query credential ID.
@@ -292,10 +295,47 @@ type CredentialMatch struct {
 	SelectedKeys []string       `json:"selected_keys"` // exact claim selectors to disclose
 }
 
+// ConsentCredentialOptions carries every way the wallet could answer a
+// presentation request, for the consent dialog's Edit view. The first
+// satisfiable option of every set and the first candidate of every query are
+// the wallet's own choice, so an approval that changes nothing presents
+// exactly what auto-accept would have presented.
+type ConsentCredentialOptions struct {
+	// Sets mirrors the request's credential_sets: one entry per set the
+	// wallet can satisfy, holding its satisfiable options in the order the
+	// wallet prefers them. Empty for a request without credential_sets,
+	// where every query below is required.
+	Sets []ConsentSetOptions `json:"sets,omitempty"`
+	// Queries holds the matching credentials per credential query id.
+	Queries []ConsentQueryOptions `json:"queries"`
+}
+
+// ConsentSetOptions is one credential_sets entry as the consent dialog
+// offers it.
+type ConsentSetOptions struct {
+	// Options are the satisfiable options, each a list of credential query
+	// ids that answer the set together.
+	Options [][]string `json:"options"`
+	// Optional marks a set the user may skip entirely (required: false).
+	Optional bool `json:"optional,omitempty"`
+}
+
+// ConsentQueryOptions lists the credentials that match one credential query.
+type ConsentQueryOptions struct {
+	ID         string            `json:"id"`
+	Candidates []CredentialMatch `json:"candidates"`
+}
+
 // ConsentResult is returned by the consent flow.
 type ConsentResult struct {
 	Approved       bool
 	SelectedClaims map[string][]string // credential ID → claim names
+	// Picks names the credential that answers a query id, chosen in the
+	// consent dialog. A query without an entry keeps the wallet's choice.
+	Picks map[string]string
+	// SetChoices holds the chosen option index per consent set, -1 skipping
+	// an optional set. A missing entry keeps the wallet's choice.
+	SetChoices []int
 	// TxCode is the transaction code the user typed for an issuance offer
 	// that requires one. It arrives with the approval because the offer is
 	// what says a code is needed, and the user only sees that in the dialog.
@@ -1009,6 +1049,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if len(r.Purposes) > 0 {
 		m["purposes"] = r.Purposes
+	}
+	if r.CredentialOptions != nil {
+		m["credential_options"] = r.CredentialOptions
 	}
 	if len(r.OfferConfigs) > 0 {
 		m["offer_configs"] = r.OfferConfigs

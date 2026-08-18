@@ -396,7 +396,7 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		InteractiveAuthorizationEndpoint: endpoint,
 	}
 
-	matches := w.EvaluateDCQL(authReq.DCQLQuery)
+	matches, credentialOptions := w.EvaluateDCQLWithOptions(authReq.DCQLQuery)
 	if len(matches) == 0 {
 		// §6.2.1.1: openid4vp_response "in the case of an error instead
 		// encodes the Authorization Error Response parameters", which tells
@@ -404,7 +404,7 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		return w.interactionErrorResponse(params, "access_denied", "no credential in this wallet satisfies the request")
 	}
 
-	approved, err := w.awaitInteractivePresentationConsent(endpoint, authReq, matches, setup.presentationConsented)
+	matches, approved, err := w.awaitInteractivePresentationConsent(endpoint, authReq, matches, credentialOptions, setup.presentationConsented)
 	if err != nil {
 		return nil, err
 	}
@@ -585,9 +585,9 @@ func derivedOrigin(rawURL string) string {
 // presentation the issuer made a condition of issuance. It is asked separately
 // from the issuance consent: agreeing to receive a credential is not agreeing
 // to disclose one.
-func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *AuthorizationRequestParams, matches []CredentialMatch, consented bool) (bool, error) {
+func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *AuthorizationRequestParams, matches []CredentialMatch, credentialOptions *ConsentCredentialOptions, consented bool) ([]CredentialMatch, bool, error) {
 	if w.AutoAccept || consented {
-		return true, nil
+		return matches, true, nil
 	}
 
 	// An unsigned request carries no client_id (Appendix A.2), so the party to
@@ -612,27 +612,32 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		Nonce:        authReq.Nonce,
 		DCQLQuery:    authReq.DCQLQuery,
 		Purposes:     w.consentPurposes("issuance", authReq),
+
+		CredentialOptions: credentialOptions,
 	}
 	w.CreateConsentRequest(consentReq)
 
 	select {
 	case result := <-consentReq.ResultCh:
-		if result.Approved && result.SelectedClaims != nil {
-			for i, match := range matches {
-				if selected, ok := result.SelectedClaims[match.CredentialID]; ok {
-					matches[i].SelectedKeys = selected
-					cred, _ := w.GetCredential(match.CredentialID)
-					matches[i].Claims = filterClaims(cred, selected)
+		if result.Approved {
+			matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
+			if result.SelectedClaims != nil {
+				for i, match := range matches {
+					if selected, ok := result.SelectedClaims[match.CredentialID]; ok {
+						matches[i].SelectedKeys = selected
+						cred, _ := w.GetCredential(match.CredentialID)
+						matches[i].Claims = filterClaims(cred, selected)
+					}
 				}
 			}
 		}
 		// The approve endpoint waits for this before answering the UI.
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: 200}
-		return result.Approved, nil
+		return matches, result.Approved, nil
 	case <-time.After(interactiveAuthorizationConsentTimeout):
 		consentReq.Status = "denied"
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
-		return false, fmt.Errorf("no answer to the presentation the issuer asked for")
+		return matches, false, fmt.Errorf("no answer to the presentation the issuer asked for")
 	}
 }
 

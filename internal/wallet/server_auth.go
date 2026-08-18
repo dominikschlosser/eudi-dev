@@ -247,8 +247,9 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	// Evaluate DCQL query
 	var matches []CredentialMatch
+	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches = s.wallet.EvaluateDCQL(authReq.DCQLQuery)
+		matches, credentialOptions = s.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
 	}
 
 	s.log("  Matched:       %d credential(s)", len(matches))
@@ -302,6 +303,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
 		Purposes:     s.wallet.consentPurposes("presentation", authReq),
+
+		CredentialOptions: credentialOptions,
 	}
 
 	s.wallet.CreateConsentRequest(consentReq)
@@ -339,6 +342,10 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 		}
 
 		s.log("  Consent:       approved")
+
+		// The user may have chosen a different set option or credential in
+		// the dialog. Without overrides this keeps the auto-selection.
+		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 
 		// Apply user's claim selections if provided
 		if result.SelectedClaims != nil {

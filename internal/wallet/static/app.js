@@ -1496,51 +1496,237 @@
     consentOverlay.classList.add('active');
 
     const isIssuance = req.type === 'issuance';
-    const issuerName = isIssuance && req.offer_details ? req.offer_details.issuer_name : '';
-    let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
-      '<div class="consent-verifier">' + (isIssuance ? 'Issuer: ' : 'Verifier: ') +
-      escHtml(issuerName || req.client_id) + '</div>' +
-      (issuerName ? '<div class="offer-type" id="offer-issuer-origin">' + escHtml(req.client_id) + '</div>' : '');
 
-    // The purposes the verifier registered for this data request, read by the
-    // wallet from the registration certificates in verifier_info (OpenID4VP
-    // 1.0 section 5.1) and shown with the request they explain.
-    if (!isIssuance && req.purposes) {
-      req.purposes.forEach((text, idx) => {
-        html += '<div class="consent-purpose" id="consent-purpose-' + idx + '">' +
-          '<span class="consent-purpose-label">Purpose</span>' + escHtml(text) + '</div>';
+    // The alternatives the request offers: per set its satisfiable options,
+    // per query id its matching credentials. The selection starts on the
+    // wallet's own choice (option 0, first candidate, every claim), so an
+    // untouched Approve behaves exactly like before.
+    const options = !isIssuance && req.credential_options &&
+      (req.credential_options.queries || []).length > 0 ? req.credential_options : null;
+    const selection = { editing: false, setChoices: [], picks: {}, claims: {} };
+    let submitting = false;
+    if (options) {
+      selection.setChoices = (options.sets || []).map(() => 0);
+      options.queries.forEach(q => {
+        selection.picks[q.id] = q.candidates[0].credential_id;
+        q.candidates.forEach(c => {
+          // Merged, not replaced: a credential answering two queries keeps
+          // one disclosure state, which is also how the approval applies it.
+          const kept = selection.claims[c.credential_id] || [];
+          Object.keys(c.claims || {}).forEach(key => {
+            if (!kept.includes(key)) kept.push(key);
+          });
+          selection.claims[c.credential_id] = kept;
+        });
       });
     }
+
+    function queryById(id) { return options.queries.find(q => q.id === id); }
+    function activeQueryIds() {
+      if (!options.sets || options.sets.length === 0) return options.queries.map(q => q.id);
+      const ids = [];
+      options.sets.forEach((set, i) => {
+        const choice = selection.setChoices[i];
+        if (choice === -1) return;
+        (set.options[choice] || []).forEach(id => { if (!ids.includes(id)) ids.push(id); });
+      });
+      return ids;
+    }
+    function activeCandidate(qid) {
+      const q = queryById(qid);
+      return q.candidates.find(c => c.credential_id === selection.picks[qid]) || q.candidates[0];
+    }
+    function hasAlternatives() {
+      if (!options) return false;
+      if ((options.sets || []).some(s => s.options.length > 1 || s.optional)) return true;
+      return options.queries.some(q => q.candidates.length > 1);
+    }
+    function alternativeCount() {
+      let n = 0;
+      (options.sets || []).forEach(s => { n += s.options.length - 1 + (s.optional ? 1 : 0); });
+      options.queries.forEach(q => { n += q.candidates.length - 1; });
+      return n;
+    }
+    function isAutoSelection() {
+      return selection.setChoices.every(c => c === 0) &&
+        options.queries.every(q => selection.picks[q.id] === q.candidates[0].credential_id);
+    }
+    function formatBadgeHtml(mc) {
+      const formatClass = mc.format === 'dc+sd-jwt' ? 'format-sdjwt' : mc.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
+      const formatLabel = mc.format === 'dc+sd-jwt' ? 'SD-JWT' : mc.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
+      return '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>';
+    }
+
+    function headerHtml() {
+      const issuerName = isIssuance && req.offer_details ? req.offer_details.issuer_name : '';
+      let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
+        '<div class="consent-verifier">' + (isIssuance ? 'Issuer: ' : 'Verifier: ') +
+        escHtml(issuerName || req.client_id) + '</div>' +
+        (issuerName ? '<div class="offer-type" id="offer-issuer-origin">' + escHtml(req.client_id) + '</div>' : '');
+
+      // The purposes the verifier registered for this data request, read by the
+      // wallet from the registration certificates in verifier_info (OpenID4VP
+      // 1.0 section 5.1) and shown with the request they explain.
+      if (!isIssuance && req.purposes) {
+        req.purposes.forEach((text, idx) => {
+          html += '<div class="consent-purpose" id="consent-purpose-' + idx + '">' +
+            '<span class="consent-purpose-label">Purpose</span>' + escHtml(text) + '</div>';
+        });
+      }
+      return html;
+    }
+
+    function credentialCardHtml(mc) {
+      const typeLabel = mc.vct || mc.doctype || mc.format;
+      let html = '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
+        '<div class="consent-credential-header">' +
+          formatBadgeHtml(mc) +
+          '<span style="font-size:12px;font-weight:600;">' + escHtml(typeLabel) + '</span>' +
+        '</div>' +
+        '<div class="consent-claims">';
+
+      const claims = mc.claims || {};
+      const kept = options ? selection.claims[mc.credential_id] : null;
+      Object.keys(claims).forEach(key => {
+        const val = typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]);
+        const checked = kept ? kept.includes(key) : true;
+        html += '<label class="consent-claim">' +
+          '<input type="checkbox"' + (checked ? ' checked' : '') + ' data-cred="' + mc.credential_id + '" data-claim="' + escHtml(key) + '">' +
+          '<span class="consent-claim-name">' + escHtml(key) + '</span>' +
+          '<span class="consent-claim-value">' + escHtml(val) + '</span>' +
+        '</label>';
+      });
+
+      return html + '</div></div>';
+    }
+
+    // The Edit view: the set options and, per query id of the chosen
+    // options, the matching credentials. Changes apply immediately, Done
+    // returns to the summary, and the bottom buttons stay the dialog's own
+    // Deny/Approve on both screens.
+    function editScreenHtml() {
+      let html = headerHtml() +
+        '<div class="consent-selection-row">Selection' +
+        (isAutoSelection() ? '' : '<button class="link-btn" id="consent-selection-reset">reset to auto</button>') +
+        '<button class="btn" id="consent-selection-done">Done</button></div>';
+
+      (options.sets || []).forEach((set, i) => {
+        if (set.options.length === 1 && !set.optional) return;
+        html += '<div class="consent-sets" id="consent-set-' + i + '" data-set="' + i + '"><span class="consent-section-label">The verifier accepts one of</span>';
+        set.options.forEach((opt, j) => {
+          html += '<label class="consent-set-option">' +
+            '<input type="radio" id="consent-set-' + i + '-option-' + j + '" name="consent-set-' + i + '" value="' + j + '"' + (selection.setChoices[i] === j ? ' checked' : '') + '>' +
+            opt.map(id => '<span class="query-chip">' + escHtml(id) + '</span>').join(' + ') +
+            (j === 0 ? ' <span class="auto-chip">auto</span>' : '') +
+          '</label>';
+        });
+        if (set.optional) {
+          // A presentation carries at least one credential, so the last
+          // answered set cannot also be skipped.
+          const othersAnswered = selection.setChoices.some((c, j) => j !== i && c !== -1);
+          html += '<label class="consent-set-option">' +
+            '<input type="radio" id="consent-set-' + i + '-none" name="consent-set-' + i + '" value="-1"' +
+            (selection.setChoices[i] === -1 ? ' checked' : '') +
+            (othersAnswered ? '' : ' disabled') +
+            '><span class="query-chip">none</span></label>';
+        }
+        html += '</div>';
+      });
+
+      activeQueryIds().forEach(qid => {
+        const q = queryById(qid);
+        html += '<div class="consent-credential" id="consent-query-' + escHtml(qid) + '" data-query-id="' + escHtml(qid) + '" role="radiogroup" aria-label="Credential answering ' + escHtml(qid) + '">' +
+          '<div class="consent-credential-header">' +
+            '<span class="query-id-label">' + escHtml(qid) + '</span>' +
+            '<span class="candidate-count">' + q.candidates.length +
+              (q.candidates.length === 1 ? ' credential matches' : ' of your credentials match') + '</span>' +
+          '</div>';
+        q.candidates.forEach((c, i) => {
+          const picked = selection.picks[qid] === c.credential_id;
+          html += '<div class="candidate' + (picked ? ' selected' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '" tabindex="0" role="radio" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
+            '<div class="candidate-row">' +
+              '<input type="radio" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
+              formatBadgeHtml(c) +
+              '<span class="candidate-type">' + escHtml(c.vct || c.doctype || c.format) + '</span>' +
+              (i === 0 ? '<span class="auto-chip">auto</span>' : '') +
+            '</div></div>';
+        });
+        html += '</div>';
+      });
+
+      return html;
+    }
+
+    function wireSelectionHandlers() {
+      const edit = document.getElementById('consent-edit-selection');
+      if (edit) edit.addEventListener('click', () => { selection.editing = true; renderDialog(); });
+      const done = document.getElementById('consent-selection-done');
+      if (done) done.addEventListener('click', () => { selection.editing = false; renderDialog(); });
+      const reset = document.getElementById('consent-selection-reset');
+      if (reset) reset.addEventListener('click', () => {
+        selection.setChoices = (options.sets || []).map(() => 0);
+        options.queries.forEach(q => { selection.picks[q.id] = q.candidates[0].credential_id; });
+        renderDialog();
+      });
+      consentDialog.querySelectorAll('.consent-sets input[type="radio"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+          const setIdx = Number(radio.closest('.consent-sets').dataset.set);
+          selection.setChoices[setIdx] = Number(radio.value);
+          renderDialog();
+        });
+      });
+      consentDialog.querySelectorAll('.candidate').forEach(el => {
+        const choose = () => {
+          if (selection.picks[el.dataset.query] !== el.dataset.cred) {
+            selection.picks[el.dataset.query] = el.dataset.cred;
+            renderDialog();
+          }
+        };
+        el.addEventListener('click', choose);
+        el.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
+        });
+      });
+      if (options) {
+        consentDialog.querySelectorAll('.consent-claim input[type="checkbox"]').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const kept = selection.claims[cb.dataset.cred];
+            const idx = kept.indexOf(cb.dataset.claim);
+            if (cb.checked && idx < 0) kept.push(cb.dataset.claim);
+            if (!cb.checked && idx >= 0) kept.splice(idx, 1);
+          });
+        });
+      }
+    }
+
+    function renderDialog() {
+    // A submission in flight owns the dialog: re-rendering would put a
+    // fresh, enabled Approve on screen next to it.
+    if (submitting) return;
+    let html = headerHtml();
 
     if (isIssuance) {
       html += renderOfferDetails(req);
     }
 
-    if (!isIssuance && req.matched_credentials && req.matched_credentials.length > 0) {
-      req.matched_credentials.forEach((mc, idx) => {
-        const formatClass = mc.format === 'dc+sd-jwt' ? 'format-sdjwt' : mc.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
-        const formatLabel = mc.format === 'dc+sd-jwt' ? 'SD-JWT' : mc.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
-        const typeLabel = mc.vct || mc.doctype || mc.format;
+    if (!isIssuance && options) {
+      // One quiet row announces the alternatives; the cards below stay
+      // exactly the ones the current selection presents.
+      if (hasAlternatives()) {
+        const n = alternativeCount();
+        html += '<div class="consent-selection-row" id="consent-selection-row">' +
+          (isAutoSelection()
+            ? 'Auto-selected · ' + n + (n === 1 ? ' alternative' : ' alternatives')
+            : 'Your selection (auto-choice changed)') +
+          '<button class="btn" id="consent-edit-selection">Edit</button></div>';
+      }
+      activeQueryIds().forEach(qid => { html += credentialCardHtml(activeCandidate(qid)); });
+    } else if (!isIssuance && req.matched_credentials && req.matched_credentials.length > 0) {
+      req.matched_credentials.forEach(mc => { html += credentialCardHtml(mc); });
+    }
 
-        html += '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
-          '<div class="consent-credential-header">' +
-            '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
-            '<span style="font-size:12px;font-weight:600;">' + escHtml(typeLabel) + '</span>' +
-          '</div>' +
-          '<div class="consent-claims">';
-
-        const claims = mc.claims || {};
-        Object.keys(claims).forEach(key => {
-          const val = typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]);
-          html += '<label class="consent-claim">' +
-            '<input type="checkbox" checked data-cred="' + mc.credential_id + '" data-claim="' + escHtml(key) + '">' +
-            '<span class="consent-claim-name">' + escHtml(key) + '</span>' +
-            '<span class="consent-claim-value">' + escHtml(val) + '</span>' +
-          '</label>';
-        });
-
-        html += '</div></div>';
-      });
+    if (options && selection.editing) {
+      html = editScreenHtml();
     }
 
     html += '<div class="consent-buttons">' +
@@ -1549,6 +1735,7 @@
     '</div>';
 
     consentDialog.innerHTML = html;
+    wireSelectionHandlers();
 
     document.getElementById('consent-approve').addEventListener('click', async () => {
       // Checked here so an empty code fails in the dialog, rather than as an
@@ -1561,19 +1748,29 @@
       }
       if (txCodeField) txCodeField.classList.remove('input-error');
 
-      // Gather selected claims
+      // Gather selected claims: from the tracked selection when the request
+      // offered alternatives (Approve also works from the Edit view, which
+      // renders no claim checkboxes), from the checkboxes otherwise.
       const selected = {};
-      consentDialog.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-        if (cb.checked) {
-          const credId = cb.dataset.cred;
-          const claim = cb.dataset.claim;
-          if (!selected[credId]) selected[credId] = [];
-          selected[credId].push(claim);
-        }
-      });
+      if (options) {
+        activeQueryIds().forEach(qid => {
+          const c = activeCandidate(qid);
+          selected[c.credential_id] = selection.claims[c.credential_id].slice();
+        });
+      } else {
+        consentDialog.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          if (cb.checked) {
+            const credId = cb.dataset.cred;
+            const claim = cb.dataset.claim;
+            if (!selected[credId]) selected[credId] = [];
+            selected[credId].push(claim);
+          }
+        });
+      }
 
       const approveBtn = document.getElementById('consent-approve');
       const denyBtn = document.getElementById('consent-deny');
+      submitting = true;
       approveBtn.disabled = true;
       approveBtn.textContent = 'Submitting...';
       // Approving an issuance is what may lead to an issuer login, so this
@@ -1593,6 +1790,11 @@
         const approveBody = isIssuance
           ? (txCodeInput ? { tx_code: txCodeInput.value.trim() } : {})
           : { selected_claims: selected };
+        if (options) {
+          approveBody.picks = {};
+          activeQueryIds().forEach(qid => { approveBody.picks[qid] = selection.picks[qid]; });
+          approveBody.set_choices = selection.setChoices.slice();
+        }
         const resp = await fetch('/api/requests/' + req.id + '/approve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1623,6 +1825,7 @@
         }
         showSubmissionResult(result);
       } catch (e) {
+        submitting = false;
         console.error('Approve failed:', e);
         showErrorDialog('Approve request failed', e.message);
       }
@@ -1638,6 +1841,9 @@
       consentOverlay.classList.remove('active');
       await loadLog();
     });
+    }
+
+    renderDialog();
   }
 
   // Escapes for both element content and quoted attribute values. The

@@ -807,6 +807,126 @@ header h1 {
   white-space: nowrap;
 }
 
+/* The consent dialog's credential selection: one quiet row on the main
+   screen, the set options and candidate rows on the Edit screen. */
+.consent-selection-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.consent-selection-row .btn {
+  margin-left: auto;
+}
+
+.link-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.consent-sets {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.consent-section-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.consent-set-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  padding: 3px 0;
+}
+
+.consent-set-option input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.query-chip {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.auto-chip {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.query-id-label {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.candidate-count {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+.candidate {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: var(--bg-surface);
+}
+
+.candidate:hover {
+  background: var(--bg-hover);
+}
+
+.candidate.selected {
+  border-color: var(--accent);
+  cursor: default;
+}
+
+.candidate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.candidate-row input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.candidate-type {
+  font-weight: 600;
+  font-size: 11px;
+}
+
 .consent-buttons {
   display: flex;
   gap: 8px;

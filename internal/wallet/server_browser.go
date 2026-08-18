@@ -111,8 +111,9 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	requiresVP := ResponseTypeRequiresVP(authReq.ResponseType)
 
 	var matches []CredentialMatch
+	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
-		matches = reqServer.wallet.EvaluateDCQL(authReq.DCQLQuery)
+		matches, credentialOptions = reqServer.wallet.EvaluateDCQLWithOptions(authReq.DCQLQuery)
 	}
 
 	reqServer.log("  Matched:       %d credential(s)", len(matches))
@@ -149,6 +150,8 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
 		Purposes:     reqServer.wallet.consentPurposes("presentation", authReq),
+
+		CredentialOptions: credentialOptions,
 	}
 
 	reqServer.wallet.CreateConsentRequest(consentReq)
@@ -179,6 +182,8 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			writeJSON(w, http.StatusOK, browserResult)
 			return
 		}
+
+		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 
 		if result.SelectedClaims != nil {
 			for i, m := range matches {

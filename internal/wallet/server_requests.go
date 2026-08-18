@@ -114,6 +114,28 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 // handleApproveRequest approves a consent request and waits for the submission result.
 func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	var body struct {
+		SelectedClaims map[string][]string `json:"selected_claims"`
+		TxCode         string              `json:"tx_code"`
+		// Picks and SetChoices are the credential selection made in the
+		// dialog's Edit view, referencing the request's credential_options.
+		Picks      map[string]string `json:"picks"`
+		SetChoices []int             `json:"set_choices"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+
+	// Checked against the pending request before it is resolved, so a bad
+	// selection leaves the dialog open instead of consuming the consent.
+	if pending, ok := s.wallet.GetRequest(id); ok {
+		if err := ValidateConsentSelection(pending.CredentialOptions, body.Picks, body.SetChoices); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
 	req, ok := s.wallet.ResolveRequest(id, "approved")
 	if !ok {
 		if req == nil {
@@ -124,18 +146,12 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		SelectedClaims map[string][]string `json:"selected_claims"`
-		TxCode         string              `json:"tx_code"`
-	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
-	}
-
 	req.ResultCh <- ConsentResult{
 		Approved:       true,
 		SelectedClaims: body.SelectedClaims,
 		TxCode:         strings.TrimSpace(body.TxCode),
+		Picks:          body.Picks,
+		SetChoices:     body.SetChoices,
 	}
 
 	// Wait for the VP submission to complete so we can return the result to the UI

@@ -34,6 +34,16 @@ import (
 // EvaluateDCQL matches stored credentials against a DCQL query (OID4VP 1.0 Section 6).
 // It returns matched credentials grouped by query credential ID.
 func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
+	matches, _ := w.EvaluateDCQLWithOptions(query)
+	return matches
+}
+
+// EvaluateDCQLWithOptions additionally returns the alternatives the consent
+// dialog can offer: every matching credential per query id, and per
+// credential set the options the wallet can satisfy. The returned matches
+// are the first candidate of each query the first option of each set needs,
+// so approving without edits presents them unchanged.
+func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatch, *ConsentCredentialOptions) {
 	credentials := w.GetCredentials()
 	credQueries, _ := query["credentials"].([]any)
 
@@ -45,7 +55,7 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 		}
 		if w.ValidationMode == ValidationModeStrict {
 			log.Printf("[DCQL] Result: 0 matches (strict mode treats a malformed query as an error)")
-			return nil
+			return nil, nil
 		}
 	}
 
@@ -117,12 +127,18 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 		sortMatchesByPreferredFormat(matches, w.PreferredFormat)
 	}
 
+	// Everything that matched, in preference order: the collapse below keeps
+	// the first entry per query, so per query the first candidate is the
+	// wallet's own choice.
+	candidates := append([]CredentialMatch(nil), matches...)
+
 	matches = keepOnePresentationPerQuery(matches)
 
 	// OID4VP 1.0 §6.4.2: "If credential_sets is not provided, the Verifier
 	// requests presentations for all Credentials in credentials to be
 	// returned."
-	if credSets, ok := query["credential_sets"].([]any); ok && len(credSets) > 0 {
+	credSets, _ := query["credential_sets"].([]any)
+	if len(credSets) > 0 {
 		log.Printf("[DCQL] Applying credential_sets constraints: %d sets, %d matches before", len(credSets), len(matches))
 		matches = applyCredentialSets(matches, credSets, w.PreferredFormat)
 		if matches == nil {
@@ -136,11 +152,104 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 		// return any Credential(s)." Without credential_sets every entry is
 		// non-optional.
 		log.Printf("[DCQL] Result: 0 matches (no credential answers %v, and every credential query is required without credential_sets)", missing)
-		return nil
+		return nil, nil
 	}
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
-	return matches
+	if matches == nil {
+		return nil, nil
+	}
+	return matches, buildConsentCredentialOptions(candidates, credSets, w.PreferredFormat)
+}
+
+// buildConsentCredentialOptions assembles the consent dialog's alternatives
+// from every match the evaluation found. candidates arrive in preference
+// order, so per query the first candidate and per set the first option are
+// the wallet's own choice.
+func buildConsentCredentialOptions(candidates []CredentialMatch, credSets []any, preferredFormat string) *ConsentCredentialOptions {
+	if len(candidates) == 0 {
+		return nil
+	}
+	byQuery := make(map[string][]CredentialMatch)
+	var order []string
+	for _, m := range candidates {
+		if _, ok := byQuery[m.QueryID]; !ok {
+			order = append(order, m.QueryID)
+		}
+		byQuery[m.QueryID] = append(byQuery[m.QueryID], m)
+	}
+
+	options := &ConsentCredentialOptions{}
+	for _, id := range order {
+		options.Queries = append(options.Queries, ConsentQueryOptions{ID: id, Candidates: byQuery[id]})
+	}
+
+	for _, cs := range credSets {
+		csMap, ok := cs.(map[string]any)
+		if !ok {
+			continue
+		}
+		required := true
+		if r, ok := csMap["required"].(bool); ok {
+			required = r
+		}
+		rawOptions, ok := csMap["options"].([]any)
+		if !ok {
+			continue
+		}
+		set := ConsentSetOptions{Optional: !required}
+		for _, opt := range orderOptionsByPreferredFormat(rawOptions, byQuery, preferredFormat) {
+			if ids, ok := satisfiableOption(opt, byQuery); ok {
+				set.Options = append(set.Options, ids)
+			}
+		}
+		if len(set.Options) > 0 {
+			options.Sets = append(options.Sets, set)
+		}
+	}
+	return options
+}
+
+// satisfiableOption returns the query ids of a credential_sets option when
+// every one of them has a matching credential.
+func satisfiableOption(opt any, byQuery map[string][]CredentialMatch) ([]string, bool) {
+	optArr, ok := opt.([]any)
+	if !ok {
+		return nil, false
+	}
+	ids := make([]string, 0, len(optArr))
+	for _, qid := range optArr {
+		qidStr, ok := qid.(string)
+		if !ok {
+			return nil, false
+		}
+		if _, has := byQuery[qidStr]; !has {
+			return nil, false
+		}
+		ids = append(ids, qidStr)
+	}
+	return ids, true
+}
+
+// orderOptionsByPreferredFormat moves options containing the preferred
+// format to the front, keeping the request's order otherwise.
+func orderOptionsByPreferredFormat(options []any, byQuery map[string][]CredentialMatch, preferredFormat string) []any {
+	if preferredFormat == "" {
+		return options
+	}
+	queryFormat := make(map[string]string, len(byQuery))
+	for qid, ms := range byQuery {
+		if len(ms) > 0 {
+			queryFormat[qid] = ms[0].Format
+		}
+	}
+	ordered := make([]any, len(options))
+	copy(ordered, options)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return optionMatchesFormat(ordered[i], queryFormat, preferredFormat) &&
+			!optionMatchesFormat(ordered[j], queryFormat, preferredFormat)
+	})
+	return ordered
 }
 
 // unmatchedCredentialQueries lists the credential query ids no stored
@@ -992,14 +1101,6 @@ func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFor
 		byQuery[m.QueryID] = append(byQuery[m.QueryID], m)
 	}
 
-	// Build a map of query ID → format for preference sorting
-	queryFormat := make(map[string]string)
-	for qid, ms := range byQuery {
-		if len(ms) > 0 {
-			queryFormat[qid] = ms[0].Format
-		}
-	}
-
 	// Track which query IDs are needed
 	needed := make(map[string]bool)
 
@@ -1019,47 +1120,19 @@ func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFor
 			continue
 		}
 
-		// Reorder options to prefer the preferred format
-		orderedOptions := options
-		if preferredFormat != "" {
-			orderedOptions = make([]any, len(options))
-			copy(orderedOptions, options)
-			sort.SliceStable(orderedOptions, func(i, j int) bool {
-				return optionMatchesFormat(orderedOptions[i], queryFormat, preferredFormat) &&
-					!optionMatchesFormat(orderedOptions[j], queryFormat, preferredFormat)
-			})
-		}
-
-		// Try each option (array of credential query IDs)
+		// Try each option (array of credential query IDs), preferred format
+		// first, and take the first the wallet can satisfy.
 		satisfied := false
-		for _, opt := range orderedOptions {
-			optArr, ok := opt.([]any)
+		for _, opt := range orderOptionsByPreferredFormat(options, byQuery, preferredFormat) {
+			ids, ok := satisfiableOption(opt, byQuery)
 			if !ok {
 				continue
 			}
-
-			allAvailable := true
-			for _, qid := range optArr {
-				qidStr, ok := qid.(string)
-				if !ok {
-					allAvailable = false
-					break
-				}
-				if _, has := byQuery[qidStr]; !has {
-					allAvailable = false
-					break
-				}
+			for _, qid := range ids {
+				needed[qid] = true
 			}
-
-			if allAvailable {
-				for _, qid := range optArr {
-					if qidStr, ok := qid.(string); ok {
-						needed[qidStr] = true
-					}
-				}
-				satisfied = true
-				break
-			}
+			satisfied = true
+			break
 		}
 
 		if required && !satisfied {

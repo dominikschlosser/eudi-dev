@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.0] - 2026-08-18
+
+### Added
+
+- **The consent dialog lets the user change which credentials are presented** (#8). The wallet still auto-selects the answer and the dialog opens on it unchanged. When a request has alternatives, a row above the credential cards names how many and offers Edit: pick the DCQL credential-set option to answer with, and per credential query the credential that answers it. Changes apply immediately, Done returns to the summary, reset to auto restores the wallet's choice, and Deny/Approve keep meaning the presentation itself on both screens. The consent request carries the alternatives as `credential_options`, the approval names the selection as `picks` and `set_choices`, and a selection the request did not offer is refused with 400 while the request stays pending. Auto-accept wallets are untouched and submit the auto-selection as before
+
 ## [1.24.3] - 2026-08-18
 
 ### Fixed

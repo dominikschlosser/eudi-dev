@@ -770,6 +770,171 @@ test.describe("Credential paging", () => {
 // The verifier page polls its request while it is pending. Two abandoned
 // tabs once produced 38% of all traffic on the public demo, because the
 // status endpoint never stopped saying "pending". Polling must end.
+// The consent dialog keeps the wallet's auto-selection on its main screen
+// and opens the alternatives behind an Edit button: the credential-set
+// option to answer with, and the credential per query id. The demo verifier
+// request is the richest natural case: one set with an SD-JWT and an mdoc
+// option, and two PIDs answering each.
+test.describe("Consent credential selection", () => {
+  test.beforeEach(async () => {
+    await clearPending();
+  });
+
+  /** Opens a fresh verifier request's consent dialog in the given tab. */
+  async function openConsent(page) {
+    const req = await createVerificationRequest();
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    submitAsSchemeHandler("/api/presentations", req.schemeURI);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    return req;
+  }
+
+  async function verifierStatus(id) {
+    return (await verifierResult(id)).status;
+  }
+
+  async function verifierResult(id) {
+    const res = await fetch(`${BASE}/verifier/api/requests/${id}`);
+    return await res.json();
+  }
+
+  test("the main screen shows the auto-selection and announces the alternatives", async ({ page }) => {
+    await openConsent(page);
+
+    const row = page.locator("#consent-selection-row");
+    await expect(row).toContainText("Auto-selected");
+    await expect(page.locator("#consent-edit-selection")).toBeVisible();
+    // One card: the chosen option of the set, with its claim checkboxes.
+    await expect(page.locator(".consent-credential")).toHaveCount(1);
+    await expect(page.locator(".consent-claim input[type=checkbox]").first()).toBeChecked();
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("the edit screen offers the set options and the candidates per query", async ({ page }) => {
+    await openConsent(page);
+    await page.locator("#consent-edit-selection").click();
+
+    // One set, two options (SD-JWT or mdoc), the first marked auto.
+    const setOptions = page.locator(".consent-sets .consent-set-option");
+    await expect(setOptions).toHaveCount(2);
+    await expect(page.locator(".consent-sets .auto-chip")).toHaveCount(1);
+    // The active option's query section lists both matching PIDs.
+    await expect(page.locator(".consent-credential[data-query-id] .candidate")).toHaveCount(2);
+    // Deny and Approve stay the dialog's own buttons on this screen too.
+    await expect(page.locator("#consent-approve")).toBeVisible();
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("switching the set option presents the other format", async ({ page }) => {
+    const req = await openConsent(page);
+    await expect(page.locator(".consent-credential").first()).toHaveAttribute("data-vct", /./);
+
+    await page.locator("#consent-edit-selection").click();
+    await page.locator("#consent-set-0-option-1").check();
+    // The query section follows the chosen option.
+    await expect(page.locator(".consent-credential[data-query-id]").first()).toHaveAttribute("data-query-id", "pid_mdoc");
+    await page.locator("#consent-selection-done").click();
+
+    // Back on the main screen the card is the mdoc, and the row says the
+    // selection deviates from the wallet's choice.
+    await expect(page.locator(".consent-credential").first()).toHaveAttribute("data-doctype", /./);
+    await expect(page.locator("#consent-selection-row")).toContainText("Your selection");
+
+    await page.locator("#consent-approve").click();
+    // Approving a verifier flow navigates this tab to the verifier's result
+    // page, so the arrival there is the submission's success signal.
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    // The verifier really received the chosen format: its checks name the
+    // mdoc parse, which no SD-JWT presentation produces.
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("verified");
+    expect(result.checks.map((c) => c.name)).toContain("presentation parses as an mdoc DeviceResponse");
+  });
+
+  test("switching the credential presents the other PID", async ({ page }) => {
+    const req = await openConsent(page);
+    const before = await page.locator(".consent-credential").first().getAttribute("data-vct");
+
+    await page.locator("#consent-edit-selection").click();
+    await page.locator(".candidate:not(.selected)").first().click();
+    await page.locator("#consent-selection-done").click();
+
+    const after = await page.locator(".consent-credential").first().getAttribute("data-vct");
+    expect(after).not.toBe(before);
+    // The claim checkboxes belong to the picked credential.
+    await expect(page.locator(".consent-claim input[type=checkbox]").first()).toBeChecked();
+
+    await page.locator("#consent-approve").click();
+    // Approving a verifier flow navigates this tab to the verifier's result
+    // page, so the arrival there is the submission's success signal.
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    // The verifier really received the picked credential: its verified
+    // claims carry that credential's vct.
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("verified");
+    expect(result.claims.vct).toBe(after);
+  });
+
+  test("withholding a requested claim reaches the verifier as its absence", async ({ page }) => {
+    const req = await openConsent(page);
+
+    await page.locator('.consent-claim input[data-claim="given_name"]').uncheck();
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+
+    // The wallet honored the checkbox: the claim is absent, and the verifier
+    // flags the presentation because the request asked for it.
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("failed");
+    expect((result.claims || {}).given_name).toBeFalsy();
+    expect(result.checks.filter((c) => !c.ok).length).toBeGreaterThan(0);
+  });
+
+  test("edit, done and edit again keeps the selection, reset restores auto", async ({ page }) => {
+    await openConsent(page);
+
+    await page.locator("#consent-edit-selection").click();
+    const alternate = page.locator(".candidate:not(.selected)").first();
+    const alternateID = await alternate.getAttribute("data-cred");
+    await alternate.click();
+    await page.locator("#consent-selection-done").click();
+    await page.locator("#consent-edit-selection").click();
+
+    // The earlier pick survives the round trip.
+    await expect(page.locator(`.candidate[data-cred="${alternateID}"]`)).toHaveClass(/selected/);
+
+    // Reset restores the wallet's choice and disappears once it holds.
+    await page.locator("#consent-selection-reset").click();
+    await expect(page.locator(`.candidate[data-cred="${alternateID}"]`)).not.toHaveClass(/selected/);
+    await expect(page.locator("#consent-selection-reset")).toHaveCount(0);
+
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+  });
+
+  test("approving straight from the edit screen submits the drafted selection", async ({ page }) => {
+    const req = await openConsent(page);
+
+    await page.locator("#consent-edit-selection").click();
+    await page.locator(".candidate:not(.selected)").first().click();
+    await page.locator("#consent-approve").click();
+    // A submission in flight owns the dialog: clicking Done now must not
+    // re-render a fresh Approve next to it. The click lands either on the
+    // guarded dialog (a no-op) or after the navigation (caught), and the
+    // flow completes cleanly either way.
+    await page.locator("#consent-selection-done").click({ timeout: 2000 }).catch(() => {});
+
+    // Approving a verifier flow navigates this tab to the verifier's result
+    // page, so the arrival there is the submission's success signal.
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    expect(await verifierStatus(req.id)).toBe("verified");
+  });
+});
+
 test.describe("Verifier polling", () => {
   /** Counts status polls the page makes from now on. */
   function countPolls(page) {
