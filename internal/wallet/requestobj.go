@@ -141,7 +141,27 @@ func fetchRequestURIGET(w *Wallet, requestURI string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fetching %s: HTTP %d", requestURI, resp.StatusCode)
 	}
+	if err := w.judgeRequestURIMediaType(resp.Header.Get("Content-Type")); err != nil {
+		return "", err
+	}
 	return strings.TrimSpace(string(body)), nil
+}
+
+// judgeRequestURIMediaType holds the media type of a request_uri response to
+// the active validation mode: strict refuses a wrong one, debug records a
+// profile warning and reads the request object anyway.
+func (w *Wallet) judgeRequestURIMediaType(contentType string) error {
+	err := validateRequestURIResponse(contentType)
+	if err == nil {
+		return nil
+	}
+	if w != nil && w.Mode() == ValidationModeStrict {
+		return err
+	}
+	if w != nil {
+		w.AddWarning("presentation", "Request does not follow the profile: "+err.Error(), nil)
+	}
+	return nil
 }
 
 // fetchRequestURIPOST implements the request_uri_method=post flow per OID4VP 1.0 §5.10.
@@ -206,7 +226,7 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("POST to request_uri returned HTTP %d", resp.StatusCode)
 	}
-	if err := validateRequestURIResponse(resp.Header.Get("Content-Type")); err != nil {
+	if err := w.judgeRequestURIMediaType(resp.Header.Get("Content-Type")); err != nil {
 		return "", err
 	}
 
@@ -310,7 +330,7 @@ func validateRequestURIResponse(contentType string) error {
 		return fmt.Errorf("invalid request_uri response Content-Type: %w", err)
 	}
 	if mediaType != "application/oauth-authz-req+jwt" {
-		return fmt.Errorf("request_uri response Content-Type must be application/oauth-authz-req+jwt")
+		return fmt.Errorf("request_uri response Content-Type must be application/oauth-authz-req+jwt, got %q", contentType)
 	}
 	return nil
 }

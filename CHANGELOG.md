@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.24.3] - 2026-08-18
+
+### Fixed
+
+- **The media type of a fetched request object follows the validation mode.** A `request_uri` response without `application/oauth-authz-req+jwt` is now a finding like any other: strict mode refuses it, debug mode records a profile warning in the activity log and reads the request object anyway. Before, a GET response passed without a word in every mode and a POST response was refused even in debug, so a verifier serving `text/plain` was silently tolerated on one path and hard-rejected on the other
+
 ## [1.24.2] - 2026-08-17
 
 ### Fixed

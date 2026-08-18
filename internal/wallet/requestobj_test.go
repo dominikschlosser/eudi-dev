@@ -503,6 +503,49 @@ func TestParseWithOptionsRequestURIMethodPost(t *testing.T) {
 	}
 }
 
+// The media type of a request_uri response is a validation finding like any
+// other: strict refuses a wrong one, debug records a profile warning and
+// reads the request object anyway. Both fetch methods judge it the same way.
+func TestRequestURIMediaTypeFollowsTheValidationMode(t *testing.T) {
+	jwt := makeTestJWT(map[string]any{"alg": "ES256"}, map[string]any{
+		"client_id":     "test-client",
+		"response_type": "vp_token",
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain;charset=UTF-8")
+		w.Write([]byte(jwt))
+	}))
+	defer srv.Close()
+
+	for _, method := range []string{"get", "post"} {
+		t.Run(method+" strict", func(t *testing.T) {
+			w := &Wallet{ValidationMode: ValidationModeStrict}
+			if _, err := MakeFetchRequestURI(w, nil)(srv.URL, method); err == nil {
+				t.Fatal("expected the wrong media type to be refused in strict mode")
+			}
+		})
+		t.Run(method+" debug", func(t *testing.T) {
+			w := &Wallet{ValidationMode: ValidationModeDebug}
+			result, err := MakeFetchRequestURI(w, nil)(srv.URL, method)
+			if err != nil {
+				t.Fatalf("debug mode should read the request object: %v", err)
+			}
+			if result != jwt {
+				t.Errorf("unexpected result %q", result)
+			}
+			var warned bool
+			for _, entry := range w.GetLog() {
+				if entry.Severity == severityWarning && contains(entry.Detail, "Content-Type") {
+					warned = true
+				}
+			}
+			if !warned {
+				t.Error("expected a profile warning about the media type")
+			}
+		})
+	}
+}
+
 // makeTestJWT creates a minimal unsigned JWT for testing.
 func makeTestJWT(header, payload map[string]any) string {
 	h, _ := json.Marshal(header)
