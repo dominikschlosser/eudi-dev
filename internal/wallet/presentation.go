@@ -61,6 +61,14 @@ type VPTokenResult struct {
 
 // CreateVPToken creates a VP token for the given credential match.
 func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams) (VPTokenResult, error) {
+	return w.createVPToken(match, params, "")
+}
+
+// createVPToken builds one presentation. mdocNonce is the mdoc generated
+// nonce the whole response shares (ISO 18013-7); an empty one lets an mdoc
+// presentation generate its own, which is what a response holding a single
+// presentation needs.
+func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams, mdocNonce string) (VPTokenResult, error) {
 	cred, ok := w.GetCredential(match.CredentialID)
 	if !ok {
 		return VPTokenResult{}, fmt.Errorf("credential %s not found", match.CredentialID)
@@ -97,7 +105,7 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 		log.Printf("[VP] Plain JWT presentation (no selective disclosure)")
 		return VPTokenResult{Token: cred.Raw}, nil
 	case "mso_mdoc":
-		result, err := w.createMDocPresentation(cred, match.SelectedKeys, params)
+		result, err := w.createMDocPresentation(cred, match.SelectedKeys, params, mdocNonce)
 		if err != nil {
 			return VPTokenResult{}, err
 		}
@@ -238,8 +246,21 @@ func (w *Wallet) CreateVPTokenMap(matches []CredentialMatch, params Presentation
 		TokenMap: make(map[string]string),
 	}
 
+	// ISO 18013-7 Annex B carries one mdoc generated nonce per response, in
+	// the apu of the encrypted response, and every document's session
+	// transcript hashes it. Generating one per document would leave every
+	// document but the reported one unverifiable, so the response settles it
+	// once and hands it to each presentation.
+	var mdocNonce string
+	if w.SessionTranscript == SessionTranscriptISO {
+		var err error
+		if mdocNonce, err = newMDocGeneratedNonce(); err != nil {
+			return nil, err
+		}
+	}
+
 	for _, match := range matches {
-		tokenResult, err := w.CreateVPToken(match, params)
+		tokenResult, err := w.createVPToken(match, params, mdocNonce)
 		if err != nil {
 			return nil, fmt.Errorf("creating VP token for %s: %w", match.QueryID, err)
 		}

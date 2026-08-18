@@ -26,8 +26,11 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
-// createMDocPresentation creates an mDoc DeviceResponse with selected data elements.
-func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams) (VPTokenResult, error) {
+// createMDocPresentation creates an mDoc DeviceResponse with selected data
+// elements. mdocNonce is the generated nonce of the response this document
+// belongs to; empty means this document is the response and generates its
+// own.
+func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string) (VPTokenResult, error) {
 	// Build set of selected namespace:element pairs
 	selected := make(map[string]bool, len(selectedKeys))
 	for _, k := range selectedKeys {
@@ -79,14 +82,17 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		mode = SessionTranscriptOID4VP
 	}
 
-	var mdocNonce string
-	if mode == SessionTranscriptISO {
-		// ISO mode needs mdocGeneratedNonce
-		nonceBytes := make([]byte, 16)
-		if _, err := rand.Read(nonceBytes); err != nil {
-			return VPTokenResult{}, fmt.Errorf("generating nonce: %w", err)
+	switch {
+	case mode != SessionTranscriptISO:
+		// Only the ISO transcript hashes it, and the result reports the
+		// nonce this document was actually signed over.
+		mdocNonce = ""
+	case mdocNonce == "":
+		generated, err := newMDocGeneratedNonce()
+		if err != nil {
+			return VPTokenResult{}, err
 		}
-		mdocNonce = format.EncodeBase64URL(nonceBytes)
+		mdocNonce = generated
 	}
 
 	jwkThumbprint := extractJWKThumbprint(params.RequestObject, params.ClientMetadata)
@@ -136,6 +142,18 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		Token:     format.EncodeBase64URL(responseBytes),
 		MDocNonce: mdocNonce,
 	}, nil
+}
+
+// newMDocGeneratedNonce returns an mdoc generated nonce (ISO 18013-7 Annex
+// B). One belongs to a response rather than to a document: it is hashed into
+// every document's session transcript and travels once, in the apu of the
+// encrypted response.
+func newMDocGeneratedNonce() (string, error) {
+	nonceBytes := make([]byte, 16)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return "", fmt.Errorf("generating nonce: %w", err)
+	}
+	return format.EncodeBase64URL(nonceBytes), nil
 }
 
 // buildSessionTranscript constructs the SessionTranscript CBOR bytes using the
