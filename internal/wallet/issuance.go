@@ -123,6 +123,10 @@ type OfferOptions struct {
 	// submission is the caller's consent, which is the rule the presentation
 	// endpoint applies to its own API callers.
 	PresentationConsented bool
+	// TxCode is the transaction code for a pre-authorized offer that
+	// requires one. It travels with the flow it belongs to, so concurrent
+	// offers on a shared wallet each send their own code.
+	TxCode string
 }
 
 // ProcessCredentialOffer processes an OID4VCI credential offer URI for a user
@@ -238,10 +242,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	authCtx := clientAuthContext{oauthMeta: oauthMeta, clientID: attestationClientID, tokenEndpoint: tokenEndpoint}
 	clientAuth := w.resolveClientAuthentication("", authCtx)
 
-	w.mu.Lock()
-	txCode := w.TxCode
-	w.TxCode = "" // clear after use
-	w.mu.Unlock()
+	txCode := opts.TxCode
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
 	tokenForm.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)

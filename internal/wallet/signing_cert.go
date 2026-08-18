@@ -83,6 +83,21 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile) (*ecdsa.Pri
 	return issuerKey, []*x509.Certificate{leafCert, caCert}, nil
 }
 
+// TrustAnchorCertificate returns the wallet CA certificate, read under the
+// lock: the demo reset swaps the chain while requests are in flight, and a
+// slice header is not written atomically.
+func (w *Wallet) TrustAnchorCertificate() *x509.Certificate {
+	if w == nil {
+		return nil
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if len(w.CertChain) == 0 {
+		return nil
+	}
+	return w.CertChain[len(w.CertChain)-1]
+}
+
 // DefaultSigningCertChain returns the signing certificate chain used for wallet-wide
 // endpoints that do not yet select a profile explicitly.
 func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {

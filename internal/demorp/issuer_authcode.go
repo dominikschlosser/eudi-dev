@@ -711,11 +711,12 @@ func (d *DemoRP) attestationSigner(header map[string]any) (attestationSigner, er
 // carries the leaf only, so the anchor comes from the wallet this issuer is
 // mounted on, which is also what its trust lists publish.
 func (d *DemoRP) chainsToWalletProviderCA(certs []*x509.Certificate) bool {
-	if d.wallet == nil || len(d.wallet.CertChain) < 2 || len(certs) == 0 {
+	anchor := d.wallet.TrustAnchorCertificate()
+	if anchor == nil || len(certs) == 0 {
 		return false
 	}
 	roots := x509.NewCertPool()
-	roots.AddCert(d.wallet.CertChain[len(d.wallet.CertChain)-1])
+	roots.AddCert(anchor)
 	intermediates := x509.NewCertPool()
 	for _, cert := range certs[1:] {
 		intermediates.AddCert(cert)

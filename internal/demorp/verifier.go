@@ -94,9 +94,11 @@ type requestState struct {
 
 // queryIDs are the DCQL credential ids this request asked under, quoted for
 // an error message.
+// The ticket query is not listed: this names what the PID entry lookup
+// accepts, and the ticket rides along in its own entry.
 func (r *requestState) queryIDs() []string {
 	var ids []string
-	for _, id := range []string{r.queryID, r.mdocQueryID, r.ticketQueryID} {
+	for _, id := range []string{r.queryID, r.mdocQueryID} {
 		if id != "" {
 			ids = append(ids, fmt.Sprintf("%q", id))
 		}
@@ -680,10 +682,11 @@ func (d *DemoRP) finishRequest(req *requestState, claims map[string]any, checks 
 	req.err = ""
 }
 
-// verifyPresentation validates a vp_token holding one SD-JWT+KB
-// presentation: issuer signature anchored in the wallet CA, key binding JWT
-// signed by the cnf key, sd_hash over the presented credential, and the
-// nonce and audience of this request.
+// verifyPresentation validates the vp_token: the PID entry (an SD-JWT with
+// its key binding JWT, or an mdoc DeviceResponse), and the ticket entry when
+// the request asked for one. Every credential's issuer signature anchors in
+// the wallet CA, and every key binding covers this request's nonce and
+// audience.
 func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[string]any, []map[string]any, error) {
 	log := &checklist{}
 	check := log.record
@@ -746,6 +749,9 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 			}
 			ticketClaims, err := d.verifySDJWTEntry(req, ticketPresentations[0], TicketVCT, req.ticketWant, "ticket: ", log)
 			if err != nil {
+				// The failed entry is the one worth decoding, so it replaces
+				// the PID entry recorded above.
+				d.recordPresentation(req, ticketPresentations[0])
 				return nil, log.entries, err
 			}
 			resultClaims["ticket"] = ticketClaims
@@ -803,7 +809,10 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 	// issuer signs under, which is the root of the wallet's signing chain.
 	// The check is named from the verifier's point of view: what it verifies
 	// is that the issuer certificate chains to a CA it trusts.
-	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	caCert := d.wallet.TrustAnchorCertificate()
+	if caCert == nil {
+		return nil, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
+	}
 	tlCerts := []trustlist.CertInfo{{
 		Subject:   caCert.Subject.String(),
 		PublicKey: caCert.PublicKey,
@@ -923,7 +932,10 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 
 	// Anchor the status list JWT in the same CA as the credential, so a
 	// forged list cannot un-revoke a credential.
-	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	caCert := d.wallet.TrustAnchorCertificate()
+	if caCert == nil {
+		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))
+	}
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
 		TrustListCerts: []statuslist.TrustCert{{Raw: caCert.Raw}},
 	})
@@ -978,7 +990,10 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 		return nil, log.entries, err
 	}
 
-	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	caCert := d.wallet.TrustAnchorCertificate()
+	if caCert == nil {
+		return nil, log.entries, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
+	}
 	tlCerts := []trustlist.CertInfo{{
 		Subject:   caCert.Subject.String(),
 		PublicKey: caCert.PublicKey,

@@ -14,10 +14,33 @@
 
 package wallet
 
+import "time"
+
+// Retention for the consent registry. The registry lives for the process
+// and a shared demo serves anonymous visitors, so it prunes itself: a
+// resolved request stays visible long enough for a late poll, and every
+// request goes eventually (the consent flows time out after five minutes,
+// so an hour-old pending entry has no waiter left).
+const (
+	resolvedConsentRetention = 10 * time.Minute
+	consentRequestMaxAge     = time.Hour
+)
+
 // CreateConsentRequest creates a new consent request and notifies subscribers.
 func (w *Wallet) CreateConsentRequest(req *ConsentRequest) {
 	rt := w.runtimeState()
 	rt.mu.Lock()
+	now := time.Now()
+	// The registry owns the timestamp its retention is measured against.
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = now
+	}
+	for id, r := range rt.requests {
+		age := now.Sub(r.CreatedAt)
+		if age > consentRequestMaxAge || (r.Status != "pending" && age > resolvedConsentRetention) {
+			delete(rt.requests, id)
+		}
+	}
 	rt.requests[req.ID] = req
 	subs := make([]chan *ConsentRequest, 0, len(rt.subscribers))
 	for _, ch := range rt.subscribers {
@@ -55,6 +78,31 @@ func (w *Wallet) ResolveRequest(id, status string) (*ConsentRequest, bool) {
 	}
 	req.Status = status
 	return req, true
+}
+
+// PendingRequestDocs returns the pending consent requests marshaled under
+// the registry lock: Status is written under that lock when a request
+// resolves, so the snapshot and the read are ordered.
+func (w *Wallet) PendingRequestDocs() []map[string]any {
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	docs := make([]map[string]any, 0, len(rt.requests))
+	for _, r := range rt.requests {
+		if r.Status == "pending" {
+			docs = append(docs, MarshalConsentRequest(r))
+		}
+	}
+	return docs
+}
+
+// RequestDoc marshals one consent request under the registry lock, for the
+// same ordering reason PendingRequestDocs holds it.
+func (w *Wallet) RequestDoc(r *ConsentRequest) map[string]any {
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return MarshalConsentRequest(r)
 }
 
 // GetPendingRequests returns all pending consent requests.

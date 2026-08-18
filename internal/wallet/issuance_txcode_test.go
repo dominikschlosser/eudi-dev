@@ -133,12 +133,11 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 				t.Errorf("description = %q, want the issuer's own wording", details.TxCodeDescription)
 			}
 
-			w.TxCode = ""
 			w.CreateConsentRequest(consentReq)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false)
+				server.awaitOfferConsent(noopResponseWriter{}, consentReq, "test issuer", false, "")
 			}()
 
 			consentReq.ResultCh <- ConsentResult{Approved: true, TxCode: tc.code}

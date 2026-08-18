@@ -100,7 +100,6 @@ type Wallet struct {
 	// reachable.
 	ServingOrigin string `json:"-"`
 	TemplatesDir  string `json:"-"` // credential template directory; empty selects the default
-	TxCode        string `json:"-"` // one-shot tx_code for OID4VCI token request
 	Log           []LogEntry
 	mu            sync.RWMutex
 	logSink       func(LogEntry)

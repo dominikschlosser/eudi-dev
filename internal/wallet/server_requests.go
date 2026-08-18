@@ -28,12 +28,7 @@ import (
 
 // handleListRequests returns all pending consent requests.
 func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
-	requests := s.wallet.GetPendingRequests()
-	items := make([]map[string]any, len(requests))
-	for i, req := range requests {
-		items[i] = MarshalConsentRequest(req)
-	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, s.wallet.PendingRequestDocs())
 }
 
 // sseKeepaliveInterval is how often an otherwise idle event stream sends a
@@ -79,7 +74,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case req := <-reqCh:
-			data, err := json.Marshal(MarshalConsentRequest(req))
+			data, err := json.Marshal(s.wallet.RequestDoc(req))
 			if err != nil {
 				continue
 			}

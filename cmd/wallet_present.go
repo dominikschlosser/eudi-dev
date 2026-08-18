@@ -614,11 +614,7 @@ func processCredentialOffer(uri string, txCode string) error {
 		return err
 	}
 
-	if txCode != "" {
-		w.TxCode = txCode
-	}
-
-	result, err := w.ProcessCredentialOffer(uri)
+	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: txCode})
 	if err != nil {
 		return fmt.Errorf("processing credential offer: %w", err)
 	}

@@ -271,12 +271,6 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 	addStringDetail(offerDetails, "tx_code", txCode)
 	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
-	if txCode != "" {
-		s.wallet.mu.Lock()
-		s.wallet.TxCode = txCode
-		s.wallet.mu.Unlock()
-	}
-
 	if !s.wallet.AutoAccept && !apiInitiated {
 		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri)
 		if err != nil {
@@ -303,23 +297,22 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 			// pending: send the browser to the wallet UI (which shows the
 			// request) and import the credential in the background once
 			// consent arrives.
-			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false)
+			go s.awaitOfferConsent(noopResponseWriter{}, consentReq, issuerDisplay, false, txCode)
 			redirectBrowser(w, "/?request="+consentReq.ID)
 			return
 		}
-		s.awaitOfferConsent(w, consentReq, issuerDisplay, false)
+		s.awaitOfferConsent(w, consentReq, issuerDisplay, false, txCode)
 		return
 	}
 
-	s.processOfferDirectly(w, uri, browserRedirect, apiInitiated)
+	s.processOfferDirectly(w, uri, txCode, browserRedirect, apiInitiated)
 }
 
 // awaitOfferConsent waits for the user's decision on an issuance consent
 // request and processes the credential offer on approval. The outcome is also
 // delivered on the consent request's submission channel for the approve API.
-func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentRequest, issuerDisplay string, browserRedirect bool) {
-	select {
-	case consent := <-consentReq.ResultCh:
+func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentRequest, issuerDisplay string, browserRedirect bool, txCode string) {
+	handle := func(consent ConsentResult) {
 		if !consent.Approved {
 			s.log("  Consent:       denied")
 			s.wallet.AddLog("issuance", fmt.Sprintf("Denied credential offer from %s", issuerDisplay), false)
@@ -337,15 +330,13 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		// learns one is needed from the dialog. A code typed there arrives
 		// with the approval and replaces whatever the request carried.
 		if consent.TxCode != "" {
-			s.wallet.mu.Lock()
-			s.wallet.TxCode = consent.TxCode
-			s.wallet.mu.Unlock()
+			txCode = consent.TxCode
 		}
 		// The user is at the dialog, so a presentation the issuer asks for
 		// mid-flow is put to them as well.
 		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
 			"credential_requested": consentReq.OfferConfigs,
-		}, OfferOptions{})
+		}, OfferOptions{TxCode: txCode})
 		if err != nil {
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -372,20 +363,29 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		} else {
 			writeJSON(w, http.StatusOK, result)
 		}
-		return
+	}
+
+	select {
+	case consent := <-consentReq.ResultCh:
+		handle(consent)
 	case <-time.After(5 * time.Minute):
-		consentReq.Status = "denied"
+		// The timer races an arriving decision, and the request's status is
+		// the referee: a decision that already resolved the request is
+		// honored, only a request still pending times out.
+		if _, ok := s.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+			handle(<-consentReq.ResultCh)
+			return
+		}
 		s.wallet.AddLog("issuance", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout", StatusCode: http.StatusRequestTimeout}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})
-		return
 	}
 }
 
 // processOfferDirectly runs the credential offer flow without a consent step
 // (auto-accept mode).
-func (s *Server) processOfferDirectly(w http.ResponseWriter, uri string, browserRedirect, apiInitiated bool) {
-	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated})
+func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode string, browserRedirect, apiInitiated bool) {
+	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated, TxCode: txCode})
 	if err != nil {
 		if !s.wallet.AutoAccept {
 			s.triggerUIRequest()

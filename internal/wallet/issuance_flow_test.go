@@ -1175,9 +1175,6 @@ func TestProcessCredentialOffer_TxCodeSentInTokenRequest(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	// Set tx_code on wallet
-	w.TxCode = "123456"
-
 	offer := map[string]any{
 		"credential_issuer":            srvURL,
 		"credential_configuration_ids": []string{"test-config"},
@@ -1191,18 +1188,13 @@ func TestProcessCredentialOffer_TxCodeSentInTokenRequest(t *testing.T) {
 	offerJSON, _ := json.Marshal(offer)
 	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
 
-	_, err := w.ProcessCredentialOffer(offerURI)
+	_, err := w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{TxCode: "123456"})
 	if err != nil {
 		t.Fatalf("ProcessCredentialOffer: %v", err)
 	}
 
 	if receivedTxCode != "123456" {
 		t.Errorf("expected tx_code=123456 in token request, got %q", receivedTxCode)
-	}
-
-	// Verify tx_code was cleared
-	if w.TxCode != "" {
-		t.Errorf("expected TxCode to be cleared after use, got %q", w.TxCode)
 	}
 }
 

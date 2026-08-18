@@ -74,7 +74,10 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 // selection, so auto-accept and untouched consents behave identically.
 func ApplyConsentSelection(options *ConsentCredentialOptions, matches []CredentialMatch, result ConsentResult) []CredentialMatch {
 	if options == nil || (len(result.Picks) == 0 && len(result.SetChoices) == 0) {
-		return matches
+		// A copy: the claim filtering after approval writes into the
+		// returned slice, and the published ConsentRequest keeps marshaling
+		// its own MatchedCreds concurrently.
+		return append([]CredentialMatch(nil), matches...)
 	}
 
 	var needed []string
