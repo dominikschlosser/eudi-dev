@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.1] - 2026-08-19
+
+### Fixed
+
+- **An authorization code offer no longer spends its pushed request before the browser gets there.** The wallet requested the authorization endpoint itself first, to see whether a code came straight back, and then sent the browser to the same URL. RFC 9126 §4 says "the client MUST only use a `request_uri` value once", so an issuer that enforces it answered the browser with an error and the issuance waited for a callback that never came. Whichever of the two can perform the sign-in now makes the single request
+- **The warning about a `credential_offer_uri` that could not be read again fits on a line.** The issuer's whole error body was part of the headline. It now stays in the entry's details, where the full response already was
+
 ## [1.25.0] - 2026-08-18
 
 ### Added

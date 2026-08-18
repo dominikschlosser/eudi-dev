@@ -1334,8 +1334,38 @@ func derefString(v *string) string {
 	return *v
 }
 
+// runAuthorizationCodeRequest takes the authorization request to whoever can
+// answer it: the browser where one can reach the wallet's redirect URI, the
+// wallet itself where none can. RFC 9126 §4: "the client MUST only use a
+// request_uri value once", so exactly one of them requests the endpoint.
 func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
-	location, body, err := callAuthorizationEndpoint(endpoint, clientID, requestURI, params)
+	authURL, err := authorizationRequestURL(endpoint, clientID, requestURI, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if canUseInteractiveAuthorizationCallback(w, redirectURI) {
+		callbackCh, unregister := w.RegisterAuthorizationCodeCallback(expectedState)
+		defer unregister()
+
+		// The wallet never opens a browser itself: a hosted wallet opening one
+		// on its own server reaches nobody. It hands the URL to whoever holds
+		// the user's attention and waits.
+		if !w.NotifyAuthorization(authURL) {
+			return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
+		}
+		select {
+		case values := <-callbackCh:
+			if err := validateAuthorizationCodeResponse(mode, values, expectedState, expectedIssuer); err != nil {
+				return nil, err
+			}
+			return values, nil
+		case <-time.After(config.AuthorizationCallbackWait):
+			return nil, fmt.Errorf("timed out waiting for authorization callback at %s", redirectURI)
+		}
+	}
+
+	location, body, err := callAuthorizationEndpoint(authURL)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,43 +1384,10 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 		}
 	}
 
-	if !canUseInteractiveAuthorizationCallback(w, redirectURI) {
-		if location != "" {
-			return nil, fmt.Errorf("authorization requires interactive browser login at %q, but redirect_uri %q is not handled by the running wallet server", location, redirectURI)
-		}
-		return nil, fmt.Errorf("authorization requires interactive browser login, but redirect_uri %q is not handled by the running wallet server (body: %s)", redirectURI, truncateBody(body))
+	if location != "" {
+		return nil, fmt.Errorf("authorization requires interactive browser login at %q, but redirect_uri %q is not handled by the running wallet server", location, redirectURI)
 	}
-
-	callbackCh, unregister := w.RegisterAuthorizationCodeCallback(expectedState)
-	defer unregister()
-
-	authURL := endpoint + "?" + url.Values{
-		"client_id":   {clientID},
-		"request_uri": {requestURI},
-	}.Encode()
-	// This URL comes from issuer metadata and is about to be navigated to. A
-	// javascript: or data: endpoint would run in the wallet's own origin.
-	if err := validateAbsoluteURI("authorization_endpoint", authURL); err != nil {
-		return nil, err
-	}
-
-	// The wallet never opens a browser itself: a hosted wallet opening one on
-	// its own server reaches nobody. It hands the URL to whoever holds the
-	// user's attention (a UI tab, or the API caller) and waits. The callback
-	// is matched by state, so any browser can perform the sign-in.
-	if !w.NotifyAuthorization(authURL) {
-		return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
-	}
-
-	select {
-	case values := <-callbackCh:
-		if err := validateAuthorizationCodeResponse(mode, values, expectedState, expectedIssuer); err != nil {
-			return nil, err
-		}
-		return values, nil
-	case <-time.After(config.AuthorizationCallbackWait):
-		return nil, fmt.Errorf("timed out waiting for authorization callback at %s", redirectURI)
-	}
+	return nil, fmt.Errorf("authorization requires interactive browser login, but redirect_uri %q is not handled by the running wallet server (body: %s)", redirectURI, truncateBody(body))
 }
 
 func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, expectedState, expectedIssuer string) error {
@@ -1427,9 +1424,10 @@ func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, e
 	return nil
 }
 
-// callAuthorizationEndpoint starts the authorization request: by request_uri
-// after PAR, or with the parameters in the query string (RFC 6749 §4.1.1).
-func callAuthorizationEndpoint(endpoint, clientID, requestURI string, params url.Values) (string, string, error) {
+// authorizationRequestURL builds the authorization request: by request_uri
+// after PAR, which RFC 9126 §4 sends with the client_id and nothing else, or
+// with the parameters in the query string (RFC 6749 §4.1.1).
+func authorizationRequestURL(endpoint, clientID, requestURI string, params url.Values) (string, error) {
 	values := url.Values{}
 	if requestURI != "" {
 		values.Set("client_id", clientID)
@@ -1442,7 +1440,19 @@ func callAuthorizationEndpoint(endpoint, clientID, requestURI string, params url
 		}
 		values.Set("client_id", clientID)
 	}
-	req, err := http.NewRequest("GET", endpoint+"?"+values.Encode(), nil)
+	// A javascript: or data: endpoint from issuer metadata would run in the
+	// wallet's own origin.
+	authURL := endpoint + "?" + values.Encode()
+	if err := validateAbsoluteURI("authorization_endpoint", authURL); err != nil {
+		return "", err
+	}
+	return authURL, nil
+}
+
+// callAuthorizationEndpoint makes the request no browser is there to make,
+// and reports where it was sent.
+func callAuthorizationEndpoint(authURL string) (string, string, error) {
+	req, err := http.NewRequest("GET", authURL, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("creating authorization request: %w", err)
 	}

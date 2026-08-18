@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -688,8 +689,9 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 
 	credRaw := generateTestCredential(t, w)
 	var (
-		serverURL string
-		parState  string
+		serverURL      string
+		parState       string
+		authorizeCalls atomic.Int32
 	)
 
 	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -726,6 +728,7 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 				"request_uri": serverURL + "/request-uri/example",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/authorize":
+			authorizeCalls.Add(1)
 			http.Redirect(rw, r, serverURL+"/login?state="+url.QueryEscape(parState), http.StatusFound)
 		case r.Method == http.MethodGet && r.URL.Path == "/login":
 			redirect := w.VCIRedirectURI + "?code=issued-code&state=" + url.QueryEscape(r.URL.Query().Get("state"))
@@ -791,8 +794,48 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 	if parState == "" {
 		t.Fatal("expected PAR request to include state")
 	}
+	// RFC 9126 §4: "the client MUST only use a request_uri value once", and
+	// here the browser's request is that use.
+	if got := authorizeCalls.Load(); got != 1 {
+		t.Errorf("authorization endpoint requested %d times, want the browser's single request", got)
+	}
 	if result.CredentialID == "" {
 		t.Fatal("expected imported credential ID")
+	}
+}
+
+// TestRunAuthorizationCodeRequest_NobodyTookTheURL covers an authorization URL
+// nothing took. The sign-in belongs to a browser that will never arrive, so
+// the issuance ends there with the request_uri unspent.
+func TestRunAuthorizationCodeRequest_NobodyTookTheURL(t *testing.T) {
+	w := generateTestWallet(t)
+	w.BaseURL = "https://wallet.example"
+	const (
+		redirectURI = "https://wallet.example/callback"
+		state       = "state-1"
+	)
+
+	var authorizeCalls atomic.Int32
+	authServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		authorizeCalls.Add(1)
+		http.Redirect(rw, r, redirectURI+"?code=issued-code&state="+url.QueryEscape(state), http.StatusFound)
+	}))
+	defer authServer.Close()
+
+	oldClient := httpClient
+	httpClient = authServer.Client()
+	defer func() { httpClient = oldClient }()
+
+	_, err := runAuthorizationCodeRequest(w, authServer.URL+"/authorize", "wallet-client",
+		"urn:ietf:params:oauth:request_uri:example", nil, redirectURI, state, "", ValidationModeDebug)
+	if err == nil {
+		t.Fatal("expected the issuance to end when nothing can open the authorization URL")
+	}
+	if !strings.Contains(err.Error(), "nothing is attached to this wallet that can open it") {
+		t.Errorf("error = %v, want it to name what is missing", err)
+	}
+	if got := authorizeCalls.Load(); got != 0 {
+		t.Errorf("authorization endpoint requested %d times, want the request_uri left unspent", got)
 	}
 }
 

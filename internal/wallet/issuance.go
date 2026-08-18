@@ -187,7 +187,7 @@ func (w *Wallet) keepApprovedOffer(offerURI string, approved *oid4vc.CredentialO
 		return nil, fmt.Errorf("parsing credential offer: %w", cause)
 	}
 	w.addProtocolWarning("issuance", "credential_offer_reread_failed",
-		fmt.Sprintf("The credential_offer_uri could not be read a second time, continuing with the offer this issuance was approved for: %v", cause),
+		"The credential_offer_uri could not be read a second time, continuing with the offer this issuance was approved for",
 		map[string]any{
 			"issuer":    approved.CredentialIssuer,
 			"offer_uri": offerURI,
