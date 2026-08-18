@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1923,4 +1924,91 @@ func TestVerifierRequestCarriesARegistrationCertificate(t *testing.T) {
 	if !verifyES256(leafKey, cert.signingInput, cert.signature) {
 		t.Error("the registration certificate is not signed by the wallet's signing key")
 	}
+}
+
+// The two ticket shapes a PID request can carry: "combined" puts the ticket
+// into one option next to the SD-JWT PID, "optional" adds a set the wallet
+// may skip. Both list the ticket as its own credential query.
+func TestVerifierTicketRequestShapes(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	create := func(body string) map[string]any {
+		t.Helper()
+		code, doc := doJSON(t, h, "POST", "/api/requests", body, map[string]string{"Content-Type": "application/json"})
+		if code != http.StatusCreated {
+			t.Fatalf("creating request: %d %v", code, doc)
+		}
+		id, _ := doc["id"].(string)
+		payload := fetchRequestObject(t, h, "/request/"+id)
+		dcql, _ := payload["dcql_query"].(map[string]any)
+		if dcql == nil {
+			t.Fatalf("request object carries no dcql_query: %v", payload)
+		}
+		return dcql
+	}
+
+	queryIDsOf := func(dcql map[string]any) []string {
+		var ids []string
+		for _, c := range dcql["credentials"].([]any) {
+			ids = append(ids, c.(map[string]any)["id"].(string))
+		}
+		return ids
+	}
+	optionsOf := func(set any) [][]string {
+		var out [][]string
+		for _, opt := range set.(map[string]any)["options"].([]any) {
+			var ids []string
+			for _, id := range opt.([]any) {
+				ids = append(ids, id.(string))
+			}
+			out = append(out, ids)
+		}
+		return out
+	}
+
+	t.Run("combined", func(t *testing.T) {
+		dcql := create(`{"type":"pid","ticket":"combined"}`)
+		if ids := queryIDsOf(dcql); !reflect.DeepEqual(ids, []string{"pid", "pid_mdoc", "ticket"}) {
+			t.Fatalf("credential queries = %v", ids)
+		}
+		sets := dcql["credential_sets"].([]any)
+		if len(sets) != 1 {
+			t.Fatalf("got %d sets, want 1", len(sets))
+		}
+		want := [][]string{{"pid", "ticket"}, {"pid"}, {"pid_mdoc"}}
+		if got := optionsOf(sets[0]); !reflect.DeepEqual(got, want) {
+			t.Errorf("options = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("optional", func(t *testing.T) {
+		dcql := create(`{"type":"pid","ticket":"optional"}`)
+		sets := dcql["credential_sets"].([]any)
+		if len(sets) != 2 {
+			t.Fatalf("got %d sets, want 2", len(sets))
+		}
+		if got := optionsOf(sets[0]); !reflect.DeepEqual(got, [][]string{{"pid"}, {"pid_mdoc"}}) {
+			t.Errorf("PID set options = %v", got)
+		}
+		if got := optionsOf(sets[1]); !reflect.DeepEqual(got, [][]string{{"ticket"}}) {
+			t.Errorf("ticket set options = %v", got)
+		}
+		if required, ok := sets[1].(map[string]any)["required"].(bool); !ok || required {
+			t.Errorf("the ticket set must carry required: false, got %v", sets[1])
+		}
+	})
+
+	t.Run("refused shapes", func(t *testing.T) {
+		for name, body := range map[string]string{
+			"ticket on a ticket request": `{"type":"ticket","ticket":"optional"}`,
+			"combined without SD-JWT":    `{"type":"pid","format":"mdoc","ticket":"combined"}`,
+			"unknown mode":               `{"type":"pid","ticket":"maybe"}`,
+		} {
+			code, _ := doJSON(t, h, "POST", "/api/requests", body, map[string]string{"Content-Type": "application/json"})
+			if code != http.StatusBadRequest {
+				t.Errorf("%s: status = %d, want 400", name, code)
+			}
+		}
+	})
 }

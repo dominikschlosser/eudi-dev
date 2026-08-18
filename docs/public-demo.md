@@ -37,7 +37,7 @@ The demo seeds four PID credentials: the country-independent EUDI PID (`urn:eudi
 
 The verifier page offers both through its credential toggle. The PID request names `urn:eudi:pid:1`, which both credentials answer, and the wallet presents one of them. The German PID request names `urn:eudi:pid:de:1`, which the German credential answers. This is [credential type inheritance](wallet.md#credential-type-inheritance) in both directions.
 
-`POST /verifier/api/requests` takes the type as `vct`, and accepts any type in `urn:eudi:pid:` (`urn:eudi:pid:fr:1` works the same). A request naming a domestic type is SD-JWT VC only, since every PID shares the mdoc doctype `eu.europa.ec.eudi.pid.1`.
+`POST /verifier/api/requests` takes the type as `vct`, and accepts any type in `urn:eudi:pid:` (`urn:eudi:pid:fr:1` works the same). A request naming a domestic type is SD-JWT VC only, since every PID shares the mdoc doctype `eu.europa.ec.eudi.pid.1`. A PID request can also ask for the demo ticket with `"ticket": "combined"` (one DCQL option holds PID and ticket, next to a PID-only option) or `"ticket": "optional"` (a second credential set with `required: false`), which is what exercises the consent dialog's set choices.
 
 All four are marked protected: the UI, the API and the CLI refuse to delete or revoke them, so a visitor cannot leave the demo without a baseline. Everything a visitor issues afterwards behaves normally and can be deleted. Clearing the flag needs direct access to `wallet.json`.
 

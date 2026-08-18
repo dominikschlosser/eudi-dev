@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The demo verifier can ask for the demo ticket next to the PID.** `POST /verifier/api/requests` takes `"ticket": "combined"` (one DCQL option holds PID and ticket, next to a PID-only option) or `"ticket": "optional"` (a second credential set with `required: false`). The verifier verifies both presentations of the vp_token, reports the ticket claims under `claims.ticket`, and accepts an answer that leaves the ticket out
+
 - **The consent dialog lets the user change which credentials are presented** (#8). The wallet still auto-selects the answer and the dialog opens on it unchanged. When a request has alternatives, a row above the credential cards names how many and offers Edit: pick the DCQL credential-set option to answer with, and per credential query the credential that answers it. Changes apply immediately, Done returns to the summary, reset to auto restores the wallet's choice, and Deny/Approve keep meaning the presentation itself on both screens. The consent request carries the alternatives as `credential_options`, the approval names the selection as `picks` and `set_choices`, and a selection the request did not offer is refused with 400 while the request stays pending. Auto-accept wallets are untouched and submit the auto-selection as before
 
 ## [1.24.3] - 2026-08-18

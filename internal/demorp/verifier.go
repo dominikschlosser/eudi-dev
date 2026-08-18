@@ -58,8 +58,13 @@ type requestState struct {
 	mdocQueryID string
 	wantMDOC    []string
 	want        []string // claim names the request asked for
-	nonce       string
-	clientID    string
+	// ticketQueryID is set when a PID request also asks for the demo ticket
+	// (in one option next to the PID, or as an optional set of its own), and
+	// ticketWant holds the ticket claim names it asks for.
+	ticketQueryID string
+	ticketWant    []string
+	nonce         string
+	clientID      string
 	// interactiveEndpoint is set when this request was sent inside an
 	// OpenID4VCI 1.1 §6 exchange. The presentation is then bound to that
 	// Authorization Challenge Endpoint rather than to a client_id and a
@@ -91,7 +96,7 @@ type requestState struct {
 // an error message.
 func (r *requestState) queryIDs() []string {
 	var ids []string
-	for _, id := range []string{r.queryID, r.mdocQueryID} {
+	for _, id := range []string{r.queryID, r.mdocQueryID, r.ticketQueryID} {
 		if id != "" {
 			ids = append(ids, fmt.Sprintf("%q", id))
 		}
@@ -146,6 +151,11 @@ type createRequestBody struct {
 	// urn:eudi:pid:de:1 is answered only by a credential of that type, since
 	// inheritance runs the other way.
 	VCT string `json:"vct"`
+	// Ticket asks a PID request to also ask for the demo ticket, in one of
+	// two DCQL credential_sets shapes: "combined" puts PID and ticket into
+	// one option next to a PID-only option, "optional" adds a second set the
+	// wallet may skip (required: false).
+	Ticket string `json:"ticket"`
 }
 
 // normalizePIDFormat maps what the API accepts onto the two formats a PID
@@ -188,9 +198,18 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 	var vct, docType string
 	var claims, mdocClaims []string
+	ticketMode := strings.TrimSpace(body.Ticket)
+	if ticketMode != "" && ticketMode != "combined" && ticketMode != "optional" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `ticket must be "combined" or "optional"`})
+		return
+	}
 	switch body.Type {
 	case "", "ticket":
 		body.Type = "ticket"
+		if ticketMode != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ticket applies to pid requests, which then ask for the ticket next to the PID"})
+			return
+		}
 		wantSDJWT, _, err := normalizePIDFormat(body.Format)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -240,6 +259,12 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			docType = PIDDocType
 			mdocClaims = []string{"given_name", "family_name"}
 		}
+		// The combined shape puts the ticket into one option next to the
+		// SD-JWT PID, so it needs that PID in the request.
+		if ticketMode == "combined" && !wantSDJWT {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ticket: combined needs the SD-JWT PID in the request, so use format sd-jwt or both"})
+			return
+		}
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be ticket or pid"})
 		return
@@ -264,6 +289,10 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if docType != "" {
 		req.mdocQueryID = body.Type + "_mdoc"
+	}
+	if ticketMode != "" {
+		req.ticketQueryID = "ticket"
+		req.ticketWant = []string{"event", "tier", "seat", "given_name", "family_name"}
 	}
 	responseURI := base + "/verifier/response/" + req.id
 
@@ -311,16 +340,51 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			"claims": mdocDCQLClaims,
 		})
 	}
+	if req.ticketQueryID != "" {
+		ticketDCQLClaims := make([]map[string]any, 0, len(req.ticketWant))
+		for _, c := range req.ticketWant {
+			ticketDCQLClaims = append(ticketDCQLClaims, map[string]any{"path": []string{c}})
+		}
+		credentials = append(credentials, map[string]any{
+			"id":     req.ticketQueryID,
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []string{TicketVCT}},
+			"claims": ticketDCQLClaims,
+		})
+	}
 	dcql := map[string]any{"credentials": credentials}
 
-	if req.queryID != "" && req.mdocQueryID != "" {
-		// One credential set with two options: either format satisfies it, and
-		// the wallet picks whichever it holds. Without the set both listed
-		// credentials would be required, which no wallet holding one format
-		// could answer.
-		dcql["credential_sets"] = []map[string]any{{
-			"options": [][]string{{req.queryID}, {req.mdocQueryID}},
-		}}
+	// A PID offered in both formats needs a credential set with one option
+	// per format: without it both listed credentials would be required,
+	// which no wallet holding one format could answer. The two ticket shapes
+	// build on that: "combined" puts the ticket into one option next to the
+	// SD-JWT PID, "optional" adds a second set the wallet may skip.
+	var sets []map[string]any
+	switch ticketMode {
+	case "combined":
+		options := [][]string{{req.queryID, req.ticketQueryID}, {req.queryID}}
+		if req.mdocQueryID != "" {
+			options = append(options, []string{req.mdocQueryID})
+		}
+		sets = append(sets, map[string]any{"options": options})
+	case "optional":
+		var pidOptions [][]string
+		if req.queryID != "" {
+			pidOptions = append(pidOptions, []string{req.queryID})
+		}
+		if req.mdocQueryID != "" {
+			pidOptions = append(pidOptions, []string{req.mdocQueryID})
+		}
+		sets = append(sets,
+			map[string]any{"options": pidOptions},
+			map[string]any{"options": [][]string{{req.ticketQueryID}}, "required": false})
+	default:
+		if req.queryID != "" && req.mdocQueryID != "" {
+			sets = append(sets, map[string]any{"options": [][]string{{req.queryID}, {req.mdocQueryID}}})
+		}
+	}
+	if len(sets) > 0 {
+		dcql["credential_sets"] = sets
 	}
 
 	// The purpose this verifier registered for the request, carried in a
@@ -657,17 +721,57 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		return nil, log.entries, err
 	}
 
+	var resultClaims map[string]any
+	var err error
 	if answeredMDOC {
-		return d.verifyMDOCPresentation(req, presentations[0], log)
+		resultClaims, _, err = d.verifyMDOCPresentation(req, presentations[0], log)
+	} else {
+		resultClaims, err = d.verifySDJWTEntry(req, presentations[0], req.vct, req.want, "", log)
+	}
+	if err != nil {
+		return nil, log.entries, err
 	}
 
-	token, err := sdjwt.Parse(presentations[0])
+	// The ticket entry, when the request asked for one. Its absence is an
+	// answer too: the wallet chose a PID-only option or skipped the
+	// optional set.
+	if req.ticketQueryID != "" {
+		ticketPresentations := tokenDoc[req.ticketQueryID]
+		if len(ticketPresentations) == 0 {
+			_ = log.record("ticket: not presented, which the request allows", nil)
+		} else {
+			if err := check("ticket: vp_token holds exactly one presentation",
+				errIf(len(ticketPresentations) != 1, "expected 1 presentation, got %d", len(ticketPresentations))); err != nil {
+				return nil, log.entries, err
+			}
+			ticketClaims, err := d.verifySDJWTEntry(req, ticketPresentations[0], TicketVCT, req.ticketWant, "ticket: ", log)
+			if err != nil {
+				return nil, log.entries, err
+			}
+			resultClaims["ticket"] = ticketClaims
+		}
+	}
+
+	return resultClaims, log.entries, nil
+}
+
+// verifySDJWTEntry validates one SD-JWT presentation of the vp_token: the
+// credential type the request asked for under this query, the issuer
+// signature anchored in the wallet CA, revocation, and the key binding JWT
+// over this request's nonce and audience. The label prefixes every check
+// name, so the ticket's checks read apart from the PID's.
+func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT string, want []string, label string, log *checklist) (map[string]any, error) {
+	check := func(name string, err error) error {
+		return log.record(label+name, err)
+	}
+
+	token, err := sdjwt.Parse(presentation)
 	if err = check("presentation parses as SD-JWT", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	if err = check("every disclosure is referenced by the credential", checkDisclosuresReferenced(token)); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	// Trusting the wallet to return the requested type would let any held
@@ -678,8 +782,8 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	gotVCT, _ := token.ResolvedClaims["vct"].(string)
 	gotAka := credtype.AkaVCTs(token.ResolvedClaims)
 	if err = check("credential type matches the request",
-		errIf(!credtype.Answers(gotVCT, gotAka, req.vct), "vct is %q, requested %q", gotVCT, req.vct)); err != nil {
-		return nil, log.entries, err
+		errIf(!credtype.Answers(gotVCT, gotAka, expectedVCT), "vct is %q, requested %q", gotVCT, expectedVCT)); err != nil {
+		return nil, err
 	}
 
 	// HAIP 1.0 section 6.1.1 asks the issuer certificate to name the issuer,
@@ -689,9 +793,9 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if certs, err := validate.X5CCertificates(token.Header); err == nil && len(certs) > 0 {
 		iss, _ := token.ResolvedClaims["iss"].(string)
 		if violations := validate.HAIPIssuerBinding(iss, certs); len(violations) > 0 {
-			log.warn("issuer named in the signing certificate", fmt.Errorf("%s", strings.Join(violations, "; ")))
+			log.warn(label+"issuer named in the signing certificate", fmt.Errorf("%s", strings.Join(violations, "; ")))
 		} else {
-			log.warn("issuer named in the signing certificate", nil)
+			log.warn(label+"issuer named in the signing certificate", nil)
 		}
 	}
 
@@ -710,77 +814,77 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 		err = fmt.Errorf("the credential carries no x5c certificate chain")
 	}
 	if err = check("issuer certificate chains to a trusted CA", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	result := sdjwt.Verify(token, issuerKey)
 	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	if err = check("credential is within its validity period",
 		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	if err = d.checkRevocation(token, check); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	// Key binding JWT.
 	kb := token.KeyBindingJWT
 	if err = check("key binding JWT present", errIf(kb == nil, "the presentation has no key binding JWT")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	cnf, _ := token.Payload["cnf"].(map[string]any)
 	cnfJWK, _ := cnf["jwk"].(map[string]any)
 	if err = check("credential is holder bound (cnf.jwk)", errIf(cnfJWK == nil, "the credential carries no cnf.jwk")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	holderKey, err := holderKeyFromJWK(cnfJWK)
 	if err = check("cnf.jwk parses", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	kbJWT, err := parseCompactJWT(kb.Raw)
 	if err = check("key binding JWT parses", err); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	kbTyp, _ := kbJWT.header["typ"].(string)
 	if err = check("key binding JWT is typed kb+jwt", errIf(kbTyp != "kb+jwt", "typ is %q", kbTyp)); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	if err = check("key binding signature verifies with cnf key", errIf(!verifyES256(holderKey, kbJWT.signingInput, kbJWT.signature), "key binding signature is invalid")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	// sd_hash covers everything up to and including the final ~.
-	prefix := presentations[0][:strings.LastIndex(presentations[0], "~")+1]
+	prefix := presentation[:strings.LastIndex(presentation, "~")+1]
 	digest := sha256.Sum256([]byte(prefix))
 	wantHash := base64.RawURLEncoding.EncodeToString(digest[:])
 	gotHash, _ := kbJWT.payload["sd_hash"].(string)
 	if err = check("sd_hash matches the presentation", errIf(gotHash != wantHash, "sd_hash does not match")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	nonce, _ := kbJWT.payload["nonce"].(string)
 	if err = check("nonce matches the request", errIf(nonce != req.nonce, "nonce mismatch")); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 	aud, _ := kbJWT.payload["aud"].(string)
 	if err = check("audience is this verifier", checkPresentationAudience(req, aud)); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
 	disclosed := disclosedClaims(token)
 	var missing []string
-	for _, name := range req.want {
+	for _, name := range want {
 		if _, ok := disclosed[name]; !ok {
 			missing = append(missing, name)
 		}
 	}
 	if err = check("requested claims were disclosed",
 		errIf(len(missing) > 0, "missing: %s", strings.Join(missing, ", "))); err != nil {
-		return nil, log.entries, err
+		return nil, err
 	}
 
-	return disclosed, log.entries, nil
+	return disclosed, nil
 }
 
 // checkDisclosuresReferenced enforces the SD-JWT rule that every disclosure be

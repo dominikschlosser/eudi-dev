@@ -916,6 +916,83 @@ test.describe("Consent credential selection", () => {
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
   });
 
+  /** Makes sure the wallet holds a demo ticket, issuing one if needed. */
+  async function ensureTicket() {
+    const creds = await (await fetch(`${BASE}/api/credentials`)).json();
+    if (creds.some((c) => (c.claims || {}).vct === "urn:eudi-test:demo-ticket:1")) return;
+    const { body: offer } = await postJSON("/issuer/api/offers", {});
+    await postJSON("/api/offers", { uri: offer.scheme_uri });
+  }
+
+  /** Opens the consent dialog for a prepared verifier request body. */
+  async function openPreparedConsent(page, requestBody) {
+    const { body } = await postJSON("/verifier/api/requests", requestBody);
+    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    submitAsSchemeHandler("/api/presentations", body.scheme_uri);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    return body;
+  }
+
+  test("an optional ticket set is answered by default and skippable", async ({ page }) => {
+    await ensureTicket();
+    const req = await openPreparedConsent(page, { type: "pid", ticket: "optional" });
+
+    // The auto-selection answers both sets: a PID card and the ticket card.
+    await expect(page.locator(".consent-credential")).toHaveCount(2);
+    await expect(page.locator('.consent-credential[data-vct="urn:eudi-test:demo-ticket:1"]')).toBeVisible();
+
+    // The Edit view shows both sets, and the optional one offers "none".
+    await page.locator("#consent-edit-selection").click();
+    await expect(page.locator(".consent-sets")).toHaveCount(2);
+    await page.locator("#consent-set-1-none").check();
+    await expect(page.locator(".consent-credential[data-query-id]")).toHaveCount(1);
+    await page.locator("#consent-selection-done").click();
+
+    // Skipping the ticket leaves one card, and the verifier accepts the
+    // presentation without it.
+    await expect(page.locator(".consent-credential")).toHaveCount(1);
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("verified");
+    expect((result.claims || {}).ticket).toBeFalsy();
+    expect(result.checks.map((c) => c.name)).toContain("ticket: not presented, which the request allows");
+  });
+
+  test("the ticket travels next to the PID and verifies", async ({ page }) => {
+    await ensureTicket();
+    const req = await openPreparedConsent(page, { type: "pid", ticket: "optional" });
+
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("verified");
+    expect(result.claims.ticket.event).toBe("EUDI Interop Fest");
+    expect(result.checks.map((c) => c.name)).toContain("ticket: issuer signature verifies");
+  });
+
+  test("a combined option presents PID and ticket together or the PID alone", async ({ page }) => {
+    await ensureTicket();
+    const req = await openPreparedConsent(page, { type: "pid", ticket: "combined" });
+
+    // The combined option is the auto-choice, so both cards show.
+    await expect(page.locator(".consent-credential")).toHaveCount(2);
+
+    // One set, its leading option naming both queries.
+    await page.locator("#consent-edit-selection").click();
+    await expect(page.locator(".consent-sets")).toHaveCount(1);
+    await expect(page.locator(".consent-set-option").first()).toContainText("ticket");
+    await page.locator("#consent-set-0-option-1").check();
+    await page.locator("#consent-selection-done").click();
+
+    await expect(page.locator(".consent-credential")).toHaveCount(1);
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    const result = await verifierResult(req.id);
+    expect(result.status).toBe("verified");
+    expect((result.claims || {}).ticket).toBeFalsy();
+  });
+
   test("approving straight from the edit screen submits the drafted selection", async ({ page }) => {
     const req = await openConsent(page);
 
