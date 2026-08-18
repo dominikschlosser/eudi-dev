@@ -331,8 +331,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 // verifier. The submission result is also delivered on the consent request's
 // submission channel for the approve API.
 func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *AuthorizationRequestParams, matches []CredentialMatch, consentReq *ConsentRequest) {
-	select {
-	case result := <-consentReq.ResultCh:
+	handle := func(result ConsentResult) {
 		if !result.Approved {
 			s.log("  Consent:       denied")
 			s.wallet.AddLog("presentation", fmt.Sprintf("Denied presentation to %s", authReq.ClientID), false)
@@ -360,9 +359,19 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 		}
 
 		s.submitPresentationWithNotify(w, authReq, matches, consentReq.SubmissionCh)
+	}
 
+	select {
+	case result := <-consentReq.ResultCh:
+		handle(result)
 	case <-time.After(5 * time.Minute):
-		consentReq.Status = "denied"
+		// The timer races an arriving decision, and the request's status is
+		// the referee: a decision that already resolved the request is
+		// honored, only a request still pending times out.
+		if _, ok := s.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+			handle(<-consentReq.ResultCh)
+			return
+		}
 		s.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})

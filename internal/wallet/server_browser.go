@@ -160,8 +160,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		reqServer.onConsentRequest(consentReq)
 	}
 
-	select {
-	case result := <-consentReq.ResultCh:
+	handle := func(result ConsentResult) {
 		if !result.Approved {
 			reqServer.log("  Consent:       denied")
 			browserResult, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, "access_denied", "User denied presentation")
@@ -198,8 +197,19 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 		submission := reqServer.writeBrowserPresentationResult(w, authReq, protocol, matches)
 		consentReq.SubmissionCh <- submission
+	}
+
+	select {
+	case result := <-consentReq.ResultCh:
+		handle(result)
 	case <-time.After(5 * time.Minute):
-		consentReq.Status = "denied"
+		// The timer races an arriving decision, and the request's status is
+		// the referee: a decision that already resolved the request is
+		// honored, only a request still pending times out.
+		if _, ok := reqServer.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+			handle(<-consentReq.ResultCh)
+			return
+		}
 		reqServer.wallet.AddLog("presentation", "Consent timeout", false)
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		writeJSON(w, http.StatusRequestTimeout, map[string]string{"error": "consent timeout"})

@@ -617,8 +617,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 	}
 	w.CreateConsentRequest(consentReq)
 
-	select {
-	case result := <-consentReq.ResultCh:
+	handle := func(result ConsentResult) ([]CredentialMatch, bool, error) {
 		if result.Approved {
 			matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 			if result.SelectedClaims != nil {
@@ -634,8 +633,18 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		// The approve endpoint waits for this before answering the UI.
 		consentReq.SubmissionCh <- SubmissionResult{StatusCode: 200}
 		return matches, result.Approved, nil
+	}
+
+	select {
+	case result := <-consentReq.ResultCh:
+		return handle(result)
 	case <-time.After(interactiveAuthorizationConsentTimeout):
-		consentReq.Status = "denied"
+		// The timer races an arriving decision, and the request's status is
+		// the referee: a decision that already resolved the request is
+		// honored, only a request still pending times out.
+		if _, ok := w.ResolveRequest(consentReq.ID, "denied"); !ok {
+			return handle(<-consentReq.ResultCh)
+		}
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}
 		return matches, false, fmt.Errorf("no answer to the presentation the issuer asked for")
 	}
