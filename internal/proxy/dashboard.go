@@ -18,12 +18,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
+
+// streamKeepaliveInterval is how often an idle event stream sends a comment
+// line. A variable so tests do not have to wait for it.
+var streamKeepaliveInterval = 20 * time.Second
+
+// streamWriteTimeout bounds one write to a stream. It outlasts the keepalive,
+// so a reading client never hits it, while a client that stopped reading
+// stops holding a goroutine and a subscription.
+var streamWriteTimeout = 2 * time.Minute
 
 // Dashboard serves the web dashboard for live traffic inspection.
 type Dashboard struct {
@@ -93,14 +103,34 @@ func (d *Dashboard) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A stream outlives the server's write timeout by definition, and that
+	// deadline covers the whole response: left in place it cuts the stream
+	// off mid-session, and every entry until the client notices and
+	// reconnects is one nobody sees. It is pushed forward before every write
+	// rather than removed, so a client that stops reading still releases the
+	// handler and its subscription instead of holding both indefinitely.
+	rc := http.NewResponseController(w)
+	extendDeadline := func() {
+		if err := rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
+			log.Printf("[Dashboard] stream write deadline not extended, the stream will end with the server's write timeout: %v", err)
+		}
+	}
+	extendDeadline()
+
+	// Subscribed before the response head goes out, so a client that starts
+	// following and then reads the entry list cannot miss an entry that
+	// arrives between the two requests.
+	ch, unsub := d.store.Subscribe()
+	defer unsub()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	flusher.Flush()
 
-	ch, unsub := d.store.Subscribe()
-	defer unsub()
+	keepalive := time.NewTicker(streamKeepaliveInterval)
+	defer keepalive.Stop()
 
 	for {
 		select {
@@ -109,7 +139,16 @@ func (d *Dashboard) handleStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
+			extendDeadline()
 			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-keepalive.C:
+			extendDeadline()
+			// A comment line, which every SSE reader ignores. It keeps an
+			// idle stream from being dropped by whatever sits between the
+			// proxy and the client, which on a containerized proxy is
+			// usually something.
+			fmt.Fprint(w, ": keepalive\n\n") //nolint:errcheck // a dead connection ends the stream on the next write anyway
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

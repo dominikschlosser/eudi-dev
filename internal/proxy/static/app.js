@@ -11,6 +11,9 @@
   const timelineToggle = document.getElementById("timeline-toggle");
 
   let entries = [];
+  // Traffic the user cleared. The proxy keeps its own record, so without
+  // this the next resync would bring everything back.
+  let clearedThroughID = 0;
   let showAll = false;
   let timelineView = localStorage.getItem("proxy-timeline") === "true";
 
@@ -41,6 +44,9 @@
 
   // Clear
   clearBtn.addEventListener("click", function () {
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].id > clearedThroughID) clearedThroughID = entries[i].id;
+    }
     entries = [];
     renderEntries();
   });
@@ -237,6 +243,11 @@
 
     var frag = document.createDocumentFragment();
 
+    // Newest flow first, like the entry list. The entries inside one flow
+    // stay in the order they happened.
+    flowOrder.reverse();
+    standalone.reverse();
+
     for (var f = 0; f < flowOrder.length; f++) {
       var flowId = flowOrder[f];
       var flowEntries = flowGroups[flowId];
@@ -300,11 +311,11 @@
     if (timelineView) {
       entriesEl.appendChild(renderFlowTimeline(visible));
     } else {
-      for (const entry of visible) {
-        entriesEl.appendChild(renderEntry(entry));
+      // Newest first, as the wallet's activity log reads.
+      for (var i = visible.length - 1; i >= 0; i--) {
+        entriesEl.appendChild(renderEntry(visible[i]));
       }
     }
-    entriesEl.scrollTop = entriesEl.scrollHeight;
   }
 
   function addEntry(entry) {
@@ -321,22 +332,40 @@
       emptyEl.style.display = "none";
       entriesEl.innerHTML = "";
     }
-    entriesEl.appendChild(renderEntry(entry));
-    entriesEl.scrollTop = entriesEl.scrollHeight;
+    entriesEl.insertBefore(renderEntry(entry), entriesEl.firstChild);
   }
 
-  // Load initial entries
-  fetch("/api/entries")
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      if (data && data.length > 0) {
-        entries = data;
+  // Reads the entry list and adds whatever this page has not seen. It runs
+  // whenever the stream connects: at load, so nothing that arrived before
+  // the subscription is missed, and after a reconnect, so a gap in the
+  // stream does not silently swallow traffic.
+  function syncEntries() {
+    return fetch("/api/entries")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || data.length === 0) return;
+        var known = {};
+        for (var i = 0; i < entries.length; i++) {
+          known[entries[i].id] = true;
+        }
+        var added = false;
+        for (var j = 0; j < data.length; j++) {
+          if (data[j].id <= clearedThroughID) continue;
+          if (!known[data[j].id]) {
+            entries.push(data[j]);
+            added = true;
+          }
+        }
+        if (!added) return;
+        // Kept oldest first internally: the timeline reads it in order and
+        // the list renders it reversed.
+        entries.sort(function (a, b) { return a.id - b.id; });
         renderEntries();
-      }
-    })
-    .catch(function (err) {
-      console.error("Failed to load entries:", err);
-    });
+      })
+      .catch(function (err) {
+        console.error("Failed to load entries:", err);
+      });
+  }
 
   // SSE for live updates
   function connectSSE() {
@@ -354,6 +383,7 @@
     es.onopen = function () {
       statusEl.textContent = "Connected";
       statusEl.className = "status";
+      syncEntries();
     };
 
     es.onerror = function () {

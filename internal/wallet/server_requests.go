@@ -31,6 +31,11 @@ func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.wallet.PendingRequestDocs())
 }
 
+// streamWriteTimeout bounds one write to an event stream. It outlasts the
+// keepalive, so a reading client never hits it, while a client that stopped
+// reading stops holding a goroutine and its subscriptions.
+var streamWriteTimeout = 2 * time.Minute
+
 // sseKeepaliveInterval is how often an otherwise idle event stream sends a
 // comment line. A variable so tests do not have to wait for it.
 var sseKeepaliveInterval = 25 * time.Second
@@ -42,6 +47,20 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
+
+	// A stream outlives the server's write timeout by definition, and that
+	// deadline covers the whole response: left in place it ends the stream
+	// mid-session, and a consent request arriving before the UI reconnects
+	// is one no tab is told about. It is pushed forward before every write
+	// rather than removed, so a client that stops reading still releases the
+	// handler and its subscriptions instead of holding them indefinitely.
+	rc := http.NewResponseController(w)
+	extendDeadline := func() {
+		if err := rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
+			s.log("  WARNING: event stream write deadline not extended, the stream ends with the server's write timeout: %v", err)
+		}
+	}
+	extendDeadline()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -71,6 +90,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-keepalive.C:
+			extendDeadline()
 			fmt.Fprintf(w, ": keepalive\n\n")
 			flusher.Flush()
 		case req := <-reqCh:
@@ -78,6 +98,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
+			extendDeadline()
 			fmt.Fprintf(w, "event: consent\ndata: %s\n\n", data)
 			flusher.Flush()
 		case walletErr := <-errCh:
@@ -85,9 +106,11 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
+			extendDeadline()
 			fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-stateCh:
+			extendDeadline()
 			fmt.Fprintf(w, "event: state\ndata: {}\n\n")
 			flusher.Flush()
 		case authURL := <-authCh:
@@ -98,6 +121,7 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
+			extendDeadline()
 			fmt.Fprintf(w, "event: authorize\ndata: %s\n\n", data)
 			flusher.Flush()
 		case <-r.Context().Done():
