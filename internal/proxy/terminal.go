@@ -61,6 +61,19 @@ func (tw *TerminalWriter) WriteEntry(entry *TrafficEntry) {
 // PrintEntry prints a traffic entry to the terminal with color formatting.
 // If dashboardPort > 0, decode links are printed for each credential.
 func PrintEntry(entry *TrafficEntry, dashboardPort int) {
+	base := ""
+	if dashboardPort > 0 {
+		base = fmt.Sprintf("http://localhost:%d", dashboardPort)
+	}
+	PrintEntryWithDecodeBase(entry, base)
+}
+
+// PrintEntryWithDecodeBase prints an entry, building the decode links against
+// the dashboard at decodeBase. It is what reading a remote proxy needs: the
+// links have to name the dashboard the traffic came from, which is not
+// localhost when the proxy runs in a container. An empty base prints the CLI
+// hint instead, for a proxy running without a dashboard.
+func PrintEntryWithDecodeBase(entry *TrafficEntry, decodeBase string) {
 	ts := entry.Timestamp.Format("15:04:05")
 
 	statusFn := successColor.Sprintf
@@ -92,7 +105,7 @@ func PrintEntry(entry *TrafficEntry, dashboardPort int) {
 		if len(sections) > 0 {
 			fmt.Println()
 		}
-		printDecodeSection(entry.Credentials, entry.CredentialLabels, dashboardPort)
+		printDecodeSection(entry.Credentials, entry.CredentialLabels, decodeBase)
 	}
 
 	fmt.Println()
@@ -176,14 +189,14 @@ func printSection(section renderedSection) {
 	}
 }
 
-func printDecodeSection(credentials, labels []string, dashboardPort int) {
+func printDecodeSection(credentials, labels []string, decodeBase string) {
 	labelColor.Printf("  decode:\n")
 	for i, credential := range credentials {
 		label := ""
 		if i < len(labels) {
 			label = labels[i]
 		}
-		printDecodeHint(credential, label, dashboardPort)
+		printDecodeHint(credential, label, decodeBase)
 	}
 }
 
@@ -367,11 +380,11 @@ func printDecodedField(key string, val any, depth int) {
 	}
 }
 
-func printDecodeHint(credential, label string, dashboardPort int) {
+func printDecodeHint(credential, label, decodeBase string) {
 	prefix := strings.Repeat("  ", 2)
 
-	if dashboardPort > 0 {
-		decodeURL := fmt.Sprintf("http://localhost:%d/decode?credential=%s", dashboardPort, url.QueryEscape(credential))
+	if decodeBase != "" {
+		decodeURL := fmt.Sprintf("%s/decode?credential=%s", strings.TrimRight(decodeBase, "/"), url.QueryEscape(credential))
 		dimColor.Printf("%s┌ ", prefix)
 		if label != "" {
 			dimColor.Printf("%s: ", label)

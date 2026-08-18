@@ -66,10 +66,11 @@ Examples:
 func init() {
 	proxyCmd.Flags().StringVar(&proxyTarget, "target", "", "URL of the verifier/issuer to proxy to (required)")
 	proxyCmd.Flags().IntVar(&proxyPort, "port", config.DefaultProxyPort, "Proxy listen port")
-	proxyCmd.Flags().IntVar(&dashboardPort, "dashboard", 9091, "Dashboard listen port")
+	proxyCmd.Flags().IntVar(&dashboardPort, "dashboard", config.DefaultProxyDashboardPort, "Dashboard listen port")
 	proxyCmd.Flags().BoolVar(&noDashboard, "no-dashboard", false, "Disable web dashboard")
 	proxyCmd.Flags().BoolVar(&allTraffic, "all-traffic", false, "Show all traffic, not just OID4VP/VCI requests")
 	_ = proxyCmd.MarkFlagRequired("target")
+	proxyCmd.AddCommand(proxyLogsCmd())
 	rootCmd.AddCommand(proxyCmd)
 }
 

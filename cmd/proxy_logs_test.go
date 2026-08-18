@@ -1,0 +1,302 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/fatih/color"
+
+	"github.com/dominikschlosser/eudi-dev/internal/proxy"
+)
+
+// runProxyLogs runs the command against a dashboard, capturing what it prints
+// to the terminal. The entry renderer writes to stdout and to the color
+// package's writer, which is what the proxy prints with itself.
+func runProxyLogs(t *testing.T, args ...string) string {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout, oldColor := os.Stdout, color.Output
+	os.Stdout, color.Output = w, w
+	defer func() { os.Stdout, color.Output = oldStdout, oldColor }()
+
+	cmd := proxyLogsCmd()
+	cmd.SetOut(w)
+	cmd.SetErr(w)
+	cmd.SetArgs(args)
+	runErr := cmd.Execute()
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	if runErr != nil {
+		t.Fatalf("proxy logs %v: %v (output %q)", args, runErr, buf.String())
+	}
+	return buf.String()
+}
+
+func proxyDashboardWith(t *testing.T, entries ...*proxy.TrafficEntry) *httptest.Server {
+	t.Helper()
+	store := proxy.NewStore(50)
+	for _, entry := range entries {
+		store.Add(entry)
+	}
+	srv := httptest.NewServer(proxy.NewDashboard(store, 0).Handler())
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A proxy with no terminal of its own, read from one that has.
+func TestProxyLogsPrintsWhatTheProxyRecorded(t *testing.T) {
+	srv := proxyDashboardWith(t,
+		&proxy.TrafficEntry{Method: "POST", URL: "http://issuer.example/token", StatusCode: 200, ClassLabel: "VCI Token"},
+		&proxy.TrafficEntry{Method: "GET", URL: "http://verifier.example/request", StatusCode: 404, ClassLabel: "VP Request Object"},
+	)
+
+	output := runProxyLogs(t, srv.URL)
+
+	for _, want := range []string{
+		"http://issuer.example/token",
+		"http://verifier.example/request",
+		"VCI Token",
+		"404",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output does not mention %q:\n%s", want, output)
+		}
+	}
+}
+
+// The decode links have to name the dashboard the traffic came from: a proxy
+// in a container is not reachable at localhost from outside it.
+func TestProxyLogsLinksDecodeAtTheProxyItRead(t *testing.T) {
+	srv := proxyDashboardWith(t, &proxy.TrafficEntry{
+		Method: "POST", URL: "http://verifier.example/response", StatusCode: 200,
+		ClassLabel:       "VP Authorization Response",
+		Credentials:      []string{"credential-value"},
+		CredentialLabels: []string{"vp_token"},
+	})
+
+	output := runProxyLogs(t, srv.URL)
+
+	if !strings.Contains(output, srv.URL+"/decode?credential=credential-value") {
+		t.Errorf("decode link does not point at the proxy that was read:\n%s", output)
+	}
+	if strings.Contains(output, "localhost:9091") {
+		t.Errorf("decode link fell back to a local dashboard:\n%s", output)
+	}
+}
+
+func TestProxyLogsJSON(t *testing.T) {
+	srv := proxyDashboardWith(t, &proxy.TrafficEntry{Method: "GET", URL: "http://target/one", StatusCode: 200})
+
+	jsonOutput = true
+	defer func() { jsonOutput = false }()
+
+	output := runProxyLogs(t, srv.URL)
+	var entries []map[string]any
+	if err := json.Unmarshal([]byte(output), &entries); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, output)
+	}
+	if len(entries) != 1 || entries[0]["url"] != "http://target/one" {
+		t.Errorf("unexpected JSON: %s", output)
+	}
+}
+
+// A proxy that is not there, or an address that is not a dashboard, has to
+// say so rather than print nothing and exit clean.
+func TestProxyLogsReportsAnUnreachableProxy(t *testing.T) {
+	cmd := proxyLogsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"http://127.0.0.1:1"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("reading an unreachable proxy succeeded")
+	}
+
+	cmd = proxyLogsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"ftp://proxy.example"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("a non-http dashboard URL was accepted")
+	}
+}
+
+func TestProxyLogsRefusesJSONWithFollow(t *testing.T) {
+	jsonOutput = true
+	defer func() { jsonOutput = false }()
+
+	cmd := proxyLogsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--follow"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("--json --follow was accepted")
+	}
+}
+
+// Following prints what arrives while it runs, and prints the traffic
+// recorded before it started exactly once: the subscription predates the
+// read of that traffic, so the first streamed entries can repeat it.
+func TestProxyLogsFollowsWithoutRepeatingWhatItAlreadyPrinted(t *testing.T) {
+	store := proxy.NewStore(50)
+	store.Add(&proxy.TrafficEntry{Method: "GET", URL: "http://target/recorded", StatusCode: 200})
+	srv := httptest.NewServer(proxy.NewDashboard(store, 0).Handler())
+	defer srv.Close()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout, oldColor := os.Stdout, color.Output
+	os.Stdout, color.Output = w, w
+	defer func() { os.Stdout, color.Output = oldStdout, oldColor }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := proxyLogsCmd()
+	cmd.SetOut(w)
+	cmd.SetErr(w)
+	cmd.SetArgs([]string{srv.URL, "--follow"})
+	cmd.SetContext(ctx)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+
+	// Give the follow time to print the recorded entry and subscribe, then
+	// record one more.
+	time.Sleep(300 * time.Millisecond)
+	store.Add(&proxy.TrafficEntry{Method: "POST", URL: "http://target/live", StatusCode: 201})
+	time.Sleep(300 * time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("follow ended with %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("follow did not stop when the context ended")
+	}
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	output := buf.String()
+
+	if got := strings.Count(output, "http://target/recorded"); got != 1 {
+		t.Errorf("the recorded entry was printed %d times, want once:\n%s", got, output)
+	}
+	if got := strings.Count(output, "http://target/live"); got != 1 {
+		t.Errorf("the live entry was printed %d times, want once:\n%s", got, output)
+	}
+}
+
+// followProxyEntries against a dashboard whose store is swapped underneath
+// it, which is what a restarted proxy looks like from here: the stream ends,
+// and the entries that follow are numbered from the beginning again.
+func TestProxyLogsFollowSurvivesARestartedProxy(t *testing.T) {
+	proxyLogsReconnectDelay = 10 * time.Millisecond
+	defer func() { proxyLogsReconnectDelay = 2 * time.Second }()
+
+	var mu sync.Mutex
+	store := proxy.NewStore(50)
+	store.Add(&proxy.TrafficEntry{Method: "GET", URL: "http://target/before-restart", StatusCode: 200})
+
+	current := func() *proxy.Store {
+		mu.Lock()
+		defer mu.Unlock()
+		return store
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.NewDashboard(current(), 0).Handler().ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout, oldColor := os.Stdout, color.Output
+	os.Stdout, color.Output = w, w
+	defer func() { os.Stdout, color.Output = oldStdout, oldColor }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cmd := proxyLogsCmd()
+	cmd.SetOut(w)
+	cmd.SetErr(w)
+	cmd.SetArgs([]string{srv.URL, "--follow"})
+	cmd.SetContext(ctx)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Execute() }()
+	time.Sleep(300 * time.Millisecond)
+
+	// The proxy restarts: a fresh store, numbering from 1 again, and the
+	// stream the follow was reading ends with the old one.
+	mu.Lock()
+	store = proxy.NewStore(50)
+	mu.Unlock()
+	srv.CloseClientConnections()
+	time.Sleep(300 * time.Millisecond)
+
+	current().Add(&proxy.TrafficEntry{Method: "POST", URL: "http://target/after-restart", StatusCode: 201})
+	time.Sleep(600 * time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("follow ended with %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("follow did not stop when the context ended")
+	}
+
+	w.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	output := buf.String()
+
+	if !strings.Contains(output, "http://target/before-restart") {
+		t.Errorf("the traffic recorded before the restart was never printed:\n%s", output)
+	}
+	if !strings.Contains(output, "http://target/after-restart") {
+		t.Errorf("traffic recorded after the restart was dropped, which is what renumbering does to a follow:\n%s", output)
+	}
+}

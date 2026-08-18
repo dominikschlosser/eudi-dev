@@ -31,6 +31,10 @@ const (
 	// DefaultProxyPort is the default port for the debugging reverse proxy.
 	DefaultProxyPort = 9090
 
+	// DefaultProxyDashboardPort is the default port for the proxy's dashboard,
+	// which serves the recorded traffic to the browser and to `proxy logs`.
+	DefaultProxyDashboardPort = 9091
+
 	// ConsentTimeout is how long the wallet waits for interactive consent before timing out.
 	ConsentTimeout = 5 * time.Minute
 

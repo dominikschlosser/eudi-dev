@@ -104,7 +104,7 @@ func TestPrintEntryIncludesDecodeHints(t *testing.T) {
 }
 
 func TestPrintDecodeHintWithLabel(t *testing.T) {
-	output := captureOutput(t, func() { printDecodeHint("cred-value", "id_token", 0) })
+	output := captureOutput(t, func() { printDecodeHint("cred-value", "id_token", "") })
 
 	if !strings.Contains(output, "eudi decode") {
 		t.Errorf("expected decode command, got %q", output)
@@ -115,7 +115,7 @@ func TestPrintDecodeHintWithLabel(t *testing.T) {
 }
 
 func TestPrintDecodeHintWithoutLabel(t *testing.T) {
-	output := captureOutput(t, func() { printDecodeHint("cred-value", "", 0) })
+	output := captureOutput(t, func() { printDecodeHint("cred-value", "", "") })
 
 	if !strings.Contains(output, "eudi decode") {
 		t.Errorf("expected decode command, got %q", output)
@@ -126,7 +126,7 @@ func TestPrintDecodeHintWithoutLabel(t *testing.T) {
 }
 
 func TestPrintDecodeHintWithDashboardPort(t *testing.T) {
-	output := captureOutput(t, func() { printDecodeHint("cred-value", "vp_token", 9091) })
+	output := captureOutput(t, func() { printDecodeHint("cred-value", "vp_token", "http://localhost:9091") })
 
 	if !strings.Contains(output, "http://localhost:9091/decode?credential=cred-value") {
 		t.Errorf("expected decode URL in output, got %q", output)
@@ -163,7 +163,7 @@ func TestPrintEntryWithDashboardPortRendersDecodeLinkPerCredential(t *testing.T)
 func TestPrintDecodeHintEscapesCredentialQueryParam(t *testing.T) {
 	credential := `{"cred1":["mdoc-credential"],"cred2":"jwt-credential"}`
 
-	output := captureOutput(t, func() { printDecodeHint(credential, "vp_token", 9091) })
+	output := captureOutput(t, func() { printDecodeHint(credential, "vp_token", "http://localhost:9091") })
 
 	if !strings.Contains(output, "http://localhost:9091/decode?credential="+url.QueryEscape(credential)) {
 		t.Errorf("expected escaped decode URL in output, got %q", output)

@@ -46,6 +46,7 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 - **Web dashboard** at `http://localhost:9091` with live SSE updates, expandable cards, "View in Decoder" links, HAR export, and cURL copy
 - **JARM/JWE detection**: shows encrypted response headers and the verifier's ephemeral public key
 - **NDJSON output**: `--json` for machine-readable output, pipe to `jq` or log to file
+- **Attach to a running proxy**: `eudi proxy logs` prints the traffic of a proxy that is already running, from another terminal (see [reading a running proxy](#reading-a-running-proxy))
 
 ## Flags
 
@@ -58,6 +59,43 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 | `--all-traffic`  | `false` | Show all traffic, not just OID4VP/VCI    |
 | `--json`         | `false` | NDJSON output to stdout (global flag)    |
 | `-- <command>`   | —       | Launch target as subprocess, scan stdout |
+
+`eudi proxy logs [dashboard-url]` reads a proxy that is already running:
+
+| Flag             | Default | Description                                        |
+|------------------|---------|----------------------------------------------------|
+| `[dashboard-url]`| `http://localhost:9091` | Dashboard of the proxy to read      |
+| `-f, --follow`   | `false` | Keep printing as the proxy records traffic         |
+| `--json`         | `false` | Print the recorded traffic as JSON (global flag)   |
+
+## Reading a running proxy
+
+A proxy in a container, in the background, or on another machine prints to a
+terminal you do not have. The CLI reads its traffic from the dashboard
+instead:
+
+```bash
+# a proxy on this machine
+eudi proxy logs
+
+# a proxy whose dashboard port is published from a container
+eudi proxy logs http://localhost:9091 --follow
+
+# somewhere else entirely
+eudi proxy logs https://proxy.internal.example --follow
+```
+
+The output is the same the proxy prints itself, with decode links pointing at
+that dashboard. `--follow` keeps printing as traffic arrives and keeps
+reattaching when the stream ends, until you interrupt it: after each
+reattachment it re-reads the recorded traffic, so what arrived while the
+stream was down is printed too, including after a proxy restart (which numbers
+its traffic from the beginning again). `--json` prints the recorded traffic as
+JSON and cannot be combined with `--follow`.
+
+The argument is the dashboard URL, not the proxy port. A proxy started without
+`--all-traffic` never recorded non-OID4VP/VCI requests, so they cannot be read
+back here either.
 
 ## Example output
 
