@@ -336,7 +336,7 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		// mid-flow is put to them as well.
 		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
 			"credential_requested": consentReq.OfferConfigs,
-		}, OfferOptions{TxCode: txCode})
+		}, OfferOptions{TxCode: txCode, ResolvedOffer: consentReq.ResolvedOffer})
 		if err != nil {
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -454,6 +454,9 @@ func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) 
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
 	req.OfferDetails = describeCredentialOffer(offer)
+	// Kept for the approval: an issuer that serves the offer once has
+	// nothing left to give by then.
+	req.ResolvedOffer = offer
 	return req, offer.CredentialIssuer, nil
 }
 func extractCredentialOfferURI(raw string) string {

@@ -49,6 +49,10 @@ type mockIssuerOpts struct {
 	offerViaURI bool
 	// oneShotOfferURI, if true, the credential_offer_uri succeeds once and then returns HTTP 400.
 	oneShotOfferURI bool
+	// secondOffer, if set, is what the credential_offer_uri serves from the
+	// second read on: an issuer that answers a spent offer with something
+	// else, or one that hands out a different offer under the same URI.
+	secondOffer map[string]any
 	// onOfferFetch is called whenever the credential_offer_uri endpoint is dereferenced.
 	onOfferFetch func()
 	// inspectMetadataRequest sees the request the wallet makes for the issuer
@@ -194,6 +198,11 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 			if opts.oneShotOfferURI && currentFetch > 1 {
 				rw.WriteHeader(http.StatusBadRequest)
 				json.NewEncoder(rw).Encode(map[string]string{"error": "offer_expired"})
+				return
+			}
+			if opts.secondOffer != nil && currentFetch > 1 {
+				rw.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(rw).Encode(opts.secondOffer)
 				return
 			}
 			offer := map[string]any{

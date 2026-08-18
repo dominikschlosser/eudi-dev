@@ -22,6 +22,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -127,6 +128,96 @@ type OfferOptions struct {
 	// requires one. It travels with the flow it belongs to, so concurrent
 	// offers on a shared wallet each send their own code.
 	TxCode string
+	// ResolvedOffer is an offer the caller already resolved from the same
+	// URI, which is what a consent dialog holds by the time the user
+	// approves. It is used only when reading the URI again fails.
+	ResolvedOffer *oid4vc.CredentialOffer
+}
+
+// resolveOffer reads the credential offer the URI names. resolved is an offer
+// the caller took from the same URI earlier, which a consent dialog holds by
+// the time the user approves.
+//
+// The URI is read again here even so: §4.1.3 asks the wallet to fetch it
+// "unless it is already cached", and reading it is what tells the wallet what
+// it is actually being handed. An issuer that consumes the offer on the first
+// read answers the second with an error, which is not a reason to lose an
+// issuance the user already approved: the flow continues with what was
+// resolved, and the activity log says the offer could not be read again.
+func (w *Wallet) resolveOffer(offerURI string, approved *oid4vc.CredentialOffer) (*oid4vc.CredentialOffer, error) {
+	reqType, result, err := oid4vc.Parse(offerURI)
+	if err != nil {
+		return w.keepApprovedOffer(offerURI, approved, err)
+	}
+	if reqType != oid4vc.TypeVCI {
+		return nil, fmt.Errorf("expected VCI credential offer, got VP")
+	}
+	offer, ok := result.(*oid4vc.CredentialOffer)
+	if !ok {
+		return nil, fmt.Errorf("unexpected credential offer type")
+	}
+	// §4.1.1 makes credential_issuer required, so a response without one is
+	// not an offer. Issuers that answer a spent offer with an error body and
+	// HTTP 200 land here rather than in the error branch above.
+	if strings.TrimSpace(offer.CredentialIssuer) == "" {
+		return w.keepApprovedOffer(offerURI, approved, fmt.Errorf("the response carried no credential_issuer"))
+	}
+	// The user approved what the dialog described. An offer that now names a
+	// different issuer or different credentials is not the one they saw, so
+	// it does not get to replace it without being asked again.
+	if approved != nil && !sameCredentialOffer(approved, offer) {
+		w.addProtocolWarning("issuance", "credential_offer_changed",
+			fmt.Sprintf("The credential_offer_uri now offers %s rather than the %s this issuance was approved for, continuing with what was approved",
+				offerSummary(offer), offerSummary(approved)),
+			map[string]any{
+				"issuer":          approved.CredentialIssuer,
+				"offered_issuer":  offer.CredentialIssuer,
+				"offered_configs": offer.CredentialConfigurationIDs,
+				"offer_uri":       offerURI,
+			})
+		return approved, nil
+	}
+	return offer, nil
+}
+
+// keepApprovedOffer continues an approved issuance with the offer the consent
+// dialog resolved, when reading the URI again did not produce a usable one.
+func (w *Wallet) keepApprovedOffer(offerURI string, approved *oid4vc.CredentialOffer, cause error) (*oid4vc.CredentialOffer, error) {
+	if approved == nil {
+		return nil, fmt.Errorf("parsing credential offer: %w", cause)
+	}
+	w.addProtocolWarning("issuance", "credential_offer_reread_failed",
+		fmt.Sprintf("The credential_offer_uri could not be read a second time, continuing with the offer this issuance was approved for: %v", cause),
+		map[string]any{
+			"issuer":    approved.CredentialIssuer,
+			"offer_uri": offerURI,
+			"error":     cause.Error(),
+		})
+	return approved, nil
+}
+
+// sameCredentialOffer reports whether two reads of one URI offer the same
+// thing: the credentials of that issuer are what the user was asked about.
+// The grants are deliberately not compared, since an issuer may mint a fresh
+// pre-authorized code for every read of the same offer.
+func sameCredentialOffer(approved, offered *oid4vc.CredentialOffer) bool {
+	if approved.CredentialIssuer != offered.CredentialIssuer {
+		return false
+	}
+	return slices.Equal(approved.CredentialConfigurationIDs, offered.CredentialConfigurationIDs)
+}
+
+// offerSummary names an offer the way a warning has to: whose it is and what
+// it holds.
+func offerSummary(offer *oid4vc.CredentialOffer) string {
+	issuer := strings.TrimSpace(offer.CredentialIssuer)
+	if issuer == "" {
+		issuer = "an unnamed issuer"
+	}
+	if len(offer.CredentialConfigurationIDs) == 0 {
+		return issuer
+	}
+	return fmt.Sprintf("%s from %s", strings.Join(offer.CredentialConfigurationIDs, ", "), issuer)
 }
 
 // ProcessCredentialOffer processes an OID4VCI credential offer URI for a user
@@ -141,16 +232,9 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 // even when the consent dialog already fetched it, which is allowed and keeps
 // this the single entry point.
 func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (*IssuanceResult, error) {
-	reqType, result, err := oid4vc.Parse(offerURI)
+	offer, err := w.resolveOffer(offerURI, opts.ResolvedOffer)
 	if err != nil {
-		return nil, fmt.Errorf("parsing credential offer: %w", err)
-	}
-	if reqType != oid4vc.TypeVCI {
-		return nil, fmt.Errorf("expected VCI credential offer, got VP")
-	}
-	offer, ok := result.(*oid4vc.CredentialOffer)
-	if !ok {
-		return nil, fmt.Errorf("unexpected credential offer type")
+		return nil, err
 	}
 	w.addProtocolLog("issuance", "credential_offer", fmt.Sprintf("Received credential offer from %s", offer.CredentialIssuer), true, map[string]any{
 		"direction":                    "inbound",

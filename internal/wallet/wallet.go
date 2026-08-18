@@ -281,6 +281,11 @@ type ConsentRequest struct {
 	// CredentialOptions are the alternatives the consent dialog can offer
 	// in its Edit view. MatchedCreds stays the auto-selection.
 	CredentialOptions *ConsentCredentialOptions `json:"credential_options,omitempty"`
+	// ResolvedOffer is the credential offer this dialog describes, resolved
+	// when the request was prepared. Approving it runs the offer from the
+	// URI again, and this is what that falls back to when the issuer does
+	// not serve the offer a second time.
+	ResolvedOffer *oid4vc.CredentialOffer `json:"-"`
 }
 
 // CredentialMatch links a credential to a DCQL query credential ID.
@@ -297,8 +302,8 @@ type CredentialMatch struct {
 // ConsentCredentialOptions carries every way the wallet could answer a
 // presentation request, for the consent dialog's Edit view. The first
 // satisfiable option of every set and the first candidate of every query are
-// the wallet's own choice, so an approval that changes nothing presents
-// exactly what auto-accept would have presented.
+// the wallet's own choice, so an approval that changes nothing presents what
+// auto-accept presents.
 type ConsentCredentialOptions struct {
 	// Sets mirrors the request's credential_sets: one entry per set the
 	// wallet can satisfy, holding its satisfiable options in the order the
