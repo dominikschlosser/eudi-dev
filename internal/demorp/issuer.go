@@ -28,6 +28,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 //go:embed static
@@ -671,10 +672,19 @@ type ticketGrant struct {
 }
 
 // signTicket issues the demo ticket SD-JWT VC, holder-bound to the proof key
-// and signed with the wallet's issuer key under a leaf certificate from the
-// wallet CA, so the wallet's trust list covers the credential.
+// and signed under the local trust profile of the ticket's own attestation
+// spec, so the leaf names this issuer and the wallet's trust list carries the
+// credential type under that profile.
 func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
+	spec, err := wallet.NormalizeIssuedAttestationSpec(wallet.IssuedAttestationSpec{
+		Format: "dc+sd-jwt",
+		VCT:    TicketVCT,
+	}, "local")
+	if err != nil {
+		return "", fmt.Errorf("building ticket attestation spec: %w", err)
+	}
+	_ = d.wallet.RegisterIssuedAttestation(spec)
+	signingKey, chain, err := d.wallet.SigningMaterialForIssuedAttestation(spec)
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
 	}

@@ -35,6 +35,13 @@ func (w *Wallet) SigningCertChainForIssuedAttestation(spec IssuedAttestationSpec
 	return w.SigningCertChainForProfile(trustListProfileFromSpec(spec))
 }
 
+// SigningMaterialForIssuedAttestation returns the signing key together with
+// the chain for one issued-attestation profile, read as one for the same
+// reason DefaultSigningMaterial does.
+func (w *Wallet) SigningMaterialForIssuedAttestation(spec IssuedAttestationSpec) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	return w.signingMaterialForProfile(trustListProfileFromSpec(spec))
+}
+
 // SigningCertChainForGroup returns the signing certificate chain for one trust-list group.
 func (w *Wallet) SigningCertChainForGroup(group TrustListGroup) ([]*x509.Certificate, error) {
 	return w.SigningCertChainForProfile(group.Profile)

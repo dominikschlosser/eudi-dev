@@ -168,8 +168,31 @@ func TestIssuerPreAuthFlow(t *testing.T) {
 	if _, ok := token.Payload["cnf"].(map[string]any); !ok {
 		t.Error("issued credential has no cnf claim")
 	}
-	if _, ok := token.Header["x5c"]; !ok {
-		t.Error("issued credential has no x5c chain")
+	x5c, ok := token.Header["x5c"].([]any)
+	if !ok || len(x5c) == 0 {
+		t.Fatal("issued credential has no x5c chain")
+	}
+	der, err := base64.StdEncoding.DecodeString(x5c[0].(string))
+	if err != nil {
+		t.Fatalf("decoding leaf certificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parsing leaf certificate: %v", err)
+	}
+	// The ticket signs under the local trust profile of its own attestation
+	// spec, so the leaf names the issuer that profile describes.
+	if !strings.HasPrefix(leaf.Subject.CommonName, "EUDI Dev Wallet Issuer") {
+		t.Errorf("ticket leaf names %q, want the local trust profile issuer", leaf.Subject.CommonName)
+	}
+	var registered bool
+	for _, spec := range d.wallet.IssuedAttestations {
+		if spec.VCT == TicketVCT {
+			registered = true
+		}
+	}
+	if !registered {
+		t.Error("issuing a ticket must register it as an issued attestation")
 	}
 }
 
