@@ -248,6 +248,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	if txCode != "" {
 		tokenForm.Set("tx_code", txCode)
 	}
+	// The wallet attestation pair and the DPoP proof travel as headers, so
+	// the log names them next to the form.
+	attestationHeaders := w.clientAttestationHeaders(clientAuth)
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, map[string]any{
 		"direction":           "outbound",
 		"method":              "POST",
@@ -256,8 +259,10 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		"grant_type":          "urn:ietf:params:oauth:grant-type:pre-authorized_code",
 		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
 		"tx_code":             txCode,
+		"client_attestation":  attestationHeaders != nil,
+		"dpop":                dpopKey != nil,
 	})
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestationHeaders)
 	if err != nil {
 		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
 			"direction": "inbound",

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The token request log entry names the client authentication it sends.** The wallet attestation pair and the DPoP proof travel as HTTP headers, so `token_request` entries now carry `client_attestation` and `dpop` flags next to the form, and the activity log shows what the issuer was given to check
 - **The demo ticket signs under its own trust profile.** The ticket's leaf certificate now names the local trust profile issuer instead of the PID provider, and issuing one registers the ticket type as an issued attestation, so the trust list carries it under the profile the signature chain actually uses
 - **The media type of a fetched request object follows the validation mode.** A `request_uri` response without `application/oauth-authz-req+jwt` is now a finding like any other: strict mode refuses it, debug mode records a profile warning in the activity log and reads the request object anyway. Before, a GET response passed without a word in every mode and a POST response was refused even in debug, so a verifier serving `text/plain` was silently tolerated on one path and hard-rejected on the other
 

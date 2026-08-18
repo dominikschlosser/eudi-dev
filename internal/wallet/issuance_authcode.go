@@ -304,8 +304,14 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
-	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, formRequestLogDetails(tokenEndpoint, "token", tokenForm))
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
+	// The wallet attestation pair and the DPoP proof travel as headers, so
+	// the log names them next to the form.
+	attestationHeaders := w.clientAttestationHeaders(clientAuth)
+	tokenDetails := formRequestLogDetails(tokenEndpoint, "token", tokenForm)
+	tokenDetails["client_attestation"] = attestationHeaders != nil
+	tokenDetails["dpop"] = dpopKey != nil
+	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, tokenDetails)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestationHeaders)
 	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
