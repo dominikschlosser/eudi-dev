@@ -189,6 +189,29 @@
     }
   }
 
+  // Whole credentials the consent dialog's Edit view needs for its candidate
+  // cards, by credential id. Neither of the things already loaded can stand in
+  // for them: a consent request carries only the claims the verifier asked
+  // for, and the credential list holds one page. A credential that could not
+  // be read is remembered as null, so its card falls back instead of the
+  // dialog asking for it again on every render.
+  const candidateDetails = new Map();
+
+  async function loadCandidateDetails(ids) {
+    const missing = ids.filter(id => !candidateDetails.has(id));
+    if (missing.length === 0) return false;
+    await Promise.all(missing.map(async id => {
+      try {
+        const resp = await fetch('/api/credentials/' + encodeURIComponent(id));
+        candidateDetails.set(id, resp.ok ? await resp.json() : null);
+      } catch (e) {
+        console.error('Loading credential ' + id + ' failed:', e);
+        candidateDetails.set(id, null);
+      }
+    }));
+    return true;
+  }
+
   function renderPager() {
     const pager = document.getElementById('cred-pager');
     const pages = Math.ceil(credentialTotal / CREDENTIALS_PER_PAGE);
@@ -296,6 +319,74 @@
     return shown + (rest > 0 ? '<span class="claim-tag">+' + rest + ' more</span>' : '');
   }
 
+  // The body of a credential card: the format badge, the type line with its
+  // status, expiry and protected badges, and the claim names with their
+  // namespaces. The credential list and the consent dialog's Edit view both
+  // render candidates with this, so a credential looks the same wherever the
+  // wallet names it. That matters most for the pair the picker used to lose:
+  // two mdoc PIDs share a doctype and a format, and the namespace chip is the
+  // one thing on the card that tells them apart.
+  //
+  // idPrefix keeps the badge ids unique, because the credential list stays in
+  // the DOM behind the consent overlay and the same credential can be on
+  // screen twice. withClaims leaves the claim names off, for a caller holding
+  // only part of them, where a subset would read as the whole set.
+  function credentialCardBody(cred, idPrefix, withClaims) {
+    const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt' : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
+    const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
+    const typeLabel = cred.vct || cred.doctype || cred.format;
+    const isProtected = cred.protected === true;
+
+    // Stable identity and selection hooks for UI automation
+    const dataset = {
+      credentialId: cred.id,
+      format: formatLabel === 'SD-JWT' ? 'sdjwt' : formatLabel === 'JWT VC' ? 'jwt' : 'mdoc',
+      status: 'none',
+    };
+    if (isProtected) dataset.protected = 'true';
+    if (cred.vct) dataset.vct = cred.vct;
+    if (cred.doctype) dataset.doctype = cred.doctype;
+
+    // Protected credentials are the shared baseline: the server refuses to
+    // delete or revoke them, so do not offer buttons that would only 403.
+    const protectedBadge = isProtected
+      ? '<span class="status-badge status-protected" id="' + idPrefix + 'protected-' + cred.id + '"' +
+        ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
+        ' through the UI or the API, only by editing the wallet file.">Protected</span>'
+      : '';
+
+    // Status badge: managed entries show live status, foreign status lists
+    // get a badge of their own.
+    const st = cred.status;
+    let statusBadge = '';
+    if (st && st.managed) {
+      const revoked = st.status === 1;
+      dataset.status = revoked ? 'revoked' : 'active';
+      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked' : 'status-active') + '" id="' + idPrefix + 'status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
+    } else if (st && st.uri) {
+      dataset.status = 'external';
+      statusBadge = '<span class="status-badge status-external" id="' + idPrefix + 'status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External status</span>';
+    }
+
+    // How long the credential is still good for. The wallet renews what it
+    // can shortly before this, so a date here is not always a deadline.
+    const expiry = expiryInfo(cred.expires_at);
+    let expiryBadge = '';
+    if (expiry) {
+      dataset.expiry = expiry.state;
+      expiryBadge = '<span class="status-badge status-' + expiry.state + '" id="' + idPrefix + 'expiry-' + cred.id +
+        '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
+    }
+
+    const html = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
+      '<div class="credential-info">' +
+        '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + '</div>' +
+        (withClaims ? '<div class="credential-claims">' + claimTagsFor(cred) + '</div>' : '') +
+      '</div>';
+
+    return { html: html, dataset: dataset };
+  }
+
   function renderCredentials() {
     if (credentials.length === 0) {
       credEmpty.style.display = '';
@@ -310,68 +401,30 @@
       const card = document.createElement('div');
       card.className = 'credential-card';
 
-      const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt' : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
-      const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
-      const typeLabel = cred.vct || cred.doctype || cred.format;
       const isProtected = cred.protected === true;
-
-      const claimSummary = claimTagsFor(cred);
-
-      // Stable identity and selection hooks for UI automation
+      const body = credentialCardBody(cred, '', true);
       card.id = 'credential-' + cred.id;
-      card.dataset.credentialId = cred.id;
-      card.dataset.format = formatLabel === 'SD-JWT' ? 'sdjwt' : formatLabel === 'JWT VC' ? 'jwt' : 'mdoc';
-      if (isProtected) card.dataset.protected = 'true';
-      if (cred.vct) card.dataset.vct = cred.vct;
-      if (cred.doctype) card.dataset.doctype = cred.doctype;
+      Object.assign(card.dataset, body.dataset);
 
-      // Status badge: managed entries show live status, foreign status lists
-      // get a badge plus an explicit check action.
+      // What can be done about the status this card shows: revoke an entry on
+      // the wallet's own list, re-check one on somebody else's.
       const st = cred.status;
-      let statusBadge = '';
       let revokeBtn = '';
-      // Protected credentials are the shared baseline: the server refuses to
-      // delete or revoke them, so do not offer buttons that would only 403.
-      const protectedBadge = isProtected
-        ? '<span class="status-badge status-protected" id="protected-' + cred.id + '"' +
-          ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
-          ' through the UI or the API, only by editing the wallet file.">Protected</span>'
-        : '';
       if (st && st.managed) {
-        const revoked = st.status === 1;
-        card.dataset.status = revoked ? 'revoked' : 'active';
-        statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked' : 'status-active') + '" id="status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
         if (!isProtected) {
-          revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (revoked ? 'Activate' : 'Revoke') + '</button>';
+          revokeBtn = '<button class="btn btn-sm" id="revoke-' + cred.id + '" data-revoke="' + cred.id + '">' + (st.status === 1 ? 'Activate' : 'Revoke') + '</button>';
         }
       } else if (st && st.uri) {
-        card.dataset.status = 'external';
-        statusBadge = '<span class="status-badge status-external" id="status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External status</span>';
         revokeBtn = '<button class="btn btn-sm" id="status-check-' + cred.id + '" data-check-status="' + cred.id + '">Check status</button>';
-      } else {
-        card.dataset.status = 'none';
       }
 
-      // How long the credential is still good for. The wallet renews what it
-      // can shortly before this, so a date here is not always a deadline.
-      const expiry = expiryInfo(cred.expires_at);
-      let expiryBadge = '';
-      if (expiry) {
-        card.dataset.expiry = expiry.state;
-        expiryBadge = '<span class="status-badge status-' + expiry.state + '" id="expiry-' + cred.id +
-          '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
-      }
-
-      card.innerHTML = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
-        '<div class="credential-info" title="Open in decoder">' +
-          '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + '</div>' +
-          '<div class="credential-claims">' + claimSummary + '</div>' +
-        '</div>' +
+      card.innerHTML = body.html +
         '<div class="credential-actions">' +
           revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
           (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
+      card.querySelector('.credential-info').title = 'Open in decoder';
 
       const openDecoder = () => {
         // By id: the decoder is mounted on this wallet and can look the
@@ -1315,6 +1368,9 @@
   // an earlier request must not take that dialog over, and must not be left
   // stored to reappear once this one closes.
   let consentRequestOpen = false;
+  // Which request the dialog on screen belongs to. A late answer from a fetch
+  // one dialog started must not redraw the dialog that replaced it.
+  let consentRequestID = null;
 
   function presentError(err) {
     if (!err || !err.message) return;
@@ -1492,6 +1548,7 @@
 
   function showConsentDialog(req) {
     consentRequestOpen = true;
+    consentRequestID = req.id;
     dropStoredError();
     consentOverlay.classList.add('active');
 
@@ -1550,6 +1607,24 @@
     function isAutoSelection() {
       return selection.setChoices.every(c => c === 0) &&
         options.queries.every(q => selection.picks[q.id] === q.candidates[0].credential_id);
+    }
+    // The candidate cards want the whole credential, which the request does
+    // not carry. Reading them when the Edit view opens keeps a consent that is
+    // simply approved from asking for anything, and the cards render from the
+    // match in the meantime, so there is nothing to wait for on screen.
+    let loadingCandidates = false;
+    function ensureCandidateDetails() {
+      if (loadingCandidates) return;
+      const ids = [];
+      options.queries.forEach(q => q.candidates.forEach(c => {
+        if (!candidateDetails.has(c.credential_id) && !ids.includes(c.credential_id)) ids.push(c.credential_id);
+      }));
+      if (ids.length === 0) return;
+      loadingCandidates = true;
+      loadCandidateDetails(ids).then(loaded => {
+        loadingCandidates = false;
+        if (loaded && consentRequestOpen && consentRequestID === req.id) renderDialog();
+      });
     }
     function formatBadgeHtml(mc) {
       const formatClass = mc.format === 'dc+sd-jwt' ? 'format-sdjwt' : mc.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
@@ -1643,12 +1718,28 @@
           '</div>';
         q.candidates.forEach((c, i) => {
           const picked = selection.picks[qid] === c.credential_id;
+          // The same card the credential list renders. Until the whole
+          // credential is here the card is built from the match itself, which
+          // knows the type and the format but only the claims the verifier
+          // asked for, so the claim names wait for the rest.
+          const detail = candidateDetails.get(c.credential_id);
+          const body = credentialCardBody(detail || {
+            id: c.credential_id, format: c.format, vct: c.vct, doctype: c.doctype, claims: c.claims,
+          }, 'candidate-', Boolean(detail));
           html += '<div class="candidate' + (picked ? ' selected' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '" tabindex="0" role="radio" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
             '<div class="candidate-row">' +
               '<input type="radio" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
-              formatBadgeHtml(c) +
-              '<span class="candidate-type">' + escHtml(c.vct || c.doctype || c.format) + '</span>' +
-              (i === 0 ? '<span class="auto-chip">auto</span>' : '') +
+              body.html +
+              '<div class="candidate-actions">' +
+                (i === 0 ? '<span class="auto-chip">auto</span>' : '') +
+                // By id, like the credential list's own decoder link, and in a
+                // new tab: the consent is still pending and waiting for an
+                // answer, so reading a credential must not navigate away from
+                // the dialog that is asking.
+                '<a class="candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
+                  ' href="/decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
+                  ' title="Open in decoder">Decode</a>' +
+              '</div>' +
             '</div></div>';
         });
         html += '</div>';
@@ -1686,6 +1777,13 @@
         el.addEventListener('keydown', e => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
         });
+      });
+      // The row it sits in selects the candidate, so the link keeps its own
+      // click. Without this, picking a different candidate re-renders the
+      // dialog while the browser is still following the anchor.
+      consentDialog.querySelectorAll('.candidate-decode').forEach(link => {
+        link.addEventListener('click', e => e.stopPropagation());
+        link.addEventListener('keydown', e => e.stopPropagation());
       });
       if (options) {
         consentDialog.querySelectorAll('.consent-claim input[type="checkbox"]').forEach(cb => {
@@ -1726,6 +1824,7 @@
     }
 
     if (options && selection.editing) {
+      ensureCandidateDetails();
       html = editScreenHtml();
     }
 

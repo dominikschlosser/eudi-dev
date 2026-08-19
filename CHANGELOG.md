@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.2] - 2026-08-19
+
+### Fixed
+
+- **The consent dialog's Edit view renders each candidate like the wallet overview.** A candidate showed its format and its type, which is what every credential matching one DCQL query has in common, so two PIDs that differ in their data appeared as the same row twice. Each one is now the card the credential list renders (the status, expiry and protected badges, and the claim names grouped by mdoc namespace), next to a **Decode** link that opens it in the decoder in a new tab
+
 ## [1.25.1] - 2026-08-19
 
 ### Fixed

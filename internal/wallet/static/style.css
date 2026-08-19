@@ -213,7 +213,8 @@ header h1 {
   gap: 12px;
 }
 
-.credential-card .format-badge {
+.credential-card .format-badge,
+.candidate .format-badge {
   font-size: 10px;
   padding: 2px 8px;
   border-radius: 10px;
@@ -229,10 +230,16 @@ header h1 {
 .credential-info {
   flex: 1;
   min-width: 0;
+}
+
+/* Only in the list does the card body open the decoder. On a consent
+   candidate the click picks the credential, and the decoder has a link of its
+   own. */
+.credential-card .credential-info {
   cursor: pointer;
 }
 
-.credential-info:hover .credential-type {
+.credential-card .credential-info:hover .credential-type {
   color: var(--accent);
 }
 
@@ -910,21 +917,42 @@ header h1 {
   cursor: default;
 }
 
+/* A candidate holds the same card the credential list renders, so the row
+   lines its parts up with the top of that card rather than centering on it. */
 .candidate-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   font-size: 11px;
-  flex-wrap: wrap;
 }
 
 .candidate-row input[type="radio"] {
   accent-color: var(--accent);
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
-.candidate-type {
-  font-weight: 600;
-  font-size: 11px;
+/* The wallet's own choice at the top, the decoder link at the bottom, so the
+   auto chip keeps the corner to itself. */
+.candidate-actions {
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.candidate-decode {
+  margin-top: auto;
+  color: var(--accent);
+  font-size: 10px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.candidate-decode:hover {
+  text-decoration: underline;
 }
 
 .consent-buttons {
