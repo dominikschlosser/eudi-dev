@@ -924,7 +924,10 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 			if refusal.StatusCode != 0 {
 				details["status_code"] = refusal.StatusCode
 			}
-			if refusal.Body != "" {
+			// Only when the message does not already carry it: a body that is
+			// not an error response at all is reported whole, and repeating it
+			// here would put a second copy in the stored log.
+			if refusal.Body != "" && !strings.Contains(refusal.Message, refusal.Body) {
 				details["response_body"] = refusal.Body
 			}
 		}

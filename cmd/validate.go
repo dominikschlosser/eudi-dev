@@ -344,15 +344,11 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 
 // haipCredentialFindings collects what HAIP 1.0 asks of a credential beyond
 // what the credential format itself requires. Today that is section 6.1.1:
-// an issuer key taken from the x5c header is bound to the credential by the
-// leaf's subject alternative names.
+// the issuer's signing certificate and its trust chain travel in the x5c
+// header, without the trust anchor, and the leaf is not self-signed.
 func haipCredentialFindings(token *sdjwt.Token) []string {
-	certs, err := validate.X5CCertificates(token.Header)
-	if err != nil || len(certs) == 0 {
-		return nil
-	}
-	iss, _ := token.ResolvedClaims["iss"].(string)
-	return validate.HAIPIssuerBinding(iss, certs)
+	certs, _ := validate.X5CCertificates(token.Header)
+	return validate.HAIPCredentialChain(certs)
 }
 
 // printHAIPFindings reports profile findings without failing the command.

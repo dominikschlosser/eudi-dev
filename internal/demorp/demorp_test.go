@@ -837,21 +837,24 @@ func TestVerifierPIDRequestTakesAnyDomesticType(t *testing.T) {
 	}
 }
 
-// HAIP 1.0 section 6.1.1 asks the issuer certificate to name the issuer. The
-// demo says when it does not and accepts the presentation anyway: the rule
-// comes from the profile, and a wallet still being brought into line is who
-// this demo is for.
-func TestVerifierWarnsWhenTheCertificateDoesNotNameTheIssuer(t *testing.T) {
+// HAIP 1.0 section 6.1.1 asks a credential to carry its issuer's signing
+// certificate and trust chain in x5c, with the trust anchor left out. The demo
+// says when it does not and accepts the presentation anyway: the rule comes
+// from the profile, and a wallet still being brought into line is who this
+// demo is for.
+func TestVerifierWarnsWhenTheCredentialChainCarriesTheTrustAnchor(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
 
 	id, params := startVerification(t, h, "pid")
 
 	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
-	unnamedLeaf, err := mock.GenerateLeafCert(d.wallet.CAKey, caCert, &d.wallet.IssuerKey.PublicKey)
+	leaf, err := mock.GenerateLeafCert(d.wallet.CAKey, caCert, &d.wallet.IssuerKey.PublicKey)
 	if err != nil {
-		t.Fatalf("generating a leaf without names: %v", err)
+		t.Fatalf("generating a leaf: %v", err)
 	}
+	// Twice, because the generator strips a single terminal anchor: what
+	// reaches the x5c header is the leaf followed by the self-signed CA.
 	cred, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
 		VCT:       mock.DefaultPIDVCT,
@@ -859,10 +862,10 @@ func TestVerifierWarnsWhenTheCertificateDoesNotNameTheIssuer(t *testing.T) {
 		Claims:    mock.SDJWTPIDClaims,
 		Key:       d.wallet.IssuerKey,
 		HolderKey: &holderKey.PublicKey,
-		CertChain: []*x509.Certificate{unnamedLeaf, caCert},
+		CertChain: []*x509.Certificate{leaf, caCert, caCert},
 	})
 	if err != nil {
-		t.Fatalf("signing a credential with an unnamed leaf: %v", err)
+		t.Fatalf("signing a credential whose chain carries the anchor: %v", err)
 	}
 
 	presentation := presentCredential(t, holderKey, cred, params.Get("client_id"), params.Get("nonce"))
@@ -875,7 +878,7 @@ func TestVerifierWarnsWhenTheCertificateDoesNotNameTheIssuer(t *testing.T) {
 	var warned bool
 	for _, entry := range status["checks"].([]any) {
 		check := entry.(map[string]any)
-		if warning, ok := check["warning"].(string); ok && strings.Contains(warning, "subject alternative name") {
+		if warning, ok := check["warning"].(string); ok && strings.Contains(warning, "trust anchor") {
 			warned = true
 			if check["ok"] != true {
 				t.Error("a warning must not mark the check as failed")
@@ -883,7 +886,7 @@ func TestVerifierWarnsWhenTheCertificateDoesNotNameTheIssuer(t *testing.T) {
 		}
 	}
 	if !warned {
-		t.Errorf("no warning about the unnamed issuer: %v", status["checks"])
+		t.Errorf("no warning about the anchor in the chain: %v", status["checks"])
 	}
 }
 

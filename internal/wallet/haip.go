@@ -15,7 +15,6 @@
 package wallet
 
 import (
-	"crypto/x509"
 	"fmt"
 	"net/netip"
 	"net/url"
@@ -157,11 +156,11 @@ func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid
 	certs, _ := extractCertChain(reqObj)
 	if len(certs) > 0 {
 		leaf := certs[0]
-		if isSelfSignedCert(leaf) {
+		if validate.SelfSignedCertificate(leaf) {
 			violations = append(violations, "HAIP: the certificate signing the request MUST NOT be self-signed")
 		}
 		for i, cert := range certs[1:] {
-			if isSelfSignedCert(cert) {
+			if validate.SelfSignedCertificate(cert) {
 				violations = append(violations, fmt.Sprintf(
 					"HAIP: the x5c header of the signed request carries a self-signed certificate at position %d (subject %q), and §5 says the certificate of the trust anchor MUST NOT be included there",
 					i+2, cert.Subject.String()))
@@ -369,30 +368,14 @@ func metadataListContains(meta map[string]any, key, want string) bool {
 	return false
 }
 
-// isSelfSignedCert reports whether a certificate is its own issuer, which is
-// what a trust anchor looks like inside a chain that must not carry one.
-func isSelfSignedCert(cert *x509.Certificate) bool {
-	if cert == nil {
-		return false
-	}
-	if cert.Subject.String() != cert.Issuer.String() {
-		return false
-	}
-	return cert.CheckSignatureFrom(cert) == nil
-}
-
-// haipCredentialIssuerViolations reads the pieces validate.HAIPIssuerBinding
-// compares out of a received credential. A credential in another format, or
-// one this wallet cannot parse, is left to the checks that own it.
-func (w *Wallet) haipCredentialIssuerViolations(raw string) []string {
+// haipCredentialChainViolations holds a received credential to §6.1.1. A
+// credential in another format, or one this wallet cannot parse, is left to
+// the checks that own it: the section is the IETF SD-JWT VC profile.
+func (w *Wallet) haipCredentialChainViolations(raw string) []string {
 	token, err := sdjwt.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil
 	}
-	chain, err := validate.X5CCertificates(token.Header)
-	if err != nil || len(chain) == 0 {
-		return nil
-	}
-	iss, _ := token.Payload["iss"].(string)
-	return validate.HAIPIssuerBinding(iss, chain)
+	chain, _ := validate.X5CCertificates(token.Header)
+	return validate.HAIPCredentialChain(chain)
 }

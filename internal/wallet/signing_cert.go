@@ -127,11 +127,14 @@ func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificat
 	return w.signingMaterialForProfile(group.Profile)
 }
 
-// issuerSubjectAltNames are the subject alternative names a signing leaf needs
-// so credentials it signs verify from their x5c header. HAIP 1.0 §6.1.1: "the
-// iss value MUST be an URL with a FQDN matching a dNSName Subject Alternative
-// Name (SAN) entry in the leaf certificate", or a uniformResourceIdentifier
-// SAN. Both forms are written, since a verifier may check either.
+// issuerSubjectAltNames are the subject alternative names a signing leaf
+// carries, so a verifier can see that this certificate speaks for this issuer
+// identifier. Both the dNSName and the uniformResourceIdentifier form are
+// written, since a verifier may check either.
+//
+// They are written for the verifiers that ask for them: SD-JWT VC required
+// iss to be named by a SAN of the leaf up to draft-08, and one built against
+// that rule refuses a leaf without them.
 //
 // A host that is an IP address goes into an iPAddress SAN instead.
 func issuerSubjectAltNames(issuerURL string) (dnsNames []string, ips []net.IP, uris []*url.URL) {

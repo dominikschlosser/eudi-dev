@@ -474,7 +474,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	// not name is one a verifier holding the issuer to HAIP will refuse, so
 	// saying so here is what turns a rejection later into a finding now.
 	if w.RequireHAIP {
-		if violations := w.haipCredentialIssuerViolations(credential); len(violations) > 0 {
+		if violations := w.haipCredentialChainViolations(credential); len(violations) > 0 {
 			detail := fmt.Sprintf("Credential does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
 			details := map[string]any{
 				"issuer":     offer.CredentialIssuer,
@@ -916,8 +916,11 @@ func selectAuthorizationServer(metadata map[string]any, offer *oid4vc.Credential
 
 // grantTypesSupported lists the grant_types_supported entries of an
 // authorization server's metadata, and says whether the server stated any.
-// RFC 8414 §2 makes the parameter optional, so an absent list is silence
-// rather than a refusal, and silence is not a finding.
+//
+// A server that states none has said nothing. RFC 8414 §2 gives the parameter
+// a default of "authorization_code" and "implicit", which predates the
+// pre-authorized code grant, so applying it would report every issuer that
+// omits it.
 func grantTypesSupported(oauthMeta map[string]any) ([]string, bool) {
 	raw, ok := oauthMeta["grant_types_supported"].([]any)
 	if !ok {

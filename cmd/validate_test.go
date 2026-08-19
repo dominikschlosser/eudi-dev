@@ -527,26 +527,16 @@ func TestValidateHAIPFindings(t *testing.T) {
 		return token
 	}
 
-	unnamed, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
+	leaf, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings := haipCredentialFindings(credential(t, unnamed)); len(findings) != 1 {
-		t.Errorf("a leaf naming nobody produced %v", findings)
+	if findings := haipCredentialFindings(credential(t, leaf)); len(findings) != 0 {
+		t.Errorf("a credential carrying its issuer chain produced %v", findings)
 	}
 
-	named, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, mock.LeafCertOptions{
-		DNSNames: []string{"issuer.example"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if findings := haipCredentialFindings(credential(t, named)); len(findings) != 0 {
-		t.Errorf("a leaf naming the issuer produced %v", findings)
-	}
-
-	// A credential whose issuer key comes from metadata carries no chain, and
-	// this is not the check that binds it.
+	// §6.1.1: "The SD-JWT VC MUST contain the credential issuer's signing
+	// certificate along with a trust chain in the x5c JOSE header parameter".
 	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    "https://issuer.example",
 		VCT:       mock.DefaultPIDVCT,
@@ -561,7 +551,28 @@ func TestValidateHAIPFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if findings := haipCredentialFindings(token); len(findings) != 0 {
-		t.Errorf("a credential without x5c produced %v", findings)
+	if findings := haipCredentialFindings(token); len(findings) != 1 {
+		t.Errorf("a credential with no x5c produced %v, want the missing-chain finding", findings)
+	}
+
+	// §6.1.1: "The X.509 certificate of the trust anchor MUST NOT be included
+	// in the x5c JOSE header of the SD-JWT VC."
+	withAnchor, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       mock.DefaultPIDVCT,
+		ExpiresIn: time.Hour,
+		Claims:    map[string]any{"given_name": "ERIKA"},
+		Key:       issuerKey,
+		CertChain: []*x509.Certificate{leaf, caCert, caCert},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchorToken, err := sdjwt.Parse(withAnchor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings := haipCredentialFindings(anchorToken); len(findings) != 1 {
+		t.Errorf("a chain carrying the trust anchor produced %v, want the anchor finding", findings)
 	}
 }

@@ -8,12 +8,10 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
-// HAIP 1.0 section 6.1.1: an issuer key resolved from the x5c header is bound
-// to the credential by the certificate's subject alternative names, where
-// "the iss value MUST be an URL with a FQDN matching a dNSName Subject
-// Alternative Name (SAN) entry in the leaf certificate". A leaf without them
-// signs credentials a conformant verifier refuses, which is what the Animo
-// playground did.
+// A signing leaf names the issuer identifier in its subject alternative
+// names, so a verifier that asks for them accepts it. A verifier built
+// against SD-JWT VC draft-08 refuses a leaf without them, which is what the
+// Animo playground did.
 func TestIssuedCredentialLeafNamesTheIssuer(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://eudi-test.dev"

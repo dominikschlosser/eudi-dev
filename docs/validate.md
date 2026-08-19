@@ -70,6 +70,6 @@ eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-
 
 ## HAIP 1.0
 
-`--haip` adds the rules the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) puts on a credential, on top of what the format itself requires. Today that is section 6.1.1: a credential carrying an `x5c` chain must be bound to its issuer by the leaf certificate. The host of an https `iss` must appear as a `dNSName`, another kind of `iss` as a `uniformResourceIdentifier`, and an address as an `iPAddress`. A HAIP verifier refuses a credential where these do not match. This flag reports the mismatch before one does.
+`--haip` adds the rules the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) puts on a credential, on top of what the format itself requires. Today that is section 6.1.1: an SD-JWT VC must carry its issuer's signing certificate and a trust chain in the `x5c` header, the certificate of the trust anchor must not be included there, and the signing certificate must not be self-signed. A HAIP verifier refuses a credential that breaks these. This flag reports it before one does.
 
 Findings are printed. The exit code follows the credential's own validity (signature, expiry, revocation), so `--haip` reports what a credential breaks whether or not it is otherwise valid.

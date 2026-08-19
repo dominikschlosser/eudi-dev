@@ -792,17 +792,16 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		return nil, err
 	}
 
-	// HAIP 1.0 section 6.1.1 asks the issuer certificate to name the issuer,
-	// so a verifier can tell that this certificate speaks for this iss. The
-	// demo says so and carries on: the rule comes from the profile, and a
-	// wallet still being brought into line is exactly who this demo is for.
-	if certs, err := validate.X5CCertificates(token.Header); err == nil && len(certs) > 0 {
-		iss, _ := token.ResolvedClaims["iss"].(string)
-		if violations := validate.HAIPIssuerBinding(iss, certs); len(violations) > 0 {
-			log.warn(label+"issuer named in the signing certificate", fmt.Errorf("%s", strings.Join(violations, "; ")))
-		} else {
-			log.warn(label+"issuer named in the signing certificate", nil)
-		}
+	// HAIP 1.0 section 6.1.1 asks a credential to carry its issuer's signing
+	// certificate and trust chain in x5c, with the trust anchor left out and
+	// the leaf not self-signed. The demo says so and carries on: the rule
+	// comes from the profile, and a wallet still being brought into line is
+	// exactly who this demo is for.
+	certs, _ := validate.X5CCertificates(token.Header)
+	if violations := validate.HAIPCredentialChain(certs); len(violations) > 0 {
+		log.warn(label+"issuer certificate chain follows HAIP", fmt.Errorf("%s", strings.Join(violations, "; ")))
+	} else {
+		log.warn(label+"issuer certificate chain follows HAIP", nil)
 	}
 
 	// Issuer signature. The CA this demo trusts is the one the built-in

@@ -240,7 +240,7 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 			t.Error("expected a credential to be imported")
 		}
 		if entry := findLogEntry(w.GetLog(), "authorization_server_grant_unsupported"); entry != nil {
-			t.Errorf("RFC 8414 §2 makes grant_types_supported optional, so silence is not a finding: %s", entry.Detail)
+			t.Errorf("a server stating no grant_types_supported has said nothing, so it is not a finding: %s", entry.Detail)
 		}
 	})
 }
