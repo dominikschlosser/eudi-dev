@@ -93,6 +93,10 @@ The wallet uses:
 
 This keeps the run aligned with real wallet behavior. There are no suite-only signing paths.
 
+## What the Suite Does Not Cover
+
+The suite plays the authorization server, and its authorization endpoint issues the code on the first request and redirects straight back. No sign-in happens, so no plan reaches the branch where the wallet hands the authorization URL to a browser. The Playwright suite covers that branch against the demo issuer, which serves a real login page and gives the pushed `request_uri` one use (RFC 9126 section 4).
+
 ## References
 
 - [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html)

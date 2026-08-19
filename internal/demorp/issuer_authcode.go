@@ -115,6 +115,7 @@ type authRequestState struct {
 	issuerState   string
 	code          string
 	codeUsed      bool
+	resolved      bool
 	subject       string
 	// holderClaims are the claims of a credential presented to obtain this
 	// code, which only interactive authorization produces.
@@ -193,6 +194,12 @@ func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 	if clientID := r.URL.Query().Get("client_id"); clientID != "" && clientID != request.clientID {
 		writeAuthorizeError(w, "client_id does not match the pushed authorization request")
+		return
+	}
+	// RFC 9126 §4: "the client MUST only use a request_uri value once". The
+	// login page posts the value back, which is this server's own step.
+	if err := d.resolveAuthRequest(request.requestURI); err != nil {
+		writeAuthorizeError(w, err.Error())
 		return
 	}
 	renderLoginPage(w, loginPageData{
@@ -438,6 +445,22 @@ func (d *DemoRP) lookupAuthRequest(requestURI string) (*authRequestState, error)
 		return nil, fmt.Errorf("unknown or expired request_uri")
 	}
 	return request, nil
+}
+
+// resolveAuthRequest marks a pushed request as answered by the authorization
+// endpoint, and refuses a second client asking for the same one.
+func (d *DemoRP) resolveAuthRequest(requestURI string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	request, ok := d.authRequests[requestURI]
+	if !ok {
+		return fmt.Errorf("unknown or expired request_uri")
+	}
+	if request.resolved {
+		return fmt.Errorf("request_uri has already been used, RFC 9126 §4 gives a client one use of it")
+	}
+	request.resolved = true
+	return nil
 }
 
 func validDemoAccount(username, password string) bool {

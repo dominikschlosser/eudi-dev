@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The demo issuer spends a pushed `request_uri` on one authorization request.** RFC 9126 §4 gives a client one use of it, so a second request is refused rather than served. The login form still posts the same value back, as the issuer's own step, and an end-to-end test now signs in at that page, which is the branch the OIDF suite never drives
 - **An authorization code offer no longer spends its pushed request before the browser gets there.** The wallet requested the authorization endpoint itself first, to see whether a code came straight back, and then sent the browser to the same URL. RFC 9126 §4 says "the client MUST only use a `request_uri` value once", so an issuer that enforces it answered the browser with an error and the issuance waited for a callback that never came. Whichever of the two can perform the sign-in now makes the single request
 - **The warning about a `credential_offer_uri` that could not be read again fits on a line.** The issuer's whole error body was part of the headline. It now stays in the entry's details, where the full response already was
 

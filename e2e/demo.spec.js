@@ -591,6 +591,35 @@ test.describe("Demo issuer authorization choice", () => {
     const events = log.map((entry) => (entry.details || {}).event);
     expect(events).toContain("interactive_authorization_auth_via_web");
   });
+
+  // This test performs the sign-in the wallet asks for. The issuer gives the
+  // pushed request_uri one use (RFC 9126 section 4), so a wallet that resolves
+  // the authorization endpoint before sending the user there fails here.
+  test("the credential arrives once the user signs in at the issuer", async ({ page }) => {
+    const uri = await createIssuerOffer(page, {
+      grant: "authorization_code",
+      authorization: "browser",
+    });
+
+    const redeemed = await postJSON("/api/offers", { uri });
+    expect(redeemed.status, JSON.stringify(redeemed.body)).toBe(202);
+    const { authorization_url: authURL, offer_id: offerID } = redeemed.body;
+
+    await page.goto(authURL);
+    await expect(page.locator('input[name="username"]')).toHaveValue("alice");
+    await page.locator('button[type="submit"]').click();
+
+    // The issuer redirects to the callback the waiting flow resumes at.
+    await expect
+      .poll(
+        async () => (await (await fetch(`${BASE}/api/offers/${offerID}`)).json()).status,
+        { timeout: 15_000 }
+      )
+      .toBe("completed");
+
+    const status = await (await fetch(`${BASE}/api/offers/${offerID}`)).json();
+    expect(status.result.credential_id).toBeTruthy();
+  });
 });
 
 test.describe("Verifier request types", () => {

@@ -1335,9 +1335,10 @@ func derefString(v *string) string {
 }
 
 // runAuthorizationCodeRequest takes the authorization request to whoever can
-// answer it: the browser where one can reach the wallet's redirect URI, the
-// wallet itself where none can. RFC 9126 §4: "the client MUST only use a
-// request_uri value once", so exactly one of them requests the endpoint.
+// answer it. A browser does where it can reach the wallet's redirect URI, and
+// the wallet itself where no browser can. RFC 9126 §4 says "the client MUST
+// only use a request_uri value once", so only one of them requests the
+// endpoint.
 func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
 	authURL, err := authorizationRequestURL(endpoint, clientID, requestURI, params)
 	if err != nil {

@@ -502,6 +502,57 @@ func TestAuthorizationCodeFlowWithoutClientAuthentication(t *testing.T) {
 	}
 }
 
+// RFC 9126 §4 gives a client one use of a request_uri, which is how this
+// issuer catches a wallet that resolves one pushed request twice.
+func TestAuthorizeSpendsTheRequestURI(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	d.SetClientAuthMode(ClientAuthOptional)
+	h := d.IssuerHandler()
+
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	pushed := pushAuthorizationRequest(t, h, "http://wallet.example", holderKey, format.EncodeBase64URL(sum[:]), nil)
+	if pushed.Code != http.StatusCreated {
+		t.Fatalf("pushing the authorization request: %d %s", pushed.Code, pushed.Body.String())
+	}
+	var pushedDoc map[string]any
+	if err := json.Unmarshal(pushed.Body.Bytes(), &pushedDoc); err != nil {
+		t.Fatalf("decoding the pushed authorization response: %v", err)
+	}
+	requestURI, _ := pushedDoc["request_uri"].(string)
+	if requestURI == "" {
+		t.Fatalf("no request_uri in %v", pushedDoc)
+	}
+
+	authorize := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/authorize?request_uri="+url.QueryEscape(requestURI), nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if first := authorize(); first.Code != http.StatusOK {
+		t.Fatalf("the first authorization request: %d %s", first.Code, first.Body.String())
+	}
+	second := authorize()
+	if second.Code != http.StatusBadRequest {
+		t.Errorf("the second authorization request: %d, want 400 (%s)", second.Code, second.Body.String())
+	}
+	if !strings.Contains(second.Body.String(), "already") {
+		t.Errorf("body = %s, want it to say the request_uri is spent", second.Body.String())
+	}
+
+	// The login form carries the same value back, as the issuer's own step.
+	login := postForm(t, h, "/authorize", url.Values{
+		"request_uri": {requestURI},
+		"username":    {demoAccountUsername},
+		"password":    {demoAccountPassword},
+	})
+	if login.Code != http.StatusFound {
+		t.Fatalf("signing in after the login page was served: %d %s", login.Code, login.Body.String())
+	}
+}
+
 // The authorization server metadata is what tells a wallet where to push its
 // request and that PKCE with S256 is required.
 func TestAuthorizationServerMetadata(t *testing.T) {
