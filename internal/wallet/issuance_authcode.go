@@ -916,6 +916,18 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 	}
 	if err != nil {
 		details["error"] = err.Error()
+		// What the server actually sent. The headline is the refusal's own
+		// code, which a server answering outside the OAuth 2.0 error format
+		// fills with its HTTP status text, and then the reason is only here.
+		var refusal *serverRefusal
+		if errors.As(err, &refusal) {
+			if refusal.StatusCode != 0 {
+				details["status_code"] = refusal.StatusCode
+			}
+			if refusal.Body != "" {
+				details["response_body"] = refusal.Body
+			}
+		}
 	}
 	return details
 }
@@ -935,17 +947,31 @@ func accessTokenScheme(tokenResp map[string]any, sentDPoP bool) string {
 	return "Bearer"
 }
 
+// serverRefusal is an authorization server's refusal, kept whole. Message is
+// what the flow reports, so an entry stays on a line, and the status and body
+// travel with it for the log details: a server that does not answer in the
+// OAuth 2.0 error format states its reason where only the body shows it, and
+// then the code alone says nothing worth reading.
+type serverRefusal struct {
+	StatusCode int
+	Body       string
+	Message    string
+}
+
+func (e *serverRefusal) Error() string { return e.Message }
+
 func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, accessToken string, nonce *string, extraHeaders func() (map[string]string, error)) (map[string]any, error) {
 	body := []byte(form.Encode())
-	respBody, _, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, extraHeaders)
+	respBody, status, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, extraHeaders)
 	if err != nil {
 		// A refusal states its reason in the response, in the two fields
 		// RFC 6749 §5.2 defines for it. Reporting those beats handing the
 		// caller the raw body and the status code a second time.
-		if refusal := oauthErrorMessage(respBody); refusal != "" {
-			return nil, errors.New(refusal)
+		message := oauthErrorMessage(respBody)
+		if message == "" {
+			message = err.Error()
 		}
-		return nil, err
+		return nil, &serverRefusal{StatusCode: status, Body: string(respBody), Message: message}
 	}
 	var out map[string]any
 	if err := json.Unmarshal(respBody, &out); err != nil {
@@ -954,7 +980,7 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	// Some servers answer 200 with an error document, so the body decides
 	// rather than the status.
 	if refusal := oauthErrorMessage(respBody); refusal != "" {
-		return nil, errors.New(refusal)
+		return nil, &serverRefusal{StatusCode: status, Body: string(respBody), Message: refusal}
 	}
 	return out, nil
 }

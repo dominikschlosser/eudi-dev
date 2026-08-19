@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.25.2] - 2026-08-19
 
+### Added
+
+- **An offer naming an authorization server that cannot take its grant is reported before the grant is spent.** The wallet already reads the server's metadata, so it now compares `grant_types_supported` with the grant the issuance uses. OpenID4VCI 1.0 §12.2.4 describes exactly this reading ("by examining the `grant_types_supported` values, the Wallet can filter the server to use based on the grant type it plans to use") and §4.1.1 defines the offer's `authorization_server` as the one to use "with this grant type", so a server listing neither is the offer naming the wrong one. Strict mode refuses while the offer is still redeemable elsewhere, debug mode records a warning and runs into the refusal as before. A server that states no `grant_types_supported` at all is not a finding (RFC 8414 §2 makes it optional)
+
 ### Fixed
 
+- **A refused token, PAR or authorization challenge request keeps what the server said.** The entry reported the refusal's code alone, which for a server answering outside the OAuth 2.0 error format (RFC 6749 §5.2) is the HTTP status text, so an issuance ended on "Bad Request" while the sentence naming the reason was thrown away with the body. The headline still stays the code, and the status and the response body now travel in the entry's details, where the full response already sits for the reads that fail
 - **The consent dialog's Edit view renders each candidate like the wallet overview.** A candidate showed its format and its type, which is what every credential matching one DCQL query has in common, so two PIDs that differ in their data appeared as the same row twice. Each one is now the card the credential list renders (the status, expiry and protected badges, and the claim names grouped by mdoc namespace), next to a **Decode** link that opens it in the decoder in a new tab
 
 ## [1.25.1] - 2026-08-19

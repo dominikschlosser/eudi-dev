@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -296,6 +297,16 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		}
 	}
 
+	// Checked before the grant is spent, so a server that cannot take it is
+	// named while the offer is still redeemable somewhere else.
+	grantType := preAuthorizedCodeGrant
+	if offer.Grants.PreAuthorizedCode == "" {
+		grantType = "authorization_code"
+	}
+	if err := w.checkAuthorizationServerGrant(authServer, oauthMeta, grantType); err != nil {
+		return nil, err
+	}
+
 	if offer.Grants.PreAuthorizedCode == "" {
 		if w.Mode() == ValidationModeStrict {
 			if oauthErr != nil {
@@ -328,7 +339,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 
 	txCode := opts.TxCode
 	tokenForm := url.Values{}
-	tokenForm.Set("grant_type", "urn:ietf:params:oauth:grant-type:pre-authorized_code")
+	tokenForm.Set("grant_type", preAuthorizedCodeGrant)
 	tokenForm.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)
 	if txCode != "" {
 		tokenForm.Set("tx_code", txCode)
@@ -341,7 +352,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		"method":              "POST",
 		"url":                 tokenEndpoint,
 		"endpoint":            "token",
-		"grant_type":          "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+		"grant_type":          preAuthorizedCodeGrant,
 		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
 		"tx_code":             txCode,
 		"client_attestation":  attestationHeaders != nil,
@@ -349,12 +360,8 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	})
 	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestationHeaders)
 	if err != nil {
-		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false, map[string]any{
-			"direction": "inbound",
-			"url":       tokenEndpoint,
-			"endpoint":  "token",
-			"error":     err.Error(),
-		})
+		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false,
+			responseMapLogDetails(tokenEndpoint, "token", nil, err))
 		return nil, fmt.Errorf("token exchange: %w", err)
 	}
 	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), true, map[string]any{
@@ -826,6 +833,10 @@ func normalizeMetadataX5CEntries(raw any) ([]string, error) {
 	}
 }
 
+// preAuthorizedCodeGrant is the grant type identifier §4.1.1 defines for the
+// pre-authorized code flow.
+const preAuthorizedCodeGrant = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+
 func getAuthorizationServer(metadata map[string]any, issuer string) string {
 	servers := authorizationServersFromMetadata(metadata)
 	if len(servers) == 0 {
@@ -853,7 +864,7 @@ func authorizationServersFromMetadata(metadata map[string]any) []string {
 }
 
 // offerAuthorizationServer reads the authorization_server hint the offer's
-// grant may carry. §12.2.4 defines it as "OPTIONAL string that the Wallet can
+// grant may carry. §4.1.1 defines it as "OPTIONAL string that the Wallet can
 // use to identify the Authorization Server to use with this grant type when
 // authorization_servers parameter in the Credential Issuer metadata has
 // multiple entries."
@@ -865,7 +876,7 @@ func offerAuthorizationServer(offer *oid4vc.CredentialOffer) string {
 	if !ok {
 		return ""
 	}
-	for _, grantType := range []string{"urn:ietf:params:oauth:grant-type:pre-authorized_code", "authorization_code"} {
+	for _, grantType := range []string{preAuthorizedCodeGrant, "authorization_code"} {
 		grant, ok := grants[grantType].(map[string]any)
 		if !ok {
 			continue
@@ -901,6 +912,52 @@ func selectAuthorizationServer(metadata map[string]any, offer *oid4vc.Credential
 		}
 	}
 	return "", fmt.Errorf("credential offer names authorization server %q, which the issuer metadata of %s does not list", hint, issuer)
+}
+
+// grantTypesSupported lists the grant_types_supported entries of an
+// authorization server's metadata, and says whether the server stated any.
+// RFC 8414 §2 makes the parameter optional, so an absent list is silence
+// rather than a refusal, and silence is not a finding.
+func grantTypesSupported(oauthMeta map[string]any) ([]string, bool) {
+	raw, ok := oauthMeta["grant_types_supported"].([]any)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, 0, len(raw))
+	for _, entry := range raw {
+		if s, _ := entry.(string); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, len(out) > 0
+}
+
+// checkAuthorizationServerGrant reports an authorization server that says it
+// cannot process the grant this issuance is about to use. §12.2.4 has the
+// wallet read exactly this ("by examining the grant_types_supported values,
+// the Wallet can filter the server to use based on the grant type it plans to
+// use"), and §4.1.1 defines the offer's authorization_server as the one to use
+// "with this grant type", so a server listing neither is the offer naming the
+// wrong one. Without the check the token request goes out and comes back as a
+// refusal that names the grant rather than the server that cannot take it.
+func (w *Wallet) checkAuthorizationServerGrant(authServer string, oauthMeta map[string]any, grantType string) error {
+	supported, stated := grantTypesSupported(oauthMeta)
+	if !stated || slices.Contains(supported, grantType) {
+		return nil
+	}
+	detail := fmt.Sprintf("Authorization server %s does not support %s, which this issuance uses. Its metadata supports %s.",
+		authServer, grantType, strings.Join(supported, ", "))
+	details := map[string]any{
+		"authorization_server":  authServer,
+		"grant_type":            grantType,
+		"grant_types_supported": supported,
+	}
+	if w.Mode() == ValidationModeStrict {
+		w.addProtocolLog("issuance", "authorization_server_grant_unsupported", detail, false, details)
+		return errors.New(detail)
+	}
+	w.addProtocolWarning("issuance", "authorization_server_grant_unsupported", detail, details)
+	return nil
 }
 
 func validateAuthorizationServerIssuer(authServer string, oauthMeta map[string]any) error {
