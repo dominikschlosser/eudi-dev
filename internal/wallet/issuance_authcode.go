@@ -428,9 +428,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		ClientAuth:         clientAuth,
 	})
 
-	if err := w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource); err != nil {
-		return nil, err
-	}
+	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
 
 	credFormat := resolveCredentialFormat(metadata, credentialConfigurationID)
 	if credFormat == "" {
@@ -876,7 +874,7 @@ func createDPoPProofJWT(key *ecdsa.PrivateKey, method, targetURL, nonce, accessT
 	payload := map[string]any{
 		"jti": randomBase64URL(18),
 		"htm": strings.ToUpper(method),
-		"htu": stripURLFragment(targetURL),
+		"htu": dpopTargetURI(targetURL),
 		"iat": time.Now().Unix(),
 	}
 	if nonce != "" {
@@ -889,12 +887,19 @@ func createDPoPProofJWT(key *ecdsa.PrivateKey, method, targetURL, nonce, accessT
 	return signJWT(header, payload, key)
 }
 
-func stripURLFragment(raw string) string {
+// dpopTargetURI is the htu claim of a DPoP proof. RFC 9449 §4.2: "The HTTP
+// target URI (Section 7.1 of [RFC9110]) of the request to which the JWT is
+// attached, without query and fragment parts." An issuer is free to publish an
+// endpoint carrying a query (a tenant, an API version), and a server that
+// compares htu against its own target URI refuses a proof that kept it.
+func dpopTargetURI(raw string) string {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return raw
 	}
 	parsed.Fragment = ""
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
 	return parsed.String()
 }
 
@@ -1191,13 +1196,17 @@ func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 }
 
 // notifyCredentialAccepted reports a stored credential to the issuer's
-// Notification Endpoint. §11.1 makes it a MAY; this wallet sends one whenever
-// the issuer offers the endpoint and the response carries a notification_id.
-func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
+// Notification Endpoint. §11: "Support for this endpoint is OPTIONAL. The
+// Issuer cannot assume that a notification will be sent for every issued
+// Credential since the use of this Endpoint is not mandatory for the Wallet."
+// The credential is stored by the time it is sent, so a notification the
+// issuer does not answer is reported and left at that. Failing the issuance
+// over it would throw away a credential the user already holds.
+func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) {
 	notificationID, _ := credResp["notification_id"].(string)
 	notificationEndpoint, _ := metadata["notification_endpoint"].(string)
 	if notificationID == "" || notificationEndpoint == "" {
-		return nil
+		return
 	}
 	w.addProtocolLog("issuance", "notification_request", fmt.Sprintf("Send credential notification to %s", notificationEndpoint), true, map[string]any{
 		"direction":          "outbound",
@@ -1207,39 +1216,91 @@ func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, acc
 		"notification_id":    notificationID,
 		"notification_event": "credential_accepted",
 	})
-	if err := sendNotificationWithDPoP(notificationEndpoint, accessToken, authScheme, notificationID, dpopKey, nonce); err != nil {
+	status, respBody, err := sendNotificationWithDPoP(notificationEndpoint, accessToken, authScheme, notificationID, dpopKey, nonce)
+	if err != nil {
 		w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), false, map[string]any{
 			"direction": "inbound",
 			"url":       notificationEndpoint,
 			"endpoint":  "notification",
 			"error":     err.Error(),
 		})
-		return fmt.Errorf("sending notification: %w", err)
+		reading, code := readNotificationRefusal(status, respBody)
+		details := map[string]any{
+			"url":             notificationEndpoint,
+			"notification_id": notificationID,
+			"status":          status,
+			"error":           err.Error(),
+		}
+		if code != "" {
+			details["error_code"] = code
+		}
+		w.addProtocolWarning("issuance", "notification_failed",
+			"The issuer did not accept the notification for this credential, which is stored either way. "+reading,
+			details)
+		return
 	}
 	w.addProtocolLog("issuance", "notification_response", fmt.Sprintf("Notification response from %s", notificationEndpoint), true, map[string]any{
 		"direction": "inbound",
 		"url":       notificationEndpoint,
 		"endpoint":  "notification",
 	})
-	return nil
 }
 
-func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID string, dpopKey *ecdsa.PrivateKey, nonce *string) error {
+// readNotificationRefusal says what an answer from the Notification Endpoint
+// is against §11.3, which defines two: an Authorization Error Response
+// (RFC 6750 §3) when the Access Token is missing or invalid, and 400 with a
+// JSON error whose value SHOULD be invalid_notification_id or
+// invalid_notification_request.
+// An issuer answering outside those is worth naming, because a developer
+// reading a bare status has no way to tell a refusal from a wiring mistake.
+// It returns the reading and the error code the issuer sent, if any.
+func readNotificationRefusal(status int, body []byte) (string, string) {
+	var parsed struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(body, &parsed)
+	code := strings.TrimSpace(parsed.Error)
+
+	switch {
+	case status < 100:
+		return "Nothing was answered, so this is the endpoint being unreachable rather than the issuer refusing.", code
+	case status >= 200 && status < 300:
+		return "The status says the issuer took it (§11.2 makes any 2xx a success), so what failed is reading the response.", code
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return "That is the Authorization Error Response §11.3 points at (RFC 6750 §3): the endpoint did not accept the access token this issuance was granted.", code
+	// RFC 6750 §3.1 gives invalid_request a 400, so that one is the
+	// Authorization Error Response too rather than a notification error.
+	case status == http.StatusBadRequest && code == "invalid_request":
+		return "That is the Authorization Error Response §11.3 points at (RFC 6750 §3.1 gives invalid_request a 400).", code
+	case status == http.StatusBadRequest && (code == "invalid_notification_id" || code == "invalid_notification_request"):
+		return "That is a Notification Error Response of §11.3 (" + code + ").", code
+	case status == http.StatusBadRequest && code != "":
+		return "§11.3 lists invalid_notification_id and invalid_notification_request for a 400, and this names " + code + " instead.", code
+	case status == http.StatusBadRequest:
+		return "§11.3 requires a 400 to carry a JSON error, whose value SHOULD be invalid_notification_id or invalid_notification_request. This one carries no error at all.", code
+	default:
+		return fmt.Sprintf("§11.3 defines no response with status %d for this endpoint: an invalid access token is answered per RFC 6750 §3, an invalid notification_id with 400.", status), code
+	}
+}
+
+func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID string, dpopKey *ecdsa.PrivateKey, nonce *string) (int, []byte, error) {
 	body, err := json.Marshal(map[string]any{
 		"notification_id": notificationID,
 		"event":           "credential_accepted",
 	})
 	if err != nil {
-		return fmt.Errorf("marshaling notification request: %w", err)
+		return 0, nil, fmt.Errorf("marshaling notification request: %w", err)
 	}
-	_, statusCode, err := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
+	// §11.2 requires a 2xx and only RECOMMENDS 204, so the whole range is a
+	// success.
+	respBody, statusCode, err := doDPoPRequest("POST", endpoint, "application/json", "", body, authScheme, accessToken, dpopKey, nonce, nil)
 	if err != nil {
-		return err
+		return statusCode, respBody, err
 	}
-	if statusCode != http.StatusNoContent && (statusCode < 200 || statusCode >= 300) {
-		return fmt.Errorf("notification endpoint returned HTTP %d", statusCode)
+	if statusCode < 200 || statusCode >= 300 {
+		return statusCode, respBody, fmt.Errorf("notification endpoint returned HTTP %d", statusCode)
 	}
-	return nil
+	return statusCode, respBody, nil
 }
 
 // fetchNonce asks the Nonce Endpoint for a challenge. Nothing is presented

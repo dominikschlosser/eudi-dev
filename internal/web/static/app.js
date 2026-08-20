@@ -505,8 +505,8 @@
 
     banner.classList.add(cls);
 
-    // A failure names itself. Everything passing used to show the status check
-    // alone, which read as though nothing else had been looked at.
+    // A failure names itself. Everything passing names every check that ran,
+    // so the banner says what was looked at rather than only the last thing.
     let detail = "";
     const firstFailed = checks.find((c) => c.status === "fail");
     if (firstFailed) {

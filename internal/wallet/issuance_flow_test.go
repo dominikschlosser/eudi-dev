@@ -37,6 +37,13 @@ type mockIssuerOpts struct {
 	tokenCNonce string
 	// nonceEndpoint, if true, serves a nonce endpoint.
 	nonceEndpoint bool
+	// captureNotification, if set, is handed the Notification Request the
+	// wallet sent, so a test can hold it to §11.1.
+	captureNotification func(*http.Request, []byte)
+	// refusesNotification, if true, publishes a Notification Endpoint that
+	// answers every call with 404, as an issuer whose notification handler
+	// cannot find the session behind the token does.
+	refusesNotification bool
 	// tokenAuthorizationDetails, if non-empty, is returned in the token response.
 	tokenAuthorizationDetails []any
 	// credentialResponse is the raw JSON object returned by the credential endpoint.
@@ -120,6 +127,9 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 					},
 				},
 			}
+			if opts.refusesNotification {
+				meta["notification_endpoint"] = serverURL + "/notification"
+			}
 			if opts.nonceEndpoint {
 				meta["nonce_endpoint"] = serverURL + "/nonce"
 			}
@@ -187,6 +197,16 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 				return
 			}
 			json.NewEncoder(rw).Encode(credResp)
+
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/notification"):
+			if opts.captureNotification != nil {
+				raw, _ := io.ReadAll(r.Body)
+				opts.captureNotification(r, raw)
+			}
+			// What an issuer whose notification handler cannot resolve the
+			// session behind the access token answers.
+			rw.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(rw).Encode(map[string]any{"message": "Could not find any entity of type \"Session\""})
 
 		case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/credential-offer"):
 			if opts.onOfferFetch != nil {
@@ -1873,5 +1893,151 @@ func TestCallbackIsAcceptedOnAWalletWithoutABaseURL(t *testing.T) {
 	w.BaseURL = "https://wallet.example"
 	if canUseInteractiveAuthorizationCallback(w, "http://localhost:8085/callback") {
 		t.Error("accepted a callback that does not match the configured base URL")
+	}
+}
+
+// TestProcessCredentialOffer_KeepsCredentialWhenNotificationIsRefused covers an
+// issuer that hands over a credential and then refuses the notification for it.
+// §11 makes the endpoint's use optional for the wallet, and the credential is
+// stored before the notification is sent, so the issuance stands.
+func TestProcessCredentialOffer_KeepsCredentialWhenNotificationIsRefused(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		tokenCNonce:         "test-c-nonce",
+		refusesNotification: true,
+		credentialResponse: map[string]any{
+			"credentials":     []any{map[string]any{"credential": credRaw}},
+			"notification_id": "notification-the-issuer-will-not-take",
+		},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("the issuance failed over a notification: %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Fatal("expected the credential to be issued")
+	}
+	if creds := w.GetCredentials(); len(creds) != 1 {
+		t.Fatalf("holding %d credentials, want the issued one kept", len(creds))
+	}
+
+	// The refusal is reported in the activity log.
+	logs := w.GetLog()
+	assertWalletLogEvent(t, logs, "notification_response")
+	assertWalletLogEvent(t, logs, "notification_failed")
+}
+
+// TestReadNotificationRefusal covers what a developer is told about an answer
+// from the Notification Endpoint. §11.3 defines two, and an issuer answering
+// outside them is named as such rather than left as a bare status.
+func TestReadNotificationRefusal(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		body     string
+		wantCode string
+		wantSays string
+	}{
+		{"defined 400", 400, `{"error":"invalid_notification_id"}`, "invalid_notification_id", "§11.3 (invalid_notification_id)"},
+		{"rfc 6750 code with a 400", 400, `{"error":"invalid_request"}`, "invalid_request", "RFC 6750 §3.1"},
+		{"nothing answered", 0, ``, "", "unreachable"},
+		{"read failed on a success", 204, ``, "", "took it"},
+		{"other code", 400, `{"error":"session_not_found"}`, "session_not_found", "names session_not_found instead"},
+		{"400 with no code", 400, `not json`, "", "carries no error at all"},
+		{"bad token", 401, ``, "", "RFC 6750"},
+		{"undefined status", 404, `{"message":"Could not find any entity of type \"Session\""}`, "", "defines no response with status 404"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reading, code := readNotificationRefusal(tc.status, []byte(tc.body))
+			if code != tc.wantCode {
+				t.Errorf("code = %q, want %q", code, tc.wantCode)
+			}
+			if !strings.Contains(reading, tc.wantSays) {
+				t.Errorf("reading = %q, want it to say %q", reading, tc.wantSays)
+			}
+		})
+	}
+}
+
+// TestDPoPTargetURI covers the htu claim of a DPoP proof. RFC 9449 §4.2 asks
+// for the target URI "without query and fragment parts", and a server that
+// compares htu against its own URI refuses a proof that kept either.
+func TestDPoPTargetURI(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"https://issuer.example/token", "https://issuer.example/token"},
+		{"https://issuer.example/token?tenant=playground", "https://issuer.example/token"},
+		{"https://issuer.example/token#frag", "https://issuer.example/token"},
+		{"https://issuer.example/token?tenant=a#frag", "https://issuer.example/token"},
+		{"https://issuer.example/vci/notification?", "https://issuer.example/vci/notification"},
+		{"https://issuer.example:8443/a/b?x=1", "https://issuer.example:8443/a/b"},
+	} {
+		if got := dpopTargetURI(tc.in); got != tc.want {
+			t.Errorf("dpopTargetURI(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestNotificationRequestIsShapedAsSpecified holds the Notification Request to
+// §11.1: an HTTP POST "with the following parameters in the entity-body and
+// using the application/json media type", carrying notification_id (the string
+// from the Credential Response) and event, presenting the Access Token the
+// Token Endpoint issued.
+func TestNotificationRequestIsShapedAsSpecified(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	var method, contentType, authorization string
+	var body []byte
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{
+		tokenCNonce:         "test-c-nonce",
+		refusesNotification: true,
+		credentialResponse: map[string]any{
+			"credentials":     []any{map[string]any{"credential": credRaw}},
+			"notification_id": "3fwe98js",
+		},
+		captureNotification: func(r *http.Request, raw []byte) {
+			method, contentType, authorization, body = r.Method, r.Header.Get("Content-Type"), r.Header.Get("Authorization"), raw
+		},
+	})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, err := w.ProcessCredentialOffer(offerURI); err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+
+	if method != http.MethodPost {
+		t.Errorf("method = %s, want POST", method)
+	}
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", contentType)
+	}
+	if authorization != "Bearer test-access-token" {
+		t.Errorf("Authorization = %q, want the access token the Token Endpoint issued", authorization)
+	}
+
+	var sent map[string]any
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("the body is not JSON: %v (%s)", err, body)
+	}
+	if sent["notification_id"] != "3fwe98js" {
+		t.Errorf("notification_id = %v, want the one the Credential Response carried", sent["notification_id"])
+	}
+	if sent["event"] != "credential_accepted" {
+		t.Errorf("event = %v, want credential_accepted for a credential that was stored", sent["event"])
+	}
+	if len(sent) != 2 {
+		t.Errorf("body carries %v, want notification_id and event only", sent)
 	}
 }

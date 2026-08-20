@@ -34,8 +34,6 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Conformance is process-level wallet state now, so the browser flow runs
-	// on the real server like every other request.
 	reqServer := s
 
 	requestOrigin := strings.TrimSpace(r.Header.Get("Origin"))

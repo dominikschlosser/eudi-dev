@@ -408,6 +408,12 @@ func NewOwnerToken() string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
+// ActsForAPage reports whether this client named a browser to the wallet. What
+// the wallet hands that browser, this client does not also act on.
+func (c *Client) ActsForAPage() bool {
+	return c.owner != ""
+}
+
 // ActingFor names the browser this client submits on behalf of, so the wallet
 // puts the consent in front of that page.
 func (c *Client) ActingFor(owner string) {

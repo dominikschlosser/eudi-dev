@@ -80,12 +80,12 @@ func TestFollowVerifierRedirectPrintsTheURL(t *testing.T) {
 	t.Cleanup(func() { noOpen = false })
 	noOpen = true
 
-	out := captureStdout(t, func() { followVerifierRedirect("https://verifier.example/done?session=1") })
+	out := captureStdout(t, func() { followVerifierRedirect("https://verifier.example/done?session=1", false) })
 	if !strings.Contains(out, "https://verifier.example/done?session=1") {
 		t.Errorf("the verifier redirect was not shown:\n%s", out)
 	}
 
-	if out := captureStdout(t, func() { followVerifierRedirect("") }); out != "" {
+	if out := captureStdout(t, func() { followVerifierRedirect("", false) }); out != "" {
 		t.Errorf("a verifier that returned no redirect should print nothing, got %q", out)
 	}
 }

@@ -46,6 +46,9 @@ type dispatchOID4Opts struct {
 	txCode            string
 	haip              bool
 	mode              string
+	// resolvedOffer is the offer a transaction-code prompt already read from
+	// the URI, which the issuance falls back to when reading it again fails.
+	resolvedOffer *oid4vc.CredentialOffer
 }
 
 // dispatchURI detects the URI type and dispatches to the appropriate wallet flow.
@@ -84,7 +87,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		return runPresent(w, store, uri, port)
 
 	case format.FormatOID4VCI:
-		return processCredentialOffer(uri, opts.txCode)
+		return processCredentialOffer(uri, opts.txCode, opts.resolvedOffer)
 
 	default:
 		return fmt.Errorf("unable to detect URI type (expected openid4vp://, openid-credential-offer://, or similar): %s", format.Truncate(uri, 80))
@@ -572,7 +575,7 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	w.AddLogDetails("presentation", fmt.Sprintf("Verifier result from %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), result.StatusCode < 400, resultDetails)
 	dim.Println("───────────────────────────────────────")
 
-	followVerifierRedirect(result.RedirectURI)
+	followVerifierRedirect(result.RedirectURI, submissionCh != nil)
 
 	if submissionCh != nil {
 		submissionCh <- submission
@@ -608,13 +611,13 @@ func authorizationRequestParamsFromParsed(parsed *oid4vc.AuthorizationRequest, r
 }
 
 // processCredentialOffer fetches and stores a credential from an OID4VCI offer URI.
-func processCredentialOffer(uri string, txCode string) error {
+func processCredentialOffer(uri string, txCode string, resolved *oid4vc.CredentialOffer) error {
 	w, store, err := loadWallet()
 	if err != nil {
 		return err
 	}
 
-	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: txCode})
+	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: txCode, ResolvedOffer: resolved})
 	if err != nil {
 		return fmt.Errorf("processing credential offer: %w", err)
 	}
@@ -661,12 +664,26 @@ func processCredentialOffer(uri string, txCode string) error {
 //
 // A script does not want browser windows appearing, so this only opens one
 // when a person is running the command. The URL is printed either way.
-func followVerifierRedirect(redirectURI string) {
+//
+// browserWaiting says a browser is already holding this flow (the consent
+// tab), which the result reaches and which navigates there itself.
+func followVerifierRedirect(redirectURI string, browserWaiting bool) {
 	if redirectURI == "" {
 		return
 	}
 	fmt.Printf("  Continue at: %s\n", redirectURI)
-	if !noOpen && stdinIsTerminal() {
+	if stdinIsTerminal() && navigatesHere(browserWaiting) {
 		openBrowser(redirectURI)
 	}
+}
+
+// navigatesHere reports whether this process sends the user's browser to a URL
+// the flow hands over. It does not when a browser is already holding the flow,
+// because that browser is being sent to the same place and what waits there
+// survives one arrival: a PAR request_uri has one use (RFC 9126 §4, "the
+// client MUST only use a `request_uri` value once"), and a verifier's
+// redirect_uri leads to a session it consumes and invalidates (OpenID4VP 1.0
+// §13.3, steps 7 to 10). The second arrival lands on an error.
+func navigatesHere(browserWaiting bool) bool {
+	return !noOpen && !browserWaiting
 }

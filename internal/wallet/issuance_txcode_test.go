@@ -114,7 +114,11 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 	}{
 		{"correct code", "1234", ""},
 		{"wrong code", "9999", "Invalid 'tx_code'"},
-		{"no code", "", "Missing required 'tx_code'"},
+		// An offer that names a tx_code is refused here rather than at the
+		// issuer: §4.1.1 puts it in the grant because the Authorization
+		// Server expects one, so a request without it spends the
+		// pre-authorized code on an answer that was never going to work.
+		{"no code", "", "this offer requires a transaction code"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
@@ -215,5 +219,35 @@ func TestDescribeCredentialOffer_TxCodeShape(t *testing.T) {
 				t.Errorf("description = %q, want %q", details.TxCodeDescription, tc.wantDescr)
 			}
 		})
+	}
+}
+
+// TestOfferNeedingATxCodeIsRefusedBeforeTheCodeIsSpent covers an offer that
+// names a tx_code reaching an issuance that was given none, which is what an
+// auto-accepting wallet or an API caller that forgot it produces. §4.1.1 puts
+// tx_code in the grant because the Authorization Server expects one, so the
+// pre-authorized code is not spent on a request that cannot succeed.
+func TestOfferNeedingATxCodeIsRefusedBeforeTheCodeIsSpent(t *testing.T) {
+	w := generateTestWallet(t)
+	srv, offerURI := txCodeIssuer(t, w, "1234")
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	_, err := w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{})
+	if err == nil {
+		t.Fatal("expected the issuance to say what it is missing")
+	}
+	for _, want := range []string{"requires a transaction code", "--tx-code", "The code from your letter"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+
+	// The same offer with the code runs through.
+	if _, err := w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{TxCode: "1234"}); err != nil {
+		t.Fatalf("issuance with the code: %v", err)
 	}
 }

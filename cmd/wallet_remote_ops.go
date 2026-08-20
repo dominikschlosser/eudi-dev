@@ -322,7 +322,7 @@ func completeSignIn(c *remote.Client, pending map[string]any) (map[string]any, e
 	}
 
 	fmt.Fprintf(os.Stderr, "Sign in to continue: %s\n", authURL)
-	if !noOpen {
+	if opensSignInHere(c) {
 		openBrowser(authURL)
 	}
 
@@ -356,4 +356,11 @@ func isCredentialOfferURI(uri string) bool {
 	return strings.Contains(uri, "credential_offer") ||
 		strings.HasPrefix(uri, "openid-credential-offer://") ||
 		strings.HasPrefix(uri, "haip-vci://")
+}
+
+// opensSignInHere reports whether this process navigates to the authorization
+// URL itself. A client that named a page does not: the wallet sends that page
+// there.
+func opensSignInHere(c *remote.Client) bool {
+	return navigatesHere(c.ActsForAPage())
 }

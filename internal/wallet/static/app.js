@@ -339,9 +339,8 @@
   // status, expiry and protected badges, and the claim names with their
   // namespaces. The credential list and the consent dialog's Edit view both
   // render candidates with this, so a credential looks the same wherever the
-  // wallet names it. That matters most for the pair the picker used to lose:
-  // two mdoc PIDs share a doctype and a format, and the namespace chip is the
-  // one thing on the card that tells them apart.
+  // wallet names it. Two mdoc PIDs share a doctype and a format, so the
+  // namespace chip is the one thing on the card that tells them apart.
   //
   // idPrefix keeps the badge ids unique, because the credential list stays in
   // the DOM behind the consent overlay and the same credential can be on
@@ -576,8 +575,6 @@
         uri.startsWith('openid-credential-offer://') ||
         uri.startsWith('haip-vci://');
       const endpoint = isVCI ? '/api/offers' : '/api/presentations';
-      // Submitting an offer here may lead to an issuer login, and this tab
-      // asked for it, so it is the one allowed to follow.
       // Whatever goes wrong with this submission is this tab's to report.
       expectError();
 
@@ -1952,13 +1949,12 @@
     renderDialog();
   }
 
-  // Escapes for both element content and quoted attribute values. The
-  // textContent/innerHTML trick this used to do leaves " and ' untouched, so
-  // any value interpolated into an attribute (a status list URI, a vct, a
-  // claim name, a credential configuration id) could close the attribute and
-  // add an event handler. On a shared wallet those values come from whoever
-  // imported the credential or sent the offer, so they run in every other
-  // visitor's browser.
+  // Escapes for both element content and quoted attribute values, including
+  // " and '. A value interpolated into an attribute (a status list URI, a
+  // vct, a claim name, a credential configuration id) could otherwise close
+  // the attribute and add an event handler. On a shared wallet those values
+  // come from whoever imported the credential or sent the offer, so they run
+  // in every other visitor's browser.
   function escHtml(s) {
     return String(s === undefined || s === null ? '' : s)
       .replace(/&/g, '&amp;')

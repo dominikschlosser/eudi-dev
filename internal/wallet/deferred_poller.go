@@ -274,12 +274,9 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		fmt.Sprintf("Collected deferred credential %s from %s", imported.ID, pending.Issuer), true, details)
 	s.log("  Collected:     deferred %s credential from %s", imported.Format, pending.Issuer)
 
-	// §8.3 lets the Deferred Credential Response carry a notification_id of its
-	// own. The credential is already imported, so a notification the issuer
-	// does not answer is reported and left at that rather than losing it.
-	if err := s.wallet.notifyCredentialAccepted(metadata, credResp, pending.AccessToken, pending.AuthScheme, dpopKey, &nonce); err != nil {
-		s.log("  Notification:  %v", err)
-	}
+	// §9.2 lets the Deferred Credential Response carry a notification_id of
+	// its own, defined in §8.3.
+	s.wallet.notifyCredentialAccepted(metadata, credResp, pending.AccessToken, pending.AuthScheme, dpopKey, &nonce)
 
 	s.saveIssuedCredential(&IssuanceResult{Imported: imported})
 	s.wallet.NotifyStateChanged()

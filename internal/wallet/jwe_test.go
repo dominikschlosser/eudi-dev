@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -225,8 +226,12 @@ func TestEcdsaPublicKeyFromJWK(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	xB64 := format.EncodeBase64URL(key.PublicKey.X.Bytes())
-	yB64 := format.EncodeBase64URL(key.PublicKey.Y.Bytes())
+	// Padded to the curve's width, which RFC 7518 §6.2.1.2 requires ("The
+	// length of this octet string MUST be the full size of a coordinate for
+	// the curve"). big.Int.Bytes() drops leading zeros, so roughly one key in
+	// 256 would otherwise be narrow and strict mode would rightly refuse it.
+	xB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.X))
+	yB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.Y))
 
 	pub, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, yB64)
 	if err != nil {
@@ -250,7 +255,7 @@ func TestEcdsaPublicKeyFromJWK_InvalidX(t *testing.T) {
 
 func TestEcdsaPublicKeyFromJWK_InvalidY(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	xB64 := format.EncodeBase64URL(key.PublicKey.X.Bytes())
+	xB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.X))
 
 	_, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, "not-valid-base64!!!")
 	if err == nil {
@@ -401,4 +406,11 @@ func TestShortCoordinateIsReportedInTheActivityLog(t *testing.T) {
 	if !reported {
 		t.Error("the repair never reached the activity log, so nothing tells the user their verifier is non-conformant")
 	}
+}
+
+// p256Coordinate renders an EC coordinate the width RFC 7518 §6.2.1.2 asks
+// for. A test that skips this builds a JWK the spec does not allow and fails
+// against strict mode whenever the coordinate happens to start with a zero.
+func p256Coordinate(v *big.Int) []byte {
+	return v.FillBytes(make([]byte, 32))
 }

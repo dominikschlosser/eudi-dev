@@ -36,10 +36,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/web"
 )
 
-// walletServeOptions is what the wallet serve flags collect. They used to be
-// a var block the RunE closure read straight out of, which is how that
-// closure grew to most of this file, and how a local process id came to
-// shadow the --pid flag halfway through it.
+// walletServeOptions is what the wallet serve flags collect.
 type walletServeOptions struct {
 	Port                    int
 	AutoAccept              bool

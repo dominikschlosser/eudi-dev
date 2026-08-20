@@ -341,6 +341,14 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	clientAuth := w.resolveClientAuthentication("", authCtx)
 
 	txCode := opts.TxCode
+	// §4.1.1 puts tx_code in the grant when the Authorization Server expects
+	// one, so an issuance that has none has nothing to send and the token
+	// request would be refused for a reason that names neither the code nor
+	// where to put it. Whoever could have asked did not: an auto-accepting
+	// wallet shows no dialog, and an API caller supplies the code on the call.
+	if len(offer.Grants.TxCode) > 0 && strings.TrimSpace(txCode) == "" {
+		return nil, fmt.Errorf("this offer requires a transaction code, which the issuer delivers separately: supply it as tx_code on the call, or --tx-code on the command line%s", txCodeHintSuffix(offer.Grants.TxCode))
+	}
 	tokenForm := url.Values{}
 	tokenForm.Set("grant_type", preAuthorizedCodeGrant)
 	tokenForm.Set("pre-authorized_code", offer.Grants.PreAuthorizedCode)
@@ -509,9 +517,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		ClientAuth:         clientAuth,
 	})
 
-	if err := w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource); err != nil {
-		return nil, err
-	}
+	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
 
 	if credFormat == "" {
 		credFormat = imported.Format
@@ -1462,4 +1468,29 @@ func credentialResponseLogDetails(endpoint string, response map[string]any, err 
 		details["error"] = err.Error()
 	}
 	return details
+}
+
+// txCodeHintSuffix repeats what the offer says about the code, so the message
+// names the length and input mode the user is looking for.
+func txCodeHintSuffix(txCode map[string]any) string {
+	if description, _ := txCode["description"].(string); strings.TrimSpace(description) != "" {
+		return " (" + strings.TrimSpace(description) + ")"
+	}
+	mode, _ := txCode["input_mode"].(string)
+	length := 0
+	switch n := txCode["length"].(type) {
+	case float64:
+		length = int(n)
+	case int:
+		length = n
+	}
+	switch {
+	case length > 0 && mode != "":
+		return fmt.Sprintf(" (%d %s characters)", length, mode)
+	case length > 0:
+		return fmt.Sprintf(" (%d characters)", length)
+	case mode != "":
+		return " (" + mode + ")"
+	}
+	return ""
 }

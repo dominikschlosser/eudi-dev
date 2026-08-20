@@ -32,20 +32,28 @@ import (
 // the command line, or one typed at the terminal when the offer requires it,
 // since the issuer delivers it out of band. Anything that goes wrong leaves
 // the code empty and lets the flow run, where the issuer's error is clearer.
-func resolveTxCode(uri, given string) string {
+//
+// It returns the offer it read along with the code. The issuance reads the URI
+// again (that is how it notices an offer that changed under it), and against an
+// issuer that serves it once that read fails, so the offer read here is handed
+// over as what the issuance falls back to.
+func resolveTxCode(uri, given string) (string, *oid4vc.CredentialOffer) {
 	if strings.TrimSpace(given) != "" {
-		return given
+		return given, nil
 	}
 	if !isCredentialOfferURI(uri) || !stdinIsTerminal() {
-		return given
+		return given, nil
 	}
 	reqType, parsed, err := oid4vc.Parse(uri)
 	if err != nil || reqType != oid4vc.TypeVCI {
-		return given
+		return given, nil
 	}
 	offer, ok := parsed.(*oid4vc.CredentialOffer)
-	if !ok || len(offer.Grants.TxCode) == 0 {
-		return given
+	if !ok {
+		return given, nil
+	}
+	if len(offer.Grants.TxCode) == 0 {
+		return given, offer
 	}
 
 	prompt := "Transaction code"
@@ -55,9 +63,9 @@ func resolveTxCode(uri, given string) string {
 	fmt.Fprintf(os.Stderr, "%s: ", prompt)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && strings.TrimSpace(line) == "" {
-		return given
+		return given, offer
 	}
-	return strings.TrimSpace(line)
+	return strings.TrimSpace(line), offer
 }
 
 // describeTxCodePrompt summarizes a tx_code object for the prompt.
@@ -89,17 +97,24 @@ func stdinIsTerminal() bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-// acceptOID4URI processes an OID4VP request or OID4VCI offer the way `wallet
-// accept` does: resolve any transaction code, then route to a running or
-// remote wallet when one is configured, otherwise run the local flow. `wallet
-// scan` shares it, so a scanned request behaves like a supplied one.
+// acceptOID4URI processes an OID4VP request or OID4VCI offer. Routing comes
+// first and reading second, which is the order [ADR-0012] asks for: a wallet
+// that is going to read the URI is left to read it. `wallet scan` shares this,
+// so a scanned request behaves exactly like a supplied one.
+//
+// [ADR-0012]: docs/adr/0012-every-entry-point-runs-the-same-flow.md
 func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
-	opts.txCode = resolveTxCode(uri, opts.txCode)
-	if c, err := remoteClientIfConfigured(); err != nil {
+	c, err := remoteClientIfConfigured()
+	if err != nil {
 		return err
-	} else if c != nil {
+	}
+	if c != nil {
+		// A credential_offer_uri is spent by whoever reads it first, and the
+		// wallet is the one that reads it. Its consent dialog asks for the
+		// transaction code, and an issuance given none says what to supply.
 		return remoteAccept(c, uri, opts.txCode, !opts.autoAccept)
 	}
+	opts.txCode, opts.resolvedOffer = resolveTxCode(uri, opts.txCode)
 	return dispatchURI(uri, opts)
 }
 

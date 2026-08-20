@@ -110,11 +110,9 @@ func (s *Server) DemoEnabled() bool {
 	return s.demo != nil
 }
 
-// maxRequestBodyBytes caps request bodies. Every legitimate payload
-// (credentials, offers, presentations, templates) is far smaller. The cap
-// used to apply in demo mode alone, which left the size of a request the
-// server will read up to whoever sent it everywhere else, on a server that
-// reads several of them fully into memory.
+// maxRequestBodyBytes caps request bodies on every server, demo or not,
+// because several handlers read one fully into memory. Every legitimate
+// payload (credentials, offers, presentations, templates) is far smaller.
 const maxRequestBodyBytes = 1 << 20
 
 // Handler returns the server's root handler: the mux, wrapped with the
