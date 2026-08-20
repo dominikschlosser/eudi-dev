@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // handleBrowserPresentationAPI executes an OpenID4VP Browser API request and
@@ -83,6 +85,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
 		reqServer.wallet.NotifyError(WalletError{
+			Owner:   requestOwner(r),
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
@@ -90,7 +93,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		// follows RFC 6749, whose §4.1.2.1 has the server "inform the resource
 		// owner of the error" instead. The caller is told, which over this API
 		// is how the page learns the wallet refused.
-		reqServer.triggerUIRequest()
+		reqServer.triggerUIRequest("")
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":             refusalCodeForRequest(authReq, err),
 			"error_description": err.Error(),
@@ -140,6 +143,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	consentReq := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "presentation",
+		Owner:        requestOwner(r),
 		MatchedCreds: matches,
 		Status:       "pending",
 		ResultCh:     make(chan ConsentResult, 1),
@@ -155,7 +159,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 
 	reqServer.wallet.CreateConsentRequest(consentReq)
-	reqServer.triggerUIRequest()
+	reqServer.triggerUIRequest(consentReq.ID)
 	if reqServer.onConsentRequest != nil {
 		reqServer.onConsentRequest(consentReq)
 	}
@@ -199,14 +203,15 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		consentReq.SubmissionCh <- submission
 	}
 
+	reqServer.allowSlowResponse(w, config.ConsentTimeout)
 	select {
 	case result := <-consentReq.ResultCh:
 		handle(result)
-	case <-time.After(5 * time.Minute):
+	case <-time.After(config.ConsentTimeout):
 		// The timer races an arriving decision, and the request's status is
 		// the referee: a decision that already resolved the request is
 		// honored, only a request still pending times out.
-		if _, ok := reqServer.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+		if _, ok := reqServer.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return
 		}

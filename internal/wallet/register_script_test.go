@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,14 +29,40 @@ import (
 func TestHandlerScriptSource(t *testing.T) {
 	script := handlerScriptSource("/usr/local/bin/eudi", RegisterOptions{ListenerPort: 8085})
 
-	// The tab the handler opens is the one that started the flow. Without
-	// the marker a demo instance only shows the "waiting for consent" bar,
-	// because it cannot tell this tab from an uninvolved visitor's.
-	if !strings.Contains(script, "consent=await") {
-		t.Error("the script must mark the UI it opens as the consent owner")
+	// The handler names the page it opens on both acts, which is what ties
+	// the request it submits to that page rather than to every visitor.
+	if !strings.Contains(script, `open "$LISTENER/?focus=overview&owner=$OWNER"`) {
+		t.Error("the URL the handler opens must name the page")
 	}
-	if !strings.Contains(script, `open "$LISTENER/?focus=overview&consent=await"`) {
-		t.Error("the marker must be on the URL the handler opens")
+	if strings.Count(script, `-H "$OWNER_HEADER"`) != 2 {
+		t.Error("both submissions must carry the page name slot")
+	}
+	// A local wallet opens its own tab, which holds no name, so the request
+	// has to stay unowned to reach it. The name is minted only in the branch
+	// that opens a page with it.
+	if !strings.Contains(script, `OWNER_HEADER="X-Eudi-Owner:"`) {
+		t.Error("the submission names no page until this script opens one")
+	}
+	mintIdx := strings.Index(script, "OWNER=$(uuidgen")
+	openFnIdx := strings.Index(script, "open_remote_ui() {")
+	submitFnIdx := strings.Index(script, "submit_presentation() {")
+	if mintIdx < openFnIdx || mintIdx > submitFnIdx {
+		t.Error("the name is minted inside the branch that opens the page")
+	}
+
+	// It runs on a user's machine as bash, so it has to parse as bash.
+	path := filepath.Join(t.TempDir(), "handler.sh")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatalf("writing the script: %v", err)
+	}
+	if out, err := exec.Command("bash", "-n", path).CombinedOutput(); err != nil {
+		t.Errorf("the generated script does not parse: %v\n%s", err, out)
+	}
+	if strings.Count(script, `-H "$CLIENT_HEADER"`) < 2 {
+		t.Error("the script must name itself on the calls it makes")
+	}
+	if strings.Contains(script, "{{VERSION}}") {
+		t.Error("the release the script reports must be substituted")
 	}
 
 	// Order matters: the submit blocks until consent is resolved, so the UI

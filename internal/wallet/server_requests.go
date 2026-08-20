@@ -18,6 +18,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -26,9 +27,11 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
-// handleListRequests returns all pending consent requests.
+// handleListRequests returns the pending consent requests this caller may see.
 func (s *Server) handleListRequests(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.wallet.PendingRequestDocs())
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.Header().Set("Vary", "Cookie, "+OwnerHeader)
+	writeJSON(w, http.StatusOK, s.wallet.PendingRequestDocsFor(callerOwners(r), namedRequest(r)))
 }
 
 // streamWriteTimeout bounds one write to an event stream. It outlasts the
@@ -72,6 +75,8 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	// the conformance runner) do not enforce CORS and are unaffected.
 	flusher.Flush()
 
+	owners := callerOwners(r)
+
 	reqCh, reqUnsub := s.wallet.Subscribe()
 	defer reqUnsub()
 	errCh, errUnsub := s.wallet.SubscribeErrors()
@@ -91,38 +96,68 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-keepalive.C:
 			extendDeadline()
-			fmt.Fprintf(w, ": keepalive\n\n")
+			if _, err := fmt.Fprintf(w, ": keepalive\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		case req := <-reqCh:
-			data, err := json.Marshal(s.wallet.RequestDoc(req))
+			// A request belongs to the browser that started it. Another
+			// visitor's stream carries neither the event nor the claims the
+			// verifier asked for.
+			if !ownsRequest(owners, req, "") {
+				continue
+			}
+			data, err := json.Marshal(s.wallet.RequestDocFor(req, owners))
 			if err != nil {
 				continue
 			}
 			extendDeadline()
-			fmt.Fprintf(w, "event: consent\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: consent\ndata: %s\n\n", data); err != nil {
+				return
+			}
 			flusher.Flush()
 		case walletErr := <-errCh:
+			// A failure belongs to the flow that raised it, so it reaches the
+			// browser that started that flow. One with no owner came from a
+			// client that named no browser, and is everyone's to see.
+			if walletErr.Owner != "" && !ownedBy(owners, walletErr.Owner) {
+				continue
+			}
 			data, err := json.Marshal(walletErr)
 			if err != nil {
 				continue
 			}
 			extendDeadline()
-			fmt.Fprintf(w, "event: error\ndata: %s\n\n", data)
+			// Not "error": an EventSource dispatches a named event of that
+			// type at itself, where it would also run the handler for a lost
+			// connection and tear the stream down on every reported error.
+			if _, err := fmt.Fprintf(w, "event: wallet-error\ndata: %s\n\n", data); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-stateCh:
 			extendDeadline()
-			fmt.Fprintf(w, "event: state\ndata: {}\n\n")
+			if _, err := fmt.Fprintf(w, "event: state\ndata: {}\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
-		case authURL := <-authCh:
+		case prompt := <-authCh:
+			// The sign-in navigates a tab to the issuer, so it goes to the
+			// browser whose issuance it is and to no other.
+			if !ownedBy(owners, prompt.Owner) {
+				continue
+			}
 			// An issuance is waiting for the user to authenticate at the
 			// issuer. The UI navigates there and comes back through
 			// /callback, which resumes the flow already in progress.
-			data, err := json.Marshal(map[string]string{"url": authURL})
+			data, err := json.Marshal(map[string]string{"url": prompt.URL})
 			if err != nil {
 				continue
 			}
 			extendDeadline()
-			fmt.Fprintf(w, "event: authorize\ndata: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "event: authorize\ndata: %s\n\n", data); err != nil {
+				return
+			}
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -131,6 +166,31 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleApproveRequest approves a consent request and waits for the submission result.
+// allowSlowResponse pushes this response's write deadline past a wait the
+// server's own timeout is shorter than. A handler that blocks on consent
+// outlives config.SlowRequestTimeout, and without this its answer is written
+// to a connection Go already closed: the caller sees a dropped connection
+// rather than the result, and a URL handler takes that for a failure and
+// dispatches the same offer again.
+func (s *Server) allowSlowResponse(w http.ResponseWriter, wait time.Duration) {
+	err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(wait + config.SlowRequestTimeout))
+	// A browser redirected on its way in leaves the flow running against a
+	// writer that carries no deadline, so there is none to miss either.
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		s.log("  WARNING: write deadline not extended, a slow answer may not reach the caller: %v", err)
+	}
+}
+
+// refusalReason says why a request can no longer be answered. A request that
+// ran out of time was not answered by anybody, and saying it was sends the
+// user looking for the tab that did it.
+func refusalReason(status string) string {
+	if status == statusExpired {
+		return "This request timed out before it was answered"
+	}
+	return "This request was already answered"
+}
+
 func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -149,6 +209,10 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	// Checked against the pending request before it is resolved, so a bad
 	// selection leaves the dialog open instead of consuming the consent.
 	if pending, ok := s.wallet.GetRequest(id); ok {
+		if !ownsRequest(callerOwners(r), pending, namedRequest(r)) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
+			return
+		}
 		if err := ValidateConsentSelection(pending.CredentialOptions, body.Picks, body.SetChoices); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -158,15 +222,16 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	req, ok := s.wallet.ResolveRequest(id, "approved")
 	if !ok {
 		if req == nil {
-			http.Error(w, "request not found", http.StatusNotFound)
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
 		} else {
-			http.Error(w, "request already resolved", http.StatusConflict)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": refusalReason(req.Status)})
 		}
 		return
 	}
 
 	req.ResultCh <- ConsentResult{
 		Approved:       true,
+		Owner:          requestOwner(r),
 		SelectedClaims: body.SelectedClaims,
 		TxCode:         strings.TrimSpace(body.TxCode),
 		Picks:          body.Picks,
@@ -174,6 +239,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for the VP submission to complete so we can return the result to the UI
+	s.allowSlowResponse(w, config.SlowRequestTimeout)
 	select {
 	case submission := <-req.SubmissionCh:
 		out := map[string]any{
@@ -202,12 +268,16 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 // handleDenyRequest denies a consent request.
 func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if pending, ok := s.wallet.GetRequest(id); ok && !ownsRequest(callerOwners(r), pending, namedRequest(r)) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
+		return
+	}
 	req, ok := s.wallet.ResolveRequest(id, "denied")
 	if !ok {
 		if req == nil {
-			http.Error(w, "request not found", http.StatusNotFound)
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
 		} else {
-			http.Error(w, "request already resolved", http.StatusConflict)
+			writeJSON(w, http.StatusConflict, map[string]string{"error": refusalReason(req.Status)})
 		}
 		return
 	}

@@ -65,6 +65,11 @@ func (w *Wallet) GetRequest(id string) (*ConsentRequest, bool) {
 	return req, ok
 }
 
+// statusExpired is what a request nobody answered in time becomes. Telling it
+// apart from "denied" is what lets the wallet say which one happened when it
+// refuses a late answer.
+const statusExpired = "expired"
+
 // ResolveRequest atomically transitions a consent request from "pending" to
 // the given status. It returns false if the request was not found or was
 // already resolved.
@@ -80,29 +85,40 @@ func (w *Wallet) ResolveRequest(id, status string) (*ConsentRequest, bool) {
 	return req, true
 }
 
-// PendingRequestDocs returns the pending consent requests marshaled under
-// the registry lock: Status is written under that lock when a request
-// resolves, so the snapshot and the read are ordered.
-func (w *Wallet) PendingRequestDocs() []map[string]any {
+// PendingRequestDocsFor lists the pending requests one caller may see: its own,
+// the unowned ones, and one it names by id. The wallet hands that id to a
+// browser in the redirect it answers with, so a browser that keeps no cookie
+// still reaches the request it was redirected for. Marshaled under the
+// registry lock: Status is written under that lock when a request resolves, so
+// the snapshot and the read are ordered.
+func (w *Wallet) PendingRequestDocsFor(owners []string, named string) []map[string]any {
 	rt := w.runtimeState()
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
 	docs := make([]map[string]any, 0, len(rt.requests))
 	for _, r := range rt.requests {
-		if r.Status == "pending" {
-			docs = append(docs, MarshalConsentRequest(r))
+		if r.Status == "pending" && ownsRequest(owners, r, named) {
+			docs = append(docs, marshalConsentRequestFor(r, owners))
 		}
 	}
 	return docs
 }
 
-// RequestDoc marshals one consent request under the registry lock, for the
-// same ordering reason PendingRequestDocs holds it.
-func (w *Wallet) RequestDoc(r *ConsentRequest) map[string]any {
+// RequestDocFor marshals one consent request as one caller sees it, under the
+// registry lock that PendingRequestDocsFor holds for the same ordering reason.
+func (w *Wallet) RequestDocFor(r *ConsentRequest, owners []string) map[string]any {
 	rt := w.runtimeState()
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	return MarshalConsentRequest(r)
+	return marshalConsentRequestFor(r, owners)
+}
+
+// marshalConsentRequestFor adds "mine", which is what decides between the
+// dialog and the banner.
+func marshalConsentRequestFor(r *ConsentRequest, owners []string) map[string]any {
+	doc := MarshalConsentRequest(r)
+	doc["mine"] = ownedBy(owners, r.Owner)
+	return doc
 }
 
 // GetPendingRequests returns all pending consent requests.
@@ -117,6 +133,15 @@ func (w *Wallet) GetPendingRequests() []*ConsentRequest {
 		}
 	}
 	return out
+}
+
+// AttachedUIs reports how many event streams are open. A wallet with one does
+// not need to open a browser for a request: the tab watching is told.
+func (w *Wallet) AttachedUIs() int {
+	rt := w.runtimeState()
+	rt.mu.RLock()
+	defer rt.mu.RUnlock()
+	return len(rt.subscribers)
 }
 
 // Subscribe returns a channel for new consent requests and an unsubscribe function.
@@ -172,8 +197,8 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 // wallet opens one; a hosted wallet hands the URL to the open UI tab. Either
 // way the login happens inside the flow, between the authorization request and
 // the token exchange.
-func (w *Wallet) SubscribeAuthorization() (<-chan string, func()) {
-	ch := make(chan string, 4)
+func (w *Wallet) SubscribeAuthorization() (<-chan AuthorizationPrompt, func()) {
+	ch := make(chan AuthorizationPrompt, 4)
 	rt := w.runtimeState()
 	rt.mu.Lock()
 	rt.authSubID++
@@ -198,10 +223,10 @@ func (w *Wallet) SubscribeAuthorization() (<-chan string, func()) {
 // NotifyAuthorization offers an authorization URL to the open UIs. It reports
 // whether anyone took it, so a wallet with no UI attached can fall back to
 // opening a browser locally.
-func (w *Wallet) NotifyAuthorization(authURL string) bool {
+func (w *Wallet) NotifyAuthorization(prompt AuthorizationPrompt) bool {
 	rt := w.runtimeState()
 	rt.mu.Lock()
-	subs := make([]chan string, 0, len(rt.authSubscribers))
+	subs := make([]chan AuthorizationPrompt, 0, len(rt.authSubscribers))
 	for _, ch := range rt.authSubscribers {
 		subs = append(subs, ch)
 	}
@@ -210,7 +235,7 @@ func (w *Wallet) NotifyAuthorization(authURL string) bool {
 	delivered := false
 	for _, ch := range subs {
 		select {
-		case ch <- authURL:
+		case ch <- prompt:
 			delivered = true
 		default:
 		}
@@ -218,11 +243,30 @@ func (w *Wallet) NotifyAuthorization(authURL string) bool {
 	return delivered
 }
 
-// NotifyError sends an error event to all subscribers and stores it for polling.
+// NotifyError sends an error event to the subscribers it belongs to and stores
+// it for polling.
 func (w *Wallet) NotifyError(err WalletError) {
 	rt := w.runtimeState()
 	rt.mu.Lock()
-	rt.lastError = &err
+	now := time.Now()
+	// The unowned slot is a key like any other, so the oldest one is tracked
+	// with a flag rather than by an empty name.
+	var oldest string
+	var haveOldest bool
+	for owner, stored := range rt.lastErrors {
+		if now.Sub(stored.at) > lastErrorRetention {
+			delete(rt.lastErrors, owner)
+			continue
+		}
+		if !haveOldest || stored.at.Before(rt.lastErrors[oldest].at) {
+			oldest, haveOldest = owner, true
+		}
+	}
+	// Callers choose the key, so age alone does not bound this.
+	if _, held := rt.lastErrors[err.Owner]; !held && len(rt.lastErrors) >= maxStoredErrors && haveOldest {
+		delete(rt.lastErrors, oldest)
+	}
+	rt.lastErrors[err.Owner] = &storedError{err: err, at: now}
 	subs := make([]chan WalletError, 0, len(rt.errSubscribers))
 	for _, ch := range rt.errSubscribers {
 		subs = append(subs, ch)
@@ -237,34 +281,41 @@ func (w *Wallet) NotifyError(err WalletError) {
 	}
 }
 
-// PopLastError returns and clears the last error, if any.
-func (w *Wallet) PopLastError() *WalletError {
-	rt := w.runtimeState()
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	err := rt.lastError
-	rt.lastError = nil
-	return err
-}
-
-// PeekLastError returns the last error without clearing it.
-func (w *Wallet) PeekLastError() *WalletError {
+// PeekLastError returns the last error one caller may read, without clearing.
+func (w *Wallet) PeekLastError(owners []string) *WalletError {
 	rt := w.runtimeState()
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	if rt.lastError == nil {
-		return nil
+	for _, owner := range errorSlots(owners) {
+		if stored := rt.lastErrors[owner]; stored != nil && time.Since(stored.at) <= lastErrorRetention {
+			err := stored.err
+			return &err
+		}
 	}
-	err := *rt.lastError
-	return &err
+	return nil
 }
 
-// ClearLastError clears the last error, if any.
-func (w *Wallet) ClearLastError() {
+// ClearLastError clears every slot the same caller may read, so an error a
+// caller was shown is one it can dismiss. It clears the unowned slot too, both
+// on a dismissal and when a caller starts something new: the alternative is a
+// report nobody named a browser for surfacing later against an unrelated flow,
+// in a tab whose visitor had nothing to do with it. A client with no browser
+// prints its own failure where it was run, so that slot is the wallet's second
+// channel for it, not its only one.
+func (w *Wallet) ClearLastError(owners []string) {
 	rt := w.runtimeState()
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	rt.lastError = nil
+	for _, slot := range errorSlots(owners) {
+		delete(rt.lastErrors, slot)
+	}
+}
+
+// errorSlots are the slots a caller may read, its own first. The unowned slot
+// holds what a client that named no browser ran into, which is every client
+// with no browser to name, so it stays readable by all of them.
+func errorSlots(owners []string) []string {
+	return append(append([]string{}, owners...), "")
 }
 
 // SetNextError sets a one-shot error override for the next presentation request.
@@ -321,3 +372,29 @@ func (w *Wallet) NotifyStateChanged() {
 		}
 	}
 }
+
+// AuthorizationPrompt is an issuer sign-in the wallet needs a browser to
+// perform. Owner is the browser whose issuance it belongs to, empty when the
+// client that started it named none.
+type AuthorizationPrompt struct {
+	URL   string
+	Owner string
+}
+
+// storedError is the last error one owner ran into, with when it arrived. A
+// caller names its own owner, so the map is keyed by a value callers choose
+// and has to shed what nobody came back for.
+type storedError struct {
+	err WalletError
+	at  time.Time
+}
+
+// lastErrorRetention is how long an unread error waits for the browser it
+// belongs to. It outlasts a page load and a reconnect, which is all the tab
+// needs to come back and read it.
+const lastErrorRetention = 10 * time.Minute
+
+// maxStoredErrors caps how many slots are held at once, because a caller names
+// its own and can name a new one on every call. Age alone would let a burst
+// grow the map before anything in it expires.
+const maxStoredErrors = 64

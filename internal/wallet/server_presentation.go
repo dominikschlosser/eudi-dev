@@ -62,6 +62,13 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authReq.BrowserRedirect = isBrowserNavigation(r)
+	// A browser reaching this endpoint may be the wallet's first contact with
+	// it, so the session is minted on the response that redirects it to the UI
+	// and the request it creates belongs to that new session.
+	authReq.Session = requestOwner(r)
+	if authReq.BrowserRedirect && authReq.Session == "" {
+		authReq.Session = newBrowserSession(w, r, s.browserSecure(r))
+	}
 	s.handleAuthFlow(w, authReq)
 }
 
@@ -79,7 +86,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A new request makes any earlier failure stale, the same as for an offer.
-	s.wallet.ClearLastError()
+	s.wallet.ClearLastError(callerOwners(r))
 
 	s.log("Received authorization request")
 	// Truncate URI for display
@@ -104,9 +111,9 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 			mux:              s.mux,
 			onSave:           s.onSave,
 			onConsentRequest: s.onConsentRequest,
-			onUIRequest: func() {
+			onUIRequest: func(requestID string) {
 				if !body.AutoAccept {
-					s.triggerUIRequest()
+					s.triggerUIRequest(requestID)
 				}
 			},
 			logFunc:       s.logFunc,
@@ -127,10 +134,11 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", fmt.Sprintf("Failed to parse request: %v", err), false)
 		reqServer.wallet.NotifyError(WalletError{
+			Owner:   requestOwner(r),
 			Message: "Failed to parse authorization request",
 			Detail:  err.Error(),
 		})
-		reqServer.triggerUIRequest()
+		reqServer.triggerUIRequest("")
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -165,6 +173,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 		VerifierInfo:     parsed.FullParams["verifier_info"],
 		Source:           "api",
+		Session:          requestOwner(r),
 	}
 
 	// Validate here only to answer the API caller with a 400 on a hard failure.
@@ -176,6 +185,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
 		reqServer.wallet.NotifyError(WalletError{
+			Owner:   requestOwner(r),
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
@@ -187,6 +197,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		// A scheme dispatch or another submitter acting for a user
 		// interaction: keep the consent dialog despite the API channel.
 		authReq.Source = "interactive"
+		s.noteStaleClient(r)
 	}
 
 	reqServer.handleAuthFlow(w, authReq)

@@ -354,7 +354,7 @@ func (w *Wallet) runAuthViaWebInteraction(response map[string]any, setup authori
 			"request_uri":            requestURI,
 		})
 
-	values, err := runAuthorizationCodeRequest(w, setup.authorizationEndpoint, setup.clientID, requestURI, nil, setup.redirectURI, setup.state, setup.issuer, w.Mode())
+	values, err := runAuthorizationCodeRequest(w, setup.authorizationEndpoint, setup.clientID, requestURI, nil, setup.redirectURI, setup.state, setup.issuer, setup.owner, w.Mode())
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func (w *Wallet) runPresentationInteraction(endpoint string, response map[string
 		return w.interactionErrorResponse(params, "access_denied", "no credential in this wallet satisfies the request")
 	}
 
-	matches, approved, err := w.awaitInteractivePresentationConsent(endpoint, authReq, matches, credentialOptions, setup.presentationConsented)
+	matches, approved, err := w.awaitInteractivePresentationConsent(endpoint, authReq, matches, credentialOptions, setup.presentationConsented, setup.owner)
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +585,7 @@ func derivedOrigin(rawURL string) string {
 // presentation the issuer made a condition of issuance. It is asked separately
 // from the issuance consent: agreeing to receive a credential is not agreeing
 // to disclose one.
-func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *AuthorizationRequestParams, matches []CredentialMatch, credentialOptions *ConsentCredentialOptions, consented bool) ([]CredentialMatch, bool, error) {
+func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *AuthorizationRequestParams, matches []CredentialMatch, credentialOptions *ConsentCredentialOptions, consented bool, owner string) ([]CredentialMatch, bool, error) {
 	if w.AutoAccept || consented {
 		return matches, true, nil
 	}
@@ -603,6 +603,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		// started, so a shared wallet must not put it in front of everybody
 		// else. It is rendered as the presentation request it is.
 		Type:         ConsentTypeIssuancePresentation,
+		Owner:        owner,
 		MatchedCreds: matches,
 		Status:       "pending",
 		ResultCh:     make(chan ConsentResult, 1),
@@ -642,7 +643,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		// The timer races an arriving decision, and the request's status is
 		// the referee: a decision that already resolved the request is
 		// honored, only a request still pending times out.
-		if _, ok := w.ResolveRequest(consentReq.ID, "denied"); !ok {
+		if _, ok := w.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			return handle(<-consentReq.ResultCh)
 		}
 		consentReq.SubmissionCh <- SubmissionResult{Error: "consent timeout"}

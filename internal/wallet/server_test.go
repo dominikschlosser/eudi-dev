@@ -515,7 +515,7 @@ func TestPresentationAPI_InvalidURIWithRequestScopedOptionsShowsErrorOnMainWalle
 	srv := newTestServer(t, false)
 
 	uiRequested := false
-	srv.SetOnUIRequest(func() {
+	srv.SetOnUIRequest(func(string) {
 		uiRequested = true
 	})
 
@@ -565,7 +565,7 @@ func TestPresentationAPI_AutoAcceptOverrideSkipsConsent(t *testing.T) {
 
 	uiRequested := false
 	consentRequested := false
-	srv.SetOnUIRequest(func() {
+	srv.SetOnUIRequest(func(string) {
 		uiRequested = true
 	})
 	srv.SetOnConsentRequest(func(req *ConsentRequest) {
@@ -2530,7 +2530,7 @@ func TestOnUIRequest_CalledOnInteractiveOfferImport(t *testing.T) {
 	// Written on the request goroutine, read here: needs a lock for -race.
 	var callbackMu sync.Mutex
 	callbackCalled := false
-	srv.SetOnUIRequest(func() {
+	srv.SetOnUIRequest(func(string) {
 		callbackMu.Lock()
 		callbackCalled = true
 		callbackMu.Unlock()
@@ -2663,7 +2663,7 @@ func TestOnUIRequest_NotCalledOnAutoAcceptOfferImport(t *testing.T) {
 	// Written on the request goroutine, read here: needs a lock for -race.
 	var callbackMu sync.Mutex
 	callbackCalled := false
-	srv.SetOnUIRequest(func() {
+	srv.SetOnUIRequest(func(string) {
 		callbackMu.Lock()
 		callbackCalled = true
 		callbackMu.Unlock()

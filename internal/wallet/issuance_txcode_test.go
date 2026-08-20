@@ -117,7 +117,7 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 		{"no code", "", "Missing required 'tx_code'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
+			consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
 			if err != nil {
 				t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 			}

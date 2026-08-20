@@ -44,7 +44,7 @@ func TestApprovingAnOfferSurvivesASingleUseOfferURI(t *testing.T) {
 
 	// What the consent dialog does: resolve the offer so it can name what is
 	// being offered.
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
+	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestApproveRequestCompletesWhenTheIssuerServesTheOfferOnce(t *testing.T) {
 
 	server := NewServer(w, 0, nil)
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
+	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestASwappedOfferDoesNotReplaceTheApprovedOne(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
+	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestAnOfferRereadWithoutAnIssuerKeepsTheApprovedOne(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI)
+	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestUnattendedIssuanceCarriesNoApprovedOffer(t *testing.T) {
 
 	server := NewServer(w, 0, nil)
 	rec := httptest.NewRecorder()
-	server.processOfferURI(rec, offerURI, "", false, true)
+	server.processOfferURI(rec, offerURI, "", "", false, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("the first, unattended run failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -257,7 +257,7 @@ func TestUnattendedIssuanceCarriesNoApprovedOffer(t *testing.T) {
 	// The offer is spent now, and an unattended run has nothing to fall back
 	// on, so this one has to fail rather than reuse anything.
 	rec = httptest.NewRecorder()
-	server.processOfferURI(rec, offerURI, "", false, true)
+	server.processOfferURI(rec, offerURI, "", "", false, true)
 	if rec.Code == http.StatusOK {
 		t.Fatalf("a spent offer was accepted without anyone approving it: %s", rec.Body.String())
 	}

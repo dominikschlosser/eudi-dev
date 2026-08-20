@@ -23,6 +23,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -268,11 +269,17 @@ func remoteGeneratePID(c *remote.Client, claims map[string]any, vct string) erro
 
 func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error {
 	isVCI := isCredentialOfferURI(uri)
-	// Open the wallet UI so the consent dialog it is about to show is visible.
-	// consent=await marks this tab as the one that started the flow, so a shared
-	// demo opens the dialog here instead of only the pending banner.
+	// Open the wallet UI so the consent dialog it is about to show is visible,
+	// naming the page so the request submitted below reaches it. A shared
+	// wallet then opens the dialog there rather than offering it to everyone.
 	if interactive && !noOpen {
-		openBrowser(strings.TrimRight(c.BaseURL, "/") + "/?focus=overview&consent=await")
+		owner := remote.NewOwnerToken()
+		target := strings.TrimRight(c.BaseURL, "/") + "/?focus=overview&owner=" + url.QueryEscape(owner)
+		if openBrowser(target) {
+			c.ActingFor(owner)
+		} else {
+			fmt.Printf("Waiting for consent at: %s\n", strings.TrimRight(c.BaseURL, "/"))
+		}
 	}
 	var result map[string]any
 	var err error

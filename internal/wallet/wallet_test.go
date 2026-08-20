@@ -512,20 +512,17 @@ func TestSubscribeErrors(t *testing.T) {
 	}
 }
 
-func TestPopLastError(t *testing.T) {
+func TestLastErrorKeepsTheLatest(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// No error yet
-	if err := w.PopLastError(); err != nil {
+	if err := w.PeekLastError(nil); err != nil {
 		t.Errorf("expected nil, got %v", err)
 	}
 
-	// Notify error
 	w.NotifyError(WalletError{Message: "first"})
 	w.NotifyError(WalletError{Message: "second"})
 
-	// Pop should return last error
-	err := w.PopLastError()
+	err := w.PeekLastError(nil)
 	if err == nil {
 		t.Fatal("expected non-nil error")
 	}
@@ -533,9 +530,9 @@ func TestPopLastError(t *testing.T) {
 		t.Errorf("expected 'second', got %s", err.Message)
 	}
 
-	// Pop again should return nil
-	if err := w.PopLastError(); err != nil {
-		t.Errorf("expected nil after pop, got %v", err)
+	w.ClearLastError(nil)
+	if err := w.PeekLastError(nil); err != nil {
+		t.Errorf("expected nil once cleared, got %v", err)
 	}
 }
 

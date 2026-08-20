@@ -764,11 +764,11 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 	authCh, unsubscribe := w.SubscribeAuthorization()
 	defer unsubscribe()
 	go func() {
-		authURL, ok := <-authCh
+		prompt, ok := <-authCh
 		if !ok {
 			return
 		}
-		resp, err := issuer.Client().Get(authURL)
+		resp, err := issuer.Client().Get(prompt.URL)
 		if err == nil && resp != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -827,7 +827,7 @@ func TestRunAuthorizationCodeRequest_NobodyTookTheURL(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	_, err := runAuthorizationCodeRequest(w, authServer.URL+"/authorize", "wallet-client",
-		"urn:ietf:params:oauth:request_uri:example", nil, redirectURI, state, "", ValidationModeDebug)
+		"urn:ietf:params:oauth:request_uri:example", nil, redirectURI, state, "", "", ValidationModeDebug)
 	if err == nil {
 		t.Fatal("expected the issuance to end when nothing can open the authorization URL")
 	}
@@ -918,8 +918,8 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 	defer unsubscribe()
 	defer func() {
 		select {
-		case authURL := <-authCh:
-			t.Errorf("did not expect an interactive sign-in for a direct authorization redirect, got %s", authURL)
+		case prompt := <-authCh:
+			t.Errorf("did not expect an interactive sign-in for a direct authorization redirect, got %s", prompt.URL)
 		default:
 		}
 	}()
@@ -1429,7 +1429,7 @@ func TestIssuanceConsentDescribesTheOffer(t *testing.T) {
 	issuer, offerURI := setupMockIssuer(t, srv.wallet, mockIssuerOpts{})
 	defer issuer.Close()
 
-	req, _, err := prepareIssuanceConsentRequest(offerURI)
+	req, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1488,7 +1488,7 @@ func TestIssuanceConsentResolvesOfferByReference(t *testing.T) {
 	})
 	defer issuer.Close()
 
-	req, _, err := prepareIssuanceConsentRequest(offerURI)
+	req, _, err := prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1510,7 +1510,7 @@ func TestIssuanceConsentResolvesOfferByReference(t *testing.T) {
 // An offer whose URI cannot be fetched must still produce a dialog: naming
 // the host and the failure beats refusing to ask.
 func TestIssuanceConsentSurvivesUnresolvableOfferURI(t *testing.T) {
-	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer_uri=https://issuer.invalid/offer/1")
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer_uri=https://issuer.invalid/offer/1", "")
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}
@@ -1526,7 +1526,7 @@ func TestIssuanceConsentSurvivesUnresolvableOfferURI(t *testing.T) {
 func TestIssuanceConsentSurvivesMissingIssuerMetadata(t *testing.T) {
 	offer := `{"credential_issuer":"https://issuer.invalid","credential_configuration_ids":["some-config"],` +
 		`"grants":{"urn:ietf:params:oauth:grant-type:pre-authorized_code":{"pre-authorized_code":"abc","tx_code":{"length":6,"input_mode":"numeric"}}}}`
-	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer=" + url.QueryEscape(offer))
+	req, _, err := prepareIssuanceConsentRequest("openid-credential-offer://?credential_offer="+url.QueryEscape(offer), "")
 	if err != nil {
 		t.Fatalf("prepareIssuanceConsentRequest: %v", err)
 	}

@@ -20,6 +20,8 @@ package remote
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,6 +38,9 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
+	// owner is the browser this client submits on behalf of, set when it
+	// opened a wallet UI page for the flow it is about to start.
+	owner string
 }
 
 // NewClient creates a client for the wallet server at baseURL.
@@ -78,6 +83,12 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	// Name the client and the release it came from, so a wallet can tell a
+	// current CLI from one that predates a change it has to work around.
+	req.Header.Set(config.ClientHeader, "eudi-cli/"+version)
+	if c.owner != "" {
+		req.Header.Set(config.OwnerHeader, c.owner)
 	}
 
 	client := c.HTTP
@@ -374,4 +385,31 @@ func (c *Client) SetCredentialStatus(id string, status int) error {
 // Shutdown asks the remote wallet server to exit.
 func (c *Client) Shutdown() error {
 	return c.do(http.MethodPost, "/api/shutdown", nil, nil)
+}
+
+// version is the release this binary was built as, set by the cmd package for
+// the same reason it sets the server's.
+var version = "dev"
+
+// SetVersion records the release the CLI reports to a wallet it drives.
+func SetVersion(v string) {
+	if v = strings.TrimSpace(v); v != "" {
+		version = v
+	}
+}
+
+// NewOwnerToken mints the value that ties a page this CLI opens to the request
+// it submits for that page.
+func NewOwnerToken() string {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+// ActingFor names the browser this client submits on behalf of, so the wallet
+// puts the consent in front of that page.
+func (c *Client) ActingFor(owner string) {
+	c.owner = strings.TrimSpace(owner)
 }

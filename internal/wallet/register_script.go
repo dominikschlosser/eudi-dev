@@ -36,6 +36,18 @@ func stableBinaryPath(executable string) string {
 	return resolved
 }
 
+// handlerScriptVersion is the release the installed script reports. It is set
+// by the cmd package, like the server's own version, so a wallet can tell a
+// handler written by this build from one written by an older one.
+var handlerScriptVersion = "dev"
+
+// SetHandlerScriptVersion records the release written into handler scripts.
+func SetHandlerScriptVersion(v string) {
+	if v = strings.TrimSpace(v); v != "" {
+		handlerScriptVersion = v
+	}
+}
+
 // handlerScriptSource renders the bash script the .app bundle dispatches to.
 // Separate from writing it so its behavior can be tested without touching
 // Launch Services or the user's real handler registration.
@@ -50,6 +62,14 @@ AUTO_ACCEPT="{{AUTO_ACCEPT}}"
 # the consent dialog even though the handler submits through the API.
 if [[ "$AUTO_ACCEPT" == "true" ]]; then INTERACTIVE=false; else INTERACTIVE=true; fi
 SERVE_ARGS=({{SERVE_ARGS}})
+# Name this script and the release that wrote it on every call. A handler
+# installed once keeps running its own code long after the binary is replaced,
+# so the wallet has to be able to tell an old one from a current one.
+CLIENT_HEADER="{{CLIENT_HEADER}}: eudi-url-handler/{{VERSION}}"
+# Set only when this script opens the page itself, below. curl drops a header
+# given without a value, so the submit names no page until there is one.
+OWNER=""
+OWNER_HEADER="{{OWNER_HEADER}}:"
 LOG_FILE="/tmp/eudi-dev-wallet.log"
 SERVER_LOG="/tmp/eudi-dev-wallet-server.log"
 
@@ -63,7 +83,7 @@ if [[ -n "$REMOTE_URL" ]]; then
 fi
 
 listener_ready() {
-  curl -sf "$LISTENER/api/credentials" >/dev/null 2>&1
+  curl -sf -H "$CLIENT_HEADER" "$LISTENER/api/credentials" >/dev/null 2>&1
 }
 
 # Restart the running server if it was built from an older binary than the one
@@ -72,7 +92,7 @@ listener_ready() {
 stop_stale_listener() {
   LOCAL_ID=$(shasum -a 256 "$BINARY" 2>/dev/null | cut -d' ' -f1)
   [[ -z "$LOCAL_ID" ]] && return 0
-  VERSION_JSON=$(curl -sf "$LISTENER/api/version" 2>/dev/null)
+  VERSION_JSON=$(curl -sf -H "$CLIENT_HEADER" "$LISTENER/api/version" 2>/dev/null)
   SERVER_ID=$(printf '%s' "$VERSION_JSON" | sed -n 's/.*"build_id":"\([0-9a-f]*\)".*/\1/p')
   [[ "$SERVER_ID" == "$LOCAL_ID" ]] && return 0
   echo "wallet server is running an outdated build, restarting" >>"$SERVER_LOG"
@@ -117,7 +137,7 @@ ensure_listener() {
 
 submit_offer() {
   curl -sf -X POST "$LISTENER/api/offers" \
-    -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" -H "$CLIENT_HEADER" -H "$OWNER_HEADER" \
     -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }
 
@@ -127,16 +147,17 @@ submit_offer() {
 # until the user decides in that UI. The local server opens its own tab.
 open_remote_ui() {
   if [[ -n "$REMOTE_URL" && "$AUTO_ACCEPT" != "true" ]]; then
-    # consent=await marks this tab as the one that started the flow, so a
-    # demo instance opens the consent dialog here instead of only showing
-    # the "waiting for consent" bar meant for uninvolved visitors.
-    open "$LISTENER/?focus=overview&consent=await"
+    # owner names this page on both acts, so the request submitted below
+    # reaches it rather than every visitor of a wallet others also use.
+    OWNER=$(uuidgen 2>/dev/null || od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+    OWNER_HEADER="{{OWNER_HEADER}}: $OWNER"
+    open "$LISTENER/?focus=overview&owner=$OWNER"
   fi
 }
 
 submit_presentation() {
   curl -sf -X POST "$LISTENER/api/presentations" \
-    -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" -H "$CLIENT_HEADER" -H "$OWNER_HEADER" \
     -d "{\"uri\":\"$URI\",\"interactive\":$INTERACTIVE}" >/dev/null
 }
 
@@ -179,7 +200,10 @@ case "$URI" in
     ;;
 esac
 `, "{{BINARY_PATH}}", binaryPath), "{{PORT}}", fmt.Sprintf("%d", opts.ListenerPort)), "{{AUTO_ACCEPT}}", fmt.Sprintf("%t", opts.AutoAccept))
-	return strings.ReplaceAll(handler, "{{SERVE_ARGS}}", joinShellArgs(opts.ServeArgs))
+	handler = strings.ReplaceAll(handler, "{{SERVE_ARGS}}", joinShellArgs(opts.ServeArgs))
+	handler = strings.ReplaceAll(handler, "{{VERSION}}", handlerScriptVersion)
+	handler = strings.ReplaceAll(handler, "{{CLIENT_HEADER}}", ClientHeader)
+	return strings.ReplaceAll(handler, "{{OWNER_HEADER}}", OwnerHeader)
 }
 
 func joinShellArgs(args []string) string {

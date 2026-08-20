@@ -129,6 +129,9 @@ type OfferOptions struct {
 	// requires one. It travels with the flow it belongs to, so concurrent
 	// offers on a shared wallet each send their own code.
 	TxCode string
+	// Owner is the browser this issuance belongs to, so a presentation the
+	// issuer asks for mid-flow belongs to it too.
+	Owner string
 	// ResolvedOffer is an offer the caller already resolved from the same
 	// URI, which is what a consent dialog holds by the time the user
 	// approves. It is used only when reading the URI again fails.

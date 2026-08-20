@@ -145,6 +145,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		issuer:                oauthIssuer(oauthMeta, ""),
 
 		presentationConsented: opts.PresentationConsented,
+		owner:                 opts.Owner,
 	}
 	issuance := authorizationCodeIssuance{
 		offer:              offer,
@@ -213,7 +214,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		"redirect_uri": redirectURI,
 		"state":        state,
 	})
-	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), w.Mode())
+	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), opts.Owner, w.Mode())
 	authorizationResponseDetails := map[string]any{
 		"direction": "inbound",
 		"endpoint":  "authorization",
@@ -259,6 +260,8 @@ type authorizationCodeSetup struct {
 	// presentationConsented skips the consent for a presentation the issuer
 	// asks for, because the caller already gave it.
 	presentationConsented bool
+	// owner is the browser the issuance belongs to.
+	owner string
 }
 
 // authorizationCodeIssuance carries what the second half of an authorization
@@ -1368,7 +1371,7 @@ func derefString(v *string) string {
 // the wallet itself where no browser can. RFC 9126 §4 says "the client MUST
 // only use a request_uri value once", so only one of them requests the
 // endpoint.
-func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer string, mode ValidationMode) (url.Values, error) {
+func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer, owner string, mode ValidationMode) (url.Values, error) {
 	authURL, err := authorizationRequestURL(endpoint, clientID, requestURI, params)
 	if err != nil {
 		return nil, err
@@ -1381,7 +1384,7 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 		// The wallet never opens a browser itself: a hosted wallet opening one
 		// on its own server reaches nobody. It hands the URL to whoever holds
 		// the user's attention and waits.
-		if !w.NotifyAuthorization(authURL) {
+		if !w.NotifyAuthorization(AuthorizationPrompt{URL: authURL, Owner: owner}) {
 			return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
 		}
 		select {

@@ -56,6 +56,10 @@ _Avoid_: JAR (in prose), signed request
 **Consent request**:
 A pending decision put to the user before a presentation is sent. Internal to this wallet and unrelated to the verifier's authorization request, though one causes the other.
 
+**Owner**:
+The browser a flow belongs to, recognised by the `eudi_session` cookie or named by a client in `X-Eudi-Owner`. A consent request, an error report and an issuer sign-in prompt each carry one. Not the wallet that owns a deferred issuance, not the credential holder, and not OAuth's resource owner. A flow whose client named no browser is **unowned**, and stays visible and answerable to every caller.
+_Avoid_: session, page, acting owner (all name the same value in older code)
+
 **Presentation**:
 What the wallet sends a verifier in answer to an authorization request. The act and the artifact share the name, which is fine, but the artifact is a **VP token** when precision is needed.
 

@@ -553,21 +553,36 @@ func TestRequestBodyIsCapped(t *testing.T) {
 	}
 }
 
-// Clearing the activity log or the last error changes what every other
-// visitor sees, and nothing on a demo instance needs it.
+// Clearing the activity log changes what every other visitor sees, and
+// nothing on a demo instance needs it.
 func TestDemoBlocksClearingSharedHistory(t *testing.T) {
 	srv := newDemoTestServer(t)
 
-	for _, path := range []string{"/api/log", "/api/error"} {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodDelete, path, nil)
-			req.Host = "localhost:8085"
-			rec := httptest.NewRecorder()
-			srv.Handler().ServeHTTP(rec, req)
-			if rec.Code != http.StatusForbidden {
-				t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
-			}
-		})
+	req := httptest.NewRequest(http.MethodDelete, "/api/log", nil)
+	req.Host = "localhost:8085"
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+// A visitor dismisses the error their own flow raised: it is not shared
+// history, and one they cannot dismiss is shown again on every load.
+func TestDemoVisitorDismissesItsOwnError(t *testing.T) {
+	srv := newDemoTestServer(t)
+	srv.wallet.NotifyError(WalletError{Message: "this visitor's flow", Owner: "browser-a"})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/error", nil)
+	req.Host = "localhost:8085"
+	req.Header.Set(OwnerHeader, "browser-a")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("status = %d, want the error to be dismissable", rec.Code)
+	}
+	if got := srv.wallet.PeekLastError([]string{"browser-a"}); got != nil {
+		t.Errorf("the error survived being dismissed: %v", got)
 	}
 }
 

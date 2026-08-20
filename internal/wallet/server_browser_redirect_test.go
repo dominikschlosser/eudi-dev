@@ -32,6 +32,20 @@ func browserGet(t *testing.T, srv *Server, path string) *httptest.ResponseRecord
 	return w
 }
 
+// browserAnswer answers a consent request the way the browser that started it
+// does, carrying the session the wallet set on the response that redirected it.
+func browserAnswer(t *testing.T, srv *Server, redirect *httptest.ResponseRecorder, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for _, c := range redirect.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	srv.mux.ServeHTTP(w, req)
+	return w
+}
+
 func presentationAuthorizePath(t *testing.T, verifierURL string) string {
 	t.Helper()
 	dcqlJSON, err := json.Marshal(pidDCQLQuery())
@@ -134,7 +148,7 @@ func TestAuthorize_InteractiveBrowserRedirectsToWalletUIThenSubmits(t *testing.T
 
 	// Approving finishes the detached flow. The approve response carries the
 	// verifier redirect_uri the UI navigates to.
-	approveRec := serverRequest(t, srv, "POST", "/api/requests/"+pending[0].ID+"/approve", `{}`)
+	approveRec := browserAnswer(t, srv, rec, "/api/requests/"+pending[0].ID+"/approve", `{}`)
 	if approveRec.Code != http.StatusOK {
 		t.Fatalf("approve failed: %d %s", approveRec.Code, approveRec.Body.String())
 	}
@@ -174,7 +188,7 @@ func TestCredentialOfferEndpoint_InteractiveBrowserRedirectsToWalletUIThenImport
 		t.Fatalf("expected one pending consent request, got %d", len(pending))
 	}
 
-	approveRec := serverRequest(t, srv, "POST", "/api/requests/"+pending[0].ID+"/approve", `{}`)
+	approveRec := browserAnswer(t, srv, rec, "/api/requests/"+pending[0].ID+"/approve", `{}`)
 	if approveRec.Code != http.StatusOK {
 		t.Fatalf("approve failed: %d %s", approveRec.Code, approveRec.Body.String())
 	}

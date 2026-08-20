@@ -120,9 +120,9 @@ type WalletRuntime struct {
 	errSubID          int64
 	stateSubscribers  map[int64]chan struct{}
 	stateSubID        int64
-	authSubscribers   map[int64]chan string
+	authSubscribers   map[int64]chan AuthorizationPrompt
 	authSubID         int64
-	lastError         *WalletError
+	lastErrors        map[string]*storedError
 	authCodeCallbacks map[string]chan url.Values
 }
 
@@ -132,8 +132,9 @@ func newWalletRuntime() *WalletRuntime {
 		subscribers:       make(map[int64]chan *ConsentRequest),
 		errSubscribers:    make(map[int64]chan WalletError),
 		stateSubscribers:  make(map[int64]chan struct{}),
-		authSubscribers:   make(map[int64]chan string),
+		authSubscribers:   make(map[int64]chan AuthorizationPrompt),
 		authCodeCallbacks: make(map[string]chan url.Values),
+		lastErrors:        make(map[string]*storedError),
 	}
 }
 
@@ -176,6 +177,9 @@ func (w *Wallet) StatusListIssuer() string {
 type WalletError struct {
 	Message string `json:"message"`
 	Detail  string `json:"detail,omitempty"`
+	// Owner is the browser whose flow raised this, empty when no client named
+	// one. Not serialised, for the reason ConsentRequest.Owner is not.
+	Owner string `json:"-"`
 }
 
 // StoredCredential is a credential stored in the wallet.
@@ -263,7 +267,7 @@ type ConsentRequest struct {
 	AuthRequest  *oid4vc.AuthorizationRequest `json:"-"`
 	OfferURI     string                       `json:"-"`
 	MatchedCreds []CredentialMatch            `json:"matched_credentials"`
-	Status       string                       `json:"status"` // "pending", "approved", "denied"
+	Status       string                       `json:"status"` // "pending", "approved", "denied", "expired"
 	ResultCh     chan ConsentResult           `json:"-"`
 	SubmissionCh chan SubmissionResult        `json:"-"` // result of VP submission after approval
 	CreatedAt    time.Time                    `json:"created_at"`
@@ -281,6 +285,9 @@ type ConsentRequest struct {
 	// CredentialOptions are the alternatives the consent dialog can offer
 	// in its Edit view. MatchedCreds stays the auto-selection.
 	CredentialOptions *ConsentCredentialOptions `json:"credential_options,omitempty"`
+	// Owner is the browser this request belongs to, empty when no client named
+	// one. Not serialised: a caller that read it back could claim the request.
+	Owner string `json:"-"`
 	// ResolvedOffer is the credential offer this dialog describes, resolved
 	// when the request was prepared. Approving it runs the offer from the
 	// URI again, and this is what that falls back to when the issuer does
@@ -340,6 +347,9 @@ type ConsentResult struct {
 	// SetChoices holds the chosen option index per consent set, -1 skipping
 	// an optional set. A missing entry keeps the wallet's choice.
 	SetChoices []int
+	// Owner is the browser that answered, so a presentation the issuer asks
+	// for mid-flow reaches whoever approved the offer.
+	Owner string
 	// TxCode is the transaction code the user typed for an issuance offer
 	// that requires one. It arrives with the approval because the offer is
 	// what says a code is needed, and the user only sees that in the dialog.

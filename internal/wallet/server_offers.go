@@ -25,6 +25,8 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // pendingOfferTTL is how long a paused offer stays readable at
@@ -108,13 +110,14 @@ func (s *Server) runOffer(uri string, logDetails map[string]any, opts OfferOptio
 	go func() {
 		defer unsubscribe()
 		result, err := s.wallet.ProcessCredentialOfferWithOptions(uri, opts)
-		s.applyOfferOutcome(uri, result, err, logDetails)
+		s.applyOfferOutcome(uri, opts.Owner, result, err, logDetails)
 		p.complete(result, err)
 		close(done)
 	}()
 
 	select {
-	case authURL := <-authCh:
+	case prompt := <-authCh:
+		authURL := prompt.URL
 		p.AuthURL = authURL
 		s.trackPendingOffer(p)
 		s.log("  Sign-in:       %s", authURL)
@@ -132,11 +135,12 @@ func (s *Server) runOffer(uri string, logDetails map[string]any, opts OfferOptio
 // applyOfferOutcome records how an offer ended. It runs on the flow's own
 // goroutine, so it is the only place that has to run whether the caller is
 // still waiting or gave up after an interactive sign-in.
-func (s *Server) applyOfferOutcome(uri string, result *IssuanceResult, err error, logDetails map[string]any) {
+func (s *Server) applyOfferOutcome(uri, owner string, result *IssuanceResult, err error, logDetails map[string]any) {
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
 		s.wallet.NotifyError(WalletError{
+			Owner:   owner,
 			Message: "Credential issuance failed",
 			Detail:  err.Error(),
 		})
@@ -231,9 +235,7 @@ func (s *Server) handleAuthorizationCodeCallback(w http.ResponseWriter, r *http.
 	// The browser came back from the issuer's login. The flow finishes
 	// server-side on its own, so send the visitor back to the wallet rather
 	// than to a dead end.
-	// The marker reclaims the outcome for this tab, whose earlier claim was
-	// lost when the sign-in navigated it away.
-	http.Redirect(w, r, "/?focus=overview&signin=done", http.StatusSeeOther)
+	http.Redirect(w, r, "/?focus=overview", http.StatusSeeOther)
 }
 
 // handleOfferAPI processes a credential offer URI.
@@ -253,9 +255,12 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	// this the wallet page shows the previous failure while this request is
 	// still being registered, and swaps it for the consent dialog a moment
 	// later.
-	s.wallet.ClearLastError()
+	s.wallet.ClearLastError(callerOwners(r))
 
-	s.processOfferURI(w, body.URI, body.TxCode, false, !body.Interactive)
+	if body.Interactive {
+		s.noteStaleClient(r)
+	}
+	s.processOfferURI(w, body.URI, body.TxCode, requestOwner(r), false, !body.Interactive)
 }
 
 // processOfferURI runs the credential offer flow for an offer delivered as a
@@ -263,7 +268,7 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 // the wallet UI instead of returning JSON. apiInitiated marks programmatic
 // submissions, which auto-accept even in interactive mode (the call is the
 // caller's consent).
-func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, browserRedirect, apiInitiated bool) {
+func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session string, browserRedirect, apiInitiated bool) {
 	s.log("Received credential offer")
 	uriDisplay := format.Truncate(uri, 120)
 	s.log("  URI: %s", uriDisplay)
@@ -272,22 +277,23 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
 	if !s.wallet.AutoAccept && !apiInitiated {
-		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri)
+		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri, session)
 		if err != nil {
 			s.log("  ERROR: %v", err)
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
 			s.wallet.NotifyError(WalletError{
+				Owner:   session,
 				Message: "Credential offer parsing failed",
 				Detail:  err.Error(),
 			})
-			s.triggerUIRequest()
+			s.triggerUIRequest("")
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 
 		s.log("  Mode:          interactive — waiting for consent...")
 		s.wallet.CreateConsentRequest(consentReq)
-		s.triggerUIRequest()
+		s.triggerUIRequest(consentReq.ID)
 		if s.onConsentRequest != nil {
 			s.onConsentRequest(consentReq)
 		}
@@ -305,7 +311,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode string, brow
 		return
 	}
 
-	s.processOfferDirectly(w, uri, txCode, browserRedirect, apiInitiated)
+	s.processOfferDirectly(w, uri, txCode, session, browserRedirect, apiInitiated)
 }
 
 // awaitOfferConsent waits for the user's decision on an issuance consent
@@ -336,7 +342,7 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		// mid-flow is put to them as well.
 		result, pending, err := s.runOffer(consentReq.OfferURI, map[string]any{
 			"credential_requested": consentReq.OfferConfigs,
-		}, OfferOptions{TxCode: txCode, ResolvedOffer: consentReq.ResolvedOffer})
+		}, OfferOptions{TxCode: txCode, ResolvedOffer: consentReq.ResolvedOffer, Owner: approvingOwner(consentReq.Owner, consent.Owner)})
 		if err != nil {
 			consentReq.SubmissionCh <- SubmissionResult{Error: err.Error(), StatusCode: http.StatusBadRequest}
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -365,14 +371,17 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 		}
 	}
 
+	// Two waits, one after the other: this consent, and the presentation the
+	// issuer may ask for once the offer is approved.
+	s.allowSlowResponse(w, config.ConsentTimeout+interactiveAuthorizationConsentTimeout)
 	select {
 	case consent := <-consentReq.ResultCh:
 		handle(consent)
-	case <-time.After(5 * time.Minute):
+	case <-time.After(config.ConsentTimeout):
 		// The timer races an arriving decision, and the request's status is
 		// the referee: a decision that already resolved the request is
 		// honored, only a request still pending times out.
-		if _, ok := s.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return
 		}
@@ -384,11 +393,11 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 
 // processOfferDirectly runs the credential offer flow without a consent step
 // (auto-accept mode).
-func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode string, browserRedirect, apiInitiated bool) {
-	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated, TxCode: txCode})
+func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode, session string, browserRedirect, apiInitiated bool) {
+	result, pending, err := s.runOffer(uri, nil, OfferOptions{PresentationConsented: apiInitiated, TxCode: txCode, Owner: session})
 	if err != nil {
 		if !s.wallet.AutoAccept {
-			s.triggerUIRequest()
+			s.triggerUIRequest("")
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -414,11 +423,12 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode string,
 		writeJSON(w, http.StatusOK, result)
 	}
 }
-func prepareIssuanceConsentRequest(raw string) (*ConsentRequest, string, error) {
+func prepareIssuanceConsentRequest(raw, owner string) (*ConsentRequest, string, error) {
 	trimmed := strings.TrimSpace(raw)
 	req := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "issuance",
+		Owner:        owner,
 		OfferURI:     trimmed,
 		Status:       "pending",
 		ResultCh:     make(chan ConsentResult, 1),

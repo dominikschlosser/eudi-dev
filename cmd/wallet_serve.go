@@ -670,14 +670,23 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	// opening it on a desktop, by printing the URL on a headless host. Not on
 	// a demo host, where visitors reach it through the browser redirect.
 	if !w.AutoAccept && !opts.Demo {
-		srv.SetOnUIRequest(func() {
-			url := fmt.Sprintf("http://localhost:%d/?focus=overview", opts.Port)
-			if !noOpen && hasDesktopSession() {
-				fmt.Printf("  Opening wallet UI: %s\n", url)
-				openBrowser(url)
-			} else {
-				fmt.Printf("  Waiting for consent at: %s\n", url)
+		srv.SetOnUIRequest(func(requestID string) {
+			target := fmt.Sprintf("http://localhost:%d/?focus=overview", opts.Port)
+			if requestID != "" {
+				// Name the request this tab is being opened for, so it answers
+				// that one instead of whatever else happens to be pending.
+				target += "&request=" + url.QueryEscape(requestID)
 			}
+			// A tab already watching is told over its event stream, so opening
+			// a second one would only take the user away from the one they are
+			// in. Either way the address is printed, so a run that opens
+			// nothing still says where the request is waiting.
+			watched := w.AttachedUIs() > 0
+			if !watched && !noOpen && hasDesktopSession() && openBrowser(target) {
+				fmt.Printf("  Opening wallet UI: %s\n", target)
+				return
+			}
+			fmt.Printf("  Waiting for consent at: %s\n", target)
 		})
 	}
 

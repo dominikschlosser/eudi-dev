@@ -949,7 +949,14 @@ test.describe("Transaction code in the consent dialog", () => {
       interactive: true,
     }).catch(() => {});
 
-    await page.goto(WALLET_URL);
+    // The wallet opens a tab naming the request it opened it for, which is
+    // what the page answers. Visiting that URL is what the user's browser does.
+    let pending = [];
+    for (let i = 0; i < 50 && pending.length === 0; i++) {
+      pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
+      if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
+    }
+    await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
     const input = page.locator("#offer-tx-code-input");
     await expect(input).toBeVisible();
 
@@ -984,7 +991,12 @@ test.describe("Transaction code in the consent dialog", () => {
       interactive: true,
     }).catch(() => {});
 
-    await page.goto(WALLET_URL);
+    let pending = [];
+    for (let i = 0; i < 50 && pending.length === 0; i++) {
+      pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
+      if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
+    }
+    await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
     await expect(page.locator("#consent-approve")).toBeVisible();
     await expect(page.locator("#offer-tx-code-input")).toHaveCount(0);
   });

@@ -74,17 +74,15 @@ func TestWallet_NotifyError(t *testing.T) {
 	}
 }
 
-func TestWallet_PopLastError(t *testing.T) {
+func TestWallet_LastError(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// No error set
-	if e := w.PopLastError(); e != nil {
+	if e := w.PeekLastError(nil); e != nil {
 		t.Error("expected nil before any error")
 	}
 
-	// Notify stores last error
 	w.NotifyError(WalletError{Message: "err1"})
-	e := w.PopLastError()
+	e := w.PeekLastError(nil)
 	if e == nil {
 		t.Fatal("expected error")
 	}
@@ -92,9 +90,14 @@ func TestWallet_PopLastError(t *testing.T) {
 		t.Errorf("wrong message: %s", e.Message)
 	}
 
-	// Should be consumed
-	if e2 := w.PopLastError(); e2 != nil {
-		t.Error("expected nil after pop")
+	// The endpoint peeks, so the error survives a read and is dropped by the
+	// tab that decided not to show it.
+	if again := w.PeekLastError(nil); again == nil {
+		t.Error("expected the error to survive being read")
+	}
+	w.ClearLastError(nil)
+	if cleared := w.PeekLastError(nil); cleared != nil {
+		t.Error("expected nil once cleared")
 	}
 }
 
@@ -277,7 +280,7 @@ func TestWalletStore_LoadOrCreateSharesRuntimeForSameStore(t *testing.T) {
 		t.Fatal("timeout waiting for shared error")
 	}
 
-	if got := w1.PeekLastError(); got == nil || got.Message != "shared error" {
+	if got := w1.PeekLastError(nil); got == nil || got.Message != "shared error" {
 		t.Fatalf("expected peeked shared error, got %#v", got)
 	}
 
@@ -327,7 +330,7 @@ func TestWalletStore_LoadOrCreateRuntimeIsolatedByStore(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	if got := w1.PeekLastError(); got != nil {
+	if got := w1.PeekLastError(nil); got != nil {
 		t.Fatalf("did not expect last error from other store, got %#v", got)
 	}
 	if _, ok := w1.GetRequest("other-store-request"); ok {

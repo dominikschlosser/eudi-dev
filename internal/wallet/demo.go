@@ -163,8 +163,10 @@ func demoBlockedRoute(r *http.Request) bool {
 		return true
 	// Clearing the shared history is a change to what every other visitor
 	// sees, and nothing on a demo instance needs it. The log is bounded on
-	// its own, so keeping it is not a growth problem.
-	case r.Method == http.MethodDelete && (p == "/api/log" || p == "/api/error"):
+	// its own, so keeping it is not a growth problem. DELETE /api/error is
+	// not here: it clears only what its caller can read, and a visitor who
+	// cannot dismiss an error is shown it again on every load.
+	case r.Method == http.MethodDelete && p == "/api/log":
 		return true
 	}
 	return false

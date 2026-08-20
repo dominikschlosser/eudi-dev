@@ -118,38 +118,65 @@ async function createVerificationRequest() {
 }
 
 /**
- * Submits a URI the way the OS URL handler does: through the API, but marked
- * interactive so it keeps the consent dialog.
+ * Opens the wallet UI the way the URL handler does, naming the page it opens
+ * so the submission below reaches it. Returns that name.
  */
-function submitAsSchemeHandler(pathname, uri) {
+async function openAsSchemeHandler(page) {
+  const owner = "test-owner-" + Math.random().toString(36).slice(2);
+  await page.goto(`${BASE}/?focus=overview&owner=${owner}`);
+  return owner;
+}
+
+/**
+ * Submits a URI the way the installed URL handler does: through the API,
+ * marked interactive so it keeps the consent dialog, naming itself and the
+ * page it opened. Pass no owner to submit the way a handler installed before
+ * the wallet asked for one does.
+ */
+function submitAsSchemeHandler(pathname, uri, owner) {
+  const headers = { "Content-Type": "application/json" };
+  if (owner) {
+    headers["X-Eudi-Client"] = "eudi-url-handler/test";
+    headers["X-Eudi-Owner"] = owner;
+  }
   // Deliberately not awaited: an interactive submission blocks until the
   // consent is resolved, which is what these tests are about.
   fetch(BASE + pathname, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ uri, interactive: true }),
   }).catch(() => {});
 }
 
-async function pendingCount() {
-  const res = await fetch(`${BASE}/api/requests`);
-  return (await res.json()).length;
+/**
+ * Lists what one caller may see. Pass the name a client gave the page it
+ * opened to see the requests submitted for that page, or nothing to see the
+ * ones no client named a page for.
+ */
+async function listPending(owner) {
+  const headers = owner ? { "X-Eudi-Owner": owner } : {};
+  const res = await fetch(`${BASE}/api/requests`, { headers });
+  return await res.json();
 }
 
-async function waitForPending(expected) {
+async function pendingCount(owner) {
+  return (await listPending(owner)).length;
+}
+
+async function waitForPending(expected, owner) {
   for (let i = 0; i < 50; i++) {
-    if ((await pendingCount()) === expected) return;
+    if ((await pendingCount(owner)) === expected) return;
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error(`expected ${expected} pending request(s)`);
 }
 
-async function clearPending() {
-  const res = await fetch(`${BASE}/api/requests`);
-  for (const req of await res.json()) {
-    await fetch(`${BASE}/api/requests/${req.id}/deny`, { method: "POST" });
+async function clearPending(owner) {
+  const headers = owner ? { "X-Eudi-Owner": owner } : {};
+  for (const req of await listPending(owner)) {
+    await fetch(`${BASE}/api/requests/${req.id}/deny`, { method: "POST", headers });
   }
-  await waitForPending(0);
+  await waitForPending(0, owner);
 }
 
 test.describe("Demo mode conformance panel", () => {
@@ -192,25 +219,23 @@ test.describe("Demo mode consent visibility", () => {
     await clearPending();
   });
 
-  test("a scheme-dispatched presentation shows the banner, not a dialog", async ({
+  test("a request no client named a page for waits in the banner", async ({
     page,
   }) => {
     const req = await createVerificationRequest();
     submitAsSchemeHandler("/api/presentations", req.schemeURI);
     await waitForPending(1);
 
-    // The handler opens the UI without a request id, exactly like this.
+    // Nobody was named, so it is offered rather than put in front of a tab
+    // that did not ask, and it stays reachable.
     await page.goto(`${BASE}/?focus=overview`);
-
     await expect(page.locator("#pending-banner")).toBeVisible();
-    await expect(page.locator("#pending-text")).toContainText("waiting for consent");
-    // Rule 1: no dialog forced open in a tab that did not start the flow.
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
 
-    // Rule 2: the request is reachable.
     await page.locator("#pending-review").click();
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#consent-approve")).toBeVisible();
+    await page.locator("#consent-deny").click();
   });
 
   test("the verifier's registered purpose is shown in the consent dialog", async ({
@@ -235,8 +260,8 @@ test.describe("Demo mode consent visibility", () => {
     const offerDoc = await (await fetch(offer.offer_uri)).json();
     const uri = "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify(offerDoc));
 
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
-    submitAsSchemeHandler("/api/offers", uri);
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/offers", uri, owner);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
 
     const dialog = page.locator("#consent-dialog");
@@ -297,8 +322,8 @@ test.describe("Demo mode consent visibility", () => {
       });
     });
 
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
-    submitAsSchemeHandler("/api/offers", uri);
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/offers", uri, owner);
 
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#consent-dialog")).toContainText("Demo Event Ticket");
@@ -316,8 +341,8 @@ test.describe("Demo mode consent visibility", () => {
     // The demo issuer hands out credential_offer_uri links, so this is the
     // path a visitor actually takes.
     const { body: offer } = await postJSON("/issuer/api/offers", {});
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
-    submitAsSchemeHandler("/api/offers", offer.scheme_uri);
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/offers", offer.scheme_uri, owner);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
 
     const dialog = page.locator("#consent-dialog");
@@ -335,9 +360,6 @@ test.describe("Demo mode consent visibility", () => {
     await waitForPending(1);
 
     await page.goto(`${BASE}/?focus=overview`);
-    await expect(page.locator("#pending-banner")).toBeVisible();
-    await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
-
     await page.locator("#pending-review").click();
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#consent-dialog")).toContainText("Credential Offer");
@@ -346,41 +368,44 @@ test.describe("Demo mode consent visibility", () => {
   test("the tab the scheme handler opened takes the consent directly", async ({
     page,
   }) => {
-    // The handler opens the UI first and submits right after, so the request
-    // can already exist by the time the page finishes loading.
+    // The handler names the page on the submission and opens it right after,
+    // so the request can already exist by the time the page finishes loading.
+    const owner = "test-owner-" + Math.random().toString(36).slice(2);
     const req = await createVerificationRequest();
-    submitAsSchemeHandler("/api/presentations", req.schemeURI);
-    await waitForPending(1);
+    submitAsSchemeHandler("/api/presentations", req.schemeURI, owner);
+    await waitForPending(1, owner);
 
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    await page.goto(`${BASE}/?focus=overview&owner=${owner}`);
 
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#consent-approve")).toBeVisible();
     await expect(page.locator("#pending-banner")).toBeHidden();
-    // The marker is gone, so a reload or a shared link does not claim again.
-    await expect(page).not.toHaveURL(/consent=/);
+    // The name is gone from the address bar, so a shared link carries nothing.
+    await expect(page).not.toHaveURL(/owner=/);
   });
 
   test("an error from someone else's flow stays out of uninvolved tabs", async ({
     browser,
   }) => {
-    // A failed flow used to raise a dialog in every open tab, so a visitor who
-    // did nothing was shown an error another visitor ran into.
     const context = await browser.newContext();
     const bystander = await context.newPage();
     await bystander.goto(`${BASE}/?focus=overview`);
     await expect(bystander.locator("#credentials")).toBeVisible();
-    // Ensure the tab knows it is a demo tab before the failing flow runs, so it
-    // classifies the error as a banner rather than a dialog.
     await expect(bystander.locator("#demo-note")).toBeVisible();
 
-    // An offer that cannot be resolved, submitted by nobody's tab.
-    await postJSON("/api/offers", {
-      uri: "openid-credential-offer://?credential_offer_uri=http://127.0.0.1:1/gone",
+    // An offer that cannot be resolved, submitted for another browser.
+    await fetch(`${BASE}/api/offers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Eudi-Owner": "someone-else" },
+      body: JSON.stringify({
+        uri: "openid-credential-offer://?credential_offer_uri=http://127.0.0.1:1/gone",
+      }),
     }).catch(() => {});
 
     await bystander.waitForTimeout(1500);
     await expect(bystander.locator("#consent-overlay")).not.toHaveClass(/active/);
+    // The tab that did start a failing flow still sees its own error, which
+    // the next test covers.
     await context.close();
   });
 
@@ -404,25 +429,79 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-dialog")).toContainText("Error");
   });
 
-  test("a request arriving after that tab opened is claimed too, but only one", async ({
+  test("a request arriving after that tab opened reaches it too", async ({
     page,
   }) => {
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
+    const owner = await openAsSchemeHandler(page);
     await expect(page.locator("#pending-banner")).toBeHidden();
 
     const first = await createVerificationRequest();
-    submitAsSchemeHandler("/api/presentations", first.schemeURI);
+    submitAsSchemeHandler("/api/presentations", first.schemeURI, owner);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
 
     await page.locator("#consent-deny").click();
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
 
-    // The claim was for that one dispatch. Anything after it is treated like
-    // any other visitor's request again.
+    // A dispatch that names a different page is that page's to answer, so
+    // this one is told nothing about it.
     const second = await createVerificationRequest();
-    submitAsSchemeHandler("/api/presentations", second.schemeURI);
-    await expect(page.locator("#pending-banner")).toBeVisible();
+    submitAsSchemeHandler("/api/presentations", second.schemeURI, "someone-else");
+    await page.waitForTimeout(1000);
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
+    await expect(page.locator("#pending-banner")).toBeHidden();
+  });
+
+  test("a request pushed off screen by a second one is offered in the banner", async ({
+    page,
+  }) => {
+    const owner = await openAsSchemeHandler(page);
+
+    const first = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", first.schemeURI, owner);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+
+    // One dialog fits on screen, so the second replaces the first. The first
+    // is still pending and still this browser's to answer, so the banner
+    // offers it rather than leaving it waiting where nothing shows it.
+    const second = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", second.schemeURI, owner);
+    await waitForPending(2, owner);
+
+    // The dialog covers the banner, so the first request is offered the
+    // moment the one on screen is answered rather than dimmed behind it.
+    await expect(page.locator("#pending-banner")).toBeHidden();
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#pending-banner")).toBeVisible();
+    await expect(page.locator("#pending-text")).toHaveText(
+      "A request is waiting for consent."
+    );
+    await page.locator("#pending-review").click();
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#consent-approve")).toBeVisible();
+    await page.locator("#consent-deny").click();
+    await expect(page.locator("#pending-banner")).toBeHidden();
+    await waitForPending(0, owner);
+  });
+
+  // A URL handler installed before the wallet asked for a name submits without
+  // one. What it creates belongs to nobody in particular, so it stays reachable
+  // from any tab, which is how that handler kept working.
+  test("a client that names no page leaves its request reachable", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const req = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", req.schemeURI);
+    await waitForPending(1);
+
+    await page.goto(`${BASE}/?focus=overview`);
+    await expect(page.locator("#pending-banner")).toBeVisible();
+    await page.locator("#pending-review").click();
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#consent-approve")).toBeVisible();
+    await page.locator("#consent-deny").click();
+    await context.close();
   });
 
   test("a browser-initiated request opens its own dialog", async ({ page }) => {
@@ -431,9 +510,11 @@ test.describe("Demo mode consent visibility", () => {
     // A real navigation: the wallet redirects to /?request=<id>, and that tab
     // (and only that tab) shows the dialog.
     await page.goto(req.walletURL);
-    await expect(page).toHaveURL(/\?request=/);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     await expect(page.locator("#pending-banner")).toBeHidden();
+    // The id answers the request, so it does not stay where a copied link
+    // would carry it.
+    await expect(page).not.toHaveURL(/request=/);
   });
 
   test("the Process button opens the consent dialog for a pasted request", async ({ page }) => {
@@ -455,43 +536,55 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
   });
 
-  test("another visitor's tab is not hijacked by a pending request", async ({
+  test("another visitor's tab is not told about a pending request", async ({
     browser,
   }) => {
     const starter = await browser.newPage();
     const bystander = await browser.newPage();
     await bystander.goto(BASE);
-    // The bystander must finish loading its config (which marks it a demo tab)
-    // before the request arrives. Otherwise demoMode is still false when the
-    // pending request lands and the tab classifies it as a dialog instead of a
-    // banner. #demo-note becomes visible only once that config has loaded.
+    // #demo-note becomes visible once the config has loaded, so the tab is
+    // fully settled before the request arrives.
     await expect(bystander.locator("#demo-note")).toBeVisible();
 
     const req = await createVerificationRequest();
     await starter.goto(req.walletURL);
     await expect(starter.locator("#consent-overlay")).toHaveClass(/active/);
 
-    // The bystander was already open when the request arrived: it may learn
-    // about it, but never through a dialog it did not ask for.
+    // The request belongs to the browser that started it. The bystander is a
+    // different one, so it learns nothing: no dialog, and no banner offering
+    // it somebody else's consent.
     await bystander.waitForTimeout(1500);
     await expect(bystander.locator("#consent-overlay")).not.toHaveClass(/active/);
+    await expect(bystander.locator("#pending-banner")).toBeHidden();
+    // The bystander's own view works, so the silence above is the filter and
+    // not a page that stopped reporting anything at all.
+    const unowned = await createVerificationRequest();
+    submitAsSchemeHandler("/api/presentations", unowned.schemeURI);
     await expect(bystander.locator("#pending-banner")).toBeVisible();
 
     await starter.close();
     await bystander.close();
   });
 
-  test("the banner disappears once nothing is pending", async ({ page }) => {
+  test("the banner disappears once nothing is pending", async ({ browser }) => {
+    // Two watching, so a request no client named a page for is offered rather
+    // than opened.
+    const page = await browser.newPage();
+    const other = await browser.newPage();
+    await page.goto(`${BASE}/?focus=overview`);
+    await other.goto(`${BASE}/?focus=overview`);
+    await expect(other.locator("#demo-note")).toBeVisible();
+
     const req = await createVerificationRequest();
     submitAsSchemeHandler("/api/presentations", req.schemeURI);
-    await waitForPending(1);
-
-    await page.goto(`${BASE}/?focus=overview`);
     await expect(page.locator("#pending-banner")).toBeVisible();
 
     await clearPending();
     await page.reload();
     await expect(page.locator("#pending-banner")).toBeHidden();
+
+    await page.close();
+    await other.close();
   });
 });
 
@@ -812,8 +905,8 @@ test.describe("Consent credential selection", () => {
   /** Opens a fresh verifier request's consent dialog in the given tab. */
   async function openConsent(page) {
     const req = await createVerificationRequest();
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
-    submitAsSchemeHandler("/api/presentations", req.schemeURI);
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/presentations", req.schemeURI, owner);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     return req;
   }
@@ -956,8 +1049,8 @@ test.describe("Consent credential selection", () => {
   /** Opens the consent dialog for a prepared verifier request body. */
   async function openPreparedConsent(page, requestBody) {
     const { body } = await postJSON("/verifier/api/requests", requestBody);
-    await page.goto(`${BASE}/?focus=overview&consent=await`);
-    submitAsSchemeHandler("/api/presentations", body.scheme_uri);
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/presentations", body.scheme_uri, owner);
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
     return body;
   }

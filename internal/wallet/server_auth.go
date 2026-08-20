@@ -29,6 +29,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+
+	"github.com/dominikschlosser/eudi-dev/internal/config"
 )
 
 // Authorization Error Response codes. invalid_request and access_denied are
@@ -150,12 +152,15 @@ func redirectBrowser(w http.ResponseWriter, redirectURI string) {
 
 // AuthorizationRequestParams holds the extracted fields from an authorization request.
 type AuthorizationRequestParams struct {
-	ClientID         string
-	ResponseType     string
-	ResponseMode     string
-	Nonce            string
-	State            string
-	RequestOrigin    string
+	ClientID      string
+	ResponseType  string
+	ResponseMode  string
+	Nonce         string
+	State         string
+	RequestOrigin string
+	// Session is the browser this request came from, empty when it did not
+	// come from one. It becomes the consent request's owner.
+	Session          string
 	RedirectURI      string
 	ResponseURI      string
 	Scope            string
@@ -214,10 +219,11 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("presentation", err.Error(), false)
 		s.wallet.NotifyError(WalletError{
+			Owner:   authReq.Session,
 			Message: "Authorization request validation failed",
 			Detail:  err.Error(),
 		})
-		s.triggerUIRequest()
+		s.triggerUIRequest("")
 		// Nothing is sent to the response endpoint. §8.5 follows RFC 6749, and
 		// §4.1.2.1 says that where the client identifier or redirection URI is
 		// missing or invalid the server "SHOULD inform the resource owner of
@@ -261,10 +267,11 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		s.log("  Result:        no matching credentials")
 		s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		s.wallet.NotifyError(WalletError{
+			Owner:   authReq.Session,
 			Message: "No matching credentials",
 			Detail:  fmt.Sprintf("Verifier %s requested credentials but none matched the query", authReq.ClientID),
 		})
-		s.triggerUIRequest()
+		s.triggerUIRequest("")
 		// §8.5 access_denied: "The Wallet did not have the requested
 		// Credentials to satisfy the Authorization Request."
 		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
@@ -293,6 +300,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	consentReq := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "presentation",
+		Owner:        authReq.Session,
 		MatchedCreds: matches,
 		Status:       "pending",
 		ResultCh:     make(chan ConsentResult, 1),
@@ -308,7 +316,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	}
 
 	s.wallet.CreateConsentRequest(consentReq)
-	s.triggerUIRequest()
+	s.triggerUIRequest(consentReq.ID)
 
 	if s.onConsentRequest != nil {
 		s.onConsentRequest(consentReq)
@@ -361,14 +369,15 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 		s.submitPresentationWithNotify(w, authReq, matches, consentReq.SubmissionCh)
 	}
 
+	s.allowSlowResponse(w, config.ConsentTimeout)
 	select {
 	case result := <-consentReq.ResultCh:
 		handle(result)
-	case <-time.After(5 * time.Minute):
+	case <-time.After(config.ConsentTimeout):
 		// The timer races an arriving decision, and the request's status is
 		// the referee: a decision that already resolved the request is
 		// honored, only a request still pending times out.
-		if _, ok := s.wallet.ResolveRequest(consentReq.ID, "denied"); !ok {
+		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return
 		}

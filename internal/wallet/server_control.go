@@ -105,7 +105,9 @@ func (s *Server) handleClearLog(w http.ResponseWriter, r *http.Request) {
 
 // handleLastError returns the last error, if any.
 func (s *Server) handleLastError(w http.ResponseWriter, r *http.Request) {
-	err := s.wallet.PeekLastError()
+	w.Header().Set("Cache-Control", "no-store, private")
+	w.Header().Set("Vary", "Cookie, "+OwnerHeader)
+	err := s.wallet.PeekLastError(callerOwners(r))
 	if err == nil {
 		writeJSON(w, http.StatusOK, nil)
 		return
@@ -115,7 +117,7 @@ func (s *Server) handleLastError(w http.ResponseWriter, r *http.Request) {
 
 // handleClearLastError clears the last UI error.
 func (s *Server) handleClearLastError(w http.ResponseWriter, r *http.Request) {
-	s.wallet.ClearLastError()
+	s.wallet.ClearLastError(callerOwners(r))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 

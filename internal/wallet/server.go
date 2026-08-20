@@ -37,7 +37,7 @@ type Server struct {
 	mux              *http.ServeMux
 	onSave           func()
 	onConsentRequest func(req *ConsentRequest)
-	onUIRequest      func()
+	onUIRequest      func(requestID string)
 	logFunc          func(format string, args ...any)
 	httpSrv          *http.Server
 	issuerSrv        *http.Server
@@ -46,6 +46,7 @@ type Server struct {
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
+	staleClientOnce  sync.Once
 	demo             *demoState
 	// deferredIssuanceOwner is the wallet whose deferred credentials the
 	// poller collects. Set on the per-request clone a profile override
@@ -210,12 +211,12 @@ func (s *Server) setupRoutes() {
 	// releases (HTML and JS from different versions). no-cache forces
 	// revalidation on every load.
 	sub, _ := fs.Sub(staticFiles, "static")
-	s.mux.Handle("/", noStaleCache(http.FileServer(http.FS(sub))))
+	s.mux.Handle("/", noStaleCache(s.withBrowserSession(http.FileServer(http.FS(sub)))))
 }
 
 func noStaleCache(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Cache-Control", "no-cache, private")
 		h.ServeHTTP(w, r)
 	})
 }
@@ -267,7 +268,7 @@ func (s *Server) SetOnConsentRequest(fn func(req *ConsentRequest)) {
 }
 
 // SetOnUIRequest sets a callback invoked when the interactive wallet UI should be shown.
-func (s *Server) SetOnUIRequest(fn func()) {
+func (s *Server) SetOnUIRequest(fn func(requestID string)) {
 	s.onUIRequest = fn
 }
 
@@ -291,10 +292,11 @@ func (s *Server) log(format string, args ...any) {
 	}
 }
 
-func (s *Server) triggerUIRequest() {
-	if s.onUIRequest != nil {
-		s.onUIRequest()
+func (s *Server) triggerUIRequest(requestID string) {
+	if s.onUIRequest == nil {
+		return
 	}
+	s.onUIRequest(requestID)
 }
 
 func (s *Server) withFreshStore(handler http.HandlerFunc) http.HandlerFunc {

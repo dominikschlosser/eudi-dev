@@ -679,22 +679,23 @@ func applySessionTranscriptMode(w *wallet.Wallet, mode string) error {
 // any registered application scheme, not just web pages. The wallet validates
 // these URLs before it answers, but that is a peer on the network and this is
 // the process that acts on the answer.
-func openBrowser(rawURL string) {
+func openBrowser(rawURL string) bool {
 	if !isWebURL(rawURL) {
 		fmt.Fprintf(os.Stderr, "refusing to open %q: only http and https URLs\n", rawURL)
-		return
+		return false
 	}
 	if !hasDesktopSession() {
-		return
+		return false
 	}
 	switch runtime.GOOS {
 	case "darwin":
-		_ = exec.Command("open", rawURL).Start()
+		return exec.Command("open", rawURL).Start() == nil
 	case "linux":
-		_ = exec.Command("xdg-open", rawURL).Start()
+		return exec.Command("xdg-open", rawURL).Start() == nil
 	case "windows":
-		_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start() == nil
 	}
+	return false
 }
 
 // hasDesktopSession reports whether there is a desktop to open a browser on.

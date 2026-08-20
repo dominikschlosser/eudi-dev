@@ -52,6 +52,14 @@ const (
 	SlowRequestTimeout = 2 * time.Minute
 )
 
+// ClientHeader names the client behind an API call and its release, as
+// "<name>/<version>". OwnerHeader names the browser a client submits on behalf
+// of. Both live here because the wallet reads them and the CLI sends them.
+const (
+	ClientHeader = "X-Eudi-Client"
+	OwnerHeader  = "X-Eudi-Owner"
+)
+
 // BaseDir returns the tool's state directory. Resolution order: the
 // EUDI_DEV_HOME environment variable, the legacy OID4VC_DEV_HOME variable,
 // an existing legacy ~/.oid4vc-dev directory (so existing setups keep

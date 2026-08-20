@@ -19,6 +19,9 @@ import (
 	"runtime/debug"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dominikschlosser/eudi-dev/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // Version is set at build time via -ldflags:
@@ -40,5 +43,8 @@ func init() {
 			Version = info.Main.Version
 		}
 	}
+	// The wallet a CLI drives is told which release is driving it.
+	remote.SetVersion(Version)
+	wallet.SetHandlerScriptVersion(Version)
 	rootCmd.AddCommand(versionCmd)
 }

@@ -30,40 +30,56 @@
     });
   }
 
-  // The wallet is shared, so anything meant for the visitor who started a flow
-  // has to reach that tab and no other: the consent dialog, the issuer
-  // sign-in, the error report. A claim is how a tab says the next one is
-  // hers. Single use and short lived, so a stale marker never collects
-  // someone else's.
-  function createClaim(windowMs, claimedNow) {
-    let until = claimedNow ? Date.now() + windowMs : 0;
-    return {
-      expect() {
-        until = Date.now() + windowMs;
-      },
-      take() {
-        if (!until || Date.now() > until) return false;
-        until = 0;
-        return true;
-      },
-    };
+  const pageParams = new URLSearchParams(window.location.search);
+  // A client that submits a flow on this page's behalf (the URL handler, the
+  // CLI) names the page in the URL it opens and on the call it makes, so the
+  // request it creates reaches this page. Kept for the tab rather than read
+  // from the address bar each time, so a reload mid-flow still answers for it
+  // and the name does not sit in a URL anyone can copy.
+  const actingOwner = readActingOwner();
+  // The request this page was opened for, read here because the address bar is
+  // cleaned before anything asks what is pending.
+  const openedForRequest = pageParams.get('request') || '';
+
+  // Answering names the request this page was opened for, so a browser that
+  // keeps no cookie can act on the dialog the wallet redirected it to.
+  function approveURL(id, action) {
+    const named = id === openedForRequest ? '?request=' + encodeURIComponent(id) : '';
+    return '/api/requests/' + id + action + named;
   }
 
-  // A scheme dispatch (openid4vp:// or credential-offer:// handled by the OS)
-  // opens this UI itself and only then submits the request, so this tab
-  // started the flow even though no request id can be in its URL yet. The
-  // marker says so, which is what separates it from the uninvolved tabs the
-  // pending banner exists for. It covers the resulting error too.
-  const params = new URLSearchParams(window.location.search);
-  const schemeDispatch = params.get('consent') === 'await';
-  // Coming back from an issuer sign-in: this tab started that flow, so its
-  // outcome is this tab's to report.
-  const returnedFromSignIn = params.get('signin') === 'done';
+  function readActingOwner() {
+    const named = pageParams.get('owner') || '';
+    try {
+      if (named) sessionStorage.setItem('eudi_owner', named);
+      return named || sessionStorage.getItem('eudi_owner') || '';
+    } catch (e) {
+      return named;
+    }
+  }
 
-  const consentClaim = createClaim(90000, schemeDispatch);
-  // Longer, because both run past a round trip to the issuer.
-  const authorizeClaim = createClaim(120000);
-  const errorClaim = createClaim(120000, schemeDispatch || returnedFromSignIn);
+  // Name this client on every call it makes, the way the CLI and the URL
+  // handler do. The page is served by the wallet it talks to, so it is never
+  // the stale one, but the wallet reads the same header from everybody.
+  const CLIENT_NAME = 'eudi-ui';
+  const CLIENT_HEADER = 'X-Eudi-Client';
+  const OWNER_HEADER = 'X-Eudi-Owner';
+  (function nameThisClient() {
+    const original = window.fetch;
+    window.fetch = function (input, init) {
+      const raw = typeof input === 'string' ? input : String((input && (input.url || input.href)) || '');
+      // Same-origin absolute URLs and Request objects count too: a call that
+      // reaches the wallet's API carries the same name whatever shape it took.
+      const url = raw.startsWith(window.location.origin) ? raw.slice(window.location.origin.length) : raw;
+      if (!url.startsWith('/api/')) return original(input, init);
+      const opts = Object.assign({}, init);
+      const headers = new Headers(opts.headers || (typeof input === 'object' ? input.headers : undefined));
+      headers.set(CLIENT_HEADER, CLIENT_NAME + '/' + (window.EUDI_VERSION || 'dev'));
+      if (actingOwner) headers.set(OWNER_HEADER, actingOwner);
+      opts.headers = headers;
+      return original(input, opts);
+    };
+  })();
 
   // State
   let credentials = [];
@@ -562,11 +578,6 @@
       const endpoint = isVCI ? '/api/offers' : '/api/presentations';
       // Submitting an offer here may lead to an issuer login, and this tab
       // asked for it, so it is the one allowed to follow.
-      if (isVCI) authorizeClaim.expect();
-      // This tab pasted the request, so it reviews it: claim the consent so the
-      // dialog opens here (on a shared demo it would otherwise show only the
-      // banner) rather than auto-accepting.
-      consentClaim.expect();
       // Whatever goes wrong with this submission is this tab's to report.
       expectError();
 
@@ -1185,42 +1196,56 @@
     return html;
   }
 
-  // Show or hide the indicator for requests this browser did not start.
+  // The pending list, naming the request this page was opened for. A browser
+  // that keeps no cookie reaches that one by id and nothing else.
+  function requestsURL() {
+    return '/api/requests' +
+      (openedForRequest ? '?request=' + encodeURIComponent(openedForRequest) : '');
+  }
+
+  // Show or hide the indicator for the requests waiting off screen. The
+  // dialog covers it, so while one is open the banner is hidden rather than
+  // dimmed behind it with a button nothing can click. Every close path
+  // refreshes it, so what is still waiting is offered the moment it is gone.
   function updatePendingBanner(requests) {
     const banner = document.getElementById('pending-banner');
-    const count = (requests || []).length;
-    if (count === 0 || consentOverlay.classList.contains('active')) {
+    const pending = requests || [];
+    if (pending.length === 0 || consentOverlay.classList.contains('active')) {
       banner.hidden = true;
       return;
     }
-    document.getElementById('pending-text').textContent = count === 1
-      ? '1 request is waiting for consent.'
-      : count + ' requests are waiting for consent.';
+    // A request no client named a browser for is offered to everybody, so on
+    // a wallet several people reach it is as likely to be a stranger's as
+    // this visitor's. The count says which kind is waiting.
+    const claimed = pending.some((req) => req.mine);
+    document.getElementById('pending-text').textContent = pending.length === 1
+      ? (claimed ? 'A request is waiting for consent.' : 'A request is waiting that no browser claimed.')
+      : pending.length + (claimed ? ' requests are waiting for consent.' : ' requests are waiting that no browser claimed.');
     banner.hidden = false;
   }
 
   async function refreshPendingBanner() {
     try {
-      const resp = await fetch('/api/requests');
+      const resp = await fetch(requestsURL());
       updatePendingBanner(reviewableRequests(await resp.json()));
     } catch (e) {
       /* leave the banner as it is */
     }
   }
 
-  // What the banner may offer a visitor who did not start the flow. A
-  // presentation asked for during someone else's issuance is not on that list.
+  // What the banner may offer: everything pending this caller can answer,
+  // minus the one already on screen. The wallet scopes the list to the caller,
+  // so a request that belongs to another browser is not in it to begin with.
   function reviewableRequests(requests) {
-    return (requests || []).filter((req) => req.type !== 'issuance_presentation');
+    return (requests || []).filter((req) => !(consentRequestOpen && req.id === consentRequestID));
   }
 
   document.getElementById('pending-review').addEventListener('click', async () => {
     try {
-      const resp = await fetch('/api/requests');
+      const resp = await fetch(requestsURL());
       const requests = reviewableRequests(await resp.json());
       if (requests && requests.length > 0) {
         showConsentDialog(requests[0]);
-        document.getElementById('pending-banner').hidden = true;
         return;
       }
       updatePendingBanner(requests);
@@ -1232,36 +1257,19 @@
   // Load any existing pending consent requests
   async function loadPendingRequests() {
     try {
-      const resp = await fetch('/api/requests');
-      // A tab that opens mid-flow may pick up its own consent by id or claim,
-      // but never someone else's mid-issuance presentation.
-      const all = await resp.json();
-      const requests = (all || []).filter(
-        (req) => req.type !== 'issuance_presentation' || !demoMode
-      );
+      const resp = await fetch(requestsURL());
+      const requests = await resp.json();
       if (requests && requests.length > 0) {
-        // Prefer the request this browser was redirected here for. On a
-        // shared demo instance, never auto-open other visitors' requests.
-        const wanted = new URLSearchParams(window.location.search).get('request');
-        const own = requests.find((r) => r.id === wanted);
-        if (own) {
+        const own = requests.find((r) => r.id === openedForRequest) || requests.find((r) => r.mine);
+        // Not over a dialog the user is already answering: this runs again
+        // after a dropped stream, and reopening would reset a selection they
+        // are in the middle of making.
+        if (own && !consentRequestOpen) {
           showConsentDialog(own);
           return;
         }
-        // The request may already have been created while this page loaded.
-        // A tab the scheme handler opened still owns it and opens it directly,
-        // whether or not config has told us this is a demo yet.
-        if (consentClaim.take()) {
-          showConsentDialog(requests[0]);
-          return;
-        }
-        // Config known and this is a local wallet: every flow is this user's.
-        if (configLoaded && !demoMode) {
-          showConsentDialog(requests[0]);
-          return;
-        }
-        // Demo, or config not yet known: offer it in the banner rather than
-        // forcing a dialog for a tab that had nothing to do with the request.
+        // What is left was submitted by a client that named no browser, so it
+        // is nobody's in particular and waits in the banner.
         updatePendingBanner(reviewableRequests(requests));
         return;
       }
@@ -1280,32 +1288,18 @@
 
   // SSE for consent requests and errors
   function connectSSE() {
-    const es = new EventSource('/api/requests/stream');
+    const es = new EventSource('/api/requests/stream' +
+      (actingOwner ? '?owner=' + encodeURIComponent(actingOwner) : ''));
     es.addEventListener('consent', (event) => {
       try {
         const req = JSON.parse(event.data);
-        // Shared demo: consent dialogs belong to the browser that started
-        // the flow (it arrives via redirect, or opened this tab itself for a
-        // scheme dispatch), not to every open tab. Other tabs get the
-        // unobtrusive banner instead. Until config has loaded we treat the tab
-        // as a demo visitor, so a stranger's request never flashes a dialog
-        // before we know this is a demo; a local wallet re-opens it once
-        // config settles.
-        // A presentation the issuer asked for mid-issuance belongs to the
-        // flow one visitor started. On a shared wallet the other tabs are not
-        // offered it at all, not even in the banner: it is not theirs to
-        // answer, and answering it would finish somebody else's issuance.
-        if (req.type === 'issuance_presentation') {
-          if (consentClaim.take() || (configLoaded && !demoMode)) {
-            showConsentDialog(req);
-          }
+        // A dialog belongs to the browser that started the flow. Anything
+        // else waits in the banner, where it interrupts nobody.
+        if (req.mine) {
+          showConsentDialog(req);
           return;
         }
-        if ((!configLoaded || demoMode) && !consentClaim.take()) {
-          refreshPendingBanner();
-          return;
-        }
-        showConsentDialog(req);
+        refreshPendingBanner();
       } catch (e) {
         console.error('SSE parse error:', e);
       }
@@ -1318,7 +1312,7 @@
         loadCredentials();
         loadDeferred();
         loadLog();
-        if (demoMode) refreshPendingBanner();
+        refreshPendingBanner();
       }, 300);
     });
     // An issuance in progress needs the user to sign in at the issuer. The
@@ -1327,33 +1321,37 @@
     es.addEventListener('authorize', (event) => {
       try {
         const { url } = JSON.parse(event.data);
-        if (!authorizeClaim.take()) return;
         if (navigable(url)) window.location.href = url;
       } catch (e) {
         console.error('SSE authorize parse error:', e);
       }
     });
-    es.addEventListener('error', (event) => {
+    es.addEventListener('wallet-error', (event) => {
       try {
         presentError(JSON.parse(event.data));
       } catch (e) {
-        console.error('SSE error parse error:', e);
+        console.error('SSE wallet-error parse error:', e);
+      }
+    });
+    es.addEventListener('open', () => {
+      // Events are not replayed, so a stream that dropped left a gap. Ask for
+      // what arrived while it was down.
+      if (streamDropped) {
+        streamDropped = false;
+        loadPendingRequests();
       }
     });
     es.onerror = () => {
+      streamDropped = true;
       es.close();
       setTimeout(connectSSE, 3000);
     };
   }
+  let streamDropped = false;
 
-  // presentError is the one way a wallet error reaches the user, whether it
-  // arrived on the stream or was found stored on load. The claim lives here so
-  // both routes cannot disagree about who the error belongs to.
-  // Claiming the next error also drops one still stored from before: a claim
-  // says the next failure is this tab's, and an older one is not it. Without
-  // this a later action inherits an error it had nothing to do with.
+  // Starting something drops a stored error from before it, which a later
+  // action would otherwise inherit.
   function expectError() {
-    errorClaim.expect();
     dropStoredError();
   }
 
@@ -1372,6 +1370,16 @@
   // one dialog started must not redraw the dialog that replaced it.
   let consentRequestID = null;
 
+  // Closing the dialog puts whatever is still pending back in the banner. A
+  // second request arriving while one is on screen replaces it, so without
+  // this the first one would be waiting where nothing shows it.
+  function closeConsentOverlay() {
+    consentRequestOpen = false;
+    consentRequestID = null;
+    consentOverlay.classList.remove('active');
+    refreshPendingBanner();
+  }
+
   function presentError(err) {
     if (!err || !err.message) return;
     if (consentRequestOpen) {
@@ -1380,7 +1388,6 @@
       dropStoredError();
       return;
     }
-    if (!errorClaim.take()) return;
     showErrorDialog(err.message, err.detail);
   }
 
@@ -1401,8 +1408,7 @@
 
     consentDialog.innerHTML = html;
     document.getElementById('error-dismiss').addEventListener('click', () => {
-      consentRequestOpen = false;
-      consentOverlay.classList.remove('active');
+      closeConsentOverlay();
       fetch('/api/error', { method: 'DELETE' }).catch(() => {});
       loadLog();
     });
@@ -1456,8 +1462,7 @@
 
     consentDialog.innerHTML = html;
     document.getElementById('result-dismiss').addEventListener('click', () => {
-      consentRequestOpen = false;
-      consentOverlay.classList.remove('active');
+      closeConsentOverlay();
       loadLog();
     });
   }
@@ -1551,6 +1556,8 @@
     consentRequestID = req.id;
     dropStoredError();
     consentOverlay.classList.add('active');
+    // This one is on screen now, and a request it replaced is not.
+    refreshPendingBanner();
 
     const isIssuance = req.type === 'issuance';
 
@@ -1872,15 +1879,6 @@
       submitting = true;
       approveBtn.disabled = true;
       approveBtn.textContent = 'Submitting...';
-      // Approving an issuance is what may lead to an issuer login, so this
-      // tab is the one allowed to follow it. The issuer may also ask for a
-      // presentation before it issues (OpenID4VCI 1.1 §6), which is a second
-      // consent in the same flow: claim that one too, or it would open
-      // nowhere and sit in the pending banner of every tab.
-      if (isIssuance) {
-        authorizeClaim.expect();
-        consentClaim.expect();
-      }
       expectError();
       denyBtn.disabled = true;
 
@@ -1894,30 +1892,35 @@
           activeQueryIds().forEach(qid => { approveBody.picks[qid] = selection.picks[qid]; });
           approveBody.set_choices = selection.setChoices.slice();
         }
-        const resp = await fetch('/api/requests/' + req.id + '/approve', {
+        const resp = await fetch(approveURL(req.id, '/approve'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(approveBody)
         });
         const result = await resp.json();
+        // The wait for an answer can outlast this dialog: a presentation the
+        // issuer asks for mid-issuance replaces it. Whatever comes back then
+        // belongs to a request that is no longer on screen.
+        if (consentRequestID !== req.id) return;
+        if (!resp.ok) {
+          showErrorDialog('This request could not be answered', result.error || 'The wallet refused the answer.');
+          return;
+        }
         if (isIssuance) {
           // Deferred, not failed: the wallet keeps collecting it and the
           // credential appears once it arrives.
           if (result.pending) {
-            consentRequestOpen = false;
-            consentOverlay.classList.remove('active');
+            closeConsentOverlay();
             await loadDeferred();
             await loadLog();
             return;
           }
-          if (!resp.ok || result.error || (result.status_code && result.status_code >= 400)) {
-            const detail = result.error || ('HTTP ' + (result.status_code || resp.status));
+          if (result.error || (result.status_code && result.status_code >= 400)) {
+            const detail = result.error || ('HTTP ' + result.status_code);
             showErrorDialog('Credential issuance failed', detail);
             return;
           }
-          consentRequestOpen = false;
-          consentOverlay.classList.remove('active');
-          if (demoMode) refreshPendingBanner();
+          closeConsentOverlay();
           await loadCredentials();
           await loadLog();
           return;
@@ -1932,12 +1935,16 @@
 
     document.getElementById('consent-deny').addEventListener('click', async () => {
       try {
-        await fetch('/api/requests/' + req.id + '/deny', { method: 'POST' });
+        const resp = await fetch(approveURL(req.id, '/deny'), { method: 'POST' });
+        if (!resp.ok) {
+          const result = await resp.json().catch(() => ({}));
+          showErrorDialog('This request could not be denied', result.error || 'The wallet refused the answer.');
+          return;
+        }
       } catch (e) {
         console.error('Deny failed:', e);
       }
-      consentRequestOpen = false;
-      consentOverlay.classList.remove('active');
+      closeConsentOverlay();
       await loadLog();
     });
     }
@@ -1968,12 +1975,12 @@
   // Until /api/config resolves we do not know whether this is a demo, so the
   // dialog-vs-banner decision waits for it: a request arriving in that window
   // is never forced into a dialog it might not belong to.
-  let configLoaded = false;
   async function loadAppConfig() {
     try {
       const resp = await fetch('/api/config');
       const config = await resp.json();
       if (config.version) {
+        window.EUDI_VERSION = config.version;
         document.getElementById('footer-version').textContent = 'eudi-dev ' + config.version;
       }
       if (config.imprint) {
@@ -2041,12 +2048,6 @@
       }
     } catch (e) {
       /* footer extras are optional */
-    } finally {
-      // demoMode is settled now (or defaulted to false on a failed load, which
-      // reads as a local wallet). Re-evaluate any request that arrived while
-      // config was still loading, so a local wallet still opens its dialog.
-      configLoaded = true;
-      loadPendingRequests();
     }
   }
 
@@ -2313,9 +2314,13 @@
     howtoOverlay.classList.remove('active');
   });
 
-  // Initialize
-  if (new URLSearchParams(window.location.search).get('focus') === 'overview') {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  // Initialize. The owner and the request id answer for this page, so they
+  // are read above and cleared from the address bar rather than left where a
+  // copied link would carry them.
+  if (pageParams.get('focus') === 'overview' || openedForRequest || actingOwner) {
+    if (pageParams.get('focus') === 'overview') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
     window.history.replaceState({}, document.title, window.location.pathname);
   }
   const loadAppConfigPromise = loadAppConfig();

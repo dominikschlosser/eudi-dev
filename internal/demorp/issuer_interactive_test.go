@@ -127,12 +127,12 @@ func TestOfferCanAskForTheBrowserSignInInstead(t *testing.T) {
 	}()
 
 	select {
-	case authURL := <-authCh:
-		if !strings.Contains(authURL, "/issuer/authorize") {
-			t.Errorf("sign-in URL = %q, want the issuer's authorization endpoint", authURL)
+	case prompt := <-authCh:
+		if !strings.Contains(prompt.URL, "/issuer/authorize") {
+			t.Errorf("sign-in URL = %q, want the issuer's authorization endpoint", prompt.URL)
 		}
-		if !strings.Contains(authURL, "request_uri=") {
-			t.Errorf("sign-in URL = %q, want the pushed request the challenge endpoint handed back", authURL)
+		if !strings.Contains(prompt.URL, "request_uri=") {
+			t.Errorf("sign-in URL = %q, want the pushed request the challenge endpoint handed back", prompt.URL)
 		}
 	case err := <-done:
 		t.Fatalf("the flow ended without asking for a sign-in: %v", err)
