@@ -53,7 +53,7 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 |---------|--------|-------|
 | Credential offer parsing | Implemented | `openid-credential-offer://` and `haip-vci://` schemes |
 | Pre-authorized code grant | Implemented | With optional `tx_code` |
-| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration. Uses PAR, DPoP and client attestation when the issuer's metadata advertises them. PAR is optional, and the flow falls back to the authorization endpoint when it is absent |
+| Authorization code grant | Implemented | Requires wallet `client_id` / `redirect_uri` configuration. Uses PAR, DPoP and client attestation when the issuer's metadata advertises them. Client attestation follows drafts 07, 08 and 10 of attestation-based client authentication per [ADR-0014](adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md): the configured OpenID4VCI version selects the emitted shape. The draft-10 additions (`attest_jwt_client_auth_dpop`, `client_attestation_pop_methods_supported`, the challenge headers) are negotiated through metadata. PAR is optional, and the flow falls back to the authorization endpoint when it is absent |
 | Pushed Authorization Request (PAR) | Implemented | Used by the authorization-code flow |
 | Token endpoint | Implemented | Exchanges pre-authorized code or authorization code for access token |
 | Credential endpoint | Implemented | Uses OID4VCI 1.0 final `proofs.jwt` and sends `credential_identifier` or `credential_configuration_id` as required (§8.2 forbids both together and forbids either one where the token response did not call for it) |

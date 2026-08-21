@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.0] - 2026-08-21
+
+### Added
+
+- **Three drafts of OAuth 2.0 Attestation-Based Client Authentication are supported: draft-07, draft-08 and draft-10.** [ADR-0014](docs/adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md) records the rule: the EUDI ARF is the root of the specification graph, every draft a referenced specification pins stays supported, and the latest published draft is always supported alongside them. OpenID4VCI 1.0 pins draft-07 (its §14.7 says to prefer the pinned version), the OpenID4VCI 1.1 editor draft pins draft-08, and draft-10 is the latest. Outgoing attestations are version-exact: `--vci-version 1.0` emits the draft-07 shape (`iss` in both the attestation and its PoP, which that draft requires), `--vci-version 1.1` emits the draft-08 shape (neither, and the PoP drops the `exp`/`nbf` no draft defines). The draft the authentication was resolved under travels with the stored credential, so a later refresh emits what the issuance did
+- **The wallet speaks the combined DPoP proof of possession of draft-10.** A server that offers only `attest_jwt_client_auth_dpop`, or whose `client_attestation_pop_methods_supported` names `dpop_combined` without `attestation_pop_jwt`, gets the attestation with the DPoP proof as its possession proof and no dedicated PoP header (draft-10 §5.2). Using a mechanism the configured draft predates is warned about and done, per ADR-0014. Such a server used to be refused as an unsupported token endpoint auth method
+- **The wallet follows the header-based challenge conversation.** A challenge served in the `OAuth-Client-Attestation-Challenge` response header is carried in the next PoP, and a request refused with `use_attestation_challenge` or `use_fresh_attestation` is retried once with the served challenge or a fresh attestation (§6.2 of every supported draft). Only the `challenge_endpoint` route worked before, so a server using header-based challenges failed the exchange permanently
+- **The demo issuer accepts every supported draft's attestation shape and says which one it saw.** A shape that deviates from the draft the configured OpenID4VCI version pins, while being correct under another supported draft (an attestation without `iss` at a draft-07 configuration, a combined DPoP proof below draft-10), is accepted with a warning in the log naming both drafts. Under `--demo-issuer-client-auth optional` the metadata now also advertises the `none` proof of possession method, which is how draft-10 spells "the client MAY omit the attestation"
+
+### Fixed
+
+- **The demo issuer's pre-authorized code exchange authenticates the client.** The token endpoint advertised attestation-based client authentication as its only methods and then issued tokens on the pre-authorized grant to anybody, which contradicted both the metadata and HAIP 1.0 §4.4.1. The exchange now runs the same client authentication as the authorization code grant (the grant carries no `client_id`, so the attestation's `sub` stands on its own), verifies a DPoP proof where the wallet sends one and binds the issued token to it
+- **A client attestation whose `cnf.jwk` carries private key material is refused.** Every supported ABCA draft requires the confirmation key to be a public key, and the JWK parser silently used the public half of a private key. The same check now guards the `jwk` header of a DPoP proof (RFC 9449 §4.3)
+- **The demo issuer's pre-authorized code is single-use.** The exchange now binds the offer to the redeeming client (its DPoP key and its attestation), so a second redemption of the same code is refused with `invalid_grant`, the way a spent authorization code is (RFC 6749 §4.1.2). Redeeming twice used to rebind the first access token to the second redeemer's key, or strip its DPoP binding entirely
+- **A request carrying more than one `OAuth-Client-Attestation` or `OAuth-Client-Attestation-PoP` header field is refused.** The validation checklist starts with "precisely one" of each, and only the first was read, so a second attestation could ride along unverified. The `alg` header of both JWTs is also checked against the advertised algorithms before the signature, so a mismatch is named as such instead of as a signature failure
+
 ## [1.25.5] - 2026-08-21
 
 ### Fixed
