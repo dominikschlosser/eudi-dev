@@ -190,23 +190,19 @@ func runABCAOffer(t *testing.T, w *Wallet, cfg abcaIssuerConfig) (*abcaCapture, 
 	return capture, err
 }
 
-// TestAttestationShapePerVCIVersion pins the version-exact emission the ADR
-// decided: the configured OpenID4VCI version selects the ABCA draft that
-// OpenID4VCI version pins (1.0 pins draft-07 per its §14.7, the 1.1 editor
-// draft pins draft-08), and the attestation and PoP JWTs carry exactly that
-// draft's claims. Draft-07 §5.1/§5.2 require iss in both JWTs; draft-08
-// removed iss from both, and neither draft defines exp or nbf for the PoP.
-func TestAttestationShapePerVCIVersion(t *testing.T) {
-	for _, tc := range []struct {
-		version VCIVersion
-		wantISS bool
-	}{
-		{VCIVersion10, true},
-		{VCIVersion11, false},
-	} {
-		t.Run(string(tc.version), func(t *testing.T) {
+// TestAttestationShapeIsDraftUnion pins the emitted shape: whatever
+// OpenID4VCI version is configured, the attestation and its PoP carry the
+// union of the claims the supported drafts define, which is the draft-07
+// shape. Draft-07 §5.1/§5.2 require iss in both JWTs and define nbf, draft-08
+// stopped defining either, and every draft lets a JWT carry claims it does
+// not define itself (§5.1 and §5.2 rule 1), so one shape verifies under all
+// of them. Emitting it is what keeps this wallet working against servers that
+// implement the draft OpenID4VCI 1.0 pins.
+func TestAttestationShapeIsDraftUnion(t *testing.T) {
+	for _, version := range []VCIVersion{VCIVersion10, VCIVersion11} {
+		t.Run(string(version), func(t *testing.T) {
 			w := generateTestWallet(t)
-			w.VCIVersion = tc.version
+			w.VCIVersion = version
 			w.IssuerURL = "https://wallet.example"
 			w.VCIClientID = "test-wallet-client"
 
@@ -224,26 +220,20 @@ func TestAttestationShapePerVCIVersion(t *testing.T) {
 			attestation := decodeJWTPart(t, capture.attestations[0], 1)
 			pop := decodeJWTPart(t, capture.pops[0], 1)
 
-			if _, present := attestation["iss"]; present != tc.wantISS {
-				t.Errorf("attestation iss present = %v, want %v (%v)", present, tc.wantISS, attestation)
+			if attestation["iss"] != "https://wallet.example" {
+				t.Errorf("attestation iss = %v, want the wallet's issuer URL", attestation["iss"])
 			}
-			if _, present := pop["iss"]; present != tc.wantISS {
-				t.Errorf("PoP iss present = %v, want %v (%v)", present, tc.wantISS, pop)
+			if attestation["sub"] != "test-wallet-client" {
+				t.Errorf("attestation sub = %v, want the client_id", attestation["sub"])
 			}
-			if tc.wantISS {
-				if attestation["iss"] != "https://wallet.example" {
-					t.Errorf("attestation iss = %v, want the wallet's issuer URL", attestation["iss"])
-				}
-				if pop["iss"] != "test-wallet-client" {
-					t.Errorf("PoP iss = %v, want the client_id", pop["iss"])
-				}
+			// Draft-07 §5.2 rule 4: the PoP names the client the attestation
+			// was issued to.
+			if pop["iss"] != attestation["sub"] {
+				t.Errorf("PoP iss = %v, want the attestation's sub %v", pop["iss"], attestation["sub"])
 			}
-			wantAttestation := []string{"cnf", "exp", "iat", "sub"}
-			wantPoP := []string{"aud", "iat", "jti"}
-			if tc.wantISS {
-				wantAttestation = []string{"cnf", "exp", "iat", "iss", "nbf", "sub"}
-				wantPoP = []string{"aud", "iat", "iss", "jti"}
-			}
+
+			wantAttestation := []string{"cnf", "exp", "iat", "iss", "nbf", "sub"}
+			wantPoP := []string{"aud", "exp", "iat", "iss", "jti", "nbf"}
 			if got := sortedKeys(attestation); !slices.Equal(got, wantAttestation) {
 				t.Errorf("attestation claims = %v, want exactly %v", got, wantAttestation)
 			}

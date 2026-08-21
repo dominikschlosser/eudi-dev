@@ -803,16 +803,14 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 }
 
 // createClientAttestationHeaders mints the attestation and, outside combined
-// mode, the PoP that proves possession of the attested key. The shape is
-// version-exact: each JWT carries the claims of the ABCA draft the
-// authentication was resolved under.
+// mode, the PoP that proves possession of the attested key. Both carry the
+// union of the claims the supported drafts define, which is the draft-07
+// shape: the later drafts only stopped requiring claims, and every one of
+// them lets a JWT carry claims it does not define itself (§5.1 and §5.2 rule
+// 1), so this one shape verifies under all of them.
 func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
-	}
-	draft := auth.ABCADraft
-	if draft == 0 {
-		draft = w.VCIFeatureVersion().ABCADraft()
 	}
 
 	x5c := buildJWSX5C(w.CertChain)
@@ -830,12 +828,13 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"cnf": map[string]any{"jwk": holderJWK},
-	}
-	if draft <= 7 {
-		// Draft-07 §5.1 requires iss and defines nbf. Draft-08 defines
-		// neither.
-		clientAttestationPayload["iss"] = w.IssuerURL
-		clientAttestationPayload["nbf"] = time.Now().Unix()
+		// Draft-07 §5.1 requires iss and defines nbf, and draft-08 dropped
+		// both from the claims it defines while keeping the rule that a JWT
+		// MAY carry further claims (§5.1 rule 1). Naming the attester and the
+		// validity window in every shape is what a draft-07 server needs and
+		// a later one ignores.
+		"iss": w.IssuerURL,
+		"nbf": time.Now().Unix(),
 	}
 	clientAttestationJWT, err := signJWT(clientAttestationHeader, clientAttestationPayload, w.IssuerKey)
 	if err != nil {
@@ -856,10 +855,14 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		"aud": auth.Audience,
 		"iat": time.Now().Unix(),
 		"jti": randomBase64URL(18),
-	}
-	if draft <= 7 {
-		// Draft-07 §5.2 requires the PoP to name the client in iss.
-		popPayload["iss"] = auth.ClientID
+		// Draft-07 §5.2 requires iss and defines nbf, and draft-08 dropped
+		// both from the claims it defines while keeping the rule that a JWT
+		// MAY carry further claims (§5.2 rule 1). Naming the client and the
+		// validity window in every shape is what a draft-07 server needs and
+		// a later one ignores.
+		"iss": auth.ClientID,
+		"nbf": time.Now().Unix(),
+		"exp": time.Now().Add(5 * time.Minute).Unix(),
 	}
 	if challenge != "" {
 		popPayload["challenge"] = challenge
