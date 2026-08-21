@@ -586,3 +586,54 @@ func TestBareClientIDIsPreRegisteredRatherThanUnknown(t *testing.T) {
 		t.Error("an unrecognised prefix was accepted")
 	}
 }
+
+// A signed Request Object whose key lives somewhere this wallet does not go
+// is reported as unverified. Saying nothing let a request nobody
+// authenticated read exactly like one whose signature checked out, which is
+// the silent acceptance ADR-0013 rules out.
+func TestVerifyRequestObjectSignature_NamesWhatItCouldNotVerify(t *testing.T) {
+	header := map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}
+	payload := map[string]any{"response_type": "vp_token", "nonce": "n"}
+	headerJSON, _ := json.Marshal(header)
+	payloadJSON, _ := json.Marshal(payload)
+	raw := format.EncodeBase64URL(headerJSON) + "." + format.EncodeBase64URL(payloadJSON) + ".AAAA"
+	reqObj := &oid4vc.RequestObjectJWT{Raw: raw, Header: header, Payload: payload}
+
+	for _, tt := range []struct {
+		name     string
+		clientID string
+		want     string
+	}{
+		{"a DID resolves nowhere here", "decentralized_identifier:did:key:z6Mkabc", "did:key:z6Mkabc"},
+		{"an attestation key is not read", "verifier_attestation:https://verifier.example", "Verifier Attestation JWT"},
+		{"a federation chain is not resolved", "openid_federation:https://verifier.example", "OpenID Federation"},
+		{"a bare client_id was never registered", "example-client", "pre-registered"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			finding := VerifyRequestObjectSignature(tt.clientID, reqObj)
+			if finding == "" {
+				t.Fatal("a signature this wallet cannot verify was reported as fine")
+			}
+			if !strings.Contains(finding, "not verified") || !strings.Contains(finding, tt.want) {
+				t.Errorf("finding = %q, want it to say the signature was not verified and to name %q", finding, tt.want)
+			}
+		})
+	}
+}
+
+// The prefixes that carry their own key still verify, and the one that must
+// not be signed is left to the check that owns it, so the new finding does not
+// double up on requests another check already reports.
+func TestVerifyRequestObjectSignature_QuietWhereAnotherCheckSpeaks(t *testing.T) {
+	header := map[string]any{"alg": "none", "typ": "oauth-authz-req+jwt"}
+	reqObj := &oid4vc.RequestObjectJWT{Raw: "e30.e30.", Header: header, Payload: map[string]any{}}
+	if finding := VerifyRequestObjectSignature("redirect_uri:https://verifier.example/cb", reqObj); finding != "" {
+		t.Errorf("an unsigned request under redirect_uri: was reported: %s", finding)
+	}
+
+	signed := map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}
+	signedReq := &oid4vc.RequestObjectJWT{Raw: "e30.e30.AAAA", Header: signed, Payload: map[string]any{}}
+	if finding := VerifyRequestObjectSignature("redirect_uri:https://verifier.example/cb", signedReq); finding != "" {
+		t.Errorf("a signed request under redirect_uri: is VerifyClientID's finding, but the signature check also reported: %s", finding)
+	}
+}

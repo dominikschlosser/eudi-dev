@@ -655,6 +655,12 @@ header h1 {
   cursor: help;
 }
 
+.status-unheld-key {
+  background: rgba(224, 175, 104, 0.2);
+  color: var(--yellow);
+  cursor: help;
+}
+
 .status-expiring {
   background: rgba(224, 175, 104, 0.2);
   color: var(--yellow);

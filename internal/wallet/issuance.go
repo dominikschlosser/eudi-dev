@@ -485,7 +485,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	// not name is one a verifier holding the issuer to HAIP will refuse, so
 	// saying so here is what turns a rejection later into a finding now.
 	if w.RequireHAIP {
-		if violations := w.haipCredentialChainViolations(credential); len(violations) > 0 {
+		if violations := w.haipCredentialViolations(credential); len(violations) > 0 {
 			detail := fmt.Sprintf("Credential does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
 			details := map[string]any{
 				"issuer":     offer.CredentialIssuer,

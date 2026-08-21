@@ -101,7 +101,10 @@ func parseCWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 		return nil, err
 	}
 
-	candidates, err := resolveKeys(certs, nil, opts)
+	// A COSE kid is a byte string, and a Status Provider naming a DID puts
+	// its text there.
+	kid, _ := msg.Headers.Protected[cose.HeaderLabelKeyID].([]byte)
+	candidates, err := resolveKeys(certs, nil, string(kid), opts)
 	if err != nil {
 		return nil, err
 	}

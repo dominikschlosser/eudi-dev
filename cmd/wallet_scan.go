@@ -208,6 +208,7 @@ func walletScanCmd() *cobra.Command {
 					return err
 				}
 				fmt.Printf("Imported %s credential (%s)\n", docString(imported, "format"), docCredLabel(imported))
+				warnAboutCredential(imported)
 				return nil
 			}
 

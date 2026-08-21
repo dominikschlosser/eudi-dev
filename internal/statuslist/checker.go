@@ -344,7 +344,7 @@ type keyCandidates struct {
 // reject JWTs with an invalid signature", with no exception for a party
 // holding no trust list. A trust anchor only decides whether the key is also
 // trusted, which is reported separately.
-func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, opts CheckOptions) (*keyCandidates, error) {
+func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, named string, opts CheckOptions) (*keyCandidates, error) {
 	if len(opts.TrustListCerts) > 0 {
 		if len(certs) == 0 {
 			return nil, fmt.Errorf("the status list token carries no certificate chain to validate against the trust list")
@@ -382,6 +382,14 @@ func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, opts Ch
 			info:    "signed by the key the token carries in its own header",
 			warning: "the status list token was verified with the key it carries itself, which proves nothing about who issued it",
 		}, nil
+	}
+
+	// Section 11.3 leaves key resolution to the ecosystem, and this one
+	// resolves a Status Issuer through x5c. Reporting a DID as a key that
+	// happens to be missing reads as a fetch that went wrong, when it is the
+	// Status Provider naming itself in a way nothing here can follow.
+	if did := keys.DIDReference(named); did != "" {
+		return nil, fmt.Errorf("the status list token names its key by the DID %s, which nothing here resolves: section 11.3 leaves key resolution to the ecosystem, and this one identifies a Status Issuer by the certificate chain in the token's x5c header", did)
 	}
 
 	return nil, fmt.Errorf("no key to verify the status list token with: it carries no certificate chain and no public key, and no trust list or key was supplied")
@@ -455,7 +463,8 @@ func parseJWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 		}
 	}
 
-	candidates, err := resolveKeys(certs, embedded, opts)
+	kid, _ := header["kid"].(string)
+	candidates, err := resolveKeys(certs, embedded, kid, opts)
 	if err != nil {
 		return nil, err
 	}

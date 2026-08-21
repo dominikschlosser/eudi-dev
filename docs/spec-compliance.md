@@ -1,6 +1,6 @@
 # Spec Compliance
 
-Status of implemented features against the relevant specifications.
+Status of implemented features against the relevant specifications. These are the specifications the EUDI Architecture and Reference Framework builds on, and they are the whole scope: a mechanism none of them defines is recognised and reported, never used ([ADR-0013](adr/0013-only-the-eudi-stack-is-supported.md)).
 
 Two independent settings decide what a finding does to a flow:
 
@@ -31,8 +31,8 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 | `x509_san_dns:` client_id | Implemented | Verified against leaf cert SAN |
 | `x509_hash:` client_id | Implemented | SHA-256 of the leaf certificate matched against the prefix value |
 | `redirect_uri:` client_id | Implemented | Requires unsigned request objects and checks that the prefix value matches `response_uri` |
-| `verifier_attestation:` client_id | Validated | Checks JWT structure in header, verifies `sub` claim matches client_id |
-| `decentralized_identifier:` client_id | Validated | DID format validation, `kid` cross-check (full DID resolution not implemented) |
+| `verifier_attestation:` client_id | Validated | Checks JWT structure in header, verifies `sub` claim matches client_id. The Request Object signature is reported as not verified: its key travels in the attestation's `cnf` claim, which the wallet does not read |
+| `decentralized_identifier:` client_id | Validated | DID format validation, `kid` cross-check. DID resolution is not implemented, so the Request Object signature is reported as not verified ([ADR-0013](adr/0013-only-the-eudi-stack-is-supported.md)) |
 | Pre-registered client (no prefix) | Implemented | A Client Identifier carrying no `:` references a pre-registered client (§5.9.2) and is not reported as an unknown prefix |
 | `origin:` client_id | Refused | §5.9.3 reserves the prefix: "The Wallet MUST NOT accept this Client Identifier Prefix in requests". It names the audience of a Digital Credentials API presentation, which the wallet derives from the origin the platform reports |
 | `openid_federation:` client_id | Refused | §5.9.3 defers the prefix to OpenID Federation, whose trust chain resolution is not implemented here, so the request is refused rather than accepted unverified |

@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
@@ -30,8 +31,64 @@ import (
 // It returns a pointer to a copy of the newly imported credential, safe to
 // use even after further mutations to w.Credentials.
 func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
-	raw = strings.TrimSpace(raw)
+	cred, err := w.importDetectedFormat(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, err
+	}
+	w.adoptOwnStatusEntry(cred)
+	w.noteUnheldKeyBinding(cred)
+	w.noteDIDIssuerKey(cred)
+	return cred, nil
+}
 
+// credentialIssuerDID returns the DID a credential names as the key that
+// signed it. An mdoc names its issuer by the certificate chain in the COSE
+// header and never by a DID, so only the JWT-shaped formats are read.
+func credentialIssuerDID(raw string) string {
+	jwtPart := strings.TrimSpace(raw)
+	if idx := strings.Index(jwtPart, "~"); idx >= 0 {
+		jwtPart = jwtPart[:idx]
+	}
+	header, payload, _, err := format.ParseJWTParts(jwtPart)
+	if err != nil {
+		return ""
+	}
+	kid, _ := header["kid"].(string)
+	iss, _ := payload["iss"].(string)
+	return keys.DIDReference(kid, iss)
+}
+
+// noteDIDIssuerKey reports a credential whose issuer key is named by a DID.
+// This toolkit resolves an issuer key through the x5c chain HAIP 1.0 §6.1.1
+// requires or through the issuer metadata SD-JWT VC defines, and the EUDI
+// ecosystem uses no DIDs, so such a credential is stored without its signature
+// ever being checked. The same identifier is what leaves its status list
+// unverifiable, and both are easier to place when the wallet says so at the
+// moment the credential arrives.
+func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
+	if w == nil || cred == nil {
+		return
+	}
+	did := credentialIssuerDID(cred.Raw)
+	if did == "" {
+		return
+	}
+	details := map[string]any{
+		"credential_id":  cred.ID,
+		"format":         cred.Format,
+		"issuer_key_did": did,
+	}
+	addStringDetail(details, "vct", cred.VCT)
+	detail := fmt.Sprintf(
+		"Credential %s names its issuer key by the DID %s. Nothing here resolves a DID (HAIP 1.0 §6.1.1 has the issuer's signing certificate travel in the x5c header), so this credential is kept with its issuer signature unverified, and a status list token signed the same way cannot be checked either.",
+		credentialLabel(*cred), did)
+	w.addProtocolWarning("wallet", "credential_issuer_key_is_a_did", detail, details)
+	log.Printf("[Wallet] WARNING: %s", detail)
+}
+
+// importDetectedFormat stores a credential in whichever of the formats the
+// wallet keeps it turns out to be.
+func (w *Wallet) importDetectedFormat(raw string) (*StoredCredential, error) {
 	// Try SD-JWT first (contains ~)
 	if strings.Contains(raw, "~") {
 		cred, err := w.importSDJWT(raw)
@@ -39,7 +96,6 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported SD-JWT credential: vct=%s claims=%d disclosures=%d", cred.VCT, len(cred.Claims), len(cred.Disclosures))
-		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 
@@ -51,7 +107,6 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported mDoc credential: docType=%s claims=%d", cred.DocType, len(cred.Claims))
-		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 
@@ -62,7 +117,6 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 			return nil, err
 		}
 		log.Printf("[Wallet] Imported plain JWT credential: vct=%s claims=%d", cred.VCT, len(cred.Claims))
-		w.adoptOwnStatusEntry(cred)
 		return cred, nil
 	}
 

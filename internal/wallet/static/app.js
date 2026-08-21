@@ -393,9 +393,19 @@
         '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
     }
 
+    // A credential whose issuer bound it to a key this wallet does not hold
+    // can be shown and decoded but never presented, so the card says so
+    // before someone picks it for a verifier.
+    let keyBindingBadge = '';
+    if (cred.key_binding_not_held === true) {
+      dataset.keyBinding = 'not-held';
+      keyBindingBadge = '<span class="status-badge status-unheld-key" id="' + idPrefix + 'key-binding-' + cred.id +
+        '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">No holder key</span>';
+    }
+
     const html = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
       '<div class="credential-info">' +
-        '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + '</div>' +
+        '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + keyBindingBadge + '</div>' +
         (withClaims ? '<div class="credential-claims">' + claimTagsFor(cred) + '</div>' : '') +
       '</div>';
 

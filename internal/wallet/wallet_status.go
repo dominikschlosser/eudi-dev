@@ -194,5 +194,10 @@ func (w *Wallet) CredentialSummaryWithStatus(c StoredCredential) map[string]any 
 	if info := w.CredentialStatusInfo(c); info != nil {
 		summary["status"] = info
 	}
+	// Only a credential this wallet cannot sign for says so, so a listing
+	// stays quiet about the ordinary case.
+	if w.keyBindingNotHeld(&c) {
+		summary["key_binding_not_held"] = true
+	}
 	return summary
 }

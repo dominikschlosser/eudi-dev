@@ -73,6 +73,19 @@ func docCredLabel(cred map[string]any) string {
 	return docString(cred, "format")
 }
 
+// warnAboutCredential reports what an imported credential cannot do: be
+// presented, because the wallet does not hold the key it is bound to, or be
+// verified, because its issuer key is named by a DID. Both go to stderr so a
+// JSON listing stays machine-readable.
+func warnAboutCredential(cred map[string]any) {
+	if notHeld, _ := cred["key_binding_not_held"].(bool); notHeld {
+		fmt.Fprintln(os.Stderr, "Warning: this credential is bound to a holder key the wallet does not hold. It can be listed and decoded, but presenting it fails the verifier's key binding check.")
+	}
+	if did, _ := cred["issuer_key_did"].(string); did != "" {
+		fmt.Fprintf(os.Stderr, "Warning: this credential names its issuer key by the DID %s. Nothing here resolves a DID (HAIP 1.0 §6.1.1 puts the issuer's signing certificate in x5c), so its issuer signature is not verified.\n", did)
+	}
+}
+
 func printCredentialList(creds []map[string]any, deferred []map[string]any) error {
 	if len(creds) == 0 && len(deferred) == 0 {
 		fmt.Println("No credentials stored.")

@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -86,6 +87,10 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 		}
 	}
 
+	if err := w.checkPresentableKeyBinding(cred); err != nil {
+		return VPTokenResult{}, err
+	}
+
 	typeLabel := cred.VCT
 	if typeLabel == "" {
 		typeLabel = cred.DocType
@@ -114,6 +119,42 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 	default:
 		return VPTokenResult{}, fmt.Errorf("unsupported credential format: %s", cred.Format)
 	}
+}
+
+// checkPresentableKeyBinding reports a credential whose key binding this
+// wallet cannot sign. RFC 9901 §4.3 has the KB-JWT signed by the key the
+// credential's cnf names and ISO 18013-5 §9.1.3 the DeviceSigned by the MSO's
+// deviceKey, and this wallet signs both with the one holder key it has, so a
+// credential bound to another key produces a signature every verifier
+// refuses. Strict mode stops before the nonce is spent, debug mode sends it
+// and lets the refusal be the finding, as it does with every other deviation
+// ([ADR-0001]). A plain JWT VC signs no key binding at all and is not in
+// scope.
+//
+// [ADR-0001]: docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md
+func (w *Wallet) checkPresentableKeyBinding(cred StoredCredential) error {
+	if cred.Format != "dc+sd-jwt" && cred.Format != "mso_mdoc" {
+		return nil
+	}
+	if !w.keyBindingNotHeld(&cred) {
+		return nil
+	}
+	detail := fmt.Sprintf(
+		"Credential %s is bound to a holder key this wallet does not hold, so the key binding signature of this presentation comes from the wrong key and the verifier refuses it.",
+		credentialLabel(cred))
+	details := map[string]any{
+		"credential_id": cred.ID,
+		"format":        cred.Format,
+	}
+	addStringDetail(details, "vct", cred.VCT)
+	addStringDetail(details, "doctype", cred.DocType)
+	if w.Mode() == ValidationModeStrict {
+		w.addProtocolLog("presentation", "key_binding_cannot_be_signed", detail, false, details)
+		return errors.New(detail)
+	}
+	w.addProtocolWarning("presentation", "key_binding_cannot_be_signed", detail, details)
+	log.Printf("[VP] WARNING: %s", detail)
+	return nil
 }
 
 func sdJWTAudience(params PresentationParams) string {

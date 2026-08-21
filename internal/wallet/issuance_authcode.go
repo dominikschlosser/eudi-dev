@@ -998,18 +998,50 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 
 // oauthErrorMessage renders an OAuth 2.0 error response as "code: what it
 // says", or empty when the body is not one.
+//
+// RFC 6749 §5.2 defines error and error_description, and a server that says
+// why in neither leaves its reason behind: a NestJS handler answers
+// {"error":"Bad Request","message":"Invalid grant_type, ..."}, whose error is
+// the HTTP status phrase, so reporting that alone turns a named refusal into
+// "Bad Request". A message next to the error is read for that reason. An
+// error is still what makes the body an error response, because this also
+// decides whether a 200 carries a refusal, and a success body carrying a
+// message is not one.
 func oauthErrorMessage(body []byte) string {
 	var doc struct {
-		Error       string `json:"error"`
-		Description string `json:"error_description"`
+		Error       string          `json:"error"`
+		Description string          `json:"error_description"`
+		Message     json.RawMessage `json:"message"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil || doc.Error == "" {
 		return ""
 	}
-	if doc.Description == "" {
+	reason := doc.Description
+	if reason == "" {
+		reason = errorBodyMessage(doc.Message)
+	}
+	if reason == "" || reason == doc.Error {
 		return doc.Error
 	}
-	return doc.Error + ": " + doc.Description
+	return doc.Error + ": " + reason
+}
+
+// errorBodyMessage reads the message member of an error body, which servers
+// write as one string or as the list of things that were wrong with the
+// request.
+func errorBodyMessage(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return strings.TrimSpace(single)
+	}
+	var many []string
+	if err := json.Unmarshal(raw, &many); err == nil {
+		return strings.TrimSpace(strings.Join(many, "; "))
+	}
+	return ""
 }
 
 func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {

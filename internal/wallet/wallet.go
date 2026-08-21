@@ -1012,6 +1012,18 @@ func LoadKeyFromFile(path string) (*ecdsa.PrivateKey, error) {
 	return ecKey, nil
 }
 
+// credentialLabel names a credential the way a message about it reads best:
+// by its type, falling back to the id when the format carries none.
+func credentialLabel(c StoredCredential) string {
+	if c.VCT != "" {
+		return c.VCT
+	}
+	if c.DocType != "" {
+		return c.DocType
+	}
+	return c.ID
+}
+
 // CredentialSummary returns a JSON-serializable summary of a credential.
 func CredentialSummary(c StoredCredential) map[string]any {
 	summary := map[string]any{
@@ -1038,6 +1050,11 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	// listing is printed and logged in places a refresh token should not go.
 	if c.CanRenew() {
 		summary["can_renew"] = true
+	}
+	// A key nothing here resolves, so every listing can say that this
+	// credential's issuer signature was never checked.
+	if did := credentialIssuerDID(c.Raw); did != "" {
+		summary["issuer_key_did"] = did
 	}
 	return summary
 }

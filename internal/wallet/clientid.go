@@ -35,7 +35,8 @@ import (
 // chain for internal consistency. verifier_attestation: and
 // decentralized_identifier: take the key from the attestation or the resolved
 // DID, so they legitimately carry no x5c and requiring one would be a false
-// finding.
+// finding. What they get instead is a finding that names the signature as
+// unverified, because neither key is one this wallet resolves.
 func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	if reqObj == nil {
 		return ""
@@ -59,9 +60,7 @@ func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJ
 		if clientIDVerifiesViaX5C(clientID) {
 			return "Request Object signature verification requires an x5c header"
 		}
-		// A non-x509 prefix verifies against a key this function does not hold,
-		// so there is nothing to check here.
-		return ""
+		return unverifiedSignatureFinding(clientID)
 	}
 
 	certs, warning := extractCertChain(reqObj)
@@ -80,6 +79,36 @@ func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJ
 	}
 
 	return ""
+}
+
+// unverifiedSignatureFinding says why a signed Request Object went unverified.
+// Every prefix here resolves its key somewhere this wallet does not go, so the
+// signature establishes nothing, and saying nothing would let a request no one
+// authenticated read like one that passed. Naming the mechanism rather than
+// implementing it is the rule of [ADR-0013].
+//
+// [ADR-0013]: docs/adr/0013-only-the-eudi-stack-is-supported.md
+func unverifiedSignatureFinding(clientID string) string {
+	switch {
+	case strings.HasPrefix(clientID, "decentralized_identifier:"):
+		return fmt.Sprintf("Request Object signature was not verified: decentralized_identifier: resolves its key through the DID %s, which this wallet does not resolve",
+			strings.TrimPrefix(clientID, "decentralized_identifier:"))
+	case strings.HasPrefix(clientID, "verifier_attestation:"):
+		return "Request Object signature was not verified: verifier_attestation: carries its key in the cnf claim of the Verifier Attestation JWT, which this wallet does not read"
+	case strings.HasPrefix(clientID, "openid_federation:"):
+		return "Request Object signature was not verified: openid_federation: resolves its key through an OpenID Federation trust chain, which this wallet does not resolve"
+	case strings.HasPrefix(clientID, "redirect_uri:"):
+		// A signed Request Object under this prefix is the violation
+		// VerifyClientID already reports, and reporting it twice says nothing
+		// the reader does not have.
+		return ""
+	case clientID == "":
+		// A request naming no client at all is reported as that, by the
+		// checks that own the parameter.
+		return ""
+	default:
+		return fmt.Sprintf("Request Object signature was not verified: client_id %q carries no Client Identifier Prefix, so its key would have been pre-registered with this wallet, and nothing is", clientID)
+	}
 }
 
 // clientIDVerifiesViaX5C reports whether the client_id prefix carries the

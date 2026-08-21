@@ -368,14 +368,13 @@ func metadataListContains(meta map[string]any, key, want string) bool {
 	return false
 }
 
-// haipCredentialChainViolations holds a received credential to §6.1.1. A
-// credential in another format, or one this wallet cannot parse, is left to
-// the checks that own it: the section is the IETF SD-JWT VC profile.
-func (w *Wallet) haipCredentialChainViolations(raw string) []string {
+// haipCredentialViolations holds a received credential to §6.1.1. A credential
+// in another format, or one this wallet cannot parse, is left to the checks
+// that own it: the section is the IETF SD-JWT VC profile.
+func (w *Wallet) haipCredentialViolations(raw string) []string {
 	token, err := sdjwt.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return nil
 	}
-	chain, _ := validate.X5CCertificates(token.Header)
-	return validate.HAIPCredentialChain(chain)
+	return validate.HAIPCredentialFindings(token.Header, token.Payload)
 }

@@ -17,7 +17,25 @@ package validate
 import (
 	"crypto/x509"
 	"fmt"
+
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
+
+// HAIPCredentialFindings holds a credential's issuer key to §6.1.1: the
+// certificate chain that signed it, and whether it is named by a DID, which
+// this profile has no way to resolve. Both are read from the credential
+// itself, so the caller does not have to know which header carries what.
+func HAIPCredentialFindings(header, payload map[string]any) []string {
+	var findings []string
+	kid, _ := header["kid"].(string)
+	iss, _ := payload["iss"].(string)
+	if did := keys.DIDReference(kid, iss); did != "" {
+		findings = append(findings, fmt.Sprintf(
+			"HAIP: the credential names its issuer key by the DID %s, and §6.1.1 has the issuer's signing certificate and its trust chain travel in the x5c header instead", did))
+	}
+	chain, _ := X5CCertificates(header)
+	return append(findings, HAIPCredentialChain(chain)...)
+}
 
 // HAIPCredentialChain checks what HAIP 1.0 §6.1.1 asks of an issued SD-JWT VC:
 // "The SD-JWT VC MUST contain the credential issuer's signing certificate

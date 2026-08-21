@@ -139,7 +139,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			return err
 		} else {
 			if !opts.JSON {
-				fmt.Println("\n  Signature verification skipped (no --key/--trust-list and issuer metadata resolution unavailable)")
+				printSkippedSignatureNote(token)
 			}
 			// Still check expiry from parsed claims
 			if exp, ok := token.ResolvedClaims["exp"]; ok {
@@ -184,7 +184,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			return err
 		} else {
 			if !opts.JSON {
-				fmt.Println("\n  Signature verification skipped (no --key/--trust-list and issuer metadata resolution unavailable)")
+				printSkippedSignatureNote(token)
 			}
 			if exp, ok := token.ResolvedClaims["exp"]; ok {
 				if expFloat, ok := exp.(float64); ok {
@@ -347,8 +347,21 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 // the issuer's signing certificate and its trust chain travel in the x5c
 // header, without the trust anchor, and the leaf is not self-signed.
 func haipCredentialFindings(token *sdjwt.Token) []string {
-	certs, _ := validate.X5CCertificates(token.Header)
-	return validate.HAIPCredentialChain(certs)
+	return validate.HAIPCredentialFindings(token.Header, token.Payload)
+}
+
+// printSkippedSignatureNote says why no signature was checked. A credential
+// naming its issuer key by a DID is a case no flag fixes: this tool resolves
+// an issuer key through x5c or issuer metadata, so naming the DID beats
+// suggesting a --key the caller has no way to obtain.
+func printSkippedSignatureNote(token *sdjwt.Token) {
+	kid, _ := token.Header["kid"].(string)
+	iss, _ := token.Payload["iss"].(string)
+	if did := keys.DIDReference(kid, iss); did != "" {
+		fmt.Printf("\n  Signature verification skipped (the issuer key is named by the DID %s, which this tool does not resolve)\n", did)
+		return
+	}
+	fmt.Println("\n  Signature verification skipped (no --key/--trust-list and issuer metadata resolution unavailable)")
 }
 
 // printHAIPFindings reports profile findings without failing the command.

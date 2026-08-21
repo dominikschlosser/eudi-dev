@@ -32,7 +32,6 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -42,27 +41,27 @@ import (
 func parityWallets(t *testing.T, seed func(*wallet.Wallet)) (local walletService, remoteSvc walletService) {
 	t.Helper()
 
-	newWallet := func() *wallet.Wallet {
-		holder, err := mock.GenerateKey()
+	// The wallet comes out of its own store, so the holder key on disk is the
+	// one the credentials are bound to. A wallet built from ad-hoc keys and
+	// only saved as wallet.json would be reloaded by withFreshStore with a
+	// freshly generated holder key, and every seeded credential would come
+	// back bound to a key the reloaded wallet no longer holds.
+	newWallet := func(store *wallet.WalletStore) *wallet.Wallet {
+		w, err := store.LoadOrCreate()
 		if err != nil {
 			t.Fatal(err)
 		}
-		issuer, err := mock.GenerateKey()
-		if err != nil {
-			t.Fatal(err)
-		}
-		w := wallet.New(holder, issuer, false)
 		w.AutoAccept = true
 		w.TemplatesDir = t.TempDir()
 		seed(w)
+		if err := store.Save(w); err != nil {
+			t.Fatal(err)
+		}
 		return w
 	}
 
-	served := newWallet()
 	servedStore := wallet.NewWalletStore(t.TempDir())
-	if err := servedStore.Save(served); err != nil {
-		t.Fatal(err)
-	}
+	served := newWallet(servedStore)
 	// A store without a save hook is a trap: withFreshStore reloads from the
 	// store on every request while triggerSave only calls onSave, so writes
 	// would be dropped by the next reload.
@@ -78,11 +77,8 @@ func parityWallets(t *testing.T, seed func(*wallet.Wallet)) (local walletService
 		t.Fatalf("starting the wallet server: %v", err)
 	}
 
-	stored := newWallet()
 	store := wallet.NewWalletStore(t.TempDir())
-	if err := store.Save(stored); err != nil {
-		t.Fatal(err)
-	}
+	stored := newWallet(store)
 
 	localSvc := &localWallet{load: func() (*wallet.Wallet, *wallet.WalletStore, error) {
 		return stored, store, nil

@@ -286,6 +286,7 @@ func walletImportCmd() *cobra.Command {
 			}
 			claims, _ := imported["claims"].(map[string]any)
 			fmt.Printf("Imported %s credential (%s) with %d claims\n", docString(imported, "format"), docCredLabel(imported), len(claims))
+			warnAboutCredential(imported)
 			return nil
 		},
 	}

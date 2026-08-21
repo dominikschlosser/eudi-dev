@@ -178,7 +178,7 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 		}
 
 		// The refusal the server sent, whole. Its own error field is the HTTP
-		// status text, so without the body the entry says only "Bad Request".
+		// status text, and the reason is in a message member next to it.
 		var response *LogEntry
 		for i := range entries {
 			if entries[i].Action == "issuance" && strings.HasPrefix(entries[i].Detail, "Token response from") {
@@ -195,9 +195,12 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 		if !strings.Contains(body, "Invalid grant_type") {
 			t.Errorf("response_body does not carry the server's reason: %q", body)
 		}
-		// The headline stays the refusal itself, so the entry fits on a line.
-		if msg, _ := response.Details["error"].(string); msg != "Bad Request" {
-			t.Errorf("error = %q, want the refusal code alone", msg)
+		// The headline carries the code and the sentence that explains it, the
+		// way an error_description would be read, and the rest of the body
+		// stays in the details. "Bad Request" alone names nothing.
+		msg, _ := response.Details["error"].(string)
+		if !strings.HasPrefix(msg, "Bad Request: ") || !strings.Contains(msg, "Invalid grant_type") {
+			t.Errorf("error = %q, want the refusal code and the server's reason", msg)
 		}
 	})
 

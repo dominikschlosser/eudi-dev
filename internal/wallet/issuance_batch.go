@@ -18,13 +18,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
-
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 )
 
 // batchProofKeyCount is the number of proofs the wallet sends when the issuer
@@ -160,103 +155,4 @@ func credentialStringsFromResponse(resp map[string]any) []string {
 		}
 	}
 	return out
-}
-
-// credentialBindsToKey reports whether the credential's holder binding key
-// equals the given public key. Supports SD-JWT (cnf.jwk) and mdoc (MSO
-// deviceKey).
-func credentialBindsToKey(raw string, pub *ecdsa.PublicKey) bool {
-	raw = strings.TrimSpace(raw)
-	if strings.Contains(raw, "~") || strings.Count(raw, ".") == 2 {
-		return sdJWTBindsToKey(raw, pub)
-	}
-	if format.Detect(raw) == format.FormatMDOC {
-		return mdocBindsToKey(raw, pub)
-	}
-	return false
-}
-
-func sdJWTBindsToKey(raw string, pub *ecdsa.PublicKey) bool {
-	jwtPart := raw
-	if idx := strings.Index(raw, "~"); idx >= 0 {
-		jwtPart = raw[:idx]
-	}
-	parts := strings.Split(jwtPart, ".")
-	if len(parts) != 3 {
-		return false
-	}
-	payloadJSON, err := format.DecodeBase64URL(parts[1])
-	if err != nil {
-		return false
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
-		return false
-	}
-	cnf, ok := payload["cnf"].(map[string]any)
-	if !ok {
-		return false
-	}
-	jwk, ok := cnf["jwk"].(map[string]any)
-	if !ok {
-		return false
-	}
-	x, _ := jwk["x"].(string)
-	y, _ := jwk["y"].(string)
-	if x == "" || y == "" {
-		return false
-	}
-	xBytes, err := format.DecodeBase64URL(x)
-	if err != nil {
-		return false
-	}
-	yBytes, err := format.DecodeBase64URL(y)
-	if err != nil {
-		return false
-	}
-	return coordinateEquals(xBytes, pub.X.Bytes()) && coordinateEquals(yBytes, pub.Y.Bytes())
-}
-
-func mdocBindsToKey(raw string, pub *ecdsa.PublicKey) bool {
-	doc, err := mdoc.Parse(raw)
-	if err != nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
-		return false
-	}
-	deviceKey, ok := doc.IssuerAuth.MSO.DeviceKeyInfo["deviceKey"].(map[string]any)
-	if !ok {
-		return false
-	}
-	// COSE_Key labels: -2 = x coordinate, -3 = y coordinate
-	xBytes, ok := deviceKey["-2"].([]byte)
-	if !ok {
-		return false
-	}
-	yBytes, ok := deviceKey["-3"].([]byte)
-	if !ok {
-		return false
-	}
-	return coordinateEquals(xBytes, pub.X.Bytes()) && coordinateEquals(yBytes, pub.Y.Bytes())
-}
-
-// coordinateEquals compares two elliptic curve coordinates, tolerating
-// differences in leading-zero padding.
-func coordinateEquals(a, b []byte) bool {
-	a = trimLeadingZeros(a)
-	b = trimLeadingZeros(b)
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func trimLeadingZeros(b []byte) []byte {
-	for len(b) > 0 && b[0] == 0 {
-		b = b[1:]
-	}
-	return b
 }

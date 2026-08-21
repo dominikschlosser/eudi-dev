@@ -25,11 +25,34 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"strings"
 
 	josev4 "github.com/go-jose/go-jose/v4"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
+
+// DIDReference returns the first of the given key identifiers that is a DID,
+// or the empty string when none of them is. Nothing in this toolkit resolves
+// one: HAIP 1.0 §6.1.1 has an issuer's signing certificate and its trust chain
+// travel in the x5c header, SD-JWT VC resolves iss over HTTPS, and the EUDI
+// ecosystem builds on both. A key named only by a DID is therefore a key no
+// signature check here can find, which is worth saying rather than reporting
+// as a key that happens to be missing.
+//
+// Recognising such a mechanism without implementing it is the rule of
+// [ADR-0013].
+//
+// [ADR-0013]: docs/adr/0013-only-the-eudi-stack-is-supported.md
+func DIDReference(identifiers ...string) string {
+	for _, identifier := range identifiers {
+		trimmed := strings.TrimSpace(identifier)
+		if strings.HasPrefix(trimmed, "did:") {
+			return trimmed
+		}
+	}
+	return ""
+}
 
 // LoadPublicKey loads a public key from a PEM file or JWK JSON file.
 func LoadPublicKey(path string) (crypto.PublicKey, error) {

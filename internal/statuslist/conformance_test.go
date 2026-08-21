@@ -169,6 +169,35 @@ func TestCheck_RejectsTokenWithNoResolvableKey(t *testing.T) {
 	}
 }
 
+// A Status Provider naming its key by a DID is named as doing so. Section
+// 11.3 leaves key resolution to the ecosystem, and this one resolves a Status
+// Issuer through x5c, so the reason nothing verifies is the identifier rather
+// than a key that went missing.
+func TestCheck_NamesADIDItCannotResolve(t *testing.T) {
+	key := mustGenerateKey(t)
+	const did = "did:key:z6MkuR4XP7DmHiEzKK46ypK2RyZ3XgqQCz1DHw7XtMg3CEuf"
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := handcraftedToken(t, key, map[string]any{"kid": did, "jwk": nil}, map[string]any{
+			"sub":         srv.URL,
+			"iat":         time.Now().Unix(),
+			"exp":         time.Now().Add(time.Hour).Unix(),
+			"status_list": map[string]any{"bits": 1, "lst": zlibLST(t, make([]byte, 16))},
+		})
+		w.Header().Set("Content-Type", MediaTypeJWT)
+		_, _ = w.Write([]byte(token))
+	}))
+	defer srv.Close()
+
+	_, err := Check(&StatusRef{URI: srv.URL, Idx: 0})
+	if err == nil {
+		t.Fatal("a status list token naming its key by a DID was accepted")
+	}
+	if !strings.Contains(err.Error(), did) {
+		t.Errorf("error = %v, want it to name the DID %s", err, did)
+	}
+}
+
 // A verified signature that was not anchored anywhere is reported as such, so
 // a caller can tell a self-asserted list from a trusted one.
 func TestCheck_ReportsAnUnanchoredKeyAsAWarning(t *testing.T) {

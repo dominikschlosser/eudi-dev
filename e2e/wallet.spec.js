@@ -1051,3 +1051,57 @@ test.describe("Auto-accept toggle", () => {
     expect(config.auto_accept).toBe(false);
   });
 });
+
+test.describe("A credential bound to a key the wallet does not hold", () => {
+  // The wallet signs key binding with its own holder key (RFC 9901 §4.3 for
+  // SD-JWT, ISO 18013-5 §9.1.3 for mdoc), so a credential issued to another
+  // wallet is stored and readable but can never be presented. The card says so
+  // before somebody picks it for a verifier.
+  test("is marked on its card and in its summary", async ({ page }) => {
+    const crypto = require("crypto");
+    const b64 = (obj) =>
+      Buffer.from(JSON.stringify(obj)).toString("base64url");
+    const coordinate = () => crypto.randomBytes(32).toString("base64url");
+    const foreign =
+      b64({ alg: "ES256", typ: "dc+sd-jwt" }) +
+      "." +
+      b64({
+        iss: "https://foreign-issuer.example",
+        vct: "urn:test:foreign-key:1",
+        cnf: { jwk: { kty: "EC", crv: "P-256", x: coordinate(), y: coordinate() } },
+      }) +
+      "." +
+      crypto.randomBytes(64).toString("base64url") +
+      "~";
+
+    // The endpoint takes the credential string as the body, not as JSON.
+    const res = await fetch(`${WALLET_URL}/api/credentials`, {
+      method: "POST",
+      body: foreign,
+    });
+    expect(res.status).toBe(201);
+    const imported = await res.json();
+    expect(imported.key_binding_not_held).toBe(true);
+
+    await page.goto(WALLET_URL);
+    const card = page.locator(
+      `.credential-card[data-credential-id='${imported.id}']`
+    );
+    await expect(card.locator(".status-unheld-key")).toHaveText("No holder key", {
+      timeout: 5000,
+    });
+    await expect(card.locator(".status-unheld-key")).toHaveAttribute(
+      "title",
+      /does not hold/
+    );
+
+    // The wallet's own PID carries no such badge, so the marking says
+    // something rather than decorating every card.
+    const own = page.locator(".credential-card[data-format='mdoc']").first();
+    await expect(own.locator(".status-unheld-key")).toHaveCount(0);
+
+    await fetch(`${WALLET_URL}/api/credentials/${imported.id}`, {
+      method: "DELETE",
+    });
+  });
+});
