@@ -1087,7 +1087,7 @@ test.describe("A credential bound to a key the wallet does not hold", () => {
     const card = page.locator(
       `.credential-card[data-credential-id='${imported.id}']`
     );
-    await expect(card.locator(".status-unheld-key")).toHaveText("No holder key", {
+    await expect(card.locator(".status-unheld-key")).toHaveText("Wrong holder binding", {
       timeout: 5000,
     });
     await expect(card.locator(".status-unheld-key")).toHaveAttribute(

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.25.5] - 2026-08-21
+
+### Fixed
+
+- **The badge on a credential bound to a key this wallet does not hold names the binding as the wrong one.** It read **No holder key**, which describes something else: a credential without holder binding at all (an SD-JWT with no `cnf`, an mdoc whose MSO names no `deviceKey`). Those are presented without key binding, they are not a finding, and they never carried the badge. The badge always meant the opposite (the credential names a holder key, and it is not this wallet's), so it now reads **Wrong holder binding**
+
 ## [1.25.4] - 2026-08-21
 
 ### Added

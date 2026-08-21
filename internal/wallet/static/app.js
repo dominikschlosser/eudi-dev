@@ -400,7 +400,7 @@
     if (cred.key_binding_not_held === true) {
       dataset.keyBinding = 'not-held';
       keyBindingBadge = '<span class="status-badge status-unheld-key" id="' + idPrefix + 'key-binding-' + cred.id +
-        '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">No holder key</span>';
+        '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">Wrong holder binding</span>';
     }
 
     const html = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
