@@ -170,6 +170,7 @@ type validateRequest struct {
 	TrustListURL string `json:"trustListURL"`
 	TrustListRaw string `json:"trustListRaw"`
 	CheckStatus  bool   `json:"checkStatus"`
+	Offline      bool   `json:"offline"`
 }
 
 func handleValidate(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +192,7 @@ func handleValidate(w http.ResponseWriter, r *http.Request) {
 		TrustListURL: req.TrustListURL,
 		TrustListRaw: req.TrustListRaw,
 		CheckStatus:  req.CheckStatus,
+		Offline:      req.Offline,
 	})
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())

@@ -118,6 +118,18 @@ const SourceX5CLeaf = "x5c certificate, chain not validated"
 // metadata. The leaf step keeps validation offline for credentials that
 // carry their issuer certificate.
 func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo) (*sdjwt.VerifyResult, string, error) {
+	return verifyJWTSignature(token, pubKeys, tlCerts, true)
+}
+
+// VerifyJWTSignatureOffline verifies the token signature from what the caller
+// and the token already carry: x5c against a trust list, provided keys, and
+// the embedded leaf certificate. It stops there rather than fetching the
+// issuer metadata, so it answers without waiting on a counterparty.
+func VerifyJWTSignatureOffline(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo) (*sdjwt.VerifyResult, string, error) {
+	return verifyJWTSignature(token, pubKeys, tlCerts, false)
+}
+
+func verifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo, resolveIssuerMetadata bool) (*sdjwt.VerifyResult, string, error) {
 	if token == nil {
 		return nil, "", fmt.Errorf("token is nil")
 	}
@@ -147,13 +159,19 @@ func VerifyJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts 
 	}
 
 	if best != nil {
-		if key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts); err == nil && key != nil {
-			result := sdjwt.Verify(token, key)
-			if result.SignatureValid {
-				return result, source, nil
+		if resolveIssuerMetadata {
+			if key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts); err == nil && key != nil {
+				result := sdjwt.Verify(token, key)
+				if result.SignatureValid {
+					return result, source, nil
+				}
 			}
 		}
 		return best, "provided key", nil
+	}
+
+	if !resolveIssuerMetadata {
+		return nil, "", nil
 	}
 
 	key, source, err := ResolveJWTIssuerMetadataKey(token, tlCerts)

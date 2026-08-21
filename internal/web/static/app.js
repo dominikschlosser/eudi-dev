@@ -17,7 +17,12 @@
   const rawView = document.getElementById("raw-view");
   const EMPTY_OUTPUT_HTML = '<div class="placeholder">Paste a credential to see decoded output</div>';
 
-  let debounceTimer = null;
+  let decodeTimer = null;
+  let decodeDueAt = 0;
+  // Bumped per decode so a slow answer for text that has since changed is
+  // dropped instead of overwriting what is on screen.
+  let decodeSeq = 0;
+  let renderedSeq = -1;
   let lastData = null;
   let lastValidation = null;
   let colorized = false; // true when showing colorized view instead of textarea
@@ -68,6 +73,7 @@
     formatBadge.className = "badge hidden";
     lastData = null;
     lastValidation = null;
+    renderedSeq = -1;
     hideColorized();
   }
 
@@ -306,8 +312,19 @@
     setTimeout(() => toast.classList.remove("show"), 2000);
   }
 
-  // Decode calls /api/validate, which returns the decode result and the checks
-  // (integrity, expiry, status run automatically; signature is skipped without key)
+  function postValidate(body) {
+    return fetch(basePath + "api/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((res) => res.json());
+  }
+
+  // Two passes over the same input. The offline one carries the whole decode
+  // and every check answerable from the credential itself, so the output is on
+  // screen right away. The online one adds what only a lookup at the issuer can
+  // answer (the status list, and an issuer key named by metadata), which is a
+  // round trip to a counterparty that can take seconds.
   function decode() {
     const text = input.value.trim();
     if (!text) {
@@ -315,28 +332,68 @@
       return;
     }
 
-    fetch(basePath + "api/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input: text, checkStatus: true }),
-    })
-      .then((res) => res.json())
+    const seq = ++decodeSeq;
+
+    postValidate({ input: text, offline: true })
       .then((data) => {
+        if (seq !== decodeSeq || renderedSeq === seq) return;
         if (data.error) {
-          showError(data.error);
-          formatBadge.className = "badge hidden";
-          lastData = null;
-          lastValidation = null;
+          showDecodeError(data.error);
+          return;
+        }
+        render(seq, data, { awaitingNetworkChecks: true });
+      })
+      .catch((err) => {
+        if (seq === decodeSeq && renderedSeq !== seq) showError("Request failed: " + err.message);
+      });
+
+    postValidate({ input: text, checkStatus: true })
+      .then((data) => {
+        if (seq !== decodeSeq) return;
+        if (data.error) {
+          showDecodeError(data.error);
           return;
         }
         lastData = data;
         lastValidation = data.validation || null;
-        showResult(data);
-        showColorized();
+        if (renderedSeq === seq) {
+          replaceValidationBanner(data.validation && data.validation.checks, {});
+          return;
+        }
+        render(seq, data, {});
       })
-      .catch((err) => {
-        showError("Request failed: " + err.message);
+      .catch(() => {
+        // The network checks stay unanswered, so the banner falls back to
+        // what the offline pass reported about them.
+        if (seq === decodeSeq && renderedSeq === seq) {
+          replaceValidationBanner(lastValidation && lastValidation.checks, {});
+        }
       });
+  }
+
+  function render(seq, data, opts) {
+    lastData = data;
+    lastValidation = data.validation || null;
+    renderedSeq = seq;
+    showResult(data, opts);
+    showColorized();
+  }
+
+  function showDecodeError(message) {
+    showError(message);
+    formatBadge.className = "badge hidden";
+    lastData = null;
+    lastValidation = null;
+    renderedSeq = -1;
+  }
+
+  // Swaps the banner in place so the rest of the output (and which sections the
+  // reader collapsed) survives the online pass landing.
+  function replaceValidationBanner(checks, opts) {
+    if (!checks) return;
+    const existing = outputEl.querySelector(".validity-banner");
+    if (!existing) return;
+    existing.replaceWith(renderValidationBanner(checks, opts));
   }
 
   // Re-validate with a public key or trust list for signature verification
@@ -348,40 +405,46 @@
     if (keyText) body.key = keyText;
     if (trustListURL) body.trustListURL = trustListURL;
 
-    fetch(basePath + "api/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-      .then((res) => res.json())
+    const seq = ++decodeSeq;
+    postValidate(body)
       .then((data) => {
+        if (seq !== decodeSeq) return;
         if (data.error) {
           showToast("Verification error: " + data.error);
           return;
         }
-        lastData = data;
-        lastValidation = data.validation || null;
-        showResult(data);
-        showColorized();
+        render(seq, data, {});
       })
       .catch((err) => {
         showToast("Verification failed: " + err.message);
       });
   }
 
-  function scheduleDecode() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(decode, 300);
+  // Typing waits out a pause. A paste is the whole credential at once, so it
+  // decodes as soon as the value has landed.
+  const TYPING_DECODE_DELAY = 300;
+  const PASTE_DECODE_DELAY = 10;
+
+  // A decode already due sooner than this one stays. A paste raises both the
+  // paste event and an input event, and that pair is one decode.
+  function scheduleDecode(delay) {
+    const dueAt = Date.now() + delay;
+    if (decodeTimer !== null && decodeDueAt <= dueAt) return;
+    clearTimeout(decodeTimer);
+    decodeDueAt = dueAt;
+    decodeTimer = setTimeout(() => {
+      decodeTimer = null;
+      decode();
+    }, delay);
   }
 
   input.addEventListener("input", () => {
     // Update colorized view immediately so it stays in sync while typing
     if (colorized) updateRawView();
-    scheduleDecode();
+    scheduleDecode(TYPING_DECODE_DELAY);
   });
   input.addEventListener("paste", () => {
-    clearTimeout(debounceTimer);
-    setTimeout(decode, 10);
+    scheduleDecode(PASTE_DECODE_DELAY);
   });
 
   function showError(msg) {
@@ -389,7 +452,7 @@
   }
 
   // Render result
-  function showResult(data) {
+  function showResult(data, opts) {
     updateBadge(data.format);
     outputEl.innerHTML = "";
 
@@ -401,7 +464,7 @@
 
     // Validation banner (always from server checks now)
     if (data.validation && data.validation.checks) {
-      outputEl.appendChild(renderValidationBanner(data.validation.checks));
+      outputEl.appendChild(renderValidationBanner(data.validation.checks, opts));
     }
 
     const fmt = data.format;
@@ -473,14 +536,20 @@
     }
   }
 
-  // Validation banner with hover checklist + clickable signature verify popover
-  function renderValidationBanner(checks) {
+  // Validation banner with hover checklist + clickable signature verify popover.
+  // opts.awaitingNetworkChecks means the online pass is still running, so the
+  // checks it owns are shown as in flight rather than as an outcome.
+  function renderValidationBanner(checks, opts) {
     const banner = document.createElement("div");
     banner.className = "validity-banner";
 
+    const awaiting = !!(opts && opts.awaitingNetworkChecks);
+    const isPending = (c) => awaiting && c.needsNetwork === true;
+    const pending = checks.filter(isPending);
+
     const hasFailure = checks.some((c) => c.status === "fail");
     const sigCheck = checks.find((c) => c.name === "signature");
-    const sigSkipped = sigCheck && sigCheck.status === "skipped";
+    const sigSkipped = sigCheck && sigCheck.status === "skipped" && !isPending(sigCheck);
     const nonSkipped = checks.filter((c) => c.status !== "skipped");
     const allNonSkippedPass = nonSkipped.length > 0 && nonSkipped.every((c) => c.status === "pass");
 
@@ -489,6 +558,12 @@
       icon = "\u2717";
       label = "Invalid";
       cls = "expired"; // red
+    } else if (pending.length > 0) {
+      // A check still running can still come back revoked, so nothing here
+      // claims a verdict yet.
+      icon = "\u22ef";
+      label = "Checking";
+      cls = "checking";
     } else if (sigSkipped) {
       icon = "\u26A0";
       label = "Unverified";
@@ -511,6 +586,8 @@
     const firstFailed = checks.find((c) => c.status === "fail");
     if (firstFailed) {
       detail = firstFailed.name + ": " + firstFailed.detail;
+    } else if (pending.length > 0) {
+      detail = pending.map((c) => c.name).join(", ") + " at the issuer";
     } else if (nonSkipped.length > 0) {
       detail = "checked " + nonSkipped.map((c) => c.name).join(", ");
     }
@@ -524,15 +601,16 @@
     // Hover checklist
     html += '<div class="validity-checks">';
     checks.forEach((c) => {
-      let cIcon, cCls;
-      if (c.status === "pass") { cIcon = "\u2713"; cCls = "check-pass"; }
+      let cIcon, cCls, cDetail = c.detail;
+      if (isPending(c)) { cIcon = "\u22ef"; cCls = "check-pending"; cDetail = "checking\u2026"; }
+      else if (c.status === "pass") { cIcon = "\u2713"; cCls = "check-pass"; }
       else if (c.status === "fail") { cIcon = "\u2717"; cCls = "check-fail"; }
       else { cIcon = "\u2014"; cCls = "check-skipped"; }
 
       html += '<div class="validity-check-item ' + cCls + '">';
       html += '<span class="check-icon">' + cIcon + "</span>";
       html += '<span class="check-name">' + escapeHtml(c.name) + "</span>";
-      html += '<span class="check-detail">' + escapeHtml(c.detail) + "</span>";
+      html += '<span class="check-detail">' + escapeHtml(cDetail) + "</span>";
       html += "</div>";
     });
 
@@ -1147,9 +1225,22 @@
     return wrap;
   }
 
+  // A claim value can be kilobytes (a portrait is the everyday case). Showing
+  // all of it buries the rest of the section and lays out one line thousands of
+  // pixels wide, so the head of it stands in until asked for the rest.
+  const MAX_INLINE_VALUE_CHARS = 300;
+
   function createEmbeddedValueElement(value, opts) {
     const quoted = !!(opts && opts.quoted);
     const token = quoted ? JSON.stringify(value) : value;
+    const el = createValueToken(value, token, quoted, opts);
+    if (token.length <= MAX_INLINE_VALUE_CHARS) {
+      return el;
+    }
+    return wrapLongValue(el, token, value);
+  }
+
+  function createValueToken(value, token, quoted, opts) {
     const info = detectEmbeddedCredential(value);
     if (!info) {
       const span = document.createElement("span");
@@ -1170,6 +1261,53 @@
       navigateToEmbeddedCredential(value);
     });
     return button;
+  }
+
+  function wrapLongValue(el, token, value) {
+    const wrap = document.createElement("span");
+    wrap.className = "long-value";
+
+    const head = token.slice(0, MAX_INLINE_VALUE_CHARS) + "…";
+    el.classList.add("long-value-token");
+    el.textContent = head;
+    wrap.appendChild(el);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "long-value-toggle";
+    const showAll = "Show all " + token.length + " characters";
+    toggle.textContent = showAll;
+    let expanded = false;
+    toggle.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      expanded = !expanded;
+      el.textContent = expanded ? token : head;
+      toggle.textContent = expanded ? "Show less" : showAll;
+    });
+    wrap.appendChild(toggle);
+
+    // An image claim is the one long value a reader can actually read.
+    const image = imageDataURL(value);
+    if (image) {
+      const img = document.createElement("img");
+      img.className = "value-image";
+      img.src = image;
+      img.alt = "";
+      img.loading = "lazy";
+      wrap.appendChild(img);
+    }
+
+    return wrap;
+  }
+
+  // Only base64 data URLs, which is the form a credential carries an image in.
+  const IMAGE_DATA_URL_RE = /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i;
+
+  function imageDataURL(value) {
+    if (typeof value !== "string") return null;
+    const text = value.trim();
+    return IMAGE_DATA_URL_RE.test(text) ? text : null;
   }
 
   function detectEmbeddedCredential(value) {

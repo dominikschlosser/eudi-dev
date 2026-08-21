@@ -30,6 +30,10 @@ type CheckResult struct {
 	Name   string `json:"name"`
 	Status string `json:"status"` // "pass", "fail", "skipped"
 	Detail string `json:"detail"`
+	// NeedsNetwork marks a check that was skipped because it can only be
+	// answered by a lookup at a counterparty. A caller that decodes offline
+	// first and then asks again knows from this which checks are still open.
+	NeedsNetwork bool `json:"needsNetwork,omitempty"`
 }
 
 // CheckSDJWTIntegrity verifies that each disclosure's digest appears in the

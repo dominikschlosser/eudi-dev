@@ -363,8 +363,8 @@ func TestStaticFiles_JS(t *testing.T) {
 		t.Fatalf("expected 200 for app.js, got %d", w.Code)
 	}
 
-	if !strings.Contains(w.Body.String(), "/api/validate") {
-		t.Error("expected app.js to reference /api/validate endpoint")
+	if !strings.Contains(w.Body.String(), "api/validate") {
+		t.Error("expected app.js to reference the api/validate endpoint")
 	}
 }
 
@@ -505,7 +505,7 @@ func TestStaticFiles_JSContainsNewFeatures(t *testing.T) {
 		"digest-truncated",
 		"shortcut-hint",
 		"renderValidationBanner",
-		"/api/validate",
+		"api/validate",
 		"validity-checks",
 		"lastValidation",
 		"verifySignature",

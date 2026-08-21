@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.1] - 2026-08-22
+
+### Fixed
+
+- **The decoder shows a credential without waiting for the issuer.** Decoding ran one request that verified the signature and the revocation status before anything reached the screen, so the output waited on a round trip to whatever host the credential names. A driving licence issued in Thailand took 0.8s to decode from a local server and 2.8s from the public demo, all of it the status list fetch. The decode and every check answerable from the credential itself (type, expiry, integrity, a signature covered by an embedded certificate) now run in their own pass and render right away, typically in 30ms. The status list and an issuer key named by metadata are fetched alongside it, and the banner reads **Checking** with those rows marked until they answer. `POST /api/validate` takes an `offline` flag for that first pass, and a check it leaves open is marked `needsNetwork`
+- **Pasting a credential decodes it once instead of twice.** A paste raises a paste event and an input event, and each scheduled its own decode, so every paste fetched the status list twice and the second answer was what the reader waited for
+- **A claim value of a few kilobytes no longer runs off the side of the output.** A `portrait` claim carries an image as a base64 data URL, and the disclosure and resolved claim lists put all of it on one line (70,000 pixels wide for a 9KB portrait), which pushed the rest of the section out of view. Long values now show their first 300 characters with the rest one click away, and an image claim is shown as a thumbnail
+
 ## [1.26.0] - 2026-08-21
 
 ### Added

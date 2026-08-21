@@ -397,6 +397,39 @@ textarea.colorized::placeholder {
 .disclosure-value,
 .claim-value {
   color: var(--green);
+  /* A base64 image is one token thousands of characters long, and without
+     this the line it sits on is as wide as the value. */
+  overflow-wrap: anywhere;
+}
+
+.long-value {
+  display: inline;
+}
+
+.long-value-token {
+  overflow-wrap: anywhere;
+}
+
+.long-value-toggle {
+  appearance: none;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  margin-left: 6px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.value-image {
+  display: block;
+  margin-top: 6px;
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 
 .disclosure-meta {
@@ -430,6 +463,12 @@ textarea.colorized::placeholder {
 .validity-banner.expired {
   background: rgba(247, 118, 142, 0.12);
   color: var(--red);
+}
+
+/* Checks that only the issuer can answer are still in flight */
+.validity-banner.checking {
+  background: var(--bg-surface);
+  color: var(--text-dim);
 }
 
 .validity-banner.not-yet-valid {
@@ -805,6 +844,10 @@ textarea.colorized::placeholder {
 
 .check-skipped .check-icon {
   color: var(--text-dim);
+}
+
+.check-pending .check-icon {
+  color: var(--cyan);
 }
 
 .check-name {

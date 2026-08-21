@@ -36,6 +36,11 @@ type ValidateOpts struct {
 	TrustListURL string
 	TrustListRaw string
 	CheckStatus  bool
+	// Offline runs only the checks that need no lookup at a counterparty.
+	// The status list fetch and the issuer metadata fetch are reported as
+	// skipped and marked NeedsNetwork instead, which is what lets the decoder
+	// show a credential before those answers are in.
+	Offline bool
 }
 
 // Validate decodes a credential and runs validation checks.
@@ -243,6 +248,10 @@ func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 		}
 	}
 
+	if opts.Offline {
+		return offlineSDJWTSignature(token, pubKeys, tlCerts, opts)
+	}
+
 	result, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts)
 	if err != nil {
 		if len(pubKeys) == 0 && len(tlCerts) == 0 {
@@ -298,6 +307,74 @@ func checkSDJWTSignature(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 			Name:   "signature",
 			Status: "pass",
 			Detail: fmt.Sprintf("Valid (%s)", result.Algorithm),
+		}
+	}
+	detail := "Signature verification failed"
+	if source != "" {
+		detail = fmt.Sprintf("Signature verification failed via %s", source)
+	}
+	return CheckResult{
+		Name:   "signature",
+		Status: "fail",
+		Detail: detail,
+	}
+}
+
+// offlineSDJWTSignature verifies what the token and the caller already carry.
+// A signature that only the issuer metadata endpoint can answer for is
+// reported as still open rather than waited on.
+func offlineSDJWTSignature(token *sdjwt.Token, pubKeys []crypto.PublicKey, tlCerts []trustlist.CertInfo, opts ValidateOpts) CheckResult {
+	result, source, err := validate.VerifyJWTSignatureOffline(token, pubKeys, tlCerts)
+	if err != nil {
+		return CheckResult{
+			Name:   "signature",
+			Status: "fail",
+			Detail: err.Error(),
+		}
+	}
+	if result == nil && len(pubKeys) == 0 && len(tlCerts) == 0 {
+		if localResult, localSource := verifyWithLocalWalletIssuerKey(token); localResult != nil {
+			result = localResult
+			source = localSource
+		}
+	}
+	if result == nil {
+		if validate.CanResolveJWTIssuerMetadata(token) || opts.TrustListURL != "" {
+			return CheckResult{
+				Name:         "signature",
+				Status:       "skipped",
+				Detail:       "Needs an issuer key that is only reachable over the network",
+				NeedsNetwork: true,
+			}
+		}
+		return CheckResult{
+			Name:   "signature",
+			Status: "skipped",
+			Detail: "No key provided",
+		}
+	}
+	if result.SignatureValid {
+		if source != "" {
+			return CheckResult{
+				Name:   "signature",
+				Status: "pass",
+				Detail: fmt.Sprintf("Valid (%s, via %s)", result.Algorithm, source),
+			}
+		}
+		return CheckResult{
+			Name:   "signature",
+			Status: "pass",
+			Detail: fmt.Sprintf("Valid (%s)", result.Algorithm),
+		}
+	}
+	// A key that is here and does not match is an answer, unless the issuer
+	// metadata holds another one that the online pass still has to try.
+	if validate.CanResolveJWTIssuerMetadata(token) {
+		return CheckResult{
+			Name:         "signature",
+			Status:       "skipped",
+			Detail:       "Needs an issuer key that is only reachable over the network",
+			NeedsNetwork: true,
 		}
 	}
 	detail := "Signature verification failed"
@@ -397,15 +474,11 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 }
 
 func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) CheckResult {
-	if !opts.CheckStatus {
-		return CheckResult{
-			Name:   "status",
-			Status: "skipped",
-			Detail: "Not requested",
-		}
+	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
+	if skip, ok := statusCheckNotRun(ref, opts); ok {
+		return skip
 	}
 
-	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
 	_, tlCerts, err := resolveKeys(opts)
 	if err != nil {
 		return CheckResult{
@@ -418,14 +491,6 @@ func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) CheckResult {
 }
 
 func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) CheckResult {
-	if !opts.CheckStatus {
-		return CheckResult{
-			Name:   "status",
-			Status: "skipped",
-			Detail: "Not requested",
-		}
-	}
-
 	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.Status == nil {
 		return CheckResult{
 			Name:   "status",
@@ -437,6 +502,10 @@ func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 	// ExtractStatusRef expects {"status": {"status_list": ...}} but MSO.Status
 	// is already the inner status object. Wrap it so the lookup works.
 	ref := statuslist.ExtractStatusRef(map[string]any{"status": doc.IssuerAuth.MSO.Status})
+	if skip, ok := statusCheckNotRun(ref, opts); ok {
+		return skip
+	}
+
 	_, tlCerts, err := resolveKeys(opts)
 	if err != nil {
 		return CheckResult{
@@ -446,6 +515,36 @@ func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 		}
 	}
 	return checkStatusRef(ref, tlCerts)
+}
+
+// statusCheckNotRun reports the outcome for a status check that never gets to
+// the status list itself. A credential without a reference has a final answer
+// already. One with a reference is only answerable by fetching the list, so an
+// offline pass leaves it open.
+func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResult, bool) {
+	if ref == nil {
+		return CheckResult{
+			Name:   "status",
+			Status: "skipped",
+			Detail: "No status list reference in credential",
+		}, true
+	}
+	if opts.Offline {
+		return CheckResult{
+			Name:         "status",
+			Status:       "skipped",
+			Detail:       "Needs the status list, which is fetched from the issuer",
+			NeedsNetwork: true,
+		}, true
+	}
+	if !opts.CheckStatus {
+		return CheckResult{
+			Name:   "status",
+			Status: "skipped",
+			Detail: "Not requested",
+		}, true
+	}
+	return CheckResult{}, false
 }
 
 func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) CheckResult {
@@ -528,7 +627,7 @@ func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, e
 		}
 	}
 
-	if opts.TrustListURL != "" {
+	if opts.TrustListURL != "" && !opts.Offline {
 		// The URL comes from the HTTP request body. ReadRemoteInput never
 		// touches the server's filesystem.
 		tlRaw, err := format.ReadRemoteInput(opts.TrustListURL)

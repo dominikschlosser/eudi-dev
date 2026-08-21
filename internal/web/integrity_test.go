@@ -930,7 +930,15 @@ func TestValidate_SDJWTExpiryExpired(t *testing.T) {
 
 func TestValidate_SDJWTStatusSkippedNotRequested(t *testing.T) {
 	token := &sdjwt.Token{
-		ResolvedClaims: map[string]any{"sub": "user"},
+		ResolvedClaims: map[string]any{
+			"sub": "user",
+			"status": map[string]any{
+				"status_list": map[string]any{
+					"idx": float64(7),
+					"uri": "https://issuer.example/status-list/1",
+				},
+			},
+		},
 	}
 
 	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: false})

@@ -591,3 +591,144 @@ test.describe("Timestamp hover", () => {
     expect(await claimTs.getAttribute("title")).toContain("2099");
   });
 });
+
+// A 48x64 JPEG, the size range a portrait claim actually carries.
+const PORTRAIT_DATA_URL =
+  "data:image/jpeg;base64," +
+  "/9j/2wCEAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYn" +
+  "KSopGR8tMC0oMCUoKSgBBwcHCggKEwoKEygaFhooKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo" +
+  "KCgoKCgoKCgoKCgoKCgoKCgoKCgoKP/AABEIAEAAMAMBIgACEQEDEQH/xAGiAAABBQEBAQEBAQAA" +
+  "AAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGh" +
+  "CCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hp" +
+  "anN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV" +
+  "1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+gEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoLEQAC" +
+  "AQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXx" +
+  "FxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqS" +
+  "k5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T1" +
+  "9vf4+fr/2gAMAwEAAhEDEQA/APma3g9q0reDpxT7eD2rSt4OnFNHRg64y3g6cVp28HTin28HTitK" +
+  "3g6cVaPq8HXGW8HTitO3g9qdbwe1advB04q0fV4OuecW8HTitK3g6cU+3g6cVp28HTiskfh+DrjL" +
+  "eDpxWlbwdOKfbwdOK0reD2qkfV4OuNt4PatK3g6cU+3g6cVpW8HTirR9Xg655zbwdOK0reDpxT7e" +
+  "DpxWlbwdOKyR+H4OuMt4OnFadvB7U63g6cVp28HtVo+rwdcZbwdOK0reDpxT7eDpxWnbwdOKpH1e" +
+  "DrnnFvB04rSt4OnFPt4OnFadvB04rJH4fg64y3g9q0reDpxT7eD2rSt4OnFWj6vB1xtvB04rSt4O" +
+  "nFPt4OnFaVvB04q0fV4Ouf/Z";
+
+test.describe("Long claim values", () => {
+  test("a portrait shows as a thumbnail with the value behind a toggle", async ({
+    page,
+  }) => {
+    const sdjwt = makeSDJWT(
+      { iss: "https://issuer.example", _sd_alg: "sha-256", exp: 4102444799 },
+      [["salt1", "portrait", PORTRAIT_DATA_URL]]
+    );
+    await page.goto("/");
+    await page.locator("#input").fill(sdjwt);
+
+    const value = page.locator("#output .disclosure-value .long-value-token").first();
+    await expect(value).toBeAttached({ timeout: 3000 });
+
+    // The line carries the head of the value, not all of it.
+    const shown = await value.textContent();
+    expect(shown.length).toBeLessThan(PORTRAIT_DATA_URL.length);
+    expect(shown.endsWith("…")).toBe(true);
+
+    // An image claim is readable, so it is shown as one.
+    const thumbnail = page.locator("#output .value-image").first();
+    await expect(thumbnail).toBeVisible();
+    expect(await thumbnail.evaluate((img) => img.naturalWidth)).toBe(48);
+
+    // Without wrapping, one value this long lays out a line wider than the
+    // screen and the whole output pane scrolls sideways.
+    const overflow = await page.evaluate(() => {
+      const out = document.getElementById("output");
+      return out.scrollWidth - out.clientWidth;
+    });
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    const toggle = page.locator("#output .disclosure-value .long-value-toggle").first();
+    await expect(toggle).toContainText("Show all " + PORTRAIT_DATA_URL.length + " characters");
+    await toggle.click();
+    expect(await value.textContent()).toBe(PORTRAIT_DATA_URL);
+    await expect(toggle).toContainText("Show less");
+  });
+});
+
+test.describe("Decoding does not wait on the issuer", () => {
+  test("output renders while the checks that need the network are still running", async ({
+    page,
+  }) => {
+    // A status reference is what gives the online pass something to fetch.
+    // Port 1 answers by refusing, so the check resolves without a wait.
+    const sdjwt = makeSDJWT(
+      {
+        iss: "https://issuer.example",
+        _sd_alg: "sha-256",
+        exp: 4102444799,
+        status: { status_list: { uri: "http://127.0.0.1:1/status-list/1", idx: 0 } },
+      },
+      [["salt1", "given_name", "Erika"]]
+    );
+
+    // Stand in for an issuer that takes its time answering.
+    let releaseOnlinePass;
+    const onlinePassHeld = new Promise((resolve) => {
+      releaseOnlinePass = resolve;
+    });
+    let offlinePasses = 0;
+    let onlinePasses = 0;
+    await page.route("**/api/validate", async (route) => {
+      const body = JSON.parse(route.request().postData());
+      if (body.offline) {
+        offlinePasses++;
+        await route.continue();
+        return;
+      }
+      onlinePasses++;
+      await onlinePassHeld;
+      await route.continue();
+    });
+
+    await page.goto("/");
+    await page.locator("#input").fill(sdjwt);
+
+    // The credential is on screen with the online pass still in flight.
+    await expect(page.locator('#output .section[data-section="payload"]')).toBeVisible({
+      timeout: 3000,
+    });
+    const banner = page.locator("#output .validity-banner");
+    await expect(banner).toHaveClass(/checking/);
+    await expect(banner).toContainText("Checking");
+
+    releaseOnlinePass();
+    await expect(banner).not.toHaveClass(/checking/, { timeout: 10000 });
+    await expect(banner).toContainText("status");
+
+    // One edit is one pass of each kind, and the issuer is asked once.
+    expect(offlinePasses).toBe(1);
+    expect(onlinePasses).toBe(1);
+  });
+
+  test("pasting decodes once instead of twice", async ({ page, context }) => {
+    const sdjwt = makeSDJWT(
+      { iss: "https://issuer.example", _sd_alg: "sha-256", exp: 4102444799 },
+      [["salt1", "given_name", "Erika"]]
+    );
+
+    let onlinePasses = 0;
+    await page.route("**/api/validate", async (route) => {
+      if (!JSON.parse(route.request().postData()).offline) onlinePasses++;
+      await route.continue();
+    });
+
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto("/");
+    await page.evaluate((text) => navigator.clipboard.writeText(text), sdjwt);
+    await page.locator("#input").click();
+    await page.keyboard.press("ControlOrMeta+V");
+
+    await expect(page.locator("#format-badge")).toHaveText("SD-JWT", { timeout: 3000 });
+    // A paste raises a paste event and an input event. Both used to schedule
+    // their own decode, so every paste asked the issuer twice.
+    await page.waitForTimeout(1500);
+    expect(onlinePasses).toBe(1);
+  });
+});
