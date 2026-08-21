@@ -131,8 +131,10 @@ type authRequestState struct {
 func (d *DemoRP) authorizationServerMetadata() map[string]any {
 	issuer := d.issuerID()
 	authMethods := []string{attestationClientAuth, attestationDPoPClientAuth}
+	popMethods := []string{"attestation_pop_jwt", "dpop_combined"}
 	if d.clientAuthMode() == ClientAuthOptional {
 		authMethods = append(authMethods, unauthenticatedClientAuth)
+		popMethods = append(popMethods, "none")
 	}
 	metadata := map[string]any{
 		"issuer":                                           issuer,
@@ -156,8 +158,10 @@ func (d *DemoRP) authorizationServerMetadata() map[string]any {
 		"client_attestation_pop_signing_alg_values_supported": []string{"ES256"},
 		// The proof of possession methods registry of the same document, whose
 		// values name how the client proves the attested key: a dedicated PoP
-		// JWT, or the DPoP proof standing in for one.
-		"client_attestation_pop_methods_supported": []string{"attestation_pop_jwt", "dpop_combined"},
+		// JWT, or the DPoP proof standing in for one. Under optional client
+		// authentication the registry's none entry says what that mode means:
+		// the client MAY omit the attestation.
+		"client_attestation_pop_methods_supported": popMethods,
 	}
 	// Published only at the feature level that has it, so a wallet set to
 	// OpenID4VCI 1.0 sees exactly the document it saw before. The endpoint's
@@ -342,16 +346,9 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 	clientID := r.PostFormValue("client_id")
-	clientAuth, authErr := d.authenticateClient(r, clientID, jkt)
-	if authErr != nil {
-		writeJSON(w, http.StatusUnauthorized, oauthError(authErr.code, authErr.description))
+	clientAuth, ok := d.authenticateTokenClient(w, r, clientID, jkt)
+	if !ok {
 		return
-	}
-	// Said once per token exchange rather than at every authenticated endpoint,
-	// because it is the exchange that produces a credential. Somebody driving
-	// their own wallet through this flow reads it here and in the ticket.
-	if clientAuth.method != unauthenticatedClientAuth && !clientAuth.trusted {
-		log.Printf("[Demo issuer] client attestation from %q accepted on its own certificate, which does not chain to a wallet provider CA this issuer knows", clientAuth.attester)
 	}
 
 	code := r.PostFormValue("code")
@@ -499,6 +496,10 @@ func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken strin
 	if !ok {
 		return "", fmt.Errorf("DPoP proof header has no jwk")
 	}
+	// RFC 9449 §4.3: the jwk header holds the public key, never a private one.
+	if _, holdsPrivate := jwk["d"]; holdsPrivate {
+		return "", fmt.Errorf("DPoP proof jwk carries private key material; it must hold a public key")
+	}
 	key, err := holderKeyFromJWK(jwk)
 	if err != nil {
 		return "", fmt.Errorf("parsing DPoP jwk: %w", err)
@@ -555,6 +556,24 @@ type clientAuthError struct {
 	description string
 }
 
+// authenticateTokenClient authenticates one token request and writes the
+// refusal where that fails; the bool says whether to go on. The untrusted
+// attester is logged here, once per token exchange rather than at every
+// authenticated endpoint, because it is the exchange that produces a
+// credential. Somebody driving their own wallet through this flow reads it
+// here and in the ticket.
+func (d *DemoRP) authenticateTokenClient(w http.ResponseWriter, r *http.Request, clientID, jkt string) (clientAuthentication, bool) {
+	clientAuth, authErr := d.authenticateClient(r, clientID, jkt)
+	if authErr != nil {
+		writeJSON(w, http.StatusUnauthorized, oauthError(authErr.code, authErr.description))
+		return clientAuthentication{}, false
+	}
+	if clientAuth.method != unauthenticatedClientAuth && !clientAuth.trusted {
+		log.Printf("[Demo issuer] client attestation from %q accepted on its own certificate, which does not chain to a wallet provider CA this issuer knows", clientAuth.attester)
+	}
+	return clientAuth, true
+}
+
 // attestationFailed reports something wrong with an attestation that was
 // presented, using the invalid_client_attestation of
 // draft-ietf-oauth-attestation-based-client-auth-10 §6.2. A client that
@@ -581,6 +600,14 @@ func attestationFailed(format string, args ...any) *clientAuthError {
 //   - a client that authenticates with nothing is accepted under
 //     ClientAuthOptional, which HAIP forbids and OpenID4VCI permits.
 func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clientAuthentication, *clientAuthError) {
+	// The validation checklist starts with "precisely one" of each header
+	// field, which keeps a second attestation from riding along unverified.
+	if len(r.Header.Values("OAuth-Client-Attestation")) > 1 {
+		return clientAuthentication{}, attestationFailed("precisely one OAuth-Client-Attestation header field is allowed")
+	}
+	if len(r.Header.Values("OAuth-Client-Attestation-PoP")) > 1 {
+		return clientAuthentication{}, attestationFailed("precisely one OAuth-Client-Attestation-PoP header field is allowed")
+	}
 	rawAttestation := strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation"))
 	rawPoP := strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation-PoP"))
 	if rawAttestation == "" {
@@ -603,6 +630,9 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	if typ, _ := attestation.header["typ"].(string); typ != "oauth-client-attestation+jwt" {
 		return clientAuthentication{}, attestationFailed("client attestation has typ %q, expected oauth-client-attestation+jwt", typ)
 	}
+	if alg, _ := attestation.header["alg"].(string); alg != "ES256" {
+		return clientAuthentication{}, attestationFailed("client attestation alg %q is not among the supported algorithms (ES256)", alg)
+	}
 	attester, err := d.attestationSigner(attestation.header)
 	if err != nil {
 		return clientAuthentication{}, attestationFailed("%v", err)
@@ -612,8 +642,14 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	}
 	// §7.1: "If a client_id was provided, verify that it matches the sub claim
 	// of the Client Attestation." The sub claim is REQUIRED, iss is not (it was
-	// removed in draft -08), so the client is identified by sub alone.
-	if sub, _ := attestation.payload["sub"].(string); sub != clientID {
+	// removed in draft -08), so the client is identified by sub alone. The
+	// pre-authorized code grant carries no client_id, and then the sub stands
+	// on its own.
+	sub, _ := attestation.payload["sub"].(string)
+	if sub == "" {
+		return clientAuthentication{}, attestationFailed("client attestation has no sub claim")
+	}
+	if clientID != "" && sub != clientID {
 		return clientAuthentication{}, attestationFailed("client attestation sub %q does not match client_id %q", sub, clientID)
 	}
 	// exp is REQUIRED of the attestation, so this rejects one that omits it.
@@ -625,9 +661,20 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	if cnfJWK == nil {
 		return clientAuthentication{}, attestationFailed("client attestation has no cnf.jwk")
 	}
+	// The checklist requires that the confirmation key is not a private key.
+	if _, holdsPrivate := cnfJWK["d"]; holdsPrivate {
+		return clientAuthentication{}, attestationFailed("client attestation cnf.jwk carries private key material; the confirmation key must be a public key")
+	}
 	clientKey, err := holderKeyFromJWK(cnfJWK)
 	if err != nil {
 		return clientAuthentication{}, attestationFailed("parsing client attestation cnf.jwk: %v", err)
+	}
+	// Tolerant acceptance across the supported drafts: the configured
+	// OpenID4VCI version pins one ABCA draft, and a shape another supported
+	// draft defines is taken with a note in the log.
+	draft := d.abcaDraft()
+	if _, hasISS := attestation.payload["iss"]; draft <= 7 && !hasISS {
+		log.Printf("[Demo issuer] client attestation omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires; accepted, since draft-08 and draft-10 define the shape without it")
 	}
 
 	authenticated := clientAuthentication{
@@ -647,6 +694,9 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 		if jkt != mock.KeyIDForPublicKey(clientKey) {
 			return clientAuthentication{}, attestationFailed("the DPoP proof is signed by a different key than the one the client attestation attests")
 		}
+		if draft < 10 {
+			log.Printf("[Demo issuer] the DPoP proof serves as the attestation's possession proof (dpop_combined), a draft-10 mechanism, while the configured OpenID4VCI version pins draft-0%d; accepted, since draft-10 is always supported alongside the pinned drafts", draft)
+		}
 		return authenticated, nil
 	}
 
@@ -657,26 +707,43 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	if typ, _ := pop.header["typ"].(string); typ != "oauth-client-attestation-pop+jwt" {
 		return clientAuthentication{}, attestationFailed("client attestation PoP has typ %q, expected oauth-client-attestation-pop+jwt", typ)
 	}
+	if alg, _ := pop.header["alg"].(string); alg != "ES256" {
+		return clientAuthentication{}, attestationFailed("client attestation PoP alg %q is not among the supported algorithms (ES256)", alg)
+	}
 	if !verifyES256(clientKey, pop.signingInput, pop.signature) {
 		return clientAuthentication{}, attestationFailed("client attestation PoP is not signed by the attested key")
 	}
 	if aud, _ := pop.payload["aud"].(string); aud != d.issuerID() {
 		return clientAuthentication{}, attestationFailed("client attestation PoP aud %q is not this authorization server", aud)
 	}
-	// jti and iat are REQUIRED of the PoP (§5.1), exp is not, and iss is no
-	// longer among its claims at all. A PoP that carries iss is still held to
-	// naming the client, because a value that disagrees with the client_id says
-	// the proof was made for somebody else.
+	// jti and iat are REQUIRED of the PoP (§5.1), exp is not, and iss left its
+	// claims with draft-08. A PoP that carries iss is still held to naming the
+	// client, because a value that disagrees with the client_id says the proof
+	// was made for somebody else.
 	if jti, _ := pop.payload["jti"].(string); jti == "" {
 		return clientAuthentication{}, attestationFailed("client attestation PoP has no jti claim")
 	}
-	if iss, ok := pop.payload["iss"].(string); ok && iss != clientID {
+	iss, hasPoPISS := pop.payload["iss"].(string)
+	if hasPoPISS && clientID != "" && iss != clientID {
 		return clientAuthentication{}, attestationFailed("client attestation PoP iss %q does not match client_id %q", iss, clientID)
+	}
+	if draft <= 7 && !hasPoPISS {
+		log.Printf("[Demo issuer] client attestation PoP omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires; accepted, since draft-08 and draft-10 define the shape without it")
 	}
 	if err := checkPoPFreshness(pop.payload); err != nil {
 		return clientAuthentication{}, attestationFailed("client attestation PoP: %v", err)
 	}
 	return authenticated, nil
+}
+
+// abcaDraft is the attestation-based client authentication draft the
+// configured OpenID4VCI version pins, which is the shape this server holds
+// attestations to before the tolerant cross-draft acceptance applies.
+func (d *DemoRP) abcaDraft() int {
+	if d.wallet == nil {
+		return wallet.VCIVersion10.ABCADraft()
+	}
+	return d.wallet.VCIFeatureVersion().ABCADraft()
 }
 
 // attestationSigner is the certificate a wallet attestation was signed with,
