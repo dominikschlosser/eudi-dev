@@ -52,7 +52,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		return nil, err
 	}
 	nonce := ""
-	tokenResp, err := postFormWithDPoP(renewal.TokenEndpoint, form, dpopKey, "", &nonce, w.clientAttestationHeaders(renewal.ClientAuth))
+	tokenResp, err := postFormWithDPoP(renewal.TokenEndpoint, form, dpopKey, "", &nonce, w.attestorFor(renewal.ClientAuth))
 	if err != nil {
 		return nil, fmt.Errorf("renewing the access token: %w", err)
 	}

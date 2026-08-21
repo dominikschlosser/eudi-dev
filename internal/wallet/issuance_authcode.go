@@ -79,7 +79,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	clientAuthMethod := detectTokenEndpointAuthMethod(oauthMeta)
 	switch clientAuthMethod {
-	case "", unauthenticatedClientMethod, "private_key_jwt", "attest_jwt_client_auth":
+	case "", unauthenticatedClientMethod, "private_key_jwt", "attest_jwt_client_auth", "attest_jwt_client_auth_dpop":
 	case unregisteredPublicClientMethod:
 		// RFC 8414 takes these values from the IANA registry, where an
 		// unauthenticated client is "none". "public" is not registered.
@@ -91,12 +91,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		// as the client secret the client_secret_* methods sign or send.
 		return nil, fmt.Errorf("unsupported token endpoint auth method %q", clientAuthMethod)
 	}
-	// DPoP where the server advertises it. RFC 9449 leaves the metadata
-	// optional, so a server naming no algorithms issues bearer tokens.
-	var dpopKey *ecdsa.PrivateKey
-	if supportsDPoP(oauthMeta) {
-		dpopKey = w.HolderKey
-	}
+	dpopKey := w.dpopKeyFor(oauthMeta)
 
 	configID := ""
 	if len(offer.CredentialConfigurationIDs) > 0 {
@@ -193,7 +188,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	if requestURI == "" && parEndpoint != "" {
 		w.addProtocolLog("issuance", "par_request", fmt.Sprintf("Request PAR from %s", parEndpoint), true, formRequestLogDetails(parEndpoint, "par", parForm))
-		parResp, err := postFormWithDPoP(parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.clientAttestationHeaders(clientAuth))
+		parResp, err := postFormWithDPoP(parEndpoint, parForm, dpopKey, "", &nonces.authzServer, w.attestorFor(clientAuth))
 		w.addProtocolLog("issuance", "par_response", fmt.Sprintf("PAR response from %s", parEndpoint), err == nil, responseMapLogDetails(parEndpoint, "par", parResp, err))
 		if err != nil {
 			return nil, fmt.Errorf("PAR request: %w", err)
@@ -307,14 +302,14 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
-	// The wallet attestation pair and the DPoP proof travel as headers, so
-	// the log names them next to the form.
-	attestationHeaders := w.clientAttestationHeaders(clientAuth)
+	// The wallet attestation and the DPoP proof travel as headers, so the
+	// log names them next to the form.
+	attestor := w.attestorFor(clientAuth)
 	tokenDetails := formRequestLogDetails(tokenEndpoint, "token", tokenForm)
-	tokenDetails["client_attestation"] = attestationHeaders != nil
+	tokenDetails["client_attestation"] = attestor != nil
 	tokenDetails["dpop"] = dpopKey != nil
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, tokenDetails)
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestationHeaders)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestor)
 	w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), err == nil, responseMapLogDetails(tokenEndpoint, "token", tokenResp, err))
 	if err != nil {
 		return nil, fmt.Errorf("token exchange: %w", err)
@@ -505,6 +500,15 @@ func detectTokenEndpointAuthMethod(oauthMeta map[string]any) string {
 			return method
 		}
 	}
+	// The combined method of draft-10 §5.2, where the DPoP proof is the
+	// possession proof. Taken only where the dedicated-PoP method is not
+	// offered, since the dedicated PoP works without DPoP being negotiated.
+	for _, raw := range methods {
+		method, _ := raw.(string)
+		if method == "attest_jwt_client_auth_dpop" {
+			return method
+		}
+	}
 	for _, raw := range methods {
 		method, _ := raw.(string)
 		if method == "private_key_jwt" {
@@ -567,7 +571,7 @@ func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 		return false
 	}
 	method := detectTokenEndpointAuthMethod(oauthMeta)
-	if w.ForceClientAttestation || method == "attest_jwt_client_auth" {
+	if w.ForceClientAttestation || method == "attest_jwt_client_auth" || method == "attest_jwt_client_auth_dpop" {
 		return true
 	}
 	if !w.RequireHAIP {
@@ -611,7 +615,7 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 				"The issuer's authorization server advertises no token endpoint client authentication method (draft-ietf-oauth-attestation-based-client-auth §10.1 recommends it). Attesting anyway, since HAIP requires client authentication.",
 				map[string]any{"token_endpoint": ctx.tokenEndpoint})
 		}
-		return attestationClientAuth(ctx)
+		return w.attestationClientAuth(ctx)
 	}
 	// The wallet is not attesting. HAIP wanted client authentication but this
 	// issuer advertised only unauthenticated access, so debug proceeds without
@@ -624,34 +628,163 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 	return nil
 }
 
-func attestationClientAuth(ctx clientAuthContext) *ClientAuthentication {
+func (w *Wallet) attestationClientAuth(ctx clientAuthContext) *ClientAuthentication {
 	challengeEndpoint, _ := ctx.oauthMeta["challenge_endpoint"].(string)
-	return &ClientAuthentication{
+	auth := &ClientAuthentication{
 		Method:            ClientAuthAttestation,
 		ClientID:          ctx.clientID,
 		Audience:          oauthIssuer(ctx.oauthMeta, ctx.tokenEndpoint),
 		ChallengeEndpoint: challengeEndpoint,
+		ABCADraft:         w.VCIFeatureVersion().ABCADraft(),
 	}
+	if usesCombinedPoP(ctx.oauthMeta) {
+		auth.CombinedPoP = true
+		if auth.ABCADraft < ABCALatestDraft {
+			w.addProtocolWarning("issuance", "abca_draft_feature",
+				fmt.Sprintf("This authorization server takes the DPoP proof as the attestation's possession proof (dpop_combined), a draft-10 mechanism, while the configured OpenID4VCI version pins attestation-based client authentication draft-0%d. Using it, since the server offers nothing earlier.", auth.ABCADraft),
+				map[string]any{"token_endpoint": ctx.tokenEndpoint})
+		}
+	}
+	return auth
 }
 
-// clientAttestationHeaders builds the wallet attestation a request has to
-// carry, or nil when this authentication needs no headers. The challenge is
-// fetched per request: a server that requires one refuses a stale one.
-func (w *Wallet) clientAttestationHeaders(auth *ClientAuthentication) func() (map[string]string, error) {
+// usesCombinedPoP reports whether the DPoP proof serves as the possession
+// proof for the attestation (draft-10 §5.2): the server offers only the
+// attest_jwt_client_auth_dpop method, or its
+// client_attestation_pop_methods_supported (a draft-10 parameter the earlier
+// drafts' servers omit) names dpop_combined without attestation_pop_jwt.
+func usesCombinedPoP(oauthMeta map[string]any) bool {
+	if detectTokenEndpointAuthMethod(oauthMeta) == "attest_jwt_client_auth_dpop" {
+		return true
+	}
+	values, ok := oauthMeta["client_attestation_pop_methods_supported"].([]any)
+	if !ok {
+		return false
+	}
+	combined, dedicated := false, false
+	for _, raw := range values {
+		switch raw {
+		case "dpop_combined":
+			combined = true
+		case "attestation_pop_jwt":
+			dedicated = true
+		}
+	}
+	return combined && !dedicated
+}
+
+// usesDPoP reports whether requests to this authorization server carry a DPoP
+// proof: it advertises DPoP (RFC 9449 §5.1), or it demands the combined
+// attestation possession proof, whose proof is a DPoP proof (draft-10 §5.2).
+func usesDPoP(oauthMeta map[string]any) bool {
+	return supportsDPoP(oauthMeta) || usesCombinedPoP(oauthMeta)
+}
+
+// dpopKeyFor is the key requests to this authorization server sign their DPoP
+// proofs with, nil where the server neither advertises DPoP nor demands the
+// combined possession proof. RFC 9449 leaves the metadata optional, so a
+// server naming no algorithms and no combined method issues bearer tokens.
+func (w *Wallet) dpopKeyFor(oauthMeta map[string]any) *ecdsa.PrivateKey {
+	if usesDPoP(oauthMeta) {
+		return w.HolderKey
+	}
+	return nil
+}
+
+// attestorFor builds the attestor a request carries its wallet
+// attestation with, or nil when this authentication needs no headers.
+func (w *Wallet) attestorFor(auth *ClientAuthentication) *clientAttestor {
 	if auth == nil || auth.Method != ClientAuthAttestation {
 		return nil
 	}
-	return func() (map[string]string, error) {
-		challenge, err := fetchAttestationChallenge(auth.ChallengeEndpoint)
+	return &clientAttestor{wallet: w, auth: auth}
+}
+
+// clientAttestor puts the wallet attestation on requests and follows the
+// challenge conversation the server may hold across responses: every
+// supported ABCA draft lets a server hand out a fresh challenge in the
+// OAuth-Client-Attestation-Challenge header of any response, and the client
+// MUST carry it in the next PoP.
+type clientAttestor struct {
+	wallet *Wallet
+	auth   *ClientAuthentication
+	// challenge is the server-provided challenge the next PoP carries.
+	challenge string
+}
+
+// headers mints the attestation headers for one request. In combined mode
+// the challenge travels in the DPoP proof (dpopChallenge).
+func (a *clientAttestor) headers() (map[string]string, error) {
+	challenge := ""
+	if !a.auth.CombinedPoP {
+		var err error
+		challenge, err = a.requestChallenge()
 		if err != nil {
-			return nil, fmt.Errorf("fetching client attestation challenge: %w", err)
+			return nil, err
 		}
-		headers, err := createClientAttestationHeaders(w, auth.ClientID, auth.Audience, challenge)
-		if err != nil {
-			return nil, fmt.Errorf("creating client attestation headers: %w", err)
-		}
-		return headers, nil
 	}
+	headers, err := createClientAttestationHeaders(a.wallet, a.auth, challenge)
+	if err != nil {
+		return nil, fmt.Errorf("creating client attestation headers: %w", err)
+	}
+	return headers, nil
+}
+
+// requestChallenge resolves the challenge one request carries: the one the
+// server handed out in a response header, consumed here because challenges
+// are single use, or a fresh one from the challenge endpoint the metadata
+// names. Resolved per request, since a server that requires a challenge
+// refuses a stale one.
+func (a *clientAttestor) requestChallenge() (string, error) {
+	challenge := a.challenge
+	a.challenge = ""
+	if challenge != "" {
+		return challenge, nil
+	}
+	challenge, err := fetchAttestationChallenge(a.auth.ChallengeEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("fetching client attestation challenge: %w", err)
+	}
+	return challenge, nil
+}
+
+// dpopChallenge resolves the challenge the DPoP proof carries in combined
+// mode, where that proof is the attestation's possession proof and the
+// challenge claim lives in it (draft-10 §5.2). Empty with a dedicated PoP,
+// which carries the challenge itself.
+func (a *clientAttestor) dpopChallenge() (string, error) {
+	if !a.auth.CombinedPoP {
+		return "", nil
+	}
+	return a.requestChallenge()
+}
+
+// observe reads the challenge a response hands out for the next PoP.
+func (a *clientAttestor) observe(headers http.Header) {
+	if value := strings.TrimSpace(headers.Get("OAuth-Client-Attestation-Challenge")); value != "" {
+		a.challenge = value
+	}
+}
+
+// retryAfterRefusal reports whether the refusal asks for another attempt with
+// fresh attestation material: use_attestation_challenge arrives together with
+// the challenge the retry has to carry (§6.2 requires the header alongside
+// it), and use_fresh_attestation asks for a newer attestation, which this
+// wallet mints per request anyway.
+func (a *clientAttestor) retryAfterRefusal(body []byte) bool {
+	var parsed struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false
+	}
+	switch parsed.Error {
+	case "use_attestation_challenge":
+		return a.challenge != ""
+	case "use_fresh_attestation":
+		return true
+	}
+	return false
 }
 
 // applyClientAuthentication puts into the form what belongs in the form.
@@ -669,9 +802,17 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 	return nil
 }
 
-func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge string) (map[string]string, error) {
+// createClientAttestationHeaders mints the attestation and, outside combined
+// mode, the PoP that proves possession of the attested key. The shape is
+// version-exact: each JWT carries the claims of the ABCA draft the
+// authentication was resolved under.
+func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
+	}
+	draft := auth.ABCADraft
+	if draft == 0 {
+		draft = w.VCIFeatureVersion().ABCADraft()
 	}
 
 	x5c := buildJWSX5C(w.CertChain)
@@ -685,16 +826,25 @@ func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge str
 		clientAttestationHeader["kid"] = kid
 	}
 	clientAttestationPayload := map[string]any{
-		"iss": w.IssuerURL,
-		"sub": clientID,
+		"sub": auth.ClientID,
 		"iat": time.Now().Unix(),
-		"nbf": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"cnf": map[string]any{"jwk": holderJWK},
+	}
+	if draft <= 7 {
+		// Draft-07 §5.1 requires iss and defines nbf. Draft-08 defines
+		// neither.
+		clientAttestationPayload["iss"] = w.IssuerURL
+		clientAttestationPayload["nbf"] = time.Now().Unix()
 	}
 	clientAttestationJWT, err := signJWT(clientAttestationHeader, clientAttestationPayload, w.IssuerKey)
 	if err != nil {
 		return nil, err
+	}
+	if auth.CombinedPoP {
+		// The DPoP proof on the request is the possession proof (draft-10
+		// §5.2), so the attestation travels alone.
+		return map[string]string{"OAuth-Client-Attestation": clientAttestationJWT}, nil
 	}
 
 	popHeader := map[string]any{
@@ -703,12 +853,13 @@ func createClientAttestationHeaders(w *Wallet, clientID, audience, challenge str
 		"jwk": holderJWK,
 	}
 	popPayload := map[string]any{
-		"iss": clientID,
-		"aud": audience,
+		"aud": auth.Audience,
 		"iat": time.Now().Unix(),
-		"nbf": time.Now().Unix(),
-		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"jti": randomBase64URL(18),
+	}
+	if draft <= 7 {
+		// Draft-07 §5.2 requires the PoP to name the client in iss.
+		popPayload["iss"] = auth.ClientID
 	}
 	if challenge != "" {
 		popPayload["challenge"] = challenge
@@ -864,7 +1015,7 @@ func createClientAssertionJWT(key *ecdsa.PrivateKey, clientID, audience string) 
 	return signJWT(header, payload, key)
 }
 
-func createDPoPProofJWT(key *ecdsa.PrivateKey, method, targetURL, nonce, accessToken string) (string, error) {
+func createDPoPProofJWT(key *ecdsa.PrivateKey, method, targetURL, nonce, accessToken, challenge string) (string, error) {
 	jwk := mock.SigningJWKMap(&key.PublicKey)
 	header := map[string]any{
 		"alg": "ES256",
@@ -879,6 +1030,11 @@ func createDPoPProofJWT(key *ecdsa.PrivateKey, method, targetURL, nonce, accessT
 	}
 	if nonce != "" {
 		payload["nonce"] = nonce
+	}
+	// The attestation challenge of combined-mode attestation-based client
+	// authentication (draft-10 §5.2), where this proof is the possession proof.
+	if challenge != "" {
+		payload["challenge"] = challenge
 	}
 	if accessToken != "" {
 		sum := sha256.Sum256([]byte(accessToken))
@@ -971,9 +1127,9 @@ type serverRefusal struct {
 
 func (e *serverRefusal) Error() string { return e.Message }
 
-func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, accessToken string, nonce *string, extraHeaders func() (map[string]string, error)) (map[string]any, error) {
+func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, accessToken string, nonce *string, attestor *clientAttestor) (map[string]any, error) {
 	body := []byte(form.Encode())
-	respBody, status, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, extraHeaders)
+	respBody, status, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, attestor)
 	if err != nil {
 		// A refusal states its reason in the response, in the two fields
 		// RFC 6749 §5.2 defines for it. Reporting those beats handing the
@@ -1369,12 +1525,17 @@ func credentialAccept(credentialResponseEncryption map[string]any) string {
 
 // doDPoPRequest sends one issuance request, optionally DPoP-bound. A nil key
 // sends no DPoP proof, which is what an issuer that does not advertise
-// dpop_signing_alg_values_supported expects.
-func doDPoPRequest(method, target, contentType, accept string, body []byte, authScheme, token string, key *ecdsa.PrivateKey, nonce *string, extraHeaders func() (map[string]string, error)) ([]byte, int, error) {
+// dpop_signing_alg_values_supported expects. A refusal that comes with the
+// material to do better is answered once: a DPoP nonce (RFC 9449 §8), and an
+// attestation challenge or freshness demand (ABCA §6.2), each with its own
+// retry so one does not spend the other's.
+func doDPoPRequest(method, target, contentType, accept string, body []byte, authScheme, token string, key *ecdsa.PrivateKey, nonce *string, attestor *clientAttestor) ([]byte, int, error) {
 	if accept == "" {
 		accept = "application/json, application/jwt"
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	dpopRetried := false
+	attestationRetried := false
+	for {
 		reqBody := bytes.NewReader(body)
 		req, err := http.NewRequest(method, target, reqBody)
 		if err != nil {
@@ -1387,8 +1548,8 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 		if token != "" && authScheme != "" {
 			req.Header.Set("Authorization", authScheme+" "+token)
 		}
-		if extraHeaders != nil {
-			headers, err := extraHeaders()
+		if attestor != nil {
+			headers, err := attestor.headers()
 			if err != nil {
 				return nil, 0, err
 			}
@@ -1397,7 +1558,15 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 			}
 		}
 		if key != nil {
-			dpopJWT, err := createDPoPProofJWT(key, method, target, derefString(nonce), token)
+			challenge := ""
+			if attestor != nil {
+				var err error
+				challenge, err = attestor.dpopChallenge()
+				if err != nil {
+					return nil, 0, err
+				}
+			}
+			dpopJWT, err := createDPoPProofJWT(key, method, target, derefString(nonce), token, challenge)
 			if err != nil {
 				return nil, 0, fmt.Errorf("creating DPoP proof: %w", err)
 			}
@@ -1414,7 +1583,15 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 			return nil, resp.StatusCode, fmt.Errorf("reading response: %w", readErr)
 		}
 		updateDPoPNonce(nonce, resp.Header)
-		if needsDPoPRetry(resp.StatusCode, resp.Header, respBody) && attempt == 0 {
+		if attestor != nil {
+			attestor.observe(resp.Header)
+		}
+		if needsDPoPRetry(resp.StatusCode, resp.Header, respBody) && !dpopRetried {
+			dpopRetried = true
+			continue
+		}
+		if resp.StatusCode >= 400 && attestor != nil && attestor.retryAfterRefusal(respBody) && !attestationRetried {
+			attestationRetried = true
 			continue
 		}
 		if resp.StatusCode >= 400 {
@@ -1425,7 +1602,6 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 		}
 		return respBody, resp.StatusCode, nil
 	}
-	return nil, 0, fmt.Errorf("DPoP request failed after retry")
 }
 
 func updateDPoPNonce(target *string, headers http.Header) {

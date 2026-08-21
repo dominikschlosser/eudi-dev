@@ -248,7 +248,7 @@ func (w *Wallet) postAuthorizationChallenge(endpoint string, form url.Values, se
 
 	body := []byte(form.Encode())
 	respBody, status, reqErr := doDPoPRequest("POST", endpoint, "application/x-www-form-urlencoded", "", body,
-		"", "", setup.dpopKey, &setup.nonces.authzServer, w.clientAttestationHeaders(setup.clientAuth))
+		"", "", setup.dpopKey, &setup.nonces.authzServer, w.attestorFor(setup.clientAuth))
 
 	var response map[string]any
 	if len(respBody) > 0 {

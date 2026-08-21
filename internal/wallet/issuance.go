@@ -326,10 +326,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	// the authorization code flow (DPoP, attestation-based client
 	// authentication, key attestation), each following its own metadata.
 	nonces := &dpopNonceState{}
-	var dpopKey *ecdsa.PrivateKey
-	if supportsDPoP(oauthMeta) {
-		dpopKey = w.HolderKey
-	}
+	dpopKey := w.dpopKeyFor(oauthMeta)
 	// A pre-authorized offer carries no client_id, and the wallet is not
 	// registered with the issuer. The attestation names the wallet itself, so
 	// its own identifier is the subject.
@@ -355,9 +352,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	if txCode != "" {
 		tokenForm.Set("tx_code", txCode)
 	}
-	// The wallet attestation pair and the DPoP proof travel as headers, so
-	// the log names them next to the form.
-	attestationHeaders := w.clientAttestationHeaders(clientAuth)
+	// The wallet attestation and the DPoP proof travel as headers, so the
+	// log names them next to the form.
+	attestor := w.attestorFor(clientAuth)
 	w.addProtocolLog("issuance", "token_request", fmt.Sprintf("Request token from %s", tokenEndpoint), true, map[string]any{
 		"direction":           "outbound",
 		"method":              "POST",
@@ -366,10 +363,10 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		"grant_type":          preAuthorizedCodeGrant,
 		"pre-authorized_code": offer.Grants.PreAuthorizedCode,
 		"tx_code":             txCode,
-		"client_attestation":  attestationHeaders != nil,
+		"client_attestation":  attestor != nil,
 		"dpop":                dpopKey != nil,
 	})
-	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestationHeaders)
+	tokenResp, err := postFormWithDPoP(tokenEndpoint, tokenForm, dpopKey, "", &nonces.authzServer, attestor)
 	if err != nil {
 		w.addProtocolLog("issuance", "token_response", fmt.Sprintf("Token response from %s", tokenEndpoint), false,
 			responseMapLogDetails(tokenEndpoint, "token", nil, err))

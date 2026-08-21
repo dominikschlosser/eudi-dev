@@ -242,6 +242,16 @@ type ClientAuthentication struct {
 	// server that requires one rejects a stale challenge, so it is fetched
 	// per request rather than stored.
 	ChallengeEndpoint string `json:"challenge_endpoint,omitempty"`
+	// ABCADraft is the attestation-based client authentication draft whose
+	// shape the attestation and PoP carry, resolved from the wallet's
+	// OpenID4VCI version when this authentication was first decided so a
+	// later refresh emits what the issuance did. 0 on records from before
+	// this field, which follow the wallet's current version instead.
+	ABCADraft int `json:"abca_draft,omitempty"`
+	// CombinedPoP says the server takes the DPoP proof as the possession
+	// proof for the attestation (draft-10 §5.2, dpop_combined), so requests
+	// carry the OAuth-Client-Attestation header alone.
+	CombinedPoP bool `json:"combined_pop,omitempty"`
 }
 
 // CanRenew reports whether a credential carries what re-requesting it needs.

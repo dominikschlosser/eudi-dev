@@ -48,3 +48,20 @@ func ParseVCIVersion(raw string) (VCIVersion, error) {
 func (v VCIVersion) UsesInteractiveAuthorization() bool {
 	return v == VCIVersion11
 }
+
+// ABCADraft is the draft of OAuth 2.0 Attestation-Based Client Authentication
+// this OpenID4VCI version pins: 1.0 pins draft-07 (its §14.7 says to keep
+// using the pinned versions in preference to later ones), the 1.1 editor
+// draft pins draft-08.
+func (v VCIVersion) ABCADraft() int {
+	if v == VCIVersion11 {
+		return 8
+	}
+	return 7
+}
+
+// ABCALatestDraft is the newest published ABCA draft this wallet supports on
+// top of the pinned ones. Its additions (the attest_jwt_client_auth_dpop
+// method and the client_attestation_pop_methods_supported metadata) are
+// negotiated through server metadata.
+const ABCALatestDraft = 10

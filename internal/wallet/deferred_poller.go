@@ -446,7 +446,7 @@ func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *e
 	}
 
 	nonce := ""
-	resp, err := postFormWithDPoP(pending.TokenEndpoint, form, dpopKey, "", &nonce, s.wallet.clientAttestationHeaders(pending.ClientAuth))
+	resp, err := postFormWithDPoP(pending.TokenEndpoint, form, dpopKey, "", &nonce, s.wallet.attestorFor(pending.ClientAuth))
 	if err != nil {
 		return pending, err
 	}
