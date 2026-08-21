@@ -127,7 +127,7 @@ func TestIssuerPreAuthFlow(t *testing.T) {
 	preAuthCode := grants["pre-authorized_code"].(string)
 
 	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {preAuthCode}}
-	code, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	code, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), attestedTokenHeaders(t))
 	if code != http.StatusOK {
 		t.Fatalf("token request: %d %v", code, tokenDoc)
 	}
@@ -207,7 +207,7 @@ func TestIssuerRejectsWrongNonce(t *testing.T) {
 	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
 	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
 	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
-	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), attestedTokenHeaders(t))
 
 	proof := signES256(t, holderKey,
 		map[string]any{"alg": "ES256", "typ": "openid4vci-proof+jwt", "jwk": holderJWK(t, holderKey)},
@@ -243,7 +243,7 @@ func TestIssuerChecksTheRequestedCredential(t *testing.T) {
 	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
 	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
 	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
-	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), attestedTokenHeaders(t))
 	accessToken := tokenDoc["access_token"].(string)
 
 	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
@@ -296,7 +296,7 @@ func TestIssuerRejectsTheSingularProofMember(t *testing.T) {
 	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
 	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
 	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
-	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), attestedTokenHeaders(t))
 
 	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
 	proof := signES256(t, holderKey,
@@ -1850,7 +1850,7 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 	_, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
 	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
 	form := url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
-	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), map[string]string{"Content-Type": "application/x-www-form-urlencoded"})
+	_, tokenDoc := doJSON(t, h, "POST", "/token", form.Encode(), attestedTokenHeaders(t))
 
 	_, nonceDoc := doJSON(t, h, "POST", "/nonce", "", nil)
 	proof := signES256(t, holderKey,

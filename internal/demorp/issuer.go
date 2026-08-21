@@ -47,8 +47,8 @@ const (
 //
 // It also records how the wallet authenticated, since this issuer accepts an
 // attester it was never given and such a credential should be distinguishable
-// from one backed by a trusted attestation. The pre-authorized grant
-// authenticates no client at all (§6.1), so the claim is left off there.
+// from one backed by a trusted attestation. Both grants run the same client
+// authentication, so the claim travels on every ticket.
 func ticketClaims(subject string, holder map[string]any, auth *clientAuthentication) map[string]any {
 	claims := map[string]any{
 		"event":       "EUDI Interop Fest",
@@ -82,8 +82,11 @@ func ticketClaims(subject string, holder map[string]any, auth *clientAuthenticat
 type offerState struct {
 	id          string
 	preAuthCode string
-	issuerState string
-	subject     string
+	// preAuthCodeUsed marks the code spent by its exchange, which is the one
+	// that binds the offer to the redeeming client.
+	preAuthCodeUsed bool
+	issuerState     string
+	subject         string
 	// holderClaims are the claims of the credential presented to authorize
 	// this issuance (OpenID4VCI 1.1 §6), empty for every other flow.
 	holderClaims map[string]any
@@ -91,16 +94,15 @@ type offerState struct {
 	// authorizationPresentation or authorizationBrowser.
 	authorization string
 	accessToken   string
-	// jkt is the DPoP key thumbprint the access token is bound to. Empty for
-	// the pre-authorized flow, which uses a bearer token.
+	// jkt is the DPoP key thumbprint the access token is bound to. Empty
+	// for a bearer token.
 	jkt string
 	// withStatus issues the ticket with a reference to the wallet's own status
 	// list, which is what makes the credential revocable and gives the
 	// verifier's revocation check something to resolve.
 	withStatus bool
-	// clientAuth is how the wallet authenticated when it exchanged the code for
-	// this access token. Nil for the pre-authorized code grant, which
-	// authenticates no client.
+	// clientAuth is how the wallet authenticated when it exchanged the code
+	// for this access token. Nil until a token exchange has run.
 	clientAuth *clientAuthentication
 	expires    time.Time
 }
@@ -312,6 +314,23 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// HAIP 1.0 §4.4.1 requires client authentication at the token endpoint,
+	// and the metadata advertises attestation-based methods only, so the
+	// pre-authorized code grant authenticates like the authorization code
+	// grant. A DPoP proof binds the token where the wallet sends one.
+	var jkt string
+	if strings.TrimSpace(r.Header.Get("DPoP")) != "" {
+		var err error
+		jkt, err = d.verifyDPoPProof(r, d.issuerID()+"/token", "")
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
+			return
+		}
+	}
+	clientAuth, ok := d.authenticateTokenClient(w, r, r.PostFormValue("client_id"), jkt)
+	if !ok {
+		return
+	}
 	code := r.PostFormValue("pre-authorized_code")
 
 	d.mu.Lock()
@@ -323,21 +342,30 @@ func (d *DemoRP) handleToken(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	if offer == nil || time.Now().After(offer.expires) {
+	if offer == nil || time.Now().After(offer.expires) || offer.preAuthCodeUsed {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error":             "invalid_grant",
-			"error_description": "unknown or expired pre-authorized code",
+			"error_description": "unknown, used or expired pre-authorized code",
 		})
 		return
 	}
+	// The exchange binds the offer to the redeeming client, so the code is
+	// spent by it, the way an authorization code is (RFC 6749 §4.1.2).
+	offer.preAuthCodeUsed = true
 	offer.accessToken = randToken()
+	offer.jkt = jkt
+	offer.clientAuth = &clientAuth
 	d.tokens[offer.accessToken] = offer
+	tokenType := "Bearer"
+	if jkt != "" {
+		tokenType = "DPoP"
+	}
 	// No c_nonce. OpenID4VCI 1.0 §6.2 lists what a token response may add to
 	// RFC 6749 and defines no such parameter, and this issuer advertises a Nonce
 	// Endpoint (§7), which is where the challenge comes from.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": offer.accessToken,
-		"token_type":   "Bearer",
+		"token_type":   tokenType,
 		"expires_in":   int(entryTTL.Seconds()),
 	})
 }
@@ -384,8 +412,8 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_token"})
 		return
 	}
-	// A token from the authorization code flow is DPoP-bound, so the
-	// credential request has to prove possession of the same key again.
+	// A DPoP-bound token requires the credential request to prove possession
+	// of the same key again.
 	if granted.jkt != "" {
 		presented, err := d.verifyDPoPProof(r, d.issuerID()+"/credential", token)
 		if err != nil {
@@ -665,7 +693,7 @@ type ticketGrant struct {
 	// issuance, empty for a flow that authorized an account instead.
 	holderClaims map[string]any
 	// jkt is the DPoP key the access token is bound to, empty for a bearer
-	// token from the pre-authorized code grant.
+	// token.
 	jkt        string
 	withStatus bool
 	clientAuth *clientAuthentication
@@ -717,9 +745,9 @@ func decodeJSONBody(r *http.Request, target any) error {
 	return dec.Decode(target)
 }
 
-// accessToken reads the access token from the Authorization header. The
-// pre-authorized flow presents a bearer token, the authorization code flow a
-// DPoP-bound one.
+// accessToken reads the access token from the Authorization header. A
+// DPoP-bound token arrives under the DPoP scheme, a bearer token under
+// Bearer.
 func accessToken(r *http.Request) (string, bool) {
 	auth := strings.TrimSpace(r.Header.Get("Authorization"))
 	for _, scheme := range []string{"Bearer ", "DPoP "} {

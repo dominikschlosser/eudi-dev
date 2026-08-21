@@ -17,6 +17,7 @@ package demorp
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,170 @@ func captureLog(t *testing.T, fn func()) string {
 	defer log.SetOutput(old)
 	fn()
 	return buf.String()
+}
+
+// attestedTokenHeaders authenticates a raw token request the way this
+// authorization server requires by default: a client attestation and the PoP
+// proving possession of the attested key.
+func attestedTokenHeaders(t *testing.T) map[string]string {
+	t.Helper()
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	return map[string]string{
+		"Content-Type":                 "application/x-www-form-urlencoded",
+		"OAuth-Client-Attestation":     provider.attest(t, "wallet", clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	}
+}
+
+// preAuthTokenForm fetches a fresh offer and builds the token form redeeming
+// its pre-authorized code.
+func preAuthTokenForm(t *testing.T, d *DemoRP) url.Values {
+	t.Helper()
+	h := d.IssuerHandler()
+	code, offerDoc := doJSON(t, h, "POST", "/api/offers", "", nil)
+	if code != http.StatusCreated {
+		t.Fatalf("creating offer: %d %v", code, offerDoc)
+	}
+	offerURI := offerDoc["offer_uri"].(string)
+	id := offerURI[strings.LastIndex(offerURI, "/")+1:]
+	code, offer := doJSON(t, h, "GET", "/offer/"+id, "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("fetching offer: %d %v", code, offer)
+	}
+	grants := offer["grants"].(map[string]any)[preAuthGrant].(map[string]any)
+	return url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {grants["pre-authorized_code"].(string)}}
+}
+
+// TestPreAuthTokenRequiresClientAuth holds the pre-authorized code exchange to
+// the same rule as the authorization code exchange: the token endpoint
+// advertises attestation-based client authentication as its only methods in
+// required mode, so a token request presenting none is refused, and one
+// presenting an attestation is served.
+func TestPreAuthTokenRequiresClientAuth(t *testing.T) {
+	t.Run("without attestation refused in required mode", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		rec := postForm(t, d.IssuerHandler(), "/token", preAuthTokenForm(t, d))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 (%s)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "invalid_client") {
+			t.Errorf("body = %s, want invalid_client", rec.Body.String())
+		}
+	})
+
+	t.Run("with DPoP the token is bound to the proof key", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		dpopKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating DPoP key: %v", err)
+		}
+		form := preAuthTokenForm(t, d)
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+		for name, value := range attestedTokenHeaders(t) {
+			req.Header.Set(name, value)
+		}
+		req.Header.Set("DPoP", dpopProof(t, dpopKey, "POST", demoIssuerID+"/token"))
+		rec := httptest.NewRecorder()
+		d.IssuerHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+		var token map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &token); err != nil {
+			t.Fatalf("parsing token response: %v", err)
+		}
+		if token["token_type"] != "DPoP" {
+			t.Errorf("token_type = %v, want DPoP for a proof-bound token", token["token_type"])
+		}
+
+		otherKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating second key: %v", err)
+		}
+		accessToken := token["access_token"].(string)
+		credReq := httptest.NewRequest(http.MethodPost, "/credential", strings.NewReader("{}"))
+		credReq.Header.Set("Authorization", "DPoP "+accessToken)
+		credReq.Header.Set("DPoP", dpopProofForToken(t, otherKey, "POST", demoIssuerID+"/credential", accessToken))
+		credRec := httptest.NewRecorder()
+		d.IssuerHandler().ServeHTTP(credRec, credReq)
+		if credRec.Code != http.StatusUnauthorized {
+			t.Fatalf("credential request with another DPoP key: status = %d, want 401 (%s)", credRec.Code, credRec.Body.String())
+		}
+		if !strings.Contains(credRec.Body.String(), "different DPoP key") {
+			t.Errorf("body = %s, want the key mismatch named", credRec.Body.String())
+		}
+	})
+
+	t.Run("a broken attestation is refused in optional mode too", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		d.SetClientAuthMode(ClientAuthOptional)
+		provider := foreignWalletProvider(t)
+		clientKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating client key: %v", err)
+		}
+		otherKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating unattested key: %v", err)
+		}
+		form := preAuthTokenForm(t, d)
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("OAuth-Client-Attestation", provider.attest(t, "wallet", clientKey))
+		req.Header.Set("OAuth-Client-Attestation-PoP", attestationPoP(t, otherKey, demoIssuerID))
+		rec := httptest.NewRecorder()
+		d.IssuerHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 for a PoP signed by an unattested key (%s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("an attestation without sub is refused", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		provider := foreignWalletProvider(t)
+		clientKey, err := mock.GenerateKey()
+		if err != nil {
+			t.Fatalf("generating client key: %v", err)
+		}
+		attestation := signES256(t, provider.key,
+			map[string]any{
+				"alg": "ES256",
+				"typ": "oauth-client-attestation+jwt",
+				"x5c": []any{base64.StdEncoding.EncodeToString(provider.leaf.Raw)},
+			},
+			map[string]any{
+				"iat": time.Now().Unix(),
+				"exp": time.Now().Add(5 * time.Minute).Unix(),
+				"cnf": map[string]any{"jwk": holderJWK(t, clientKey)},
+			},
+		)
+		form := preAuthTokenForm(t, d)
+		req := httptest.NewRequest(http.MethodPost, "/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("OAuth-Client-Attestation", attestation)
+		req.Header.Set("OAuth-Client-Attestation-PoP", attestationPoP(t, clientKey, demoIssuerID))
+		rec := httptest.NewRecorder()
+		d.IssuerHandler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401 for an attestation without sub (%s)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "sub") {
+			t.Errorf("body = %s, want the missing sub named", rec.Body.String())
+		}
+	})
+
+	t.Run("without attestation served in optional mode", func(t *testing.T) {
+		d, _, _ := newDemoRP(t)
+		d.SetClientAuthMode(ClientAuthOptional)
+		rec := postForm(t, d.IssuerHandler(), "/token", preAuthTokenForm(t, d))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 // TestAttestationCnfPrivateKeyRejected enforces the validation rule every
@@ -209,6 +374,36 @@ func TestPoPIssuerMismatchRejected(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "somebody-else") {
 		t.Errorf("body = %s, want the mismatching iss named", rec.Body.String())
 	}
+}
+
+// TestPreAuthCodeSingleUse pins that the exchange spends the code: it binds
+// the offer to the redeeming client, so a second exchange is refused.
+func TestPreAuthCodeSingleUse(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	form := preAuthTokenForm(t, d)
+
+	rec := postFormWithHeaders(t, d.IssuerHandler(), "/token", form, attestedTokenHeaders(t))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first exchange: status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = postFormWithHeaders(t, d.IssuerHandler(), "/token", form, attestedTokenHeaders(t))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("second exchange: status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_grant") {
+		t.Errorf("body = %s, want invalid_grant", rec.Body.String())
+	}
+}
+
+func postFormWithHeaders(t *testing.T, h http.Handler, target string, form url.Values, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }
 
 // TestCrossDraftShapeWarnsButAccepts pins the tolerant acceptance the ADR
