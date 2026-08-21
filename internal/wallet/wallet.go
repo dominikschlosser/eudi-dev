@@ -888,6 +888,18 @@ func (w *Wallet) VCIFeatureVersion() VCIVersion {
 	return w.VCIVersion
 }
 
+// HolderKeyPair returns the wallet's holder key under the read lock. A store
+// reload replaces it while requests are in flight, so a reader takes the
+// pointer once and works from that copy.
+func (w *Wallet) HolderKeyPair() *ecdsa.PrivateKey {
+	if w == nil {
+		return nil
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.HolderKey
+}
+
 // ConformanceSettings returns the three runtime-mutable conformance fields
 // together under the read lock.
 func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {

@@ -146,11 +146,15 @@ func (j confirmationJWK) publicKey() *ecdsa.PublicKey {
 // its issuer bound it to a holder key this wallet does not have, so every key
 // binding signature it could produce would come from the wrong key.
 func (w *Wallet) keyBindingNotHeld(cred *StoredCredential) bool {
-	if w == nil || cred == nil || w.HolderKey == nil {
+	if cred == nil {
+		return false
+	}
+	holder := w.HolderKeyPair()
+	if holder == nil {
 		return false
 	}
 	binding := credentialHolderBinding(cred.Raw)
-	return binding.Bound && !binding.heldBy(&w.HolderKey.PublicKey)
+	return binding.Bound && !binding.heldBy(&holder.PublicKey)
 }
 
 // noteUnheldKeyBinding records that a credential entering the store is bound
@@ -164,7 +168,7 @@ func (w *Wallet) noteUnheldKeyBinding(cred *StoredCredential) {
 	details := map[string]any{
 		"credential_id": cred.ID,
 		"format":        cred.Format,
-		"wallet_key":    mock.KeyIDForPublicKey(&w.HolderKey.PublicKey),
+		"wallet_key":    mock.KeyIDForPublicKey(&w.HolderKeyPair().PublicKey),
 	}
 	addStringDetail(details, "vct", cred.VCT)
 	addStringDetail(details, "doctype", cred.DocType)
