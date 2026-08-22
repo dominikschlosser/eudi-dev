@@ -263,8 +263,8 @@
     const then = new Date(value);
     if (isNaN(then.getTime())) return '';
     const secs = Math.floor((Date.now() - then.getTime()) / 1000);
-    if (secs < 45) return 'just now';
     const mins = Math.floor(secs / 60);
+    if (mins < 1) return 'just now';
     if (mins < 60) return mins + ' min ago';
     const hours = Math.floor(mins / 60);
     if (hours < 24) return hours + ' h ago';
@@ -293,6 +293,10 @@
 
   const GENERIC_FACE_GLYPH = '<span class="face-generic"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2.2"/><circle cx="8" cy="11" r="2"/><path d="M13 10h5M13 13h4M6 15.6h6"/></svg></span>';
 
+  // A lock as an inline SVG so it takes the pill's color (the 🔒 emoji keeps its
+  // own yellow whatever the text color is).
+  const LOCK_SVG = '<svg class="pill-ico" viewBox="0 0 24 24" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0v3z"/></svg>';
+
   function formatLabelFor(cred) {
     return cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mdoc';
   }
@@ -315,9 +319,9 @@
     // Protected credentials are the shared baseline: the server refuses to
     // delete or revoke them, so do not offer buttons that would only 403.
     const protectedBadge = isProtected
-      ? '<span class="status-badge status-protected ico-lock" id="' + idPrefix + 'protected-' + cred.id + '"' +
+      ? '<span class="status-badge status-protected" id="' + idPrefix + 'protected-' + cred.id + '"' +
         ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
-        ' through the UI or the API, only by editing the wallet file.">Protected</span>'
+        ' through the UI or the API, only by editing the wallet file.">' + LOCK_SVG + 'Protected</span>'
       : '';
 
     // Status badge: managed entries show live status, foreign status lists
@@ -327,10 +331,10 @@
     if (st && st.managed) {
       const revoked = st.status === 1;
       dataset.status = revoked ? 'revoked' : 'active';
-      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked ico-block' : 'status-active ico-dot') + '" id="' + idPrefix + 'status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
+      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked ico-block' : 'status-active ico-dot') + '" id="' + idPrefix + 'status-' + cred.id + '" title="' + (revoked ? 'The issuer has revoked this credential on its status list' : 'Not revoked on the issuer\'s status list') + ' (' + escHtml(st.uri || '') + ' idx ' + st.idx + ').">' + (revoked ? 'Revoked' : 'Active') + '</span>';
     } else if (st && st.uri) {
       dataset.status = 'external';
-      statusBadge = '<span class="status-badge status-external ico-half" id="' + idPrefix + 'status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External list</span>';
+      statusBadge = '<span class="status-badge status-external ico-half" id="' + idPrefix + 'status-' + cred.id + '" title="Revocation is tracked on a status list this wallet does not manage, so its state is not read here (' + escHtml(st.uri) + ' idx ' + st.idx + ').">External list</span>';
     } else {
       statusBadge = '<span class="status-badge status-none ico-circle" id="' + idPrefix + 'status-' + cred.id + '" title="This credential carries no status list, so revocation cannot be checked.">No status</span>';
     }
@@ -353,12 +357,12 @@
     if (sig && sig.algorithm) {
       if (sig.self_consistent) {
         signatureBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'signature-' + cred.id +
-          '" title="Signature verifies against the key material embedded in the credential (' + escHtml(sig.algorithm) +
-          '). It is not checked against any trust anchor, so this is not proof of who the issuer is.">Signed · ' + escHtml(sig.algorithm) + '</span>';
+          '" title="The signature verifies against the key material the credential carries (its x5c certificate or embedded jwk, ' + escHtml(sig.algorithm) +
+          '). It is not checked against any trust anchor, so it proves the credential is intact, not who the issuer is.">Self-consistent</span>';
       } else {
         const kind = cred.issuer && cred.issuer.kind ? ' · ' + escHtml(cred.issuer.kind.toUpperCase()) : '';
         signatureBadge = '<span class="status-badge status-revoked ico-x" id="' + idPrefix + 'signature-' + cred.id +
-          '" title="The credential carries no key material this wallet can verify the issuer signature against.">not verified' + kind + '</span>';
+          '" title="The credential carries no key material this wallet can verify the signature against offline, so its integrity is unchecked here.">not verified' + kind + '</span>';
       }
     }
 
@@ -1740,11 +1744,6 @@
         loadingCandidates = false;
         if (loaded && consentRequestOpen && consentRequestID === req.id) renderDialog();
       });
-    }
-    function formatBadgeHtml(mc) {
-      const formatClass = mc.format === 'dc+sd-jwt' ? 'format-sdjwt' : mc.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
-      const formatLabel = mc.format === 'dc+sd-jwt' ? 'SD-JWT' : mc.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
-      return '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>';
     }
 
     // The party the request comes from. For a presentation it is the verifier

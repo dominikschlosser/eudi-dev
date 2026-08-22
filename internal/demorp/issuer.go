@@ -217,7 +217,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 							"description":      "A sample event ticket issued by the demo issuer",
 							"locale":           "en-US",
 							"logo":             map[string]any{"uri": issuer + "/logo.svg", "alt_text": "eudi-dev logo"},
-							"background_color": "#3d59a1",
+							"background_color": "#0f766e",
 							"text_color":       "#ffffff",
 						},
 					},

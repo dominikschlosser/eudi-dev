@@ -290,18 +290,6 @@ header h1 {
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
 }
-/* The format pill in a consent candidate keeps its own sizing. */
-.candidate .format-badge {
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.format-sdjwt { background: rgba(122, 162, 247, 0.2); color: var(--accent); }
-.format-jwt { background: rgba(224, 175, 104, 0.2); color: #e0af68; }
-.format-mdoc { background: rgba(158, 206, 106, 0.2); color: var(--green); }
 
 .credential-info { min-width: 0; }
 /* Only in the list does the card body open the decoder. On a consent
@@ -398,15 +386,21 @@ header h1 {
 @container (max-width: 520px) {
   .card-face {
     width: 100%;
-    aspect-ratio: 1.6;
+    aspect-ratio: 1.9;
   }
-  .credential-logo { top: 14px; left: 14px; width: 34px; height: 34px; padding: 4px; }
-  .face-init, .face-generic { font-size: 30px; }
-  .face-name { left: 16px; bottom: 14px; right: 16px; font-size: 20px; }
+  .credential-logo { top: 12px; left: 12px; width: 30px; height: 30px; padding: 4px; }
+  .face-init, .face-generic { font-size: 28px; }
+  .face-name { left: 15px; bottom: 12px; right: 15px; font-size: 19px; }
   .cred-hdr { display: none; }
-  .credential-info { padding: 13px 15px 4px; }
-  .credential-actions { padding: 11px 15px 15px; }
-  .credential-actions .btn { flex: 1; }
+  .credential-info { padding: 13px 15px 6px; }
+  /* Full-width action buttons, sized for touch without eating vertical space. */
+  .credential-actions { padding: 10px 15px 13px; gap: 8px; }
+  .credential-actions .btn {
+    flex: 1;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 8px;
+  }
 }
 
 .credential-actions {
@@ -748,7 +742,6 @@ header h1 {
 .status-protected {
   background: rgba(122, 162, 247, 0.18);
   color: var(--accent);
-  cursor: help;
 }
 
 .status-badge {
@@ -761,6 +754,12 @@ header h1 {
   vertical-align: middle;
   /* A badge is a unit: it wraps to the next line whole. */
   white-space: nowrap;
+}
+
+/* Any badge or chip that carries an explanatory tooltip invites a hover. */
+.status-badge[title],
+.who-chip[title] {
+  cursor: help;
 }
 
 /* In the card's pill row the gap sets the spacing and the pills read as a
@@ -782,7 +781,7 @@ header h1 {
 
 /* Pill icons render as pseudo-elements so the badge text stays the plain word
    (Active, Protected, Signed), which keeps text-based automation matching. */
-.ico-lock::before { content: "🔒 "; }
+.pill-ico { flex: 0 0 auto; }
 .ico-dot::before { content: "● "; }
 .ico-block::before { content: "⊘ "; }
 .ico-half::before { content: "◐ "; }
@@ -810,25 +809,21 @@ header h1 {
 .status-valid {
   background: rgba(125, 125, 125, 0.15);
   color: var(--text-dim);
-  cursor: help;
 }
 
 .status-unheld-key {
   background: rgba(224, 175, 104, 0.2);
   color: var(--yellow);
-  cursor: help;
 }
 
 .status-expiring {
   background: rgba(224, 175, 104, 0.2);
   color: var(--yellow);
-  cursor: help;
 }
 
 .status-expired {
   background: rgba(247, 118, 142, 0.2);
   color: var(--red);
-  cursor: help;
 }
 
 .templates-list {
