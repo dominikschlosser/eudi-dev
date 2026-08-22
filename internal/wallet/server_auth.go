@@ -314,6 +314,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.applyClientAuth(authReq)
 
 	s.wallet.CreateConsentRequest(consentReq)
 	s.triggerUIRequest(consentReq.ID)

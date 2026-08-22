@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
@@ -692,6 +693,147 @@ func TestMarshalConsentRequest_MinimalFields(t *testing.T) {
 	}
 	if _, ok := m["dcql_query"]; ok {
 		t.Error("expected no dcql_query field when nil")
+	}
+}
+
+// signedRequestParams builds authorization request params carrying a request
+// object signed by a certificate whose SAN matches its x509_san_dns client_id,
+// so clientAuthState verifies it as self-consistent. clientName, when set, is
+// placed in client_metadata.
+func signedRequestParams(t *testing.T, dnsName, clientName string) *AuthorizationRequestParams {
+	t.Helper()
+	key, certB64, _ := testCertWithKeyDER([]string{dnsName})
+	header := map[string]any{
+		"alg": "ES256",
+		"typ": "oauth-authz-req+jwt",
+		"x5c": []any{certB64},
+	}
+	payload := map[string]any{
+		"client_id":     "x509_san_dns:" + dnsName,
+		"response_type": "vp_token",
+		"nonce":         "nonce-123",
+	}
+	if clientName != "" {
+		payload["client_metadata"] = map[string]any{"client_name": clientName}
+	}
+	raw, err := signJWT(header, payload, key)
+	if err != nil {
+		t.Fatalf("signJWT: %v", err)
+	}
+	parsedHeader, parsedPayload, _, err := format.ParseJWTParts(raw)
+	if err != nil {
+		t.Fatalf("ParseJWTParts: %v", err)
+	}
+	return &AuthorizationRequestParams{
+		ClientID: "x509_san_dns:" + dnsName,
+		RequestObject: &oid4vc.RequestObjectJWT{
+			Raw:     raw,
+			Header:  parsedHeader,
+			Payload: parsedPayload,
+		},
+	}
+}
+
+func TestMarshalConsentRequest_ClientAuthSigned(t *testing.T) {
+	req := &ConsentRequest{
+		ID:        "req-signed",
+		Type:      ConsentTypePresentation,
+		Status:    "pending",
+		ClientID:  "x509_san_dns:verifier.example",
+		CreatedAt: time.Now(),
+	}
+	req.applyClientAuth(signedRequestParams(t, "verifier.example", ""))
+
+	m := MarshalConsentRequest(req)
+	auth, ok := m["client_auth"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected client_auth object, got %v", m["client_auth"])
+	}
+	if auth["signed"] != true {
+		t.Errorf("expected signed true, got %v", auth["signed"])
+	}
+	if auth["detail"] != "" {
+		t.Errorf("expected empty detail for a verified signature, got %q", auth["detail"])
+	}
+}
+
+func TestMarshalConsentRequest_ClientAuthUnsigned(t *testing.T) {
+	// A presentation with no request object at all is an unsigned request.
+	req := &ConsentRequest{
+		ID:        "req-unsigned",
+		Type:      ConsentTypePresentation,
+		Status:    "pending",
+		ClientID:  "redirect_uri:https://verifier.example/cb",
+		CreatedAt: time.Now(),
+	}
+	req.applyClientAuth(&AuthorizationRequestParams{ClientID: req.ClientID})
+
+	m := MarshalConsentRequest(req)
+	auth, ok := m["client_auth"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected client_auth object, got %v", m["client_auth"])
+	}
+	if auth["signed"] != false {
+		t.Errorf("expected signed false, got %v", auth["signed"])
+	}
+	if auth["detail"] == "" {
+		t.Error("expected a non-empty detail for an unsigned request")
+	}
+}
+
+func TestMarshalConsentRequest_ClientAuthInvalidSignature(t *testing.T) {
+	params := signedRequestParams(t, "verifier.example", "")
+	// Break the signature so verification fails while the request object stays
+	// present and signed (alg ES256).
+	parts := strings.Split(params.RequestObject.Raw, ".")
+	params.RequestObject.Raw = parts[0] + "." + parts[1] + ".AAAA"
+
+	req := &ConsentRequest{
+		ID:        "req-badsig",
+		Type:      ConsentTypePresentation,
+		Status:    "pending",
+		ClientID:  params.ClientID,
+		CreatedAt: time.Now(),
+	}
+	req.applyClientAuth(params)
+
+	auth := MarshalConsentRequest(req)["client_auth"].(map[string]any)
+	if auth["signed"] != false {
+		t.Errorf("expected signed false for a broken signature, got %v", auth["signed"])
+	}
+	if auth["detail"] == "" {
+		t.Error("expected a non-empty detail naming the verification failure")
+	}
+}
+
+func TestMarshalConsentRequest_ClientName(t *testing.T) {
+	req := &ConsentRequest{
+		ID:        "req-name",
+		Type:      ConsentTypePresentation,
+		Status:    "pending",
+		ClientID:  "x509_san_dns:verifier.example",
+		CreatedAt: time.Now(),
+	}
+	req.applyClientAuth(signedRequestParams(t, "verifier.example", "Example Verifier"))
+
+	m := MarshalConsentRequest(req)
+	if m["client_name"] != "Example Verifier" {
+		t.Errorf("expected client_name from client_metadata, got %v", m["client_name"])
+	}
+}
+
+func TestMarshalConsentRequest_IssuanceNoClientAuth(t *testing.T) {
+	req := &ConsentRequest{
+		ID:        "req-issuance",
+		Type:      ConsentTypeIssuance,
+		Status:    "pending",
+		ClientID:  "https://issuer.example",
+		CreatedAt: time.Now(),
+	}
+
+	m := MarshalConsentRequest(req)
+	if _, ok := m["client_auth"]; ok {
+		t.Error("expected no client_auth for a pure issuance request")
 	}
 }
 

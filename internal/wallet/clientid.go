@@ -81,6 +81,55 @@ func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJ
 	return ""
 }
 
+// clientAuthState reports how a verifier's presentation request authenticated
+// itself, for the consent dialog's "who is asking" block. signed is true only
+// when a request object was present and its signature verified against the key
+// material the request itself carries (self-consistent, with no trust anchor).
+// It never means the verifier was checked against a trust list. detail says
+// why the signature could not be verified (or notes that the request was
+// unsigned) and is empty when signed is true. It reuses
+// VerifyRequestObjectSignature, so it makes no network call.
+func clientAuthState(params *AuthorizationRequestParams) (signed bool, detail string) {
+	if params == nil || params.RequestObject == nil {
+		return false, "The request was not a signed request object."
+	}
+	if jsonutil.GetString(params.RequestObject.Header, "alg") == "none" {
+		return false, "The request object is unsigned (alg none)."
+	}
+	if finding := VerifyRequestObjectSignature(params.ClientID, params.RequestObject); finding != "" {
+		return false, finding
+	}
+	return true, ""
+}
+
+// clientMetadataName returns the self-asserted verifier name from a request's
+// client_metadata (client_metadata.client_name), empty when there is none. It
+// resolves the request-object metadata first and the outer request metadata
+// second, the same order the rest of the wallet reads it. The value is
+// unverified.
+func clientMetadataName(params *AuthorizationRequestParams) string {
+	if params == nil {
+		return ""
+	}
+	var reqPayload map[string]any
+	if params.RequestObject != nil {
+		reqPayload = params.RequestObject.Payload
+	}
+	if reqPayload == nil {
+		reqPayload = params.RequestPayload
+	}
+	name, _ := ResolveClientMetadata(reqPayload, params.ClientMetadata)["client_name"].(string)
+	return name
+}
+
+// applyClientAuth records on a presentation consent request how the verifier's
+// request authenticated itself and the verifier's self-asserted name, both
+// read back by MarshalConsentRequest.
+func (r *ConsentRequest) applyClientAuth(params *AuthorizationRequestParams) {
+	r.ClientAuthSigned, r.ClientAuthDetail = clientAuthState(params)
+	r.ClientName = clientMetadataName(params)
+}
+
 // unverifiedSignatureFinding says why a signed Request Object went unverified.
 // Every prefix here resolves its key somewhere this wallet does not go, so the
 // signature establishes nothing, and saying nothing would let a request no one

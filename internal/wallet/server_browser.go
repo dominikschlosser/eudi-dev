@@ -155,6 +155,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.applyClientAuth(authReq)
 
 	reqServer.wallet.CreateConsentRequest(consentReq)
 	reqServer.triggerUIRequest(consentReq.ID)

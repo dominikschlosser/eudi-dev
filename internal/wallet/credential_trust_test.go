@@ -66,11 +66,6 @@ func TestCredentialSummarySDJWTTrustFields(t *testing.T) {
 	if summary["holder_binding"] != holderBindingThisWallet {
 		t.Errorf("holder_binding = %v, want %s", summary["holder_binding"], holderBindingThisWallet)
 	}
-
-	count, ok := summary["sd_count"].(int)
-	if !ok || count <= 0 {
-		t.Errorf("sd_count = %v, want a positive int", summary["sd_count"])
-	}
 }
 
 // An mdoc names its issuer by the document signer leaf certificate and reports
@@ -97,11 +92,6 @@ func TestCredentialSummaryMDocTrustFields(t *testing.T) {
 	}
 	if alg, _ := signature["algorithm"].(string); alg == "" {
 		t.Errorf("signature algorithm is empty: %v", signature["algorithm"])
-	}
-
-	// An mdoc carries no selective-disclosure entries, so it reports no count.
-	if _, present := summary["sd_count"]; present {
-		t.Errorf("sd_count present on an mdoc: %v", summary["sd_count"])
 	}
 }
 

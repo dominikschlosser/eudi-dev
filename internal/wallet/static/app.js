@@ -255,97 +255,6 @@
     loadCredentials();
   });
 
-  // What a credential carries, in the shape the credential has it.
-  //
-  // mdoc elements are keyed "namespace:element", and two credentials can share
-  // a doctype while differing only in the namespaces they use: the German PID
-  // keeps its national elements in eu.europa.ec.eudi.pid.de.1 beside the
-  // eu.europa.ec.eudi.pid.1 elements every PID has. So the extra namespaces are
-  // what the card has to show, and only those: the credential's own namespace
-  // is the doctype in the headline already, and repeating it says nothing.
-  // SD-JWT claims have no namespace and stay a plain list.
-  function claimTagsFor(cred) {
-    const names = Object.keys(cred.claims || {});
-    if (names.length === 0) return '';
-    // Namespaces are an mdoc idea. An SD-JWT or JWT VC claim name may well
-    // contain a colon (https://example.org/claims/role is a claim name), and
-    // reading that as a namespace would split the name in half.
-    if (cred.format !== 'mso_mdoc') return claimTagList(names, 6);
-
-    const groups = new Map();
-    for (const name of names) {
-      const sep = name.indexOf(':');
-      const ns = sep === -1 ? '' : name.slice(0, sep);
-      const element = sep === -1 ? name : name.slice(sep + 1);
-      if (!groups.has(ns)) groups.set(ns, []);
-      groups.get(ns).push(element);
-    }
-    if (groups.size === 1 && groups.has('')) return claimTagList(groups.get(''), 6);
-
-    // Shortest first: a domestic namespace extends the one it is built from
-    // (eu.europa.ec.eudi.pid.1 then eu.europa.ec.eudi.pid.de.1), and reading
-    // them in that order says which is which.
-    const namespaces = [...groups.keys()].sort((a, b) => a.length - b.length || a.localeCompare(b));
-    const base = namespaces.includes(cred.doctype) ? cred.doctype : namespaces[0];
-
-    return namespaces.map(ns => {
-      const elements = groups.get(ns).sort();
-      // The doctype namespace needs no label, the headline is it. Any other
-      // primary one does, because then the elements are not where the doctype
-      // says (an mDL keeps org.iso.18013.5.1.mDL elements in org.iso.18013.5.1).
-      if (ns === base) {
-        const label = ns === cred.doctype ? '' : namespaceChip(ns, ns, elements);
-        return label + claimTagList(elements, namespaces.length > 1 ? 4 : 6);
-      }
-      return namespaceChip(ns, base, elements) + claimTagList(elements, 3);
-    }).join('');
-  }
-
-  // A namespace beside the credential's own, named by what it adds to it:
-  // "+de.1" for eu.europa.ec.eudi.pid.de.1 next to eu.europa.ec.eudi.pid.1.
-  // Spelling it out in full would repeat the base namespace, which is what
-  // made two different credentials look alike in the first place.
-  function namespaceChip(ns, base, elements) {
-    const title = elements.length + (elements.length === 1 ? ' element in ' : ' elements in ') + ns;
-    return '<span class="claim-namespace" title="' + escHtml(title) + '" data-namespace="' + escHtml(ns) + '">' +
-      escHtml(namespaceDelta(ns, base)) + '</span>';
-  }
-
-  // What a namespace adds to the one it is built from, by dotted segment. A
-  // domestic namespace either appends to the full identifier
-  // (org.iso.18013.5.1 -> org.iso.18013.5.1.US) or replaces its version
-  // (eu.europa.ec.eudi.pid.1 -> eu.europa.ec.eudi.pid.de.1), and the segments
-  // they share cover both. Namespaces that only happen to start alike are not
-  // in that relationship, so they keep their full name.
-  function namespaceDelta(ns, base) {
-    if (ns === base) return ns;
-    const parts = ns.split('.');
-    const baseParts = base.split('.');
-    let shared = 0;
-    while (shared < parts.length && shared < baseParts.length && parts[shared] === baseParts[shared]) shared++;
-    if (shared < 2 || shared < baseParts.length - 1) return ns;
-    return '+' + parts.slice(shared).join('.');
-  }
-
-  // Up to max names, then a count of what is left.
-  function claimTagList(names, max) {
-    const shown = names.slice(0, max)
-      .map(name => '<span class="claim-tag">' + escHtml(name) + '</span>').join('');
-    const rest = names.length - Math.min(names.length, max);
-    return shown + (rest > 0 ? '<span class="claim-tag">+' + rest + ' more</span>' : '');
-  }
-
-  // The body of a credential card: the format badge, the type line with its
-  // status, expiry and protected badges, and the claim names with their
-  // namespaces. The credential list and the consent dialog's Edit view both
-  // render candidates with this, so a credential looks the same wherever the
-  // wallet names it. Two mdoc PIDs share a doctype and a format, so the
-  // namespace chip is the one thing on the card that tells them apart.
-  //
-  // idPrefix keeps the badge ids unique, because the credential list stays in
-  // the DOM behind the consent overlay and the same credential can be on
-  // screen twice. withClaims leaves the claim names off, for a caller holding
-  // only part of them, where a subset would read as the whole set.
   // relativeTime turns a timestamp into "3 min ago", the form the card leads
   // with, because how long ago answers the question an absolute date only
   // implies. Returns "" for a missing or unparseable value.
@@ -510,8 +419,7 @@
     }
 
     const claimCount = Object.keys(cred.claims || {}).length;
-    const countMeta = '<span class="cred-meta-item">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') +
-      (cred.sd_count ? ' · ' + cred.sd_count + ' SD' : '') + '</span>';
+    const countMeta = '<span class="cred-meta-item">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') + '</span>';
 
     const bodyHtml = '<div class="credential-info">' +
         '<div class="credential-type cred-hdr">' +
@@ -1574,8 +1482,8 @@
     consentRequestOpen = false;
     consentOverlay.classList.add('active');
 
-    var html = '<div class="consent-title" style="color:var(--danger)">Error</div>' +
-      '<div class="consent-verifier">' + escHtml(message) + '</div>';
+    var html = '<div class="dialog-title" style="color:var(--danger)">Error</div>' +
+      '<div class="dialog-message">' + escHtml(message) + '</div>';
 
     if (detail) {
       html += '<pre class="error-detail">' + escHtml(detail) + '</pre>';
@@ -1623,7 +1531,7 @@
     var titleColor = isSuccess ? 'var(--success, #22c55e)' : 'var(--danger)';
     var titleText = isSuccess ? 'Success' : 'Verifier Error';
 
-    var html = '<div class="consent-title" style="color:' + titleColor + '">' + titleText + ' (HTTP ' + (result.status_code || '?') + ')</div>';
+    var html = '<div class="dialog-title" style="color:' + titleColor + '">' + titleText + ' (HTTP ' + (result.status_code || '?') + ')</div>';
 
     if (result.error) {
       // Try to parse as JSON for pretty display
@@ -1646,6 +1554,42 @@
     });
   }
 
+
+  // An offered credential configuration, as the same card the list and consent
+  // render. It is not issued yet, so it carries no trust state (status, a
+  // signature, holder binding): only the issuer-declared face, the name and
+  // type, an optional description, and the claim names it would carry. The face
+  // is painted by applyCredentialDisplay through the data-config-id hook.
+  function offerCardHtml(cred) {
+    const fmt = cred.format ? formatLabelFor(cred) : '';
+    const typeLabel = cred.vct || cred.doctype || cred.id;
+    const display = cred.display || {};
+    const logoImg = display.logo_uri
+      ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+      : '';
+    const faceBadge = fmt ? '<span class="format-badge format-badge-face">' + fmt + '</span>' : '';
+    const rowBadge = fmt ? '<span class="format-badge format-badge-row">' + fmt + '</span>' : '';
+    const faceName = cred.name || typeLabel;
+    const nameHtml = cred.name
+      ? '<span class="credential-name">' + escHtml(cred.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
+      : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
+    const card = '<div class="credential-card">' +
+        '<div class="card-face">' + faceBadge + logoImg + '<div class="face-name">' + escHtml(faceName) + '</div></div>' +
+        '<div class="credential-info">' +
+          '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
+          (cred.description ? '<div class="offer-description">' + escHtml(cred.description) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    let claims = '';
+    if (cred.claims && cred.claims.length > 0) {
+      claims = '<div class="cl-hd">↗ You will receive<span class="cl-count">' + cred.claims.length +
+          ' claim' + (cred.claims.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="consent-claims offer-claims">' + cred.claims.map(claim =>
+          '<div class="consent-claim"><span class="consent-claim-name mono">' + escHtml(claim) + '</span></div>'
+        ).join('') + '</div>';
+    }
+    return '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' + card + claims + '</div>';
+  }
 
   // What an issuer is offering. Everything except the offer itself comes from
   // the issuer's metadata, which is optional, so each part is rendered only
@@ -1696,36 +1640,7 @@
       return html;
     }
 
-    credentials.forEach(cred => {
-      const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt'
-        : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
-      const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT'
-        : cred.format === 'jwt_vc_json' ? 'JWT VC'
-        : cred.format === 'mso_mdoc' ? 'mDoc' : '';
-      const typeLabel = cred.vct || cred.doctype || cred.id;
-
-      const logoImg = cred.display && cred.display.logo_uri
-        ? '<img class="credential-logo" src="' + escHtml(cred.display.logo_uri) + '" alt="' + escHtml(cred.display.logo_alt_text || '') + '">'
-        : '';
-      html += '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' +
-        '<div class="consent-body">' +
-        '<div class="consent-credential-header">' +
-        (formatLabel ? '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' : '') +
-        logoImg +
-        (cred.name
-          ? '<span class="credential-name">' + escHtml(cred.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
-          : '<span class="credential-name">' + escHtml(typeLabel) + '</span>') +
-        '</div>';
-      if (cred.description) {
-        html += '<div class="offer-description">' + escHtml(cred.description) + '</div>';
-      }
-      if (cred.claims && cred.claims.length > 0) {
-        html += '<div class="consent-claims">' + cred.claims.map(claim =>
-          '<div class="consent-claim"><span class="consent-claim-name">' + escHtml(claim) + '</span></div>'
-        ).join('') + '</div>';
-      }
-      html += '</div></div>';
-    });
+    credentials.forEach(cred => { html += offerCardHtml(cred); });
 
     if (details.metadata_error) {
       html += '<p class="dialog-hint" id="offer-metadata-error">The issuer published no readable metadata, ' +
@@ -1832,12 +1747,45 @@
       return '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>';
     }
 
+    // The party the request comes from. For a presentation it is the verifier
+    // client_id, with the request-object authentication state beside it and the
+    // self-asserted client_name (when any) as the visible name. For an offer it
+    // is the issuer, named by its metadata when the issuer published one. The
+    // authenticated id always sits on the line carrying #offer-issuer-origin.
+    function whoBlock() {
+      let name, cid, chip = '';
+      if (isIssuance) {
+        const d = req.offer_details || {};
+        name = d.issuer_name || '';
+        cid = d.issuer || req.client_id || '';
+      } else {
+        name = req.client_name || '';
+        cid = req.client_id || '';
+        const auth = req.client_auth;
+        if (auth) {
+          chip = auth.signed
+            ? '<span class="who-chip who-ok" title="The request object is signed and the signature verifies against the key material it carries. Self-consistent, not checked against any trust anchor.">✓ Signed</span>'
+            : '<span class="who-chip who-bad" title="' + escHtml(auth.detail || 'The request object is not signed, so the wallet cannot check who sent it. On a shared demo anyone can send a request.') + '">✗ Not authenticated</span>';
+        }
+      }
+      const idLine = '<span class="mono">' + escHtml(cid) + '</span>';
+      let nameHtml, sub;
+      if (name) {
+        nameHtml = '<span class="who-name">' + escHtml(name) + '</span>';
+        sub = '<div class="who-cid" id="offer-issuer-origin">' + idLine + '</div>';
+      } else {
+        nameHtml = '<span class="who-name mono" id="offer-issuer-origin">' + escHtml(cid) + '</span>';
+        sub = '';
+      }
+      return '<div class="who"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div>';
+    }
+
     function headerHtml() {
-      const issuerName = isIssuance && req.offer_details ? req.offer_details.issuer_name : '';
+      // Title text stays "Presentation Request" / "Credential Offer" (the
+      // dialog is scanned for it), rendered as a small kicker above the who
+      // block so the party asking leads.
       let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
-        '<div class="consent-verifier">' + (isIssuance ? 'Issuer: ' : 'Verifier: ') +
-        escHtml(issuerName || req.client_id) + '</div>' +
-        (issuerName ? '<div class="offer-type" id="offer-issuer-origin">' + escHtml(req.client_id) + '</div>' : '');
+        whoBlock();
 
       // The purposes the verifier registered for this data request, read by the
       // wallet from the registration certificates in verifier_info (OpenID4VP
@@ -1851,41 +1799,42 @@
       return html;
     }
 
-    function credentialCardHtml(mc) {
-      const typeLabel = mc.vct || mc.doctype || mc.format;
-      // The issuer-declared name and logo once the credential's full detail
-      // has loaded. It is already in the wallet, so this reads the cached
-      // display rather than fetching anything.
-      const display = (candidateDetails.get(mc.credential_id) || {}).display || {};
-      const logoImg = display.logo_uri
-        ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
-        : '';
-      const nameHtml = display.name
-        ? '<span class="credential-name">' + escHtml(display.name) + '</span>' +
-          '<span class="credential-vct">' + escHtml(typeLabel) + '</span>'
-        : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
-      let html = '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
-        '<div class="consent-body">' +
-        '<div class="consent-credential-header">' +
-          formatBadgeHtml(mc) +
-          logoImg +
-          nameHtml +
-        '</div>' +
-        '<div class="consent-claims">';
-
-      const claims = mc.claims || {};
-      const kept = options ? selection.claims[mc.credential_id] : null;
-      Object.keys(claims).forEach(key => {
+    // The disclosed fields for a credential, as selective-disclosure
+    // checkboxes. Every claim stays uncheckable, including required ones, so a
+    // test wallet can withhold a field and see how the verifier reacts.
+    function claimChecklist(credID, claims, kept) {
+      const keys = Object.keys(claims || {});
+      const shared = keys.filter(k => (kept ? kept.includes(k) : true)).length;
+      let rows = '';
+      keys.forEach(key => {
         const val = typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]);
         const checked = kept ? kept.includes(key) : true;
-        html += '<label class="consent-claim">' +
-          '<input type="checkbox"' + (checked ? ' checked' : '') + ' data-cred="' + mc.credential_id + '" data-claim="' + escHtml(key) + '">' +
-          '<span class="consent-claim-name">' + escHtml(key) + '</span>' +
-          '<span class="consent-claim-value">' + escHtml(val) + '</span>' +
+        rows += '<label class="consent-claim">' +
+          '<input type="checkbox"' + (checked ? ' checked' : '') + ' data-cred="' + credID + '" data-claim="' + escHtml(key) + '">' +
+          '<span class="consent-claim-name mono">' + escHtml(key) + '</span>' +
+          '<span class="consent-claim-value mono">' + escHtml(val) + '</span>' +
         '</label>';
       });
+      return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">' +
+          shared + ' of ' + keys.length + ' field' + (keys.length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="consent-claims">' + rows + '</div>';
+    }
 
-      return html + '</div></div></div>';
+    // The summary card: the same card the credential list renders (reused from
+    // credentialCardBody, laid out compactly in the dialog) with the disclosed
+    // fields below it. Until the full credential has loaded it renders from the
+    // match, which knows the type and format but only the requested claims.
+    function credentialCardHtml(mc) {
+      const detail = candidateDetails.get(mc.credential_id);
+      const cred = detail || {
+        id: mc.credential_id, format: mc.format, vct: mc.vct, doctype: mc.doctype, claims: mc.claims,
+      };
+      const body = credentialCardBody(cred, 'summary-');
+      const kept = options ? selection.claims[mc.credential_id] : null;
+      return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
+        '<div class="credential-card">' + body.html + '</div>' +
+        claimChecklist(mc.credential_id, mc.claims, kept) +
+      '</div>';
     }
 
     // The Edit view: the set options and, per query id of the chosen
@@ -1938,11 +1887,11 @@
           const detail = candidateDetails.get(c.credential_id);
           const body = credentialCardBody(detail || {
             id: c.credential_id, format: c.format, vct: c.vct, doctype: c.doctype, claims: c.claims,
-          }, 'candidate-', Boolean(detail));
+          }, 'candidate-');
           html += '<div class="candidate' + (picked ? ' selected' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '" tabindex="0" role="radio" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
             '<div class="candidate-row">' +
               '<input type="radio" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
-              body.html +
+              '<div class="credential-card">' + body.html + '</div>' +
               '<div class="candidate-actions">' +
                 (i === 0 ? '<span class="auto-chip">auto</span>' : '') +
                 // By id, like the credential list's own decoder link, and in a
@@ -1962,12 +1911,12 @@
     }
 
     function wireSelectionHandlers() {
-      // The issuer-declared accent on every consent card that names a
-      // credential, so it looks the same being decided on as it does at rest.
-      // Presentation summary cards carry data-credential-id, edit-view
-      // candidates carry data-cred (both fetched into candidateDetails), and
-      // issuance offer cards carry data-config-id (display in the offer
-      // details). The query-group wrapper has none.
+      // The issuer-declared face on every consent card that names a credential,
+      // so it looks the same being decided on as it does at rest. Presentation
+      // summary cards carry data-credential-id, edit-view candidates carry
+      // data-cred (both fetched into candidateDetails), and issuance offer cards
+      // carry data-config-id (display in the offer details). The query-group
+      // wrapper has none.
       consentDialog.querySelectorAll('[data-credential-id], .candidate[data-cred]').forEach(el => {
         const id = el.dataset.credentialId || el.dataset.cred;
         const detail = candidateDetails.get(id);
@@ -2028,6 +1977,20 @@
           });
         });
       }
+
+      // Keep each card's "X of Y fields" count in step with its checkboxes, so
+      // withholding a field shows in the header at once.
+      consentDialog.querySelectorAll('.consent-credential').forEach(credEl => {
+        const countEl = credEl.querySelector('.cl-count');
+        const boxes = credEl.querySelectorAll('.consent-claims input[type="checkbox"]');
+        if (!countEl || boxes.length === 0) return;
+        const total = boxes.length;
+        const update = () => {
+          const checked = [...boxes].filter(b => b.checked).length;
+          countEl.textContent = checked + ' of ' + total + ' field' + (total === 1 ? '' : 's');
+        };
+        boxes.forEach(b => b.addEventListener('change', update));
+      });
     }
 
     function renderDialog() {

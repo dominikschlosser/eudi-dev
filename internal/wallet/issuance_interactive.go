@@ -616,6 +616,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.applyClientAuth(authReq)
 	w.CreateConsentRequest(consentReq)
 
 	handle := func(result ConsentResult) ([]CredentialMatch, bool, error) {

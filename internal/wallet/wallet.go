@@ -306,6 +306,20 @@ type ConsentRequest struct {
 	// URI again, and this is what that falls back to when the issuer does
 	// not serve the offer a second time.
 	ResolvedOffer *oid4vc.CredentialOffer `json:"-"`
+	// ClientAuthSigned reports how a presentation request authenticated
+	// itself, computed when this request was created (no network call) and
+	// read back by MarshalConsentRequest. It is true only when a request
+	// object was present and its signature verified against the key material
+	// the request itself carries (self-consistent, with no trust anchor). It
+	// never means the verifier was checked against a trust list.
+	ClientAuthSigned bool `json:"-"`
+	// ClientAuthDetail says why the request could not be verified, or notes
+	// that it was unsigned. Empty when ClientAuthSigned is true.
+	ClientAuthDetail string `json:"-"`
+	// ClientName is the self-asserted verifier name from the request's
+	// client_metadata (client_metadata.client_name), empty when the request
+	// carried none. It is unverified.
+	ClientName string `json:"-"`
 }
 
 // CredentialMatch links a credential to a DCQL query credential ID.
@@ -513,8 +527,8 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 // generatedPIDDisplay is the appearance the wallet gives its own generated PID
 // credentials: the eudi-dev logo, so the demo baseline shows what a styled
 // credential looks like. The German PID is told apart from the
-// country-independent one by its name, a red edge and the German ID card
-// specimen as its card art.
+// country-independent one by its name and the German ID card specimen as its
+// card art.
 func generatedPIDDisplay(vct string) *CredentialDisplay {
 	d := &CredentialDisplay{
 		Name:            "EUDI PID",
@@ -526,9 +540,9 @@ func generatedPIDDisplay(vct string) *CredentialDisplay {
 		TextColor:       "#ffffff",
 	}
 	if vct == mock.GermanPIDVCT {
-		// The ID card image is the distinction, so it keeps the same neutral
-		// brand edge as the country-independent PID rather than a second,
-		// clashing accent.
+		// The specimen image is the distinction. It keeps the same background
+		// color as the country-independent PID, which shows as the base of the
+		// face under the image.
 		d.Name = "German PID"
 		d.BackgroundURI = germanIDSpecimenDataURI()
 	}
@@ -1110,10 +1124,6 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if signature := credentialSignatureState(c); signature != nil {
 		summary["signature"] = signature
 	}
-	// SD-JWT only: how many selective-disclosure entries the credential holds.
-	if c.Format == "dc+sd-jwt" && len(c.Disclosures) > 0 {
-		summary["sd_count"] = len(c.Disclosures)
-	}
 	// Whether it can be asked for again, not the token that would do it: a
 	// listing is printed and logged in places a refresh token should not go.
 	if c.CanRenew() {
@@ -1157,6 +1167,23 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if r.OfferDetails != nil {
 		m["offer_details"] = r.OfferDetails
+	}
+	// A presentation request (including one an issuer asked for during an
+	// issuance) carries how its request authenticated itself, for the consent
+	// dialog's "who is asking" block. signed being true means the request was
+	// self-consistent (its signature verified against the key material it
+	// carries), not that the verifier was checked against a trust list. A pure
+	// issuance offer is not a signed request object, so it gets no client_auth.
+	if r.Type == ConsentTypePresentation || r.Type == ConsentTypeIssuancePresentation {
+		m["client_auth"] = map[string]any{
+			"signed": r.ClientAuthSigned,
+			"detail": r.ClientAuthDetail,
+		}
+	}
+	// The self-asserted verifier name, when the request carried one. It is
+	// unverified.
+	if r.ClientName != "" {
+		m["client_name"] = r.ClientName
 	}
 	return m
 }

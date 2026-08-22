@@ -409,31 +409,6 @@ header h1 {
   .credential-actions .btn { flex: 1; }
 }
 
-.claim-tag {
-  background: var(--bg);
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-}
-
-/* A namespace beside the credential's own, leading the elements it holds.
-   Two mdoc PIDs can share a doctype and differ only here, so this is the one
-   thing on the card that tells them apart. */
-.claim-namespace {
-  font-family: var(--font-mono, monospace);
-  color: var(--text);
-  background: transparent;
-  padding: 1px 6px 1px 0;
-  border: none;
-  border-left: 2px solid var(--border);
-  padding-left: 8px;
-  margin-left: 6px;
-}
-
-.claim-namespace:first-child {
-  margin-left: 0;
-}
-
 .credential-actions {
   flex-shrink: 0;
   display: flex;
@@ -927,18 +902,43 @@ header h1 {
   overflow-y: auto;
 }
 
+/* A small kicker, so the who block leads. */
 .consent-title {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--accent);
-  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 10px;
 }
 
-.consent-verifier {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-bottom: 16px;
+/* Who is asking: the self-asserted name when the request carried one, the
+   authenticated client_id (or the issuer) beneath it, and the request-object
+   authentication state. */
+.who {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 12px;
+  margin-bottom: 12px;
 }
+.who-nm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.who-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.who-cid { font-size: 11.5px; color: var(--text-dim); margin-top: 4px; overflow-wrap: anywhere; }
+.who-chip {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.who-ok { background: rgba(122, 162, 247, 0.16); color: var(--accent); }
+.who-bad { background: rgba(247, 118, 142, 0.2); color: var(--red); }
 
 .consent-purpose {
   font-size: 12px;
@@ -959,68 +959,121 @@ header h1 {
   margin-bottom: 2px;
 }
 
+/* A consent credential is a block: the reused card, then the disclosed fields.
+   The query-group wrapper is also a .consent-credential but only holds the
+   candidate list, so it stays a plain stacking block. */
 .consent-credential {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 12px;
   margin-bottom: 12px;
   background: var(--bg);
 }
 
-/* A consent card and a candidate lay the issuer card art out as a left
-   thumbnail exactly like the credential list, so a consent card reads the
-   same as an overview card. The content sits in its own column beside it.
-   Scoped to the cards that name a credential: the query group wrapper is also
-   a .consent-credential but only holds the candidate list and must stay a
-   block that stacks them. */
-.consent-credential[data-credential-id],
-.consent-credential[data-config-id],
-.candidate {
+/* The same card the list renders, laid out compactly in the dialog. The list's
+   responsive layout is scoped to the list container, so the dialog sizes the
+   face itself (a fixed thumbnail) rather than the row/hero the list switches
+   between. */
+.consent-credential .credential-card,
+.candidate .credential-card {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 112px;
-}
-.consent-body,
-.candidate-row {
   flex: 1;
   min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  overflow: visible;
 }
+.consent-credential .card-face,
+.candidate .card-face {
+  width: 58px;
+  aspect-ratio: 8 / 5;
+  border-radius: 7px;
+  flex: 0 0 auto;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+.consent-credential .credential-info,
+.candidate .credential-info { flex: 1; min-width: 0; }
+.consent-credential .face-name,
+.candidate .face-name,
+.consent-credential .format-badge-face,
+.candidate .format-badge-face { display: none; }
+/* The logo is a small corner badge, so the face's color or art shows behind it
+   (the list sizes it through a container query that does not reach the dialog). */
+.consent-credential .credential-logo,
+.candidate .credential-logo {
+  top: 5px;
+  left: 5px;
+  width: 16px;
+  height: 16px;
+  padding: 2px;
+}
+.consent-credential .face-init,
+.candidate .face-init,
+.consent-credential .face-generic,
+.candidate .face-generic { font-size: 18px; }
 
-.consent-credential-header {
+/* The header above the disclosed fields (and the offer's claim list). */
+.cl-hd {
   display: flex;
-  align-items: center;
+  justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
-  margin-bottom: 8px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+.cl-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text-dim);
 }
 
+/* The disclosed fields, as selective-disclosure checkboxes. */
 .consent-claims {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
 }
-
 .consent-claim {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
+  gap: 10px;
+  padding: 7px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
 }
-
+.consent-claim:last-child { border-bottom: none; }
 .consent-claim input[type="checkbox"] {
   accent-color: var(--accent);
+  flex: 0 0 auto;
 }
-
 .consent-claim-name {
-  color: var(--yellow);
-  font-weight: 600;
+  color: var(--accent);
+  flex: 0 0 42%;
+  overflow-wrap: anywhere;
 }
-
 .consent-claim-value {
-  color: var(--text-dim);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The offer preview lists claim names only (no value, not selectable). */
+.offer-claims .consent-claim { cursor: default; }
+.offer-description {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
 }
 
 /* The consent dialog's credential selection: one quiet row on the main
@@ -1100,6 +1153,14 @@ header h1 {
   background: var(--bg-surface);
 }
 
+/* The query group's header: the query id and how many credentials match. */
+.consent-credential-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .query-id-label {
   font-size: 11px;
   font-weight: 600;
@@ -1124,26 +1185,25 @@ header h1 {
   background: var(--bg-hover);
 }
 
+/* The selected candidate is highlighted rather than the others dimmed: the
+   honest pills (Revoked, Bound to another key) carry that on their own. */
 .candidate.selected {
   border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
   cursor: default;
 }
 
-/* A candidate holds the same card the credential list renders, so the row
-   lines its parts up with the top of that card rather than centering on it. */
+/* A candidate holds the reused card between its radio and the decoder link. */
 .candidate-row {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   font-size: 11px;
-  /* Same wrap as the credential card: on a narrow screen the actions column
-     moves below the candidate instead of squeezing it. */
   flex-wrap: wrap;
 }
 
 .candidate-row input[type="radio"] {
   accent-color: var(--accent);
-  margin-top: 2px;
   flex-shrink: 0;
 }
 
@@ -1471,11 +1531,18 @@ header h1 {
   color: var(--text-dim);
   min-width: 120px;
 }
-.offer-type {
-  font-size: 11px;
-  color: var(--text-dim);
-  margin-top: 2px;
-  word-break: break-all;
+/* The error and submission-result dialogs share the consent overlay but keep
+   a prominent title of their own (the consent title is a small kicker). */
+.dialog-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.dialog-message {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 12px;
 }
 
 /* Trust & certificates dialog: two labelled sections, each item on its own
