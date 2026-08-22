@@ -279,6 +279,9 @@ func (w *Wallet) cacheDisplayImage(uri, field string) string {
 // dimensions (a decompression bomb) that would bloat the store and every
 // viewer's browser even when the bytes fit the cap.
 func (w *Wallet) encodeDisplayImage(body []byte, mediaType, field, uri string) string {
+	if mediaType == "image/svg+xml" {
+		return w.keepVectorImage(body, field, uri)
+	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(body))
 	if err != nil {
 		w.rejectDisplayImage(field, uri, "not a raster image the wallet can read")
@@ -301,6 +304,23 @@ func (w *Wallet) encodeDisplayImage(body []byte, mediaType, field, uri string) s
 		return ""
 	}
 	return "data:" + shrunkType + ";base64," + base64.StdEncoding.EncodeToString(shrunk)
+}
+
+// keepVectorImage stores an SVG logo as it was served. SVG is vector, so it
+// carries no pixel dimensions to cap, and a browser renders it inertly in an
+// <img> or a CSS background (no scripts run, no external references load). The
+// byte cap still bounds what the shared store holds, and an embedded script tag
+// is refused as defense in depth.
+func (w *Wallet) keepVectorImage(body []byte, field, uri string) string {
+	if len(body) > maxDisplayImageBytes {
+		w.rejectDisplayImage(field, uri, fmt.Sprintf("larger than the %dKB cap", maxDisplayImageBytes>>10))
+		return ""
+	}
+	if bytes.Contains(bytes.ToLower(body), []byte("<script")) {
+		w.rejectDisplayImage(field, uri, "an SVG carrying a script is not kept")
+		return ""
+	}
+	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(body)
 }
 
 // decodeImageDataURI reads the base64 form of an image data URI.

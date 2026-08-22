@@ -386,15 +386,15 @@ header h1 {
 @container (max-width: 520px) {
   .card-face {
     width: 100%;
-    aspect-ratio: 1.9;
+    aspect-ratio: 2.4;
   }
-  .credential-logo { top: 12px; left: 12px; width: 30px; height: 30px; padding: 4px; }
-  .face-init, .face-generic { font-size: 28px; }
-  .face-name { left: 15px; bottom: 12px; right: 15px; font-size: 19px; }
+  .credential-logo { top: 10px; left: 10px; width: 28px; height: 28px; padding: 4px; }
+  .face-init, .face-generic { font-size: 26px; }
+  .face-name { left: 15px; bottom: 10px; right: 15px; font-size: 18px; }
   .cred-hdr { display: none; }
-  .credential-info { padding: 13px 15px 6px; }
+  .credential-info { padding: 10px 15px 4px; }
   /* Full-width action buttons, sized for touch without eating vertical space. */
-  .credential-actions { padding: 10px 15px 13px; gap: 8px; }
+  .credential-actions { padding: 8px 15px 11px; gap: 8px; }
   .credential-actions .btn {
     flex: 1;
     font-size: 13px;

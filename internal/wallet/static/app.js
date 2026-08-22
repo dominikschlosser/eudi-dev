@@ -85,8 +85,9 @@
   let credentials = [];
   let pendingRequests = [];
   // A shared demo can accumulate a lot of credentials, so the list is
-  // windowed server side rather than rendering everything.
-  const CREDENTIALS_PER_PAGE = 10;
+  // windowed server side rather than rendering everything. Each card carries a
+  // full face, so a page holds few before it needs the pager.
+  const CREDENTIALS_PER_PAGE = 5;
   let credentialPage = 0;
   let credentialTotal = 0;
 
@@ -275,9 +276,9 @@
     return Math.floor(months / 12) + ' y ago';
   }
 
-  // shortCredentialId is the first 8 characters of the credential's UUID, the
-  // handle a reader uses to tell two same-type instances apart and the id the
-  // decoder, the API and removal all key on.
+  // shortCredentialId is the first 8 characters of the credential's UUID, a
+  // visual handle for telling two same-type instances apart. The API and the
+  // CLI key on the full id, so this short form is for reading, not for lookups.
   function shortCredentialId(id) {
     return String(id || '').slice(0, 8);
   }
