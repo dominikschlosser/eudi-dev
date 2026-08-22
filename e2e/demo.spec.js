@@ -797,7 +797,7 @@ test.describe("Protected baseline credentials", () => {
 
     // The two mdoc PIDs share a doctype (ISO 18013-5 has no inheritance
     // between document types), so the card tells same-format instances apart
-    // by the short id on the identity line, which is the per-instance handle.
+    // by the short id in the meta line, which is the per-instance handle.
     const firstId = await mdocCards.nth(0).locator(".cred-shortid").textContent();
     const secondId = await mdocCards.nth(1).locator(".cred-shortid").textContent();
     expect(firstId).toMatch(/^#[0-9a-f]{8}$/);
@@ -852,29 +852,27 @@ test.describe("Credential paging", () => {
   test("pages through a long credential list", async ({ page }) => {
     // Start from the baseline, then add enough that the last page is partial.
     await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 21; i++) {
       await postJSON("/api/issue", { format: "sdjwt", vct: `urn:example:page-${i}` });
     }
 
     await page.goto(BASE);
     const range = page.locator("#cred-range");
-    await expect(page.locator(".credential-card")).toHaveCount(5, { timeout: 5000 });
-    await expect(range).toHaveText("1–5 of 24");
+    await expect(page.locator(".credential-card")).toHaveCount(10, { timeout: 5000 });
+    await expect(range).toHaveText("1–10 of 25");
     await expect(page.locator("#cred-prev")).toBeDisabled();
 
     await page.locator("#cred-next").click();
-    await expect(range).toHaveText("6–10 of 24");
-    await expect(page.locator(".credential-card")).toHaveCount(5);
+    await expect(range).toHaveText("11–20 of 25");
+    await expect(page.locator(".credential-card")).toHaveCount(10);
 
     await page.locator("#cred-next").click();
-    await page.locator("#cred-next").click();
-    await page.locator("#cred-next").click();
-    await expect(range).toHaveText("21–24 of 24");
-    await expect(page.locator(".credential-card")).toHaveCount(4);
+    await expect(range).toHaveText("21–25 of 25");
+    await expect(page.locator(".credential-card")).toHaveCount(5);
     await expect(page.locator("#cred-next")).toBeDisabled();
 
     await page.locator("#cred-prev").click();
-    await expect(range).toHaveText("16–20 of 24");
+    await expect(range).toHaveText("11–20 of 25");
 
     // Back to the baseline for the following tests.
     await fetch(`${BASE}/api/credentials`, { method: "DELETE" });

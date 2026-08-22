@@ -85,9 +85,8 @@
   let credentials = [];
   let pendingRequests = [];
   // A shared demo can accumulate a lot of credentials, so the list is
-  // windowed server side rather than rendering everything. Each card carries a
-  // full face, so a page holds few before it needs the pager.
-  const CREDENTIALS_PER_PAGE = 5;
+  // windowed server side rather than rendering everything.
+  const CREDENTIALS_PER_PAGE = 10;
   let credentialPage = 0;
   let credentialTotal = 0;
 
@@ -403,17 +402,26 @@
       '<div class="face-name">' + faceLabel + '</div>' +
       '</div>';
 
-    // The body. The display name leads and the technical type stays beside it:
-    // this is a diagnostic wallet, and the vct is what a DCQL query matches on.
-    const nameHtml = display.name
-      ? '<span class="credential-name">' + escHtml(display.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
-      : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
+    // The headline is the display name, or the technical type when the issuer
+    // declared no name. The type is not repeated: when a name leads, the type
+    // moves to the meta row below, and when it is the headline the meta row
+    // drops it.
+    const nameHtml = '<span class="credential-name">' + faceLabel + '</span>';
+
+    // The meta strip carries every technical fact in one line so the header can
+    // be just the name: the short id (the per-instance handle), when it was
+    // issued, the type a DCQL query matches on, the issuer as the format carries
+    // it, and the claim count.
+    const idMeta = '<span class="cred-meta-item"><span class="cred-meta-k">id</span> <span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
 
     const rel = relativeTime(cred.issued_at);
-    const identLine = '<div class="cred-ident">' +
-      (rel ? '<span class="cred-issued">issued ' + escHtml(rel) + '</span><span class="cred-dot">·</span>' : '') +
-      '<span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span>' +
-      '</div>';
+    const issuedMeta = rel ? '<span class="cred-meta-item"><span class="cred-meta-k">iat</span> ' + escHtml(rel) + '</span>' : '';
+
+    // The vct is shown once: it is the headline when the issuer declared no
+    // name, and a meta item when a display name took the headline.
+    const typeMeta = display.name
+      ? '<span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>'
+      : '';
 
     // Issuer as the format actually carries it: iss for SD-JWT, the signing
     // certificate subject for mdoc, a DID otherwise.
@@ -431,11 +439,9 @@
           '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
           nameHtml +
         '</div>' +
-        identLine +
         '<div class="cred-pills">' + protectedBadge + statusBadge + expiryBadge + signatureBadge + keyBindingBadge + '</div>' +
         '<div class="cred-meta">' +
-          '<span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>' +
-          issuerMeta + countMeta +
+          idMeta + issuedMeta + typeMeta + issuerMeta + countMeta +
         '</div>' +
       '</div>';
 
@@ -1575,13 +1581,15 @@
     const faceBadge = fmt ? '<span class="format-badge format-badge-face">' + fmt + '</span>' : '';
     const rowBadge = fmt ? '<span class="format-badge format-badge-row">' + fmt + '</span>' : '';
     const faceName = cred.name || typeLabel;
-    const nameHtml = cred.name
-      ? '<span class="credential-name">' + escHtml(cred.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
-      : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
+    const nameHtml = '<span class="credential-name">' + escHtml(faceName) + '</span>';
+    const typeMeta = cred.name
+      ? '<div class="cred-meta"><span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span></div>'
+      : '';
     const card = '<div class="credential-card">' +
         '<div class="card-face">' + faceBadge + logoImg + '<div class="face-name">' + escHtml(faceName) + '</div></div>' +
         '<div class="credential-info">' +
           '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
+          typeMeta +
           (cred.description ? '<div class="offer-description">' + escHtml(cred.description) + '</div>' : '') +
         '</div>' +
       '</div>';
