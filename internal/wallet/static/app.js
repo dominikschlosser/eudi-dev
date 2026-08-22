@@ -412,27 +412,27 @@
     // be just the name: the short id (the per-instance handle), when it was
     // issued, the type a DCQL query matches on, the issuer as the format carries
     // it, and the claim count.
-    const idMeta = '<span class="cred-meta-item"><span class="cred-meta-k">id</span> <span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
+    const idMeta = '<span class="cred-meta-item cred-m-id"><span class="cred-meta-k">id</span> <span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
 
     const rel = relativeTime(cred.issued_at);
-    const issuedMeta = rel ? '<span class="cred-meta-item"><span class="cred-meta-k">iat</span> ' + escHtml(rel) + '</span>' : '';
+    const issuedMeta = rel ? '<span class="cred-meta-item cred-m-iat"><span class="cred-meta-k">iat</span> ' + escHtml(rel) + '</span>' : '';
 
     // The vct is shown once: it is the headline when the issuer declared no
     // name, and a meta item when a display name took the headline.
     const typeMeta = display.name
-      ? '<span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>'
+      ? '<span class="cred-meta-item cred-m-type"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>'
       : '';
 
     // Issuer as the format actually carries it: iss for SD-JWT, the signing
     // certificate subject for mdoc, a DID otherwise.
     let issuerMeta = '';
     if (cred.issuer && cred.issuer.value) {
-      issuerMeta = '<span class="cred-meta-item"><span class="cred-meta-k">' + escHtml(cred.issuer.kind || 'iss') +
+      issuerMeta = '<span class="cred-meta-item cred-m-iss"><span class="cred-meta-k">' + escHtml(cred.issuer.kind || 'iss') +
         '</span> <span class="mono">' + escHtml(cred.issuer.value) + '</span></span>';
     }
 
     const claimCount = Object.keys(cred.claims || {}).length;
-    const countMeta = '<span class="cred-meta-item">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') + '</span>';
+    const countMeta = '<span class="cred-meta-item cred-m-claims">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') + '</span>';
 
     const bodyHtml = '<div class="credential-info">' +
         '<div class="credential-type cred-hdr">' +
@@ -1906,9 +1906,9 @@
                 // new tab: the consent is still pending and waiting for an
                 // answer, so reading a credential must not navigate away from
                 // the dialog that is asking.
-                '<a class="candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
+                '<a class="btn btn-sm candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
                   ' href="/decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
-                  ' title="Open in decoder">Decode</a>' +
+                  ' title="Open in decoder">Show</a>' +
               '</div>' +
             '</div></div>';
         });
