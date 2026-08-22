@@ -267,14 +267,20 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	if err != nil {
 		return nil, err
 	}
-	oauthMeta, oauthErr := w.fetchLoggedMetadata(metadataFetch{
-		event:         "oauth_metadata",
-		fetchLabel:    "OAuth metadata",
-		responseLabel: "OAuth metadata",
-		wellKnown:     "oauth-authorization-server",
-		issuer:        authServer,
-		fetch:         fetchOAuthMetadata,
-	})
+	oauthMeta, oauthErr := w.fetchLoggedMetadata(oauthMetadataFetch(authServer))
+	// Checked before the grant is spent, so a server that cannot take it is
+	// named while the offer is still redeemable somewhere else.
+	grantType := preAuthorizedCodeGrant
+	if offer.Grants.PreAuthorizedCode == "" {
+		grantType = "authorization_code"
+	}
+	if err := w.checkAuthorizationServerGrant(authServer, oauthMeta, grantType); err != nil {
+		return nil, err
+	}
+	if server, meta, ok := w.fallbackAuthorizationServer(metadata, authServer, oauthMeta, grantType); ok {
+		authServer, oauthMeta, oauthErr = server, meta, nil
+	}
+
 	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
 	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
 
@@ -298,16 +304,6 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
 			}
 		}
-	}
-
-	// Checked before the grant is spent, so a server that cannot take it is
-	// named while the offer is still redeemable somewhere else.
-	grantType := preAuthorizedCodeGrant
-	if offer.Grants.PreAuthorizedCode == "" {
-		grantType = "authorization_code"
-	}
-	if err := w.checkAuthorizationServerGrant(authServer, oauthMeta, grantType); err != nil {
-		return nil, err
 	}
 
 	if offer.Grants.PreAuthorizedCode == "" {
@@ -967,6 +963,64 @@ func (w *Wallet) checkAuthorizationServerGrant(authServer string, oauthMeta map[
 	}
 	w.addProtocolWarning("issuance", "authorization_server_grant_unsupported", detail, details)
 	return nil
+}
+
+// oauthMetadataFetch describes the authorization server metadata document of
+// one server for fetchLoggedMetadata.
+func oauthMetadataFetch(issuer string) metadataFetch {
+	return metadataFetch{
+		event:         "oauth_metadata",
+		fetchLabel:    "OAuth metadata",
+		responseLabel: "OAuth metadata",
+		wellKnown:     "oauth-authorization-server",
+		issuer:        issuer,
+		fetch:         fetchOAuthMetadata,
+	}
+}
+
+// fallbackAuthorizationServer finds an advertised authorization server that
+// states support for the grant this issuance uses, once the selected server's
+// metadata has stated it cannot take it. §4.1.1 makes the offer's
+// authorization_server a value the wallet "can use", and §12.2.4 has the
+// wallet examine grant_types_supported to pick the server for its grant. The
+// move happens only between explicit statements on both sides and only among
+// the servers the issuer's metadata advertises. Strict mode refuses at
+// checkAuthorizationServerGrant before this runs.
+func (w *Wallet) fallbackAuthorizationServer(metadata map[string]any, authServer string, oauthMeta map[string]any, grantType string) (string, map[string]any, bool) {
+	supported, stated := grantTypesSupported(oauthMeta)
+	if !stated || slices.Contains(supported, grantType) {
+		return "", nil, false
+	}
+	for _, candidate := range authorizationServersFromMetadata(metadata) {
+		if candidate == authServer {
+			continue
+		}
+		candidateMeta, err := w.fetchLoggedMetadata(oauthMetadataFetch(candidate))
+		if err != nil {
+			continue
+		}
+		candidateGrants, candidateStated := grantTypesSupported(candidateMeta)
+		if !candidateStated || !slices.Contains(candidateGrants, grantType) {
+			continue
+		}
+		w.addProtocolWarning("issuance", "authorization_server_fallback",
+			fmt.Sprintf("Continuing with authorization server %s, which lists %s in its grant_types_supported, instead of %s.",
+				candidate, grantType, authServer),
+			map[string]any{
+				"authorization_server": candidate,
+				"replaced_server":      authServer,
+				"grant_type":           grantType,
+			})
+		return candidate, candidateMeta, true
+	}
+	w.addProtocolWarning("issuance", "authorization_server_fallback_unavailable",
+		fmt.Sprintf("No other advertised authorization server states support for %s, continuing with %s.",
+			grantType, authServer),
+		map[string]any{
+			"authorization_server": authServer,
+			"grant_type":           grantType,
+		})
+	return "", nil, false
 }
 
 func validateAuthorizationServerIssuer(authServer string, oauthMeta map[string]any) error {

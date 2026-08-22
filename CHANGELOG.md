@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.26.2] - 2026-08-22
+
+### Fixed
+
+- **An offer naming an authorization server that states it cannot take the grant now falls back to an advertised one that can.** The EUDIPLO playground names its presentation-during-issuance authorization server in a pre-authorized code offer. That server lists only `authorization_code` and `refresh_token` in `grant_types_supported`, so the token exchange failed with `Invalid grant_type`. In debug mode the wallet now reads the metadata of the other advertised `authorization_servers` entries (however many the issuer lists) and continues with the first that lists the grant, logged as a warning (`authorization_server_fallback`). When none states support, a warning says so (`authorization_server_fallback_unavailable`) and the flow stays at the named server. The move happens only between explicit statements on both sides, and a server that omits `grant_types_supported` has said nothing. Strict mode still refuses before the code is spent. §4.1.1 makes the offer's `authorization_server` a value the wallet "can use" and §12.2.4 has the wallet read `grant_types_supported` to pick the server for its grant
+
 ## [1.26.1] - 2026-08-22
 
 ### Fixed

@@ -25,21 +25,23 @@ import (
 	"testing"
 )
 
-// grantMismatchIssuer serves an issuer that lists two authorization servers:
-// its own, which takes the pre-authorized code grant, and a second one that
-// only does authorization_code. The offer names the second for a
-// pre-authorized grant, which is the shape a real issuer produced. Its token
-// endpoint then refuses in its own error format rather than OAuth's, so the
-// error code is the HTTP status text and the reason is only in the body.
+// grantMismatchIssuer serves an issuer that advertises three authorization
+// servers: one whose metadata is unreachable, its own, and a limited one that
+// only does authorization_code. The offer names the limited one for a
+// pre-authorized grant, the shape a real issuer produced. The limited token
+// endpoint refuses in its own error format, so the error code is the HTTP
+// status text and the reason is only in the body.
 //
-// namesGrants leaves grant_types_supported off the second server, which
-// RFC 8414 §2 allows: then nothing was stated, and the flow proceeds.
-func grantMismatchIssuer(t *testing.T, w *Wallet, namesGrants bool) (*httptest.Server, string, *atomic.Int32) {
+// limitedNamesGrants leaves grant_types_supported off the limited server,
+// which RFC 8414 §2 allows: then nothing was stated, and the flow proceeds.
+// ownStatesPreAuth controls whether the issuer's own server states support
+// for the pre-authorized code grant, making it a fallback candidate.
+func grantMismatchIssuer(t *testing.T, w *Wallet, limitedNamesGrants, ownStatesPreAuth bool) (*httptest.Server, string, *atomic.Int32, *atomic.Int32) {
 	t.Helper()
 
 	credRaw := generateTestCredential(t, w)
 	var serverURL string
-	var limitedTokenCalls atomic.Int32
+	var limitedTokenCalls, ownTokenCalls atomic.Int32
 
 	issueToken := func(rw http.ResponseWriter) {
 		json.NewEncoder(rw).Encode(map[string]any{
@@ -55,9 +57,9 @@ func grantMismatchIssuer(t *testing.T, w *Wallet, namesGrants bool) (*httptest.S
 			json.NewEncoder(rw).Encode(map[string]any{
 				"credential_issuer":   serverURL,
 				"credential_endpoint": serverURL + "/credential",
-				// The issuer's own server first, the limited one second, so
-				// picking the first entry would have passed by accident.
-				"authorization_servers": []any{serverURL, serverURL + "/limited"},
+				// The unreachable server sits first, so the fallback has to
+				// skip past it to reach the issuer's own.
+				"authorization_servers": []any{serverURL + "/down", serverURL, serverURL + "/limited"},
 				"credential_configurations_supported": map[string]any{
 					"test-config": map[string]any{
 						"format":                "dc+sd-jwt",
@@ -73,22 +75,25 @@ func grantMismatchIssuer(t *testing.T, w *Wallet, namesGrants bool) (*httptest.S
 				"token_endpoint":         serverURL + "/limited/token",
 				"authorization_endpoint": serverURL + "/limited/authorize",
 			}
-			if namesGrants {
+			if limitedNamesGrants {
 				meta["grant_types_supported"] = []any{"authorization_code", "refresh_token"}
 			}
 			json.NewEncoder(rw).Encode(meta)
 
 		case strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
-			json.NewEncoder(rw).Encode(map[string]any{
+			meta := map[string]any{
 				"issuer":                 serverURL,
 				"token_endpoint":         serverURL + "/token",
 				"authorization_endpoint": serverURL + "/authorize",
-				"grant_types_supported":  []any{"authorization_code", "refresh_token", preAuthorizedCodeGrant},
-			})
+			}
+			if ownStatesPreAuth {
+				meta["grant_types_supported"] = []any{"authorization_code", "refresh_token", preAuthorizedCodeGrant}
+			}
+			json.NewEncoder(rw).Encode(meta)
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/limited/token"):
 			limitedTokenCalls.Add(1)
-			if !namesGrants {
+			if !limitedNamesGrants {
 				issueToken(rw)
 				return
 			}
@@ -102,6 +107,7 @@ func grantMismatchIssuer(t *testing.T, w *Wallet, namesGrants bool) (*httptest.S
 			})
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/token"):
+			ownTokenCalls.Add(1)
 			issueToken(rw)
 
 		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
@@ -125,7 +131,7 @@ func grantMismatchIssuer(t *testing.T, w *Wallet, namesGrants bool) (*httptest.S
 		},
 	}
 	offerJSON, _ := json.Marshal(offer)
-	return srv, "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON)), &limitedTokenCalls
+	return srv, "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON)), &limitedTokenCalls, &ownTokenCalls
 }
 
 // findLogEntry returns the first entry with the given event, or nil.
@@ -142,12 +148,59 @@ func findLogEntry(entries []LogEntry, event string) *LogEntry {
 // offer naming an authorization server that says it does not support the
 // grant the offer carries. §4.1.1 defines authorization_server as the one to
 // use "with this grant type", and §12.2.4 has the wallet read
-// grant_types_supported for exactly this, so the mismatch is reported rather
-// than left to come back as a refusal from the token endpoint.
+// grant_types_supported for exactly this. In debug mode the wallet then
+// moves to an advertised server that states support for the grant.
 func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T) {
-	t.Run("debug warns and lets the flow run into it", func(t *testing.T) {
+	t.Run("debug falls back to an advertised server that states the grant", func(t *testing.T) {
 		w := generateTestWallet(t)
-		srv, offerURI, tokenCalls := grantMismatchIssuer(t, w, true)
+		srv, offerURI, limitedTokenCalls, ownTokenCalls := grantMismatchIssuer(t, w, true, true)
+		defer srv.Close()
+
+		oldClient := httpClient
+		httpClient = srv.Client()
+		defer func() { httpClient = oldClient }()
+
+		result, err := w.ProcessCredentialOffer(offerURI)
+		if err != nil {
+			t.Fatalf("ProcessCredentialOffer: %v", err)
+		}
+		if result.CredentialID == "" {
+			t.Error("expected a credential to be imported")
+		}
+		if ownTokenCalls.Load() != 1 {
+			t.Errorf("issuer's own token endpoint called %d times, want 1", ownTokenCalls.Load())
+		}
+		if limitedTokenCalls.Load() != 0 {
+			t.Errorf("limited token endpoint called %d times, want 0", limitedTokenCalls.Load())
+		}
+
+		entries := w.GetLog()
+		warning := findLogEntry(entries, "authorization_server_grant_unsupported")
+		if warning == nil {
+			t.Fatal("expected an authorization_server_grant_unsupported entry")
+		}
+		if warning.Severity != severityWarning {
+			t.Errorf("severity = %q, want %q", warning.Severity, severityWarning)
+		}
+
+		fallback := findLogEntry(entries, "authorization_server_fallback")
+		if fallback == nil {
+			t.Fatal("expected an authorization_server_fallback entry")
+		}
+		if fallback.Severity != severityWarning {
+			t.Errorf("severity = %q, want %q", fallback.Severity, severityWarning)
+		}
+		if !strings.Contains(fallback.Detail, srv.URL) || !strings.Contains(fallback.Detail, srv.URL+"/limited") {
+			t.Errorf("detail does not name both servers: %s", fallback.Detail)
+		}
+		if !strings.Contains(fallback.Detail, preAuthorizedCodeGrant) {
+			t.Errorf("detail does not name the grant: %s", fallback.Detail)
+		}
+	})
+
+	t.Run("debug proceeds at the named server when nothing else states the grant", func(t *testing.T) {
+		w := generateTestWallet(t)
+		srv, offerURI, limitedTokenCalls, ownTokenCalls := grantMismatchIssuer(t, w, true, false)
 		defer srv.Close()
 
 		oldClient := httpClient
@@ -158,8 +211,11 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 		if err == nil {
 			t.Fatal("expected the token request to be refused")
 		}
-		if tokenCalls.Load() != 1 {
-			t.Errorf("token endpoint called %d times, want 1: debug mode reports and continues", tokenCalls.Load())
+		if limitedTokenCalls.Load() != 1 {
+			t.Errorf("limited token endpoint called %d times, want 1: debug mode reports and continues", limitedTokenCalls.Load())
+		}
+		if ownTokenCalls.Load() != 0 {
+			t.Errorf("issuer's own token endpoint called %d times, want 0", ownTokenCalls.Load())
 		}
 
 		entries := w.GetLog()
@@ -175,6 +231,17 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 		}
 		if !strings.Contains(warning.Detail, srv.URL+"/limited") {
 			t.Errorf("detail does not name the server: %s", warning.Detail)
+		}
+
+		unavailable := findLogEntry(entries, "authorization_server_fallback_unavailable")
+		if unavailable == nil {
+			t.Fatal("expected an authorization_server_fallback_unavailable entry")
+		}
+		if unavailable.Severity != severityWarning {
+			t.Errorf("severity = %q, want %q", unavailable.Severity, severityWarning)
+		}
+		if !strings.Contains(unavailable.Detail, preAuthorizedCodeGrant) {
+			t.Errorf("detail does not name the grant: %s", unavailable.Detail)
 		}
 
 		// The refusal the server sent, whole. Its own error field is the HTTP
@@ -207,7 +274,7 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 	t.Run("strict refuses before the code is spent", func(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeStrict
-		srv, offerURI, tokenCalls := grantMismatchIssuer(t, w, true)
+		srv, offerURI, limitedTokenCalls, ownTokenCalls := grantMismatchIssuer(t, w, true, true)
 		defer srv.Close()
 
 		oldClient := httpClient
@@ -221,14 +288,17 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 		if !strings.Contains(err.Error(), preAuthorizedCodeGrant) {
 			t.Errorf("error does not name the grant: %v", err)
 		}
-		if tokenCalls.Load() != 0 {
-			t.Errorf("token endpoint called %d times, want 0: the offer is still redeemable", tokenCalls.Load())
+		if limitedTokenCalls.Load() != 0 {
+			t.Errorf("limited token endpoint called %d times, want 0: the offer is still redeemable", limitedTokenCalls.Load())
+		}
+		if ownTokenCalls.Load() != 0 {
+			t.Errorf("issuer's own token endpoint called %d times, want 0: the offer is still redeemable", ownTokenCalls.Load())
 		}
 	})
 
 	t.Run("a server stating no grants is not a finding", func(t *testing.T) {
 		w := generateTestWallet(t)
-		srv, offerURI, _ := grantMismatchIssuer(t, w, false)
+		srv, offerURI, _, _ := grantMismatchIssuer(t, w, false, true)
 		defer srv.Close()
 
 		oldClient := httpClient
@@ -246,4 +316,19 @@ func TestProcessCredentialOffer_AuthorizationServerCannotTakeGrant(t *testing.T)
 			t.Errorf("a server stating no grant_types_supported has said nothing, so it is not a finding: %s", entry.Detail)
 		}
 	})
+}
+
+// TestFallbackAuthorizationServer_SingleAdvertisedServer pins that the
+// fallback handles any number of advertised servers: with a single entry
+// there is no candidate, so the wallet says so and stays.
+func TestFallbackAuthorizationServer_SingleAdvertisedServer(t *testing.T) {
+	w := generateTestWallet(t)
+	metadata := map[string]any{"authorization_servers": []any{"https://as.example"}}
+	oauthMeta := map[string]any{"grant_types_supported": []any{"authorization_code"}}
+	if _, _, ok := w.fallbackAuthorizationServer(metadata, "https://as.example", oauthMeta, preAuthorizedCodeGrant); ok {
+		t.Fatal("a single advertised server leaves no candidate to move to")
+	}
+	if findLogEntry(w.GetLog(), "authorization_server_fallback_unavailable") == nil {
+		t.Error("expected an authorization_server_fallback_unavailable entry")
+	}
 }
