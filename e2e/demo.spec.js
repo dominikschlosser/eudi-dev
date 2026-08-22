@@ -782,30 +782,21 @@ test.describe("Protected baseline credentials", () => {
     await expect(first.locator("[data-revoke]")).toHaveCount(0);
   });
 
-  test("the two mdoc PIDs are told apart by the namespaces they use", async ({
+  test("the two mdoc PIDs are told apart by their short id", async ({
     page,
   }) => {
     await page.goto(BASE);
     const mdocCards = page.locator(".credential-card[data-format='mdoc']");
     await expect(mdocCards).toHaveCount(2, { timeout: 5000 });
 
-    // Both carry the same doctype, because ISO 18013-5 has no inheritance
-    // between document types. The extra namespace is what says which is which,
-    // named by what it adds rather than spelled out: the full identifier would
-    // repeat the doctype in the headline above it.
-    const german = mdocCards.filter({
-      has: page.locator(".claim-namespace[data-namespace='eu.europa.ec.eudi.pid.de.1']"),
-    });
-    await expect(german).toHaveCount(1);
-    await expect(german.locator(".claim-namespace")).toHaveText(["+de.1"]);
-    await expect(german.locator(".claim-tag", { hasText: "academic_title" })).toHaveCount(1);
-
-    // The country-independent one keeps every element in the doctype's own
-    // namespace, so it needs no label at all.
-    const eu = mdocCards.filter({
-      hasNot: page.locator(".claim-namespace[data-namespace='eu.europa.ec.eudi.pid.de.1']"),
-    });
-    await expect(eu.locator(".claim-namespace")).toHaveCount(0);
+    // The two mdoc PIDs share a doctype (ISO 18013-5 has no inheritance
+    // between document types), so the card tells same-format instances apart
+    // by the short id on the identity line, which is the per-instance handle.
+    const firstId = await mdocCards.nth(0).locator(".cred-shortid").textContent();
+    const secondId = await mdocCards.nth(1).locator(".cred-shortid").textContent();
+    expect(firstId).toMatch(/^#[0-9a-f]{8}$/);
+    expect(secondId).toMatch(/^#[0-9a-f]{8}$/);
+    expect(firstId).not.toBe(secondId);
   });
 
   test("the API refuses to delete or revoke them", async () => {

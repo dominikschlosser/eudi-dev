@@ -199,5 +199,6 @@ func (w *Wallet) CredentialSummaryWithStatus(c StoredCredential) map[string]any 
 	if w.keyBindingNotHeld(&c) {
 		summary["key_binding_not_held"] = true
 	}
+	summary["holder_binding"] = w.credentialHolderBindingState(c)
 	return summary
 }

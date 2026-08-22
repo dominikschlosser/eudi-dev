@@ -40,10 +40,13 @@ type DeferredIssuance struct {
 	// metadata for this configuration. A credential offer carries only
 	// configuration ids, so without these a waiting credential is listed by an
 	// issuer's internal name while a delivered one is listed by its type.
-	VCT         string `json:"vct,omitempty"`
-	DocType     string `json:"doctype,omitempty"`
-	AccessToken string `json:"access_token"`
-	AuthScheme  string `json:"auth_scheme,omitempty"`
+	VCT     string `json:"vct,omitempty"`
+	DocType string `json:"doctype,omitempty"`
+	// Display travels with the record the way VCT does: the metadata that
+	// declared it is gone by the time the poller collects the credential.
+	Display     *CredentialDisplay `json:"display,omitempty"`
+	AccessToken string             `json:"access_token"`
+	AuthScheme  string             `json:"auth_scheme,omitempty"`
 	// RefreshToken and AccessTokenExpiresAt let a long deferral obtain a new
 	// access token. The one the credential request used is short lived, and an
 	// issuer may ask the wallet back in an hour, so without these the

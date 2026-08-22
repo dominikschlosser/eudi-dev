@@ -346,9 +346,50 @@
   // the DOM behind the consent overlay and the same credential can be on
   // screen twice. withClaims leaves the claim names off, for a caller holding
   // only part of them, where a subset would read as the whole set.
-  function credentialCardBody(cred, idPrefix, withClaims) {
-    const formatClass = cred.format === 'dc+sd-jwt' ? 'format-sdjwt' : cred.format === 'jwt_vc_json' ? 'format-jwt' : 'format-mdoc';
-    const formatLabel = cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mDoc';
+  // relativeTime turns a timestamp into "3 min ago", the form the card leads
+  // with, because how long ago answers the question an absolute date only
+  // implies. Returns "" for a missing or unparseable value.
+  function relativeTime(value) {
+    if (!value) return '';
+    const then = new Date(value);
+    if (isNaN(then.getTime())) return '';
+    const secs = Math.floor((Date.now() - then.getTime()) / 1000);
+    if (secs < 45) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + ' min ago';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + ' h ago';
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days + ' d ago';
+    const months = Math.floor(days / 30);
+    if (months < 12) return months + ' mo ago';
+    return Math.floor(months / 12) + ' y ago';
+  }
+
+  // shortCredentialId is the first 8 characters of the credential's UUID, the
+  // handle a reader uses to tell two same-type instances apart and the id the
+  // decoder, the API and removal all key on.
+  function shortCredentialId(id) {
+    return String(id || '').slice(0, 8);
+  }
+
+  // credentialInitials builds a monogram from a display name (first letter of
+  // up to three words), for a credential whose face has neither art nor color
+  // nor a logo. A credential with no display name gets a generic glyph
+  // instead, since the technical type has no meaningful initials.
+  function credentialInitials(name) {
+    const words = String(name || '').replace(/[()]/g, ' ').split(/\s+/).filter(w => /^[a-z0-9]/i.test(w));
+    return words.slice(0, 3).map(w => w[0]).join('').toUpperCase();
+  }
+
+  const GENERIC_FACE_GLYPH = '<span class="face-generic"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2.2"/><circle cx="8" cy="11" r="2"/><path d="M13 10h5M13 13h4M6 15.6h6"/></svg></span>';
+
+  function formatLabelFor(cred) {
+    return cred.format === 'dc+sd-jwt' ? 'SD-JWT' : cred.format === 'jwt_vc_json' ? 'JWT VC' : 'mdoc';
+  }
+
+  function credentialCardBody(cred, idPrefix) {
+    const formatLabel = formatLabelFor(cred);
     const typeLabel = cred.vct || cred.doctype || cred.format;
     const isProtected = cred.protected === true;
 
@@ -365,22 +406,24 @@
     // Protected credentials are the shared baseline: the server refuses to
     // delete or revoke them, so do not offer buttons that would only 403.
     const protectedBadge = isProtected
-      ? '<span class="status-badge status-protected" id="' + idPrefix + 'protected-' + cred.id + '"' +
+      ? '<span class="status-badge status-protected ico-lock" id="' + idPrefix + 'protected-' + cred.id + '"' +
         ' title="Part of this wallet\'s baseline. It cannot be deleted or revoked' +
         ' through the UI or the API, only by editing the wallet file.">Protected</span>'
       : '';
 
     // Status badge: managed entries show live status, foreign status lists
-    // get a badge of their own.
+    // get a badge of their own, and an entry with no status list says so.
     const st = cred.status;
-    let statusBadge = '';
+    let statusBadge;
     if (st && st.managed) {
       const revoked = st.status === 1;
       dataset.status = revoked ? 'revoked' : 'active';
-      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked' : 'status-active') + '" id="' + idPrefix + 'status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
+      statusBadge = '<span class="status-badge ' + (revoked ? 'status-revoked ico-block' : 'status-active ico-dot') + '" id="' + idPrefix + 'status-' + cred.id + '" title="Status list: ' + escHtml(st.uri || '') + ' idx ' + st.idx + '">' + (revoked ? 'Revoked' : 'Active') + '</span>';
     } else if (st && st.uri) {
       dataset.status = 'external';
-      statusBadge = '<span class="status-badge status-external" id="' + idPrefix + 'status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External status</span>';
+      statusBadge = '<span class="status-badge status-external ico-half" id="' + idPrefix + 'status-' + cred.id + '" title="External status list: ' + escHtml(st.uri) + ' idx ' + st.idx + '">External list</span>';
+    } else {
+      statusBadge = '<span class="status-badge status-none ico-circle" id="' + idPrefix + 'status-' + cred.id + '" title="This credential carries no status list, so revocation cannot be checked.">No status</span>';
     }
 
     // How long the credential is still good for. The wallet renews what it
@@ -389,27 +432,154 @@
     let expiryBadge = '';
     if (expiry) {
       dataset.expiry = expiry.state;
-      expiryBadge = '<span class="status-badge status-' + expiry.state + '" id="' + idPrefix + 'expiry-' + cred.id +
+      expiryBadge = '<span class="status-badge status-' + expiry.state + ' ico-clock" id="' + idPrefix + 'expiry-' + cred.id +
         '" title="' + escHtml(expiry.title) + '">' + escHtml(expiry.label) + '</span>';
     }
 
-    // A credential whose issuer bound it to a key this wallet does not hold
-    // can be shown and decoded but never presented, so the card says so
-    // before someone picks it for a verifier.
-    let keyBindingBadge = '';
-    if (cred.key_binding_not_held === true) {
-      dataset.keyBinding = 'not-held';
-      keyBindingBadge = '<span class="status-badge status-unheld-key" id="' + idPrefix + 'key-binding-' + cred.id +
-        '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">Wrong holder binding</span>';
+    // The issuer signature checked against only the key material embedded in
+    // the credential (its x5c chain or embedded jwk), with no trust anchor. A
+    // pass means self-consistent, never that the issuer is trusted (ADR-0009).
+    let signatureBadge = '';
+    const sig = cred.signature;
+    if (sig && sig.algorithm) {
+      if (sig.self_consistent) {
+        signatureBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'signature-' + cred.id +
+          '" title="Signature verifies against the key material embedded in the credential (' + escHtml(sig.algorithm) +
+          '). It is not checked against any trust anchor, so this is not proof of who the issuer is.">Signed · ' + escHtml(sig.algorithm) + '</span>';
+      } else {
+        const kind = cred.issuer && cred.issuer.kind ? ' · ' + escHtml(cred.issuer.kind.toUpperCase()) : '';
+        signatureBadge = '<span class="status-badge status-revoked ico-x" id="' + idPrefix + 'signature-' + cred.id +
+          '" title="The credential carries no key material this wallet can verify the issuer signature against.">not verified' + kind + '</span>';
+      }
     }
 
-    const html = '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' +
-      '<div class="credential-info">' +
-        '<div class="credential-type">' + escHtml(typeLabel) + statusBadge + expiryBadge + protectedBadge + keyBindingBadge + '</div>' +
-        (withClaims ? '<div class="credential-claims">' + claimTagsFor(cred) + '</div>' : '') +
+    // Holder binding: bound to a key this wallet holds (presentable), bound to
+    // a key it does not hold (shown and decoded but never presentable), or no
+    // binding at all. The unheld case keeps its own hook so a picker can warn.
+    let keyBindingBadge = '';
+    const binding = cred.holder_binding ||
+      (cred.key_binding_not_held === true ? 'other_key' : '');
+    if (binding === 'this_wallet') {
+      dataset.keyBinding = 'this-wallet';
+      keyBindingBadge = '<span class="status-badge status-active ico-check" id="' + idPrefix + 'key-binding-' + cred.id +
+        '" title="Bound to a holder key this wallet holds, so it can be presented.">Bound to this wallet</span>';
+    } else if (binding === 'other_key') {
+      dataset.keyBinding = 'not-held';
+      keyBindingBadge = '<span class="status-badge status-unheld-key ico-warn" id="' + idPrefix + 'key-binding-' + cred.id +
+        '" title="Bound to a holder key this wallet does not hold. Presenting it fails the verifier\'s key binding check.">Bound to another key</span>';
+    } else if (binding === 'none') {
+      dataset.keyBinding = 'none';
+      keyBindingBadge = '<span class="status-badge status-none" id="' + idPrefix + 'key-binding-' + cred.id +
+        '" title="The credential names no holder key.">No key binding</span>';
+    }
+
+    // The issuer-declared appearance (§12.2.4), stored with the credential.
+    const display = cred.display || {};
+    const logoImg = display.logo_uri
+      ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+      : '';
+    const faceLabel = display.name ? escHtml(display.name) : escHtml(typeLabel);
+
+    // The card face: one background slot (art over color, or a solid color, or
+    // a plain tile), painted by applyCredentialDisplay. The format badge and
+    // the name overlay it, so on a phone the face reads like a wallet card.
+    const faceHtml = '<div class="card-face">' +
+      '<span class="format-badge format-badge-face">' + formatLabel + '</span>' +
+      logoImg +
+      '<div class="face-name">' + faceLabel + '</div>' +
       '</div>';
 
-    return { html: html, dataset: dataset };
+    // The body. The display name leads and the technical type stays beside it:
+    // this is a diagnostic wallet, and the vct is what a DCQL query matches on.
+    const nameHtml = display.name
+      ? '<span class="credential-name">' + escHtml(display.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
+      : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
+
+    const rel = relativeTime(cred.issued_at);
+    const identLine = '<div class="cred-ident">' +
+      (rel ? '<span class="cred-issued">issued ' + escHtml(rel) + '</span><span class="cred-dot">·</span>' : '') +
+      '<span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span>' +
+      '</div>';
+
+    // Issuer as the format actually carries it: iss for SD-JWT, the signing
+    // certificate subject for mdoc, a DID otherwise.
+    let issuerMeta = '';
+    if (cred.issuer && cred.issuer.value) {
+      issuerMeta = '<span class="cred-meta-item"><span class="cred-meta-k">' + escHtml(cred.issuer.kind || 'iss') +
+        '</span> <span class="mono">' + escHtml(cred.issuer.value) + '</span></span>';
+    }
+
+    const claimCount = Object.keys(cred.claims || {}).length;
+    const countMeta = '<span class="cred-meta-item">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') +
+      (cred.sd_count ? ' · ' + cred.sd_count + ' SD' : '') + '</span>';
+
+    const bodyHtml = '<div class="credential-info">' +
+        '<div class="credential-type cred-hdr">' +
+          '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
+          nameHtml +
+        '</div>' +
+        identLine +
+        '<div class="cred-pills">' + protectedBadge + statusBadge + expiryBadge + signatureBadge + keyBindingBadge + '</div>' +
+        '<div class="cred-meta">' +
+          '<span class="cred-meta-item"><span class="cred-meta-k">type</span> <span class="mono">' + escHtml(typeLabel) + '</span></span>' +
+          issuerMeta + countMeta +
+        '</div>' +
+      '</div>';
+
+    return { html: faceHtml + bodyHtml, dataset: dataset };
+  }
+
+  // applyCredentialDisplay paints the issuer-declared appearance (§12.2.4)
+  // onto the card face, which has one background slot the way a real wallet
+  // card does: the background image over the background color as its base, or
+  // a solid color when there is no image, or a plain tile with a monogram or a
+  // generic glyph when the issuer declared neither. The color lives only in
+  // the face, never as a row tint. Values were validated at issuance and are
+  // assigned as style properties, never interpolated into a style sheet.
+  function applyCredentialDisplay(card, display) {
+    const face = card.querySelector('.card-face');
+    if (!face) return;
+    display = display || {};
+    const textColor = String(display.text_color || '');
+    const darkText = textColor.toLowerCase() === '#000' || textColor.toLowerCase() === '#000000';
+
+    if (display.background_uri) {
+      const scrim = darkText
+        ? 'linear-gradient(0deg,rgba(255,255,255,.80),rgba(255,255,255,.12) 58%)'
+        : 'linear-gradient(0deg,rgba(0,0,0,.62),rgba(0,0,0,.05) 58%)';
+      // The image over the declared color as its base, so a transparent image
+      // shows the color through it. url() takes the value as a plain string,
+      // not a place a quote could break out of a rule.
+      face.style.backgroundImage = scrim + ', url("' + display.background_uri.replace(/["\\]/g, '') + '")';
+      if (display.background_color) face.style.backgroundColor = display.background_color;
+      face.style.color = textColor || '#fff';
+    } else if (display.background_color) {
+      face.style.background = 'linear-gradient(135deg, ' + display.background_color +
+        ', color-mix(in srgb, ' + display.background_color + ' 56%, #000))';
+      face.style.color = textColor || '#fff';
+    } else {
+      // No art and no color. A logo still sits on the plain tile, otherwise a
+      // monogram from the display name, or a generic glyph when there is not
+      // even a name to initial.
+      face.classList.add('plain');
+      if (!face.querySelector('.credential-logo')) {
+        const name = display.name || '';
+        const initials = credentialInitials(name);
+        const glyph = name && initials
+          ? '<span class="face-init">' + escHtml(initials) + '</span>'
+          : GENERIC_FACE_GLYPH;
+        const nameEl = face.querySelector('.face-name');
+        if (nameEl) nameEl.insertAdjacentHTML('beforebegin', glyph);
+      }
+    }
+
+    // The overlaid format badge takes the declared text color so it reads as
+    // part of the face, with a scrim that contrasts either way.
+    const fb = face.querySelector('.format-badge-face');
+    if (fb) {
+      fb.style.color = textColor || '#fff';
+      fb.style.background = darkText ? 'rgba(255,255,255,.62)' : 'rgba(0,0,0,.5)';
+    }
   }
 
   function renderCredentials() {
@@ -427,7 +597,7 @@
       card.className = 'credential-card';
 
       const isProtected = cred.protected === true;
-      const body = credentialCardBody(cred, '', true);
+      const body = credentialCardBody(cred, '');
       card.id = 'credential-' + cred.id;
       Object.assign(card.dataset, body.dataset);
 
@@ -450,6 +620,7 @@
           (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
       card.querySelector('.credential-info').title = 'Open in decoder';
+      applyCredentialDisplay(card, cred.display);
 
       const openDecoder = () => {
         // By id: the decoder is mounted on this wallet and can look the
@@ -458,6 +629,7 @@
       };
       card.querySelector('[data-show]').addEventListener('click', openDecoder);
       card.querySelector('.credential-info').addEventListener('click', openDecoder);
+      card.querySelector('.card-face').addEventListener('click', openDecoder);
       const del = card.querySelector('[data-delete]');
       if (del) {
         del.addEventListener('click', () => deleteCredential(cred.id));
@@ -1532,14 +1704,18 @@
         : cred.format === 'mso_mdoc' ? 'mDoc' : '';
       const typeLabel = cred.vct || cred.doctype || cred.id;
 
+      const logoImg = cred.display && cred.display.logo_uri
+        ? '<img class="credential-logo" src="' + escHtml(cred.display.logo_uri) + '" alt="' + escHtml(cred.display.logo_alt_text || '') + '">'
+        : '';
       html += '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' +
+        '<div class="consent-body">' +
         '<div class="consent-credential-header">' +
         (formatLabel ? '<span class="format-badge ' + formatClass + '">' + formatLabel + '</span>' : '') +
-        '<span style="font-size:12px;font-weight:600;">' + escHtml(cred.name || typeLabel) + '</span>' +
+        logoImg +
+        (cred.name
+          ? '<span class="credential-name">' + escHtml(cred.name) + '</span><span class="credential-vct">' + escHtml(typeLabel) + '</span>'
+          : '<span class="credential-name">' + escHtml(typeLabel) + '</span>') +
         '</div>';
-      if (cred.name && typeLabel !== cred.name) {
-        html += '<div class="offer-type">' + escHtml(typeLabel) + '</div>';
-      }
       if (cred.description) {
         html += '<div class="offer-description">' + escHtml(cred.description) + '</div>';
       }
@@ -1548,7 +1724,7 @@
           '<div class="consent-claim"><span class="consent-claim-name">' + escHtml(claim) + '</span></div>'
         ).join('') + '</div>';
       }
-      html += '</div>';
+      html += '</div></div>';
     });
 
     if (details.metadata_error) {
@@ -1627,12 +1803,22 @@
     // simply approved from asking for anything, and the cards render from the
     // match in the meantime, so there is nothing to wait for on screen.
     let loadingCandidates = false;
+    // The credential ids the dialog shows, from the DCQL queries or, without
+    // them, the matched credentials. Both surfaces render the issuer-declared
+    // appearance, which travels with the fetched detail.
+    function candidateIds() {
+      const ids = [];
+      const add = id => { if (id && !ids.includes(id)) ids.push(id); };
+      if (options) {
+        options.queries.forEach(q => q.candidates.forEach(c => add(c.credential_id)));
+      } else if (req.matched_credentials) {
+        req.matched_credentials.forEach(mc => add(mc.credential_id));
+      }
+      return ids;
+    }
     function ensureCandidateDetails() {
       if (loadingCandidates) return;
-      const ids = [];
-      options.queries.forEach(q => q.candidates.forEach(c => {
-        if (!candidateDetails.has(c.credential_id) && !ids.includes(c.credential_id)) ids.push(c.credential_id);
-      }));
+      const ids = candidateIds().filter(id => !candidateDetails.has(id));
       if (ids.length === 0) return;
       loadingCandidates = true;
       loadCandidateDetails(ids).then(loaded => {
@@ -1667,10 +1853,23 @@
 
     function credentialCardHtml(mc) {
       const typeLabel = mc.vct || mc.doctype || mc.format;
+      // The issuer-declared name and logo once the credential's full detail
+      // has loaded. It is already in the wallet, so this reads the cached
+      // display rather than fetching anything.
+      const display = (candidateDetails.get(mc.credential_id) || {}).display || {};
+      const logoImg = display.logo_uri
+        ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+        : '';
+      const nameHtml = display.name
+        ? '<span class="credential-name">' + escHtml(display.name) + '</span>' +
+          '<span class="credential-vct">' + escHtml(typeLabel) + '</span>'
+        : '<span class="credential-name">' + escHtml(typeLabel) + '</span>';
       let html = '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
+        '<div class="consent-body">' +
         '<div class="consent-credential-header">' +
           formatBadgeHtml(mc) +
-          '<span style="font-size:12px;font-weight:600;">' + escHtml(typeLabel) + '</span>' +
+          logoImg +
+          nameHtml +
         '</div>' +
         '<div class="consent-claims">';
 
@@ -1686,7 +1885,7 @@
         '</label>';
       });
 
-      return html + '</div></div>';
+      return html + '</div></div></div>';
     }
 
     // The Edit view: the set options and, per query id of the chosen
@@ -1763,6 +1962,26 @@
     }
 
     function wireSelectionHandlers() {
+      // The issuer-declared accent on every consent card that names a
+      // credential, so it looks the same being decided on as it does at rest.
+      // Presentation summary cards carry data-credential-id, edit-view
+      // candidates carry data-cred (both fetched into candidateDetails), and
+      // issuance offer cards carry data-config-id (display in the offer
+      // details). The query-group wrapper has none.
+      consentDialog.querySelectorAll('[data-credential-id], .candidate[data-cred]').forEach(el => {
+        const id = el.dataset.credentialId || el.dataset.cred;
+        const detail = candidateDetails.get(id);
+        if (detail && detail.display) applyCredentialDisplay(el, detail.display);
+      });
+      if (isIssuance && req.offer_details) {
+        const byId = {};
+        (req.offer_details.credentials || []).forEach(c => { byId[c.id] = c.display; });
+        consentDialog.querySelectorAll('[data-config-id]').forEach(el => {
+          const display = byId[el.dataset.configId];
+          if (display) applyCredentialDisplay(el, display);
+        });
+      }
+
       const edit = document.getElementById('consent-edit-selection');
       if (edit) edit.addEventListener('click', () => { selection.editing = true; renderDialog(); });
       const done = document.getElementById('consent-selection-done');
@@ -1821,6 +2040,13 @@
       html += renderOfferDetails(req);
     }
 
+    if (!isIssuance) {
+      // Load the full detail behind every candidate so the cards can carry
+      // the issuer's declared name, logo and colors, the same as the
+      // credential list. A re-render follows when it arrives.
+      ensureCandidateDetails();
+    }
+
     if (!isIssuance && options) {
       // One quiet row announces the alternatives; the cards below stay
       // exactly the ones the current selection presents.
@@ -1838,7 +2064,6 @@
     }
 
     if (options && selection.editing) {
-      ensureCandidateDetails();
       html = editScreenHtml();
     }
 

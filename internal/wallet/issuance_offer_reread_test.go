@@ -44,7 +44,7 @@ func TestApprovingAnOfferSurvivesASingleUseOfferURI(t *testing.T) {
 
 	// What the consent dialog does: resolve the offer so it can name what is
 	// being offered.
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
+	consentReq, _, err := generateTestWallet(t).prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestApproveRequestCompletesWhenTheIssuerServesTheOfferOnce(t *testing.T) {
 
 	server := NewServer(w, 0, nil)
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
+	consentReq, _, err := generateTestWallet(t).prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestASwappedOfferDoesNotReplaceTheApprovedOne(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
+	consentReq, _, err := generateTestWallet(t).prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestAnOfferRereadWithoutAnIssuerKeepsTheApprovedOne(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	consentReq, _, err := prepareIssuanceConsentRequest(offerURI, "")
+	consentReq, _, err := generateTestWallet(t).prepareIssuanceConsentRequest(offerURI, "")
 	if err != nil {
 		t.Fatalf("preparing the consent request: %v", err)
 	}

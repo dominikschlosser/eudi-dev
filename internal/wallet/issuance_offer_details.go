@@ -32,6 +32,11 @@ type OfferedCredential struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Claims      []string `json:"claims,omitempty"`
+	// Display is the appearance the issuer declares for this configuration, so
+	// the consent dialog shows the card the user is about to accept. Its
+	// images are fetched now through the policed client, the same defensive
+	// path the issuance itself uses.
+	Display *CredentialDisplay `json:"display,omitempty"`
 }
 
 // IssuanceOfferDetails is what the consent dialog shows about a credential
@@ -64,7 +69,7 @@ type IssuanceOfferDetails struct {
 // there is recorded and the offer is still described from what it carries,
 // because a user should not be blocked from deciding by an issuer that
 // publishes no metadata.
-func describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetails {
+func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetails {
 	if offer == nil {
 		return nil
 	}
@@ -90,7 +95,7 @@ func describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetail
 	}
 
 	for _, id := range offer.CredentialConfigurationIDs {
-		details.Credentials = append(details.Credentials, describeConfiguration(metadata, id))
+		details.Credentials = append(details.Credentials, w.describeConfiguration(metadata, id))
 	}
 	return details
 }
@@ -151,7 +156,7 @@ func issuerDisplay(metadata map[string]any) (name, logo string) {
 // describeConfiguration resolves one configuration id against the metadata.
 // An id the issuer does not publish still yields an entry, so the dialog can
 // show what was offered rather than silently dropping it.
-func describeConfiguration(metadata map[string]any, id string) OfferedCredential {
+func (w *Wallet) describeConfiguration(metadata map[string]any, id string) OfferedCredential {
 	out := OfferedCredential{ID: id}
 	configs, _ := metadata["credential_configurations_supported"].(map[string]any)
 	config, _ := configs[id].(map[string]any)
@@ -173,6 +178,10 @@ func describeConfiguration(metadata map[string]any, id string) OfferedCredential
 		out.Description, _ = entry["description"].(string)
 	}
 	out.Claims = configurationClaimNames(credentialMetadata["claims"])
+	// The full appearance (colors, logo, card art), resolved the same way the
+	// issued credential's is, so the consent dialog previews the card. Its
+	// images go through the policed, capped, dimension-guarded fetch.
+	out.Display = w.resolveCredentialDisplay(metadata, id)
 	return out
 }
 

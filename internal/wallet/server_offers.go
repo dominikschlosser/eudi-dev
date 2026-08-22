@@ -277,7 +277,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session str
 	s.wallet.AddLogDetails("issuance", "Received credential offer", true, offerDetails)
 
 	if !s.wallet.AutoAccept && !apiInitiated {
-		consentReq, issuerDisplay, err := prepareIssuanceConsentRequest(uri, session)
+		consentReq, issuerDisplay, err := s.wallet.prepareIssuanceConsentRequest(uri, session)
 		if err != nil {
 			s.log("  ERROR: %v", err)
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
@@ -423,7 +423,7 @@ func (s *Server) processOfferDirectly(w http.ResponseWriter, uri, txCode, sessio
 		writeJSON(w, http.StatusOK, result)
 	}
 }
-func prepareIssuanceConsentRequest(raw, owner string) (*ConsentRequest, string, error) {
+func (w *Wallet) prepareIssuanceConsentRequest(raw, owner string) (*ConsentRequest, string, error) {
 	trimmed := strings.TrimSpace(raw)
 	req := &ConsentRequest{
 		ID:           newConsentID(),
@@ -463,7 +463,7 @@ func prepareIssuanceConsentRequest(raw, owner string) (*ConsentRequest, string, 
 	}
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
-	req.OfferDetails = describeCredentialOffer(offer)
+	req.OfferDetails = w.describeCredentialOffer(offer)
 	// Kept for the approval: an issuer that serves the offer once has
 	// nothing left to give by then.
 	req.ResolvedOffer = offer

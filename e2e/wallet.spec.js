@@ -165,24 +165,24 @@ test.describe("Wallet Dashboard", () => {
     });
 
     // Check for SD-JWT credential
-    const sdjwtCard = page.locator(".format-sdjwt").first();
+    const sdjwtCard = page.locator(".credential-card[data-format='sdjwt']").first();
     await expect(sdjwtCard).toBeVisible();
 
     // Check for mDoc credential
-    const mdocCard = page.locator(".format-mdoc").first();
+    const mdocCard = page.locator(".credential-card[data-format='mdoc']").first();
     await expect(mdocCard).toBeVisible();
   });
 
-  test("displays claim tags on credential cards", async ({ page }) => {
+  test("shows a claim count on credential cards", async ({ page }) => {
     await page.goto(WALLET_URL);
     await expect(page.locator(".credential-card")).toHaveCount(2, {
       timeout: 5000,
     });
 
-    // Should show some claim tags
-    const claimTags = page.locator(".claim-tag");
-    const count = await claimTags.count();
-    expect(count).toBeGreaterThan(0);
+    // The card carries a claim count in its meta line, not the claims
+    // themselves (the decoder shows those).
+    const meta = page.locator(".credential-card").first().locator(".cred-meta");
+    await expect(meta).toContainText(/\d+ claims?/);
   });
 
   test("has theme toggle button", async ({ page }) => {
@@ -562,10 +562,9 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator(".credential-card")).toHaveCount(2);
   });
 
-  // Namespaces are an mdoc idea, and the card groups mdoc elements by them.
-  // An SD-JWT claim name may contain a colon of its own (a URI claim name is
-  // ordinary), and splitting that into a namespace would show half a name.
-  test("an SD-JWT claim name containing a colon stays whole on the card", async ({
+  // An SD-JWT with a URI claim name (a colon of its own) imports and renders
+  // as an ordinary card with its claim count, and deletes.
+  test("an SD-JWT with a URI claim name renders and deletes", async ({
     page,
   }) => {
     const claimName = "https://example.org/claims/role";
@@ -579,8 +578,7 @@ test.describe("Credential Issuing via UI", () => {
     await page.goto(WALLET_URL);
     const card = page.locator(`#credential-${issued.body.id}`);
     await expect(card).toBeVisible();
-    await expect(card.locator(".claim-namespace")).toHaveCount(0);
-    await expect(card.locator(".claim-tag", { hasText: claimName })).toHaveCount(1);
+    await expect(card.locator(".cred-meta")).toContainText(/\d+ claims?/);
 
     await page.locator(`#delete-${issued.body.id}`).click();
     await expect(card).toHaveCount(0);
@@ -1087,7 +1085,7 @@ test.describe("A credential bound to a key the wallet does not hold", () => {
     const card = page.locator(
       `.credential-card[data-credential-id='${imported.id}']`
     );
-    await expect(card.locator(".status-unheld-key")).toHaveText("Wrong holder binding", {
+    await expect(card.locator(".status-unheld-key")).toHaveText("Bound to another key", {
       timeout: 5000,
     });
     await expect(card.locator(".status-unheld-key")).toHaveAttribute(

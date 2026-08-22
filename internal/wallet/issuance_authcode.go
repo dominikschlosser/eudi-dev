@@ -399,7 +399,9 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 	if err != nil {
 		return nil, err
 	}
+	display := w.resolveCredentialDisplay(metadata, configID)
 	if pending != nil {
+		pending.Display = display
 		return w.recordDeferredIssuance(pending), nil
 	}
 
@@ -422,6 +424,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		UseDPoP:            dpopKey != nil,
 		ClientAuth:         clientAuth,
 	})
+	w.rememberDisplay(imported, display)
 
 	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
 
@@ -562,10 +565,9 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 // so under HAIP the remaining cases turn on the metadata:
 //
 //   - No method advertised at all: attest anyway, since §10.1 makes
-//     advertising only a SHOULD (this is what the Animo playground needs).
+//     advertising only a SHOULD.
 //   - Only unauthenticated access advertised: debug takes the server at its
-//     word and does not attest (Procivis One), strict attests and lets the
-//     exchange fail.
+//     word and does not attest, strict attests and lets the exchange fail.
 func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w == nil {
 		return false

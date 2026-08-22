@@ -120,6 +120,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("POST /token", d.handleToken)
 	mux.HandleFunc("POST /credential", d.handleCredential)
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer", d.handleIssuerMetadata)
+	mux.HandleFunc("GET /logo.svg", d.handleLogo)
 
 	// Authorization code flow, with this issuer as its own authorization
 	// server. The user signs in at /authorize, during redemption, not before
@@ -164,6 +165,14 @@ func (d *DemoRP) issuerID() string {
 	return d.baseURL() + "/issuer"
 }
 
+// handleLogo serves the eudi-dev logo the display metadata points at, so a
+// wallet exercising §12.2.4 fetches it the way it would from any issuer.
+func (d *DemoRP) handleLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(wallet.LogoSVG())
+}
+
 func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	issuer := d.issuerID()
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -180,7 +189,11 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		// challenge its key proof must carry.
 		"nonce_endpoint": issuer + "/nonce",
 		"display": []map[string]any{
-			{"name": "EUDI Test Demo Issuer", "locale": "en-US"},
+			{
+				"name":   "EUDI Test Demo Issuer",
+				"locale": "en-US",
+				"logo":   map[string]any{"uri": issuer + "/logo.svg", "alt_text": "eudi-dev logo"},
+			},
 		},
 		"credential_configurations_supported": map[string]any{
 			ticketConfigurationID: map[string]any{
@@ -199,7 +212,14 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 				// with no name and no claims.
 				"credential_metadata": map[string]any{
 					"display": []map[string]any{
-						{"name": "Demo Event Ticket", "description": "A sample event ticket issued by the demo issuer", "locale": "en-US"},
+						{
+							"name":             "Demo Event Ticket",
+							"description":      "A sample event ticket issued by the demo issuer",
+							"locale":           "en-US",
+							"logo":             map[string]any{"uri": issuer + "/logo.svg", "alt_text": "eudi-dev logo"},
+							"background_color": "#3d59a1",
+							"text_color":       "#ffffff",
+						},
 					},
 					"claims": []map[string]any{
 						{"path": []string{"event"}},

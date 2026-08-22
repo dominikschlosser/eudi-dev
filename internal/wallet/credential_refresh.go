@@ -190,6 +190,7 @@ func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (
 		fresh.ID = id
 		fresh.Protected = w.Credentials[i].Protected
 		fresh.Renewal = renewal
+		fresh.Display = w.Credentials[i].Display
 		w.Credentials[i] = fresh
 		return &w.Credentials[i], nil
 	}

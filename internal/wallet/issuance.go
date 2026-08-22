@@ -464,7 +464,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	if err != nil {
 		return nil, err
 	}
+	display := w.resolveCredentialDisplay(metadata, configID)
 	if pending != nil {
+		pending.Display = display
 		return w.recordDeferredIssuance(pending), nil
 	}
 
@@ -509,6 +511,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		UseDPoP:            dpopKey != nil,
 		ClientAuth:         clientAuth,
 	})
+	w.rememberDisplay(imported, display)
 
 	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
 

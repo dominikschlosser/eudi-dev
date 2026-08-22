@@ -203,20 +203,94 @@ header h1 {
   gap: 8px;
 }
 
-.credential-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  background: var(--bg-surface);
+/* The credential card is a single background slot (the face) plus a body of
+   debug detail. It lays itself out from its own width: a dense row on a wide
+   list, a wallet-style card with the face as a hero on a phone. */
+/* The list is the query container: every card lays itself out from the list
+   width, so the whole stack switches between the row and the wallet-card form
+   together. A card cannot size itself from its own width, so the container has
+   to be the parent. */
+.credentials {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  /* On a narrow screen the actions move below the credential body instead of
-     squeezing it into a sliver. */
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
+  container-type: inline-size;
 }
 
-.credential-card .format-badge,
+.credential-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+/* The card face carries the issuer-declared appearance. background_image over
+   background_color as its base, or a solid color, or a plain tile, painted by
+   applyCredentialDisplay. */
+.card-face {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+  cursor: pointer;
+}
+.card-face.plain {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The issuer logo, a monogram from the display name, or a generic glyph, each
+   sitting on the face. */
+.credential-logo {
+  position: absolute;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 8px;
+}
+.face-init,
+.face-generic {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.face-name {
+  position: absolute;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* One accent-blue format pill for every format, so the format reads without
+   the noise of a color per type. The face variant overlays the art with a
+   scrim (set inline to match the declared text color). */
+.format-badge {
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.format-badge-row {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.format-badge-face {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+}
+/* The format pill in a consent candidate keeps its own sizing. */
 .candidate .format-badge {
   font-size: 10px;
   padding: 2px 8px;
@@ -225,46 +299,114 @@ header h1 {
   white-space: nowrap;
   flex-shrink: 0;
 }
-
 .format-sdjwt { background: rgba(122, 162, 247, 0.2); color: var(--accent); }
 .format-jwt { background: rgba(224, 175, 104, 0.2); color: #e0af68; }
 .format-mdoc { background: rgba(158, 206, 106, 0.2); color: var(--green); }
 
-.credential-info {
-  flex: 1;
-  /* The floor that makes the card wrap: once the type column cannot get this
-     much beside the actions, the actions go to their own row. */
-  min-width: min(180px, 100%);
-}
-
+.credential-info { min-width: 0; }
 /* Only in the list does the card body open the decoder. On a consent
    candidate the click picks the credential, and the decoder has a link of its
    own. */
-.credential-card .credential-info {
-  cursor: pointer;
-}
+.credential-card .credential-info { cursor: pointer; }
+.credential-card .credential-info:hover .credential-name { color: var(--accent); }
 
-.credential-card .credential-info:hover .credential-type {
-  color: var(--accent);
+/* The header: the format pill baseline-aligned with the display name, and the
+   technical type dimmed beside it (the vct is what a DCQL query matches on). */
+.cred-hdr {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
 }
-
-.credential-type {
-  font-size: 12px;
+.credential-name {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
-  /* A type name is one long token, so it breaks wherever the line ends, and
-     the raised line height keeps wrapped badge rows apart. */
-  overflow-wrap: anywhere;
-  line-height: 1.6;
+  letter-spacing: -0.01em;
 }
-
-.credential-claims {
+.credential-vct {
+  font-family: var(--font-mono, monospace);
+  font-weight: 400;
   font-size: 11px;
   color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+/* The identity line: when it was issued and the short id, the handle that
+   tells two same-type instances apart. */
+.cred-ident {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-dim);
   display: flex;
+  gap: 7px;
   flex-wrap: wrap;
-  gap: 4px;
+  align-items: baseline;
+}
+.cred-dot { opacity: 0.5; }
+
+.cred-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* The meta line: the technical type, the issuer as the format carries it, and
+   the claim counts. */
+.cred-meta {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cred-meta-item { overflow-wrap: anywhere; }
+.cred-meta-k {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+  margin-right: 3px;
+}
+.mono { font-family: var(--font-mono, monospace); font-size: 11px; }
+
+/* DESKTOP: a dense row, the face a small thumbnail, actions on the right. */
+@container (min-width: 521px) {
+  .credential-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+  }
+  .card-face {
+    width: 92px;
+    aspect-ratio: 8 / 5;
+    border-radius: 9px;
+    flex: 0 0 auto;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+  .credential-logo { top: 5px; left: 5px; width: 20px; height: 20px; padding: 2px; }
+  .face-init, .face-generic { font-size: 22px; }
+  .face-name, .format-badge-face { display: none; }
+  .credential-info { flex: 1; }
+  .credential-actions { flex: 0 0 auto; margin-left: 6px; }
+}
+
+/* MOBILE: a wallet card, the face a full-width hero with the name on it, the
+   debug detail stacked below, actions full width. */
+@container (max-width: 520px) {
+  .card-face {
+    width: 100%;
+    aspect-ratio: 1.6;
+  }
+  .credential-logo { top: 14px; left: 14px; width: 34px; height: 34px; padding: 4px; }
+  .face-init, .face-generic { font-size: 30px; }
+  .face-name { left: 16px; bottom: 14px; right: 16px; font-size: 20px; }
+  .cred-hdr { display: none; }
+  .credential-info { padding: 13px 15px 4px; }
+  .credential-actions { padding: 11px 15px 15px; }
+  .credential-actions .btn { flex: 1; }
 }
 
 .claim-tag {
@@ -646,6 +788,35 @@ header h1 {
   white-space: nowrap;
 }
 
+/* In the card's pill row the gap sets the spacing and the pills read as a
+   rounded set. */
+.cred-pills .status-badge {
+  margin-left: 0;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.status-none {
+  background: color-mix(in srgb, var(--text-dim) 16%, transparent);
+  color: var(--text-dim);
+}
+
+/* Pill icons render as pseudo-elements so the badge text stays the plain word
+   (Active, Protected, Signed), which keeps text-based automation matching. */
+.ico-lock::before { content: "🔒 "; }
+.ico-dot::before { content: "● "; }
+.ico-block::before { content: "⊘ "; }
+.ico-half::before { content: "◐ "; }
+.ico-circle::before { content: "○ "; }
+.ico-clock::before { content: "◷ "; }
+.ico-check::before { content: "✓ "; }
+.ico-x::before { content: "✗ "; }
+.ico-warn::before { content: "⚠ "; }
+
 .status-active {
   background: rgba(158, 206, 106, 0.2);
   color: var(--green);
@@ -796,6 +967,26 @@ header h1 {
   background: var(--bg);
 }
 
+/* A consent card and a candidate lay the issuer card art out as a left
+   thumbnail exactly like the credential list, so a consent card reads the
+   same as an overview card. The content sits in its own column beside it.
+   Scoped to the cards that name a credential: the query group wrapper is also
+   a .consent-credential but only holds the candidate list and must stay a
+   block that stacks them. */
+.consent-credential[data-credential-id],
+.consent-credential[data-config-id],
+.candidate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 112px;
+}
+.consent-body,
+.candidate-row {
+  flex: 1;
+  min-width: 0;
+}
+
 .consent-credential-header {
   display: flex;
   align-items: center;
@@ -904,6 +1095,9 @@ header h1 {
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.4px;
+  /* A surface behind it so it reads over a candidate card's background art,
+     the way the credential list's buttons do. */
+  background: var(--bg-surface);
 }
 
 .query-id-label {
@@ -970,6 +1164,12 @@ header h1 {
   font-size: 10px;
   white-space: nowrap;
   text-decoration: none;
+  /* A surface and border so it reads over background art, matching the
+     credential list's action buttons. */
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-surface);
 }
 
 .candidate-decode:hover {
