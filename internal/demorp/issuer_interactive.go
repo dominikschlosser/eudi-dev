@@ -415,12 +415,13 @@ func (d *DemoRP) newInteractivePIDRequest() *requestState {
 // OpenID4VP Authorization Request shaped as the Digital Credentials API takes
 // one, with the response mode that sends the answer back here.
 //
-// It is sent unsigned, which is the form the draft's own example uses. The
-// binding does not depend on a signature: the wallet checks expected_origins
-// against the endpoint it called, and the presentation it signs names that
-// endpoint (§6.2.1.5).
+// It is a signed request object, so the wallet can authenticate the issuer as
+// the party asking for the presentation. The client_id is the hash of the
+// signing certificate (x509_hash), which the wallet verifies against the x5c
+// leaf in the request object with no trust list. When no signing material is
+// available it falls back to the unsigned form the draft's example uses.
 func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]any {
-	request := map[string]any{
+	claims := map[string]any{
 		"response_type":    "vp_token",
 		"response_mode":    "ia_post",
 		"nonce":            req.nonce,
@@ -448,28 +449,38 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 		},
 	}
 
+	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
+	if err != nil || signingKey == nil || len(chain) == 0 {
+		return claims
+	}
+
 	// The purpose of the request, carried in a registration certificate
 	// (rc-wrp+jwt) in verifier_info (OpenID4VP 1.0 §5.1) like the demo
-	// verifier's requests. Best-effort: a request without one still verifies
-	// the same way.
-	signingKey, chain, err := d.wallet.DefaultSigningMaterial()
-	if err == nil && signingKey != nil && len(chain) > 0 {
-		registration, err := wallet.SignRegistrationCertificateJWT(map[string]any{
-			"sub":  "EUDI-DEV-DEMO-ISSUER",
-			"name": "Demo Issuer",
-			"iat":  time.Now().Unix(),
-			"purpose": []map[string]any{
-				{"lang": "en", "value": "Proving who you are before the ticket is issued"},
-			},
-		}, signingKey, chain)
-		if err == nil {
-			request["verifier_info"] = []map[string]any{{
-				"format": "registration_cert",
-				"data":   registration,
-			}}
-		}
+	// verifier's requests.
+	registration, rerr := wallet.SignRegistrationCertificateJWT(map[string]any{
+		"sub":  "EUDI-DEV-DEMO-ISSUER",
+		"name": "Demo Issuer",
+		"iat":  time.Now().Unix(),
+		"purpose": []map[string]any{
+			{"lang": "en", "value": "Proving who you are before the ticket is issued"},
+		},
+	}, signingKey, chain)
+	if rerr == nil {
+		claims["verifier_info"] = []map[string]any{{
+			"format": "registration_cert",
+			"data":   registration,
+		}}
 	}
-	return request
+
+	// The signed request object: the client_id is the certificate hash, so the
+	// wallet authenticates the issuer without a trust list.
+	claims["client_id"] = wallet.X509HashClientID(chain[0])
+	jar, jerr := wallet.SignRequestObjectJWT(claims, signingKey, chain)
+	if jerr != nil {
+		delete(claims, "client_id")
+		return claims
+	}
+	return map[string]any{"request": jar}
 }
 
 func claimPaths(names []string) []map[string]any {

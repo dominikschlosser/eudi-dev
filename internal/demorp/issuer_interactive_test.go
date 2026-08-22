@@ -16,6 +16,7 @@ package demorp
 
 import (
 	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -529,11 +530,36 @@ func startInteractiveSession(t *testing.T, d *DemoRP, provider walletProvider, c
 	}
 	session, _ = response["auth_session"].(string)
 	request, _ := response["openid4vp_request"].(map[string]any)
+	// The presentation request is a signed request object, so the nonce lives
+	// in the JWT payload. The unsigned fallback carries it at the top level.
 	nonce, _ = request["nonce"].(string)
+	if nonce == "" {
+		if jar, ok := request["request"].(string); ok {
+			nonce, _ = signedRequestClaims(t, jar)["nonce"].(string)
+		}
+	}
 	if session == "" || nonce == "" {
 		t.Fatalf("challenge response carries no session or nonce: %v", response)
 	}
 	return session, nonce
+}
+
+// signedRequestClaims decodes the payload of a signed request object JWT.
+func signedRequestClaims(t *testing.T, jar string) map[string]any {
+	t.Helper()
+	parts := strings.Split(jar, ".")
+	if len(parts) != 3 {
+		t.Fatalf("request object is not a JWT: %q", jar)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("decoding request object payload: %v", err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		t.Fatalf("parsing request object payload: %v", err)
+	}
+	return claims
 }
 
 // The presentation an interactive session hands back is verified as a
