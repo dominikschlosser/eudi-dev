@@ -1192,16 +1192,19 @@ func TestDecodeJARMResponseJWEWithJWK(t *testing.T) {
 	}
 
 	// Build JWK JSON from private key
-	b64 := func(b []byte) string {
-		padded := make([]byte, 32)
-		copy(padded[32-len(b):], b)
-		return base64.RawURLEncoding.EncodeToString(padded)
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := key.Bytes()
+	if err != nil {
+		t.Fatal(err)
 	}
 	jwkJSON, _ := json.Marshal(map[string]string{
 		"kty": "EC", "crv": "P-256",
-		"x": b64(key.PublicKey.X.Bytes()),
-		"y": b64(key.PublicKey.Y.Bytes()),
-		"d": b64(key.D.Bytes()),
+		"x": format.EncodeBase64URL(x),
+		"y": format.EncodeBase64URL(y),
+		"d": format.EncodeBase64URL(d),
 	})
 
 	decoded := make(map[string]any)

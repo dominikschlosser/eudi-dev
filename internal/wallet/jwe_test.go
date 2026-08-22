@@ -15,12 +15,12 @@
 package wallet
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"math/big"
 	"strings"
 	"testing"
 
@@ -226,19 +226,22 @@ func TestEcdsaPublicKeyFromJWK(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Padded to the curve's width, which RFC 7518 §6.2.1.2 requires ("The
-	// length of this octet string MUST be the full size of a coordinate for
-	// the curve"). big.Int.Bytes() drops leading zeros, so roughly one key in
-	// 256 would otherwise be narrow and strict mode would rightly refuse it.
-	xB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.X))
-	yB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.Y))
+	// Full-width coordinates, which RFC 7518 §6.2.1.2 requires ("The length of
+	// this octet string MUST be the full size of a coordinate for the curve")
+	// and strict mode enforces.
+	xRaw, yRaw, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	xB64 := format.EncodeBase64URL(xRaw)
+	yB64 := format.EncodeBase64URL(yRaw)
 
 	pub, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, yB64)
 	if err != nil {
 		t.Fatalf("ecdsaPublicKeyFromJWK() error: %v", err)
 	}
 
-	if pub.X.Cmp(key.PublicKey.X) != 0 || pub.Y.Cmp(key.PublicKey.Y) != 0 {
+	if !pub.Equal(&key.PublicKey) {
 		t.Error("parsed key does not match original")
 	}
 	if pub.Curve != elliptic.P256() {
@@ -255,7 +258,11 @@ func TestEcdsaPublicKeyFromJWK_InvalidX(t *testing.T) {
 
 func TestEcdsaPublicKeyFromJWK_InvalidY(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	xB64 := format.EncodeBase64URL(p256Coordinate(key.PublicKey.X))
+	xRaw, _, coordErr := format.ECPublicCoords(&key.PublicKey)
+	if coordErr != nil {
+		t.Fatal(coordErr)
+	}
+	xB64 := format.EncodeBase64URL(xRaw)
 
 	_, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, "not-valid-base64!!!")
 	if err == nil {
@@ -330,11 +337,15 @@ func TestEncryptionJWKShortCoordinate_StrictRefusesDebugReports(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.X.BitLen() > 248 { // no leading zero byte, keep looking
+		x, y, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x[0] != 0 { // no leading zero byte, keep looking
 			continue
 		}
-		shortX := base64.RawURLEncoding.EncodeToString(key.X.Bytes())
-		fullY := base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32)))
+		shortX := base64.RawURLEncoding.EncodeToString(bytes.TrimLeft(x, "\x00"))
+		fullY := base64.RawURLEncoding.EncodeToString(y)
 
 		if _, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, shortX, fullY); err == nil {
 			t.Error("strict mode accepted a JWK the specification does not allow")
@@ -367,11 +378,15 @@ func TestShortCoordinateIsReportedInTheActivityLog(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.X.BitLen() > 248 {
+		x, y, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x[0] != 0 {
 			continue
 		}
-		shortX = base64.RawURLEncoding.EncodeToString(key.X.Bytes())
-		fullY = base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32)))
+		shortX = base64.RawURLEncoding.EncodeToString(bytes.TrimLeft(x, "\x00"))
+		fullY = base64.RawURLEncoding.EncodeToString(y)
 		holder = &key.PublicKey
 	}
 	if shortX == "" {
@@ -406,11 +421,4 @@ func TestShortCoordinateIsReportedInTheActivityLog(t *testing.T) {
 	if !reported {
 		t.Error("the repair never reached the activity log, so nothing tells the user their verifier is non-conformant")
 	}
-}
-
-// p256Coordinate renders an EC coordinate the width RFC 7518 §6.2.1.2 asks
-// for. A test that skips this builds a JWK the spec does not allow and fails
-// against strict mode whenever the coordinate happens to start with a zero.
-func p256Coordinate(v *big.Int) []byte {
-	return v.FillBytes(make([]byte, 32))
 }

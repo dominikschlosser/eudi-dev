@@ -100,7 +100,7 @@ func TestParseJWK_EC(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *ecdsa.PublicKey, got %T", pub)
 	}
-	if ecPub.X.Cmp(key.PublicKey.X) != 0 || ecPub.Y.Cmp(key.PublicKey.Y) != 0 {
+	if !ecPub.Equal(&key.PublicKey) {
 		t.Error("parsed key does not match original")
 	}
 }
@@ -238,8 +238,8 @@ func TestParseJWKPrivate_EC(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *ecdsa.PrivateKey, got %T", priv)
 	}
-	if ecKey.D.Cmp(key.D) != 0 {
-		t.Error("private key D does not match")
+	if !ecKey.Equal(key) {
+		t.Error("private key does not match")
 	}
 }
 
@@ -391,7 +391,7 @@ func TestParseJWK_EC_P384(t *testing.T) {
 	if ecPub.Curve != elliptic.P384() {
 		t.Error("expected P-384 curve")
 	}
-	if ecPub.X.Cmp(key.PublicKey.X) != 0 || ecPub.Y.Cmp(key.PublicKey.Y) != 0 {
+	if !ecPub.Equal(&key.PublicKey) {
 		t.Error("parsed key does not match original")
 	}
 }
@@ -402,15 +402,17 @@ func TestParseJWK_EC_P521(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	jwk := map[string]any{
 		"kty": "EC",
 		"crv": "P-521",
-		// Padded to the curve width, which RFC 7518 requires. P-521
-		// coordinates routinely have a zero leading byte, so writing
-		// X.Bytes() here produced a short coordinate and was testing the
-		// parser's leniency by accident.
-		"x": format.EncodeBase64URL(key.PublicKey.X.FillBytes(make([]byte, 66))),
-		"y": format.EncodeBase64URL(key.PublicKey.Y.FillBytes(make([]byte, 66))),
+		// Full-width coordinates, which RFC 7518 requires. P-521 coordinates
+		// routinely have a zero leading byte, so a full-width encoding matters.
+		"x": format.EncodeBase64URL(x),
+		"y": format.EncodeBase64URL(y),
 	}
 	data, _ := json.Marshal(jwk)
 
@@ -426,7 +428,7 @@ func TestParseJWK_EC_P521(t *testing.T) {
 	if ecPub.Curve != elliptic.P521() {
 		t.Error("expected P-521 curve")
 	}
-	if ecPub.X.Cmp(key.PublicKey.X) != 0 || ecPub.Y.Cmp(key.PublicKey.Y) != 0 {
+	if !ecPub.Equal(&key.PublicKey) {
 		t.Error("parsed key does not match original")
 	}
 }

@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/big"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -135,11 +134,11 @@ func (j confirmationJWK) publicKey() *ecdsa.PublicKey {
 	if err != nil {
 		return nil
 	}
-	return &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(x),
-		Y:     new(big.Int).SetBytes(y),
+	pub, err := format.ECPublicKeyFromCoords(elliptic.P256(), x, y)
+	if err != nil {
+		return nil
 	}
+	return pub
 }
 
 // keyBindingNotHeld reports a credential the wallet keeps but cannot present:

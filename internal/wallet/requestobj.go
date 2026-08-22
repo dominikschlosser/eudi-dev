@@ -28,6 +28,16 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/jwe"
 )
 
+// encryptionKeyCoords returns the JWK coordinates of the request encryption
+// key when the wallet requires encrypted requests and holds one, and nil
+// coordinates otherwise.
+func encryptionKeyCoords(w *Wallet) (x, y []byte, err error) {
+	if !w.RequireEncryptedRequest || w.RequestEncryptionKey == nil {
+		return nil, nil, nil
+	}
+	return format.ECPublicCoords(&w.RequestEncryptionKey.PublicKey)
+}
+
 // BuildWalletMetadata builds the wallet_metadata JSON object per OID4VP 1.0 §10.
 func BuildWalletMetadata(w *Wallet) map[string]any {
 	meta := map[string]any{
@@ -63,23 +73,14 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 		"request_object_signing_alg_values_supported": []string{"ES256"},
 	}
 
-	if w.RequireEncryptedRequest && w.RequestEncryptionKey != nil {
-		pub := &w.RequestEncryptionKey.PublicKey
-		x := pub.X.Bytes()
-		y := pub.Y.Bytes()
-		// Pad to 32 bytes for P-256
-		xPad := make([]byte, 32)
-		yPad := make([]byte, 32)
-		copy(xPad[32-len(x):], x)
-		copy(yPad[32-len(y):], y)
-
+	if x, y, err := encryptionKeyCoords(w); err == nil && x != nil {
 		meta["jwks"] = map[string]any{
 			"keys": []any{
 				map[string]any{
 					"kty": "EC",
 					"crv": "P-256",
-					"x":   format.EncodeBase64URL(xPad),
-					"y":   format.EncodeBase64URL(yPad),
+					"x":   format.EncodeBase64URL(x),
+					"y":   format.EncodeBase64URL(y),
 					"use": "enc",
 					"alg": "ECDH-ES",
 				},

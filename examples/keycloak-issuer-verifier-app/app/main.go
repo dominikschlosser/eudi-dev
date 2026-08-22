@@ -739,6 +739,7 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		delete(s.appSessions, cookie.Value)
 		s.appMu.Unlock()
 	}
+	//nolint:gosec // G124: demo app served over plain http on localhost, so Secure cannot be set.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "demo_session",
 		Value:    "",
@@ -805,6 +806,7 @@ func (s *server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	s.appMu.Unlock()
 
+	//nolint:gosec // G124: demo app served over plain http on localhost, so Secure cannot be set.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "demo_session",
 		Value:    sessionID,

@@ -88,37 +88,39 @@ func isKeycloakRequest(path string) bool {
 }
 
 func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	originalDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		forwardedHost := req.Header.Get("X-Forwarded-Host")
-		if forwardedHost == "" {
-			forwardedHost = req.Host
-		}
-		forwardedProto := req.Header.Get("X-Forwarded-Proto")
-		if forwardedProto == "" {
-			if req.TLS != nil {
-				forwardedProto = "https"
-			} else {
-				forwardedProto = "http"
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			in, out := pr.In, pr.Out
+			forwardedHost := in.Header.Get("X-Forwarded-Host")
+			if forwardedHost == "" {
+				forwardedHost = in.Host
 			}
-		}
-		forwardedPort := req.Header.Get("X-Forwarded-Port")
-		if forwardedPort == "" {
-			if forwardedProto == "https" {
-				forwardedPort = "443"
-			} else {
-				forwardedPort = "80"
+			forwardedProto := in.Header.Get("X-Forwarded-Proto")
+			if forwardedProto == "" {
+				if in.TLS != nil {
+					forwardedProto = "https"
+				} else {
+					forwardedProto = "http"
+				}
 			}
-		}
-		originalDirector(req)
-		req.Host = forwardedHost
-		req.Header.Set("X-Forwarded-Host", forwardedHost)
-		req.Header.Set("X-Forwarded-Proto", forwardedProto)
-		req.Header.Set("X-Forwarded-Port", forwardedPort)
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		http.Error(w, "upstream unavailable: "+err.Error(), http.StatusBadGateway)
+			forwardedPort := in.Header.Get("X-Forwarded-Port")
+			if forwardedPort == "" {
+				if forwardedProto == "https" {
+					forwardedPort = "443"
+				} else {
+					forwardedPort = "80"
+				}
+			}
+			pr.SetURL(target)
+			// Preserve the original Host header for the backend.
+			out.Host = forwardedHost
+			out.Header.Set("X-Forwarded-Host", forwardedHost)
+			out.Header.Set("X-Forwarded-Proto", forwardedProto)
+			out.Header.Set("X-Forwarded-Port", forwardedPort)
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+			http.Error(w, "upstream unavailable: "+err.Error(), http.StatusBadGateway)
+		},
 	}
 	return proxy
 }

@@ -15,6 +15,7 @@
 package keys
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -23,6 +24,8 @@ import (
 	"encoding/json"
 	"math/big"
 	"testing"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // These pin what JWK parsing accepts and rejects, so the implementation
@@ -33,12 +36,15 @@ import (
 // jwkFor renders a public key as a JWK document the way a peer would send it.
 func ecJWK(t *testing.T, key *ecdsa.PublicKey, crv string) []byte {
 	t.Helper()
-	size := (key.Curve.Params().BitSize + 7) / 8
+	x, y, err := format.ECPublicCoords(key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	doc := map[string]string{
 		"kty": "EC",
 		"crv": crv,
-		"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, size))),
-		"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, size))),
+		"x":   base64.RawURLEncoding.EncodeToString(x),
+		"y":   base64.RawURLEncoding.EncodeToString(y),
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {
@@ -51,13 +57,20 @@ func ecJWK(t *testing.T, key *ecdsa.PublicKey, crv string) []byte {
 // 7518 section 6.2.2.1 gives d the curve width too.
 func ecPrivateJWK(t *testing.T, key *ecdsa.PrivateKey, crv string) []byte {
 	t.Helper()
-	size := (key.Curve.Params().BitSize + 7) / 8
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := key.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	doc := map[string]string{
 		"kty": "EC",
 		"crv": crv,
-		"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, size))),
-		"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, size))),
-		"d":   base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, size))),
+		"x":   base64.RawURLEncoding.EncodeToString(x),
+		"y":   base64.RawURLEncoding.EncodeToString(y),
+		"d":   base64.RawURLEncoding.EncodeToString(d),
 	}
 	out, err := json.Marshal(doc)
 	if err != nil {
@@ -105,7 +118,11 @@ func TestParseJWK_ECLeadingZeroCoordinate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.X.BitLen() > 248 { // not a leading zero byte
+		x, _, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x[0] != 0 { // not a leading zero byte
 			continue
 		}
 		parsed, err := ParseJWK(ecJWK(t, &key.PublicKey, "P-256"))
@@ -175,12 +192,20 @@ func TestParseJWKPrivate_ECRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := key.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	doc, err := json.Marshal(map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
-		"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
-		"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
-		"d":   base64.RawURLEncoding.EncodeToString(key.D.FillBytes(make([]byte, 32))),
+		"x":   base64.RawURLEncoding.EncodeToString(x),
+		"y":   base64.RawURLEncoding.EncodeToString(y),
+		"d":   base64.RawURLEncoding.EncodeToString(d),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +218,7 @@ func TestParseJWKPrivate_ECRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("parsed %T, want *ecdsa.PrivateKey", parsed)
 	}
-	if got.D.Cmp(key.D) != 0 {
+	if !got.Equal(key) {
 		t.Error("private scalar did not survive the round trip")
 	}
 	if !got.PublicKey.Equal(&key.PublicKey) {
@@ -211,14 +236,18 @@ func TestParseJWK_ShortCoordinateStrictVersusLenient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.X.BitLen() > 248 { // no leading zero byte, keep looking
+		x, y, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x[0] != 0 { // no leading zero byte, keep looking
 			continue
 		}
 		doc, err := json.Marshal(map[string]string{
 			"kty": "EC",
 			"crv": "P-256",
-			"x":   base64.RawURLEncoding.EncodeToString(key.X.Bytes()), // short
-			"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
+			"x":   base64.RawURLEncoding.EncodeToString(bytes.TrimLeft(x, "\x00")), // short
+			"y":   base64.RawURLEncoding.EncodeToString(y),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -286,15 +315,23 @@ func TestParseJWKPrivate_ShortScalarStillLoads(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.D.BitLen() > 248 { // no leading zero byte, keep looking
+		x, y, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := key.Bytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d[0] != 0 { // no leading zero byte, keep looking
 			continue
 		}
 		doc, err := json.Marshal(map[string]string{
 			"kty": "EC",
 			"crv": "P-256",
-			"x":   base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
-			"y":   base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))),
-			"d":   base64.RawURLEncoding.EncodeToString(key.D.Bytes()), // short
+			"x":   base64.RawURLEncoding.EncodeToString(x),
+			"y":   base64.RawURLEncoding.EncodeToString(y),
+			"d":   base64.RawURLEncoding.EncodeToString(bytes.TrimLeft(d, "\x00")), // short
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -304,7 +341,7 @@ func TestParseJWKPrivate_ShortScalarStillLoads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("a key file with a short scalar was refused: %v", err)
 		}
-		if parsed.(*ecdsa.PrivateKey).D.Cmp(key.D) != 0 {
+		if !parsed.(*ecdsa.PrivateKey).Equal(key) {
 			t.Error("the loaded scalar is not the one in the file")
 		}
 		return

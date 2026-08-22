@@ -177,7 +177,7 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 	d.requests[request.id] = request
 	d.mu.Unlock()
 
-	log.Printf("[Demo issuer] interactive authorization: asking %s for a PID before issuing", clientID)
+	log.Printf("[Demo issuer] interactive authorization: asking %q for a PID before issuing", clientID)
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":                     "insufficient_authorization",
 		"interaction_type_required": interactionTypePresentation,

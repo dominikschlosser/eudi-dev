@@ -92,12 +92,15 @@ func publicKeyJWKParams(pub any) (map[string]any, string, error) {
 		default:
 			return nil, "", fmt.Errorf("unsupported EC curve: %s", key.Curve.Params().Name)
 		}
-		keySize := (key.Curve.Params().BitSize + 7) / 8
+		x, y, err := format.ECPublicCoords(key)
+		if err != nil {
+			return nil, "", err
+		}
 		return map[string]any{
 			"kty": "EC",
 			"crv": crv,
-			"x":   format.EncodeBase64URL(key.X.FillBytes(make([]byte, keySize))),
-			"y":   format.EncodeBase64URL(key.Y.FillBytes(make([]byte, keySize))),
+			"x":   format.EncodeBase64URL(x),
+			"y":   format.EncodeBase64URL(y),
 		}, alg, nil
 	case *rsa.PublicKey:
 		return map[string]any{

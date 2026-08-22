@@ -15,12 +15,15 @@
 package mdoc
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // These pin what DeviceKey reads out of an MSO and what it refuses, so the
@@ -65,10 +68,11 @@ func TestDeviceKey_ResolvesTheBoundKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := msoWithDeviceKey(t, coseEC2(
-		key.X.FillBytes(make([]byte, 32)),
-		key.Y.FillBytes(make([]byte, 32)),
-	))
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := msoWithDeviceKey(t, coseEC2(x, y))
 
 	got, err := DeviceKey(doc)
 	if err != nil {
@@ -90,11 +94,15 @@ func TestDeviceKey_ShortCoordinate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if key.X.BitLen() > 248 {
+		x, y, err := format.ECPublicCoords(&key.PublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x[0] != 0 {
 			continue
 		}
 		// Unpadded, the way a lax encoder would write it.
-		doc := msoWithDeviceKey(t, coseEC2(key.X.Bytes(), key.Y.FillBytes(make([]byte, 32))))
+		doc := msoWithDeviceKey(t, coseEC2(bytes.TrimLeft(x, "\x00"), y))
 		got, err := DeviceKey(doc)
 		if err != nil {
 			t.Fatalf("DeviceKey with a short X: %v", err)
@@ -150,8 +158,10 @@ func TestDeviceKey_IntegerLabelTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x := key.X.FillBytes(make([]byte, 32))
-	y := key.Y.FillBytes(make([]byte, 32))
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		name     string

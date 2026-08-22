@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
@@ -502,6 +503,7 @@ func originOf(raw string) string {
 // encryption key. The wallet refuses direct_post.jwt without a usable JWK,
 // and requires an explicit alg on it.
 func responseEncryptionMetadata(key *ecdsa.PrivateKey) map[string]any {
+	x, y, _ := format.ECPublicCoords(&key.PublicKey)
 	return map[string]any{
 		"jwks": map[string]any{
 			"keys": []map[string]any{{
@@ -510,8 +512,8 @@ func responseEncryptionMetadata(key *ecdsa.PrivateKey) map[string]any {
 				"use": "enc",
 				"alg": "ECDH-ES",
 				"kid": "demo-verifier-response-enc",
-				"x":   base64.RawURLEncoding.EncodeToString(key.PublicKey.X.FillBytes(make([]byte, 32))),
-				"y":   base64.RawURLEncoding.EncodeToString(key.PublicKey.Y.FillBytes(make([]byte, 32))),
+				"x":   base64.RawURLEncoding.EncodeToString(x),
+				"y":   base64.RawURLEncoding.EncodeToString(y),
 			}},
 		},
 		// HAIP 1.0 §5: "Verifiers MUST list both A128GCM and A256GCM in
@@ -1059,9 +1061,13 @@ func encryptionJWKThumbprint(key *ecdsa.PrivateKey) []byte {
 	if key == nil {
 		return nil
 	}
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		return nil
+	}
 	canonical := fmt.Sprintf(`{"crv":"P-256","kty":"EC","x":%q,"y":%q}`,
-		base64.RawURLEncoding.EncodeToString(key.PublicKey.X.FillBytes(make([]byte, 32))),
-		base64.RawURLEncoding.EncodeToString(key.PublicKey.Y.FillBytes(make([]byte, 32))))
+		base64.RawURLEncoding.EncodeToString(x),
+		base64.RawURLEncoding.EncodeToString(y))
 	sum := sha256.Sum256([]byte(canonical))
 	return sum[:]
 }

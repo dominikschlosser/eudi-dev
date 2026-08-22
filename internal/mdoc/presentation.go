@@ -27,6 +27,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 // VerifyValueDigests checks the disclosed items against the digests the issuer
@@ -212,10 +214,14 @@ func DeviceKeyThumbprint(key *ecdsa.PublicKey) string {
 	if key == nil {
 		return ""
 	}
+	x, y, err := format.ECPublicCoords(key)
+	if err != nil {
+		return ""
+	}
 	canonical := fmt.Sprintf(`{"crv":%q,"kty":"EC","x":%q,"y":%q}`,
 		key.Curve.Params().Name,
-		base64.RawURLEncoding.EncodeToString(key.X.FillBytes(make([]byte, 32))),
-		base64.RawURLEncoding.EncodeToString(key.Y.FillBytes(make([]byte, 32))))
+		base64.RawURLEncoding.EncodeToString(x),
+		base64.RawURLEncoding.EncodeToString(y))
 	sum := sha256.Sum256([]byte(canonical))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

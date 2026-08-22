@@ -39,10 +39,10 @@ func GenerateKey() (*ecdsa.PrivateKey, error) {
 
 // PublicKeyJWKMap returns the JWK representation of a P-256 public key as a map.
 func PublicKeyJWKMap(key *ecdsa.PublicKey) map[string]string {
-	keySize := (key.Curve.Params().BitSize + 7) / 8
-	xBytes := padToKeySize(key.X.Bytes(), keySize)
-	yBytes := padToKeySize(key.Y.Bytes(), keySize)
-
+	xBytes, yBytes, err := format.ECPublicCoords(key)
+	if err != nil {
+		return nil
+	}
 	return map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
@@ -74,27 +74,12 @@ func SigningJWKMap(key *ecdsa.PublicKey) map[string]any {
 	}
 }
 
-func padToKeySize(b []byte, size int) []byte {
-	for len(b) < size {
-		b = append([]byte{0}, b...)
-	}
-	return b
-}
-
 // PublicKeyJWK returns the JSON JWK representation of a P-256 public key.
 func PublicKeyJWK(key *ecdsa.PublicKey) string {
-	keySize := (key.Curve.Params().BitSize + 7) / 8
-	xBytes := key.X.Bytes()
-	yBytes := key.Y.Bytes()
-
-	// Pad to key size
-	for len(xBytes) < keySize {
-		xBytes = append([]byte{0}, xBytes...)
+	xBytes, yBytes, err := format.ECPublicCoords(key)
+	if err != nil {
+		return fmt.Sprintf(`{"error": %q}`, err)
 	}
-	for len(yBytes) < keySize {
-		yBytes = append([]byte{0}, yBytes...)
-	}
-
 	jwk := map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
@@ -192,19 +177,13 @@ func WithoutSelfSignedTrustAnchor(chain []*x509.Certificate) []*x509.Certificate
 
 // PrivateKeyJWK returns the JSON JWK representation of a P-256 private key (includes d).
 func PrivateKeyJWK(key *ecdsa.PrivateKey) string {
-	keySize := (key.Curve.Params().BitSize + 7) / 8
-	xBytes := key.X.Bytes()
-	yBytes := key.Y.Bytes()
-	dBytes := key.D.Bytes()
-
-	for len(xBytes) < keySize {
-		xBytes = append([]byte{0}, xBytes...)
+	xBytes, yBytes, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		return fmt.Sprintf(`{"error": %q}`, err)
 	}
-	for len(yBytes) < keySize {
-		yBytes = append([]byte{0}, yBytes...)
-	}
-	for len(dBytes) < keySize {
-		dBytes = append([]byte{0}, dBytes...)
+	dBytes, err := key.Bytes()
+	if err != nil {
+		return fmt.Sprintf(`{"error": %q}`, err)
 	}
 
 	jwk := map[string]string{

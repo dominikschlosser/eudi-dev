@@ -198,14 +198,9 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 
 	// Add deviceKeyInfo with holder's COSE_Key
 	if cfg.HolderKey != nil {
-		keySize := (cfg.HolderKey.Curve.Params().BitSize + 7) / 8
-		xBytes := cfg.HolderKey.X.Bytes()
-		yBytes := cfg.HolderKey.Y.Bytes()
-		for len(xBytes) < keySize {
-			xBytes = append([]byte{0}, xBytes...)
-		}
-		for len(yBytes) < keySize {
-			yBytes = append([]byte{0}, yBytes...)
+		xBytes, yBytes, err := format.ECPublicCoords(cfg.HolderKey)
+		if err != nil {
+			return "", fmt.Errorf("encoding holder key: %w", err)
 		}
 
 		// COSE_Key: kty=2 (EC2), crv=1 (P-256), x, y

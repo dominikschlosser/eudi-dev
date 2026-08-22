@@ -71,33 +71,34 @@ func NewServer(cfg Config, writer EntryWriter) *Server {
 	s.rewriter = NewRewriter(targetHost, proxyHost)
 
 	s.proxy = &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			forwardedHost := req.Header.Get("X-Forwarded-Host")
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			in, out := pr.In, pr.Out
+			forwardedHost := in.Header.Get("X-Forwarded-Host")
 			if forwardedHost == "" {
-				forwardedHost = req.Host
+				forwardedHost = in.Host
 			}
-			forwardedProto := req.Header.Get("X-Forwarded-Proto")
+			forwardedProto := in.Header.Get("X-Forwarded-Proto")
 			if forwardedProto == "" {
-				if req.TLS != nil {
+				if in.TLS != nil {
 					forwardedProto = "https"
 				} else {
 					forwardedProto = "http"
 				}
 			}
-			forwardedPort := req.Header.Get("X-Forwarded-Port")
+			forwardedPort := in.Header.Get("X-Forwarded-Port")
 			if forwardedPort == "" {
 				forwardedPort = forwardedPortForProto(forwardedProto)
 			}
-			req.URL.Scheme = cfg.TargetURL.Scheme
-			req.URL.Host = cfg.TargetURL.Host
-			req.Host = cfg.TargetURL.Host
-			req.Header.Set("X-Forwarded-Host", forwardedHost)
-			req.Header.Set("X-Forwarded-Proto", forwardedProto)
-			req.Header.Set("X-Forwarded-Port", forwardedPort)
+			out.URL.Scheme = cfg.TargetURL.Scheme
+			out.URL.Host = cfg.TargetURL.Host
+			out.Host = cfg.TargetURL.Host
+			out.Header.Set("X-Forwarded-Host", forwardedHost)
+			out.Header.Set("X-Forwarded-Proto", forwardedProto)
+			out.Header.Set("X-Forwarded-Port", forwardedPort)
 		},
 		ModifyResponse: s.modifyResponse,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Printf("proxy: backend error for %s %s: %v", r.Method, r.URL.Path, err)
+			log.Printf("proxy: backend error for %q %q: %v", r.Method, r.URL.Path, err)
 			w.WriteHeader(http.StatusBadGateway)
 		},
 	}

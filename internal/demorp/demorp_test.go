@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
@@ -595,11 +595,11 @@ func responseEncryptionKey(t *testing.T, payload map[string]any) (*ecdsa.PublicK
 		t.Fatalf("decoding jwk y: %v", err)
 	}
 	kid, _ := jwk["kid"].(string)
-	return &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(xb),
-		Y:     new(big.Int).SetBytes(yb),
-	}, kid
+	pub, err := format.ECPublicKeyFromCoords(elliptic.P256(), xb, yb)
+	if err != nil {
+		t.Fatalf("building the jwk public key: %v", err)
+	}
+	return pub, kid
 }
 
 // postPresentation submits a presentation the way a HAIP wallet does: the

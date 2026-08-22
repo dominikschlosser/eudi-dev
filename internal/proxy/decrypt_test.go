@@ -18,10 +18,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
@@ -202,18 +202,20 @@ func TestDecryptJWEWithJWK_WrongKey(t *testing.T) {
 // ecPrivateKeyToJWK creates a JWK JSON string from an ECDSA private key.
 func ecPrivateKeyToJWK(t *testing.T, key *ecdsa.PrivateKey) string {
 	t.Helper()
-	b64 := func(b []byte) string {
-		// Pad to 32 bytes for P-256
-		padded := make([]byte, 32)
-		copy(padded[32-len(b):], b)
-		return base64.RawURLEncoding.EncodeToString(padded)
+	x, y, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := key.Bytes()
+	if err != nil {
+		t.Fatal(err)
 	}
 	jwk := map[string]string{
 		"kty": "EC",
 		"crv": "P-256",
-		"x":   b64(key.PublicKey.X.Bytes()),
-		"y":   b64(key.PublicKey.Y.Bytes()),
-		"d":   b64(key.D.Bytes()),
+		"x":   format.EncodeBase64URL(x),
+		"y":   format.EncodeBase64URL(y),
+		"d":   format.EncodeBase64URL(d),
 	}
 	out, err := json.Marshal(jwk)
 	if err != nil {

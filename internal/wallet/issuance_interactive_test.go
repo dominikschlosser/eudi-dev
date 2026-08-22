@@ -589,14 +589,18 @@ func encryptionJWKForTest(t *testing.T) map[string]any {
 	if err != nil {
 		t.Fatalf("generating an encryption key: %v", err)
 	}
+	encX, encY, err := format.ECPublicCoords(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("encoding the encryption key: %v", err)
+	}
 	return map[string]any{
 		"kty": "EC",
 		"crv": "P-256",
 		"use": "enc",
 		"alg": "ECDH-ES",
 		"kid": "issuer-encryption-key",
-		"x":   format.EncodeBase64URL(key.PublicKey.X.FillBytes(make([]byte, 32))),
-		"y":   format.EncodeBase64URL(key.PublicKey.Y.FillBytes(make([]byte, 32))),
+		"x":   format.EncodeBase64URL(encX),
+		"y":   format.EncodeBase64URL(encY),
 	}
 }
 

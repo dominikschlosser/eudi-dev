@@ -218,7 +218,11 @@ func TestAttestationCnfPrivateKeyRejected(t *testing.T) {
 	}
 
 	privateJWK := holderJWK(t, clientKey)
-	privateJWK["d"] = format.EncodeBase64URL(clientKey.D.Bytes())
+	clientD, err := clientKey.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateJWK["d"] = format.EncodeBase64URL(clientD)
 	attestation := signES256(t, provider.key,
 		map[string]any{
 			"alg": "ES256",

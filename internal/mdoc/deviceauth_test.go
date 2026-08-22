@@ -23,6 +23,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/veraison/go-cose"
+
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
 const testDocType = "eu.europa.ec.eudi.pid.1"
@@ -39,7 +41,11 @@ func testKey(t *testing.T) *ecdsa.PrivateKey {
 // deviceKeyCBOR encodes a public key the way an MSO carries it, as a COSE_Key.
 func deviceKeyCBOR(t *testing.T, pub *ecdsa.PublicKey) []byte {
 	t.Helper()
-	key, err := cose.NewKeyEC2(cose.AlgorithmES256, pub.X.FillBytes(make([]byte, 32)), pub.Y.FillBytes(make([]byte, 32)), nil)
+	x, y, err := format.ECPublicCoords(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := cose.NewKeyEC2(cose.AlgorithmES256, x, y, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

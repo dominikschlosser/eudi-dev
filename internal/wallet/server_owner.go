@@ -49,6 +49,7 @@ func newBrowserSession(w http.ResponseWriter, r *http.Request, secure bool) stri
 		return ""
 	}
 	id := base64.RawURLEncoding.EncodeToString(raw)
+	//nolint:gosec // G124: Secure is set for TLS connections; the wallet also serves plain http on localhost, so it cannot be unconditional.
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    id,

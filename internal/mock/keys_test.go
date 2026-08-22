@@ -41,7 +41,7 @@ func TestGenerateKey_UniqueKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
 	}
-	if key1.D.Cmp(key2.D) == 0 {
+	if key1.Equal(key2) {
 		t.Error("two generated keys should not be identical")
 	}
 }

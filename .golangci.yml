@@ -36,6 +36,10 @@ linters:
         - "-ST1000"
         - "-ST1005"
     gosec:
+      # The taint-analysis rules flag the variable-in-path, variable-in-URL and
+      # variable-in-log patterns that are pervasive and intended in this
+      # developer tool. G703 and G706 are the newer taint versions of the
+      # already-excluded G304 and are excluded on the same grounds.
       excludes:
         - G104
         - G107
@@ -46,6 +50,8 @@ linters:
         - G304
         - G306
         - G301
+        - G703
+        - G706
 
   exclusions:
     rules:

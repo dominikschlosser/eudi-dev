@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"math/big"
@@ -129,13 +130,12 @@ func TestJWKThumbprint(t *testing.T) {
 func TestJWKThumbprint_KnownVector(t *testing.T) {
 	// Manually construct a key with known coordinates and verify the thumbprint
 	// matches the expected SHA-256 of the canonical JWK form.
-	x, _ := new(big.Int).SetString("60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6", 16)
-	y, _ := new(big.Int).SetString("7903FE1008B8BC99A41AE9E95628BC64F2F1B20C2D7E9F5177A3C294D4462299", 16)
+	x, _ := hex.DecodeString("60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6")
+	y, _ := hex.DecodeString("7903FE1008B8BC99A41AE9E95628BC64F2F1B20C2D7E9F5177A3C294D4462299")
 
-	key := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     x,
-		Y:     y,
+	key, err := format.ECPublicKeyFromCoords(elliptic.P256(), x, y)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	tp, err := jwkThumbprint(key)

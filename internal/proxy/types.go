@@ -39,6 +39,7 @@ const (
 	ClassOIDCCallback                      // Redirect/callback back to the client
 )
 
+//nolint:gosec // G101: these are traffic-class display labels, not credentials.
 var classLabels = map[TrafficClass]string{
 	ClassUnknown:              "Unknown",
 	ClassVPAuthRequest:        "VP Auth Request",
