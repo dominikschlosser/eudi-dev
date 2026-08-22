@@ -211,6 +211,9 @@ header h1 {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  /* On a narrow screen the actions move below the credential body instead of
+     squeezing it into a sliver. */
+  flex-wrap: wrap;
 }
 
 .credential-card .format-badge,
@@ -229,7 +232,9 @@ header h1 {
 
 .credential-info {
   flex: 1;
-  min-width: 0;
+  /* The floor that makes the card wrap: once the type column cannot get this
+     much beside the actions, the actions go to their own row. */
+  min-width: min(180px, 100%);
 }
 
 /* Only in the list does the card body open the decoder. On a consent
@@ -248,7 +253,10 @@ header h1 {
   font-weight: 600;
   color: var(--text);
   margin-bottom: 4px;
-  word-break: break-all;
+  /* A type name is one long token, so it breaks wherever the line ends, and
+     the raised line height keeps wrapped badge rows apart. */
+  overflow-wrap: anywhere;
+  line-height: 1.6;
 }
 
 .credential-claims {
@@ -288,6 +296,8 @@ header h1 {
   flex-shrink: 0;
   display: flex;
   gap: 6px;
+  /* Keeps the actions on the right edge, on their own row too. */
+  margin-left: auto;
 }
 
 .pager {
@@ -632,6 +642,8 @@ header h1 {
   font-size: 10px;
   font-weight: 600;
   vertical-align: middle;
+  /* A badge is a unit: it wraps to the next line whole. */
+  white-space: nowrap;
 }
 
 .status-active {
@@ -930,6 +942,9 @@ header h1 {
   align-items: flex-start;
   gap: 8px;
   font-size: 11px;
+  /* Same wrap as the credential card: on a narrow screen the actions column
+     moves below the candidate instead of squeezing it. */
+  flex-wrap: wrap;
 }
 
 .candidate-row input[type="radio"] {
