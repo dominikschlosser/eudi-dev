@@ -287,10 +287,14 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("importing to wallet: %w", err)
 	}
+	// An explicit display wins, otherwise the template's own display (if any)
+	// gives the issued credential the same appearance the template declares.
 	if opts.Display != nil {
 		if d := w.issuedDisplay(*opts.Display); d != nil {
 			w.rememberDisplay(imported, d)
 		}
+	} else if tpl != nil {
+		w.rememberDisplay(imported, w.templateDisplay(tpl.Display))
 	}
 	if registerStatus {
 		w.RegisterStatusEntry(imported.ID, statusIdx)

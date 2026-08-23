@@ -24,11 +24,14 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"golang.org/x/image/draw"
+
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
 )
 
 // CredentialDisplay is the appearance a §12.2.4 display entry declares for a
@@ -206,6 +209,69 @@ func relativeLuminance(rgb [3]float64) float64 {
 		channels[i] = c
 	}
 	return 0.2126*channels[0] + 0.7152*channels[1] + 0.0722*channels[2]
+}
+
+// templateDisplay resolves a template's display to a credential display. Colors
+// run through the §12.2.4 validation, and each image reference becomes card art:
+// an "embedded:<file>" name reads a bundled asset, and a data URI or https URL
+// runs through the policed, size-capped cache. It returns nil for a nil or empty
+// template display.
+func (w *Wallet) templateDisplay(td *credtemplate.TemplateDisplay) *CredentialDisplay {
+	if td == nil {
+		return nil
+	}
+	d := &CredentialDisplay{
+		Name:            strings.TrimSpace(td.Name),
+		Description:     strings.TrimSpace(td.Description),
+		Locale:          "en-US",
+		BackgroundColor: w.displayColor(map[string]any{"background_color": td.BackgroundColor}, "background_color"),
+		TextColor:       w.displayColor(map[string]any{"text_color": td.TextColor}, "text_color"),
+		LogoURI:         w.templateImage(td.Logo, "logo"),
+		BackgroundURI:   w.templateImage(td.BackgroundImage, "background_image"),
+	}
+	if d.Name == "" && d.Description == "" && d.BackgroundColor == "" &&
+		d.TextColor == "" && d.LogoURI == "" && d.BackgroundURI == "" {
+		return nil
+	}
+	w.checkDisplayContrast(d)
+	return d
+}
+
+// templateImage resolves a template image reference to card art. An
+// "embedded:<file>" reference reads a bundled asset by base name, so a template
+// can only reach the wallet's own read-only assets. Any other value is a display
+// image URI and runs through the policed cache.
+func (w *Wallet) templateImage(ref, field string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if name, ok := strings.CutPrefix(ref, "embedded:"); ok {
+		data, err := staticFiles.ReadFile("static/" + filepath.Base(name))
+		if err != nil {
+			w.rejectDisplayImage(field, ref, "not a bundled asset")
+			return ""
+		}
+		return "data:" + embeddedImageMIME(name) + ";base64," + base64.StdEncoding.EncodeToString(data)
+	}
+	return w.cacheDisplayImage(ref, field)
+}
+
+// embeddedImageMIME is the media type of a bundled image, by extension.
+func embeddedImageMIME(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".svg":
+		return "image/svg+xml"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	}
+	return "application/octet-stream"
 }
 
 // issuedDisplay builds the display for a self-issued credential from operator
