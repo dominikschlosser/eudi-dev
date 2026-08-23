@@ -1566,11 +1566,11 @@ func TestAuthorizationCodeOfferKeepsTheStatusChoice(t *testing.T) {
 	grants := offer["grants"].(map[string]any)[authCodeGrant].(map[string]any)
 	issuerState := grants["issuer_state"].(string)
 
-	if !d.offerWantsStatus(issuerState) {
+	if src := d.offerByIssuerState(issuerState); src == nil || !src.withStatus {
 		t.Error("the status choice was lost between the offer and its issuer_state")
 	}
-	if d.offerWantsStatus("some-other-state") {
-		t.Error("an unknown issuer_state must not inherit a status choice")
+	if d.offerByIssuerState("some-other-state") != nil {
+		t.Error("an unknown issuer_state must not resolve to an offer")
 	}
 }
 

@@ -397,7 +397,10 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	// This is a second state for the same offer, so what the offer was created
 	// with has to travel with it: the issuer_state is the only thing tying the
 	// two together.
-	offer.withStatus = d.offerWantsStatus(granted.issuerState)
+	if src := d.offerByIssuerState(granted.issuerState); src != nil {
+		offer.withStatus = src.withStatus
+		offer.deferred = src.deferred
+	}
 
 	d.mu.Lock()
 	d.tokens[offer.accessToken] = offer
@@ -413,20 +416,21 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// offerWantsStatus reports whether the offer an issuer_state belongs to was
-// created with a status list reference.
-func (d *DemoRP) offerWantsStatus(issuerState string) bool {
+// offerByIssuerState returns the offer an issuer_state belongs to, so the
+// settings it was created with (a status reference, deferred issuance) travel
+// to the token state the redemption builds. Nil when none matches.
+func (d *DemoRP) offerByIssuerState(issuerState string) *offerState {
 	if issuerState == "" {
-		return false
+		return nil
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, offer := range d.offers {
 		if offer.issuerState == issuerState {
-			return offer.withStatus
+			return offer
 		}
 	}
-	return false
+	return nil
 }
 
 func (d *DemoRP) lookupAuthRequest(requestURI string) (*authRequestState, error) {
