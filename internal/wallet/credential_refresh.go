@@ -191,6 +191,13 @@ func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (
 		fresh.Protected = w.Credentials[i].Protected
 		fresh.Renewal = renewal
 		fresh.Display = w.Credentials[i].Display
+		// The renewed copy keeps its place in its batch: dropping the group and
+		// its per-copy key would split the batch, so it would list twice and no
+		// longer present, delete, or revoke as one credential.
+		fresh.BatchGroup = w.Credentials[i].BatchGroup
+		fresh.BindingKeyPEM = w.Credentials[i].BindingKeyPEM
+		fresh.Uses = w.Credentials[i].Uses
+		fresh.LastPresentedAt = w.Credentials[i].LastPresentedAt
 		w.Credentials[i] = fresh
 		return &w.Credentials[i], nil
 	}

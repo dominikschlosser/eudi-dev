@@ -239,9 +239,8 @@ func (w *Wallet) collapseBatchMatches(matches []CredentialMatch, credentials []S
 
 // chooseBatchCopy returns the index into matches of the batch copy to present:
 // a random one among those presented the fewest times. That shows each copy
-// once in a random order and cycles again once all have been used (EUDI ARF
-// ISSU_52), falling back to reusing an already-used copy when none is unused
-// (ISSU_47).
+// once in a random order and then resets and cycles again, reusing the copies,
+// once all have been used (EUDI ARF method C, ISSU_52).
 func chooseBatchCopy(idxs []int, matches []CredentialMatch, byID map[string]StoredCredential) int {
 	fewest := -1
 	for _, i := range idxs {

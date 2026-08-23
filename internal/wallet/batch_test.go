@@ -215,6 +215,46 @@ func TestIssueCredentialBatchMintsEveryCopy(t *testing.T) {
 	}
 }
 
+func TestIssueCredentialBatchGivesEachCopyAnOwnStatusIndex(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example"
+	statusURL := w.StatusListURL()
+	// An explicit index must not be reused across the batch: every copy still
+	// lands on its own index, so two presentations cannot be linked by it. A low
+	// index would otherwise collide with the counter the copies draw from.
+	explicit := 0
+	if _, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           testBatchVCT,
+		BatchSize:     3,
+		StatusListURI: &statusURL,
+		StatusListIdx: &explicit,
+	}); err != nil {
+		t.Fatalf("issuing a batch with status: %v", err)
+	}
+
+	seen := make(map[int]bool)
+	count := 0
+	for i := range w.GetCredentials() {
+		c := w.GetCredentials()[i]
+		if c.VCT != testBatchVCT {
+			continue
+		}
+		count++
+		entry, ok := w.StatusEntryFor(c.ID)
+		if !ok {
+			t.Fatalf("copy %s has no status entry", c.ID)
+		}
+		if seen[entry.Index] {
+			t.Fatalf("two copies share status index %d, which would link them", entry.Index)
+		}
+		seen[entry.Index] = true
+	}
+	if count != 3 {
+		t.Fatalf("want 3 copies, got %d", count)
+	}
+}
+
 func TestIssueCredentialBatchRejectsPlainJWT(t *testing.T) {
 	w := generateTestWallet(t)
 	noStatus := ""
@@ -225,6 +265,47 @@ func TestIssueCredentialBatchRejectsPlainJWT(t *testing.T) {
 		StatusListURI: &noStatus,
 	}); err == nil {
 		t.Fatal("a batch of a plain JWT VC has no holder binding and must be rejected")
+	}
+}
+
+func TestRenewalKeepsBatchMembership(t *testing.T) {
+	w := generateTestWallet(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
+	storeTestBatch(t, w, keys)
+	rep := w.ListedCredentials()[0]
+	group := rep.BatchGroup
+	if group == "" {
+		t.Fatal("the batch has no group to keep")
+	}
+
+	// A renewal replaces the holder copy with a freshly signed one. It must stay
+	// in its batch, or the batch would list twice and stop presenting as one.
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("issuer key: %v", err)
+	}
+	freshRaw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer:    "https://issuer.example",
+		VCT:       testBatchVCT,
+		Claims:    map[string]any{"family_name": "Doe", "given_name": "Jane"},
+		Key:       issuerKey,
+		HolderKey: &w.HolderKey.PublicKey,
+	})
+	if err != nil {
+		t.Fatalf("signing the renewed copy: %v", err)
+	}
+	renewed, err := w.ReplaceCredential(rep.ID, freshRaw, nil)
+	if err != nil {
+		t.Fatalf("renewing: %v", err)
+	}
+	if renewed.BatchGroup != group {
+		t.Fatalf("renewal dropped the batch group: got %q, want %q", renewed.BatchGroup, group)
+	}
+	if listed := w.ListedCredentials(); len(listed) != 1 {
+		t.Fatalf("after renewal the batch lists as %d credentials, want 1", len(listed))
+	}
+	if n := w.BatchGroupSize(group); n != len(keys) {
+		t.Fatalf("after renewal the batch holds %d copies, want %d", n, len(keys))
 	}
 }
 

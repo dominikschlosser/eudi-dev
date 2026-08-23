@@ -130,7 +130,7 @@
         const when = next && !isNaN(next) ? next.toLocaleTimeString() : '';
         // The same card face as a delivered credential, painted by
         // applyCredentialDisplay below, so an awaiting item already shows the
-        // art the offer declared instead of a bare badge.
+        // art the offer declared.
         const logoImg = display.logo_uri
           ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
           : '';

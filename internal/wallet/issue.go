@@ -282,6 +282,13 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
+	// A batch draws every copy's status index from the wallet's counter,
+	// including this first one, so no two copies can share an index even when an
+	// explicit index was given (a shared index would link two presentations).
+	if opts.BatchSize >= 2 && registerStatus {
+		statusIdx = w.nextStatusIndex()
+	}
+
 	raw, err := signCopy(holderPub, statusIdx)
 	if err != nil {
 		return nil, fmt.Errorf("generating credential: %w", err)

@@ -230,8 +230,8 @@ type StoredCredential struct {
 	BindingKeyPEM string `json:"binding_key,omitempty"`
 	// Uses counts how many times this copy has been presented. The batch presents
 	// a random copy among those used the fewest times, which shows each copy once
-	// in a random order and then cycles again once they have all been used (ARF
-	// ISSU_52), falling back to reuse when none is unused (ISSU_47).
+	// in a random order and then resets and cycles again, reusing them, once they
+	// have all been used (EUDI ARF method C, ISSU_52).
 	Uses int `json:"uses,omitempty"`
 	// LastPresentedAt is when this copy was last sent, for display.
 	LastPresentedAt time.Time                          `json:"last_presented_at,omitempty"`
@@ -856,6 +856,16 @@ func (w *Wallet) RemoveCredential(id string) bool {
 			}
 			group = c.BatchGroup
 			break
+		}
+	}
+	// A protected copy anywhere in the batch stops the whole delete, the same
+	// rule revoking a batch follows, so a protected baseline cannot be removed
+	// through one of its copies.
+	if group != "" {
+		for _, c := range w.Credentials {
+			if c.BatchGroup == group && c.Protected {
+				return false
+			}
 		}
 	}
 	kept := w.Credentials[:0]
