@@ -685,13 +685,15 @@ test.describe("Credential Issuing via UI", () => {
     expect(tplRes.body.vct).toBe("urn:example:e2e-saved");
     expect(tplRes.body.claims.member_id).toBe("M-1");
 
-    // Clean up: the issued credential and the saved template
+    // Clean up the issued credential and the saved template through the API,
+    // so the cleanup does not depend on the credential's delete button sitting
+    // on the first page of a list that earlier tests may have paged.
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
     const issued = res.body.find((c) => c.vct === "urn:example:e2e-saved");
     expect(issued).toBeDefined();
-    await page.goto(WALLET_URL);
-    await page.locator(`#delete-${issued.id}`).click();
-    await expect(page.locator(`#credential-${issued.id}`)).toHaveCount(0);
+    await fetch(`${WALLET_URL}/api/credentials/${issued.id}`, {
+      method: "DELETE",
+    });
     await fetch(`${WALLET_URL}/api/templates/e2e-saved-template`, {
       method: "DELETE",
     });
