@@ -99,14 +99,11 @@ func (s *Server) handleImportCredential(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	label := id
-	for _, cred := range s.wallet.GetCredentials() {
-		if cred.ID == id {
-			if cred.VCT != "" {
-				label = cred.VCT
-			} else if cred.DocType != "" {
-				label = cred.DocType
-			}
-			break
+	if cred, ok := s.wallet.GetCredential(id); ok {
+		if cred.VCT != "" {
+			label = cred.VCT
+		} else if cred.DocType != "" {
+			label = cred.DocType
 		}
 	}
 	if s.wallet.IsProtected(id) {

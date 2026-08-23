@@ -20,8 +20,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // DeferredIssuance is a credential the issuer deferred, kept until the wallet
@@ -113,7 +111,7 @@ func newDeferredIssuance(ctx deferredContext, transactionID string, interval tim
 		accessTokenExpiry = now.Add(time.Duration(ctx.expiresIn) * time.Second)
 	}
 	return &DeferredIssuance{
-		ID:                   uuid.NewString(),
+		ID:                   newCredentialID(),
 		TransactionID:        transactionID,
 		Issuer:               ctx.issuer,
 		DeferredEndpoint:     ctx.deferredEndpoint,

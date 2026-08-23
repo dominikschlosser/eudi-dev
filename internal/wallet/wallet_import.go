@@ -15,17 +15,30 @@
 package wallet
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
-
-	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
+
+// newCredentialID mints a short hex id for a stored credential, the way git
+// names an object. It is long enough to stay unique in a wallet and short
+// enough to show and type, and a command resolves it from an unambiguous
+// prefix. It panics only if the system has no entropy, the same failure
+// uuid.New would raise.
+func newCredentialID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic("wallet: no entropy for a credential id: " + err.Error())
+	}
+	return hex.EncodeToString(b)
+}
 
 // ImportCredential auto-detects and imports a credential string.
 // It returns a pointer to a copy of the newly imported credential, safe to
@@ -169,7 +182,7 @@ func (w *Wallet) importSDJWT(raw string) (*StoredCredential, error) {
 	}
 
 	cred := StoredCredential{
-		ID:          uuid.New().String(),
+		ID:          newCredentialID(),
 		Format:      "dc+sd-jwt",
 		Raw:         raw,
 		Claims:      token.ResolvedClaims,
@@ -192,7 +205,7 @@ func (w *Wallet) importPlainJWT(raw string) (*StoredCredential, error) {
 	}
 
 	cred := StoredCredential{
-		ID:     uuid.New().String(),
+		ID:     newCredentialID(),
 		Format: "jwt_vc_json",
 		Raw:    raw,
 		Claims: payload,
@@ -221,7 +234,7 @@ func (w *Wallet) importMDoc(raw string) (*StoredCredential, error) {
 	}
 
 	cred := StoredCredential{
-		ID:         uuid.New().String(),
+		ID:         newCredentialID(),
 		Format:     "mso_mdoc",
 		Raw:        raw,
 		Claims:     claims,

@@ -823,8 +823,9 @@ func (w *Wallet) ClearCredentials() int {
 func (w *Wallet) RemoveCredential(id string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	full := w.resolveIDLocked(id)
 	for i, c := range w.Credentials {
-		if c.ID == id {
+		if c.ID == full {
 			if c.Protected {
 				return false
 			}
@@ -839,8 +840,9 @@ func (w *Wallet) RemoveCredential(id string) bool {
 func (w *Wallet) IsProtected(id string) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	full := w.resolveIDLocked(id)
 	for _, c := range w.Credentials {
-		if c.ID == id {
+		if c.ID == full {
 			return c.Protected
 		}
 	}
@@ -962,12 +964,38 @@ func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {
 	return w.ValidationMode, w.RequireHAIP, w.RequireEncryptedRequest
 }
 
-// GetCredential returns a credential by ID.
+// resolveIDLocked maps a credential id or an unambiguous id prefix to the full
+// stored id, so a command can name a credential by the short id the UI shows.
+// An exact id wins over any prefix. A prefix that matches nothing or more than
+// one credential returns "". The caller holds w.mu.
+func (w *Wallet) resolveIDLocked(idOrPrefix string) string {
+	if idOrPrefix == "" {
+		return ""
+	}
+	var prefixMatch string
+	prefixCount := 0
+	for _, c := range w.Credentials {
+		if c.ID == idOrPrefix {
+			return c.ID
+		}
+		if strings.HasPrefix(c.ID, idOrPrefix) {
+			prefixMatch = c.ID
+			prefixCount++
+		}
+	}
+	if prefixCount == 1 {
+		return prefixMatch
+	}
+	return ""
+}
+
+// GetCredential returns a credential by its id or an unambiguous id prefix.
 func (w *Wallet) GetCredential(id string) (StoredCredential, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	full := w.resolveIDLocked(id)
 	for _, c := range w.Credentials {
-		if c.ID == id {
+		if c.ID == full {
 			return c, true
 		}
 	}
