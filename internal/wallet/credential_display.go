@@ -227,6 +227,7 @@ func (w *Wallet) templateDisplay(td *credtemplate.TemplateDisplay) *CredentialDi
 		BackgroundColor: w.displayColor(map[string]any{"background_color": td.BackgroundColor}, "background_color"),
 		TextColor:       w.displayColor(map[string]any{"text_color": td.TextColor}, "text_color"),
 		LogoURI:         w.templateImage(td.Logo, "logo"),
+		LogoAltText:     strings.TrimSpace(td.LogoAltText),
 		BackgroundURI:   w.templateImage(td.BackgroundImage, "background_image"),
 	}
 	if d.Name == "" && d.Description == "" && d.BackgroundColor == "" &&

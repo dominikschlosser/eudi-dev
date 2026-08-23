@@ -77,6 +77,7 @@ type TemplateDisplay struct {
 	BackgroundColor string `json:"background_color,omitempty"`
 	TextColor       string `json:"text_color,omitempty"`
 	Logo            string `json:"logo,omitempty"`
+	LogoAltText     string `json:"logo_alt_text,omitempty"`
 	BackgroundImage string `json:"background_image,omitempty"`
 }
 
@@ -132,6 +133,7 @@ func PredefinedTemplates() []Template {
 			BackgroundColor: "#3d59a1",
 			TextColor:       "#ffffff",
 			Logo:            "embedded:logo.svg",
+			LogoAltText:     "eudi-dev logo",
 		}
 	}
 	germanDisplay := func() *TemplateDisplay {
