@@ -112,6 +112,7 @@ func newReverseProxy(target *url.URL) *httputil.ReverseProxy {
 				}
 			}
 			pr.SetURL(target)
+			pr.SetXForwarded()
 			// Preserve the original Host header for the backend.
 			out.Host = forwardedHost
 			out.Header.Set("X-Forwarded-Host", forwardedHost)
