@@ -349,14 +349,14 @@ header h1 {
     padding: 12px 14px;
   }
   .card-face {
-    width: 132px;
+    width: 92px;
     aspect-ratio: 8 / 5;
     border-radius: 9px;
     flex: 0 0 auto;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   }
-  .credential-logo { top: 6px; left: 6px; width: 22px; height: 22px; padding: 2px; }
-  .face-init, .face-generic { font-size: 24px; }
+  .credential-logo { top: 5px; left: 5px; width: 20px; height: 20px; padding: 2px; }
+  .face-init, .face-generic { font-size: 22px; }
   .face-name, .format-badge-face { display: none; }
   .credential-info { flex: 1; }
   .credential-actions { flex: 0 0 auto; margin-left: 6px; }
@@ -1195,15 +1195,22 @@ header h1 {
 .candidate-actions {
   flex-shrink: 0;
   align-self: stretch;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
   gap: 8px;
 }
+/* The auto chip stays pinned to the top right, out of the flow, so the Show
+   button below it centers beside the card on its own. */
+.candidate-actions .auto-chip {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
 
-/* The Show link matches the credential list's action button (.btn.btn-sm) and
-   centers with it beside the card. */
+/* The Show link matches the credential list's action button (.btn.btn-sm). */
 .candidate-decode {
   white-space: nowrap;
   text-decoration: none;
