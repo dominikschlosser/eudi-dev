@@ -16,9 +16,12 @@ package cmd
 
 import (
 	"crypto/ecdsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -58,6 +61,12 @@ var (
 	issueRevocationServiceType string
 	issueIssuanceServiceName   string
 	issueRevocationServiceName string
+	issueDisplayName           string
+	issueDisplayDescription    string
+	issueBackgroundColor       string
+	issueTextColor             string
+	issueLogo                  string
+	issueBackgroundImage       string
 )
 
 var issueCmd = &cobra.Command{
@@ -112,6 +121,7 @@ func init() {
 	issueSDJWTCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueSDJWTCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueSDJWTCmd)
+	addIssueDisplayFlags(issueSDJWTCmd)
 
 	// JWT flags
 	issueJWTCmd.Flags().StringVar(&issueClaims, "claims", "", "Claims as JSON string or @filepath")
@@ -128,6 +138,7 @@ func init() {
 	issueJWTCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueJWTCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueJWTCmd)
+	addIssueDisplayFlags(issueJWTCmd)
 
 	// mDOC flags
 	issueMDOCCmd.Flags().StringVar(&issueClaims, "claims", "", "Claims as JSON string or @filepath")
@@ -144,6 +155,7 @@ func init() {
 	issueMDOCCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueMDOCCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueMDOCCmd)
+	addIssueDisplayFlags(issueMDOCCmd)
 
 	// Shell completion for knowable values
 	for _, c := range []*cobra.Command{issueSDJWTCmd, issueJWTCmd, issueMDOCCmd} {
@@ -603,6 +615,37 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	// applies the trust profile, so an empty spec here is equivalent to sending
 	// none.
 	req["trust"] = issueTrustSpecFromFlags()
+
+	display := map[string]any{}
+	if issueDisplayName != "" {
+		display["name"] = issueDisplayName
+	}
+	if issueDisplayDescription != "" {
+		display["description"] = issueDisplayDescription
+	}
+	if issueBackgroundColor != "" {
+		display["background_color"] = issueBackgroundColor
+	}
+	if issueTextColor != "" {
+		display["text_color"] = issueTextColor
+	}
+	logo, err := displayImageArg(issueLogo)
+	if err != nil {
+		return nil, err
+	}
+	if logo != "" {
+		display["logo"] = logo
+	}
+	bg, err := displayImageArg(issueBackgroundImage)
+	if err != nil {
+		return nil, err
+	}
+	if bg != "" {
+		display["background_image"] = bg
+	}
+	if len(display) > 0 {
+		req["display"] = display
+	}
 	return req, nil
 }
 
@@ -631,6 +674,54 @@ func resolveIssueClaimsForFormat(format string, tpl *credtemplate.Template) (map
 		return omitClaims(overrides, issueOmit), nil
 	}
 	return omitClaims(mock.DefaultClaims, issueOmit), nil
+}
+
+// addIssueDisplayFlags registers the display flags shared by the issue
+// subcommands. They set the §12.2.4 appearance of the imported credential, so
+// they apply with --wallet.
+func addIssueDisplayFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&issueDisplayName, "display-name", "", "With --wallet: the credential's display name")
+	cmd.Flags().StringVar(&issueDisplayDescription, "display-description", "", "With --wallet: the credential's display description")
+	cmd.Flags().StringVar(&issueBackgroundColor, "background-color", "", "With --wallet: the card background color, a CSS color (e.g. #3d59a1)")
+	cmd.Flags().StringVar(&issueTextColor, "text-color", "", "With --wallet: the card text color, a CSS color")
+	cmd.Flags().StringVar(&issueLogo, "logo", "", "With --wallet: the card logo, a file path, a data URI, or an https URL")
+	cmd.Flags().StringVar(&issueBackgroundImage, "background-image", "", "With --wallet: the card background image, a file path, a data URI, or an https URL")
+}
+
+// displayImageArg resolves a display image flag to a value the wallet accepts. A
+// data URI or an http(s) URL passes through, and a file path is read and encoded
+// as a data URI.
+func displayImageArg(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(value, "data:") || strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://") {
+		return value, nil
+	}
+	data, err := os.ReadFile(value)
+	if err != nil {
+		return "", fmt.Errorf("reading display image %q: %w", value, err)
+	}
+	return "data:" + displayImageMIME(value, data) + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+}
+
+// displayImageMIME picks the media type for a display image read from a file,
+// by extension where the wallet supports it and by content otherwise.
+func displayImageMIME(path string, data []byte) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".svg":
+		return "image/svg+xml"
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	}
+	return http.DetectContentType(data)
 }
 
 func addIssueTrustMetadataFlags(cmd *cobra.Command) {

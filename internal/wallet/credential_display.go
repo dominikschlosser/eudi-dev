@@ -208,6 +208,28 @@ func relativeLuminance(rgb [3]float64) float64 {
 	return 0.2126*channels[0] + 0.7152*channels[1] + 0.0722*channels[2]
 }
 
+// issuedDisplay builds the display for a self-issued credential from operator
+// input. Colors run through the same §12.2.4 validation as an offer's display
+// (a bad one is dropped with a warning) and images through the same policed,
+// size-capped cache, so a self-issued card is held to the rules an issuer's is.
+// It returns nil when the input carries no display.
+func (w *Wallet) issuedDisplay(in IssueDisplay) *CredentialDisplay {
+	d := &CredentialDisplay{
+		Name:            strings.TrimSpace(in.Name),
+		Description:     strings.TrimSpace(in.Description),
+		BackgroundColor: w.displayColor(map[string]any{"background_color": in.BackgroundColor}, "background_color"),
+		TextColor:       w.displayColor(map[string]any{"text_color": in.TextColor}, "text_color"),
+		LogoURI:         w.cacheDisplayImage(strings.TrimSpace(in.Logo), "logo"),
+		BackgroundURI:   w.cacheDisplayImage(strings.TrimSpace(in.BackgroundImage), "background_image"),
+	}
+	if d.Name == "" && d.Description == "" && d.BackgroundColor == "" &&
+		d.TextColor == "" && d.LogoURI == "" && d.BackgroundURI == "" {
+		return nil
+	}
+	w.checkDisplayContrast(d)
+	return d
+}
+
 // displayColor reads one color field against the §12.2.4 value space.
 func (w *Wallet) displayColor(entry map[string]any, field string) string {
 	value, _ := entry[field].(string)

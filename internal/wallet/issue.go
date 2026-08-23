@@ -84,6 +84,21 @@ type IssueOptions struct {
 	// issued credential type. Format, VCT, and DocType are overwritten with
 	// the resolved values.
 	Trust IssuedAttestationSpec
+	// Display sets the credential's §12.2.4 appearance (name, description,
+	// colors, logo and background image). Image fields take a data URI or an
+	// https URI, which is fetched through the policed client and cached. Nil
+	// leaves the credential without display metadata.
+	Display *IssueDisplay
+}
+
+// IssueDisplay is the appearance an operator sets for a self-issued credential.
+type IssueDisplay struct {
+	Name            string `json:"name"`
+	Description     string `json:"description"`
+	BackgroundColor string `json:"background_color"`
+	TextColor       string `json:"text_color"`
+	Logo            string `json:"logo"`
+	BackgroundImage string `json:"background_image"`
 }
 
 // IssueResult is the outcome of IssueCredential.
@@ -271,6 +286,11 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	imported, err := w.ImportCredential(raw)
 	if err != nil {
 		return nil, fmt.Errorf("importing to wallet: %w", err)
+	}
+	if opts.Display != nil {
+		if d := w.issuedDisplay(*opts.Display); d != nil {
+			w.rememberDisplay(imported, d)
+		}
 	}
 	if registerStatus {
 		w.RegisterStatusEntry(imported.ID, statusIdx)

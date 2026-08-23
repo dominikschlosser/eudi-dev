@@ -1013,6 +1013,32 @@
     issueOverlay.classList.remove('active');
   });
 
+  // Display: keep each color picker and its text field in step, and load an
+  // uploaded image into its text field as a data URI. The text field is the
+  // value that is sent, so the picker and the upload are conveniences.
+  function bindColorPicker(pickerId, textId) {
+    const picker = document.getElementById(pickerId);
+    const text = document.getElementById(textId);
+    picker.addEventListener('input', () => { text.value = picker.value; });
+    text.addEventListener('input', () => {
+      if (/^#[0-9a-fA-F]{6}$/.test(text.value.trim())) picker.value = text.value.trim();
+    });
+  }
+  bindColorPicker('issue-bg-color-picker', 'issue-bg-color');
+  bindColorPicker('issue-text-color-picker', 'issue-text-color');
+
+  function bindImageUpload(fileId, textId) {
+    document.getElementById(fileId).addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { document.getElementById(textId).value = reader.result; };
+      reader.readAsDataURL(file);
+    });
+  }
+  bindImageUpload('issue-logo-file', 'issue-logo');
+  bindImageUpload('issue-bg-image-file', 'issue-bg-image');
+
   issueForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     issueError.textContent = '';
@@ -1055,6 +1081,21 @@
     }
     const saveTemplate = document.getElementById('issue-save-template').value.trim();
     if (saveTemplate) body.save_as_template = saveTemplate;
+
+    const display = {};
+    const dName = document.getElementById('issue-display-name').value.trim();
+    if (dName) display.name = dName;
+    const dDesc = document.getElementById('issue-display-description').value.trim();
+    if (dDesc) display.description = dDesc;
+    const bgColor = document.getElementById('issue-bg-color').value.trim();
+    if (bgColor) display.background_color = bgColor;
+    const txtColor = document.getElementById('issue-text-color').value.trim();
+    if (txtColor) display.text_color = txtColor;
+    const logo = document.getElementById('issue-logo').value.trim();
+    if (logo) display.logo = logo;
+    const bgImage = document.getElementById('issue-bg-image').value.trim();
+    if (bgImage) display.background_image = bgImage;
+    if (Object.keys(display).length > 0) body.display = display;
 
     issueSubmit.disabled = true;
     issueSubmit.textContent = 'Issuing...';

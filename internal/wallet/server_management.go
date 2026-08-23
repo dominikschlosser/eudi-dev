@@ -153,6 +153,7 @@ type IssueAPIRequest struct {
 	StatusListIdx   *int                  `json:"status_list_idx"`
 	TrustProfile    string                `json:"trust_profile"`
 	Trust           IssuedAttestationSpec `json:"trust"`
+	Display         *IssueDisplay         `json:"display"`
 }
 
 // Options converts the API request into IssueOptions.
@@ -172,6 +173,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		StatusListIdx:   req.StatusListIdx,
 		TrustProfile:    req.TrustProfile,
 		Trust:           req.Trust,
+		Display:         req.Display,
 	}
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)

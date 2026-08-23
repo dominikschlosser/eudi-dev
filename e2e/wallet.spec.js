@@ -699,6 +699,31 @@ test.describe("Credential Issuing via UI", () => {
     });
   });
 
+  test("sets display values on the issued credential", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-vct").fill("urn:example:e2e-display");
+    await page.locator("#issue-display-name").fill("E2E Badge");
+    // Typing a hex color keeps the picker in step; the text field is what is sent.
+    await page.locator("#issue-bg-color").fill("#0f766e");
+    await page.locator("#issue-text-color").fill("#ffffff");
+    await expect(page.locator("#issue-bg-color-picker")).toHaveValue("#0f766e");
+
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    const issued = res.body.find((c) => c.vct === "urn:example:e2e-display");
+    expect(issued).toBeDefined();
+    expect(issued.display.name).toBe("E2E Badge");
+    expect(issued.display.background_color).toBe("#0f766e");
+    expect(issued.display.text_color).toBe("#ffffff");
+
+    await fetch(`${WALLET_URL}/api/credentials/${issued.id}`, {
+      method: "DELETE",
+    });
+  });
+
   test("shows status badges and revokes and re-activates a credential", async ({
     page,
   }) => {

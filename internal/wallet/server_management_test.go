@@ -106,6 +106,49 @@ func TestIssueCredentialAPI(t *testing.T) {
 	}
 }
 
+// Issuing through the UI or CLI can set the credential's display, which runs
+// through the same validation and image cache as an issuer's display metadata.
+func TestIssueCredentialAPIDisplay(t *testing.T) {
+	srv := newTestServer(t, true)
+	tinyPNG := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	body := `{"format":"sdjwt","vct":"urn:example:display","display":{"name":"Badge","description":"desc","background_color":"#0f766e","text_color":"#ffffff","logo":"` + tinyPNG + `"}}`
+	resp := serverRequest(t, srv, http.MethodPost, "/api/issue", body)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", resp.Code, resp.Body.String())
+	}
+	id, _ := decodeJSON(t, resp)["id"].(string)
+	cred, ok := srv.wallet.GetCredential(id)
+	if !ok || cred.Display == nil {
+		t.Fatalf("issued credential carries no display: %+v", cred)
+	}
+	d := cred.Display
+	if d.Name != "Badge" || d.Description != "desc" || d.BackgroundColor != "#0f766e" || d.TextColor != "#ffffff" {
+		t.Errorf("display fields not stored: %+v", d)
+	}
+	if !strings.HasPrefix(d.LogoURI, "data:image/") {
+		t.Errorf("logo not cached as a data URI: %.30q", d.LogoURI)
+	}
+}
+
+// A display color the value space does not allow is dropped rather than failing
+// the issuance, the same as on the offer path.
+func TestIssueCredentialAPIDropsInvalidColor(t *testing.T) {
+	srv := newTestServer(t, true)
+	body := `{"format":"sdjwt","vct":"urn:example:badcolor","display":{"name":"Bad","background_color":"#gggggg"}}`
+	resp := serverRequest(t, srv, http.MethodPost, "/api/issue", body)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.Code)
+	}
+	id, _ := decodeJSON(t, resp)["id"].(string)
+	cred, _ := srv.wallet.GetCredential(id)
+	if cred.Display == nil || cred.Display.Name != "Bad" {
+		t.Fatal("the display name should be kept")
+	}
+	if cred.Display.BackgroundColor != "" {
+		t.Errorf("an invalid color should be dropped, got %q", cred.Display.BackgroundColor)
+	}
+}
+
 // A JWT VC carries the PID claim set plainly, so a PID request in that format
 // has to work. It used to fail with a template-format error, because the
 // template the PID flag picks for the caller was held to the same format rule
