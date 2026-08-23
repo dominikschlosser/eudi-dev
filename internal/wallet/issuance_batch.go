@@ -20,6 +20,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"math/big"
+	"time"
 )
 
 // batchProofKeyCount is the number of proofs the wallet sends when the issuer
@@ -133,6 +135,174 @@ func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateK
 	}
 	log.Printf("[VCI] Matched %d batch credential(s) to their proof keys; importing the holder-key-bound credential", len(creds))
 	return holderCredential, nil
+}
+
+// proofKeyIndex returns the index of the proof key a credential is bound to, or
+// -1 when it is bound to none of them.
+func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
+	for i := range keys {
+		if credentialBindsToKey(raw, &keys[i].PublicKey) {
+			return i
+		}
+	}
+	return -1
+}
+
+// storeBatchSiblings ties the copies of a batch to the holder copy already
+// imported as primary. A batch credential response holds one credential per
+// proof key (§8.3); selectHolderBoundCredential imported the copy bound to the
+// wallet holder key, and this stores the rest, each bound to the ephemeral key
+// it was issued against, under a shared batch group. The wallet then presents
+// an unused copy each time so a Relying Party cannot link two presentations of
+// the same credential (EUDI ARF Annex 2 Topic 10 method C, ISSU_51-54).
+//
+// A single-credential response stores nothing extra. So does a batch collected
+// on a presentation clone: its credentialSink forwards a copy to the real
+// wallet at import time, before the per-copy key could be set, so the copies
+// would land there unpresentable. Such an issuance keeps its holder copy alone.
+func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) {
+	creds := credentialStringsFromResponse(credResp)
+	if primary == nil || len(creds) <= 1 || len(keys) <= 1 {
+		return
+	}
+	if w.credentialSink != nil {
+		log.Printf("[VCI] Batch issued during a presentation is kept as its holder copy only")
+		return
+	}
+	group := newCredentialID()
+	w.setBatchFields(primary.ID, group, "")
+	primary.BatchGroup = group
+
+	stored := 1
+	for _, raw := range creds {
+		idx := proofKeyIndex(raw, keys)
+		// Index 0 is the holder copy already imported as primary; a negative
+		// index was reported by selectHolderBoundCredential.
+		if idx <= 0 {
+			continue
+		}
+		pem, err := encodeECPrivateKeyPEM(keys[idx])
+		if err != nil {
+			log.Printf("[VCI] skipping a batch copy: encoding its binding key failed: %v", err)
+			continue
+		}
+		copyCred, err := w.importBatchCopy(raw, group, pem)
+		if err != nil {
+			log.Printf("[VCI] skipping a batch copy: %v", err)
+			continue
+		}
+		if display != nil {
+			w.rememberDisplay(copyCred, display)
+		}
+		stored++
+	}
+	log.Printf("[VCI] Stored a batch of %d copies (group %s) for one-time-use presentation", stored, group)
+}
+
+// collapseBatchMatches reduces the copies of one batch that match a query to
+// the single copy that will be presented, so the wallet presents one unused
+// copy per batch and the consent dialog does not list identical copies as
+// alternatives. The copy is chosen by chooseBatchCopy; matches outside a batch
+// pass through untouched, in order.
+func (w *Wallet) collapseBatchMatches(matches []CredentialMatch, credentials []StoredCredential) []CredentialMatch {
+	byID := make(map[string]StoredCredential, len(credentials))
+	for _, c := range credentials {
+		byID[c.ID] = c
+	}
+	groups := make(map[string][]int)
+	for i, m := range matches {
+		group := byID[m.CredentialID].BatchGroup
+		if group == "" {
+			continue
+		}
+		key := m.QueryID + "\x00" + group
+		groups[key] = append(groups[key], i)
+	}
+	if len(groups) == 0 {
+		return matches
+	}
+	keep := make(map[int]bool, len(groups))
+	for _, idxs := range groups {
+		keep[chooseBatchCopy(idxs, matches, byID)] = true
+	}
+	out := matches[:0]
+	for i, m := range matches {
+		if byID[m.CredentialID].BatchGroup != "" && !keep[i] {
+			log.Printf("[DCQL]   query=%s: batch copy %s held back, another copy of the batch is presented", m.QueryID, m.CredentialID)
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// chooseBatchCopy returns the index into matches of the batch copy to present:
+// a random one among those presented the fewest times. That shows each copy
+// once in a random order and cycles again once all have been used (EUDI ARF
+// ISSU_52), falling back to reusing an already-used copy when none is unused
+// (ISSU_47).
+func chooseBatchCopy(idxs []int, matches []CredentialMatch, byID map[string]StoredCredential) int {
+	fewest := -1
+	for _, i := range idxs {
+		uses := byID[matches[i].CredentialID].Uses
+		if fewest < 0 || uses < fewest {
+			fewest = uses
+		}
+	}
+	var least []int
+	for _, i := range idxs {
+		if byID[matches[i].CredentialID].Uses == fewest {
+			least = append(least, i)
+		}
+	}
+	return least[secureIntn(len(least))]
+}
+
+// secureIntn returns a uniform random int in [0, n) using crypto/rand, so which
+// batch copy is presented cannot be predicted or biased. It returns 0 on the
+// degenerate n <= 1 and on the practically impossible read error.
+func secureIntn(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	r, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return 0
+	}
+	return int(r.Int64())
+}
+
+// recordBatchPresentation marks a batch copy as presented, so the next
+// presentation of the batch prefers a copy used fewer times. It is a no-op for
+// a credential that is not part of a batch.
+func (w *Wallet) recordBatchPresentation(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if w.Credentials[i].ID == id {
+			if w.Credentials[i].BatchGroup == "" {
+				return
+			}
+			w.Credentials[i].Uses++
+			w.Credentials[i].LastPresentedAt = time.Now()
+			w.batchDirty = true
+			return
+		}
+	}
+}
+
+// setBatchFields records a copy's batch group and per-copy binding key on the
+// store entry with the given id, the way rememberDisplay records a display.
+func (w *Wallet) setBatchFields(id, group, bindingKeyPEM string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if w.Credentials[i].ID == id {
+			w.Credentials[i].BatchGroup = group
+			w.Credentials[i].BindingKeyPEM = bindingKeyPEM
+			return
+		}
+	}
 }
 
 // credentialStringsFromResponse extracts the credentials from a credential

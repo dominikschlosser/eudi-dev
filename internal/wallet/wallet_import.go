@@ -43,9 +43,26 @@ func newCredentialID() string {
 // It returns a pointer to a copy of the newly imported credential, safe to
 // use even after further mutations to w.Credentials.
 func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
+	return w.importCredential(raw, "", "")
+}
+
+// importBatchCopy imports one copy of a batch, tied to the batch group and
+// bound to its own key. The batch fields are set before the holder-binding note
+// runs, so a copy bound to its own key is not flagged as one the wallet cannot
+// present.
+func (w *Wallet) importBatchCopy(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
+	return w.importCredential(raw, group, bindingKeyPEM)
+}
+
+func (w *Wallet) importCredential(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
 	cred, err := w.importDetectedFormat(strings.TrimSpace(raw))
 	if err != nil {
 		return nil, err
+	}
+	if group != "" || bindingKeyPEM != "" {
+		w.setBatchFields(cred.ID, group, bindingKeyPEM)
+		cred.BatchGroup = group
+		cred.BindingKeyPEM = bindingKeyPEM
 	}
 	w.adoptOwnStatusEntry(cred)
 	w.noteUnheldKeyBinding(cred)

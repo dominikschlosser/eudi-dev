@@ -265,6 +265,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))
 	}
 	s.wallet.rememberDisplay(imported, pending.Display)
+	s.wallet.storeBatchSiblings(imported, credResp, proofKeys, pending.Display)
 
 	s.wallet.RemoveDeferredIssuance(pending.ID)
 	details := credentialImportLogDetails(imported, credential)

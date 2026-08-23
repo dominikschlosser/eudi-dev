@@ -400,6 +400,7 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	if src := d.offerByIssuerState(granted.issuerState); src != nil {
 		offer.withStatus = src.withStatus
 		offer.deferred = src.deferred
+		offer.batch = src.batch
 	}
 
 	d.mu.Lock()

@@ -110,6 +110,10 @@ type offerState struct {
 	// transaction_id, and the credential is handed over at the deferred
 	// credential endpoint once it is ready (OpenID4VCI 1.0 §9).
 	deferred bool
+	// batch signs one credential per proof key (§8.3), so the wallet holds a
+	// batch of distinct-key copies to present one at a time. Off issues a single
+	// credential even though this issuer advertises batch support.
+	batch bool
 	// clientAuth is how the wallet authenticated when it exchanged the code
 	// for this access token. Nil until a token exchange has run.
 	clientAuth *clientAuthentication
@@ -283,6 +287,7 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		id:            randToken(),
 		withStatus:    withStatus,
 		deferred:      r.URL.Query().Get("deferred") == "true",
+		batch:         r.URL.Query().Get("batch") == "true",
 		authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
 		expires:       time.Now().Add(entryTTL),
 	}
@@ -440,6 +445,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 			jkt:          offer.jkt,
 			withStatus:   offer.withStatus,
 			deferred:     offer.deferred,
+			batch:        offer.batch,
 			clientAuth:   offer.clientAuth,
 		}
 	}
@@ -512,8 +518,13 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 }
 
 // signBatch signs one credential per proof key, each bound to that key, so a
-// batch of distinct-key copies comes back in the §8.3 credentials array.
+// batch of distinct-key copies comes back in the §8.3 credentials array. A
+// non-batch offer signs a single credential, bound to the wallet holder key the
+// wallet always proves first, even though extra proofs arrived.
 func (d *DemoRP) signBatch(holderKeys []*ecdsa.PublicKey, granted ticketGrant) ([]map[string]any, error) {
+	if !granted.batch && len(holderKeys) > 1 {
+		holderKeys = holderKeys[:1]
+	}
 	credentials := make([]map[string]any, 0, len(holderKeys))
 	for _, key := range holderKeys {
 		credential, err := d.signTicket(key, granted)
@@ -761,6 +772,7 @@ type ticketGrant struct {
 	jkt        string
 	withStatus bool
 	deferred   bool
+	batch      bool
 	clientAuth *clientAuthentication
 }
 

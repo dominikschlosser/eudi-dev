@@ -1,4 +1,4 @@
-async function createOffer(grant, status, authorization, deferred) {
+async function createOffer(grant, status, authorization, deferred, batch) {
   const errEl = document.getElementById("error");
   errEl.hidden = true;
   try {
@@ -6,6 +6,7 @@ async function createOffer(grant, status, authorization, deferred) {
     if (grant) params.set("grant", grant);
     if (status) params.set("status", status);
     if (deferred) params.set("deferred", "true");
+    if (batch) params.set("batch", "true");
     // Only the authorization code grant asks the user for anything.
     if (grant && authorization) params.set("authorization", authorization);
     const query = params.toString() ? "?" + params.toString() : "";
@@ -61,10 +62,21 @@ const DEFERRED_HINTS = {
     "wallet shows it awaiting issuance and collects it a few seconds later.",
 };
 
+// Whether the wallet receives one credential or a batch of distinct-key copies.
+const BATCH_HINTS = {
+  "": "The wallet receives a single credential.",
+  true:
+    "The issuer signs one credential per proof key (OpenID4VCI 1.0 §8.3), so " +
+    "the wallet holds a batch of distinct-key copies and presents an unused " +
+    "one each time a verifier asks (EUDI ARF method C). The wallet shows the " +
+    "batch as one stacked card.",
+};
+
 let grant = "";
 let status = "";
 let authorization = "browser";
 let deferred = "";
+let batch = "";
 
 // Each toggle owns its own options, so the selection is scoped to the group
 // the clicked option belongs to.
@@ -102,9 +114,12 @@ bindToggle("status-toggle", "status", "status-hint", STATUS_HINTS, (value) => {
 bindToggle("deferred-toggle", "deferred", "deferred-hint", DEFERRED_HINTS, (value) => {
   deferred = value;
 });
+bindToggle("batch-toggle", "batch", "batch-hint", BATCH_HINTS, (value) => {
+  batch = value;
+});
 
 document.getElementById("create-btn")
-  .addEventListener("click", () => createOffer(grant, status, authorization, deferred));
+  .addEventListener("click", () => createOffer(grant, status, authorization, deferred, batch));
 
 // The imprint is the wallet's, and it is only served when the operator
 // configured one, so the link appears only then. The status list toggle needs

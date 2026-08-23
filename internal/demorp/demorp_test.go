@@ -1445,6 +1445,63 @@ func TestIssuanceWithOverrideStillStoresTheCredential(t *testing.T) {
 	}
 }
 
+// A batch offer hands the wallet several copies of one credential, each on its
+// own key, tied into one batch group so the wallet can present an unused copy
+// each time.
+func TestIssuerBatchOfferStoresEveryCopy(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	before := len(w.GetCredentials())
+	redeemDemoTicket(t, w, ts, "?batch=true")
+
+	var group string
+	holderCopies := 0
+	for _, c := range w.GetCredentials() {
+		if c.VCT != TicketVCT {
+			continue
+		}
+		if c.BatchGroup == "" {
+			t.Fatalf("batch copy %s carries no batch group", c.ID)
+		}
+		if group == "" {
+			group = c.BatchGroup
+		} else if c.BatchGroup != group {
+			t.Fatalf("batch copies landed in different groups: %s vs %s", group, c.BatchGroup)
+		}
+		if c.BindingKeyPEM == "" {
+			holderCopies++
+		}
+	}
+	if added := len(w.GetCredentials()) - before; added < 2 {
+		t.Fatalf("a batch offer stored %d copies, want at least 2", added)
+	}
+	if holderCopies != 1 {
+		t.Fatalf("a batch must have exactly one holder-key copy, got %d", holderCopies)
+	}
+}
+
+// A plain offer stays a single credential even though the issuer advertises
+// batch support, so the wallet only holds a batch when the offer asks for one.
+func TestIssuerPlainOfferStaysSingle(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	ticket := redeemDemoTicket(t, w, ts, "")
+	if ticket.BatchGroup != "" {
+		t.Fatalf("a plain offer produced a batch (group %s)", ticket.BatchGroup)
+	}
+	count := 0
+	for _, c := range w.GetCredentials() {
+		if c.VCT == TicketVCT {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("a plain offer stored %d ticket copies, want 1", count)
+	}
+}
+
 // A ticket offered without the status toggle carries no status reference at
 // all, which is what makes the toggle worth having.
 func TestIssuerOffersTicketWithoutStatusByDefault(t *testing.T) {

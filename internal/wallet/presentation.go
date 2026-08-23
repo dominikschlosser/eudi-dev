@@ -91,6 +91,14 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 		return VPTokenResult{}, err
 	}
 
+	// The signing key is the copy's own key for a batch copy bound to one, and
+	// the wallet holder key otherwise, so a rotated batch copy signs its key
+	// binding with the key it was issued against.
+	signingKey, err := w.batchSigningKey(cred)
+	if err != nil {
+		return VPTokenResult{}, err
+	}
+
 	typeLabel := cred.VCT
 	if typeLabel == "" {
 		typeLabel = cred.DocType
@@ -100,7 +108,7 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 	switch cred.Format {
 	case "dc+sd-jwt":
 		audience := sdJWTAudience(params)
-		token, err := w.createSDJWTPresentation(cred, match.SelectedKeys, params.Nonce, audience)
+		token, err := w.createSDJWTPresentation(cred, match.SelectedKeys, params.Nonce, audience, signingKey)
 		if err != nil {
 			return VPTokenResult{}, err
 		}
@@ -110,7 +118,7 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 		log.Printf("[VP] Plain JWT presentation (no selective disclosure)")
 		return VPTokenResult{Token: cred.Raw}, nil
 	case "mso_mdoc":
-		result, err := w.createMDocPresentation(cred, match.SelectedKeys, params, mdocNonce)
+		result, err := w.createMDocPresentation(cred, match.SelectedKeys, params, mdocNonce, signingKey)
 		if err != nil {
 			return VPTokenResult{}, err
 		}
@@ -180,8 +188,9 @@ func interactiveAuthorizationAudience(endpoint string) string {
 	return "ia:" + endpoint
 }
 
-// createSDJWTPresentation creates an SD-JWT presentation with selective disclosure and KB-JWT.
-func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []string, nonce, clientID string) (string, error) {
+// createSDJWTPresentation creates an SD-JWT presentation with selective
+// disclosure and KB-JWT, signing the key binding with signingKey.
+func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []string, nonce, clientID string, signingKey *ecdsa.PrivateKey) (string, error) {
 	// Parse the raw SD-JWT to get the issuer JWT part
 	parts := strings.Split(cred.Raw, "~")
 	if len(parts) < 1 {
@@ -242,7 +251,7 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 	sdHashB64 := format.EncodeBase64URL(sdHash[:])
 
 	// Create Key Binding JWT
-	kbJWT, err := w.createKBJWT(nonce, clientID, sdHashB64)
+	kbJWT, err := w.createKBJWT(nonce, clientID, sdHashB64, signingKey)
 	if err != nil {
 		return "", fmt.Errorf("creating KB-JWT: %w", err)
 	}
@@ -251,8 +260,9 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 	return withoutKB + kbJWT, nil
 }
 
-// createKBJWT creates a Key Binding JWT.
-func (w *Wallet) createKBJWT(nonce, audience, sdHash string) (string, error) {
+// createKBJWT creates a Key Binding JWT signed with signingKey (the copy's
+// holder key).
+func (w *Wallet) createKBJWT(nonce, audience, sdHash string, signingKey *ecdsa.PrivateKey) (string, error) {
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "kb+jwt",
@@ -265,7 +275,7 @@ func (w *Wallet) createKBJWT(nonce, audience, sdHash string) (string, error) {
 		"sd_hash": sdHash,
 	}
 
-	return signJWT(header, payload, w.HolderKey)
+	return signJWT(header, payload, signingKey)
 }
 
 // signJWT creates and signs a JWT with the given header, payload, and key.
@@ -309,6 +319,9 @@ func (w *Wallet) CreateVPTokenMap(matches []CredentialMatch, params Presentation
 		if tokenResult.MDocNonce != "" {
 			result.MDocNonce = tokenResult.MDocNonce
 		}
+		// The copy has now been sent, so the next presentation of the batch
+		// prefers a copy used fewer times (a no-op outside a batch).
+		w.recordBatchPresentation(match.CredentialID)
 	}
 
 	log.Printf("[VP] VP token map created: queries=%v", mapKeys(result.TokenMap))

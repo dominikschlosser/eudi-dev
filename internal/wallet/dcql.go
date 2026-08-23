@@ -121,6 +121,10 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 		}
 	}
 
+	// A batch matches once per copy: keep the one unused copy that will be
+	// presented, so a batch reads as one credential from here on.
+	matches = w.collapseBatchMatches(matches, credentials)
+
 	sortMatchesNewestFirst(matches, credentials)
 
 	if w.PreferredFormat != "" {

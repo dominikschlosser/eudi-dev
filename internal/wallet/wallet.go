@@ -106,6 +106,19 @@ type Wallet struct {
 	// credentialSink forwards imports to the wallet a clone was made from.
 	credentialSink func(StoredCredential)
 	runtime        *WalletRuntime
+	// batchDirty records that a batch copy's use count changed and the store
+	// entry should be saved, so the rotation survives a restart.
+	batchDirty bool
+}
+
+// takeBatchStateDirty reports whether a batch copy has been presented since the
+// last call and clears the flag, so the caller persists the wallet once.
+func (w *Wallet) takeBatchStateDirty() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	dirty := w.batchDirty
+	w.batchDirty = false
+	return dirty
 }
 
 // WalletRuntime is the in-memory flow state shared by wallet instances backed
@@ -202,9 +215,43 @@ type StoredCredential struct {
 	Renewal *CredentialRenewal `json:"renewal,omitempty"`
 	// Display is the appearance the issuer declared for this credential
 	// (§12.2.4), or the wallet's own appearance on a generated one.
-	Display     *CredentialDisplay                 `json:"display,omitempty"`
-	Disclosures []sdjwt.Disclosure                 `json:"-"`
-	NameSpaces  map[string][]mdoc.IssuerSignedItem `json:"-"`
+	Display *CredentialDisplay `json:"display,omitempty"`
+	// BatchGroup ties together the copies issued in one batch. The wallet keeps
+	// several copies of one credential, each bound to a different key, and
+	// presents an unused copy each time so a Relying Party cannot link two
+	// presentations of the same credential (EUDI ARF Annex 2 Topic 10 method C,
+	// ISSU_51-54). Empty on a credential issued singly.
+	BatchGroup string `json:"batch_group,omitempty"`
+	// BindingKeyPEM is the holder key this copy is bound to when it is not the
+	// wallet holder key. A batch binds each copy to a distinct key, so every
+	// copy but the one bound to the wallet holder key carries its own key here.
+	// Empty means the copy presents with the wallet holder key (every credential
+	// from before batch storage, and the holder-key copy of a batch).
+	BindingKeyPEM string `json:"binding_key,omitempty"`
+	// Uses counts how many times this copy has been presented. The batch presents
+	// a random copy among those used the fewest times, which shows each copy once
+	// in a random order and then cycles again once they have all been used (ARF
+	// ISSU_52), falling back to reuse when none is unused (ISSU_47).
+	Uses int `json:"uses,omitempty"`
+	// LastPresentedAt is when this copy was last sent, for display.
+	LastPresentedAt time.Time                          `json:"last_presented_at,omitempty"`
+	Disclosures     []sdjwt.Disclosure                 `json:"-"`
+	NameSpaces      map[string][]mdoc.IssuerSignedItem `json:"-"`
+}
+
+// batchSigningKey returns the private key this copy presents with: its own
+// per-copy key when the batch bound it to one, or the wallet holder key when it
+// carries none. Every credential issued before batch storage, and the
+// holder-key copy of a batch, present with the holder key unchanged.
+func (w *Wallet) batchSigningKey(cred StoredCredential) (*ecdsa.PrivateKey, error) {
+	if cred.BindingKeyPEM == "" {
+		return w.HolderKeyPair(), nil
+	}
+	key, err := decodeECPrivateKeyPEM(cred.BindingKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("decoding the binding key of credential %s: %w", cred.ID, err)
+	}
+	return key, nil
 }
 
 // CredentialRenewal is the issuer context a credential can be re-requested

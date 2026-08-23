@@ -425,6 +425,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		ClientAuth:         clientAuth,
 	})
 	w.rememberDisplay(imported, display)
+	w.storeBatchSiblings(imported, credResp, proofKeys, display)
 
 	w.notifyCredentialAccepted(metadata, credResp, accessToken, authScheme, dpopKey, &nonces.resource)
 

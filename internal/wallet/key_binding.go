@@ -148,12 +148,14 @@ func (w *Wallet) keyBindingNotHeld(cred *StoredCredential) bool {
 	if cred == nil {
 		return false
 	}
-	holder := w.HolderKeyPair()
-	if holder == nil {
+	// A batch copy is bound to its own key, which the wallet holds alongside
+	// the holder key, so the copy's key is what its binding is checked against.
+	signingKey, err := w.batchSigningKey(*cred)
+	if err != nil || signingKey == nil {
 		return false
 	}
 	binding := credentialHolderBinding(cred.Raw)
-	return binding.Bound && !binding.heldBy(&holder.PublicKey)
+	return binding.Bound && !binding.heldBy(&signingKey.PublicKey)
 }
 
 // noteUnheldKeyBinding records that a credential entering the store is bound

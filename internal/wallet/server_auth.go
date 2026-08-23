@@ -451,6 +451,10 @@ func (s *Server) preparePresentation(authReq *AuthorizationRequestParams, matche
 			return nil, fmt.Errorf("creating VP token map: %w", err)
 		}
 		prepared.VPResult = vpResult
+		// Presenting a batch copy advanced its use count, so save the rotation.
+		if s.wallet.takeBatchStateDirty() {
+			s.persistWallet()
+		}
 	}
 
 	if ResponseTypeContains(authReq.ResponseType, "id_token") {

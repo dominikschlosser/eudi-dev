@@ -107,6 +107,16 @@
     <p class="grant-hint" id="deferred-hint">
       The credential is issued at once.
     </p>
+    <div class="grant-row" id="batch-row">
+      <span class="grant-label">Copies</span>
+      <div class="toggle" id="batch-toggle" role="radiogroup" aria-label="Batch issuance">
+        <button type="button" class="toggle-option selected" data-batch="" role="radio" aria-checked="true">Single</button>
+        <button type="button" class="toggle-option" data-batch="true" role="radio" aria-checked="false">Batch</button>
+      </div>
+    </div>
+    <p class="grant-hint" id="batch-hint">
+      The wallet receives a single credential.
+    </p>
     <button class="btn primary" id="create-btn">Create offer</button>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>

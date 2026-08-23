@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
@@ -30,7 +31,7 @@ import (
 // elements. mdocNonce is the generated nonce of the response this document
 // belongs to; empty means this document is the response and generates its
 // own.
-func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string) (VPTokenResult, error) {
+func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string, signingKey *ecdsa.PrivateKey) (VPTokenResult, error) {
 	// Build set of selected namespace:element pairs
 	selected := make(map[string]bool, len(selectedKeys))
 	for _, k := range selectedKeys {
@@ -102,7 +103,7 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 	}
 
 	// Create DeviceAuth using COSE_Sign1
-	deviceAuthBytes, err := w.createDeviceAuth(sessionTranscriptBytes, docType)
+	deviceAuthBytes, err := w.createDeviceAuth(sessionTranscriptBytes, docType, signingKey)
 	if err != nil {
 		return VPTokenResult{}, fmt.Errorf("creating DeviceAuth: %w", err)
 	}
@@ -312,8 +313,8 @@ func emptyDeviceNamespacesBytes() ([]byte, error) {
 // createDeviceAuth creates a COSE_Sign1 DeviceAuth with proper DeviceAuthentication payload.
 // DeviceAuthentication = ["DeviceAuthentication", SessionTranscript, DocType, DeviceNameSpacesBytes]
 // The payload is Tag24(CBOR(DeviceAuthentication)).
-func (w *Wallet) createDeviceAuth(sessionTranscriptBytes []byte, docType string) ([]byte, error) {
-	signer, err := cose.NewSigner(cose.AlgorithmES256, w.HolderKey)
+func (w *Wallet) createDeviceAuth(sessionTranscriptBytes []byte, docType string, signingKey *ecdsa.PrivateKey) ([]byte, error) {
+	signer, err := cose.NewSigner(cose.AlgorithmES256, signingKey)
 	if err != nil {
 		return nil, fmt.Errorf("creating COSE signer: %w", err)
 	}
