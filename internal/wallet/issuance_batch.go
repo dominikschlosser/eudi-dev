@@ -277,17 +277,25 @@ func secureIntn(n int) int {
 // a credential that is not part of a batch.
 func (w *Wallet) recordBatchPresentation(id string) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
+	sink := w.batchPresentedSink
+	bumped := false
 	for i := range w.Credentials {
 		if w.Credentials[i].ID == id {
-			if w.Credentials[i].BatchGroup == "" {
-				return
+			if w.Credentials[i].BatchGroup != "" {
+				w.Credentials[i].Uses++
+				w.Credentials[i].LastPresentedAt = time.Now()
+				w.batchDirty = true
+				bumped = true
 			}
-			w.Credentials[i].Uses++
-			w.Credentials[i].LastPresentedAt = time.Now()
-			w.batchDirty = true
-			return
+			break
 		}
+	}
+	w.mu.Unlock()
+	// A presentation run on a clone carries the use back to the wallet the clone
+	// was made from, so the rotation still advances (auto-accept and
+	// ISO-transcript presentations run on a clone).
+	if bumped && sink != nil {
+		sink(id)
 	}
 }
 

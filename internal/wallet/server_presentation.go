@@ -244,6 +244,11 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 			src.Credentials = append(src.Credentials, cred)
 			src.mu.Unlock()
 		},
+		// A batch copy presented on the clone advances the rotation on the real
+		// wallet, which is what gets saved after the presentation.
+		batchPresentedSink: func(id string) {
+			src.recordBatchPresentation(id)
+		},
 		runtime: src.runtimeState(),
 	}
 

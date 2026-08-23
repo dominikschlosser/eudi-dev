@@ -105,7 +105,10 @@ type Wallet struct {
 	logSink       func(LogEntry)
 	// credentialSink forwards imports to the wallet a clone was made from.
 	credentialSink func(StoredCredential)
-	runtime        *WalletRuntime
+	// batchPresentedSink forwards a batch copy's use to the wallet a clone was
+	// made from, so a presentation run on a clone still advances the rotation.
+	batchPresentedSink func(id string)
+	runtime            *WalletRuntime
 	// batchDirty records that a batch copy's use count changed and the store
 	// entry should be saved, so the rotation survives a restart.
 	batchDirty bool
