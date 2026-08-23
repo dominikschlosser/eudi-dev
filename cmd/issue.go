@@ -684,8 +684,8 @@ func addIssueDisplayFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&issueDisplayDescription, "display-description", "", "With --wallet: the credential's display description")
 	cmd.Flags().StringVar(&issueBackgroundColor, "background-color", "", "With --wallet: the card background color, a CSS color (e.g. #3d59a1)")
 	cmd.Flags().StringVar(&issueTextColor, "text-color", "", "With --wallet: the card text color, a CSS color")
-	cmd.Flags().StringVar(&issueLogo, "logo", "", "With --wallet: the card logo, a file path, a data URI, or an https URL")
-	cmd.Flags().StringVar(&issueBackgroundImage, "background-image", "", "With --wallet: the card background image, a file path, a data URI, or an https URL")
+	cmd.Flags().StringVar(&issueLogo, "logo", "", "With --wallet: the card logo, a file path, a data URI, or an http(s) URL")
+	cmd.Flags().StringVar(&issueBackgroundImage, "background-image", "", "With --wallet: the card background image, a file path, a data URI, or an http(s) URL")
 }
 
 // displayImageArg resolves a display image flag to a value the wallet accepts. A

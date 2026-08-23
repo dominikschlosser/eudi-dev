@@ -1033,6 +1033,7 @@
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => { document.getElementById(textId).value = reader.result; };
+      reader.onerror = () => { issueError.textContent = 'Could not read the selected file.'; };
       reader.readAsDataURL(file);
     });
   }
