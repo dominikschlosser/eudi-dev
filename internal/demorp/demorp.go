@@ -78,6 +78,9 @@ type DemoRP struct {
 	// until it expires. It is where a wallet built to OpenID4VCI 1.0 asks for
 	// the challenge it signs into a key proof.
 	nonces map[string]time.Time
+	// deferred holds issuances the credential endpoint accepted but did not
+	// hand over yet, keyed by the transaction id a wallet polls with.
+	deferred map[string]*deferredTicket
 }
 
 // New creates the demo issuer/verifier pair. baseURL returns the public
@@ -94,6 +97,7 @@ func New(w *wallet.Wallet, baseURL func() string) *DemoRP {
 		codes:        make(map[string]*authRequestState),
 		interactive:  make(map[string]*interactiveSession),
 		nonces:       make(map[string]time.Time),
+		deferred:     make(map[string]*deferredTicket),
 	}
 }
 
@@ -135,6 +139,11 @@ func (d *DemoRP) pruneLocked() {
 	for tok, o := range d.tokens {
 		if now.After(o.expires) {
 			delete(d.tokens, tok)
+		}
+	}
+	for txID, t := range d.deferred {
+		if now.After(t.expires) {
+			delete(d.deferred, txID)
 		}
 	}
 	for id, r := range d.requests {

@@ -106,6 +106,10 @@ type offerState struct {
 	// list, which is what makes the credential revocable and gives the
 	// verifier's revocation check something to resolve.
 	withStatus bool
+	// deferred defers issuance: the credential endpoint returns a
+	// transaction_id, and the credential is handed over at the deferred
+	// credential endpoint once it is ready (OpenID4VCI 1.0 §9).
+	deferred bool
 	// clientAuth is how the wallet authenticated when it exchanged the code
 	// for this access token. Nil until a token exchange has run.
 	clientAuth *clientAuthentication
@@ -124,6 +128,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("GET /offer/{id}", d.handleOfferByReference)
 	mux.HandleFunc("POST /token", d.handleToken)
 	mux.HandleFunc("POST /credential", d.handleCredential)
+	mux.HandleFunc("POST /deferred_credential", d.handleDeferredCredential)
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer", d.handleIssuerMetadata)
 	mux.HandleFunc("GET /logo.svg", d.handleLogo)
 
@@ -181,8 +186,9 @@ func (d *DemoRP) handleLogo(w http.ResponseWriter, r *http.Request) {
 func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	issuer := d.issuerID()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"credential_issuer":   issuer,
-		"credential_endpoint": issuer + "/credential",
+		"credential_issuer":            issuer,
+		"credential_endpoint":          issuer + "/credential",
+		"deferred_credential_endpoint": issuer + "/deferred_credential",
 		// This issuer is its own Authorization Server and says so rather than
 		// leaving it to the §12.2.4 inference, so that a wallet which does not
 		// implement that fallback still reaches the metadata carrying
@@ -276,6 +282,7 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 	offer := &offerState{
 		id:            randToken(),
 		withStatus:    withStatus,
+		deferred:      r.URL.Query().Get("deferred") == "true",
 		authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
 		expires:       time.Now().Add(entryTTL),
 	}
@@ -432,6 +439,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 			holderClaims: offer.holderClaims,
 			jkt:          offer.jkt,
 			withStatus:   offer.withStatus,
+			deferred:     offer.deferred,
 			clientAuth:   offer.clientAuth,
 		}
 	}
@@ -473,28 +481,48 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One credential per key proof, each bound to that proof's key, so a batch
-	// of distinct-key copies comes back in the §8.3 credentials array.
-	credentials := make([]map[string]any, 0, len(req.Proofs.JWT))
+	holderKeys := make([]*ecdsa.PublicKey, 0, len(req.Proofs.JWT))
 	for _, proof := range req.Proofs.JWT {
 		holderKey, err := d.verifyProofJWT(proof)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, oauthError(err.code, err.description))
 			return
 		}
-		credential, signErr := d.signTicket(holderKey, granted)
-		if signErr != nil {
-			// Not a §8.3.1.2 error: those describe what is wrong with the request
-			// and are answered with 400, and credential_request_denied in particular
-			// tells the wallet "the Credential cannot be issued", so it stops asking.
-			// A signing failure here is this issuer being broken, which the next
-			// attempt may well survive.
-			writeJSON(w, http.StatusInternalServerError, oauthError("server_error", signErr.Error()))
-			return
+		holderKeys = append(holderKeys, holderKey)
+	}
+
+	// A deferred offer hands over a transaction id here and the credential at
+	// the deferred credential endpoint once it is ready (§9).
+	if granted.deferred {
+		writeJSON(w, http.StatusOK, map[string]any{"transaction_id": d.deferIssuance(holderKeys, granted, token)})
+		return
+	}
+
+	credentials, signErr := d.signBatch(holderKeys, granted)
+	if signErr != nil {
+		// Not a §8.3.1.2 error: those describe what is wrong with the request
+		// and are answered with 400, and credential_request_denied in particular
+		// tells the wallet "the Credential cannot be issued", so it stops asking.
+		// A signing failure here is this issuer being broken, which the next
+		// attempt may well survive.
+		writeJSON(w, http.StatusInternalServerError, oauthError("server_error", signErr.Error()))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"credentials": credentials})
+}
+
+// signBatch signs one credential per proof key, each bound to that key, so a
+// batch of distinct-key copies comes back in the §8.3 credentials array.
+func (d *DemoRP) signBatch(holderKeys []*ecdsa.PublicKey, granted ticketGrant) ([]map[string]any, error) {
+	credentials := make([]map[string]any, 0, len(holderKeys))
+	for _, key := range holderKeys {
+		credential, err := d.signTicket(key, granted)
+		if err != nil {
+			return nil, err
 		}
 		credentials = append(credentials, map[string]any{"credential": credential})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"credentials": credentials})
+	return credentials, nil
 }
 
 // checkRequestedCredential holds the request to §8.2, where
@@ -732,6 +760,7 @@ type ticketGrant struct {
 	// token.
 	jkt        string
 	withStatus bool
+	deferred   bool
 	clientAuth *clientAuthentication
 }
 

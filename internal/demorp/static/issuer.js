@@ -1,10 +1,11 @@
-async function createOffer(grant, status, authorization) {
+async function createOffer(grant, status, authorization, deferred) {
   const errEl = document.getElementById("error");
   errEl.hidden = true;
   try {
     const params = new URLSearchParams();
     if (grant) params.set("grant", grant);
     if (status) params.set("status", status);
+    if (deferred) params.set("deferred", "true");
     // Only the authorization code grant asks the user for anything.
     if (grant && authorization) params.set("authorization", authorization);
     const query = params.toString() ? "?" + params.toString() : "";
@@ -51,9 +52,19 @@ const STATUS_HINTS = {
     "UI and the demo verifier rejects the next presentation.",
 };
 
+// Whether the credential is handed over at once or after a wait.
+const DEFERRED_HINTS = {
+  "": "The credential is issued at once.",
+  true:
+    "The issuer returns a transaction id and hands the credential over at its " +
+    "deferred credential endpoint once it is ready (OpenID4VCI 1.0 §9). The " +
+    "wallet shows it awaiting issuance and collects it a few seconds later.",
+};
+
 let grant = "";
 let status = "";
 let authorization = "browser";
+let deferred = "";
 
 // Each toggle owns its own options, so the selection is scoped to the group
 // the clicked option belongs to.
@@ -88,9 +99,12 @@ bindToggle("authorization-toggle", "authorization", "authorization-hint", AUTHOR
 bindToggle("status-toggle", "status", "status-hint", STATUS_HINTS, (value) => {
   status = value;
 });
+bindToggle("deferred-toggle", "deferred", "deferred-hint", DEFERRED_HINTS, (value) => {
+  deferred = value;
+});
 
 document.getElementById("create-btn")
-  .addEventListener("click", () => createOffer(grant, status, authorization));
+  .addEventListener("click", () => createOffer(grant, status, authorization, deferred));
 
 // The imprint is the wallet's, and it is only served when the operator
 // configured one, so the link appears only then. The status list toggle needs

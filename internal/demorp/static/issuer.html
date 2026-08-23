@@ -97,6 +97,16 @@
     <p class="grant-hint" id="status-hint" hidden>
       The ticket carries no status reference, so nothing can revoke it.
     </p>
+    <div class="grant-row" id="deferred-row">
+      <span class="grant-label">Issuance</span>
+      <div class="toggle" id="deferred-toggle" role="radiogroup" aria-label="Deferred issuance">
+        <button type="button" class="toggle-option selected" data-deferred="" role="radio" aria-checked="true">Immediate</button>
+        <button type="button" class="toggle-option" data-deferred="true" role="radio" aria-checked="false">Deferred</button>
+      </div>
+    </div>
+    <p class="grant-hint" id="deferred-hint">
+      The credential is issued at once.
+    </p>
     <button class="btn primary" id="create-btn">Create offer</button>
     <div class="result" id="result">
       <div class="label">Open in the wallet on this host</div>

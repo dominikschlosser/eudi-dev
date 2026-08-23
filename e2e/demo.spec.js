@@ -280,6 +280,31 @@ test.describe("Demo mode consent visibility", () => {
     await expect(page.locator("#consent-overlay")).not.toHaveClass(/active/);
   });
 
+  test("a deferred offer is awaited and then collected", async ({ page }) => {
+    const { body: offer } = await postJSON("/issuer/api/offers?deferred=true", {});
+    const offerDoc = await (await fetch(offer.offer_uri)).json();
+    const uri =
+      "openid-credential-offer://?credential_offer=" +
+      encodeURIComponent(JSON.stringify(offerDoc));
+
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/offers", uri, owner);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    await page.locator("#consent-approve").click();
+
+    // The issuer defers, so the credential shows as awaiting issuance first,
+    // then arrives once the wallet has polled the deferred endpoint.
+    await expect(page.locator("#deferred-section")).toBeVisible({ timeout: 10_000 });
+    await expect(
+      page.locator("#credentials .credential-card", {
+        hasText: "Demo Event Ticket",
+      })
+    ).toBeVisible({ timeout: 25_000 });
+
+    // Back to a clean baseline for the following tests.
+    await fetch(`${BASE}/api/credentials`, { method: "DELETE" });
+  });
+
   // An issuance that failed leaves its error stored on the wallet, and the
   // endpoint that reads it only peeks, so it outlives the flow it came from.
   // A later request must not show it: the wallet page opens while the request
