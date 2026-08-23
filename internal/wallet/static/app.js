@@ -540,6 +540,9 @@
     credentials.forEach(cred => {
       const card = document.createElement('div');
       card.className = 'credential-card';
+      // A batch reads as one card drawn as a small stack (desktop and consent
+      // only). The stack is the sole cue that it was batch issued.
+      if (cred.batch) card.classList.add('batch');
 
       const isProtected = cred.protected === true;
       const body = credentialCardBody(cred, '');
@@ -1924,7 +1927,7 @@
       const body = credentialCardBody(cred, 'summary-');
       const kept = options ? selection.claims[mc.credential_id] : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
-        '<div class="credential-card">' + body.html + '</div>' +
+        '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
         claimChecklist(mc.credential_id, mc.claims, kept) +
       '</div>';
     }
@@ -1983,7 +1986,7 @@
           html += '<div class="candidate' + (picked ? ' selected' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '" tabindex="0" role="radio" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
             '<div class="candidate-row">' +
               '<input type="radio" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
-              '<div class="credential-card">' + body.html + '</div>' +
+              '<div class="credential-card' + (detail && detail.batch ? ' batch' : '') + '">' + body.html + '</div>' +
               '<div class="candidate-actions">' +
                 (i === 0 ? '<span class="auto-chip">auto</span>' : '') +
                 // By id, like the credential list's own decoder link, and in a

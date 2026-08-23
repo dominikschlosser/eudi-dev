@@ -129,6 +129,42 @@ func TestStoreBatchSiblingsStoresEveryCopy(t *testing.T) {
 	}
 }
 
+func TestListedCredentialsCollapsesBatch(t *testing.T) {
+	w := generateTestWallet(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
+	storeTestBatch(t, w, keys)
+
+	if got := len(w.GetCredentials()); got != len(keys) {
+		t.Fatalf("the store should hold every copy: got %d, want %d", got, len(keys))
+	}
+	listed := w.ListedCredentials()
+	if len(listed) != 1 {
+		t.Fatalf("a batch should list as one credential, got %d", len(listed))
+	}
+	if listed[0].BindingKeyPEM != "" {
+		t.Fatal("a batch should be listed by its holder-key copy")
+	}
+	if summary := CredentialSummary(listed[0]); summary["batch"] != true {
+		t.Fatalf("the listed batch should carry the batch flag, got %v", summary["batch"])
+	}
+}
+
+func TestRemoveCredentialRemovesWholeBatch(t *testing.T) {
+	w := generateTestWallet(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
+	storeTestBatch(t, w, keys)
+
+	rep := w.ListedCredentials()[0]
+	if !w.RemoveCredential(rep.ID) {
+		t.Fatal("removing the batch reported nothing removed")
+	}
+	for _, c := range w.GetCredentials() {
+		if c.VCT == testBatchVCT {
+			t.Fatalf("copy %s survived deleting the batch", c.ID)
+		}
+	}
+}
+
 func TestBatchPresentsEachCopyOnceThenReuses(t *testing.T) {
 	w := generateTestWallet(t)
 	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}

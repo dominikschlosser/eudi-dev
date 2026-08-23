@@ -697,6 +697,21 @@ func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
 	}
 }
 
+// A batch credential is marked in the status column, the CLI's text stand-in
+// for the stacked card art the wallet UI draws.
+func TestCredStatusLabelMarksBatch(t *testing.T) {
+	if got := credStatusLabel(map[string]any{"batch": true}); got != "batch" {
+		t.Errorf("credStatusLabel for a batch = %q, want %q", got, "batch")
+	}
+	protectedBatch := map[string]any{"protected": true, "batch": true}
+	if got := credStatusLabel(protectedBatch); got != "protected, batch" {
+		t.Errorf("credStatusLabel for a protected batch = %q, want %q", got, "protected, batch")
+	}
+	if got := credStatusLabel(map[string]any{}); got != "-" {
+		t.Errorf("credStatusLabel with nothing to say = %q, want %q", got, "-")
+	}
+}
+
 // The validity column answers "is this still good", so it has to distinguish
 // an expired credential from one that never states a lifetime.
 func TestCredentialValidityLabel(t *testing.T) {

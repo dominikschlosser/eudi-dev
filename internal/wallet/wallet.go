@@ -846,16 +846,29 @@ func (w *Wallet) RemoveCredential(id string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	full := w.resolveIDLocked(id)
-	for i, c := range w.Credentials {
+	// Deleting one copy of a batch deletes the whole batch: it reads as one
+	// credential, so removing part of it would leave orphan copies behind.
+	group := ""
+	for _, c := range w.Credentials {
 		if c.ID == full {
 			if c.Protected {
 				return false
 			}
-			w.Credentials = append(w.Credentials[:i], w.Credentials[i+1:]...)
-			return true
+			group = c.BatchGroup
+			break
 		}
 	}
-	return false
+	kept := w.Credentials[:0]
+	removed := false
+	for _, c := range w.Credentials {
+		if c.ID == full || (group != "" && c.BatchGroup == group) {
+			removed = true
+			continue
+		}
+		kept = append(kept, c)
+	}
+	w.Credentials = kept
+	return removed
 }
 
 // IsProtected reports whether the credential is part of a protected baseline.
@@ -1157,6 +1170,12 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if c.Protected {
 		summary["protected"] = true
 	}
+	// A batch reads as one credential: the flag lets a listing draw it as a
+	// stack and act on the whole batch, without exposing a copy count (a batch
+	// cycles and reuses, so the number is not a useful signal).
+	if c.BatchGroup != "" {
+		summary["batch"] = true
+	}
 	if c.Display != nil {
 		summary["display"] = c.Display
 	}
@@ -1243,12 +1262,48 @@ func (w *Wallet) CredentialsJSON() ([]byte, error) {
 	return w.CredentialsJSONWindow(0, 0)
 }
 
+// ListedCredentials returns the credentials as the UI and CLI list them: one
+// entry per batch, represented by its holder-key copy, so a batch of copies
+// reads as a single credential. Credentials outside a batch are unchanged.
+func (w *Wallet) ListedCredentials() []StoredCredential {
+	creds := w.GetCredentials()
+	out := make([]StoredCredential, 0, len(creds))
+	seen := make(map[string]bool)
+	for _, c := range creds {
+		if c.BatchGroup == "" {
+			out = append(out, c)
+			continue
+		}
+		if seen[c.BatchGroup] {
+			continue
+		}
+		seen[c.BatchGroup] = true
+		out = append(out, batchRepresentative(creds, c))
+	}
+	return out
+}
+
+// batchRepresentative returns the holder-key copy of a batch (the one presented
+// with the wallet holder key), falling back to the given copy when none is
+// found, so a batch is always listed by a stable member.
+func batchRepresentative(creds []StoredCredential, member StoredCredential) StoredCredential {
+	if member.BindingKeyPEM == "" {
+		return member
+	}
+	for _, c := range creds {
+		if c.BatchGroup == member.BatchGroup && c.BindingKeyPEM == "" {
+			return c
+		}
+	}
+	return member
+}
+
 // CredentialsJSONWindow serializes a slice of the stored credentials.
 // A limit of 0 means "to the end", and an offset past the end yields an
 // empty array rather than an error, so a paging client that lands on a
 // stale page simply sees nothing.
 func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
-	creds := w.GetCredentials()
+	creds := w.ListedCredentials()
 	// Sorted before the window is taken, or paging would slice the stored
 	// order and then order each page on its own.
 	SortCredentialsNewestFirst(creds)

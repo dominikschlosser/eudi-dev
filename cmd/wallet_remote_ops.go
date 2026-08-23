@@ -185,6 +185,11 @@ func credStatusLabel(cred map[string]any) string {
 	if protected, _ := cred["protected"].(bool); protected {
 		parts = append(parts, "protected")
 	}
+	// A batch reads as one credential here too, marked so the rotation of copies
+	// is not a surprise (the list shows the holder copy).
+	if batch, _ := cred["batch"].(bool); batch {
+		parts = append(parts, "batch")
+	}
 	if len(parts) == 0 {
 		return "-"
 	}
@@ -240,12 +245,20 @@ func printCredentialDoc(cred map[string]any, decoded bool) error {
 	// The decoded payload states the expiry as a Unix timestamp, which is not
 	// an answer to "is this still good".
 	if !jsonOutput {
-		if when, ok := credExpiry(cred); ok {
+		when, hasExpiry := credExpiry(cred)
+		isBatch, _ := cred["batch"].(bool)
+		if hasExpiry {
 			validity := "expired " + when.Local().Format(time.RFC1123)
 			if time.Until(when) > 0 {
 				validity = "valid for " + credValidityLabel(cred) + ", until " + when.Local().Format(time.RFC1123)
 			}
-			fmt.Printf("Validity: %s\n\n", validity)
+			fmt.Printf("Validity: %s\n", validity)
+		}
+		if isBatch {
+			fmt.Println("Batch:    yes (the wallet holds several copies and presents an unused one each time)")
+		}
+		if hasExpiry || isBatch {
+			fmt.Println()
 		}
 	}
 	opts := output.Options{JSON: jsonOutput, NoColor: noColor, Verbose: verbose}

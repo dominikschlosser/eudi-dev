@@ -31,7 +31,8 @@ import (
 // clients keep working. The full count travels in X-Total-Count, which a
 // paging UI needs to know how many pages there are.
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
-	total := len(s.wallet.GetCredentials())
+	// A batch counts once, so paging matches what the window returns.
+	total := len(s.wallet.ListedCredentials())
 	limit, err := intParam(r, "limit", 0)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid limit: " + err.Error()})

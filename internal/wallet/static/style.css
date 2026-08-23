@@ -239,6 +239,21 @@ header h1 {
   color: var(--text);
 }
 
+/* A batch is drawn as a small stack: two sheets peek from the lower right of
+   the card face, drawn as offset box-shadows so they sit behind the art and
+   are never clipped. The stack is the only cue that a credential was batch
+   issued (no count, since a batch cycles and reuses). It shows on the desktop
+   list row and in the consent dialog; the mobile hero drops it, where a
+   full-width tile has no room for the offset. */
+.credential-card.batch .card-face {
+  box-shadow:
+    3px 4px 0 -1px var(--bg-surface),
+    4px 5px 0 -1px color-mix(in srgb, var(--text-dim) 60%, transparent),
+    6px 8px 0 -2px var(--bg-surface),
+    7px 9px 0 -2px color-mix(in srgb, var(--text-dim) 42%, transparent),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 /* The issuer logo, a monogram from the display name, or a generic glyph, each
    sitting on the face. */
 .credential-logo {
@@ -368,6 +383,11 @@ header h1 {
   .card-face {
     width: 100%;
     aspect-ratio: 2.4;
+  }
+  /* The full-width hero has no room for the offset stack, so a batch reads as a
+     plain card on a phone (the stack stays a desktop and consent cue). */
+  .credential-card.batch .card-face {
+    box-shadow: none;
   }
   .credential-logo { top: 10px; left: 10px; width: 28px; height: 28px; padding: 4px; }
   .face-init, .face-generic { font-size: 26px; }
