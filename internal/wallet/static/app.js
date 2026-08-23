@@ -1326,11 +1326,12 @@
     try {
       const resp = await fetch(requestsURL());
       const all = await resp.json();
-      // A dialog whose request is no longer pending (answered in this tab, in
-      // another tab, or timed out) can answer nothing, so it is closed rather
-      // than left on screen asking about a flow that already ended. closeConsent
-      // Overlay refreshes the banner again, this time with the dialog gone.
-      if (consentRequestOpen && consentRequestID != null &&
+      // A dialog whose request is no longer pending can answer nothing, so it
+      // is closed here (this is how another tab drops a dialog for a request
+      // answered elsewhere). The tab with the answer in flight keeps its dialog
+      // and closes it with the result instead. closeConsentOverlay refreshes the
+      // banner again, this time with the dialog gone.
+      if (consentRequestOpen && !consentSubmitting && consentRequestID != null &&
           !(all || []).some((req) => req.id === consentRequestID)) {
         closeConsentOverlay();
         return;
@@ -1477,6 +1478,10 @@
   // Which request the dialog on screen belongs to. A late answer from a fetch
   // one dialog started must not redraw the dialog that replaced it.
   let consentRequestID = null;
+  // Whether this tab has an approve or deny in flight. This tab's own dialog is
+  // driven by that request, so the resolution reconciliation leaves it alone
+  // and lets the handler close it with the result.
+  let consentSubmitting = false;
 
   // Closing the dialog puts whatever is still pending back in the banner. A
   // second request arriving while one is on screen replaces it, so without
@@ -1675,6 +1680,7 @@
   function showConsentDialog(req) {
     consentRequestOpen = true;
     consentRequestID = req.id;
+    consentSubmitting = false;
     dropStoredError();
     consentOverlay.classList.add('active');
     // This one is on screen now, and a request it replaced is not.
@@ -2090,6 +2096,7 @@
       const approveBtn = document.getElementById('consent-approve');
       const denyBtn = document.getElementById('consent-deny');
       submitting = true;
+      consentSubmitting = true;
       approveBtn.disabled = true;
       approveBtn.textContent = 'Submitting...';
       expectError();
@@ -2143,10 +2150,13 @@
         submitting = false;
         console.error('Approve failed:', e);
         showErrorDialog('Approve request failed', e.message);
+      } finally {
+        consentSubmitting = false;
       }
     });
 
     document.getElementById('consent-deny').addEventListener('click', async () => {
+      consentSubmitting = true;
       try {
         const resp = await fetch(approveURL(req.id, '/deny'), { method: 'POST' });
         if (!resp.ok) {
@@ -2156,6 +2166,8 @@
         }
       } catch (e) {
         console.error('Deny failed:', e);
+      } finally {
+        consentSubmitting = false;
       }
       closeConsentOverlay();
       await loadLog();

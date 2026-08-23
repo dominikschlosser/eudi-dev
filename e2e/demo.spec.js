@@ -1159,6 +1159,40 @@ test.describe("Multi-tab dialogs", () => {
       await ctx.close();
     }
   });
+
+  // The tab doing the answering keeps its dialog through the submission (the
+  // resolution reconciliation must not close the dialog on the acting tab), so
+  // the flow completes, while the other tab's stale dialog closes.
+  test("approving in one tab completes while the other tab's dialog closes", async ({
+    browser,
+  }) => {
+    const req = await createVerificationRequest();
+    const owner = "multitab-approve-" + Math.random().toString(36).slice(2);
+    const ctx = await browser.newContext();
+    try {
+      const acting = await ctx.newPage();
+      const stale = await ctx.newPage();
+      await acting.goto(`${BASE}/?focus=overview&owner=${owner}`);
+      await stale.goto(`${BASE}/?focus=overview&owner=${owner}`);
+      await acting.waitForTimeout(300);
+      submitAsSchemeHandler("/api/presentations", req.schemeURI, owner);
+      await expect(acting.locator("#consent-overlay")).toHaveClass(/active/);
+      await expect(stale.locator("#consent-overlay")).toHaveClass(/active/);
+
+      await acting.locator("#consent-approve").click();
+      // The stale tab drops its dialog, and the submission actually completed
+      // rather than hanging with the acting tab's dialog torn out from under it.
+      await expect(stale.locator("#consent-overlay")).not.toHaveClass(/active/);
+      await expect
+        .poll(async () => {
+          const res = await fetch(`${BASE}/verifier/api/requests/${req.id}`);
+          return (await res.json()).status;
+        }, { timeout: 15_000 })
+        .toBe("verified");
+    } finally {
+      await ctx.close();
+    }
+  });
 });
 
 test.describe("Verifier polling", () => {
