@@ -40,6 +40,11 @@ const (
 
 	ticketConfigurationID = "demo-ticket"
 	preAuthGrant          = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+
+	// demoBatchSize is how many copies of the ticket this issuer signs in one
+	// request, one per key proof, so a wallet can hold a batch and present a
+	// fresh copy each time (OpenID4VCI 1.0 §8.3).
+	demoBatchSize = 3
 )
 
 // ticketClaims returns the ticket's test data, carrying the signed-in holder's
@@ -188,6 +193,9 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		// The Nonce Endpoint of §7 is the only place a 1.0 wallet looks for the
 		// challenge its key proof must carry.
 		"nonce_endpoint": issuer + "/nonce",
+		// The issuer signs a copy of the credential per key proof, up to this
+		// many, so a wallet can request a batch (OpenID4VCI 1.0 §8.3).
+		"batch_credential_issuance": map[string]any{"batch_size": demoBatchSize},
 		"display": []map[string]any{
 			{
 				"name":   "EUDI Test Demo Issuer",
@@ -459,26 +467,34 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_proof", "proofs.jwt is required"))
 		return
 	}
-
-	holderKey, err := d.verifyProofJWT(req.Proofs.JWT[0])
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, oauthError(err.code, err.description))
+	if len(req.Proofs.JWT) > demoBatchSize {
+		writeJSON(w, http.StatusBadRequest, oauthError("invalid_credential_request",
+			fmt.Sprintf("this issuer signs at most %d copies in one request", demoBatchSize)))
 		return
 	}
 
-	credential, signErr := d.signTicket(holderKey, granted)
-	if signErr != nil {
-		// Not a §8.3.1.2 error: those describe what is wrong with the request
-		// and are answered with 400, and credential_request_denied in particular
-		// tells the wallet "the Credential cannot be issued", so it stops asking.
-		// A signing failure here is this issuer being broken, which the next
-		// attempt may well survive.
-		writeJSON(w, http.StatusInternalServerError, oauthError("server_error", signErr.Error()))
-		return
+	// One credential per key proof, each bound to that proof's key, so a batch
+	// of distinct-key copies comes back in the §8.3 credentials array.
+	credentials := make([]map[string]any, 0, len(req.Proofs.JWT))
+	for _, proof := range req.Proofs.JWT {
+		holderKey, err := d.verifyProofJWT(proof)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, oauthError(err.code, err.description))
+			return
+		}
+		credential, signErr := d.signTicket(holderKey, granted)
+		if signErr != nil {
+			// Not a §8.3.1.2 error: those describe what is wrong with the request
+			// and are answered with 400, and credential_request_denied in particular
+			// tells the wallet "the Credential cannot be issued", so it stops asking.
+			// A signing failure here is this issuer being broken, which the next
+			// attempt may well survive.
+			writeJSON(w, http.StatusInternalServerError, oauthError("server_error", signErr.Error()))
+			return
+		}
+		credentials = append(credentials, map[string]any{"credential": credential})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"credentials": []map[string]any{{"credential": credential}},
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"credentials": credentials})
 }
 
 // checkRequestedCredential holds the request to §8.2, where
