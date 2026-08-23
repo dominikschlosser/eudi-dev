@@ -29,18 +29,51 @@ func (w *Wallet) SetCredentialStatus(credID string, status int) (StatusEntry, bo
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	// A batch revokes as one credential. Its copies each carry their own status
+	// index (never a shared one, so two presentations stay unlinkable), so the
+	// logical credential is revoked only when every copy's index is flipped.
+	group := ""
 	for _, c := range w.Credentials {
-		if c.ID == credID && c.Protected {
-			// Revoking the shared baseline would break the demo for everyone.
-			return StatusEntry{}, false
+		if c.ID == credID {
+			if c.Protected {
+				// Revoking the shared baseline would break the demo for everyone.
+				return StatusEntry{}, false
+			}
+			group = c.BatchGroup
+			break
 		}
 	}
+
+	ids := []string{credID}
+	if group != "" {
+		ids = ids[:0]
+		for _, c := range w.Credentials {
+			if c.BatchGroup != group {
+				continue
+			}
+			if c.Protected {
+				return StatusEntry{}, false
+			}
+			ids = append(ids, c.ID)
+		}
+	}
+
 	entry, ok := w.StatusEntries[credID]
 	if !ok {
 		return StatusEntry{}, false
 	}
-	entry.Status = status
-	w.StatusEntries[credID] = entry
+	for _, id := range ids {
+		e, ok := w.StatusEntries[id]
+		if !ok {
+			continue
+		}
+		e.Status = status
+		w.StatusEntries[id] = e
+		if id == credID {
+			entry = e
+		}
+	}
 	return entry, true
 }
 

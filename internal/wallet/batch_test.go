@@ -165,6 +165,36 @@ func TestRemoveCredentialRemovesWholeBatch(t *testing.T) {
 	}
 }
 
+func TestSetCredentialStatusRevokesWholeBatch(t *testing.T) {
+	w := generateTestWallet(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
+	storeTestBatch(t, w, keys)
+
+	// Each copy carries its own status index, the way the issuer reserves one
+	// per copy so two presentations cannot be linked by a shared index.
+	idx := 0
+	for _, c := range w.GetCredentials() {
+		if c.VCT == testBatchVCT {
+			w.RegisterStatusEntry(c.ID, idx)
+			idx++
+		}
+	}
+
+	rep := w.ListedCredentials()[0]
+	if _, ok := w.SetCredentialStatus(rep.ID, 1); !ok {
+		t.Fatal("revoking the batch reported failure")
+	}
+	for _, c := range w.GetCredentials() {
+		if c.VCT != testBatchVCT {
+			continue
+		}
+		entry, ok := w.StatusEntryFor(c.ID)
+		if !ok || entry.Status != 1 {
+			t.Fatalf("copy %s was not revoked with the batch (entry %+v ok=%v)", c.ID, entry, ok)
+		}
+	}
+}
+
 func TestBatchPresentsEachCopyOnceThenReuses(t *testing.T) {
 	w := generateTestWallet(t)
 	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}

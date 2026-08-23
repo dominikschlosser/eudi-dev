@@ -1559,6 +1559,59 @@ func TestIssuerOffersRevocableTicket(t *testing.T) {
 	}
 }
 
+// A batch revokes as one credential: its copies each sit on a distinct status
+// index (so two presentations cannot be linked by a shared index), and revoking
+// the batch flips every one, so whichever copy the wallet rotates to next also
+// reads as revoked.
+func TestIssuerRevokesAWholeBatch(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	rep := redeemDemoTicket(t, w, ts, "?status=true&batch=true")
+	var copies []wallet.StoredCredential
+	for _, c := range w.GetCredentials() {
+		if c.BatchGroup != "" && c.BatchGroup == rep.BatchGroup {
+			copies = append(copies, c)
+		}
+	}
+	if len(copies) < 2 {
+		t.Fatalf("a batch offer stored %d copies, want at least 2", len(copies))
+	}
+	seenIdx := make(map[int]bool)
+	for _, c := range copies {
+		ref := wallet.CredentialStatusRef(c)
+		if ref == nil {
+			t.Fatalf("copy %s carries no status reference", c.ID)
+		}
+		if seenIdx[ref.Idx] {
+			t.Fatalf("two copies share status index %d, which links them", ref.Idx)
+		}
+		seenIdx[ref.Idx] = true
+	}
+
+	// Fresh, every rotated copy verifies.
+	for round := 0; round <= len(copies); round++ {
+		if got := presentDemoTicket(t, ts); got["status"] != "verified" {
+			t.Fatalf("a fresh batch copy did not verify on round %d: %v", round, got["checks"])
+		}
+	}
+
+	if _, ok := w.SetCredentialStatus(rep.ID, 1); !ok {
+		t.Fatal("revoking the batch failed")
+	}
+
+	// Revoked, every rotated copy fails, so the batch cannot be presented at all.
+	for round := 0; round <= len(copies); round++ {
+		result := presentDemoTicket(t, ts)
+		if result["status"] != "failed" {
+			t.Fatalf("a revoked batch copy still verified on round %d: %v", round, result["checks"])
+		}
+		if !strings.Contains(fmt.Sprint(result["error"]), "revoked") {
+			t.Errorf("round %d failed for the wrong reason: %v", round, result["error"])
+		}
+	}
+}
+
 // Two tickets issued with a status reference must land on different indices,
 // or revoking one would revoke the other.
 func TestIssuerReservesOneStatusIndexPerTicket(t *testing.T) {
