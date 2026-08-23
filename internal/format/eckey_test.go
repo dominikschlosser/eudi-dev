@@ -22,19 +22,18 @@ import (
 	"testing"
 )
 
-// The helpers replaced direct access to the deprecated ecdsa big.Int coordinate
-// fields across the toolkit's signing, JWK and thumbprint code. These tests pin
-// that the replacement is byte-for-byte what the old field access produced, so
-// signatures, JWK thumbprints and key bindings computed through the helpers are
-// identical to before. The deprecated fields appear here only as the trusted
-// reference the new code is measured against.
+// The signing, JWK and thumbprint code reads EC key coordinates through these
+// helpers. These tests pin that the helper output is byte-for-byte the SEC1
+// point and the fixed-width JWK coordinates, across P-256, P-384 and P-521, so
+// every signature, JWK and thumbprint built on them is exact. The big.Int
+// coordinate fields are read here only as the independent reference.
 
-// referenceCoords is the fixed-width big-endian X and Y a JWK carried before the
-// migration: the coordinate big.Int left-padded to the curve width.
+// referenceCoords is the fixed-width big-endian X and Y a JWK carries: the
+// coordinate big.Int left-padded to the curve width.
 func referenceCoords(pub *ecdsa.PublicKey) (x, y []byte) {
 	size := (pub.Curve.Params().BitSize + 7) / 8
-	return pub.X.FillBytes(make([]byte, size)), //nolint:staticcheck // reference for the migration under test
-		pub.Y.FillBytes(make([]byte, size)) //nolint:staticcheck // reference for the migration under test
+	return pub.X.FillBytes(make([]byte, size)), //nolint:staticcheck // the independent reference for the helper
+		pub.Y.FillBytes(make([]byte, size)) //nolint:staticcheck // the independent reference for the helper
 }
 
 func TestECPublicCoords_MatchesFieldAccess(t *testing.T) {
@@ -68,7 +67,7 @@ func TestECPublicCoords_MatchesFieldAccess(t *testing.T) {
 					t.Fatalf("coordinates differ from field access:\n got x=%x y=%x\nwant x=%x y=%x", gotX, gotY, wantX, wantY)
 				}
 				// A second, independent reference: the SEC1 uncompressed point.
-				marshaled := elliptic.Marshal(c.curve, key.X, key.Y) //nolint:staticcheck // reference for the migration under test
+				marshaled := elliptic.Marshal(c.curve, key.X, key.Y) //nolint:staticcheck // the independent reference for the helper
 				if !bytes.Equal(append([]byte{4}, append(gotX, gotY...)...), marshaled) {
 					t.Fatalf("coordinates do not reassemble into the SEC1 point")
 				}
@@ -147,7 +146,7 @@ func TestPrivateKeyScalar_MatchesFieldAccess(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PrivateKey.Bytes: %v", err)
 			}
-			want := key.D.FillBytes(make([]byte, size)) //nolint:staticcheck // reference for the migration under test
+			want := key.D.FillBytes(make([]byte, size)) //nolint:staticcheck // the independent reference for the helper
 			if !bytes.Equal(got, want) {
 				t.Fatalf("private scalar differs from field access:\n got %x\nwant %x", got, want)
 			}
