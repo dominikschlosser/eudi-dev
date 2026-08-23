@@ -122,27 +122,53 @@
       }
       section.hidden = false;
       list.innerHTML = pending.map(p => {
-        const name = p.vct || p.doctype || p.credential_configuration_id || p.format || 'Credential';
+        const display = p.display || {};
+        const typeLabel = p.vct || p.doctype || p.credential_configuration_id || p.format || 'Credential';
+        const name = display.name || typeLabel;
+        const formatLabel = formatLabelFor(p);
         const next = p.next_attempt_at ? new Date(p.next_attempt_at) : null;
         const when = next && !isNaN(next) ? next.toLocaleTimeString() : '';
+        // The same card face as a delivered credential, painted by
+        // applyCredentialDisplay below, so an awaiting item already shows the
+        // art the offer declared instead of a bare badge.
+        const logoImg = display.logo_uri
+          ? '<img class="credential-logo" src="' + escHtml(display.logo_uri) + '" alt="' + escHtml(display.logo_alt_text || '') + '">'
+          : '';
+        const faceHtml = '<div class="card-face">' +
+            '<span class="format-badge format-badge-face">' + formatLabel + '</span>' +
+            logoImg +
+            '<div class="face-name">' + escHtml(name) + '</div>' +
+          '</div>';
         return '<div class="deferred-item" data-id="' + escHtml(p.id) + '">' +
-          '<div class="deferred-item-head">' +
-            '<span class="deferred-badge">Deferred</span>' +
-            '<span class="deferred-name">' + escHtml(name) + '</span>' +
-          '</div>' +
-          '<div class="deferred-meta">' + escHtml(p.issuer || '') + '</div>' +
-          '<div class="deferred-meta">' +
-            'The issuer asked the wallet to check back every ' + escHtml(p.interval || '') +
-            (when ? '. Next attempt at ' + escHtml(when) : '') +
-            (p.attempts ? ' (' + escHtml(p.attempts) + ' so far)' : '') +
-          '</div>' +
-          (p.last_error ? '<div class="deferred-meta deferred-error">' + escHtml(p.last_error) + '</div>' : '') +
-          '<div class="deferred-actions">' +
-            '<button class="btn btn-sm deferred-check" data-id="' + escHtml(p.id) + '">Check now</button>' +
-            '<button class="btn btn-sm btn-danger deferred-abandon" data-id="' + escHtml(p.id) + '">Abandon</button>' +
+          faceHtml +
+          '<div class="deferred-body">' +
+            '<div class="deferred-item-head">' +
+              '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
+              '<span class="deferred-name">' + escHtml(name) + '</span>' +
+              '<span class="status-badge deferred-awaiting">Awaiting issuance</span>' +
+            '</div>' +
+            '<div class="deferred-meta deferred-status">' +
+              '<span class="deferred-spinner" aria-hidden="true"></span>' +
+              'The issuer asked the wallet to check back every ' + escHtml(p.interval || '') +
+              (when ? '. Next attempt at ' + escHtml(when) : '') +
+              (p.attempts ? ' (' + escHtml(p.attempts) + ' so far)' : '') +
+            '</div>' +
+            (p.issuer ? '<div class="deferred-meta">' + escHtml(p.issuer) + '</div>' : '') +
+            (p.last_error ? '<div class="deferred-meta deferred-error">' + escHtml(p.last_error) + '</div>' : '') +
+            '<div class="deferred-actions">' +
+              '<button class="btn btn-sm deferred-check" data-id="' + escHtml(p.id) + '">Check now</button>' +
+              '<button class="btn btn-sm btn-danger deferred-abandon" data-id="' + escHtml(p.id) + '">Abandon</button>' +
+            '</div>' +
           '</div>' +
         '</div>';
       }).join('');
+
+      // Paint each face with the appearance the offer declared, the same call
+      // the credential list uses.
+      list.querySelectorAll('.deferred-item').forEach(item => {
+        const p = pending.find(x => String(x.id) === item.dataset.id);
+        if (p) applyCredentialDisplay(item, p.display);
+      });
 
       // Check asks the issuer now instead of at the next scheduled attempt.
       // Abandon stops the wallet asking at all.

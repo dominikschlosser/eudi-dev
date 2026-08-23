@@ -314,6 +314,7 @@ func DeferredIssuanceSummary(p DeferredIssuance) map[string]any {
 		"format":                      p.Format,
 		"vct":                         p.VCT,
 		"doctype":                     p.DocType,
+		"display":                     p.Display,
 		"can_refresh":                 p.CanRefresh(),
 		"interval":                    p.Interval().String(),
 		"created_at":                  p.CreatedAt,
