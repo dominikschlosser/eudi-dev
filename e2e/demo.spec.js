@@ -1131,6 +1131,36 @@ test.describe("Consent credential selection", () => {
   });
 });
 
+test.describe("Multi-tab dialogs", () => {
+  // Two tabs of the same browser both show a dialog for the same request.
+  // Answering it in one resolves the request, so the other tab's dialog must
+  // close rather than keep asking about a flow that already ended.
+  test("a request answered in one tab closes its dialog in the other", async ({
+    browser,
+  }) => {
+    const req = await createVerificationRequest();
+    const owner = "multitab-" + Math.random().toString(36).slice(2);
+    const ctx = await browser.newContext();
+    try {
+      const tab1 = await ctx.newPage();
+      const tab2 = await ctx.newPage();
+      await tab1.goto(`${BASE}/?focus=overview&owner=${owner}`);
+      await tab2.goto(`${BASE}/?focus=overview&owner=${owner}`);
+      // Both event streams need to be attached before the request arrives.
+      await tab1.waitForTimeout(300);
+      submitAsSchemeHandler("/api/presentations", req.schemeURI, owner);
+      await expect(tab1.locator("#consent-overlay")).toHaveClass(/active/);
+      await expect(tab2.locator("#consent-overlay")).toHaveClass(/active/);
+
+      await tab1.locator("#consent-deny").click();
+      await expect(tab1.locator("#consent-overlay")).not.toHaveClass(/active/);
+      await expect(tab2.locator("#consent-overlay")).not.toHaveClass(/active/);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
 test.describe("Verifier polling", () => {
   /** Counts status polls the page makes from now on. */
   function countPolls(page) {

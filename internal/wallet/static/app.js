@@ -1325,7 +1325,17 @@
   async function refreshPendingBanner() {
     try {
       const resp = await fetch(requestsURL());
-      updatePendingBanner(reviewableRequests(await resp.json()));
+      const all = await resp.json();
+      // A dialog whose request is no longer pending (answered in this tab, in
+      // another tab, or timed out) can answer nothing, so it is closed rather
+      // than left on screen asking about a flow that already ended. closeConsent
+      // Overlay refreshes the banner again, this time with the dialog gone.
+      if (consentRequestOpen && consentRequestID != null &&
+          !(all || []).some((req) => req.id === consentRequestID)) {
+        closeConsentOverlay();
+        return;
+      }
+      updatePendingBanner(reviewableRequests(all));
     } catch (e) {
       /* leave the banner as it is */
     }

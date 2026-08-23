@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **EC key coordinates are read and written through the crypto/ecdsa encode and decode calls.** Go 1.26 deprecated direct access to the big.Int coordinate fields, so the JWK, COSE key and thumbprint code now uses `PublicKey.Bytes`, `ParseUncompressedPublicKey` and the private-scalar `Bytes` call. The bytes are identical to before (an equivalence test pins this across P-256, P-384 and P-521), and rebuilding a key from its coordinates now rejects a point that is not on the curve. The debug reverse proxy moves from the deprecated `ReverseProxy.Director` to `Rewrite`.
 
+### Fixed
+
+- **A dialog answered in one tab closes in the others.** Two tabs of the same browser both show the dialog for a pending request. Resolving it in one (approve, deny or a timeout) now closes the others too, which used to keep asking about a flow that had already ended. Every resolution notifies the open event streams, and a tab whose dialog names a request that is no longer pending closes it.
+
 ## [1.26.2] - 2026-08-22
 
 ### Fixed

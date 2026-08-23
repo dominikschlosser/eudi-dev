@@ -76,12 +76,18 @@ const statusExpired = "expired"
 func (w *Wallet) ResolveRequest(id, status string) (*ConsentRequest, bool) {
 	rt := w.runtimeState()
 	rt.mu.Lock()
-	defer rt.mu.Unlock()
 	req, ok := rt.requests[id]
 	if !ok || req.Status != "pending" {
+		rt.mu.Unlock()
 		return req, false
 	}
 	req.Status = status
+	rt.mu.Unlock()
+	// The request is no longer pending, so every open stream is told to drop a
+	// dialog still showing it (another tab that also opened it, or the tab that
+	// started a flow this one resolved). NotifyStateChanged takes the lock, so
+	// it runs after the unlock above.
+	w.NotifyStateChanged()
 	return req, true
 }
 
