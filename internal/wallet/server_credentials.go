@@ -125,6 +125,12 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	// Resolve a short id prefix to the full id so the protection gate and the
+	// status write below act on the same credential.
+	if cred, ok := s.wallet.GetCredential(id); ok {
+		id = cred.ID
+	}
+
 	var body struct {
 		Status int `json:"status"`
 	}

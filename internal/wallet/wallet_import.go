@@ -30,8 +30,7 @@ import (
 // newCredentialID mints a short hex id for a stored credential, the way git
 // names an object. It is long enough to stay unique in a wallet and short
 // enough to show and type, and a command resolves it from an unambiguous
-// prefix. It panics only if the system has no entropy, the same failure
-// uuid.New would raise.
+// prefix. It panics only if the system has no entropy.
 func newCredentialID() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
