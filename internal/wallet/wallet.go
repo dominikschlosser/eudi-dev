@@ -1316,9 +1316,30 @@ func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	}
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
-		summaries[i] = w.CredentialSummaryWithStatus(c)
+		summary := w.CredentialSummaryWithStatus(c)
+		if c.BatchGroup != "" {
+			summary["batch_size"] = w.BatchGroupSize(c.BatchGroup)
+		}
+		summaries[i] = summary
 	}
 	return json.Marshal(summaries)
+}
+
+// BatchGroupSize is how many copies a batch holds, so a listing can report the
+// count of a credential shown once.
+func (w *Wallet) BatchGroupSize(group string) int {
+	if group == "" {
+		return 0
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	n := 0
+	for _, c := range w.Credentials {
+		if c.BatchGroup == group {
+			n++
+		}
+	}
+	return n
 }
 
 // RestoreCredential appends a credential that is already known to have been

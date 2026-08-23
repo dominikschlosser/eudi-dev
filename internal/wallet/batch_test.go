@@ -165,6 +165,69 @@ func TestRemoveCredentialRemovesWholeBatch(t *testing.T) {
 	}
 }
 
+func TestIssueCredentialBatchMintsEveryCopy(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	res, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           testBatchVCT,
+		BatchSize:     3,
+		StatusListURI: &noStatus,
+	})
+	if err != nil {
+		t.Fatalf("issuing a batch: %v", err)
+	}
+	group := res.Credential.BatchGroup
+	if group == "" {
+		t.Fatal("the issued batch carries no group")
+	}
+
+	holderCopies, keyedCopies := 0, 0
+	seenKeys := make(map[string]bool)
+	for i := range w.GetCredentials() {
+		c := w.GetCredentials()[i]
+		if c.BatchGroup != group {
+			continue
+		}
+		if c.BindingKeyPEM == "" {
+			holderCopies++
+		} else {
+			keyedCopies++
+		}
+		binding := credentialHolderBinding(c.Raw)
+		if binding.Key == nil {
+			t.Fatalf("copy %s is not holder bound", c.ID)
+		}
+		kid := mock.KeyIDForPublicKey(binding.Key)
+		if seenKeys[kid] {
+			t.Fatalf("two copies share holder key %s, which would link them", kid)
+		}
+		seenKeys[kid] = true
+		if w.keyBindingNotHeld(&c) {
+			t.Fatalf("issued batch copy %s is not presentable", c.ID)
+		}
+	}
+	if holderCopies != 1 {
+		t.Fatalf("a batch has exactly one holder-key copy, got %d", holderCopies)
+	}
+	if keyedCopies != 2 {
+		t.Fatalf("a batch of 3 has two copies on their own key, got %d", keyedCopies)
+	}
+}
+
+func TestIssueCredentialBatchRejectsPlainJWT(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	if _, err := w.IssueCredential(IssueOptions{
+		Format:        "jwt",
+		VCT:           testBatchVCT,
+		BatchSize:     2,
+		StatusListURI: &noStatus,
+	}); err == nil {
+		t.Fatal("a batch of a plain JWT VC has no holder binding and must be rejected")
+	}
+}
+
 func TestSetCredentialStatusRevokesWholeBatch(t *testing.T) {
 	w := generateTestWallet(t)
 	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}

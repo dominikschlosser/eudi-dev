@@ -185,10 +185,14 @@ func credStatusLabel(cred map[string]any) string {
 	if protected, _ := cred["protected"].(bool); protected {
 		parts = append(parts, "protected")
 	}
-	// A batch reads as one credential here too, marked so the rotation of copies
-	// is not a surprise (the list shows the holder copy).
+	// A batch reads as one credential here too, marked with its copy count so
+	// the rotation of copies is not a surprise (the list shows the holder copy).
 	if batch, _ := cred["batch"].(bool); batch {
-		parts = append(parts, "batch")
+		if size, ok := docNumber(cred, "batch_size"); ok && size >= 2 {
+			parts = append(parts, fmt.Sprintf("batch of %d", int(size)))
+		} else {
+			parts = append(parts, "batch")
+		}
 	}
 	if len(parts) == 0 {
 		return "-"
@@ -255,7 +259,11 @@ func printCredentialDoc(cred map[string]any, decoded bool) error {
 			fmt.Printf("Validity: %s\n", validity)
 		}
 		if isBatch {
-			fmt.Println("Batch:    yes (the wallet holds several copies and presents an unused one each time)")
+			copies := "several copies"
+			if size, ok := docNumber(cred, "batch_size"); ok && size >= 2 {
+				copies = fmt.Sprintf("%d copies", int(size))
+			}
+			fmt.Printf("Batch:    yes (the wallet holds %s and presents an unused one each time)\n", copies)
 		}
 		if hasExpiry || isBatch {
 			fmt.Println()

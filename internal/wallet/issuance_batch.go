@@ -24,11 +24,12 @@ import (
 	"time"
 )
 
-// batchProofKeyCount is the number of proofs the wallet sends when the issuer
-// advertises batch_credential_issuance. Two proofs are enough to exercise
-// batch issuance (per-key credential copies with distinct binding keys)
-// without inflating requests. The advertised batch_size still caps the count.
-const batchProofKeyCount = 2
+// maxBatchProofKeys caps how many proofs the wallet sends for a batch. The
+// wallet requests the batch the issuer advertises, one credential per proof
+// (§8.3), so it holds several copies and can present an unused one each time
+// (EUDI ARF method C). The cap keeps a large advertised batch_size from making
+// a single request enormous.
+const maxBatchProofKeys = 8
 
 // advertisedBatchSize returns the issuer's batch_credential_issuance.batch_size,
 // or 0 when the issuer does not advertise batch issuance support.
@@ -63,9 +64,9 @@ func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, con
 	if batchSize < 2 {
 		return keys, nil
 	}
-	count := batchProofKeyCount
-	if count > batchSize {
-		count = batchSize
+	count := batchSize
+	if count > maxBatchProofKeys {
+		count = maxBatchProofKeys
 	}
 	for len(keys) < count {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

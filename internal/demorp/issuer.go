@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,11 +42,34 @@ const (
 	ticketConfigurationID = "demo-ticket"
 	preAuthGrant          = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 
-	// demoBatchSize is how many copies of the ticket this issuer signs in one
-	// request, one per key proof, so a wallet can hold a batch and present a
-	// fresh copy each time (OpenID4VCI 1.0 §8.3).
-	demoBatchSize = 3
+	// demoBatchSize is the most copies of the ticket this issuer will sign in
+	// one request (one per key proof, §8.3), the ceiling it advertises. A batch
+	// offer chooses how many to issue up to this, so a wallet can hold a batch
+	// and present a fresh copy each time (EUDI ARF method C).
+	demoBatchSize = 8
+	// demoDefaultBatchSize is the batch an offer that asks for one without a
+	// size gets.
+	demoDefaultBatchSize = 3
 )
+
+// parseBatchSize reads the batch query parameter: "true" asks for the default
+// batch, a number asks for that many copies (clamped to what this issuer signs),
+// and anything else (including "false" and an empty value) means a single
+// credential.
+func parseBatchSize(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "true" {
+		return demoDefaultBatchSize
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 2 {
+		return 0
+	}
+	if n > demoBatchSize {
+		return demoBatchSize
+	}
+	return n
+}
 
 // ticketClaims returns the ticket's test data, carrying the signed-in holder's
 // name for an authorization code flow.
@@ -110,10 +134,10 @@ type offerState struct {
 	// transaction_id, and the credential is handed over at the deferred
 	// credential endpoint once it is ready (OpenID4VCI 1.0 §9).
 	deferred bool
-	// batch signs one credential per proof key (§8.3), so the wallet holds a
-	// batch of distinct-key copies to present one at a time. Off issues a single
+	// batchSize is how many distinct-key copies to sign (§8.3), so the wallet
+	// holds a batch and presents one at a time. 0 or 1 issues a single
 	// credential even though this issuer advertises batch support.
-	batch bool
+	batchSize int
 	// clientAuth is how the wallet authenticated when it exchanged the code
 	// for this access token. Nil until a token exchange has run.
 	clientAuth *clientAuthentication
@@ -287,7 +311,7 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		id:            randToken(),
 		withStatus:    withStatus,
 		deferred:      r.URL.Query().Get("deferred") == "true",
-		batch:         r.URL.Query().Get("batch") == "true",
+		batchSize:     parseBatchSize(r.URL.Query().Get("batch")),
 		authorization: normalizeAuthorizationMode(r.URL.Query().Get("authorization")),
 		expires:       time.Now().Add(entryTTL),
 	}
@@ -445,7 +469,7 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 			jkt:          offer.jkt,
 			withStatus:   offer.withStatus,
 			deferred:     offer.deferred,
-			batch:        offer.batch,
+			batchSize:    offer.batchSize,
 			clientAuth:   offer.clientAuth,
 		}
 	}
@@ -522,8 +546,12 @@ func (d *DemoRP) handleCredential(w http.ResponseWriter, r *http.Request) {
 // non-batch offer signs a single credential, bound to the wallet holder key the
 // wallet always proves first, even though extra proofs arrived.
 func (d *DemoRP) signBatch(holderKeys []*ecdsa.PublicKey, granted ticketGrant) ([]map[string]any, error) {
-	if !granted.batch && len(holderKeys) > 1 {
-		holderKeys = holderKeys[:1]
+	want := granted.batchSize
+	if want < 1 {
+		want = 1
+	}
+	if want < len(holderKeys) {
+		holderKeys = holderKeys[:want]
 	}
 	credentials := make([]map[string]any, 0, len(holderKeys))
 	for _, key := range holderKeys {
@@ -772,7 +800,7 @@ type ticketGrant struct {
 	jkt        string
 	withStatus bool
 	deferred   bool
-	batch      bool
+	batchSize  int
 	clientAuth *clientAuthentication
 }
 

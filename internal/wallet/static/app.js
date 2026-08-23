@@ -969,6 +969,7 @@
     document.getElementById('issue-doctype').value = '';
     document.getElementById('issue-exp').value = '';
     document.getElementById('issue-nbf').value = '';
+    document.getElementById('issue-batch').value = '';
     document.getElementById('issue-save-template').value = '';
     document.getElementById('issue-status-list').value = 'auto';
     document.getElementById('issue-status-list-uri').value = '';
@@ -1097,6 +1098,10 @@
     if (exp) body.exp = exp;
     const nbf = document.getElementById('issue-nbf').value.trim();
     if (nbf) body.nbf = nbf;
+    // A batch of N mints N distinct-key copies, so the wallet presents an
+    // unused one each time (holder-bound formats only).
+    const batch = parseInt(document.getElementById('issue-batch').value, 10);
+    if (batch >= 2) body.batch = batch;
     const statusListMode = document.getElementById('issue-status-list').value;
     if (statusListMode === 'none') {
       body.status_list_uri = '';

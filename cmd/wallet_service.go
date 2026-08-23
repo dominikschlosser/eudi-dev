@@ -203,13 +203,17 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	creds := w.GetCredentials()
-	// Same order the HTTP API returns, so `wallet list` and the UI agree
-	// about which credential is the newest.
+	// A batch reads as one credential, the same collapse the HTTP API applies,
+	// so `wallet list` and the UI agree about what is stored and its order.
+	creds := w.ListedCredentials()
 	wallet.SortCredentialsNewestFirst(creds)
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
-		summaries[i] = w.CredentialSummaryWithStatus(c)
+		summary := w.CredentialSummaryWithStatus(c)
+		if c.BatchGroup != "" {
+			summary["batch_size"] = w.BatchGroupSize(c.BatchGroup)
+		}
+		summaries[i] = summary
 	}
 	return summaries, nil
 }
@@ -253,7 +257,11 @@ func (l *localWallet) Credential(id string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("credential %s not found", id)
 	}
-	return w.CredentialSummaryWithStatus(cred), nil
+	summary := w.CredentialSummaryWithStatus(cred)
+	if cred.BatchGroup != "" {
+		summary["batch_size"] = w.BatchGroupSize(cred.BatchGroup)
+	}
+	return summary, nil
 }
 
 func (l *localWallet) ImportCredential(raw string) (map[string]any, error) {

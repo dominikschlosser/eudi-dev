@@ -251,8 +251,9 @@ func TestIssuanceProofKeys_KeyAttestationKeepsOneProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("issuanceProofKeys: %v", err)
 	}
-	if len(keys) != batchProofKeyCount {
-		t.Errorf("plain config produced %d proof keys, want %d", len(keys), batchProofKeyCount)
+	// batch_size 10 is capped to the wallet's own ceiling.
+	if len(keys) != maxBatchProofKeys {
+		t.Errorf("plain config produced %d proof keys, want %d", len(keys), maxBatchProofKeys)
 	}
 }
 

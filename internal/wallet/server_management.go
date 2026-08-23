@@ -41,7 +41,11 @@ func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.wallet.CredentialSummaryWithStatus(cred))
+	summary := s.wallet.CredentialSummaryWithStatus(cred)
+	if cred.BatchGroup != "" {
+		summary["batch_size"] = s.wallet.BatchGroupSize(cred.BatchGroup)
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 // handleGetCredentialStatus resolves the live status of a credential: from
@@ -154,6 +158,7 @@ type IssueAPIRequest struct {
 	TrustProfile    string                `json:"trust_profile"`
 	Trust           IssuedAttestationSpec `json:"trust"`
 	Display         *IssueDisplay         `json:"display"`
+	Batch           int                   `json:"batch"`
 }
 
 // Options converts the API request into IssueOptions.
@@ -174,6 +179,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		TrustProfile:    req.TrustProfile,
 		Trust:           req.Trust,
 		Display:         req.Display,
+		BatchSize:       req.Batch,
 	}
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)

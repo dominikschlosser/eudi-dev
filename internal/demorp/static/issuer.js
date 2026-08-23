@@ -6,7 +6,7 @@ async function createOffer(grant, status, authorization, deferred, batch) {
     if (grant) params.set("grant", grant);
     if (status) params.set("status", status);
     if (deferred) params.set("deferred", "true");
-    if (batch) params.set("batch", "true");
+    if (batch) params.set("batch", batch);
     // Only the authorization code grant asks the user for anything.
     if (grant && authorization) params.set("authorization", authorization);
     const query = params.toString() ? "?" + params.toString() : "";
@@ -62,14 +62,21 @@ const DEFERRED_HINTS = {
     "wallet shows it awaiting issuance and collects it a few seconds later.",
 };
 
-// Whether the wallet receives one credential or a batch of distinct-key copies.
+// Whether the wallet receives one credential or a batch of distinct-key copies,
+// and how many.
+function batchHint(n) {
+  return (
+    "The issuer signs " + n + " credentials, each on its own key (OpenID4VCI " +
+    "1.0 §8.3), so the wallet holds a batch of " + n + " and presents an unused " +
+    "one each time a verifier asks (EUDI ARF method C). The wallet shows the " +
+    "batch as one stacked card."
+  );
+}
 const BATCH_HINTS = {
   "": "The wallet receives a single credential.",
-  true:
-    "The issuer signs one credential per proof key (OpenID4VCI 1.0 §8.3), so " +
-    "the wallet holds a batch of distinct-key copies and presents an unused " +
-    "one each time a verifier asks (EUDI ARF method C). The wallet shows the " +
-    "batch as one stacked card.",
+  2: batchHint(2),
+  3: batchHint(3),
+  5: batchHint(5),
 };
 
 let grant = "";

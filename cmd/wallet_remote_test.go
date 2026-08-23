@@ -697,15 +697,20 @@ func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
 	}
 }
 
-// A batch credential is marked in the status column, the CLI's text stand-in
-// for the stacked card art the wallet UI draws.
+// A batch credential is marked in the status column with its copy count, the
+// CLI's text stand-in for the stacked card art the wallet UI draws.
 func TestCredStatusLabelMarksBatch(t *testing.T) {
-	if got := credStatusLabel(map[string]any{"batch": true}); got != "batch" {
-		t.Errorf("credStatusLabel for a batch = %q, want %q", got, "batch")
+	batch := map[string]any{"batch": true, "batch_size": float64(3)}
+	if got := credStatusLabel(batch); got != "batch of 3" {
+		t.Errorf("credStatusLabel for a batch = %q, want %q", got, "batch of 3")
 	}
-	protectedBatch := map[string]any{"protected": true, "batch": true}
-	if got := credStatusLabel(protectedBatch); got != "protected, batch" {
-		t.Errorf("credStatusLabel for a protected batch = %q, want %q", got, "protected, batch")
+	// Without a size the marker still reports that it is a batch.
+	if got := credStatusLabel(map[string]any{"batch": true}); got != "batch" {
+		t.Errorf("credStatusLabel for a batch without a size = %q, want %q", got, "batch")
+	}
+	protectedBatch := map[string]any{"protected": true, "batch": true, "batch_size": float64(2)}
+	if got := credStatusLabel(protectedBatch); got != "protected, batch of 2" {
+		t.Errorf("credStatusLabel for a protected batch = %q, want %q", got, "protected, batch of 2")
 	}
 	if got := credStatusLabel(map[string]any{}); got != "-" {
 		t.Errorf("credStatusLabel with nothing to say = %q, want %q", got, "-")

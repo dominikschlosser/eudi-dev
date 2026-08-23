@@ -1481,6 +1481,24 @@ func TestIssuerBatchOfferStoresEveryCopy(t *testing.T) {
 	}
 }
 
+// A batch offer issues the number of copies it asks for, up to what the issuer
+// signs, so the size is chosen per offer.
+func TestIssuerBatchSizeIsHonored(t *testing.T) {
+	w := newIssuanceWallet(t)
+	_, ts := serveDemoStack(t, w)
+
+	redeemDemoTicket(t, w, ts, "?batch=5")
+	count := 0
+	for _, c := range w.GetCredentials() {
+		if c.VCT == TicketVCT {
+			count++
+		}
+	}
+	if count != 5 {
+		t.Fatalf("a batch of 5 stored %d copies, want 5", count)
+	}
+}
+
 // A plain offer stays a single credential even though the issuer advertises
 // batch support, so the wallet only holds a batch when the offer asks for one.
 func TestIssuerPlainOfferStaysSingle(t *testing.T) {

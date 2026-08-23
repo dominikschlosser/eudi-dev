@@ -16,6 +16,8 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"fmt"
 	"strings"
 	"time"
@@ -89,6 +91,11 @@ type IssueOptions struct {
 	// https URI, which is fetched through the policed client and cached. Nil
 	// leaves the credential without display metadata.
 	Display *IssueDisplay
+	// BatchSize mints this many distinct-key copies of the credential, tied
+	// into one batch so the wallet presents an unused copy each time (EUDI ARF
+	// method C). 0 or 1 issues a single credential. Needs holder binding, so it
+	// is rejected for jwt_vc_json.
+	BatchSize int
 }
 
 // IssueDisplay is the appearance an operator sets for a self-issued credential.
@@ -232,73 +239,97 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		holderPub = &w.HolderKey.PublicKey
 	}
 
-	var raw string
-	switch format {
-	case "sdjwt":
-		raw, err = mock.GenerateSDJWT(mock.SDJWTConfig{
-			Issuer:          issuer,
-			VCT:             vct,
-			ExpiresIn:       expiresIn,
-			NotBefore:       opts.NotBefore,
-			Claims:          claims,
-			Key:             w.IssuerKey,
-			HolderKey:       holderPub,
-			StatusListURI:   statusURI,
-			StatusListIdx:   statusIdx,
-			CertChain:       certChain,
-			AlwaysDisclosed: alwaysDisclosed,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("generating SD-JWT: %w", err)
+	if opts.BatchSize >= 2 && format == "jwt" {
+		return nil, fmt.Errorf("batch issuance needs holder binding, which jwt_vc_json does not carry")
+	}
+
+	// signCopy mints one credential, holder-bound to holderPub and carrying the
+	// given status index.
+	signCopy := func(holderPub *ecdsa.PublicKey, statusIdx int) (string, error) {
+		switch format {
+		case "sdjwt":
+			return mock.GenerateSDJWT(mock.SDJWTConfig{
+				Issuer: issuer, VCT: vct, ExpiresIn: expiresIn, NotBefore: opts.NotBefore,
+				Claims: claims, Key: w.IssuerKey, HolderKey: holderPub,
+				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
+				AlwaysDisclosed: alwaysDisclosed,
+			})
+		case "jwt":
+			return mock.GenerateJWT(mock.JWTConfig{
+				Issuer: issuer, VCT: vct, ExpiresIn: expiresIn, NotBefore: opts.NotBefore,
+				Claims: claims, Key: w.IssuerKey,
+				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
+			})
+		case "mdoc":
+			return mock.GenerateMDOC(mock.MDOCConfig{
+				DocType: docType, NamespaceClaims: splitClaimsByNamespace(claims, namespace),
+				Key: w.IssuerKey, HolderKey: holderPub, ExpiresIn: expiresIn, ValidFrom: opts.NotBefore,
+				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
+			})
 		}
-	case "jwt":
-		raw, err = mock.GenerateJWT(mock.JWTConfig{
-			Issuer:        issuer,
-			VCT:           vct,
-			ExpiresIn:     expiresIn,
-			NotBefore:     opts.NotBefore,
-			Claims:        claims,
-			Key:           w.IssuerKey,
-			StatusListURI: statusURI,
-			StatusListIdx: statusIdx,
-			CertChain:     certChain,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("generating JWT: %w", err)
-		}
-	case "mdoc":
-		raw, err = mock.GenerateMDOC(mock.MDOCConfig{
-			DocType:         docType,
-			NamespaceClaims: splitClaimsByNamespace(claims, namespace),
-			Key:             w.IssuerKey,
-			HolderKey:       holderPub,
-			ExpiresIn:       expiresIn,
-			ValidFrom:       opts.NotBefore,
-			StatusListURI:   statusURI,
-			StatusListIdx:   statusIdx,
-			CertChain:       certChain,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("generating mDOC: %w", err)
+		return "", fmt.Errorf("unsupported format %q", format)
+	}
+
+	// applyIssuedDisplay gives a freshly minted credential its appearance: an
+	// explicit display wins, otherwise the template's own display (if any).
+	applyIssuedDisplay := func(cred *StoredCredential) {
+		if opts.Display != nil {
+			if d := w.issuedDisplay(*opts.Display); d != nil {
+				w.rememberDisplay(cred, d)
+			}
+		} else if tpl != nil {
+			w.rememberDisplay(cred, w.templateDisplay(tpl.Display))
 		}
 	}
 
+	raw, err := signCopy(holderPub, statusIdx)
+	if err != nil {
+		return nil, fmt.Errorf("generating credential: %w", err)
+	}
 	imported, err := w.ImportCredential(raw)
 	if err != nil {
 		return nil, fmt.Errorf("importing to wallet: %w", err)
 	}
-	// An explicit display wins, otherwise the template's own display (if any)
-	// gives the issued credential the same appearance the template declares.
-	if opts.Display != nil {
-		if d := w.issuedDisplay(*opts.Display); d != nil {
-			w.rememberDisplay(imported, d)
-		}
-	} else if tpl != nil {
-		w.rememberDisplay(imported, w.templateDisplay(tpl.Display))
-	}
+	applyIssuedDisplay(imported)
 	if registerStatus {
 		w.RegisterStatusEntry(imported.ID, statusIdx)
 	}
+
+	// A batch mints the extra copies, each on its own key and (when the wallet
+	// governs the status) its own status index, tied to the primary so the
+	// wallet presents an unused copy each time.
+	if opts.BatchSize >= 2 {
+		group := newCredentialID()
+		w.setBatchFields(imported.ID, group, "")
+		imported.BatchGroup = group
+		for i := 1; i < opts.BatchSize; i++ {
+			copyKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			if err != nil {
+				return nil, fmt.Errorf("generating batch copy key: %w", err)
+			}
+			copyIdx := statusIdx
+			if registerStatus {
+				copyIdx = w.nextStatusIndex()
+			}
+			copyRaw, err := signCopy(&copyKey.PublicKey, copyIdx)
+			if err != nil {
+				return nil, fmt.Errorf("generating batch copy: %w", err)
+			}
+			pem, err := encodeECPrivateKeyPEM(copyKey)
+			if err != nil {
+				return nil, err
+			}
+			copyCred, err := w.importBatchCopy(copyRaw, group, pem)
+			if err != nil {
+				return nil, fmt.Errorf("importing batch copy: %w", err)
+			}
+			applyIssuedDisplay(copyCred)
+			if registerStatus {
+				w.RegisterStatusEntry(copyCred.ID, copyIdx)
+			}
+		}
+	}
+
 	if err := w.RegisterIssuedAttestation(spec); err != nil {
 		return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)
 	}
