@@ -920,9 +920,17 @@
   // unconditionally (cleared when the template omits it), because otherwise
   // switching templates before issuing would submit a merge of all
   // previously selected templates.
+  // The template whose logo or background image the issued credential should
+  // wear. The form flattens a template into explicit values and cannot carry
+  // an embedded image, so its name travels instead and the server applies its
+  // display. Empty when the selected template declares no art.
+  let issueDisplayTemplate = '';
+
   function applyIssueTemplate(name) {
     const tpl = (templatesCache || []).find(t => t.name === name);
     if (!tpl) return;
+    const display = tpl.display || {};
+    issueDisplayTemplate = (display.logo || display.background_image) ? tpl.name : '';
     if (tpl.format) issueFormat.value = tpl.format;
     updateIssueFormatFields();
     document.getElementById('issue-vct').value = tpl.vct || '';
@@ -1003,6 +1011,7 @@
     document.getElementById('issue-status-list-idx').hidden = true;
     issueTemplateSelect.value = '';
     issueAlwaysDisclosed.value = '';
+    issueDisplayTemplate = '';
     applyTemplateDisplay({});
     document.getElementById('issue-claims-mode-builder').checked = true;
     issueClaimsTextarea.value = '';
@@ -1157,6 +1166,10 @@
     const bgImage = document.getElementById('issue-bg-image').value.trim();
     if (bgImage) display.background_image = bgImage;
     if (Object.keys(display).length > 0) body.display = display;
+    // The selected template's logo and background image cannot travel in the
+    // form, so its name does, and the server applies its display under any
+    // field set above.
+    if (issueDisplayTemplate) body.display_template = issueDisplayTemplate;
 
     issueSubmit.disabled = true;
     issueSubmit.textContent = 'Issuing...';

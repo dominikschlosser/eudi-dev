@@ -96,6 +96,12 @@ type IssueOptions struct {
 	// method C). 0 or 1 issues a single credential. Needs holder binding, so it
 	// is rejected for jwt_vc_json.
 	BatchSize int
+	// DisplayTemplate names the template whose display the credential wears,
+	// used when a form flattened a template's claims into explicit values but
+	// its embedded logo and background image could not travel in a form field.
+	// The named template's display is the base; an explicit Display is laid over
+	// it. Empty falls back to the Template (if any) for the display.
+	DisplayTemplate string
 }
 
 // IssueDisplay is the appearance an operator sets for a self-issued credential.
@@ -270,12 +276,21 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		return "", fmt.Errorf("unsupported format %q", format)
 	}
 
-	// The credential's appearance is the template's, with any explicit fields
-	// laid over it, so choosing a template keeps its art (name, logo, background
-	// image) even when the operator also sets a name or a color.
+	// The credential's appearance is a template's, with any explicit fields laid
+	// over it, so choosing a template keeps its art (name, logo, background
+	// image) even when the operator also sets a name or a color, and even when a
+	// form flattened the template's claims and named it only for the display.
+	displaySource := tpl
+	if opts.DisplayTemplate != "" {
+		dt, err := credtemplate.Load(opts.DisplayTemplate, w.TemplatesDir)
+		if err != nil {
+			return nil, fmt.Errorf("loading the display template %q: %w", opts.DisplayTemplate, err)
+		}
+		displaySource = dt
+	}
 	var issuedDisplay *CredentialDisplay
-	if tpl != nil {
-		issuedDisplay = w.templateDisplay(tpl.Display)
+	if displaySource != nil {
+		issuedDisplay = w.templateDisplay(displaySource.Display)
 	}
 	if opts.Display != nil {
 		issuedDisplay = mergeCredentialDisplay(issuedDisplay, w.issuedDisplay(*opts.Display))

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -159,6 +160,10 @@ type IssueAPIRequest struct {
 	Trust           IssuedAttestationSpec `json:"trust"`
 	Display         *IssueDisplay         `json:"display"`
 	Batch           int                   `json:"batch"`
+	// DisplayTemplate names the template whose display (logo and background
+	// image in particular) the credential wears, when the form flattened a
+	// template's claims but its embedded art could not travel in a form field.
+	DisplayTemplate string `json:"display_template"`
 }
 
 // Options converts the API request into IssueOptions.
@@ -180,6 +185,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		Trust:           req.Trust,
 		Display:         req.Display,
 		BatchSize:       req.Batch,
+		DisplayTemplate: req.DisplayTemplate,
 	}
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)
@@ -228,6 +234,12 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		// Template writes are disabled in demo mode. Without this check the
 		// issue endpoint would bypass the blocked PUT /api/templates route.
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "saving templates is disabled in public demo mode"})
+		return
+	}
+
+	if name := req.DisplayTemplate; name != "" && (name != filepath.Base(name) || strings.HasPrefix(name, ".")) {
+		// The name reaches a file load, so a URL segment cannot be an arbitrary path.
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid display template name %q", name)})
 		return
 	}
 

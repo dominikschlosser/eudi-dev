@@ -584,3 +584,30 @@ func TestIssueFromTemplateKeepsArtWhenNameOverridden(t *testing.T) {
 		t.Error("the template logo was dropped when the name was set")
 	}
 }
+
+func TestIssueWithDisplayTemplateAppliesTemplateArt(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	// The UI flattens a template's claims into explicit values and names it only
+	// for the display, since its embedded art cannot travel in a form field.
+	res, err := w.IssueCredential(IssueOptions{
+		Format:          "sdjwt",
+		VCT:             "urn:example:pid",
+		DisplayTemplate: "german-pid-sdjwt",
+		StatusListURI:   &noStatus,
+		Display:         &IssueDisplay{Name: "German PID", BackgroundColor: "#3d59a1"},
+	})
+	if err != nil {
+		t.Fatalf("issuing with a display template: %v", err)
+	}
+	d := res.Credential.Display
+	if d == nil {
+		t.Fatal("the credential carries no display")
+	}
+	if d.BackgroundURI == "" || d.LogoURI == "" {
+		t.Fatalf("the display template's art was not applied (bg=%q logo=%q)", d.BackgroundURI, d.LogoURI)
+	}
+	if d.Name != "German PID" {
+		t.Fatalf("the name override was lost: %q", d.Name)
+	}
+}
