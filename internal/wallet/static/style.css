@@ -689,6 +689,16 @@ header h1 {
   border-top: 1px solid var(--border);
 }
 
+/* A note that spans the whole form width, so it does not shift the label and
+   input columns of the grid. */
+.form-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
 /* A color or image field: the text input carries the value, with a picker or an
    upload beside it as a convenience. */
 .form-color-row,
