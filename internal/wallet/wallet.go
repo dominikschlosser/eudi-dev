@@ -1352,11 +1352,7 @@ func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	}
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
-		summary := w.CredentialSummaryWithStatus(c)
-		if c.BatchGroup != "" {
-			summary["batch_size"] = w.BatchGroupSize(c.BatchGroup)
-		}
-		summaries[i] = summary
+		summaries[i] = w.CredentialSummaryWithBatch(c)
 	}
 	return json.Marshal(summaries)
 }

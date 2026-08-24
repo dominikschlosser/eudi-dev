@@ -209,11 +209,7 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 	wallet.SortCredentialsNewestFirst(creds)
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
-		summary := w.CredentialSummaryWithStatus(c)
-		if c.BatchGroup != "" {
-			summary["batch_size"] = w.BatchGroupSize(c.BatchGroup)
-		}
-		summaries[i] = summary
+		summaries[i] = w.CredentialSummaryWithBatch(c)
 	}
 	return summaries, nil
 }
@@ -257,11 +253,7 @@ func (l *localWallet) Credential(id string) (map[string]any, error) {
 	if !ok {
 		return nil, fmt.Errorf("credential %s not found", id)
 	}
-	summary := w.CredentialSummaryWithStatus(cred)
-	if cred.BatchGroup != "" {
-		summary["batch_size"] = w.BatchGroupSize(cred.BatchGroup)
-	}
-	return summary, nil
+	return w.CredentialSummaryWithBatch(cred), nil
 }
 
 func (l *localWallet) ImportCredential(raw string) (map[string]any, error) {

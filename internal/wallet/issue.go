@@ -301,10 +301,11 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	// A batch draws every copy's status index from the wallet's counter,
-	// including this first one, so no two copies can share an index even when an
-	// explicit index was given (a shared index would link two presentations).
-	if opts.BatchSize >= 2 && registerStatus {
+	// An explicit index cannot be shared across a batch (a shared index would
+	// link two presentations), so a batch draws even its first copy from the
+	// counter, the way the extra copies do. The auto case already drew a unique
+	// index, so it is left as is.
+	if opts.BatchSize >= 2 && registerStatus && opts.StatusListIdx != nil {
 		statusIdx = w.nextStatusIndex()
 	}
 

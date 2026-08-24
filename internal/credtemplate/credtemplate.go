@@ -341,6 +341,18 @@ func hasTemplateExtension(name string) bool {
 	return false
 }
 
+// IsBareName reports whether s is a plain template name rather than a path or a
+// file with a template extension, so Load resolves it against the predefined
+// templates and the template directory, never the working directory. A name
+// reaching Load from an untrusted caller has to pass this first.
+func IsBareName(s string) bool {
+	return s != "" &&
+		!strings.ContainsRune(s, os.PathSeparator) &&
+		!strings.ContainsRune(s, '/') &&
+		!strings.HasPrefix(s, ".") &&
+		!hasTemplateExtension(s)
+}
+
 func loadFile(path string) (*Template, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

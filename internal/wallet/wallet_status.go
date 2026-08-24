@@ -235,3 +235,15 @@ func (w *Wallet) CredentialSummaryWithStatus(c StoredCredential) map[string]any 
 	summary["holder_binding"] = w.credentialHolderBindingState(c)
 	return summary
 }
+
+// CredentialSummaryWithBatch is the summary the credential list and the get
+// endpoint return: the status summary plus the batch copy count, so a batch
+// reads the same on every path. The plain status summary omits the count, so
+// an issue or import response does not gain it.
+func (w *Wallet) CredentialSummaryWithBatch(c StoredCredential) map[string]any {
+	summary := w.CredentialSummaryWithStatus(c)
+	if c.BatchGroup != "" {
+		summary["batch_size"] = w.BatchGroupSize(c.BatchGroup)
+	}
+	return summary
+}

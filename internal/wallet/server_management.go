@@ -26,10 +26,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 )
@@ -42,11 +42,7 @@ func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "credential not found"})
 		return
 	}
-	summary := s.wallet.CredentialSummaryWithStatus(cred)
-	if cred.BatchGroup != "" {
-		summary["batch_size"] = s.wallet.BatchGroupSize(cred.BatchGroup)
-	}
-	writeJSON(w, http.StatusOK, summary)
+	writeJSON(w, http.StatusOK, s.wallet.CredentialSummaryWithBatch(cred))
 }
 
 // handleGetCredentialStatus resolves the live status of a credential: from
@@ -237,8 +233,9 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if name := req.DisplayTemplate; name != "" && (name != filepath.Base(name) || strings.HasPrefix(name, ".")) {
-		// The name reaches a file load, so a URL segment cannot be an arbitrary path.
+	if name := req.DisplayTemplate; name != "" && !credtemplate.IsBareName(name) {
+		// The name reaches a template load, so it stays a plain name resolved
+		// against the template directory, never a path.
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid display template name %q", name)})
 		return
 	}

@@ -1338,9 +1338,10 @@
     }
   }
 
+  // The button sits in the drawer header, which toggles the drawer, so its
+  // click and its keyboard activation stay on the button.
+  document.getElementById('clear-log-btn').addEventListener('keydown', (event) => event.stopPropagation());
   document.getElementById('clear-log-btn').addEventListener('click', async (event) => {
-    // The button sits in the drawer header, which toggles the drawer, so its
-    // click stays on the button.
     event.stopPropagation();
     try {
       await fetch('/api/log', { method: 'DELETE' });
@@ -1361,9 +1362,10 @@
     try { localStorage.setItem('activity-collapsed', collapsed ? '1' : '0'); } catch (e) { /* private mode */ }
   }
   try { if (localStorage.getItem('activity-collapsed') === '1') setActivityCollapsed(true); } catch (e) { /* private mode */ }
-  activityToggle.addEventListener('click', () => setActivityCollapsed(!activityDrawer.classList.contains('collapsed')));
+  const toggleActivity = () => setActivityCollapsed(!activityDrawer.classList.contains('collapsed'));
+  activityToggle.addEventListener('click', toggleActivity);
   activityToggle.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActivityCollapsed(!activityDrawer.classList.contains('collapsed')); }
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggleActivity(); }
   });
 
   function renderLog(log) {
