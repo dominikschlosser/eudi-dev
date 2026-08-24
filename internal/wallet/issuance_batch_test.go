@@ -169,6 +169,24 @@ func TestSelectHolderBoundCredentialSingle(t *testing.T) {
 	}
 }
 
+// An issuer that advertises batch_credential_issuance makes the wallet send
+// several proofs, but the issuer may still hand back a single credential (an
+// ordinary non-batch issuance). That one credential is imported rather than
+// refused for not filling every proof key.
+func TestSelectHolderBoundCredentialSingleWithManyProofs(t *testing.T) {
+	holder := testKey(t)
+	cred := fakeSDJWT(t, &holder.PublicKey)
+	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
+	keys := []*ecdsa.PrivateKey{holder, testKey(t), testKey(t), testKey(t)}
+	got, err := selectHolderBoundCredential(resp, keys)
+	if err != nil {
+		t.Fatalf("selectHolderBoundCredential with many proofs and one credential: %v", err)
+	}
+	if got != cred {
+		t.Fatal("expected the single credential to be imported")
+	}
+}
+
 func TestMdocBindsToKey(t *testing.T) {
 	holder := testKey(t)
 	issuer := testKey(t)

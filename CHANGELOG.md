@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-08-25
+
+### Fixed
+
+- **Collecting from a batch-capable issuer that issues a single credential works again.** An issuer that advertises `batch_credential_issuance` makes the wallet request a batch (several key proofs), but the issuer may hand back a single credential, which OpenID4VCI 1.0 allows ("unless the Issuer decides to issue fewer Credentials"). The wallet now imports that one credential instead of refusing it for not filling every proof key. This fixes issuance (immediate and deferred) from issuers such as the Animo playground.
+
 ## [2.0.0] - 2026-08-24
 
 ### Summary

@@ -104,7 +104,12 @@ func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateK
 	if len(creds) == 0 {
 		return "", fmt.Errorf("no credential in response")
 	}
-	if len(keys) <= 1 && len(creds) == 1 {
+	// One credential back is a non-batch issuance, whatever the wallet asked
+	// for. An issuer that advertises batch_credential_issuance but hands back a
+	// single credential (the wallet sent several proofs) is answered by
+	// importing that one credential. Only a response carrying several
+	// credentials is matched to the proof keys as a batch below.
+	if len(creds) == 1 {
 		return creds[0], nil
 	}
 
