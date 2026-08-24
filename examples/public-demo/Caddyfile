@@ -102,3 +102,20 @@ eudi-test.dev {
 		}
 	}
 }
+
+# Preview host: the same wallet on its own release (PREVIEW_TAG in the compose
+# file), where a big change goes live before ./deploy.sh promote moves the main
+# site to it. Caddy provisions its TLS certificate automatically. No usage
+# report here, a single rate-limit ceiling is enough for a staging host.
+preview.eudi-test.dev {
+	handle {
+		reverse_proxy wallet-preview:8085
+	}
+	rate_limit {
+		zone preview_site {
+			key {remote_host}
+			events 1200
+			window 1m
+		}
+	}
+}

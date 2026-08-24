@@ -140,6 +140,22 @@ ENV
 
 `setup` also fixes the wallet data volume's ownership. Docker creates named volumes owned by root while the image runs as uid 1000, which would send the wallet into a crash loop on a fresh host.
 
+### Preview host
+
+A big change can go live on a preview host first, tried there, and then moved to the main site. The preview is a second wallet on the same box, served by the same Caddy at its own subdomain (`preview.eudi-test.dev` in the example), with its own data volume and its own release. Point the subdomain's DNS at the same host (a CNAME to the main domain is enough) and add its URL to `deploy.env`.
+
+```bash
+# in deploy.env, alongside DEMO_HOST and DEMO_URL:
+PREVIEW_URL=https://preview.demo.example
+
+./deploy.sh preview v2.1.0   # run v2.1.0 on the preview host, main site untouched
+./deploy.sh verify           # checks the main site and the preview host
+./deploy.sh promote          # move the main site to the release the preview runs
+./deploy.sh logs preview     # follow the preview wallet log
+```
+
+`preview` copies the stack (so the host gets the Caddy preview block and the `wallet-preview` service), prepares the preview data volume, pins its release as `PREVIEW_TAG` in the host's `.env`, and recreates only Caddy and the preview wallet. Without a tag it runs `latest`, so the preview mirrors the newest release until a change is pinned. `promote` reads the version the preview reports and moves the main site to exactly that image, recording the release it replaces so `rollback` still works. `./deploy.sh update` on the main site clears the pin and returns to the newest release.
+
 ## Usage statistics
 
 The compose example ships an optional usage report that shows whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every two minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, the report sets no cookies, and no third party is involved.

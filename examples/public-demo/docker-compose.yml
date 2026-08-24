@@ -75,6 +75,39 @@ services:
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 
+  # Preview instance served at preview.eudi-test.dev by the same Caddy. It runs
+  # its own release (PREVIEW_TAG, set by ./deploy.sh preview), so a big change
+  # can go live on the preview host and be tried there before ./deploy.sh
+  # promote moves the main site to the same image. Its own base URL and data
+  # volume keep it separate from the production wallet above.
+  wallet-preview:
+    image: ghcr.io/dominikschlosser/eudi-dev:${PREVIEW_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    # Opt-in: a plain production up/push leaves it alone, and ./deploy.sh
+    # preview names it explicitly to bring it up.
+    profiles: ["preview"]
+    command:
+      - wallet
+      - serve
+      - --demo
+      - --demo-reset
+      - 00:00 Europe/Berlin
+      - --port
+      - "8085"
+      - --base-url
+      - https://preview.eudi-test.dev
+      - --vci-client-id
+      - https://preview.eudi-test.dev
+      - --vci-redirect-uri
+      - https://preview.eudi-test.dev/callback
+      - --status-list
+      - --imprint-file
+      - /config/imprint.html
+    volumes:
+      - wallet-data-preview:/home/app/.eudi-dev
+      - ./imprint.html:/config/imprint.html:ro
+
   # Usage statistics: turns Caddy's (IP-anonymized) access log into a static
   # HTML report. No JavaScript, no cookies, nothing added to the pages.
   stats:
@@ -106,3 +139,4 @@ volumes:
   caddy-logs:
   stats-report:
   wallet-data:
+  wallet-data-preview:

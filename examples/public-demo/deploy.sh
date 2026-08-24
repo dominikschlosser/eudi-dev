@@ -8,16 +8,20 @@
 #   DEMO_HOST=root@demo.example
 #   DEMO_DIR=/opt/eudi-demo          # optional, this is the default
 #   DEMO_URL=https://demo.example    # optional, enables the post-deploy check
+#   PREVIEW_URL=https://preview.demo.example   # optional, the preview host
 #
 # Usage: ./deploy.sh <command>
 #   setup     install Docker, copy the stack, start it (first deployment)
 #   push      copy Caddyfile, compose file and imprint, then apply them
 #   update    pull the latest image and restart (no file changes)
+#   preview [tag]   run a release on the preview host (default latest), leaving
+#             the main site as it is, so a big change can be tried there first
+#   promote   move the main site to the release the preview host runs
 #   rollback [version]  put the previous release back (or a named one, e.g.
-#             v1.19.16). Without an argument it uses the release that was live
+#             v2.0.0). Without an argument it uses the release that was live
 #             before the last push or update
 #   status    container status and the version the site reports
-#   logs      follow the wallet log
+#   logs [preview]  follow the wallet log (the preview wallet with "preview")
 #   verify    check that the deployed endpoints respond
 #   stats     print a usage summary from the access log (pages and API calls)
 #   stats-reset     discard the access log and rebuild the report from zero
@@ -96,6 +100,28 @@ set_wallet_tag() {
   fi
 }
 
+# PREVIEW_TAG lives in the same host .env and pins the release the preview host
+# runs, independently of the main site's WALLET_TAG.
+set_preview_tag() {
+  local tag="$1"
+  remote "touch .env && sed -i.bak '/^PREVIEW_TAG=/d' .env && rm -f .env.bak && printf 'PREVIEW_TAG=%s\n' '${tag}' >> .env"
+}
+
+# The release the preview host reports, the concrete version even when it runs
+# the "latest" tag, so promote moves the main site to exactly what was tried.
+preview_version() {
+  [[ -n "${PREVIEW_URL:-}" ]] || return 0
+  curl -fsS --max-time 15 "${PREVIEW_URL%/}/api/version" 2>/dev/null |
+    sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+# The image runs as uid 1000, but Docker creates a named volume owned by root,
+# which makes the wallet crash-loop on a fresh host (the same fix setup applies
+# to the production volume).
+ensure_preview_volume() {
+  remote "docker volume create eudi-demo_wallet-data-preview >/dev/null && docker run --rm -v eudi-demo_wallet-data-preview:/d alpine chown 1000:1000 /d >/dev/null"
+}
+
 apply_stack() {
   compose "pull -q wallet" >/dev/null
   # --build keeps the Caddy image in step with the Dockerfile (the rate
@@ -166,12 +192,52 @@ case "${COMMAND}" in
     apply_stack
     ;;
 
+  preview)
+    require_host
+    target="${2:-latest}"
+    # Copy the stack so the host has the Caddy preview block and the
+    # wallet-preview service, then prepare its data volume.
+    copy_stack
+    ensure_preview_volume
+    set_preview_tag "${target}"
+    compose "--profile preview pull -q wallet-preview" >/dev/null
+    # Recreate Caddy (to pick up the preview site block) and the preview wallet,
+    # and leave the production wallet and stats running as they are.
+    compose "--profile preview up -d --build --quiet-pull caddy wallet-preview" >/dev/null
+    sleep 3
+    compose "ps --format '{{.Name}} {{.Status}}'"
+    version="$(preview_version)"
+    [[ -n "${version}" ]] && echo "Preview now live: ${version}"
+    echo "Try it${PREVIEW_URL:+ at ${PREVIEW_URL}}, then ./deploy.sh promote to move the main site to it."
+    ;;
+
+  promote)
+    require_host
+    target="$(preview_version)"
+    [[ -n "${target}" ]] || target="$(remote "sed -n 's/^PREVIEW_TAG=//p' .env 2>/dev/null" || true)"
+    [[ -n "${target}" ]] || die "no preview release to promote. Run ./deploy.sh preview <tag> first."
+    current="$(deployed_version)"
+    if [[ -n "${current}" && "${target}" == "${current}" ]]; then
+      die "${target} is already live on the main site."
+    fi
+    echo "Promoting the main site${current:+ from ${current}} to ${target} (the preview release)..."
+    record_running_version
+    ensure_pinnable_compose
+    set_wallet_tag "${target}"
+    if ! compose "pull -q wallet" >/dev/null 2>&1; then
+      set_wallet_tag ""
+      die "ghcr.io/dominikschlosser/eudi-dev:${target} could not be pulled, so nothing was changed."
+    fi
+    apply_stack
+    echo "Main site promoted to ${target}. ./deploy.sh update returns to the newest release."
+    ;;
+
   rollback)
     require_host
     target="${2:-}"
     if [[ -z "${target}" ]]; then
       target="$(previous_version)"
-      [[ -n "${target}" ]] || die "no recorded previous version. Pass one: ./deploy.sh rollback v1.19.16"
+      [[ -n "${target}" ]] || die "no recorded previous version. Pass one: ./deploy.sh rollback v2.0.0"
     fi
     current="$(deployed_version)"
     if [[ -n "${current}" && "${target}" == "${current}" ]]; then
@@ -201,10 +267,17 @@ case "${COMMAND}" in
     compose "ps --format '{{.Name}} {{.Status}}'"
     version="$(deployed_version)"
     [[ -n "${version}" ]] && echo "Version reported by ${DEMO_URL}: ${version}"
+    pversion="$(preview_version)"
+    [[ -n "${pversion}" ]] && echo "Version reported by ${PREVIEW_URL}: ${pversion}"
     ;;
   logs)
     require_host
-    compose "logs -f --tail 100 wallet"
+    # ./deploy.sh logs preview follows the preview wallet instead of the main one.
+    if [[ "${2:-}" == "preview" ]]; then
+      compose "--profile preview logs -f --tail 100 wallet-preview"
+    else
+      compose "logs -f --tail 100 wallet"
+    fi
     ;;
   stats)
     require_host
@@ -275,12 +348,17 @@ case "${COMMAND}" in
     ;;
   verify)
     [[ -n "${DEMO_URL:-}" ]] || die "DEMO_URL is not set, nothing to verify."
-    base="${DEMO_URL%/}"
     failed=0
-    for path in / /decoder/ /issuer/ /verifier/ /imprint /favicon.svg /logo.svg /api/trustlist; do
-      code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "${base}${path}" || echo 000)"
-      printf '%-16s %s\n' "${path}" "${code}"
-      [[ "${code}" == "200" ]] || failed=1
+    # The main site, and the preview host too when PREVIEW_URL is set.
+    for target in "${DEMO_URL}" "${PREVIEW_URL:-}"; do
+      [[ -n "${target}" ]] || continue
+      echo "${target}:"
+      base="${target%/}"
+      for path in / /decoder/ /issuer/ /verifier/ /imprint /favicon.svg /logo.svg /api/trustlist; do
+        code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "${base}${path}" || echo 000)"
+        printf '  %-16s %s\n' "${path}" "${code}"
+        [[ "${code}" == "200" ]] || failed=1
+      done
     done
     [[ "${failed}" -eq 0 ]] || die "some endpoints did not return 200"
     echo "All endpoints healthy."
