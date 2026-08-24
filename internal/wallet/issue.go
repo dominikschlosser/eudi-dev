@@ -102,9 +102,13 @@ type IssueOptions struct {
 	// The named template's display is the base; an explicit Display is laid over
 	// it. Empty falls back to the Template (if any) for the display.
 	DisplayTemplate string
-	// Unbound issues the credential without a holder key, so it names no cnf
-	// (SD-JWT) or device key (mdoc) and is a bearer credential anyone can
-	// present. The default is a credential bound to the wallet holder key.
+	// Unbound issues the credential without a holder key. An SD-JWT VC then
+	// names no cnf, a spec-valid bearer credential anyone holding it can present
+	// (cnf is optional, SD-JWT VC §3.2.2.2). An mdoc names no MSO deviceKey,
+	// which ISO 18013-5 §9.1.2.4 makes mandatory, so an unbound mdoc is a
+	// deliberately malformed document for testing verifier rejection rather than
+	// a presentable bearer credential. The default binds the credential to the
+	// wallet holder key.
 	Unbound bool
 }
 
@@ -115,6 +119,7 @@ type IssueDisplay struct {
 	BackgroundColor string `json:"background_color"`
 	TextColor       string `json:"text_color"`
 	Logo            string `json:"logo"`
+	LogoAltText     string `json:"logo_alt_text"`
 	BackgroundImage string `json:"background_image"`
 }
 
@@ -245,18 +250,20 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	}
 
 	// A bound credential carries the wallet holder key so the wallet can present
-	// it with a key binding; an unbound one carries no holder key at all (a
-	// bearer credential anyone holding it can present).
+	// it with a key binding. An unbound one carries no holder key at all (a
+	// bearer SD-JWT VC, or a deliberately malformed mdoc, see IssueOptions).
 	var holderPub *ecdsa.PublicKey
 	if !opts.Unbound && w.HolderKey != nil {
 		holderPub = &w.HolderKey.PublicKey
 	}
 
-	if opts.BatchSize >= 2 && format == "jwt" {
-		return nil, fmt.Errorf("batch issuance needs holder binding, which jwt_vc_json does not carry")
-	}
-	if opts.BatchSize >= 2 && opts.Unbound {
-		return nil, fmt.Errorf("an unbound credential cannot be issued as a batch (a batch needs a distinct holder key per copy)")
+	if opts.BatchSize >= 2 {
+		if format == "jwt" {
+			return nil, fmt.Errorf("batch issuance needs holder binding, which jwt_vc_json does not carry")
+		}
+		if opts.Unbound {
+			return nil, fmt.Errorf("an unbound credential cannot be issued as a batch (a batch needs a distinct holder key per copy)")
+		}
 	}
 
 	// signCopy mints one credential, holder-bound to holderPub and carrying the
@@ -311,11 +318,13 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	// An explicit index cannot be shared across a batch (a shared index would
-	// link two presentations), so a batch draws even its first copy from the
-	// counter, the way the extra copies do. The auto case already drew a unique
-	// index, so it is left as is.
-	if opts.BatchSize >= 2 && registerStatus && opts.StatusListIdx != nil {
+	// A fixed index cannot be shared across a batch (a shared index would link
+	// two presentations), so a batch draws even its first copy from the
+	// counter, the way the extra copies do. Only the fully automatic case (no
+	// status URI and no index) already drew a unique counter index, so it is
+	// left as is. Naming the wallet's own status URL without an index otherwise
+	// pins the primary to index 0.
+	if opts.BatchSize >= 2 && registerStatus && (opts.StatusListIdx != nil || opts.StatusListURI != nil) {
 		statusIdx = w.nextStatusIndex()
 	}
 

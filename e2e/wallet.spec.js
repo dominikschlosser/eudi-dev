@@ -733,6 +733,53 @@ test.describe("Credential Issuing via UI", () => {
     });
   });
 
+  test("reveals the description behind an About control, only when there is one", async ({
+    page,
+  }) => {
+    await page.goto(WALLET_URL);
+    // A credential that carries a description.
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-vct").fill("urn:example:e2e-desc");
+    await page.locator("#issue-display-name").fill("Described Badge");
+    await page
+      .locator("#issue-display-description")
+      .fill("A sample description shown behind About.");
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    // One that carries none.
+    await page.locator("#issue-btn").click();
+    await page.locator("#issue-vct").fill("urn:example:e2e-nodesc");
+    await page.locator("#issue-submit").click();
+    await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
+
+    const described = page.locator(
+      '.credential-card[data-vct="urn:example:e2e-desc"]',
+    );
+    const plain = page.locator(
+      '.credential-card[data-vct="urn:example:e2e-nodesc"]',
+    );
+    await expect(described.locator(".about-btn")).toHaveCount(1);
+    await expect(plain.locator(".about-btn")).toHaveCount(0);
+
+    // Opening reveals the description. On this wide layout the About button
+    // toggles it shut again (the Back control belongs to the phone flip).
+    await expect(described).not.toHaveClass(/desc-open/);
+    await described.locator(".about-btn").click();
+    await expect(described).toHaveClass(/desc-open/);
+    await expect(described.locator(".cred-desc-body")).toContainText(
+      "A sample description",
+    );
+    await described.locator(".about-btn").click();
+    await expect(described).not.toHaveClass(/desc-open/);
+
+    const res = await jsonGet(`${WALLET_URL}/api/credentials`);
+    for (const vct of ["urn:example:e2e-desc", "urn:example:e2e-nodesc"]) {
+      const c = res.body.find((x) => x.vct === vct);
+      if (c) await fetch(`${WALLET_URL}/api/credentials/${c.id}`, { method: "DELETE" });
+    }
+  });
+
   test("shows status badges and revokes and re-activates a credential", async ({
     page,
   }) => {

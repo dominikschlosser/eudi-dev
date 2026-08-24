@@ -51,6 +51,29 @@ type CredentialDisplay struct {
 	BackgroundURI   string `json:"background_uri,omitempty"`
 }
 
+// The text a credential's display carries is cosmetic, so it is capped rather
+// than trusted: an issuer's metadata, an operator form, and a template all feed
+// it, and any of them can be long or hostile. The cap bounds what the wallet
+// stores and renders. Images are already byte-capped in cacheDisplayImage.
+const (
+	maxDisplayNameRunes        = 80
+	maxDisplayDescriptionRunes = 300
+	maxDisplayLocaleRunes      = 35
+	maxDisplayAltTextRunes     = 120
+)
+
+// boundDisplayText trims a display string and caps it at max runes, so an
+// over-long value is kept to a safe length rather than refused (the text is
+// cosmetic, so bounding it never fails an issuance).
+func boundDisplayText(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	return string(r[:maxRunes])
+}
+
 // mergeCredentialDisplay lays the fields of over onto base, so an explicit
 // display overrides only the fields it sets and inherits the rest (a template's
 // art in particular) from base. Either side may be nil.
@@ -74,8 +97,13 @@ func mergeCredentialDisplay(base, over *CredentialDisplay) *CredentialDisplay {
 	if over.TextColor != "" {
 		out.TextColor = over.TextColor
 	}
+	// A new logo carries its own alt text (even an empty one, so a replaced logo
+	// never keeps the old text). An alt text set on its own lays over the base,
+	// so an operator can describe a template's logo without replacing it.
 	if over.LogoURI != "" {
 		out.LogoURI = over.LogoURI
+		out.LogoAltText = over.LogoAltText
+	} else if over.LogoAltText != "" {
 		out.LogoAltText = over.LogoAltText
 	}
 	if over.BackgroundURI != "" {
@@ -124,16 +152,20 @@ func (w *Wallet) resolveCredentialDisplay(metadata map[string]any, configID stri
 		return nil
 	}
 	d := &CredentialDisplay{}
-	d.Name, _ = entry["name"].(string)
-	d.Description, _ = entry["description"].(string)
-	d.Locale, _ = entry["locale"].(string)
+	name, _ := entry["name"].(string)
+	d.Name = boundDisplayText(name, maxDisplayNameRunes)
+	description, _ := entry["description"].(string)
+	d.Description = boundDisplayText(description, maxDisplayDescriptionRunes)
+	locale, _ := entry["locale"].(string)
+	d.Locale = boundDisplayText(locale, maxDisplayLocaleRunes)
 	d.BackgroundColor = w.displayColor(entry, "background_color")
 	d.TextColor = w.displayColor(entry, "text_color")
 	if logo, ok := entry["logo"].(map[string]any); ok {
 		uri, _ := logo["uri"].(string)
 		d.LogoURI = w.cacheDisplayImage(uri, "logo")
 		if d.LogoURI != "" {
-			d.LogoAltText, _ = logo["alt_text"].(string)
+			altText, _ := logo["alt_text"].(string)
+			d.LogoAltText = boundDisplayText(altText, maxDisplayAltTextRunes)
 		}
 	}
 	if background, ok := entry["background_image"].(map[string]any); ok {
@@ -254,13 +286,13 @@ func (w *Wallet) templateDisplay(td *credtemplate.TemplateDisplay) *CredentialDi
 		return nil
 	}
 	d := &CredentialDisplay{
-		Name:            strings.TrimSpace(td.Name),
-		Description:     strings.TrimSpace(td.Description),
+		Name:            boundDisplayText(td.Name, maxDisplayNameRunes),
+		Description:     boundDisplayText(td.Description, maxDisplayDescriptionRunes),
 		Locale:          "en-US",
 		BackgroundColor: w.displayColor(map[string]any{"background_color": td.BackgroundColor}, "background_color"),
 		TextColor:       w.displayColor(map[string]any{"text_color": td.TextColor}, "text_color"),
 		LogoURI:         w.templateImage(td.Logo, "logo"),
-		LogoAltText:     strings.TrimSpace(td.LogoAltText),
+		LogoAltText:     boundDisplayText(td.LogoAltText, maxDisplayAltTextRunes),
 		BackgroundURI:   w.templateImage(td.BackgroundImage, "background_image"),
 	}
 	if d.Name == "" && d.Description == "" && d.BackgroundColor == "" &&
@@ -315,11 +347,12 @@ func embeddedImageMIME(name string) string {
 // It returns nil when the input carries no display.
 func (w *Wallet) issuedDisplay(in IssueDisplay) *CredentialDisplay {
 	d := &CredentialDisplay{
-		Name:            strings.TrimSpace(in.Name),
-		Description:     strings.TrimSpace(in.Description),
+		Name:            boundDisplayText(in.Name, maxDisplayNameRunes),
+		Description:     boundDisplayText(in.Description, maxDisplayDescriptionRunes),
 		BackgroundColor: w.displayColor(map[string]any{"background_color": in.BackgroundColor}, "background_color"),
 		TextColor:       w.displayColor(map[string]any{"text_color": in.TextColor}, "text_color"),
 		LogoURI:         w.cacheDisplayImage(strings.TrimSpace(in.Logo), "logo"),
+		LogoAltText:     boundDisplayText(in.LogoAltText, maxDisplayAltTextRunes),
 		BackgroundURI:   w.cacheDisplayImage(strings.TrimSpace(in.BackgroundImage), "background_image"),
 	}
 	if d.Name == "" && d.Description == "" && d.BackgroundColor == "" &&

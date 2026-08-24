@@ -436,8 +436,8 @@
 
     // The meta strip carries every technical fact in one line so the header can
     // be just the name: the short id (the per-instance handle), when it was
-    // issued, the type a DCQL query matches on, the issuer as the format carries
-    // it, and the claim count.
+    // issued, the type a DCQL query matches on, and the issuer as the format
+    // carries it.
     const idMeta = '<span class="cred-meta-item cred-m-id"><span class="cred-meta-k">id</span> <span class="mono cred-shortid">#' + escHtml(shortCredentialId(cred.id)) + '</span></span>';
 
     const rel = relativeTime(cred.issued_at);
@@ -558,12 +558,39 @@
         revokeBtn = '<button class="btn btn-sm" id="status-check-' + cred.id + '" data-check-status="' + cred.id + '">Check status</button>';
       }
 
-      card.innerHTML = body.html +
-        '<div class="credential-actions">' +
+      // The About control and the description pane appear only when the issuer
+      // declared a description. The card wraps its face, body and actions in a
+      // front so the pane can be the flipped-over back on a phone and an inline
+      // expand on a wide list (see the container queries in the stylesheet).
+      const hasDesc = !!(cred.display && cred.display.description);
+      // The button carries both glyphs. The stylesheet shows the info glyph on a
+      // phone (where the card flips) and the chevron on a wide list (where the
+      // pane expands in place, so the arrow signals open/close and rotates).
+      const aboutBtn = hasDesc
+        ? '<button class="btn btn-sm about-btn" id="about-' + cred.id + '" data-about="' + cred.id + '" aria-expanded="false" aria-label="Show description">' +
+            descIcon('ic-info', '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.6h.01"/>') +
+            '<span>About</span>' +
+            descIcon('ic-chev', '<path d="M6 9l6 6 6-6"/>') +
+          '</button>'
+        : '';
+      const actionsHtml = '<div class="credential-actions">' +
+          aboutBtn +
           revokeBtn +
           '<button class="btn btn-sm" id="show-' + cred.id + '" data-show="' + cred.id + '">Show</button>' +
           (isProtected ? '' : '<button class="btn btn-danger btn-sm" id="delete-' + cred.id + '" data-delete="' + cred.id + '">Delete</button>') +
         '</div>';
+      // The Back control sits in the pane for the phone flip, where the front
+      // face (with the About button) is turned away. A wide list has no flip, so
+      // the stylesheet hides it and the About button toggles the pane shut.
+      const descPane = hasDesc
+        ? '<div class="cred-desc"><div class="cred-desc-in">' +
+            '<div class="cred-desc-head"><span class="cred-desc-label">Description</span>' +
+              '<button class="cred-desc-back" data-desc-close="' + cred.id + '" aria-label="Back to card">' +
+                descIcon('', '<path d="M15 18l-6-6 6-6"/>') + '<span>Back</span></button></div>' +
+            '<div class="cred-desc-body">' + escHtml(cred.display.description) + '</div>' +
+          '</div></div>'
+        : '';
+      card.innerHTML = '<div class="cred-front">' + body.html + actionsHtml + '</div>' + descPane;
       card.querySelector('.credential-info').title = 'Open in decoder';
       applyCredentialDisplay(card, cred.display);
 
@@ -587,8 +614,35 @@
       if (check) {
         check.addEventListener('click', () => checkCredentialStatus(cred.id));
       }
+
+      // Opening flips the card on a phone and expands the pane on a wide list,
+      // both the same class the stylesheet reads differently per width.
+      const about = card.querySelector('[data-about]');
+      if (about) {
+        about.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = card.classList.toggle('desc-open');
+          about.setAttribute('aria-expanded', String(open));
+        });
+        const back = card.querySelector('[data-desc-close]');
+        if (back) {
+          back.addEventListener('click', (e) => {
+            e.stopPropagation();
+            card.classList.remove('desc-open');
+            about.setAttribute('aria-expanded', 'false');
+          });
+        }
+      }
       credContainer.appendChild(card);
     });
+  }
+
+  // descIcon is a small inline SVG for the description controls, stroked in the
+  // current text color. cls names the variant the stylesheet shows per width.
+  function descIcon(cls, body) {
+    return '<svg class="ic ' + cls + '" viewBox="0 0 24 24" width="13" height="13" fill="none" ' +
+      'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      body + '</svg>';
   }
 
   // expiryInfo turns an RFC 3339 expiry into what the badge shows: how long
@@ -950,6 +1004,7 @@
     text.value = display.text_color || '';
     text.dispatchEvent(new Event('input'));
     document.getElementById('issue-logo').value = '';
+    document.getElementById('issue-logo-alt').value = '';
     document.getElementById('issue-bg-image').value = '';
     const note = document.getElementById('issue-template-art-note');
     if (note) note.hidden = !(display.logo || display.background_image);
@@ -1159,6 +1214,8 @@
     if (txtColor) display.text_color = txtColor;
     const logo = document.getElementById('issue-logo').value.trim();
     if (logo) display.logo = logo;
+    const logoAlt = document.getElementById('issue-logo-alt').value.trim();
+    if (logoAlt) display.logo_alt_text = logoAlt;
     const bgImage = document.getElementById('issue-bg-image').value.trim();
     if (bgImage) display.background_image = bgImage;
     if (Object.keys(display).length > 0) body.display = display;
@@ -1336,8 +1393,9 @@
 
   // The button sits in the drawer header, which toggles the drawer, so its
   // click and its keyboard activation stay on the button.
-  document.getElementById('clear-log-btn').addEventListener('keydown', (event) => event.stopPropagation());
-  document.getElementById('clear-log-btn').addEventListener('click', async (event) => {
+  const clearLogBtn = document.getElementById('clear-log-btn');
+  clearLogBtn.addEventListener('keydown', (event) => event.stopPropagation());
+  clearLogBtn.addEventListener('click', async (event) => {
     event.stopPropagation();
     try {
       await fetch('/api/log', { method: 'DELETE' });

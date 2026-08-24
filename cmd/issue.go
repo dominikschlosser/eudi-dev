@@ -68,6 +68,7 @@ var (
 	issueBackgroundColor       string
 	issueTextColor             string
 	issueLogo                  string
+	issueLogoAlt               string
 	issueBackgroundImage       string
 )
 
@@ -121,7 +122,7 @@ func init() {
 	issueSDJWTCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. place_of_birth,sex)")
 	issueSDJWTCmd.Flags().BoolVar(&issueToWallet, "wallet", false, "Import the issued credential into the wallet")
 	issueSDJWTCmd.Flags().IntVar(&issueBatchSize, "batch", 0, "Issue a batch of this many distinct-key copies (--wallet only), so the wallet presents an unused one each time")
-	issueSDJWTCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without a holder key (a bearer credential with no cnf); the default binds it to the wallet")
+	issueSDJWTCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without a holder key (a bearer credential with no cnf). The default binds it to the wallet")
 	issueSDJWTCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueSDJWTCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueSDJWTCmd)
@@ -157,7 +158,7 @@ func init() {
 	issueMDOCCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. place_of_birth,sex)")
 	issueMDOCCmd.Flags().BoolVar(&issueToWallet, "wallet", false, "Import the issued credential into the wallet")
 	issueMDOCCmd.Flags().IntVar(&issueBatchSize, "batch", 0, "Issue a batch of this many distinct-key copies (--wallet only), so the wallet presents an unused one each time")
-	issueMDOCCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without a holder key (a bearer credential with no device key); the default binds it to the wallet")
+	issueMDOCCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without an MSO device key (a deliberately malformed mdoc for testing verifier rejection). The default binds it to the wallet")
 	issueMDOCCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueMDOCCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueMDOCCmd)
@@ -648,6 +649,9 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	if logo != "" {
 		display["logo"] = logo
 	}
+	if issueLogoAlt != "" {
+		display["logo_alt_text"] = issueLogoAlt
+	}
 	bg, err := displayImageArg(issueBackgroundImage)
 	if err != nil {
 		return nil, err
@@ -697,6 +701,7 @@ func addIssueDisplayFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&issueBackgroundColor, "background-color", "", "With --wallet: the card background color, a CSS color (e.g. #3d59a1)")
 	cmd.Flags().StringVar(&issueTextColor, "text-color", "", "With --wallet: the card text color, a CSS color")
 	cmd.Flags().StringVar(&issueLogo, "logo", "", "With --wallet: the card logo, a file path, a data URI, or an http(s) URL")
+	cmd.Flags().StringVar(&issueLogoAlt, "logo-alt", "", "With --wallet: the logo's alt text")
 	cmd.Flags().StringVar(&issueBackgroundImage, "background-image", "", "With --wallet: the card background image, a file path, a data URI, or an http(s) URL")
 }
 

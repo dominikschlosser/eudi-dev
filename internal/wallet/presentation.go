@@ -246,6 +246,12 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 		withoutKB += strings.Join(selectedDisclosures, "~") + "~"
 	}
 
+	// A credential with no cnf names no holder key, so RFC 9901 §3.3 (key
+	// binding is optional) has it presented without a KB-JWT: issuer_jwt~disc~.
+	if !credentialHolderBinding(cred.Raw).Bound {
+		return withoutKB, nil
+	}
+
 	// Compute sd_hash = base64url(SHA-256(sd-jwt-without-kb))
 	sdHash := sha256.Sum256([]byte(withoutKB))
 	sdHashB64 := format.EncodeBase64URL(sdHash[:])

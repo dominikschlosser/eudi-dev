@@ -367,11 +367,37 @@ header h1 {
 }
 .mono { font-family: var(--font-mono, monospace); font-size: 11px; }
 
+/* The About control opens the credential's issuer-declared description. It is an
+   ordinary action button carrying an info glyph, so it sits with Show and Revoke
+   yet reads as info, and shows only when a description exists. These base rules
+   precede the container queries below, which choose the glyph per width (info on
+   a phone that flips, a rotating chevron on a wide list that expands in place). */
+.about-btn { display: inline-flex; align-items: center; gap: 5px; }
+.about-btn .ic { display: block; width: 13px; height: 13px; }
+.about-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.about-btn .ic-chev { transition: transform 0.2s ease; }
+
+/* The description pane: a small label and a bounded body that scrolls with the
+   one themed scrollbar every scroll region shares. The Back control belongs to
+   the phone flip (the desktop query hides it, since a wide list toggles the pane
+   from the About button). */
+.cred-desc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.cred-desc-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+.cred-desc-body { font-size: 12px; line-height: 1.55; color: var(--text); overscroll-behavior: contain; }
+.cred-desc-back {
+  display: inline-flex;
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim);
+  border: 1px solid var(--border); background: transparent; border-radius: 7px;
+  padding: 3px 9px; cursor: pointer; align-items: center; gap: 5px;
+}
+.cred-desc-back:hover { color: var(--text); }
+.cred-desc-back .ic { width: 13px; height: 13px; display: block; }
+
 /* DESKTOP: a dense row with a fixed card-art thumbnail and the body beside it.
    The art is a stable size, so a card whose body wraps grows a little without
    the art resizing with it. */
 @container (min-width: 601px) {
-  .credential-card {
+  .cred-front {
     display: flex;
     align-items: center;
     gap: 14px;
@@ -389,6 +415,22 @@ header h1 {
   .face-name, .format-badge-face { display: none; }
   .credential-info { flex: 1; }
   .credential-actions { flex: 0 0 auto; margin-left: 6px; }
+
+  /* The description opens as an inline pane below the row, indented past the
+     art thumbnail and held to a readable measure though the row is wide. The
+     About button toggles it, so the pane's Back control is not shown. */
+  .cred-desc { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 0.26s ease, opacity 0.2s ease; }
+  .credential-card.desc-open .cred-desc { max-height: 180px; opacity: 1; }
+  .cred-desc-in { margin: 0 14px 0 120px; padding: 11px 0 13px; border-top: 1px solid var(--border); }
+  .cred-desc-body { max-height: 120px; max-width: 76ch; overflow-y: auto; }
+  /* No Back control on a wide list: the About button opens and closes the pane. */
+  .cred-desc-back { display: none; }
+
+  /* The pane expands in place, so the chevron replaces the info glyph and turns
+     to point up while it is open. */
+  .about-btn .ic-info { display: none; }
+  .about-btn .ic-chev { display: block; }
+  .about-btn[aria-expanded="true"] .ic-chev { transform: rotate(180deg); }
 }
 
 /* MOBILE: a wallet card, the face a full-width hero with the name on it, the
@@ -397,6 +439,7 @@ header h1 {
   .card-face {
     width: 100%;
     aspect-ratio: 2.4;
+    border-radius: 12px 12px 0 0;
   }
   /* The full-width hero has no room for the offset stack, so a batch reads as a
      plain card on a phone (the stack stays a desktop and consent cue). */
@@ -416,6 +459,48 @@ header h1 {
     padding: 8px 12px;
     border-radius: 8px;
   }
+
+  /* On a phone a tall hero card turns over to read its description: the card is
+     the 3D holder, so the border and the clip move to the two faces. */
+  .credential-card {
+    background: transparent;
+    border: 0;
+    overflow: visible;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .credential-card.desc-open { transform: perspective(1000px) rotateY(180deg); }
+  .cred-front {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    overflow: hidden;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .cred-desc {
+    position: absolute;
+    inset: 0;
+    transform: rotateY(180deg);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-surface);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .cred-desc-in { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 12px 14px; }
+  .cred-desc-body { flex: 1; min-height: 0; overflow-y: auto; }
+
+  /* The About button leads the full-width action row and stays its own size so
+     Revoke, Show and Delete keep sharing the rest. It flips the card, so it
+     reads as info and the chevron is hidden. */
+  .credential-actions { flex-wrap: wrap; }
+  .credential-actions .about-btn { flex: 0 0 auto; }
+  .about-btn .ic-chev { display: none; }
 }
 
 .credential-actions {

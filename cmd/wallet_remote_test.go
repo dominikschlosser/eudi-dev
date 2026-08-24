@@ -717,6 +717,34 @@ func TestCredStatusLabelMarksBatch(t *testing.T) {
 	}
 }
 
+// The display name and description reach the CLI from a remote wallet as a JSON
+// object and from a local wallet as the struct value, so the reader tolerates
+// both.
+func TestCredDisplayReadsMapAndStruct(t *testing.T) {
+	fromMap := map[string]any{"display": map[string]any{"name": "EUDI PID", "description": "a sample"}}
+	if got := credDisplayName(fromMap); got != "EUDI PID" {
+		t.Errorf("name from a JSON map = %q, want %q", got, "EUDI PID")
+	}
+	if got := credDisplayDescription(fromMap); got != "a sample" {
+		t.Errorf("description from a JSON map = %q, want %q", got, "a sample")
+	}
+
+	fromStruct := map[string]any{"display": &wallet.CredentialDisplay{Name: "Badge", Description: "issued locally"}}
+	if got := credDisplayName(fromStruct); got != "Badge" {
+		t.Errorf("name from a struct = %q, want %q", got, "Badge")
+	}
+	if got := credDisplayDescription(fromStruct); got != "issued locally" {
+		t.Errorf("description from a struct = %q, want %q", got, "issued locally")
+	}
+
+	if got := credDisplayName(map[string]any{}); got != "" {
+		t.Errorf("name with no display = %q, want empty", got)
+	}
+	if got := orDash(""); got != "-" {
+		t.Errorf("orDash(empty) = %q, want %q", got, "-")
+	}
+}
+
 // The validity column answers "is this still good", so it has to distinguish
 // an expired credential from one that never states a lifetime.
 func TestCredentialValidityLabel(t *testing.T) {

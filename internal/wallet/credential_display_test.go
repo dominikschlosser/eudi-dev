@@ -645,6 +645,108 @@ func TestIssueUnboundCredentialHasNoHolderKey(t *testing.T) {
 	}
 }
 
+func TestIssuedDisplayBoundsTextAndKeepsAltText(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	longDesc := strings.Repeat("x", 500)
+	res, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           "urn:example:x",
+		StatusListURI: &noStatus,
+		Display:       &IssueDisplay{Name: "Badge", Description: longDesc, LogoAltText: "the org logo"},
+	})
+	if err != nil {
+		t.Fatalf("issuing with display: %v", err)
+	}
+	d := res.Credential.Display
+	if d == nil {
+		t.Fatal("the credential carries no display")
+	}
+	if got := len([]rune(d.Description)); got != maxDisplayDescriptionRunes {
+		t.Fatalf("description was not capped: %d runes, want %d", got, maxDisplayDescriptionRunes)
+	}
+	if d.LogoAltText != "the org logo" {
+		t.Fatalf("logo alt text was lost: %q", d.LogoAltText)
+	}
+}
+
+func TestResolveCredentialDisplayBoundsIssuerText(t *testing.T) {
+	w := generateTestWallet(t)
+	metadata := map[string]any{
+		"credential_configurations_supported": map[string]any{
+			"cfg": map[string]any{
+				"credential_metadata": map[string]any{
+					"display": []any{
+						map[string]any{
+							"name":        strings.Repeat("N", 200),
+							"description": strings.Repeat("d", 999),
+							"locale":      strings.Repeat("l", 99),
+						},
+					},
+				},
+			},
+		},
+	}
+	d := w.resolveCredentialDisplay(metadata, "cfg")
+	if d == nil {
+		t.Fatal("no display resolved")
+	}
+	if len([]rune(d.Name)) != maxDisplayNameRunes {
+		t.Fatalf("name not capped: %d", len([]rune(d.Name)))
+	}
+	if len([]rune(d.Description)) != maxDisplayDescriptionRunes {
+		t.Fatalf("description not capped: %d", len([]rune(d.Description)))
+	}
+	if len([]rune(d.Locale)) != maxDisplayLocaleRunes {
+		t.Fatalf("locale not capped: %d", len([]rune(d.Locale)))
+	}
+}
+
+func TestPresentUnboundSDJWTOmitsKeyBinding(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	res, err := w.IssueCredential(IssueOptions{
+		Format: "sdjwt", VCT: "urn:example:bearer", Unbound: true, StatusListURI: &noStatus,
+	})
+	if err != nil {
+		t.Fatalf("issuing an unbound credential: %v", err)
+	}
+	cred := *res.Credential
+	key, err := w.batchSigningKey(cred)
+	if err != nil {
+		t.Fatalf("resolving the signing key: %v", err)
+	}
+	// A credential with no cnf names no holder key, so it presents without a
+	// KB-JWT (the token ends with the final disclosure separator).
+	token, err := w.createSDJWTPresentation(cred, nil, "nonce", "https://verifier.example", key)
+	if err != nil {
+		t.Fatalf("presenting the unbound credential: %v", err)
+	}
+	if !strings.HasSuffix(token, "~") {
+		t.Fatalf("an unbound SD-JWT must present without a KB-JWT, got %q", token)
+	}
+
+	// A bound credential still carries one.
+	bound, err := w.IssueCredential(IssueOptions{
+		Format: "sdjwt", VCT: "urn:example:bound", StatusListURI: &noStatus,
+	})
+	if err != nil {
+		t.Fatalf("issuing a bound credential: %v", err)
+	}
+	bcred := *bound.Credential
+	bkey, err := w.batchSigningKey(bcred)
+	if err != nil {
+		t.Fatalf("resolving the bound signing key: %v", err)
+	}
+	btoken, err := w.createSDJWTPresentation(bcred, nil, "nonce", "https://verifier.example", bkey)
+	if err != nil {
+		t.Fatalf("presenting the bound credential: %v", err)
+	}
+	if strings.HasSuffix(btoken, "~") {
+		t.Fatal("a bound SD-JWT must carry a KB-JWT")
+	}
+}
+
 func TestIssueUnboundBatchRejected(t *testing.T) {
 	w := generateTestWallet(t)
 	noStatus := ""

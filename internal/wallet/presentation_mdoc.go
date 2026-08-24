@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
@@ -32,6 +33,24 @@ import (
 // belongs to; empty means this document is the response and generates its
 // own.
 func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string, signingKey *ecdsa.PrivateKey) (VPTokenResult, error) {
+	// ISO 18013-5 §9.1.2.4 makes the MSO deviceKey mandatory, so an mdoc that
+	// names none cannot be presented: its DeviceSigned binds to a key the MSO
+	// never vouched for. The wallet builds the response anyway and lets the
+	// verifier's refusal be the finding ([ADR-0001]), but warns so the
+	// deviation is not silent.
+	//
+	// [ADR-0001]: docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md
+	if !credentialHolderBinding(cred.Raw).Bound {
+		detail := fmt.Sprintf(
+			"mdoc %s names no MSO deviceKey (ISO 18013-5 §9.1.2.4 makes it mandatory), so its DeviceSigned binds to a key the issuer never vouched for and the verifier refuses this presentation.",
+			credentialLabel(cred))
+		w.addProtocolWarning("presentation", "mdoc_names_no_device_key", detail, map[string]any{
+			"credential_id": cred.ID,
+			"doctype":       cred.DocType,
+		})
+		log.Printf("[VP] WARNING: %s", detail)
+	}
+
 	// Build set of selected namespace:element pairs
 	selected := make(map[string]bool, len(selectedKeys))
 	for _, k := range selectedKeys {

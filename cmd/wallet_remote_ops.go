@@ -104,11 +104,11 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS\tVALID\tSTATUS")
+	fmt.Fprintln(tw, "ID\tNAME\tFORMAT\tTYPE\tCLAIMS\tVALID\tSTATUS")
 	for _, cred := range creds {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n",
-			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), credClaimCount(cred),
-			credValidityLabel(cred), credStatusLabel(cred))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+			docString(cred, "id"), orDash(credDisplayName(cred)), docString(cred, "format"), docCredLabel(cred),
+			credClaimCount(cred), credValidityLabel(cred), credStatusLabel(cred))
 	}
 	for _, entry := range deferred {
 		// The credential type when the issuer's metadata named one, so a
@@ -121,8 +121,8 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 		if label == "" {
 			label = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t-\t-\t%s\n",
-			docString(entry, "id"), docString(entry, "format"), label, "deferred")
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t-\t-\t%s\n",
+			docString(entry, "id"), orDash(credDisplayName(entry)), docString(entry, "format"), label, "deferred")
 	}
 	return tw.Flush()
 }
@@ -163,6 +163,49 @@ func printDeferredDoc(entry map[string]any) error {
 		fmt.Printf("Last error:     %s\n", lastErr)
 	}
 	return nil
+}
+
+// orDash renders an empty string as a dash so a table column always reads.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
+// credDisplay reads the credential's issuer-declared display, tolerating both
+// the JSON object a remote wallet sends and the struct value a local wallet
+// hands over in-process.
+func credDisplay(cred map[string]any) map[string]any {
+	raw, ok := cred["display"]
+	if !ok || raw == nil {
+		return nil
+	}
+	if m, ok := raw.(map[string]any); ok {
+		return m
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+// credDisplayName is the issuer-declared display name, empty when none.
+func credDisplayName(cred map[string]any) string {
+	name, _ := credDisplay(cred)["name"].(string)
+	return name
+}
+
+// credDisplayDescription is the issuer-declared display description, empty when
+// none.
+func credDisplayDescription(cred map[string]any) string {
+	desc, _ := credDisplay(cred)["description"].(string)
+	return desc
 }
 
 // credClaimCount is the subject-attribute count the server reports (the
@@ -259,23 +302,37 @@ func printCredentialDoc(cred map[string]any, decoded bool) error {
 	// The decoded payload states the expiry as a Unix timestamp, which is not
 	// an answer to "is this still good".
 	if !jsonOutput {
+		printed := false
+		if name := credDisplayName(cred); name != "" {
+			fmt.Printf("Name:     %s\n", name)
+			printed = true
+		}
 		when, hasExpiry := credExpiry(cred)
-		isBatch, _ := cred["batch"].(bool)
 		if hasExpiry {
 			validity := "expired " + when.Local().Format(time.RFC1123)
 			if time.Until(when) > 0 {
 				validity = "valid for " + credValidityLabel(cred) + ", until " + when.Local().Format(time.RFC1123)
 			}
 			fmt.Printf("Validity: %s\n", validity)
+			printed = true
 		}
-		if isBatch {
+		if isBatch, _ := cred["batch"].(bool); isBatch {
 			copies := "several copies"
 			if size, ok := docNumber(cred, "batch_size"); ok && size >= 2 {
 				copies = fmt.Sprintf("%d copies", int(size))
 			}
 			fmt.Printf("Batch:    yes (the wallet holds %s and presents an unused one each time)\n", copies)
+			printed = true
 		}
-		if hasExpiry || isBatch {
+		// The description is issuer prose that can run long, so it stays behind
+		// -v the way the other verbose detail does.
+		if verbose {
+			if desc := credDisplayDescription(cred); desc != "" {
+				fmt.Printf("Description: %s\n", desc)
+				printed = true
+			}
+		}
+		if printed {
 			fmt.Println()
 		}
 	}
