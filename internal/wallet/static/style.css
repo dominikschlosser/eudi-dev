@@ -1339,6 +1339,56 @@ header h1 {
 }
 
 /* Activity Log */
+/* The activity log lives in a drawer pinned above the footer: the credentials
+   own the main scroll, and the log is a bounded, collapsible region of its own,
+   so it is a glance away without ever pushing the cards down. */
+.activity-drawer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.drawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.drawer-head:hover {
+  background: var(--bg-hover);
+}
+.drawer-head .section-title {
+  margin: 0;
+}
+.drawer-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.drawer-chev {
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.activity-drawer.collapsed .drawer-chev {
+  transform: rotate(-90deg);
+}
+.drawer-body {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  max-height: 32vh;
+  padding: 4px 16px 12px;
+}
+.activity-drawer.collapsed .drawer-body {
+  display: none;
+}
+
 .log-entries {
   display: flex;
   flex-direction: column;

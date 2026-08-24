@@ -84,16 +84,20 @@
         <button class="btn btn-sm" id="cred-next">Next</button>
       </div>
     </div>
+  </div>
 
-    <!-- Activity Log -->
-    <div>
-      <div class="section-title-row">
-        <div class="section-title">Activity</div>
+  <!-- Activity Log: a drawer at the bottom so the credentials own the main
+       scroll and the log is a glance away without pushing them down. -->
+  <div class="activity-drawer" id="activity-drawer">
+    <div class="drawer-head" id="activity-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="log">
+      <span class="section-title">Activity</span>
+      <span class="drawer-head-right">
         <button class="btn btn-sm" id="clear-log-btn">Clear</button>
-      </div>
-      <div id="log" class="log-entries">
-        <div class="empty-state" id="log-empty">No activity yet</div>
-      </div>
+        <span class="drawer-chev" id="activity-chev" aria-hidden="true">⌄</span>
+      </span>
+    </div>
+    <div id="log" class="log-entries drawer-body">
+      <div class="empty-state" id="log-empty">No activity yet</div>
     </div>
   </div>
 

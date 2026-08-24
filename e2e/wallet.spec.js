@@ -472,9 +472,15 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#issue-submit").click();
     await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
     await expect(page.locator(".credential-card")).toHaveCount(3);
-    await expect(
-      page.locator(".credential-type", { hasText: "urn:example:e2e-test" })
-    ).toBeVisible();
+    // The template's display is applied, so the card wears its name and the
+    // custom vct moves to the meta line.
+    const newCard = page.locator(".credential-card", {
+      hasText: "urn:example:e2e-test",
+    });
+    await expect(newCard).toBeVisible();
+    await expect(newCard.locator(".credential-name").first()).toHaveText(
+      "German PID"
+    );
 
     // The issued credential contains the pre-filled PID claims plus the added one
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);

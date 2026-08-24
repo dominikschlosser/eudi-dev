@@ -1338,13 +1338,32 @@
     }
   }
 
-  document.getElementById('clear-log-btn').addEventListener('click', async () => {
+  document.getElementById('clear-log-btn').addEventListener('click', async (event) => {
+    // The button sits in the drawer header, which toggles the drawer, so its
+    // click stays on the button.
+    event.stopPropagation();
     try {
       await fetch('/api/log', { method: 'DELETE' });
       await loadLog();
     } catch (e) {
       console.error('Failed to clear log:', e);
     }
+  });
+
+  // The activity drawer starts open and collapses to just its header, so the
+  // credentials take the height when the log is not wanted. The choice is
+  // remembered per viewer.
+  const activityDrawer = document.getElementById('activity-drawer');
+  const activityToggle = document.getElementById('activity-toggle');
+  function setActivityCollapsed(collapsed) {
+    activityDrawer.classList.toggle('collapsed', collapsed);
+    activityToggle.setAttribute('aria-expanded', String(!collapsed));
+    try { localStorage.setItem('activity-collapsed', collapsed ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+  try { if (localStorage.getItem('activity-collapsed') === '1') setActivityCollapsed(true); } catch (e) { /* private mode */ }
+  activityToggle.addEventListener('click', () => setActivityCollapsed(!activityDrawer.classList.contains('collapsed')));
+  activityToggle.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActivityCollapsed(!activityDrawer.classList.contains('collapsed')); }
   });
 
   function renderLog(log) {
