@@ -62,6 +62,7 @@ All fields except `claims` are optional:
 | `exp` | Default expiry as a Go duration (for example `720h`) |
 | `claims` | The default claim set |
 | `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
+| `display` | The appearance credentials issued from the template wear (`name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image`). Image fields take a data URI or an http(s) URL. The pre-defined PID templates set it |
 | `predefined` | Set by the server on pre-defined templates in listings and exports. Ignored on import |
 
 A template reference (`--template`, `--from`) resolves in this order. A value containing a path separator or a `.json` or `.template` extension loads that file directly. Otherwise the name is looked up in the template directory (both extensions), then in the pre-defined templates.

@@ -150,7 +150,7 @@ Generated credentials expire in **30 days** by default. Use `--exp` to override 
 
 ## `wallet show <id>`
 
-Displays a stored credential by its ID (as shown in `wallet list`). By default, outputs the raw credential string and nothing else, so it can be piped. Use `--decoded` for human-readable output (supports the `--json` and `-v` global flags). Decoded output begins with a validity line, since the payload states the expiry only as a Unix timestamp.
+Displays a stored credential by its ID (as shown in `wallet list`). An unambiguous id prefix also resolves, so the short id `wallet list` prints is enough. By default, outputs the raw credential string and nothing else, so it can be piped. Use `--decoded` for human-readable output (supports the `--json` and `-v` global flags). Decoded output begins with a validity line, since the payload states the expiry only as a Unix timestamp.
 
 `wallet list` shows the same in its `VALID` column: the time left (`29d`, `5h`, `expired`) or `-` for a credential that states no lifetime.
 
@@ -209,7 +209,7 @@ The dialog always opens on the wallet's auto-selected answer. When a request has
 
 ![Consent credential selection](./assets/wallet-consent-edit-ui.png)
 
-A credential card lists a few of the claims the credential carries. An mdoc element outside the doctype's own namespace is grouped under that namespace, labelled with the segments it adds (`+de.1` for `eu.europa.ec.eudi.pid.de.1` next to `eu.europa.ec.eudi.pid.1`, full identifier on hover). This tells apart two credentials of the same doctype, such as the two PIDs.
+A credential card shows the appearance the issuer declared (a display name, a logo, text and background colors, and a background image where the issuer set one). Where the issuer set no appearance the card falls back to a monogram from the name or a generic glyph. An About control opens the credential's declared description. Two credentials of the same type read apart by their display name (the two PIDs carry `EUDI PID` and `German PID`), with the technical type and a short id on the meta line below.
 
 Credentials can be issued interactively from the web UI. The Issue Credential dialog shows format specific fields and offers a claim builder next to a raw JSON editor. Selecting a credential template (for example the pre-defined `german-pid-sdjwt`) fills all fields so they can be reviewed and edited before issuing. A status list selector controls the embedded status reference (the wallet's own list when configured, none, or a custom URI and index).
 
@@ -241,7 +241,7 @@ Credential-signing certificates are derived per trust-list profile. The wallet k
 
 An issuer needs the same shared CA on the other side of the flow. The wallet attestation (`OAuth-Client-Attestation`) and the key attestation in credential proofs are signed by the wallet's issuer key and carry only the leaf in `x5c`. The anchor comes from `/api/certificates/ca` or from any trust list (they all embed the same CA). A trust list id such as `pid` names the credential profile it describes. It does not limit what the list can anchor.
 
-`wallet serve` reuses persisted issuer and status-list URLs by default, so previously generated credentials keep resolving against the same issuer metadata, trust-list, and status-list endpoints. `--base-url` or `--docker` replaces them. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They never rewrite persisted serving URLs unless the flags ask for it, and they print a note when the embedded URLs are not live because no server is running.
+`wallet serve` reuses persisted issuer and status-list URLs by default, so credentials generated earlier keep resolving against the same issuer metadata, trust-list, and status-list endpoints. `--base-url` or `--docker` replaces them. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They never rewrite persisted serving URLs unless the flags ask for it, and they print a note when the embedded URLs are not live because no server is running.
 
 The startup banner warns about serving config that cannot work in the current environment: a persisted Docker hostname when the server does not run in Docker, and stored credentials that embed issuer or status list URLs this server does not serve (they keep failing validation and status checks until they are issued again).
 
@@ -805,6 +805,9 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `status_list_idx` | int     | Status list index (default is the next free index on the wallet's status list)               |
 | `trust_profile`   | string  | Trust-list profile for registration metadata: `auto` (default), `pid`, or `local`            |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
+| `display`         | object  | The appearance the card shows: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
+| `batch`           | int     | Issue this many distinct-key copies, so the wallet presents an unused one each time (like `--batch`) |
+| `unbound`         | bool    | Issue without a holder key (a bearer credential), the default binds it to the wallet (like `--unbound`) |
 
 The response is `201` with the stored credential (`id`, `format`, `claims`, `raw`, `status_list_idx` when the credential was registered on the wallet's status list, and `template_path` when `save_as_template` was used).
 

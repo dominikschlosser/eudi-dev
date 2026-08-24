@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.0] - 2026-08-24
 
+### Summary
+
+2.0.0 is a wallet redesign around the credential card. A card now wears the appearance its issuer declared (name, description, logo, colors and background image) and reads its own trust state, and the consent and offer dialogs render that same card. The wallet gained batch issuance (it holds many copies of a credential and presents an unused one each time, so two presentations cannot be linked), deferred issuance, and the option to issue a credential unbound. Credentials carry a short hex id, the activity log moved into a collapsible drawer so the list owns the scroll, and a credential's description opens behind an About control. The country-independent PID now carries the EUDI PID Rulebook's own Jan Wijnand example instead of borrowing the German specimen.
+
 ### Added
 
 - **Credential cards show the appearance the issuer declared (§12.2.4).** The name, description, logo, colors and background image travel with the credential and render on its card. The display name is the headline (or the technical type when the issuer declared no name), and the type otherwise sits in the meta line with the other facts (a DCQL query matches on the vct). The background image and color are the card face as one slot (the image over the color, or a solid color, or a plain tile with a monogram), and the color stays in the face. The card lays out from its width, a dense row on a wide list (a fixed card-art thumbnail beside the facts) and a wallet-style card on a phone (the art a full-width hero with the name on it). In the consent and offer dialogs the card is narrow, so its meta line keeps the facts that help pick a credential (id, iat, type) and drops the issuer and claim count. The first display entry is used whatever its locale.

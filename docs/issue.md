@@ -61,6 +61,8 @@ eudi issue mdoc  | eudi decode
 | `--always-disclosed` | —               | Claims issued plainly instead of selectively disclosable (dotted paths for nested claims) |
 | `--save-template` | —                  | Save the issued claims and settings as a template with this name |
 | `--wallet` | `false`                   | Import the issued credential into the wallet   |
+| `--batch`  | `0`                       | With `--wallet`: issue this many distinct-key copies, so the wallet presents an unused one each time |
+| `--unbound` | `false`                  | With `--wallet`: issue without a holder key (a bearer credential with no cnf). The default binds it to the wallet |
 | `--status-list-uri` | —              | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
 
@@ -99,6 +101,8 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 | `--template`  | —                              | Credential template name or file (see [templates](templates.md)) |
 | `--save-template` | —                          | Save the issued claims and settings as a template with this name |
 | `--wallet`    | `false`                        | Import the issued credential into the wallet   |
+| `--batch`     | `0`                            | With `--wallet`: issue this many distinct-key copies, so the wallet presents an unused one each time |
+| `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a deliberately malformed mdoc for testing verifier rejection). The default binds it to the wallet |
 | `--status-list-uri` | —                       | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 
@@ -149,3 +153,17 @@ These flags give explicit control over the stored trust and issuer metadata for 
 | `--revocation-service-type` | — | Revocation service type identifier to store |
 | `--issuance-service-name` | — | Issuance service name to store |
 | `--revocation-service-name` | — | Revocation service name to store |
+
+### Display metadata
+
+These flags set the appearance the imported credential shows on its card, so they apply with `--wallet` (on all three subcommands). Colors are held to the §12.2.4 value space (a bad one is dropped with a warning) and images run through the policed, size-capped cache, the same as an issuer's display metadata. A public demo takes no operator image (the logo and background-image flags are ignored there), while a template's own art still applies.
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--display-name` | — | The credential's display name |
+| `--display-description` | — | The credential's display description (shown behind the card's About control) |
+| `--background-color` | — | The card background color, a CSS color (e.g. `#3d59a1`) |
+| `--text-color` | — | The card text color, a CSS color |
+| `--logo` | — | The card logo, a file path, a data URI, or an http(s) URL |
+| `--logo-alt` | — | The logo's alt text |
+| `--background-image` | — | The card background image, a file path, a data URI, or an http(s) URL |

@@ -144,7 +144,7 @@ walletURL, _ := wallet.Endpoint(ctx, "http")
 The default CMD loads two EUDI PID credentials (SD-JWT + mDoc) with the EUDI PID Rulebook attributes (`given_name`, `family_name`, `birth_date`, `place_of_birth`, `nationality`, etc.). To customize them, mount a folder of [credential templates](templates.md) that overrides the pre-defined PID templates (or adds your own):
 
 ```bash
-# my-templates/german-pid-sdjwt.json overrides the pre-defined PID template
+# my-templates/pid-sdjwt.json overrides the pre-defined PID template
 docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eudi-dev \
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
