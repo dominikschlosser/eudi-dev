@@ -105,8 +105,8 @@ func TestGenerateDefaultCredentials(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected mDoc place_of_birth map, got %T", creds[1].Claims["eu.europa.ec.eudi.pid.1:place_of_birth"])
 	}
-	if birthPlace["locality"] != "BERLIN" {
-		t.Errorf("expected mDoc place_of_birth.locality BERLIN, got %v", birthPlace["locality"])
+	if birthPlace["locality"] != "Amsterdam" {
+		t.Errorf("expected mDoc place_of_birth.locality Amsterdam, got %v", birthPlace["locality"])
 	}
 }
 
@@ -174,8 +174,8 @@ func TestGenerateDefaultCredentials_ClaimOverrides(t *testing.T) {
 		t.Errorf("expected family_name MUSTERMANN-OVERRIDE, got %v", sdjwtCred.Claims["family_name"])
 	}
 	// Non-overridden claim should still be present
-	if sdjwtCred.Claims["birthdate"] != "1964-08-12" {
-		t.Errorf("expected birthdate 1964-08-12, got %v", sdjwtCred.Claims["birthdate"])
+	if sdjwtCred.Claims["birthdate"] != "1978-02-12" {
+		t.Errorf("expected birthdate 1978-02-12, got %v", sdjwtCred.Claims["birthdate"])
 	}
 }
 

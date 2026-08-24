@@ -149,7 +149,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 	}{
 		{
 			name:      "string value matches",
-			claim:     map[string]any{"path": []any{"given_name"}, "values": []any{"ERIKA"}},
+			claim:     map[string]any{"path": []any{"given_name"}, "values": []any{"Jan Wijnand"}},
 			wantMatch: true,
 		},
 		{
@@ -159,7 +159,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 		},
 		{
 			name:      "one of several values matches",
-			claim:     map[string]any{"path": []any{"given_name"}, "values": []any{"MAX", "ERIKA"}},
+			claim:     map[string]any{"path": []any{"given_name"}, "values": []any{"MAX", "Jan Wijnand"}},
 			wantMatch: true,
 		},
 		{
@@ -187,7 +187,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 		},
 		{
 			name:      "array element matches through a wildcard",
-			claim:     map[string]any{"path": []any{"nationalities", nil}, "values": []any{"DE"}},
+			claim:     map[string]any{"path": []any{"nationalities", nil}, "values": []any{"NL"}},
 			wantMatch: true,
 		},
 		{

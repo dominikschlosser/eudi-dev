@@ -85,7 +85,7 @@ func TestInteractiveAuthorizationEndToEnd(t *testing.T) {
 	if !ok {
 		t.Fatalf("credential %s is not in the wallet", result.CredentialID)
 	}
-	if got, _ := issued.Claims["family_name"].(string); got != "MUSTERMANN" {
+	if got, _ := issued.Claims["family_name"].(string); got != "'t Hart" {
 		t.Errorf("issued credential family_name = %q, want the presented holder", got)
 	}
 

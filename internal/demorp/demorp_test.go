@@ -1095,7 +1095,7 @@ func TestVerifierIsHAIPCompliantEndToEnd(t *testing.T) {
 		t.Fatalf("status = %v, want verified (error: %v, checks: %v)", status["status"], status["error"], status["checks"])
 	}
 	claims, _ := status["claims"].(map[string]any)
-	if claims["family_name"] != "MUSTERMANN" {
+	if claims["family_name"] != "'t Hart" {
 		t.Errorf("verified claims = %v, want the PID holder", claims)
 	}
 }

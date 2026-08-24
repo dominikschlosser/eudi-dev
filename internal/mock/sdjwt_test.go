@@ -190,11 +190,11 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	if !ok {
 		t.Fatal("expected place_of_birth to be a map in resolved claims")
 	}
-	if pob["locality"] != "BERLIN" {
-		t.Errorf("expected place_of_birth.locality BERLIN, got %v", pob["locality"])
+	if pob["locality"] != "Amsterdam" {
+		t.Errorf("expected place_of_birth.locality Amsterdam, got %v", pob["locality"])
 	}
-	if pob["country"] != "DE" {
-		t.Errorf("expected place_of_birth.country DE, got %v", pob["country"])
+	if pob["country"] != "NL" {
+		t.Errorf("expected place_of_birth.country NL, got %v", pob["country"])
 	}
 	if len(pob) != 2 {
 		t.Errorf("expected place_of_birth to contain locality and country, got %d entries", len(pob))
@@ -215,7 +215,7 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 				t.Fatalf("place_of_birth disclosure should carry _sd digests for locality and country, got %v", value["_sd"])
 			}
 		case "locality":
-			if disclosure.Value == "BERLIN" {
+			if disclosure.Value == "Amsterdam" {
 				foundLocality = true
 			}
 		}
@@ -232,8 +232,8 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 	if !ok {
 		t.Fatal("expected nationalities to be an array in resolved claims")
 	}
-	if len(nats) != 1 || nats[0] != "DE" {
-		t.Errorf("expected nationalities=[DE], got %v", nats)
+	if len(nats) != 1 || nats[0] != "NL" {
+		t.Errorf("expected nationalities=[NL], got %v", nats)
 	}
 	if _, ok := token.ResolvedClaims["trust_anchor"]; ok {
 		t.Fatal("did not expect trust_anchor in resolved SD-JWT claims")

@@ -146,8 +146,8 @@ func TestGenerateMDOC_PIDClaims(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected place_of_birth map, got %T", birthPlace)
 	}
-	if bp["locality"] != "BERLIN" {
-		t.Errorf("expected place_of_birth.locality BERLIN, got %v", bp["locality"])
+	if bp["locality"] != "Amsterdam" {
+		t.Errorf("expected place_of_birth.locality Amsterdam, got %v", bp["locality"])
 	}
 
 	verifyResult := mdoc.Verify(doc, &key.PublicKey)

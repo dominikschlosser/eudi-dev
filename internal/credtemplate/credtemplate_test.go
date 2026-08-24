@@ -17,6 +17,7 @@ package credtemplate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -48,10 +49,10 @@ func TestPredefinedTemplates(t *testing.T) {
 	sdjwt.Claims["family_name"] = "CHANGED"
 	addr := sdjwt.Claims["address"].(map[string]any)
 	addr["country"] = "XX"
-	if mock.SDJWTPIDClaims["family_name"] != "MUSTERMANN" {
+	if mock.SDJWTPIDClaims["family_name"] != "'t Hart" {
 		t.Error("built-in template shares top-level claims with mock.SDJWTPIDClaims")
 	}
-	if mock.SDJWTPIDClaims["address"].(map[string]any)["country"] != "DE" {
+	if mock.SDJWTPIDClaims["address"].(map[string]any)["country"] != "NL" {
 		t.Error("built-in template shares nested claims with mock.SDJWTPIDClaims")
 	}
 }
@@ -81,6 +82,27 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	}
 	if _, ok := mdoc.Claims[mock.GermanPIDNamespace+":birth_name"]; !ok {
 		t.Errorf("german-pid-mdoc is missing %s:birth_name", mock.GermanPIDNamespace)
+	}
+}
+
+func TestPIDTemplatesCarryDisplayDescription(t *testing.T) {
+	cases := map[string]string{
+		"pid-sdjwt":        "EUDI PID Rulebook",
+		"pid-mdoc":         "EUDI PID Rulebook",
+		"german-pid-sdjwt": "German PID provider",
+		"german-pid-mdoc":  "German PID provider",
+	}
+	for name, want := range cases {
+		tpl, err := Load(name, t.TempDir())
+		if err != nil {
+			t.Fatalf("loading %s: %v", name, err)
+		}
+		if tpl.Display == nil || tpl.Display.Description == "" {
+			t.Fatalf("%s carries no display description", name)
+		}
+		if !strings.Contains(tpl.Display.Description, want) {
+			t.Errorf("%s description %q does not mention %q", name, tpl.Display.Description, want)
+		}
 	}
 }
 

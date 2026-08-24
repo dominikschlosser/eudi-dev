@@ -826,8 +826,8 @@ func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
 	})
 
 	nats, ok := mock.SDJWTPIDClaims["nationalities"].([]any)
-	if !ok || len(nats) != 1 || nats[0] != "DE" {
-		t.Errorf("nationalities should be [\"DE\"], got %v", mock.SDJWTPIDClaims["nationalities"])
+	if !ok || len(nats) != 1 || nats[0] != "NL" {
+		t.Errorf("nationalities should be [\"NL\"], got %v", mock.SDJWTPIDClaims["nationalities"])
 	}
 }
 
@@ -928,8 +928,8 @@ func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
 	if !ok {
 		t.Fatal("place_of_birth should be a map")
 	}
-	if birthPlace["locality"] != "BERLIN" {
-		t.Errorf("expected place_of_birth.locality BERLIN, got %v", birthPlace["locality"])
+	if birthPlace["locality"] != "Amsterdam" {
+		t.Errorf("expected place_of_birth.locality Amsterdam, got %v", birthPlace["locality"])
 	}
 }
 
@@ -984,9 +984,10 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	}
 }
 
-// The two formats describe one person, so the shared values must agree, and
-// so must the two rulebooks: the German PID and the country-independent one
-// describe the same ERIKA MUSTERMANN.
+// Each PID's two formats (SD-JWT and mdoc) describe one person, so their shared
+// values must agree. The country-independent PID and the German PID describe
+// different people: the rulebook's Dutch Jan Wijnand and the German Erika
+// Mustermann specimen.
 func TestPIDClaims_TypesAreCorrect(t *testing.T) {
 	pairs := []struct {
 		label             string
@@ -1008,19 +1009,18 @@ func TestPIDClaims_TypesAreCorrect(t *testing.T) {
 		}
 	}
 
-	// One person, whichever rulebook describes them.
-	if mock.SDJWTPIDClaims["family_name"] != mock.SDJWTGermanPIDClaims["family_name"] ||
-		mock.SDJWTPIDClaims["given_name"] != mock.SDJWTGermanPIDClaims["given_name"] ||
-		mock.SDJWTPIDClaims["birthdate"] != mock.SDJWTGermanPIDClaims["birthdate"] {
-		t.Error("the country-independent and the German PID describe different people")
+	// Two different people, one per rulebook: the country-independent PID is the
+	// rulebook's Dutch Jan Wijnand, the German PID is the Erika Mustermann
+	// specimen. The shared claim names must therefore differ between them.
+	if mock.SDJWTPIDClaims["family_name"] == mock.SDJWTGermanPIDClaims["family_name"] &&
+		mock.SDJWTPIDClaims["given_name"] == mock.SDJWTGermanPIDClaims["given_name"] {
+		t.Error("the country-independent and the German PID should describe different people")
 	}
-	// The birth name has a different claim name under each rulebook.
-	if mock.SDJWTPIDClaims["birth_family_name"] != mock.SDJWTGermanPIDClaims["birth_name"] {
-		t.Error("birth_family_name and birth_name should carry the same value")
+	if v, ok := mock.SDJWTPIDClaims["family_name"].(string); !ok || v != "'t Hart" {
+		t.Errorf("country-independent family_name should be \"'t Hart\", got %v", v)
 	}
-
-	if v, ok := mock.SDJWTPIDClaims["family_name"].(string); !ok || !strings.Contains(v, "MUSTERMANN") {
-		t.Errorf("family_name should be string containing MUSTERMANN, got %v", v)
+	if v, ok := mock.SDJWTGermanPIDClaims["family_name"].(string); !ok || !strings.Contains(v, "MUSTERMANN") {
+		t.Errorf("German family_name should contain MUSTERMANN, got %v", v)
 	}
 
 	// The expiry is a calendar day with no time component, and the rulebook

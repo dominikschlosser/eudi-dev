@@ -39,21 +39,21 @@ const (
 
 // DefaultClaims returns a minimal set of PID-like claims.
 var DefaultClaims = map[string]any{
-	"given_name":  "ERIKA",
-	"family_name": "MUSTERMANN",
-	"birthdate":   "1964-08-12",
+	"given_name":  "Jan Wijnand",
+	"family_name": "'t Hart",
+	"birthdate":   "1978-02-12",
 }
 
 // The country-independent claim sets follow the EUDI PID Rulebook v1.7
 // (github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog,
-// rulebooks/pid/pid-rulebook.md). The German ones follow the German PID
-// provider's claim table
-// (https://demo.pid-provider.bundesdruckerei.de/credential-claims).
+// rulebooks/pid/pid-rulebook.md) and carry its own worked example, the Dutch
+// Jan Wijnand 't Hart identity. The German ones follow the German PID provider's
+// claim table (https://demo.pid-provider.bundesdruckerei.de/credential-claims)
+// and carry the Erika Mustermann specimen from the German ID card.
 //
-// Both describe the same ERIKA MUSTERMANN identity, so only the rulebook
-// separates them: the German PID adds national attributes and encodes some
-// shared ones differently (birth_name rather than birth_family_name, the
-// house number folded into the street).
+// The two describe different people. The German PID carries national attributes
+// on top of the shared set, and encodes some shared ones differently (birth_name
+// rather than birth_family_name, the house number folded into the street).
 //
 // The rulebook's own data identifiers are not the identifiers of either
 // encoding (its §2.1), which is why birth_place appears as place_of_birth.
@@ -63,36 +63,36 @@ var DefaultClaims = map[string]any{
 // whose subclaims are individually disclosable, and nationalities is a
 // selectively disclosable array.
 var SDJWTPIDClaims = map[string]any{
-	"family_name":       "MUSTERMANN",
-	"given_name":        "ERIKA",
-	"birthdate":         "1964-08-12",
-	"birth_family_name": "GABLER",
+	"family_name":       "'t Hart",
+	"given_name":        "Jan Wijnand",
+	"birthdate":         "1978-02-12",
+	"birth_family_name": "'t Hart",
 	// ISO/IEC 5218: 0 unknown, 1 male, 2 female, 9 not applicable.
-	"sex": 2,
+	"sex": 1,
 	"place_of_birth": map[string]any{
-		"locality": "BERLIN",
-		"country":  "DE",
+		"locality": "Amsterdam",
+		"country":  "NL",
 	},
 	"address": map[string]any{
 		// The rulebook keeps the house number out of the street, which is
 		// where this differs from the German encoding.
-		"street_address": "HEIDESTRAẞE",
-		"house_number":   "17",
-		"postal_code":    "51147",
-		"locality":       "KÖLN",
-		"region":         "NW",
-		"country":        "DE",
+		"street_address": "Rietveld",
+		"house_number":   "1",
+		"postal_code":    "2312 JD",
+		"locality":       "Leiden",
+		"region":         "Zuid-Holland",
+		"country":        "NL",
 	},
-	"nationalities": []any{"DE"},
+	"nationalities": []any{"NL"},
 	// No age thresholds: the rulebook removed the age verification attributes
 	// in version 1.1, following CIR 2024/2977. Germany keeps its own, which
 	// is why they are in the German claim set and not here.
-	"personal_administrative_number": "8172619283",
-	"document_number":                "T220001293",
+	"personal_administrative_number": "123456782",
+	"document_number":                "A01234567",
 	"date_of_issuance":               PIDIssuanceDate(),
 	"date_of_expiry":                 PIDExpiryDate(),
-	"issuing_authority":              "DE",
-	"issuing_country":                "DE",
+	"issuing_authority":              "Rijksdienst voor Identiteitsgegevens",
+	"issuing_country":                "NL",
 }
 
 // SDJWTGermanPIDClaims holds the SD-JWT VC claims of the German PID (vct
@@ -147,24 +147,24 @@ var SDJWTGermanPIDClaims = map[string]any{
 // mdoc attribute identifiers, with a flat address carrying the house number in
 // resident_street and no national additions.
 var MDOCPIDClaims = map[string]any{
-	"family_name":                    "MUSTERMANN",
-	"given_name":                     "ERIKA",
-	"birth_date":                     "1964-08-12",
-	"family_name_birth":              "GABLER",
-	"sex":                            2,
-	"place_of_birth":                 map[string]any{"locality": "BERLIN", "country": "DE"},
-	"nationality":                    []any{"DE"},
-	"resident_street":                "HEIDESTRAẞE 17",
-	"resident_postal_code":           "51147",
-	"resident_city":                  "KÖLN",
-	"resident_state":                 "NW",
-	"resident_country":               "DE",
-	"personal_administrative_number": "8172619283",
-	"document_number":                "T220001293",
+	"family_name":                    "'t Hart",
+	"given_name":                     "Jan Wijnand",
+	"birth_date":                     "1978-02-12",
+	"family_name_birth":              "'t Hart",
+	"sex":                            1,
+	"place_of_birth":                 map[string]any{"locality": "Amsterdam", "country": "NL"},
+	"nationality":                    []any{"NL"},
+	"resident_street":                "Rietveld 1",
+	"resident_postal_code":           "2312 JD",
+	"resident_city":                  "Leiden",
+	"resident_state":                 "Zuid-Holland",
+	"resident_country":               "NL",
+	"personal_administrative_number": "123456782",
+	"document_number":                "A01234567",
 	"issuance_date":                  PIDIssuanceDate(),
 	"expiry_date":                    PIDExpiryDate(),
-	"issuing_authority":              "DE",
-	"issuing_country":                "DE",
+	"issuing_authority":              "Rijksdienst voor Identiteitsgegevens",
+	"issuing_country":                "NL",
 }
 
 // MDOCGermanPIDClaims holds the ISO 18013-5 elements of the German PID. The

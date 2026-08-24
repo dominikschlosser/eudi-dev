@@ -89,9 +89,9 @@ SD-JWT Credential
   vct: urn:eudi:pid:1
 
 ┌ Disclosed Claims (3)
-  [1] given_name: Erika
-  [2] family_name: Mustermann
-  [3] birth_date: 1984-08-12
+  [1] given_name: Jan Wijnand
+  [2] family_name: 't Hart
+  [3] birth_date: 1978-02-12
 ```
 
 `decode` is an inspection tool. It still verifies JWT or SD-JWT signatures automatically, against the embedded `x5c` certificate when the credential carries one, otherwise against issuer metadata resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
