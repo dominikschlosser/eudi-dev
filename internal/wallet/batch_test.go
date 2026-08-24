@@ -184,8 +184,7 @@ func TestIssueCredentialBatchMintsEveryCopy(t *testing.T) {
 
 	holderCopies, keyedCopies := 0, 0
 	seenKeys := make(map[string]bool)
-	for i := range w.GetCredentials() {
-		c := w.GetCredentials()[i]
+	for _, c := range w.GetCredentials() {
 		if c.BatchGroup != group {
 			continue
 		}
@@ -235,8 +234,7 @@ func TestIssueCredentialBatchGivesEachCopyAnOwnStatusIndex(t *testing.T) {
 
 	seen := make(map[int]bool)
 	count := 0
-	for i := range w.GetCredentials() {
-		c := w.GetCredentials()[i]
+	for _, c := range w.GetCredentials() {
 		if c.VCT != testBatchVCT {
 			continue
 		}
@@ -330,8 +328,7 @@ func TestPresentationCloneAdvancesRotationOnTheRealWallet(t *testing.T) {
 
 	presentedID := matches[0].CredentialID
 	found := false
-	for i := range w.GetCredentials() {
-		c := w.GetCredentials()[i]
+	for _, c := range w.GetCredentials() {
 		if c.ID != presentedID {
 			continue
 		}
@@ -345,6 +342,23 @@ func TestPresentationCloneAdvancesRotationOnTheRealWallet(t *testing.T) {
 	}
 	if !w.takeBatchStateDirty() {
 		t.Fatal("the real wallet was not marked for saving after the clone presented a copy")
+	}
+}
+
+func TestBatchCopyHolderBindingReadsAsHeld(t *testing.T) {
+	w := generateTestWallet(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), testKey(t)}
+	storeTestBatch(t, w, keys)
+
+	// Every copy is presentable, so the card and the consent dialog must read
+	// it as bound to this wallet, the copy bound to its own key included.
+	for _, c := range w.GetCredentials() {
+		if c.VCT != testBatchVCT {
+			continue
+		}
+		if got := w.credentialHolderBindingState(c); got != holderBindingThisWallet {
+			t.Fatalf("copy %s (own key: %v) reads as %q, want %q", c.ID, c.BindingKeyPEM != "", got, holderBindingThisWallet)
+		}
 	}
 }
 

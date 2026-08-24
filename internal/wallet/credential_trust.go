@@ -153,11 +153,13 @@ func (w *Wallet) credentialHolderBindingState(c StoredCredential) string {
 	if !binding.Bound {
 		return holderBindingNone
 	}
-	holder := w.HolderKeyPair()
-	if holder == nil {
+	// A batch copy is bound to its own key, which the wallet holds alongside the
+	// holder key, so the copy's key is what its binding is checked against.
+	signingKey, err := w.batchSigningKey(c)
+	if err != nil || signingKey == nil {
 		return holderBindingOtherKey
 	}
-	if binding.heldBy(&holder.PublicKey) {
+	if binding.heldBy(&signingKey.PublicKey) {
 		return holderBindingThisWallet
 	}
 	return holderBindingOtherKey

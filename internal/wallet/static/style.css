@@ -203,17 +203,6 @@ header h1 {
 }
 
 /* Credential Cards */
-.section-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.section-title-row .section-title {
-  margin-bottom: 0;
-}
-
 .section-title {
   font-size: 12px;
   color: var(--text-dim);
@@ -1401,6 +1390,9 @@ header h1 {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   overflow: hidden;
+  /* Keep each entry its natural height inside the bounded, scrolling drawer,
+     so a full log overflows and scrolls rather than squeezing every row flat. */
+  flex-shrink: 0;
 }
 
 .log-header {
