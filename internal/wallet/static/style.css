@@ -48,6 +48,28 @@ a {
   display: none !important;
 }
 
+/* One thin, theme-aware scrollbar for every scroll region, so a long
+   credential list, a dialog, and the decoder all read the same instead of
+   falling back to the platform's default bar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
 body {
   font-family: var(--font-mono);
   background: var(--bg);
@@ -171,6 +193,9 @@ header h1 {
 .main {
   flex: 1;
   overflow-y: auto;
+  /* Reserve the scrollbar's width whether or not it is showing, so the content
+     does not jump sideways the moment the list grows past one screen. */
+  scrollbar-gutter: stable;
   padding: 16px;
   display: flex;
   flex-direction: column;
