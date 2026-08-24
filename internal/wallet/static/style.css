@@ -1079,12 +1079,9 @@ header h1 {
 .consent-credential .face-generic,
 .candidate .face-generic { font-size: 18px; }
 /* The dialog card is narrow, so its meta keeps only what helps pick the right
-   credential (id, iat, type) and drops the long issuer and the claim count that
-   would wrap it tall. */
+   credential (id, iat, type) and drops the long issuer that would wrap it tall. */
 .consent-credential .cred-m-iss,
-.candidate .cred-m-iss,
-.consent-credential .cred-m-claims,
-.candidate .cred-m-claims { display: none; }
+.candidate .cred-m-iss { display: none; }
 
 /* The header above the disclosed fields (and the offer's claim list). */
 .cl-hd {

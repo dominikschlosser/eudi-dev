@@ -173,16 +173,17 @@ test.describe("Wallet Dashboard", () => {
     await expect(mdocCard).toBeVisible();
   });
 
-  test("shows a claim count on credential cards", async ({ page }) => {
+  test("shows the credential facts in the card meta line", async ({ page }) => {
     await page.goto(WALLET_URL);
     await expect(page.locator(".credential-card")).toHaveCount(2, {
       timeout: 5000,
     });
 
-    // The card carries a claim count in its meta line, not the claims
-    // themselves (the decoder shows those).
+    // The card carries the credential's facts in one meta line: the short id,
+    // when it was issued, and the type a query matches on.
     const meta = page.locator(".credential-card").first().locator(".cred-meta");
-    await expect(meta).toContainText(/\d+ claims?/);
+    await expect(meta).toContainText("iat");
+    await expect(meta).toContainText("type");
   });
 
   test("has theme toggle button", async ({ page }) => {
@@ -569,7 +570,7 @@ test.describe("Credential Issuing via UI", () => {
   });
 
   // An SD-JWT with a URI claim name (a colon of its own) imports and renders
-  // as an ordinary card with its claim count, and deletes.
+  // as an ordinary card, and deletes.
   test("an SD-JWT with a URI claim name renders and deletes", async ({
     page,
   }) => {
@@ -584,7 +585,9 @@ test.describe("Credential Issuing via UI", () => {
     await page.goto(WALLET_URL);
     const card = page.locator(`#credential-${issued.body.id}`);
     await expect(card).toBeVisible();
-    await expect(card.locator(".cred-meta")).toContainText(/\d+ claims?/);
+    await expect(card.locator(".credential-name")).toContainText(
+      "urn:example:colon-claim"
+    );
 
     await page.locator(`#delete-${issued.body.id}`).click();
     await expect(card).toHaveCount(0);

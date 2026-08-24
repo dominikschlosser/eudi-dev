@@ -457,14 +457,6 @@
         '</span> <span class="mono">' + escHtml(cred.issuer.value) + '</span></span>';
     }
 
-    // The count of the subject's attributes, from the server so the card and
-    // the CLI agree; the protocol members (iss, cnf, ...) are left out. Older
-    // records without the field fall back to the full key count.
-    const claimCount = typeof cred.claim_count === 'number'
-      ? cred.claim_count
-      : Object.keys(cred.claims || {}).length;
-    const countMeta = '<span class="cred-meta-item cred-m-claims">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') + '</span>';
-
     const bodyHtml = '<div class="credential-info">' +
         '<div class="credential-type cred-hdr">' +
           '<span class="format-badge format-badge-row">' + formatLabel + '</span>' +
@@ -472,7 +464,7 @@
         '</div>' +
         '<div class="cred-pills">' + protectedBadge + statusBadge + expiryBadge + signatureBadge + keyBindingBadge + '</div>' +
         '<div class="cred-meta">' +
-          idMeta + issuedMeta + typeMeta + issuerMeta + countMeta +
+          idMeta + issuedMeta + typeMeta + issuerMeta +
         '</div>' +
       '</div>';
 
