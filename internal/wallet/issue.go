@@ -102,6 +102,10 @@ type IssueOptions struct {
 	// The named template's display is the base; an explicit Display is laid over
 	// it. Empty falls back to the Template (if any) for the display.
 	DisplayTemplate string
+	// Unbound issues the credential without a holder key, so it names no cnf
+	// (SD-JWT) or device key (mdoc) and is a bearer credential anyone can
+	// present. The default is a credential bound to the wallet holder key.
+	Unbound bool
 }
 
 // IssueDisplay is the appearance an operator sets for a self-issued credential.
@@ -240,13 +244,19 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		issuer = "https://issuer.example"
 	}
 
+	// A bound credential carries the wallet holder key so the wallet can present
+	// it with a key binding; an unbound one carries no holder key at all (a
+	// bearer credential anyone holding it can present).
 	var holderPub *ecdsa.PublicKey
-	if w.HolderKey != nil {
+	if !opts.Unbound && w.HolderKey != nil {
 		holderPub = &w.HolderKey.PublicKey
 	}
 
 	if opts.BatchSize >= 2 && format == "jwt" {
 		return nil, fmt.Errorf("batch issuance needs holder binding, which jwt_vc_json does not carry")
+	}
+	if opts.BatchSize >= 2 && opts.Unbound {
+		return nil, fmt.Errorf("an unbound credential cannot be issued as a batch (a batch needs a distinct holder key per copy)")
 	}
 
 	// signCopy mints one credential, holder-bound to holderPub and carrying the

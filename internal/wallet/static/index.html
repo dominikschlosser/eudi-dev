@@ -320,6 +320,12 @@
           <label class="form-label" for="issue-batch" data-formats="sdjwt mdoc">Copies</label>
           <input type="number" id="issue-batch" class="form-input" data-formats="sdjwt mdoc" min="1" placeholder="1 (a batch of N presents an unused copy each time)">
 
+          <label class="form-label" for="issue-binding" data-formats="sdjwt mdoc">Holder binding</label>
+          <select id="issue-binding" class="form-input" data-formats="sdjwt mdoc">
+            <option value="bound" selected>Bound to this wallet</option>
+            <option value="unbound">Unbound (bearer, no cnf)</option>
+          </select>
+
           <div class="form-section-label">Display (optional)</div>
 
           <p class="form-hint" id="issue-template-art-note" hidden>This template provides its own logo and background image. They are kept unless you set your own below.</p>

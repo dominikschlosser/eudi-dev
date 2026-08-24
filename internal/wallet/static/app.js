@@ -995,6 +995,7 @@
     document.getElementById('issue-exp').value = '';
     document.getElementById('issue-nbf').value = '';
     document.getElementById('issue-batch').value = '';
+    document.getElementById('issue-binding').value = 'bound';
     document.getElementById('issue-save-template').value = '';
     document.getElementById('issue-status-list').value = 'auto';
     document.getElementById('issue-status-list-uri').value = '';
@@ -1129,6 +1130,9 @@
     // unused one each time (holder-bound formats only).
     const batch = parseInt(document.getElementById('issue-batch').value, 10);
     if (batch >= 2) body.batch = batch;
+    // Unbound issues a bearer credential with no holder key; the default binds
+    // it to the wallet.
+    if (document.getElementById('issue-binding').value === 'unbound') body.unbound = true;
     const statusListMode = document.getElementById('issue-status-list').value;
     if (statusListMode === 'none') {
       body.status_list_uri = '';

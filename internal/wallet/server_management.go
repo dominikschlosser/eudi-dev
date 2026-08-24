@@ -160,6 +160,9 @@ type IssueAPIRequest struct {
 	// image in particular) the credential wears, when the form flattened a
 	// template's claims but its embedded art could not travel in a form field.
 	DisplayTemplate string `json:"display_template"`
+	// Unbound issues the credential without a holder key (a bearer credential).
+	// The default is bound to the wallet.
+	Unbound bool `json:"unbound"`
 }
 
 // Options converts the API request into IssueOptions.
@@ -182,6 +185,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		Display:         req.Display,
 		BatchSize:       req.Batch,
 		DisplayTemplate: req.DisplayTemplate,
+		Unbound:         req.Unbound,
 	}
 	if req.Exp != "" {
 		expDuration, err := time.ParseDuration(req.Exp)

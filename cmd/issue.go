@@ -49,6 +49,7 @@ var (
 	issueOmit                  []string
 	issueToWallet              bool
 	issueBatchSize             int
+	issueUnbound               bool
 	issueStatusListURI         string
 	issueStatusListIdx         int
 	issueTrustProfile          string
@@ -120,6 +121,7 @@ func init() {
 	issueSDJWTCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. place_of_birth,sex)")
 	issueSDJWTCmd.Flags().BoolVar(&issueToWallet, "wallet", false, "Import the issued credential into the wallet")
 	issueSDJWTCmd.Flags().IntVar(&issueBatchSize, "batch", 0, "Issue a batch of this many distinct-key copies (--wallet only), so the wallet presents an unused one each time")
+	issueSDJWTCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without a holder key (a bearer credential with no cnf); the default binds it to the wallet")
 	issueSDJWTCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueSDJWTCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueSDJWTCmd)
@@ -155,6 +157,7 @@ func init() {
 	issueMDOCCmd.Flags().StringSliceVar(&issueOmit, "omit", nil, "Comma-separated claim names to omit from --pid (e.g. place_of_birth,sex)")
 	issueMDOCCmd.Flags().BoolVar(&issueToWallet, "wallet", false, "Import the issued credential into the wallet")
 	issueMDOCCmd.Flags().IntVar(&issueBatchSize, "batch", 0, "Issue a batch of this many distinct-key copies (--wallet only), so the wallet presents an unused one each time")
+	issueMDOCCmd.Flags().BoolVar(&issueUnbound, "unbound", false, "Issue without a holder key (a bearer credential with no device key); the default binds it to the wallet")
 	issueMDOCCmd.Flags().StringVar(&issueStatusListURI, "status-list-uri", "", "Status list URI to embed in credential")
 	issueMDOCCmd.Flags().IntVar(&issueStatusListIdx, "status-list-idx", 0, "Status list index to embed in credential")
 	addIssueTrustMetadataFlags(issueMDOCCmd)
@@ -606,6 +609,9 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	}
 	if flags.Changed("batch") {
 		req["batch"] = issueBatchSize
+	}
+	if issueUnbound {
+		req["unbound"] = true
 	}
 	if flags.Changed("status-list-uri") {
 		req["status_list_uri"] = issueStatusListURI

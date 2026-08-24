@@ -611,3 +611,50 @@ func TestIssueWithDisplayTemplateAppliesTemplateArt(t *testing.T) {
 		t.Fatalf("the name override was lost: %q", d.Name)
 	}
 }
+
+func TestIssueUnboundCredentialHasNoHolderKey(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	res, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           "urn:example:bearer",
+		Unbound:       true,
+		StatusListURI: &noStatus,
+	})
+	if err != nil {
+		t.Fatalf("issuing an unbound credential: %v", err)
+	}
+	if credentialHolderBinding(res.Credential.Raw).Bound {
+		t.Fatal("an unbound credential must carry no cnf")
+	}
+	if got := w.credentialHolderBindingState(*res.Credential); got != holderBindingNone {
+		t.Fatalf("an unbound credential reads as %q, want no key binding", got)
+	}
+
+	// Bound is the default.
+	bound, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           "urn:example:bound",
+		StatusListURI: &noStatus,
+	})
+	if err != nil {
+		t.Fatalf("issuing the default credential: %v", err)
+	}
+	if !credentialHolderBinding(bound.Credential.Raw).Bound {
+		t.Fatal("the default credential must be bound to the wallet")
+	}
+}
+
+func TestIssueUnboundBatchRejected(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	if _, err := w.IssueCredential(IssueOptions{
+		Format:        "sdjwt",
+		VCT:           "urn:example:x",
+		Unbound:       true,
+		BatchSize:     3,
+		StatusListURI: &noStatus,
+	}); err == nil {
+		t.Fatal("an unbound batch has no distinct keys and must be rejected")
+	}
+}
