@@ -270,15 +270,19 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		return "", fmt.Errorf("unsupported format %q", format)
 	}
 
-	// applyIssuedDisplay gives a freshly minted credential its appearance: an
-	// explicit display wins, otherwise the template's own display (if any).
+	// The credential's appearance is the template's, with any explicit fields
+	// laid over it, so choosing a template keeps its art (name, logo, background
+	// image) even when the operator also sets a name or a color.
+	var issuedDisplay *CredentialDisplay
+	if tpl != nil {
+		issuedDisplay = w.templateDisplay(tpl.Display)
+	}
+	if opts.Display != nil {
+		issuedDisplay = mergeCredentialDisplay(issuedDisplay, w.issuedDisplay(*opts.Display))
+	}
 	applyIssuedDisplay := func(cred *StoredCredential) {
-		if opts.Display != nil {
-			if d := w.issuedDisplay(*opts.Display); d != nil {
-				w.rememberDisplay(cred, d)
-			}
-		} else if tpl != nil {
-			w.rememberDisplay(cred, w.templateDisplay(tpl.Display))
+		if issuedDisplay != nil {
+			w.rememberDisplay(cred, issuedDisplay)
 		}
 	}
 

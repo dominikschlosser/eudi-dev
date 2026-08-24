@@ -51,6 +51,39 @@ type CredentialDisplay struct {
 	BackgroundURI   string `json:"background_uri,omitempty"`
 }
 
+// mergeCredentialDisplay lays the fields of over onto base, so an explicit
+// display overrides only the fields it sets and inherits the rest (a template's
+// art in particular) from base. Either side may be nil.
+func mergeCredentialDisplay(base, over *CredentialDisplay) *CredentialDisplay {
+	if base == nil {
+		return over
+	}
+	if over == nil {
+		return base
+	}
+	out := *base
+	if over.Name != "" {
+		out.Name = over.Name
+	}
+	if over.Description != "" {
+		out.Description = over.Description
+	}
+	if over.BackgroundColor != "" {
+		out.BackgroundColor = over.BackgroundColor
+	}
+	if over.TextColor != "" {
+		out.TextColor = over.TextColor
+	}
+	if over.LogoURI != "" {
+		out.LogoURI = over.LogoURI
+		out.LogoAltText = over.LogoAltText
+	}
+	if over.BackgroundURI != "" {
+		out.BackgroundURI = over.BackgroundURI
+	}
+	return &out
+}
+
 // maxDisplayImageBytes caps a cached display image. The image lives in
 // wallet.json, which every save rewrites whole, so a card background stays
 // small or stays out.

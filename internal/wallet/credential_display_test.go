@@ -534,3 +534,53 @@ func TestCacheDisplayImage_BlocksInternalAddress(t *testing.T) {
 		t.Errorf("rejection does not name the policy block: %s", entry.Detail)
 	}
 }
+
+func TestMergeCredentialDisplayOverlaysFields(t *testing.T) {
+	base := &CredentialDisplay{Name: "Template", BackgroundColor: "#111", LogoURI: "logo", LogoAltText: "alt", BackgroundURI: "bg"}
+	over := &CredentialDisplay{Name: "Custom", TextColor: "#fff"}
+	got := mergeCredentialDisplay(base, over)
+	if got.Name != "Custom" {
+		t.Errorf("name not overridden: %q", got.Name)
+	}
+	if got.TextColor != "#fff" {
+		t.Errorf("text color not laid over: %q", got.TextColor)
+	}
+	if got.BackgroundColor != "#111" {
+		t.Errorf("base background color lost: %q", got.BackgroundColor)
+	}
+	if got.LogoURI != "logo" || got.BackgroundURI != "bg" {
+		t.Error("base images were dropped by a name-only override")
+	}
+	if mergeCredentialDisplay(nil, over) != over {
+		t.Error("a nil base should return the override unchanged")
+	}
+	if mergeCredentialDisplay(base, nil) != base {
+		t.Error("a nil override should return the base unchanged")
+	}
+}
+
+func TestIssueFromTemplateKeepsArtWhenNameOverridden(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	res, err := w.IssueCredential(IssueOptions{
+		Template:      "german-pid-sdjwt",
+		StatusListURI: &noStatus,
+		Display:       &IssueDisplay{Name: "My German PID"},
+	})
+	if err != nil {
+		t.Fatalf("issuing from the German PID template: %v", err)
+	}
+	d := res.Credential.Display
+	if d == nil {
+		t.Fatal("the issued credential carries no display")
+	}
+	if d.Name != "My German PID" {
+		t.Fatalf("display name = %q, want the override", d.Name)
+	}
+	if d.BackgroundURI == "" {
+		t.Error("the template background image was dropped when the name was set")
+	}
+	if d.LogoURI == "" {
+		t.Error("the template logo was dropped when the name was set")
+	}
+}

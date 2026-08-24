@@ -318,6 +318,8 @@
 
           <div class="form-section-label">Display (optional)</div>
 
+          <p class="form-hint" id="issue-template-art-note" hidden>This template provides its own logo and background image. They are kept unless you set your own below.</p>
+
           <label class="form-label" for="issue-display-name">Display name</label>
           <input type="text" id="issue-display-name" class="form-input" placeholder="e.g. Employee Badge">
 
@@ -336,14 +338,14 @@
             <input type="text" id="issue-text-color" class="form-input" placeholder="Any CSS color, e.g. #ffffff">
           </div>
 
-          <label class="form-label" for="issue-logo">Logo</label>
-          <div class="form-image-row">
+          <label class="form-label issue-image-field" for="issue-logo">Logo</label>
+          <div class="form-image-row issue-image-field">
             <input type="text" id="issue-logo" class="form-input" placeholder="Data URI or http(s) URL">
             <input type="file" id="issue-logo-file" accept="image/*" class="form-file" aria-label="Upload a logo">
           </div>
 
-          <label class="form-label" for="issue-bg-image">Background image</label>
-          <div class="form-image-row">
+          <label class="form-label issue-image-field" for="issue-bg-image">Background image</label>
+          <div class="form-image-row issue-image-field">
             <input type="text" id="issue-bg-image" class="form-input" placeholder="Data URI or http(s) URL">
             <input type="file" id="issue-bg-image-file" accept="image/*" class="form-file" aria-label="Upload a background image">
           </div>

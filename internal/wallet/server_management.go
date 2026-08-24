@@ -231,6 +231,15 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.demo != nil && req.Display != nil &&
+		(strings.TrimSpace(req.Display.Logo) != "" || strings.TrimSpace(req.Display.BackgroundImage) != "") {
+		// A shared demo must not carry an image a visitor supplied. A template's
+		// own art still applies, and a normally issued credential keeps the
+		// appearance its issuer declared.
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setting a logo or background image is disabled in public demo mode (a template's own art still applies)"})
+		return
+	}
+
 	opts, err := req.Options()
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

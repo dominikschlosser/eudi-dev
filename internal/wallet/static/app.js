@@ -933,6 +933,26 @@
     fillClaimRows(tpl.claims || {});
     syncRowsFromAlwaysDisclosed();
     issueClaimsTextarea.value = JSON.stringify(tpl.claims || {}, null, 2);
+    applyTemplateDisplay(tpl.display || {});
+  }
+
+  // Shows the template's declared appearance in the form: the name, description
+  // and colors are editable, and the logo and background image stay with the
+  // template (they are applied on issuance and merged under any field the
+  // operator sets, so the art is kept even when the name is changed).
+  function applyTemplateDisplay(display) {
+    document.getElementById('issue-display-name').value = display.name || '';
+    document.getElementById('issue-display-description').value = display.description || '';
+    const bg = document.getElementById('issue-bg-color');
+    bg.value = display.background_color || '';
+    bg.dispatchEvent(new Event('input'));
+    const text = document.getElementById('issue-text-color');
+    text.value = display.text_color || '';
+    text.dispatchEvent(new Event('input'));
+    document.getElementById('issue-logo').value = '';
+    document.getElementById('issue-bg-image').value = '';
+    const note = document.getElementById('issue-template-art-note');
+    if (note) note.hidden = !(display.logo || display.background_image);
   }
 
   // Keeps both claim editors in sync: entering JSON mode serializes the
@@ -983,6 +1003,7 @@
     document.getElementById('issue-status-list-idx').hidden = true;
     issueTemplateSelect.value = '';
     issueAlwaysDisclosed.value = '';
+    applyTemplateDisplay({});
     document.getElementById('issue-claims-mode-builder').checked = true;
     issueClaimsTextarea.value = '';
     issueError.textContent = '';
@@ -2336,6 +2357,10 @@
         document.querySelector('label[for="issue-save-template"]').hidden = true;
         document.getElementById('template-form').hidden = true;
         document.getElementById('templates-btn').hidden = true;
+        // A shared demo takes no visitor-supplied image, so the logo and
+        // background image fields are gone. A template's own art still applies,
+        // and normal issuance carries the appearance the issuer declares.
+        document.querySelectorAll('.issue-image-field').forEach((el) => { el.hidden = true; });
         // The activity log is shared history on a demo, and the server
         // refuses to clear it. Leaving the button would offer an action that
         // can only fail.

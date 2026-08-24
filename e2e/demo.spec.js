@@ -1306,6 +1306,9 @@ test.describe("Demo mode hardening", () => {
       ["PUT", "/api/config/preferred-format", { preferred_format: "dc+sd-jwt" }],
       ["PUT", "/api/config/conformance", { mode: "debug" }],
       ["DELETE", "/api/config/conformance", null],
+      // A visitor-supplied display image is refused; a template's own art still applies.
+      ["POST", "/api/issue", { format: "sdjwt", vct: "urn:eudi:pid:1", status_list_uri: "", display: { background_image: "data:image/png;base64,iVBORw0KGgo=" } }],
+      ["POST", "/api/issue", { format: "sdjwt", vct: "urn:eudi:pid:1", status_list_uri: "", display: { logo: "data:image/png;base64,iVBORw0KGgo=" } }],
     ];
     for (const [method, pathname, body] of blocked) {
       const res = await fetch(BASE + pathname, {
@@ -1332,6 +1335,12 @@ test.describe("Demo mode hardening", () => {
     // Browser flows keep their consent dialog on the demo, and the shared
     // setting cannot be changed, so no auto-accept control.
     await expect(page.locator("#auto-accept-toggle")).toBeHidden();
+    // The issue form takes no visitor-supplied image, so the logo and
+    // background image fields are gone, while the rest of the form stays.
+    await page.locator("#issue-btn").click();
+    await expect(page.locator("#issue-display-name")).toBeVisible();
+    await expect(page.locator("#issue-logo")).toBeHidden();
+    await expect(page.locator("#issue-bg-image")).toBeHidden();
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {
