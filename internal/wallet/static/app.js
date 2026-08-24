@@ -457,7 +457,12 @@
         '</span> <span class="mono">' + escHtml(cred.issuer.value) + '</span></span>';
     }
 
-    const claimCount = Object.keys(cred.claims || {}).length;
+    // The count of the subject's attributes, from the server so the card and
+    // the CLI agree; the protocol members (iss, cnf, ...) are left out. Older
+    // records without the field fall back to the full key count.
+    const claimCount = typeof cred.claim_count === 'number'
+      ? cred.claim_count
+      : Object.keys(cred.claims || {}).length;
     const countMeta = '<span class="cred-meta-item cred-m-claims">' + claimCount + ' claim' + (claimCount === 1 ? '' : 's') + '</span>';
 
     const bodyHtml = '<div class="credential-info">' +
@@ -2020,14 +2025,15 @@
       consentDialog.querySelectorAll('[data-credential-id], .candidate[data-cred]').forEach(el => {
         const id = el.dataset.credentialId || el.dataset.cred;
         const detail = candidateDetails.get(id);
-        if (detail && detail.display) applyCredentialDisplay(el, detail.display);
+        // Always paint the face, so a credential with no declared appearance
+        // gets its monogram or the generic glyph here too, never a blank tile.
+        applyCredentialDisplay(el, detail && detail.display);
       });
       if (isIssuance && req.offer_details) {
         const byId = {};
         (req.offer_details.credentials || []).forEach(c => { byId[c.id] = c.display; });
         consentDialog.querySelectorAll('[data-config-id]').forEach(el => {
-          const display = byId[el.dataset.configId];
-          if (display) applyCredentialDisplay(el, display);
+          applyCredentialDisplay(el, byId[el.dataset.configId]);
         });
       }
 

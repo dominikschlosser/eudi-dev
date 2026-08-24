@@ -1166,13 +1166,36 @@ func credentialLabel(c StoredCredential) string {
 	return c.ID
 }
 
+// reservedCredentialClaims are the JWT and SD-JWT VC protocol members that
+// carry no user attribute, so a claim count that reflects what the credential
+// says about its subject leaves them out (RFC 7519 registered claims plus the
+// SD-JWT VC members of draft-ietf-oauth-sd-jwt-vc §3.2.2).
+var reservedCredentialClaims = map[string]bool{
+	"iss": true, "sub": true, "aud": true, "exp": true, "nbf": true,
+	"iat": true, "jti": true, "cnf": true, "vct": true, "vct#integrity": true,
+	"status": true, "_sd": true, "_sd_alg": true,
+}
+
+// userClaimCount counts the claims that say something about the subject, the
+// number the card and the listing report, leaving out the protocol members.
+func userClaimCount(claims map[string]any) int {
+	n := 0
+	for key := range claims {
+		if !reservedCredentialClaims[key] {
+			n++
+		}
+	}
+	return n
+}
+
 // CredentialSummary returns a JSON-serializable summary of a credential.
 func CredentialSummary(c StoredCredential) map[string]any {
 	summary := map[string]any{
-		"id":     c.ID,
-		"format": c.Format,
-		"claims": c.Claims,
-		"raw":    c.Raw,
+		"id":          c.ID,
+		"format":      c.Format,
+		"claims":      c.Claims,
+		"claim_count": userClaimCount(c.Claims),
+		"raw":         c.Raw,
 	}
 	if c.VCT != "" {
 		summary["vct"] = c.VCT

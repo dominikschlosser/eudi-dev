@@ -106,9 +106,8 @@ func printCredentialList(creds []map[string]any, deferred []map[string]any) erro
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tFORMAT\tTYPE\tCLAIMS\tVALID\tSTATUS")
 	for _, cred := range creds {
-		claims, _ := cred["claims"].(map[string]any)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n",
-			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), len(claims),
+			docString(cred, "id"), docString(cred, "format"), docCredLabel(cred), credClaimCount(cred),
 			credValidityLabel(cred), credStatusLabel(cred))
 	}
 	for _, entry := range deferred {
@@ -164,6 +163,17 @@ func printDeferredDoc(entry map[string]any) error {
 		fmt.Printf("Last error:     %s\n", lastErr)
 	}
 	return nil
+}
+
+// credClaimCount is the subject-attribute count the server reports (the
+// protocol members left out), falling back to the full claim count for a
+// record from before the field existed.
+func credClaimCount(cred map[string]any) int {
+	if n, ok := docNumber(cred, "claim_count"); ok {
+		return int(n)
+	}
+	claims, _ := cred["claims"].(map[string]any)
+	return len(claims)
 }
 
 // credStatusLabel summarizes revocation state and protection for the list,

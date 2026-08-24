@@ -1224,3 +1224,17 @@ func TestGenerateDefaultCredentials_APIPathCannotReplaceProtected(t *testing.T) 
 		}
 	}
 }
+
+func TestUserClaimCountExcludesProtocolClaims(t *testing.T) {
+	claims := map[string]any{
+		"family_name": "Doe", "given_name": "Jane", "birthdate": "2000-01-01",
+		"iss": "x", "cnf": map[string]any{}, "iat": 1, "exp": 2, "vct": "y",
+		"status": map[string]any{}, "_sd_alg": "sha-256",
+	}
+	if got := userClaimCount(claims); got != 3 {
+		t.Fatalf("userClaimCount counted %d, want 3 (only the subject attributes)", got)
+	}
+	if got := userClaimCount(nil); got != 0 {
+		t.Fatalf("userClaimCount(nil) = %d, want 0", got)
+	}
+}
