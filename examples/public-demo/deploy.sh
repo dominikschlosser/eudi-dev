@@ -201,11 +201,14 @@ case "${COMMAND}" in
     ensure_preview_volume
     set_preview_tag "${target}"
     compose "--profile preview pull -q wallet-preview" >/dev/null
-    # Recreate Caddy (to pick up the preview site block) and the preview wallet,
-    # and leave the production wallet and stats running as they are.
-    compose "--profile preview up -d --build --quiet-pull caddy wallet-preview" >/dev/null
+    # Start the preview wallet, leaving production untouched.
+    compose "--profile preview up -d --quiet-pull wallet-preview" >/dev/null
+    # Caddy reads its Caddyfile from a bind mount, so a recreate would not pick
+    # up the new preview block (and would blip the main site). A graceful reload
+    # applies it with no downtime and provisions the preview certificate.
+    compose "exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile" >/dev/null
     sleep 3
-    compose "ps --format '{{.Name}} {{.Status}}'"
+    compose "--profile preview ps --format '{{.Name}} {{.Status}}'"
     version="$(preview_version)"
     [[ -n "${version}" ]] && echo "Preview now live: ${version}"
     echo "Try it${PREVIEW_URL:+ at ${PREVIEW_URL}}, then ./deploy.sh promote to move the main site to it."
