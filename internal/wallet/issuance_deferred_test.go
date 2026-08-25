@@ -263,6 +263,150 @@ func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
 	}
 }
 
+// TestProcessCredentialOffer_DeferredWithBatchAdvertised reproduces the Animo
+// playground: the issuer advertises batch_credential_issuance (so the wallet
+// sends several proofs) and then defers, answering the credential endpoint with
+// a transaction_id and no credentials. The deferral must still be recorded.
+func TestProcessCredentialOffer_DeferredWithBatchAdvertised(t *testing.T) {
+	w := generateTestWallet(t)
+	var serverURL string
+	credEndpointCalls := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":            serverURL,
+				"credential_endpoint":          serverURL + "/credential",
+				"deferred_credential_endpoint": serverURL + "/deferred",
+				"token_endpoint":               serverURL + "/token",
+				// Animo advertises this, which makes the wallet request a batch.
+				"batch_credential_issuance": map[string]any{"batch_size": 10},
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{
+						"format": "dc+sd-jwt", "vct": "urn:test:credential",
+						// The Animo config requires key attestations, which routes
+						// proof building through the attestation path.
+						"proof_types_supported": map[string]any{
+							"jwt": map[string]any{
+								"proof_signing_alg_values_supported": []any{"ES256"},
+								"key_attestations_required": map[string]any{
+									"key_storage":         []any{"iso_18045_high"},
+									"user_authentication": []any{"iso_18045_high"},
+								},
+							},
+						},
+					},
+				},
+			})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/token"):
+			json.NewEncoder(rw).Encode(map[string]any{
+				"access_token": "test-access-token", "token_type": "Bearer", "c_nonce": "test-c-nonce",
+			})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
+			credEndpointCalls++
+			rw.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(rw).Encode(map[string]any{
+				"transaction_id": "test-transaction",
+				"interval":       3600,
+				"c_nonce":        "test-c-nonce",
+			})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": map[string]any{
+				"pre-authorized_code": "test-pre-auth-code",
+			},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer: %v", err)
+	}
+	if !result.Pending {
+		t.Fatalf("result = %+v, want it recorded as a pending deferred issuance", result)
+	}
+	if got := len(w.DeferredIssuanceList()); got != 1 {
+		t.Fatalf("wallet holds %d pending issuances, want 1", got)
+	}
+	if credEndpointCalls != 1 {
+		t.Errorf("credential endpoint called %d times, want 1", credEndpointCalls)
+	}
+}
+
+// TestProcessCredentialOffer_FailureIsLogged covers the activity log naming why
+// issuance did not finish, rather than the flow stopping silently after the last
+// step that happened to succeed (the credential response).
+func TestProcessCredentialOffer_FailureIsLogged(t *testing.T) {
+	w := generateTestWallet(t)
+	var serverURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":   serverURL,
+				"credential_endpoint": serverURL + "/credential",
+				"token_endpoint":      serverURL + "/token",
+				"credential_configurations_supported": map[string]any{
+					"test-config": map[string]any{"format": "dc+sd-jwt", "vct": "urn:test:credential"},
+				},
+			})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/token"):
+			json.NewEncoder(rw).Encode(map[string]any{"access_token": "t", "token_type": "Bearer", "c_nonce": "n"})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/credential"):
+			// A response with neither a credential nor a transaction_id, so the
+			// flow cannot finish after the credential response.
+			json.NewEncoder(rw).Encode(map[string]any{"unexpected": "shape"})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+
+	offer := map[string]any{
+		"credential_issuer":            serverURL,
+		"credential_configuration_ids": []string{"test-config"},
+		"grants": map[string]any{
+			"urn:ietf:params:oauth:grant-type:pre-authorized_code": map[string]any{"pre-authorized_code": "c"},
+		},
+	}
+	offerJSON, _ := json.Marshal(offer)
+	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, err := w.ProcessCredentialOffer(offerURI); err == nil {
+		t.Fatal("expected the offer to fail")
+	}
+	found := false
+	for _, e := range w.GetLog() {
+		if !e.Success && strings.Contains(e.Detail, "did not finish") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a failed activity log entry naming that issuance did not finish")
+	}
+}
+
 // A credential can only be re-requested from an issuer that handed over a
 // refresh token, and the flow that obtained it is gone by the time it nears
 // expiry, so what that flow knew has to travel with the credential.

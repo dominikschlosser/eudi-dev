@@ -5,11 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-08-25
+
+### Fixed
+
+- **An issuance that cannot finish says so in the activity log.** After the credential response arrives the flow can still fail (an unusable credential, a deferred response the wallet cannot act on, an import error), and until now the activity log stopped at the last step that succeeded. Any error that ends the flow after the offer was received is now recorded, naming the issuer and the reason, so a failed issuance is visible rather than silent.
+
 ## [2.0.1] - 2026-08-25
 
 ### Fixed
 
-- **Collecting from a batch-capable issuer that issues a single credential works again.** An issuer that advertises `batch_credential_issuance` makes the wallet request a batch (several key proofs), but the issuer may hand back a single credential, which OpenID4VCI 1.0 allows ("unless the Issuer decides to issue fewer Credentials"). The wallet now imports that one credential instead of refusing it for not filling every proof key. This fixes issuance (immediate and deferred) from issuers such as the Animo playground.
+- **A batch-capable issuer that issues a single credential is accepted.** An issuer that advertises `batch_credential_issuance` makes the wallet request a batch (several key proofs), but the issuer may hand back a single credential, which OpenID4VCI 1.0 allows ("unless the Issuer decides to issue fewer Credentials"). The wallet now imports that one credential instead of refusing it for not filling every proof key.
 
 ## [2.0.0] - 2026-08-24
 
