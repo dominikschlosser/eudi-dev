@@ -440,6 +440,7 @@ header h1 {
     width: 100%;
     aspect-ratio: 2.4;
     border-radius: 12px 12px 0 0;
+    overflow: hidden;
   }
   /* The full-width hero has no room for the offset stack, so a batch reads as a
      plain card on a phone (the stack stays a desktop and consent cue). */
@@ -467,20 +468,29 @@ header h1 {
     border: 0;
     overflow: visible;
     transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d;
     /* Perspective is set in the resting transform too, so only the rotation
        animates. A perspective that appeared only in the open state would leave
        the 3D context unstable through the flip, so the front face (its name and
        logo mirrored) showed until the animation finished. */
     transform: perspective(1000px) rotateY(0deg);
+    -webkit-transform: perspective(1000px) rotateY(0deg);
     transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
-  .credential-card.desc-open { transform: perspective(1000px) rotateY(180deg); }
+  .credential-card.desc-open {
+    transform: perspective(1000px) rotateY(180deg);
+    -webkit-transform: perspective(1000px) rotateY(180deg);
+  }
+  /* The faces carry no overflow clip: iOS WebKit stops honoring
+     backface-visibility on an element that also has overflow other than
+     visible, so the hidden front face showed through the flip. The card art
+     clips itself to its border radius, and the description body scrolls on its
+     own, so the clip is not needed here. */
   .cred-front {
     position: relative;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--bg-surface);
-    overflow: hidden;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
   }
@@ -488,12 +498,12 @@ header h1 {
     position: absolute;
     inset: 0;
     transform: rotateY(180deg);
+    -webkit-transform: rotateY(180deg);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--bg-surface);
-    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
