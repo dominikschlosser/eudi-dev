@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -46,6 +47,14 @@ func (w *Wallet) ImportCredential(raw string) (*StoredCredential, error) {
 	return w.importCredential(raw, "", "")
 }
 
+// importPrimaryCredential imports the credential selectPrimaryCredential picked,
+// bound to the proof key it names (its own, whichever key that is). Recording
+// the key as the credential is imported keeps its key binding signable and, on a
+// per-request clone, forwards the key to the real wallet with the credential.
+func (w *Wallet) importPrimaryCredential(raw string, keys []*ecdsa.PrivateKey) (*StoredCredential, error) {
+	return w.importCredential(raw, "", primaryBindingKeyPEM(raw, keys))
+}
+
 // importBatchCopy imports one copy of a batch, tied to the batch group and
 // bound to its own key. The batch fields are set before the holder-binding note
 // runs, so a copy bound to its own key is not flagged as one the wallet cannot
@@ -55,14 +64,9 @@ func (w *Wallet) importBatchCopy(raw, group, bindingKeyPEM string) (*StoredCrede
 }
 
 func (w *Wallet) importCredential(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
-	cred, err := w.importDetectedFormat(strings.TrimSpace(raw))
+	cred, err := w.importDetectedFormat(strings.TrimSpace(raw), group, bindingKeyPEM)
 	if err != nil {
 		return nil, err
-	}
-	if group != "" || bindingKeyPEM != "" {
-		w.setBatchFields(cred.ID, group, bindingKeyPEM)
-		cred.BatchGroup = group
-		cred.BindingKeyPEM = bindingKeyPEM
 	}
 	w.adoptOwnStatusEntry(cred)
 	w.noteUnheldKeyBinding(cred)
@@ -116,11 +120,13 @@ func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
 }
 
 // importDetectedFormat stores a credential in whichever of the formats the
-// wallet keeps it turns out to be.
-func (w *Wallet) importDetectedFormat(raw string) (*StoredCredential, error) {
+// wallet keeps it turns out to be. The batch group and per-copy binding key are
+// carried in so they sit on the credential before it is appended, since that is
+// when a per-request clone forwards it to the wallet it was made from.
+func (w *Wallet) importDetectedFormat(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
 	// Try SD-JWT first (contains ~)
 	if strings.Contains(raw, "~") {
-		cred, err := w.importSDJWT(raw)
+		cred, err := w.importSDJWT(raw, group, bindingKeyPEM)
 		if err != nil {
 			return nil, err
 		}
@@ -131,7 +137,7 @@ func (w *Wallet) importDetectedFormat(raw string) (*StoredCredential, error) {
 	// Try mDoc (base64url or hex encoded CBOR)
 	detected := format.Detect(raw)
 	if detected == format.FormatMDOC {
-		cred, err := w.importMDoc(raw)
+		cred, err := w.importMDoc(raw, group, bindingKeyPEM)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +147,7 @@ func (w *Wallet) importDetectedFormat(raw string) (*StoredCredential, error) {
 
 	// Try as plain JWT VC (3-part JWT without ~)
 	if strings.Count(raw, ".") == 2 {
-		cred, err := w.importPlainJWT(raw)
+		cred, err := w.importPlainJWT(raw, group, bindingKeyPEM)
 		if err != nil {
 			return nil, err
 		}
@@ -191,18 +197,20 @@ func (w *Wallet) appendCredential(cred StoredCredential) *StoredCredential {
 	return &cred
 }
 
-func (w *Wallet) importSDJWT(raw string) (*StoredCredential, error) {
+func (w *Wallet) importSDJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
 	token, err := sdjwt.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing SD-JWT: %w", err)
 	}
 
 	cred := StoredCredential{
-		ID:          newCredentialID(),
-		Format:      "dc+sd-jwt",
-		Raw:         raw,
-		Claims:      token.ResolvedClaims,
-		Disclosures: token.Disclosures,
+		ID:            newCredentialID(),
+		Format:        "dc+sd-jwt",
+		Raw:           raw,
+		Claims:        token.ResolvedClaims,
+		Disclosures:   token.Disclosures,
+		BatchGroup:    group,
+		BindingKeyPEM: bindingKeyPEM,
 	}
 
 	if vct, ok := token.Payload["vct"].(string); ok {
@@ -214,17 +222,19 @@ func (w *Wallet) importSDJWT(raw string) (*StoredCredential, error) {
 	return stored, nil
 }
 
-func (w *Wallet) importPlainJWT(raw string) (*StoredCredential, error) {
+func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
 	_, payload, _, err := format.ParseJWTParts(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing JWT: %w", err)
 	}
 
 	cred := StoredCredential{
-		ID:     newCredentialID(),
-		Format: "jwt_vc_json",
-		Raw:    raw,
-		Claims: payload,
+		ID:            newCredentialID(),
+		Format:        "jwt_vc_json",
+		Raw:           raw,
+		Claims:        payload,
+		BatchGroup:    group,
+		BindingKeyPEM: bindingKeyPEM,
 	}
 
 	if vct, ok := payload["vct"].(string); ok {
@@ -236,7 +246,7 @@ func (w *Wallet) importPlainJWT(raw string) (*StoredCredential, error) {
 	return stored, nil
 }
 
-func (w *Wallet) importMDoc(raw string) (*StoredCredential, error) {
+func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
 	doc, err := mdoc.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing mDoc: %w", err)
@@ -250,12 +260,14 @@ func (w *Wallet) importMDoc(raw string) (*StoredCredential, error) {
 	}
 
 	cred := StoredCredential{
-		ID:         newCredentialID(),
-		Format:     "mso_mdoc",
-		Raw:        raw,
-		Claims:     claims,
-		DocType:    doc.DocType,
-		NameSpaces: doc.NameSpaces,
+		ID:            newCredentialID(),
+		Format:        "mso_mdoc",
+		Raw:           raw,
+		Claims:        claims,
+		DocType:       doc.DocType,
+		NameSpaces:    doc.NameSpaces,
+		BatchGroup:    group,
+		BindingKeyPEM: bindingKeyPEM,
 	}
 
 	stored := w.appendCredential(cred)

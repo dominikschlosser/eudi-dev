@@ -171,10 +171,8 @@ func TestSelectPrimaryCredentialSingle(t *testing.T) {
 
 // An issuer that advertises batch_credential_issuance makes the wallet send
 // several proofs, but OpenID4VCI 1.0 lets it issue fewer credentials. A single
-// credential is imported even when it is bound to a proof key other than the
-// holder key, rather than being refused (its card then reads as bound to another
-// key). The credential is bound to an ephemeral proof key here, which the old
-// matching path refused, so this guards the leniency.
+// credential is imported whichever proof key it names, here an ephemeral one
+// (its card then reads as bound to another key).
 func TestSelectPrimaryCredentialSingleNotHolderBound(t *testing.T) {
 	holder := testKey(t)
 	ephemeral := testKey(t)
@@ -198,7 +196,7 @@ func TestSingleCredentialBoundToEphemeralKeyIsPresentable(t *testing.T) {
 	ephemeral := testKey(t)
 	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), ephemeral}
 	cred := fakeSDJWT(t, &ephemeral.PublicKey)
-	imported, err := w.ImportCredential(cred)
+	imported, err := w.importPrimaryCredential(cred, keys)
 	if err != nil {
 		t.Fatalf("importing: %v", err)
 	}
@@ -311,7 +309,7 @@ func TestPartialBatchNoneHolderBoundIsStoredAndPresentable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selectPrimaryCredential: %v", err)
 	}
-	imported, err := w.ImportCredential(primaryRaw)
+	imported, err := w.importPrimaryCredential(primaryRaw, keys)
 	if err != nil {
 		t.Fatalf("importing the primary: %v", err)
 	}
@@ -337,5 +335,19 @@ func TestPartialBatchNoneHolderBoundIsStoredAndPresentable(t *testing.T) {
 		if !credentialBindsToKey(c.Raw, &signer.PublicKey) {
 			t.Fatal("a batch copy must sign its key binding with the key its cnf names")
 		}
+	}
+}
+
+// Two credentials bound to the same proof key are a malformed batch: the wallet
+// rejects the response rather than storing one credential twice.
+func TestSelectPrimaryCredentialRejectsDuplicateKey(t *testing.T) {
+	holder := testKey(t)
+	eph := testKey(t)
+	resp := map[string]any{"credentials": []any{
+		map[string]any{"credential": fakeSDJWT(t, &eph.PublicKey)},
+		map[string]any{"credential": fakeSDJWT(t, &eph.PublicKey)},
+	}}
+	if _, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, eph}); err == nil {
+		t.Fatal("expected an error for two credentials bound to the same proof key")
 	}
 }

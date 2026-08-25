@@ -514,7 +514,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	}
 
 	// Import the received credential
-	imported, err := w.ImportCredential(credential)
+	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
 	}

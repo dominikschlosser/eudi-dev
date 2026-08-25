@@ -410,7 +410,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
-	imported, err := w.ImportCredential(credential)
+	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
 	}

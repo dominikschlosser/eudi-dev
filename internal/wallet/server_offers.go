@@ -149,9 +149,9 @@ func (s *Server) applyOfferOutcome(uri, owner string, result *IssuanceResult, er
 
 	if result.Pending {
 		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
-		// The poller reads the same wallet the offer recorded the deferral on,
-		// and a per-request reload no longer clears it, so persisting is all
-		// that is left before the poller collects it.
+		// The poller reads the same wallet the offer recorded the deferral on, so
+		// persisting it is all that stands between here and the poller collecting
+		// the credential.
 		s.persistWallet()
 		return
 	}

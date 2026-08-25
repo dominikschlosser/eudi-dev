@@ -302,3 +302,40 @@ func TestPresentingAHeldCredentialIsNotReported(t *testing.T) {
 		t.Fatalf("a credential bound to the wallet's own key was reported: %s", entry.Detail)
 	}
 }
+
+// The primary copy of a batch the issuer bound to a proof key other than the
+// holder key is imported with that key, so it is presentable and importing it
+// stays quiet: a warning here would be a false alarm the wallet contradicts the
+// moment it signs the key binding with the recorded key.
+func TestImportStaysQuietForABatchPrimaryBoundToAProofKey(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  func(t *testing.T, w *Wallet, holder *ecdsa.PublicKey) string
+	}{
+		{"sd-jwt", sdJWTBoundTo},
+		{"mdoc", mdocBoundTo},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			ephemeral, err := mock.GenerateKey()
+			if err != nil {
+				t.Fatalf("generating an ephemeral proof key: %v", err)
+			}
+			keys := []*ecdsa.PrivateKey{w.HolderKey, ephemeral}
+			imported, err := w.importPrimaryCredential(tc.raw(t, w, &ephemeral.PublicKey), keys)
+			if err != nil {
+				t.Fatalf("importing: %v", err)
+			}
+			if entry := findLogEntry(w.GetLog(), keyBindingEvent); entry != nil {
+				t.Fatalf("the batch primary was falsely reported as unpresentable: %s", entry.Detail)
+			}
+			signer, err := w.batchSigningKey(*imported)
+			if err != nil {
+				t.Fatalf("resolving the signing key: %v", err)
+			}
+			if !signer.PublicKey.Equal(&ephemeral.PublicKey) {
+				t.Fatal("the primary must sign its key binding with the proof key it is bound to")
+			}
+		})
+	}
+}

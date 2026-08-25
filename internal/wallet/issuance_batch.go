@@ -115,7 +115,6 @@ func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) 
 		return creds[0], nil
 	}
 
-	primary := ""
 	holderCredential := ""
 	matched := make([]int, len(keys))
 	for _, raw := range creds {
@@ -124,9 +123,6 @@ func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) 
 			return "", fmt.Errorf("credential response contains a credential that is not bound to any proof key")
 		}
 		matched[keyIndex]++
-		if primary == "" {
-			primary = raw
-		}
 		if keyIndex == 0 {
 			holderCredential = raw
 		}
@@ -136,11 +132,11 @@ func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) 
 			return "", fmt.Errorf("credential response contains %d credentials bound to the same proof key (index %d)", count, i)
 		}
 	}
-	if holderCredential != "" {
-		primary = holderCredential
-	}
 	log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys; importing one as the primary copy", len(creds))
-	return primary, nil
+	if holderCredential != "" {
+		return holderCredential, nil
+	}
+	return creds[0], nil
 }
 
 // proofKeyIndex returns the index of the proof key a credential is bound to, or
@@ -154,52 +150,44 @@ func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
 	return -1
 }
 
-// storeBatchSiblings ties the copies of a batch to the copy already imported as
-// primary. A batch credential response holds one credential per proof key
-// (§8.3); selectPrimaryCredential imported one of them, and this stores the
-// rest, each bound to the key it was issued against, under a shared batch group.
-// The wallet then presents an unused copy each time so a Relying Party cannot
-// link two presentations of the same credential (EUDI ARF Annex 2 Topic 10
-// method C, ISSU_51-54).
+// primaryBindingKeyPEM returns the PEM of the proof key a credential is bound to
+// when it is not the holder key (index 0), and "" otherwise. The holder key
+// needs no per-copy record, since batchSigningKey falls back to it.
+func primaryBindingKeyPEM(raw string, keys []*ecdsa.PrivateKey) string {
+	if idx := proofKeyIndex(raw, keys); idx > 0 {
+		if pem, err := encodeECPrivateKeyPEM(keys[idx]); err == nil {
+			return pem
+		}
+	}
+	return ""
+}
+
+// storeBatchSiblings stores the other copies of a batch alongside the copy
+// importPrimaryCredential already imported as primary. A batch credential
+// response holds one credential per proof key (§8.3); this stores the rest, each
+// bound to the key it was issued against, under a batch group shared with the
+// primary. The wallet then presents an unused copy each time so a Relying Party
+// cannot link two presentations of the same credential (EUDI ARF Annex 2 Topic
+// 10 method C, ISSU_51-54).
 //
-// The binding key is recorded against every copy the issuer bound to a key
-// other than the holder key (an issuer may bind none of a partial batch to the
-// holder key), so each copy signs its key binding with the key its cnf names.
-// The holder copy needs no recorded key, since batchSigningKey falls back to the
-// holder key. A single-credential response stores no siblings but still records
-// its key when it is not the holder key. A batch collected on a presentation
-// clone keeps its primary copy alone: its credentialSink forwards a copy to the
-// real wallet at import time, before the per-copy key could be set, so the
-// copies would land there unpresentable.
+// The primary is already bound to its own key, so a single-credential response
+// leaves it as it is. A batch collected on a presentation clone keeps its
+// primary copy alone: its credentialSink forwarded that copy (with its key) to
+// the real wallet at import time, but the siblings would land there under a
+// group the primary copy does not carry back, so they are left off.
 func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) {
 	creds := credentialStringsFromResponse(credResp)
-	if primary == nil {
-		return
-	}
-	primaryIdx := proofKeyIndex(primary.Raw, keys)
-	primaryKeyPEM := func() string {
-		if primaryIdx > 0 {
-			if pem, err := encodeECPrivateKeyPEM(keys[primaryIdx]); err == nil {
-				return pem
-			}
-		}
-		return ""
-	}()
-	if len(creds) <= 1 || len(keys) <= 1 {
-		if primaryKeyPEM != "" {
-			w.setBatchFields(primary.ID, "", primaryKeyPEM)
-			primary.BindingKeyPEM = primaryKeyPEM
-		}
+	if primary == nil || len(creds) <= 1 || len(keys) <= 1 {
 		return
 	}
 	if w.credentialSink != nil {
 		log.Printf("[VCI] Batch issued during a presentation is kept as its primary copy only")
 		return
 	}
+	primaryIdx := proofKeyIndex(primary.Raw, keys)
 	group := newCredentialID()
-	w.setBatchFields(primary.ID, group, primaryKeyPEM)
+	w.setBatchFields(primary.ID, group, primary.BindingKeyPEM)
 	primary.BatchGroup = group
-	primary.BindingKeyPEM = primaryKeyPEM
 
 	stored := 1
 	for _, raw := range creds {
