@@ -264,8 +264,16 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))
 	}
-	s.wallet.rememberDisplay(imported, pending.Display)
-	s.wallet.storeBatchSiblings(imported, credResp, proofKeys, pending.Display)
+	// The display was resolved at offer time and carried on the record. If it
+	// came back empty then, resolve it again from the metadata fetched for this
+	// collection, so a credential whose display failed to resolve earlier is not
+	// left blank for good.
+	display := pending.Display
+	if display == nil && metadata != nil {
+		display = s.wallet.resolveCredentialDisplay(metadata, pending.ConfigurationID)
+	}
+	s.wallet.rememberDisplay(imported, display)
+	s.wallet.storeBatchSiblings(imported, credResp, proofKeys, display)
 
 	s.wallet.RemoveDeferredIssuance(pending.ID)
 	details := credentialImportLogDetails(imported, credential)

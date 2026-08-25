@@ -570,3 +570,79 @@ func TestReloadKeepsUnpersistedDeferral(t *testing.T) {
 		t.Fatalf("a per-request reload wiped the just-recorded deferral: %+v", deferrals)
 	}
 }
+
+// A deferred credential whose display did not resolve at offer time (the record
+// carries none) is not left blank: the poller resolves it again from the
+// metadata it fetches for the collection.
+func TestDeferredCollectionRecoversAMissingDisplay(t *testing.T) {
+	w := generateTestWallet(t)
+	credRaw := generateTestCredential(t, w)
+
+	var serverURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":            serverURL,
+				"credential_endpoint":          serverURL + "/credential",
+				"deferred_credential_endpoint": serverURL + "/deferred",
+				"credential_configurations_supported": map[string]any{
+					"cfg": map[string]any{
+						"format": "dc+sd-jwt",
+						"credential_metadata": map[string]any{
+							"display": []any{map[string]any{
+								"name": "Recovered Card", "locale": "en-US",
+								"background_color": "#123456", "text_color": "#ffffff",
+							}},
+						},
+					},
+				},
+			})
+		case strings.HasSuffix(r.URL.Path, "/deferred"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credentials": []any{map[string]any{"credential": credRaw}},
+			})
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, func() {})
+	pending, err := newDeferredIssuance(deferredContext{
+		issuer:           srv.URL,
+		configID:         "cfg",
+		format:           "dc+sd-jwt",
+		deferredEndpoint: srv.URL + "/deferred",
+		accessToken:      "test-access-token",
+		authScheme:       "Bearer",
+		proofKeys:        []*ecdsa.PrivateKey{w.HolderKey},
+	}, "tx", time.Second)
+	if err != nil {
+		t.Fatalf("newDeferredIssuance: %v", err)
+	}
+	if pending.Display != nil {
+		t.Fatal("precondition: the deferred record should carry no display")
+	}
+	w.AddDeferredIssuance(pending)
+
+	if attempt := server.attemptDeferredCollection(*pending); !attempt.Collected {
+		t.Fatalf("the deferred credential was not collected: %+v", attempt)
+	}
+
+	recovered := false
+	for _, c := range w.GetCredentials() {
+		if c.Display != nil && c.Display.Name == "Recovered Card" {
+			recovered = true
+		}
+	}
+	if !recovered {
+		t.Fatal("the display was not recovered from the collection-time metadata")
+	}
+}
