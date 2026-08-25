@@ -142,6 +142,9 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/credentials", s.withFreshStore(s.handleImportCredential))
 	s.mux.HandleFunc("DELETE /api/credentials", s.withFreshStore(s.handleDeleteAllCredentials))
 	s.mux.HandleFunc("GET /api/credentials/{id}", s.withFreshStore(s.handleGetCredential))
+	// The display images are static per credential and cached hard, so this
+	// endpoint skips the per-request store reload the other routes take.
+	s.mux.HandleFunc("GET /api/credentials/{id}/display/{kind}", s.handleCredentialDisplayImage)
 	s.mux.HandleFunc("DELETE /api/credentials/{id}", s.withFreshStore(s.handleDeleteCredential))
 
 	// API: credential issuance mirroring `issue ... --wallet` and `wallet generate-pid`

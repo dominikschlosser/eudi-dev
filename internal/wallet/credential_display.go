@@ -139,6 +139,68 @@ const maxDisplayImagePixels = 32 << 20
 // colors. Only a value of this shape reaches a style sheet.
 var cssColorValue = regexp.MustCompile(`^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30}|(?:rgb|rgba|hsl|hsla)\([0-9,.%\s]{1,40}\))$`)
 
+// displayForListing returns a credential's display for an API response with its
+// image fields as reference URLs (/api/credentials/{id}/display/{logo|background})
+// instead of inline data URIs, so a listing does not ship every card's art as
+// base64. A card renders from a small JSON, and the browser fetches and caches
+// each image on its own.
+func displayForListing(c StoredCredential) map[string]any {
+	d := c.Display
+	if d == nil {
+		return nil
+	}
+	m := map[string]any{}
+	addStringDetail(m, "name", d.Name)
+	addStringDetail(m, "description", d.Description)
+	addStringDetail(m, "locale", d.Locale)
+	addStringDetail(m, "background_color", d.BackgroundColor)
+	addStringDetail(m, "text_color", d.TextColor)
+	addStringDetail(m, "logo_alt_text", d.LogoAltText)
+	if d.LogoURI != "" {
+		m["logo_uri"] = displayImageRef(c.ID, "logo", d.LogoURI)
+	}
+	if d.BackgroundURI != "" {
+		m["background_uri"] = displayImageRef(c.ID, "background", d.BackgroundURI)
+	}
+	return m
+}
+
+// displayImageRef references a stored data-URI image by an endpoint URL, and
+// passes an external URL through unchanged.
+func displayImageRef(id, kind, uri string) string {
+	if strings.HasPrefix(uri, "data:") {
+		return "/api/credentials/" + id + "/display/" + kind
+	}
+	return uri
+}
+
+// dataURIImage decodes a base64 data URI into its content type and bytes.
+func dataURIImage(uri string) (contentType string, data []byte, ok bool) {
+	if !strings.HasPrefix(uri, "data:") {
+		return "", nil, false
+	}
+	rest := uri[len("data:"):]
+	comma := strings.IndexByte(rest, ',')
+	if comma < 0 {
+		return "", nil, false
+	}
+	meta, payload := rest[:comma], rest[comma+1:]
+	if !strings.Contains(meta, "base64") {
+		return "", nil, false
+	}
+	contentType = "application/octet-stream"
+	if head, _, found := strings.Cut(meta, ";"); found && head != "" {
+		contentType = head
+	} else if meta != "" && !strings.Contains(meta, "=") {
+		contentType = strings.TrimSuffix(meta, ";base64")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	if err != nil {
+		return "", nil, false
+	}
+	return contentType, decoded, true
+}
+
 // resolveCredentialDisplay reads the display §12.2.4 declares for the issued
 // configuration, with the images cached. The first entry is the one used,
 // the same rule the consent dialog follows. Everything here is cosmetic, so

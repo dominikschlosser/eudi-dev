@@ -433,9 +433,36 @@ func TestProcessCredentialOffer_CredentialDisplay(t *testing.T) {
 			"text_color":       "#ffffff",
 		}})
 		summary := CredentialSummary(*imported)
-		d, ok := summary["display"].(*CredentialDisplay)
-		if !ok || d.Name != "Test Badge" {
+		d, ok := summary["display"].(map[string]any)
+		if !ok || d["name"] != "Test Badge" {
 			t.Errorf("summary display = %#v", summary["display"])
+		}
+	})
+
+	t.Run("the summary references display images by URL, not inline data", func(t *testing.T) {
+		c := StoredCredential{ID: "abc123", Display: &CredentialDisplay{
+			Name:            "Art Badge",
+			BackgroundColor: "#0f766e",
+			LogoURI:         "data:image/png;base64," + base64.StdEncoding.EncodeToString(tinyPNG),
+			BackgroundURI:   "data:image/jpeg;base64,/9j/4AAQ",
+		}}
+		d := CredentialSummary(c)["display"].(map[string]any)
+		if d["logo_uri"] != "/api/credentials/abc123/display/logo" {
+			t.Fatalf("logo_uri = %v, want a reference URL", d["logo_uri"])
+		}
+		if d["background_uri"] != "/api/credentials/abc123/display/background" {
+			t.Fatalf("background_uri = %v, want a reference URL", d["background_uri"])
+		}
+		if d["background_color"] != "#0f766e" || d["name"] != "Art Badge" {
+			t.Fatalf("non-image fields were dropped: %#v", d)
+		}
+	})
+
+	t.Run("an external image URL is passed through unchanged", func(t *testing.T) {
+		c := StoredCredential{ID: "x", Display: &CredentialDisplay{LogoURI: "https://issuer.example/logo.svg"}}
+		d := CredentialSummary(c)["display"].(map[string]any)
+		if d["logo_uri"] != "https://issuer.example/logo.svg" {
+			t.Fatalf("external URL was rewritten: %v", d["logo_uri"])
 		}
 	})
 

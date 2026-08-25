@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -127,6 +128,38 @@ func TestIssueCredentialAPIDisplay(t *testing.T) {
 	}
 	if !strings.HasPrefix(d.LogoURI, "data:image/") {
 		t.Errorf("logo not cached as a data URI: %.30q", d.LogoURI)
+	}
+
+	// The listing references the image by URL, not inline, so the payload stays
+	// small.
+	list := serverRequest(t, srv, http.MethodGet, "/api/credentials", "")
+	if strings.Contains(list.Body.String(), "data:image/") {
+		t.Error("the credential listing still inlines a display image as a data URI")
+	}
+
+	// The referenced endpoint serves the image bytes, cached hard with an ETag.
+	img := serverRequest(t, srv, http.MethodGet, "/api/credentials/"+id+"/display/logo", "")
+	if img.Code != http.StatusOK {
+		t.Fatalf("display image GET: expected 200, got %d", img.Code)
+	}
+	if ct := img.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", ct)
+	}
+	etag := img.Header().Get("ETag")
+	if etag == "" || !strings.Contains(img.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("expected an ETag and an immutable Cache-Control, got etag=%q cache=%q", etag, img.Header().Get("Cache-Control"))
+	}
+	if img.Body.Len() == 0 {
+		t.Error("the display image response is empty")
+	}
+
+	// A conditional request with the ETag is answered 304.
+	req := httptest.NewRequest(http.MethodGet, "/api/credentials/"+id+"/display/logo", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("conditional GET: expected 304, got %d", rec.Code)
 	}
 }
 

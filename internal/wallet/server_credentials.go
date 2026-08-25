@@ -18,6 +18,8 @@
 package wallet
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +27,44 @@ import (
 	"strconv"
 	"strings"
 )
+
+// handleCredentialDisplayImage serves a stored credential's display logo or
+// background image, referenced by the credential listing instead of inlined as
+// a data URI. The bytes are fixed for the credential, so the response is cached
+// hard (immutable) with a content ETag.
+func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Request) {
+	cred, ok := s.wallet.GetCredential(r.PathValue("id"))
+	if !ok || cred.Display == nil {
+		http.NotFound(w, r)
+		return
+	}
+	var uri string
+	switch r.PathValue("kind") {
+	case "logo":
+		uri = cred.Display.LogoURI
+	case "background":
+		uri = cred.Display.BackgroundURI
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	contentType, data, ok := dataURIImage(uri)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	_, _ = w.Write(data)
+}
 
 // handleListCredentials serves the stored credentials, optionally windowed
 // with ?limit= and ?offset=. The response stays a plain array so existing

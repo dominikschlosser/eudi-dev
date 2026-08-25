@@ -1212,8 +1212,8 @@ func CredentialSummary(c StoredCredential) map[string]any {
 	if c.BatchGroup != "" {
 		summary["batch"] = true
 	}
-	if c.Display != nil {
-		summary["display"] = c.Display
+	if disp := displayForListing(c); disp != nil {
+		summary["display"] = disp
 	}
 	// Both backends build their listings from this, so a caller reading the
 	// expiry reads the same value whichever one answered.
