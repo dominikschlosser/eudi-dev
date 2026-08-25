@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -39,13 +40,45 @@ func extractJWKThumbprint(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[st
 // per OID4VP 1.0. No fallback to other locations. The wallet enforces strict
 // spec compliance so verifiers can detect misconfigurations.
 func findEncryptionJWK(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) map[string]any {
+	return firstJWK(encryptionJWKS(reqObj, clientMetadata))
+}
+
+// encryptionJWKS returns the verifier's jwks value, preferring the request
+// object's client_metadata when it carries one.
+func encryptionJWKS(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) any {
 	if reqObj != nil && reqObj.Payload != nil {
-		clientMeta, ok := reqObj.Payload["client_metadata"].(map[string]any)
-		if ok {
-			return firstJWK(clientMeta["jwks"])
+		if clientMeta, ok := reqObj.Payload["client_metadata"].(map[string]any); ok {
+			return clientMeta["jwks"]
 		}
 	}
-	return firstJWK(clientMetadata["jwks"])
+	if clientMetadata != nil {
+		return clientMetadata["jwks"]
+	}
+	return nil
+}
+
+// firstSigningOnlyEncryptionJWK returns the first key marked "use":"sig" whose
+// material the wallet could still encrypt to. It is the debug-mode fallback when
+// the verifier published no encryption-marked key at all.
+func firstSigningOnlyEncryptionJWK(jwksVal any) map[string]any {
+	jwks, ok := jwksVal.(map[string]any)
+	if !ok {
+		return nil
+	}
+	keysSlice, ok := jwks["keys"].([]any)
+	if !ok {
+		return nil
+	}
+	for _, entry := range keysSlice {
+		jwk, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if use, _ := jwk["use"].(string); use == "sig" && encryptableKeyMaterial(jwk) {
+			return jwk
+		}
+	}
+	return nil
 }
 
 // firstJWK extracts the first usable encryption key from a JWKS value
@@ -62,33 +95,52 @@ func firstJWK(jwksVal any) map[string]any {
 	if !ok || len(keysSlice) == 0 {
 		return nil
 	}
+	// Prefer an EC key: ECDH-ES on P-256 is the OID4VP baseline and the only
+	// option HAIP allows, so it is chosen over an RSA key when the verifier
+	// offers both. A usable RSA-OAEP key is the fallback when it is all there is.
+	var fallback map[string]any
 	for _, entry := range keysSlice {
 		jwk, ok := entry.(map[string]any)
-		if !ok {
+		if !ok || !usableEncryptionJWK(jwk) {
 			continue
 		}
-		if usableEncryptionJWK(jwk) {
+		if kty, _ := jwk["kty"].(string); kty == "EC" {
 			return jwk
 		}
+		if fallback == nil {
+			fallback = jwk
+		}
 	}
-	return nil
+	return fallback
 }
 
 // usableEncryptionJWK reports whether the wallet can encrypt to the given JWK:
-// an EC key on P-256 with both coordinates present, not marked signing-only.
+// an EC key on P-256 (ECDH-ES) or an RSA key (RSA-OAEP), not marked signing-only.
 func usableEncryptionJWK(jwk map[string]any) bool {
-	if kty, _ := jwk["kty"].(string); kty != "EC" {
-		return false
-	}
-	if crv, ok := jwk["crv"].(string); ok && crv != "P-256" {
-		return false
-	}
 	if use, ok := jwk["use"].(string); ok && use != "enc" {
 		return false
 	}
-	x, _ := jwk["x"].(string)
-	y, _ := jwk["y"].(string)
-	return x != "" && y != ""
+	return encryptableKeyMaterial(jwk)
+}
+
+// encryptableKeyMaterial reports whether a JWK holds a key the wallet can
+// encrypt to (an EC key on P-256, or an RSA key), ignoring its declared use.
+func encryptableKeyMaterial(jwk map[string]any) bool {
+	switch kty, _ := jwk["kty"].(string); kty {
+	case "EC":
+		if crv, ok := jwk["crv"].(string); ok && crv != "P-256" {
+			return false
+		}
+		x, _ := jwk["x"].(string)
+		y, _ := jwk["y"].(string)
+		return x != "" && y != ""
+	case "RSA":
+		n, _ := jwk["n"].(string)
+		e, _ := jwk["e"].(string)
+		return n != "" && e != ""
+	default:
+		return false
+	}
 }
 
 // computeJWKThumbprint computes the RFC 7638 JWK Thumbprint using SHA-256.
@@ -129,41 +181,79 @@ func computeJWKThumbprint(jwk map[string]any) []byte {
 }
 
 // encryptionKeyInfo holds the extracted encryption key parameters from a JWK.
+// Exactly one of Key (ECDH-ES) or RSAKey (RSA-OAEP) is set.
 type encryptionKeyInfo struct {
-	Key *ecdsa.PublicKey
-	Kid string
-	Alg string // JWE algorithm (e.g. "ECDH-ES") — MUST be present per OID4VP 1.0
+	Key    *ecdsa.PublicKey
+	RSAKey *rsa.PublicKey
+	Kid    string
+	Alg    string // JWE algorithm (e.g. "ECDH-ES" or "RSA-OAEP") — MUST be present per OID4VP 1.0
 	// Finding records a specification violation the debug path read past.
 	// Strict mode never produces one: it refuses the document instead.
 	Finding string
 }
 
-// extractEncryptionKey extracts the EC public key, kid, and alg from
-// client_metadata.jwks per OID4VP 1.0.
+// extractEncryptionKey reads the verifier's public key, kid, and alg from
+// client_metadata.jwks per OID4VP 1.0. An EC key is used with ECDH-ES, an RSA
+// key with RSA-OAEP. ECDH-ES on P-256 is the OID4VP baseline (and the only key
+// HAIP allows), so findEncryptionJWK prefers it when the verifier offers both.
 func extractEncryptionKey(mode ValidationMode, reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) (*encryptionKeyInfo, error) {
 	jwk := findEncryptionJWK(reqObj, clientMetadata)
+	selectionFinding := ""
+	if jwk == nil && mode == ValidationModeDebug {
+		// The verifier published no encryption-marked key. Debug answers where it
+		// can, so a signing-marked key of a usable type is encrypted to anyway,
+		// with a finding: a direct_post.jwt response needs an encryption key here.
+		if cand := firstSigningOnlyEncryptionJWK(encryptionJWKS(reqObj, clientMetadata)); cand != nil {
+			jwk = cand
+			selectionFinding = `verifier's key in client_metadata.jwks is marked "use":"sig" (signing only); OID4VP 1.0 needs an encryption key for a direct_post.jwt response, so it was used for encryption`
+		}
+	}
 	if jwk == nil {
 		return nil, fmt.Errorf("no encryption JWK found in client_metadata.jwks")
 	}
 
-	x, _ := jwk["x"].(string)
-	y, _ := jwk["y"].(string)
 	kid, _ := jwk["kid"].(string)
 	alg, _ := jwk["alg"].(string)
-
-	if x == "" || y == "" {
-		return nil, fmt.Errorf("missing x or y in JWK")
-	}
 	if alg == "" {
 		return nil, fmt.Errorf("JWK missing required 'alg' parameter (OID4VP 1.0 requires alg in each JWK)")
 	}
 
-	pubKey, finding, err := ecdsaPublicKeyFromJWK(mode, x, y)
-	if err != nil {
-		return nil, fmt.Errorf("constructing EC key: %w", err)
+	switch kty, _ := jwk["kty"].(string); kty {
+	case "RSA":
+		rsaKey, err := rsaPublicKeyFromJWK(jwk)
+		if err != nil {
+			return nil, fmt.Errorf("constructing RSA key: %w", err)
+		}
+		return &encryptionKeyInfo{RSAKey: rsaKey, Kid: kid, Alg: alg, Finding: selectionFinding}, nil
+	case "EC", "":
+		x, _ := jwk["x"].(string)
+		y, _ := jwk["y"].(string)
+		if x == "" || y == "" {
+			return nil, fmt.Errorf("missing x or y in JWK")
+		}
+		pubKey, finding, err := ecdsaPublicKeyFromJWK(mode, x, y)
+		if err != nil {
+			return nil, fmt.Errorf("constructing EC key: %w", err)
+		}
+		return &encryptionKeyInfo{Key: pubKey, Kid: kid, Alg: alg, Finding: joinFindings(selectionFinding, finding)}, nil
+	default:
+		return nil, fmt.Errorf("unsupported encryption key type %q in client_metadata.jwks", kty)
 	}
+}
 
-	return &encryptionKeyInfo{Key: pubKey, Kid: kid, Alg: alg, Finding: finding}, nil
+// joinFindings combines the non-empty findings into one line.
+func joinFindings(findings ...string) string {
+	out := ""
+	for _, f := range findings {
+		if f == "" {
+			continue
+		}
+		if out != "" {
+			out += "; "
+		}
+		out += f
+	}
+	return out
 }
 
 // HasEncryptionKey checks if the request object contains a valid encryption JWK.
@@ -203,6 +293,12 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 	// Determine enc algorithm from client_metadata
 	// OID4VP 1.0: encrypted_response_enc_values_supported (array)
 	enc := detectEncAlgorithm(params.RequestObject, params.ClientMetadata, "A128GCM")
+
+	// An RSA verifier key is wrapped with RSA-OAEP, which has no key agreement
+	// and so no ephemeral key, apu or apv.
+	if keyInfo.RSAKey != nil {
+		return EncryptJWERSA(payloadJSON, keyInfo.RSAKey, keyInfo.Kid, keyInfo.Alg, enc)
+	}
 
 	// For ISO mode with mdoc_generated_nonce, set apu and apv per ISO 18013-7 Annex B.
 	var apu, apv []byte

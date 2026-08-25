@@ -115,9 +115,29 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 
 	if !interactive {
 		violations = append(violations, haipClientMetadataViolations(params.ClientMetadata)...)
+		violations = append(violations, haipEncryptionKeyViolations(params.RequestObject, params.ClientMetadata)...)
 	}
 
 	return violations
+}
+
+// haipEncryptionKeyViolations checks §5's requirement that the response is
+// encrypted with ECDH-ES to the Verifier's key on the P-256 curve. RSA-OAEP is
+// an OID4VP option but not a HAIP one. findEncryptionJWK returns the key the
+// response path will actually use (EC is preferred over RSA), so a non-EC result
+// is exactly the case where the wallet would fall off the profile to answer.
+func haipEncryptionKeyViolations(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) []string {
+	jwk := findEncryptionJWK(reqObj, clientMetadata)
+	if jwk == nil {
+		return nil
+	}
+	if kty, _ := jwk["kty"].(string); kty != "" && kty != "EC" {
+		return []string{fmt.Sprintf("HAIP: response encryption key MUST be an EC key on P-256 (ECDH-ES), got kty %q", kty)}
+	}
+	if crv, ok := jwk["crv"].(string); ok && crv != "P-256" {
+		return []string{fmt.Sprintf("HAIP: response encryption key MUST be on the P-256 curve, got %q", crv)}
+	}
+	return nil
 }
 
 // isDCAPIResponseMode reports whether a response mode belongs to the Digital

@@ -21,10 +21,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1" //nolint:gosec // RSA-OAEP (JWA "RSA-OAEP", RFC 7518 §4.2) uses SHA-1 by definition; not a signature hash
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"hash"
+	"math/big"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/jwe"
@@ -120,6 +124,92 @@ func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 		format.EncodeBase64URL(ciphertext) + "." +
 		format.EncodeBase64URL(tag)
 	return jweStr, derivedKey, nil
+}
+
+// EncryptJWERSA encrypts payload as a compact JWE using RSA-OAEP key wrapping
+// with AES-GCM or AES-CBC-HS content encryption, to the verifier's RSA public
+// key. A random content encryption key is wrapped with RSA-OAEP (RFC 7518 §4.2,
+// SHA-1) or RSA-OAEP-256 (§4.3, SHA-256). It returns the compact serialization
+// and the content encryption key. RSA-OAEP is an OID4VP option; HAIP requires
+// ECDH-ES instead (see the HAIP checks).
+func EncryptJWERSA(payload []byte, recipientKey *rsa.PublicKey, kid, alg, enc string) (string, []byte, error) {
+	keyBitLen, err := jwe.EncKeyBitLen(enc)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var oaepHash hash.Hash
+	switch alg {
+	case "RSA-OAEP":
+		oaepHash = sha1.New() //nolint:gosec // RSA-OAEP is defined with SHA-1 (RFC 7518 §4.2)
+	case "RSA-OAEP-256":
+		oaepHash = sha256.New()
+	default:
+		return "", nil, fmt.Errorf("unsupported RSA key management alg: %s", alg)
+	}
+
+	cek := make([]byte, keyBitLen/8)
+	if _, err := rand.Read(cek); err != nil {
+		return "", nil, fmt.Errorf("generating content encryption key: %w", err)
+	}
+	encryptedKey, err := rsa.EncryptOAEP(oaepHash, rand.Reader, recipientKey, cek, nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("RSA-OAEP wrapping the content encryption key: %w", err)
+	}
+
+	header := map[string]any{"alg": alg, "enc": enc, "kid": kid}
+	headerJSON, err := json.Marshal(header)
+	if err != nil {
+		return "", nil, fmt.Errorf("marshaling header: %w", err)
+	}
+	headerB64 := format.EncodeBase64URL(headerJSON)
+
+	var iv, ciphertext, tag []byte
+	switch enc {
+	case "A128GCM", "A256GCM":
+		iv, ciphertext, tag, err = encryptAESGCM(cek, payload, []byte(headerB64))
+	case "A128CBC-HS256":
+		iv, ciphertext, tag, err = encryptAESCBCHS256(cek, payload, []byte(headerB64))
+	default:
+		return "", nil, fmt.Errorf("unsupported enc algorithm: %s", enc)
+	}
+	if err != nil {
+		return "", nil, err
+	}
+
+	// Compact serialization: header.encryptedKey.iv.ciphertext.tag
+	jweStr := headerB64 + "." +
+		format.EncodeBase64URL(encryptedKey) + "." +
+		format.EncodeBase64URL(iv) + "." +
+		format.EncodeBase64URL(ciphertext) + "." +
+		format.EncodeBase64URL(tag)
+	return jweStr, cek, nil
+}
+
+// rsaPublicKeyFromJWK reads a verifier's RSA encryption key from a JWK (its
+// base64url modulus n and exponent e).
+func rsaPublicKeyFromJWK(jwk map[string]any) (*rsa.PublicKey, error) {
+	nB64, _ := jwk["n"].(string)
+	eB64, _ := jwk["e"].(string)
+	if nB64 == "" || eB64 == "" {
+		return nil, fmt.Errorf("RSA JWK missing n or e")
+	}
+	nBytes, err := format.DecodeBase64URL(nB64)
+	if err != nil {
+		return nil, fmt.Errorf("decoding n: %w", err)
+	}
+	eBytes, err := format.DecodeBase64URL(eB64)
+	if err != nil {
+		return nil, fmt.Errorf("decoding e: %w", err)
+	}
+	e := 0
+	for _, b := range eBytes {
+		e = e<<8 | int(b)
+	}
+	if e < 2 {
+		return nil, fmt.Errorf("RSA exponent is too small")
+	}
+	return &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: e}, nil
 }
 
 // encryptAESGCM encrypts with AES-GCM (for A128GCM / A256GCM).
