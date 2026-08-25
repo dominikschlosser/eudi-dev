@@ -133,7 +133,7 @@ sequenceDiagram
 
 ## Interactive Authorization (OpenID4VCI 1.1)
 
-At feature level 1.1 (`--vci-version 1.1`), an authorization server that publishes `authorization_challenge_endpoint` gets this flow instead of the browser redirect above. The wallet either answers the challenge with an OpenID4VP presentation or hands the user to a browser sign-in (`auth_via_web`). Everything after the authorization code is the ordinary token and credential exchange. See [interactive authorization](../wallet.md#interactive-authorization) for the full behavior.
+At feature level 1.1 (`--vci-version 1.1`), an authorization server that publishes `authorization_challenge_endpoint` gets this flow instead of the browser redirect above. The wallet either answers the challenge with an OpenID4VP presentation or hands the user to a browser sign-in (`auth_via_web`). Everything after the authorization code is the ordinary token and credential exchange. See [interactive authorization](../wallet/issuing.md#interactive-authorization) for the full behavior.
 
 ```mermaid
 sequenceDiagram

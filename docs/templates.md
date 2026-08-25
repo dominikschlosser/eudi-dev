@@ -69,6 +69,49 @@ A template reference (`--template`, `--from`) resolves in this order. A value co
 
 A template is a single JSON document, so sharing one means sharing the file (or the output of `templates show`).
 
+## Card appearance (display)
+
+The optional `display` object sets the appearance credentials issued from the template wear (OpenID4VCI 1.0 §12.2.4). It renders on the credential card in the wallet UI and on the same card in the consent and offer dialogs, so a credential issued from a template looks the way the template declares wherever it is shown.
+
+| Field | Description |
+|-------|-------------|
+| `name` | Display name (the card headline, falling back to the technical type) |
+| `description` | Free text shown behind the card's About control |
+| `background_color` | Card background, a CSS color such as `#3d59a1` |
+| `text_color` | Card text, a CSS color such as `#ffffff` |
+| `logo` | Card logo image (see image sources below) |
+| `logo_alt_text` | Alt text for the logo image |
+| `background_image` | Full card art behind the name (see image sources below) |
+
+The two image fields (`logo`, `background_image`) take one of three sources:
+
+- a `data:` URI, embedded directly
+- an `https://` URL, fetched once at issuance
+- `embedded:<file>`, which reads a bundled asset by base name. This is only for the pre-defined templates compiled into the binary. A user template uses a `data:` URI or an `https://` URL.
+
+Whatever the source, the image is fetched through the wallet's size-capped policed cache and embedded as a `data:` URI on the issued credential, so a card never calls out again after issuance. All display text is length-bounded when it is issued or read.
+
+The pre-defined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The German PID adds `background_image` `embedded:german-id-specimen.jpg` (the public Personalausweis specimen, which is also what tells it apart from the country-independent PID on the card).
+
+Display is set in the template JSON `display` object. There are no `templates save` flags for it (unlike the claim and format flags). An explicit display value at issue time overlays the template's: the `issue` command's `--display-name`, `--display-description`, `--background-color`, `--text-color`, `--logo`, `--logo-alt` and `--background-image` flags (and the same fields in the Issue dialog and `POST /api/issue`) take precedence over the template's, so setting a name keeps the template's art while replacing the name.
+
+```json
+{
+  "description": "Employee badge for verifier testing",
+  "format": "sdjwt",
+  "vct": "urn:example:employee",
+  "claims": { "employee_id": "E-1", "department": "IT" },
+  "display": {
+    "name": "Acme Employee",
+    "description": "A demo employee badge issued for verifier testing.",
+    "background_color": "#0f766e",
+    "text_color": "#ffffff",
+    "logo": "https://acme.example/badge-logo.svg",
+    "logo_alt_text": "Acme logo"
+  }
+}
+```
+
 ## Always disclosed claims
 
 Every claim in an SD-JWT is selectively disclosable by default, apart from the registered claims SD-JWT VC §2.2.2.3 excludes (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts`, `status` and `iat`), which are always embedded plainly. Claims listed in `always_disclosed` are also embedded plainly in the signed payload, so a verifier always sees them and they cannot be withheld during presentation.
@@ -109,7 +152,7 @@ eudi templates show employee-card > share-me.json
 eudi templates delete employee-card
 ```
 
-All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. With `--remote <url>` (or after `wallet instances use <url>`) list, show, save, import, and delete operate on a remote instance's template store through its REST API. See [remote control](wallet.md#remote-control).
+All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. With `--remote <url>` (or after `wallet instances use <url>`) list, show, save, import, and delete operate on a remote instance's template store through its REST API. See [remote control](wallet/http-api.md#remote-control).
 
 ### `templates save`
 
@@ -136,7 +179,7 @@ The wallet server exposes the same template store:
 | `PUT /api/templates/{name}` | Create or replace a user template (body is a full template document, which makes this the import endpoint) |
 | `DELETE /api/templates/{name}` | Delete a user template (deleting an override of a pre-defined template restores the pre-defined version) |
 
-`POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet.md#issuing-credentials).
+`POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet/http-api.md#issuing-credentials).
 
 ```bash
 # Import a template and issue from it

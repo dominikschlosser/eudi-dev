@@ -126,7 +126,7 @@ With `--wallet`, the credential is issued with the wallet's issuer key and a tru
 
 Unless you override the status-list flags, `--wallet` also uses the wallet's own status-list endpoint and registers a wallet-managed status entry for the new credential.
 
-If a wallet server is already running for the same wallet directory, `--wallet` issuance routes through that instance's REST API to keep its state consistent (see [remote control](wallet.md#automatic-routing-single-writer)). Without a running server the command issues directly into the store, keeps any persisted issuer and base URLs untouched, and notes that the embedded URLs resolve once `wallet serve` runs.
+If a wallet server is already running for the same wallet directory, `--wallet` issuance routes through that instance's REST API to keep its state consistent (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Without a running server the command issues directly into the store, keeps any persisted issuer and base URLs untouched, and notes that the embedded URLs resolve once `wallet serve` runs.
 
 Trust lists are created from the wallet's issued-attestation registry:
 - each issued or imported credential type contributes one registry entry

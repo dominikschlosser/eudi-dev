@@ -7,7 +7,7 @@ Two independent settings decide what a finding does to a flow:
 - `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each finding and continues so the rest of the exchange stays observable.
 - `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run. The validation mode then decides what a violation does, as for every other finding: strict stops the flow, debug reports it and continues.
 
-A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follows as a client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` adds the 1.1 draft features listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet.md#openid4vci-feature-level)).
+A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follows as a client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` adds the 1.1 draft features listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet/issuing.md#openid4vci-feature-level)).
 
 ## OID4VP 1.0 (OpenID for Verifiable Presentations)
 
@@ -27,6 +27,7 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 | `direct_post.jwt` response mode | Implemented | JARM-encrypted responses |
 | `dc_api` response mode | Implemented | Browser API responses via `/api/dc-api` |
 | `dc_api.jwt` response mode | Implemented | Encrypted Browser API responses via `/api/dc-api` |
+| Response encryption key | Implemented | The response JWE is encrypted to the Verifier's `client_metadata.jwks` key. ECDH-ES for an EC P-256 key (the OID4VP baseline, preferred when the Verifier offers both) or RSA-OAEP for an RSA key. A Verifier that publishes only a signing-marked key is a misconfiguration debug encrypts to anyway with a warning, strict refuses. Under `--haip` only ECDH-ES on P-256 is conformant (§5), so any other key is a violation |
 | JAR (signed request objects) | Implemented | The JWS signature is verified with the leaf `x5c` key in every mode. Strict rejects a failure, debug reports it and continues. The chain is checked for internal consistency but not anchored to a pre-registered verifier CA (a test wallet has none). This proves the request is self-consistent, not that it came from a trusted verifier (see [SECURITY.md](../SECURITY.md)) |
 | `x509_san_dns:` client_id | Implemented | Verified against leaf cert SAN |
 | `x509_hash:` client_id | Implemented | SHA-256 of the leaf certificate matched against the prefix value |
