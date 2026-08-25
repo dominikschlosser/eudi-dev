@@ -94,41 +94,39 @@ func createProofJWTs(keys []*ecdsa.PrivateKey, audience, cNonce string, extraHea
 	return proofs, nil
 }
 
-// selectHolderBoundCredential picks the credential from a credential response
-// that is bound to the wallet's holder key (keys[0]). OID4VCI 1.0 defines no
-// correspondence between the order of the credentials array and the proofs in
-// the request, so the binding key is identified from each credential itself.
-// Every returned credential must be bound to one of the proof keys.
-func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) (string, error) {
+// selectPrimaryCredential picks the credential to import as the primary copy
+// from a credential response. OID4VCI 1.0 defines no correspondence between the
+// order of the credentials array and the proofs in the request, so the binding
+// key is identified from each credential itself.
+//
+// An issuer may "issue fewer Credentials" than the proofs sent and binds each
+// key to at most one Credential, so it may return one credential, or several
+// fewer than advertised, and need not bind any of them to the wallet's holder
+// key. A single credential is taken whichever proof key it names (its card then
+// reads as bound to another key). Several credentials are each matched to a
+// distinct proof key, and the holder-key copy is preferred as the primary,
+// falling back to the first credential when the issuer bound none to it.
+func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) (string, error) {
 	creds := credentialStringsFromResponse(credResp)
 	if len(creds) == 0 {
 		return "", fmt.Errorf("no credential in response")
 	}
-	// One credential back is imported whichever proof key it names. OpenID4VCI
-	// 1.0 lets an issuer "issue fewer Credentials" than the proofs sent, so an
-	// issuer that advertises batch_credential_issuance and then hands back a
-	// single credential (the wallet asked for a batch) is answered by taking it.
-	// A credential bound to a key other than the holder key reads as bound to
-	// another key on its card rather than being dropped. Only a response
-	// carrying several credentials is matched to the proof keys as a batch below.
 	if len(creds) == 1 {
 		return creds[0], nil
 	}
 
+	primary := ""
 	holderCredential := ""
 	matched := make([]int, len(keys))
 	for _, raw := range creds {
-		keyIndex := -1
-		for i, key := range keys {
-			if credentialBindsToKey(raw, &key.PublicKey) {
-				keyIndex = i
-				break
-			}
-		}
+		keyIndex := proofKeyIndex(raw, keys)
 		if keyIndex < 0 {
 			return "", fmt.Errorf("credential response contains a credential that is not bound to any proof key")
 		}
 		matched[keyIndex]++
+		if primary == "" {
+			primary = raw
+		}
 		if keyIndex == 0 {
 			holderCredential = raw
 		}
@@ -138,11 +136,11 @@ func selectHolderBoundCredential(credResp map[string]any, keys []*ecdsa.PrivateK
 			return "", fmt.Errorf("credential response contains %d credentials bound to the same proof key (index %d)", count, i)
 		}
 	}
-	if holderCredential == "" {
-		return "", fmt.Errorf("credential response contains no credential bound to the wallet's holder key")
+	if holderCredential != "" {
+		primary = holderCredential
 	}
-	log.Printf("[VCI] Matched %d batch credential(s) to their proof keys; importing the holder-key-bound credential", len(creds))
-	return holderCredential, nil
+	log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys; importing one as the primary copy", len(creds))
+	return primary, nil
 }
 
 // proofKeyIndex returns the index of the proof key a credential is bound to, or
@@ -156,52 +154,59 @@ func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
 	return -1
 }
 
-// storeBatchSiblings ties the copies of a batch to the holder copy already
-// imported as primary. A batch credential response holds one credential per
-// proof key (§8.3); selectHolderBoundCredential imported the copy bound to the
-// wallet holder key, and this stores the rest, each bound to the ephemeral key
-// it was issued against, under a shared batch group. The wallet then presents
-// an unused copy each time so a Relying Party cannot link two presentations of
-// the same credential (EUDI ARF Annex 2 Topic 10 method C, ISSU_51-54).
+// storeBatchSiblings ties the copies of a batch to the copy already imported as
+// primary. A batch credential response holds one credential per proof key
+// (§8.3); selectPrimaryCredential imported one of them, and this stores the
+// rest, each bound to the key it was issued against, under a shared batch group.
+// The wallet then presents an unused copy each time so a Relying Party cannot
+// link two presentations of the same credential (EUDI ARF Annex 2 Topic 10
+// method C, ISSU_51-54).
 //
-// A single-credential response stores nothing extra, unless the one credential
-// is bound to a proof key other than the holder key (a batch-capable issuer
-// that issued fewer credentials than the proofs sent): then that key is recorded
-// against it so the wallet can still present it. A batch collected on a
-// presentation clone keeps its holder copy alone: its credentialSink forwards a
-// copy to the real wallet at import time, before the per-copy key could be set,
-// so the copies would land there unpresentable.
+// The binding key is recorded against every copy the issuer bound to a key
+// other than the holder key (an issuer may bind none of a partial batch to the
+// holder key), so each copy signs its key binding with the key its cnf names.
+// The holder copy needs no recorded key, since batchSigningKey falls back to the
+// holder key. A single-credential response stores no siblings but still records
+// its key when it is not the holder key. A batch collected on a presentation
+// clone keeps its primary copy alone: its credentialSink forwards a copy to the
+// real wallet at import time, before the per-copy key could be set, so the
+// copies would land there unpresentable.
 func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) {
 	creds := credentialStringsFromResponse(credResp)
 	if primary == nil {
 		return
 	}
-	if len(creds) <= 1 || len(keys) <= 1 {
-		// One credential bound to an ephemeral proof key is presentable only if
-		// the wallet keeps that key. The holder-bound case needs nothing, since
-		// batchSigningKey falls back to the holder key.
-		if idx := proofKeyIndex(primary.Raw, keys); idx > 0 {
-			if pem, err := encodeECPrivateKeyPEM(keys[idx]); err == nil {
-				w.setBatchFields(primary.ID, "", pem)
-				primary.BindingKeyPEM = pem
+	primaryIdx := proofKeyIndex(primary.Raw, keys)
+	primaryKeyPEM := func() string {
+		if primaryIdx > 0 {
+			if pem, err := encodeECPrivateKeyPEM(keys[primaryIdx]); err == nil {
+				return pem
 			}
+		}
+		return ""
+	}()
+	if len(creds) <= 1 || len(keys) <= 1 {
+		if primaryKeyPEM != "" {
+			w.setBatchFields(primary.ID, "", primaryKeyPEM)
+			primary.BindingKeyPEM = primaryKeyPEM
 		}
 		return
 	}
 	if w.credentialSink != nil {
-		log.Printf("[VCI] Batch issued during a presentation is kept as its holder copy only")
+		log.Printf("[VCI] Batch issued during a presentation is kept as its primary copy only")
 		return
 	}
 	group := newCredentialID()
-	w.setBatchFields(primary.ID, group, "")
+	w.setBatchFields(primary.ID, group, primaryKeyPEM)
 	primary.BatchGroup = group
+	primary.BindingKeyPEM = primaryKeyPEM
 
 	stored := 1
 	for _, raw := range creds {
 		idx := proofKeyIndex(raw, keys)
-		// Index 0 is the holder copy already imported as primary; a negative
-		// index was reported by selectHolderBoundCredential.
-		if idx <= 0 {
+		// Skip the copy already imported as primary; a negative index was
+		// reported by selectPrimaryCredential.
+		if idx < 0 || idx == primaryIdx {
 			continue
 		}
 		pem, err := encodeECPrivateKeyPEM(keys[idx])

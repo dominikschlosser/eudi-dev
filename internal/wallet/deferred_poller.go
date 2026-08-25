@@ -256,7 +256,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		return s.handleDeferredAttemptError(pending, err)
 	}
 
-	credential, err := selectHolderBoundCredential(credResp, proofKeys)
+	credential, err := selectPrimaryCredential(credResp, proofKeys)
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the issuer answered without a usable credential: %v", err))
 	}

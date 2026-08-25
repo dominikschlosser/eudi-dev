@@ -405,7 +405,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return w.recordDeferredIssuance(pending), nil
 	}
 
-	credential, err := selectHolderBoundCredential(credResp, proofKeys)
+	credential, err := selectPrimaryCredential(credResp, proofKeys)
 	if err != nil {
 		return nil, err
 	}

@@ -119,7 +119,7 @@ func TestIssuanceProofKeys(t *testing.T) {
 	}
 }
 
-func TestSelectHolderBoundCredentialReversedOrder(t *testing.T) {
+func TestSelectPrimaryCredentialReversedOrder(t *testing.T) {
 	holder := testKey(t)
 	ephemeral := testKey(t)
 	holderCred := fakeSDJWT(t, &holder.PublicKey)
@@ -132,16 +132,16 @@ func TestSelectHolderBoundCredentialReversedOrder(t *testing.T) {
 			map[string]any{"credential": holderCred},
 		},
 	}
-	got, err := selectHolderBoundCredential(resp, []*ecdsa.PrivateKey{holder, ephemeral})
+	got, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, ephemeral})
 	if err != nil {
-		t.Fatalf("selectHolderBoundCredential: %v", err)
+		t.Fatalf("selectPrimaryCredential: %v", err)
 	}
 	if got != holderCred {
 		t.Fatal("expected the holder-key-bound credential to be selected")
 	}
 }
 
-func TestSelectHolderBoundCredentialUnknownKey(t *testing.T) {
+func TestSelectPrimaryCredentialUnknownKey(t *testing.T) {
 	holder := testKey(t)
 	stranger := testKey(t)
 	resp := map[string]any{
@@ -150,19 +150,19 @@ func TestSelectHolderBoundCredentialUnknownKey(t *testing.T) {
 			map[string]any{"credential": fakeSDJWT(t, &holder.PublicKey)},
 		},
 	}
-	_, err := selectHolderBoundCredential(resp, []*ecdsa.PrivateKey{holder, testKey(t)})
+	_, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder, testKey(t)})
 	if err == nil {
 		t.Fatal("expected error for credential bound to an unknown key")
 	}
 }
 
-func TestSelectHolderBoundCredentialSingle(t *testing.T) {
+func TestSelectPrimaryCredentialSingle(t *testing.T) {
 	holder := testKey(t)
 	cred := fakeSDJWT(t, &holder.PublicKey)
 	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
-	got, err := selectHolderBoundCredential(resp, []*ecdsa.PrivateKey{holder})
+	got, err := selectPrimaryCredential(resp, []*ecdsa.PrivateKey{holder})
 	if err != nil {
-		t.Fatalf("selectHolderBoundCredential: %v", err)
+		t.Fatalf("selectPrimaryCredential: %v", err)
 	}
 	if got != cred {
 		t.Fatal("expected the single credential to be selected")
@@ -175,13 +175,13 @@ func TestSelectHolderBoundCredentialSingle(t *testing.T) {
 // holder key, rather than being refused (its card then reads as bound to another
 // key). The credential is bound to an ephemeral proof key here, which the old
 // matching path refused, so this guards the leniency.
-func TestSelectHolderBoundCredentialSingleNotHolderBound(t *testing.T) {
+func TestSelectPrimaryCredentialSingleNotHolderBound(t *testing.T) {
 	holder := testKey(t)
 	ephemeral := testKey(t)
 	cred := fakeSDJWT(t, &ephemeral.PublicKey)
 	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
 	keys := []*ecdsa.PrivateKey{holder, ephemeral, testKey(t)}
-	got, err := selectHolderBoundCredential(resp, keys)
+	got, err := selectPrimaryCredential(resp, keys)
 	if err != nil {
 		t.Fatalf("a single credential should be imported even when it is not holder-bound: %v", err)
 	}
@@ -270,5 +270,72 @@ func TestFirstJWKSkipsUnusableKeys(t *testing.T) {
 	}
 	if got := firstJWK(jwks); got != nil {
 		t.Fatalf("expected no usable key, got %v", got)
+	}
+}
+
+// An issuer that advertises a batch may issue fewer credentials than the proofs
+// sent and need not bind any of them to the holder key (each key binds to at
+// most one Credential). Two credentials bound to ephemeral proof keys, none to
+// the holder key, are accepted and the first is taken as the primary.
+func TestSelectPrimaryCredentialFewerThanAdvertisedNoneHolderBound(t *testing.T) {
+	holder := testKey(t)
+	eph1, eph2 := testKey(t), testKey(t)
+	first := fakeSDJWT(t, &eph1.PublicKey)
+	second := fakeSDJWT(t, &eph2.PublicKey)
+	resp := map[string]any{"credentials": []any{
+		map[string]any{"credential": first},
+		map[string]any{"credential": second},
+	}}
+	keys := []*ecdsa.PrivateKey{holder, eph1, eph2, testKey(t), testKey(t)}
+	got, err := selectPrimaryCredential(resp, keys)
+	if err != nil {
+		t.Fatalf("a partial batch bound to ephemeral keys should be accepted: %v", err)
+	}
+	if got != first {
+		t.Fatal("expected the first credential to be the primary when none is holder-bound")
+	}
+}
+
+// The copies of a partial batch the issuer bound to ephemeral keys (none to the
+// holder key) are stored under one batch group, each signing its key binding
+// with the key its cnf names.
+func TestPartialBatchNoneHolderBoundIsStoredAndPresentable(t *testing.T) {
+	w := generateTestWallet(t)
+	eph1, eph2 := testKey(t), testKey(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, eph1, eph2}
+	resp := map[string]any{"credentials": []any{
+		map[string]any{"credential": fakeSDJWT(t, &eph1.PublicKey)},
+		map[string]any{"credential": fakeSDJWT(t, &eph2.PublicKey)},
+	}}
+	primaryRaw, err := selectPrimaryCredential(resp, keys)
+	if err != nil {
+		t.Fatalf("selectPrimaryCredential: %v", err)
+	}
+	imported, err := w.ImportCredential(primaryRaw)
+	if err != nil {
+		t.Fatalf("importing the primary: %v", err)
+	}
+	w.storeBatchSiblings(imported, resp, keys, nil)
+
+	var batch []StoredCredential
+	for _, c := range w.GetCredentials() {
+		if c.BatchGroup != "" {
+			batch = append(batch, c)
+		}
+	}
+	if len(batch) != 2 {
+		t.Fatalf("expected 2 copies stored as a batch, got %d", len(batch))
+	}
+	if batch[0].BatchGroup != batch[1].BatchGroup {
+		t.Fatal("the two copies should share one batch group")
+	}
+	for _, c := range batch {
+		signer, err := w.batchSigningKey(c)
+		if err != nil {
+			t.Fatalf("resolving the signing key: %v", err)
+		}
+		if !credentialBindsToKey(c.Raw, &signer.PublicKey) {
+			t.Fatal("a batch copy must sign its key binding with the key its cnf names")
+		}
 	}
 }

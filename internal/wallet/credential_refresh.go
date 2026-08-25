@@ -114,7 +114,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("requesting the credential: %w", err)
 	}
-	raw, err := selectHolderBoundCredential(credResp, proofKeys)
+	raw, err := selectPrimaryCredential(credResp, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("reading the renewed credential: %w", err)
 	}
