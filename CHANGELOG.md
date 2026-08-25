@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-08-25
+
+### Changed
+
+- **Display images are stored beside wallet.json, not inside it.** A credential's card art (logo, background) was embedded in `wallet.json` as a base64 data URI, so a wallet holding image-heavy credentials grew the file to megabytes and a hosted instance that reparses it on every request crawled. The images now live as content-addressed files in an `assets/` directory beside `wallet.json`, referenced by `asset:<hash>.<ext>`, so the file stays small. The same image is stored once, and an image a wallet embedded before this change is still served and moves to `assets/` on the next save.
+
 ## [2.0.3] - 2026-08-25
 
 ### Fixed

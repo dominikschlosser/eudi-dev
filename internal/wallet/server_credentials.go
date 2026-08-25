@@ -28,6 +28,20 @@ import (
 	"strings"
 )
 
+// resolveDisplayImage turns a stored display image value into bytes: an
+// "asset:" reference reads the file beside wallet.json, and an embedded data URI
+// (as older wallets and freshly issued, not-yet-saved credentials carry) is
+// decoded in place.
+func (s *Server) resolveDisplayImage(uri string) (contentType string, data []byte, ok bool) {
+	if strings.HasPrefix(uri, "asset:") {
+		if s.store == nil {
+			return "", nil, false
+		}
+		return s.store.ReadDisplayAsset(uri)
+	}
+	return dataURIImage(uri)
+}
+
 // handleCredentialDisplayImage serves a stored credential's display logo or
 // background image, referenced by the credential listing instead of inlined as
 // a data URI. The bytes are fixed for the credential, so the response is cached
@@ -48,7 +62,9 @@ func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Req
 		http.NotFound(w, r)
 		return
 	}
-	contentType, data, ok := dataURIImage(uri)
+	// A new store references the image as an asset file; a wallet written before
+	// this change still embeds it as a data URI. Both are served here.
+	contentType, data, ok := s.resolveDisplayImage(uri)
 	if !ok {
 		http.NotFound(w, r)
 		return

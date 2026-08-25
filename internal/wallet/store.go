@@ -16,13 +16,16 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,6 +118,105 @@ func (s *WalletStore) WalletFileState() (modTime time.Time, size int64, ok bool)
 		return time.Time{}, 0, false
 	}
 	return info.ModTime(), info.Size(), true
+}
+
+// assetsDir holds the display images referenced from wallet.json, kept beside it
+// so a credential's card art does not bloat the file the wallet reparses on
+// every request.
+func (s *WalletStore) assetsDir() string {
+	return filepath.Join(s.Dir, "assets")
+}
+
+// storeDisplayAsset writes a data-URI display image to the assets directory as a
+// content-addressed file and returns a reference of the form
+// "asset:<sha256>.<ext>". A value that is not a data URI (an already-stored
+// reference, or an external URL) is returned unchanged with converted=false, so
+// this is safe to call on every save. Content addressing dedupes the baseline
+// art a demo re-issues and makes an asset immutable, which is what keeps a
+// reference valid across a shared, reloaded store.
+func (s *WalletStore) storeDisplayAsset(uri string) (ref string, converted bool) {
+	contentType, data, ok := dataURIImage(uri)
+	if !ok {
+		return uri, false
+	}
+	sum := sha256.Sum256(data)
+	name := hex.EncodeToString(sum[:]) + "." + assetExtension(contentType)
+	if err := os.MkdirAll(s.assetsDir(), 0o700); err != nil {
+		return uri, false
+	}
+	path := filepath.Join(s.assetsDir(), name)
+	if _, err := os.Stat(path); err == nil {
+		return "asset:" + name, true
+	}
+	tmp, err := os.CreateTemp(s.assetsDir(), name+".tmp-*")
+	if err != nil {
+		return uri, false
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return uri, false
+	}
+	if err := tmp.Close(); err != nil {
+		return uri, false
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return uri, false
+	}
+	return "asset:" + name, true
+}
+
+// ReadDisplayAsset returns the bytes and content type of a stored display asset,
+// or ok=false when the reference is not an asset reference or the file is
+// missing. The image-serving endpoint uses it.
+func (s *WalletStore) ReadDisplayAsset(ref string) (contentType string, data []byte, ok bool) {
+	name, found := strings.CutPrefix(ref, "asset:")
+	// The name is a hash and an extension the store wrote, but the read is
+	// path-guarded anyway so a reference can never reach outside the directory.
+	if !found || name == "" || strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return "", nil, false
+	}
+	data, err := os.ReadFile(filepath.Join(s.assetsDir(), name))
+	if err != nil {
+		return "", nil, false
+	}
+	return assetContentType(name), data, true
+}
+
+// assetExtension maps an image content type to a file extension.
+func assetExtension(contentType string) string {
+	switch contentType {
+	case "image/png":
+		return "png"
+	case "image/jpeg":
+		return "jpg"
+	case "image/svg+xml":
+		return "svg"
+	case "image/webp":
+		return "webp"
+	case "image/gif":
+		return "gif"
+	default:
+		return "bin"
+	}
+}
+
+// assetContentType maps a stored asset file name back to its content type.
+func assetContentType(name string) string {
+	switch {
+	case strings.HasSuffix(name, ".png"):
+		return "image/png"
+	case strings.HasSuffix(name, ".jpg"):
+		return "image/jpeg"
+	case strings.HasSuffix(name, ".svg"):
+		return "image/svg+xml"
+	case strings.HasSuffix(name, ".webp"):
+		return "image/webp"
+	case strings.HasSuffix(name, ".gif"):
+		return "image/gif"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // holderKeyPath returns the path to the holder private key.
@@ -232,6 +334,23 @@ func (s *WalletStore) Save(w *Wallet) error {
 	}
 
 	creds := w.GetCredentials()
+	// Move any embedded display image out of wallet.json into the assets
+	// directory, leaving a reference in its place. Done on the copy so the
+	// in-memory wallet is untouched (a later reload picks up the references),
+	// which is what keeps wallet.json small enough to reparse on every request.
+	for i := range creds {
+		if creds[i].Display == nil {
+			continue
+		}
+		logo, logoConverted := s.storeDisplayAsset(creds[i].Display.LogoURI)
+		background, backgroundConverted := s.storeDisplayAsset(creds[i].Display.BackgroundURI)
+		if logoConverted || backgroundConverted {
+			d := *creds[i].Display
+			d.LogoURI = logo
+			d.BackgroundURI = background
+			creds[i].Display = &d
+		}
+	}
 	w.mu.RLock()
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
 	deferredIssuances := append([]DeferredIssuance(nil), w.DeferredIssuances...)

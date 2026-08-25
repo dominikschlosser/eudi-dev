@@ -127,8 +127,11 @@ All wallet state is stored in `~/.eudi-dev/wallet/` by default:
     ├── wallet-log-cleaned-at # Timestamp marker written by wallet logs clean
     ├── wallet-tls-cert.pem # HTTPS certificate for wallet endpoints on port+1
     ├── wallet-tls-key.pem  # HTTPS private key for wallet endpoints on port+1
+    ├── assets/             # Display images (card art) referenced from wallet.json
     └── templates/          # User credential templates (see templates.md)
 ```
+
+A credential's display images (logo, background) are kept as content-addressed files in `assets/`, and `wallet.json` holds a reference (`asset:<hash>.<ext>`) rather than the image bytes. This keeps `wallet.json` small enough to reparse on every request on a busy hosted instance. The same image is stored once (content-addressed), and an image the wallet embedded before this layout (a `data:` URI inside `wallet.json`) is still served and moves to `assets/` on the next save.
 
 Wallet interaction logs are stored in `wallet.json` under the top-level `log` field. `wallet logs clean` clears those entries and writes `wallet-log-cleaned-at` so an already-running wallet server cannot later save old in-memory log entries back to disk. If you use `--wallet-dir`, both files live in that custom wallet directory instead.
 

@@ -165,13 +165,14 @@ func displayForListing(c StoredCredential) map[string]any {
 	return m
 }
 
-// displayImageRef references a stored data-URI image by an endpoint URL, and
-// passes an external URL through unchanged.
+// displayImageRef references a stored image (a data URI or an "asset:" file) by
+// an endpoint URL the wallet serves, and passes an external http(s) URL through
+// unchanged.
 func displayImageRef(id, kind, uri string) string {
-	if strings.HasPrefix(uri, "data:") {
-		return "/api/credentials/" + id + "/display/" + kind
+	if strings.HasPrefix(uri, "http://") || strings.HasPrefix(uri, "https://") {
+		return uri
 	}
-	return uri
+	return "/api/credentials/" + id + "/display/" + kind
 }
 
 // dataURIImage decodes a base64 data URI into its content type and bytes.
