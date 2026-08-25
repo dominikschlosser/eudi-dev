@@ -646,3 +646,37 @@ func TestDeferredCollectionRecoversAMissingDisplay(t *testing.T) {
 		t.Fatal("the display was not recovered from the collection-time metadata")
 	}
 }
+
+// A per-request reload reparses wallet.json, which runs to megabytes with
+// embedded card art. When the file has not changed since the last load the
+// reparse is skipped, so a busy demo does not queue up behind it. The skip is
+// observable: an in-memory-only change survives a reload of an unchanged file.
+func TestReloadSkipsUnchangedStore(t *testing.T) {
+	srv := newTestServer(t, true)
+	store := NewWalletStore(t.TempDir())
+	if _, err := store.LoadOrCreate(); err != nil {
+		t.Fatalf("initializing store: %v", err)
+	}
+	if err := store.Save(srv.wallet); err != nil {
+		t.Fatalf("saving wallet: %v", err)
+	}
+	srv.SetStore(store)
+
+	// Prime the mod-time cache with a first reload.
+	if err := srv.reloadFromStore(); err != nil {
+		t.Fatalf("reloadFromStore: %v", err)
+	}
+	before := len(srv.wallet.GetCredentials())
+
+	// Add a credential in memory only, leaving the file untouched.
+	srv.wallet.appendCredential(StoredCredential{ID: "in-memory", Format: "dc+sd-jwt", Raw: "x~"})
+
+	// The reload sees an unchanged file and skips the reparse, so the in-memory
+	// credential is not overwritten from disk.
+	if err := srv.reloadFromStore(); err != nil {
+		t.Fatalf("reloadFromStore: %v", err)
+	}
+	if got := len(srv.wallet.GetCredentials()); got != before+1 {
+		t.Fatalf("an unchanged store was reparsed (dropped the in-memory credential): got %d, want %d", got, before+1)
+	}
+}

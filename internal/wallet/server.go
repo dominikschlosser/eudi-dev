@@ -46,8 +46,13 @@ type Server struct {
 	parseOpts        oid4vc.ParseOptions
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
-	staleClientOnce  sync.Once
-	demo             *demoState
+	// lastWalletMod and lastWalletSize let a per-request reload skip reparsing a
+	// wallet.json that has not changed since the last load. Guarded by
+	// storeSyncMu.
+	lastWalletMod   time.Time
+	lastWalletSize  int64
+	staleClientOnce sync.Once
+	demo            *demoState
 	// renewalBackoff holds off retrying a credential whose renewal failed.
 	renewalBackoff map[string]time.Time
 	renewalMu      sync.Mutex
@@ -316,11 +321,25 @@ func (s *Server) reloadFromStore() error {
 		return nil
 	}
 
+	// The store is reloaded per request so several visitors of a shared demo
+	// see each other's changes. Reparsing a wallet.json that carries embedded
+	// card art runs to megabytes, and doing it on every poll, serialized here,
+	// is what makes a busy demo queue up and feel like it hangs. Skip the parse
+	// when the file has not changed since the last load.
+	mod, size, ok := s.store.WalletFileState()
+	if ok && size == s.lastWalletSize && mod.Equal(s.lastWalletMod) {
+		return nil
+	}
+
 	reloaded, err := s.store.LoadOrCreate()
 	if err != nil {
 		return err
 	}
 	s.applyPersistedWalletState(reloaded)
+	if ok {
+		s.lastWalletMod = mod
+		s.lastWalletSize = size
+	}
 	return nil
 }
 

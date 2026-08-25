@@ -106,6 +106,17 @@ func (s *WalletStore) walletPath() string {
 	return filepath.Join(s.Dir, "wallet.json")
 }
 
+// WalletFileState returns wallet.json's modification time and size, or ok=false
+// when it cannot be stat'd. A per-request reload uses it to skip reparsing a
+// file that has not changed since the last load.
+func (s *WalletStore) WalletFileState() (modTime time.Time, size int64, ok bool) {
+	info, err := os.Stat(s.walletPath())
+	if err != nil {
+		return time.Time{}, 0, false
+	}
+	return info.ModTime(), info.Size(), true
+}
+
 // holderKeyPath returns the path to the holder private key.
 func (s *WalletStore) holderKeyPath() string {
 	return filepath.Join(s.Dir, "holder.pem")
