@@ -71,7 +71,7 @@ A template is a single JSON document, so sharing one means sharing the file (or 
 
 ## Card appearance (display)
 
-The optional `display` object sets the appearance credentials issued from the template wear (OpenID4VCI 1.0 §12.2.4). It renders on the credential card in the wallet UI and on the same card in the consent and offer dialogs, so a credential issued from a template looks the way the template declares wherever it is shown.
+The optional `display` object sets the appearance credentials issued from the template wear (OpenID4VCI 1.0 §12.2.4). It renders on the credential card in the wallet UI and in the consent and offer dialogs.
 
 | Field | Description |
 |-------|-------------|

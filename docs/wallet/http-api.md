@@ -2,7 +2,7 @@
 
 # Wallet HTTP API
 
-Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance. This page is the full endpoint reference (credential management, issuing, templates, certificate export, error override, preferred format, import, status list, deferred, activity log, last error, encrypted request objects), followed by [remote control](#remote-control), where the CLI drives another instance through this same API.
+Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance: credential management, issuing, templates, certificate export, status, deferred issuance, the activity log, and simulated errors. [Remote control](#remote-control) drives another instance from the CLI through this same API.
 
 ## HTTP API
 

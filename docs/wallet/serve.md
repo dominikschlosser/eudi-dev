@@ -2,7 +2,7 @@
 
 # Serving the wallet
 
-`wallet serve` runs the persistent wallet HTTP server with the web UI, the OID4VP and OID4VCI endpoints, the trust lists, and optional URL scheme handling. This page covers that command in full, the certificate and trust-list commands that pair with it (`trust-list`, `ca-cert`, `tls-cert`), URL scheme registration (`register` / `unregister`), and changing the conformance settings at runtime.
+`wallet serve` runs the persistent wallet HTTP server: the web UI, the OID4VP and OID4VCI endpoints, the trust lists, and optional URL scheme handling. The certificate exports (`ca-cert`, `tls-cert`), the `trust-list` command, and URL scheme registration (`register`, `unregister`) pair with it, and the conformance settings can change at runtime.
 
 ## `wallet serve`
 

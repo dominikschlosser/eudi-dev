@@ -1,6 +1,6 @@
 # OID4VP Flows
 
-This page covers the OID4VP presentation flows implemented by `eudi-dev` when it acts as a wallet.
+The OID4VP presentation flows `eudi-dev` implements when it acts as a wallet.
 
 ## Flow Map
 

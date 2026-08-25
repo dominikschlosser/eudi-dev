@@ -2,7 +2,7 @@
 
 # Issuing into the wallet
 
-A credential offer is accepted with [`wallet accept`](presenting.md#wallet-accept-uri) (or from the wallet UI, a scanned QR, or the wallet's `/credential-offer` URL). This page covers the issuance-side topics that come up along the way: signing in at the issuer, renewing a credential later, deferred issuance, the wallet attestation the wallet sends, the OpenID4VCI feature level, and interactive (presentation-during-issuance) authorization.
+A credential offer is accepted with [`wallet accept`](presenting.md#wallet-accept-uri) (or from the wallet UI, a scanned QR, or the wallet's `/credential-offer` URL). Along the way the wallet handles sign-in at the issuer, renewing a credential later, deferred issuance, the wallet attestation it sends, the OpenID4VCI feature level, and interactive (presentation-during-issuance) authorization.
 
 ## Sign-in during issuance
 

@@ -2,7 +2,7 @@
 
 # Presenting from the wallet
 
-The wallet answers an OID4VP presentation request from the CLI, from a scanned QR, or at its own URL. This page covers `wallet accept` and `wallet scan`, invoking the wallet by URL instead of a custom scheme, and holding incoming requests to HAIP 1.0. Credential offers are dispatched by the same `wallet accept` command (see [issuing into the wallet](issuing.md) for the issuance-side topics).
+The wallet answers an OID4VP presentation request from the CLI (`wallet accept`), from a scanned QR (`wallet scan`), or at its own `/authorize` URL, and can hold the request to HAIP 1.0. A credential offer is dispatched by the same `wallet accept` command (see [issuing into the wallet](issuing.md) for the issuance side).
 
 ## `wallet accept <uri>`
 

@@ -1,6 +1,6 @@
 # OID4VCI Flows
 
-This page covers the OID4VCI flows implemented by `eudi-dev` when it acts as a wallet receiving a credential offer.
+The OID4VCI flows `eudi-dev` implements when it acts as a wallet receiving a credential offer.
 
 ## Flow Map
 

@@ -1,6 +1,6 @@
 # Docker Verifier Testing Guide
 
-The Docker image is mainly for **automated integration testing of OID4VP verifiers**. The container is a fully functional EUDI wallet that your verifier can send presentation requests to.
+The Docker image is mainly for **automated integration testing of OID4VP verifiers**. The container is an EUDI wallet your verifier can send presentation requests to.
 
 ## Quick start
 

@@ -1,6 +1,6 @@
 # eudi-dev documentation
 
-A testing toolkit for the EUDI wallet ecosystem (wallet, issuer, verifier, and CA in one binary). Start with the overview a page names, then follow into its detail.
+A testing toolkit for the EUDI wallet ecosystem (wallet, issuer, verifier, and CA in one binary), grouped by task.
 
 ## Getting started
 
