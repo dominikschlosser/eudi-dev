@@ -540,3 +540,33 @@ func TestDeferredCredentialRequestIsEncryptedWhenTheIssuerRequiresIt(t *testing.
 		t.Errorf("the deferred request carries no credential_response_encryption: %v", deferredRequest)
 	}
 }
+
+// A deferral recorded during an offer must survive the per-request store
+// reload that demo mode runs on every HTTP request. The poller reads the
+// server's own wallet, so if a reload overwrote its deferred issuances from a
+// disk copy written before the deferral was recorded, a busy demo would wipe
+// the record moments after it was made and never collect the credential.
+func TestReloadKeepsUnpersistedDeferral(t *testing.T) {
+	srv := newTestServer(t, true)
+	store := NewWalletStore(t.TempDir())
+	if _, err := store.LoadOrCreate(); err != nil {
+		t.Fatalf("initializing store: %v", err)
+	}
+	srv.SetStore(store)
+
+	srv.wallet.AddDeferredIssuance(&DeferredIssuance{
+		ID:            "pending-1",
+		TransactionID: "tx-1",
+		Issuer:        "https://issuer.test.example",
+		NextAttemptAt: time.Now().Add(time.Minute),
+	})
+
+	if err := srv.reloadFromStore(); err != nil {
+		t.Fatalf("reloadFromStore: %v", err)
+	}
+
+	deferrals := srv.wallet.DeferredIssuanceList()
+	if len(deferrals) != 1 || deferrals[0].ID != "pending-1" {
+		t.Fatalf("a per-request reload wiped the just-recorded deferral: %+v", deferrals)
+	}
+}

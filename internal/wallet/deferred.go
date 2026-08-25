@@ -237,37 +237,6 @@ func (w *Wallet) recordDeferredIssuance(pending *DeferredIssuance) *IssuanceResu
 	}
 }
 
-// AdoptDeferredIssuances takes over deferred credentials recorded on another
-// wallet, skipping any this one already tracks. A request that overrides the
-// profile runs on a clone that is thrown away afterwards: a credential is safe
-// there because it goes straight to the shared store, but a deferred issuance
-// is a promise to come back, and only the server's own wallet is polled.
-func (w *Wallet) AdoptDeferredIssuances(from *Wallet) int {
-	if w == nil || from == nil || w == from {
-		return 0
-	}
-	incoming := from.DeferredIssuanceList()
-	if len(incoming) == 0 {
-		return 0
-	}
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	known := make(map[string]bool, len(w.DeferredIssuances))
-	for _, existing := range w.DeferredIssuances {
-		known[existing.Issuer+"|"+existing.TransactionID] = true
-	}
-	adopted := 0
-	for _, pending := range incoming {
-		if known[pending.Issuer+"|"+pending.TransactionID] {
-			continue
-		}
-		w.DeferredIssuances = append(w.DeferredIssuances, pending)
-		adopted++
-	}
-	return adopted
-}
-
 // credentialTypeForConfiguration reads the credential type an issuer declares
 // for one configuration id, so a deferred credential can be named the way a
 // delivered one is.

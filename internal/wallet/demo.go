@@ -182,6 +182,9 @@ func (w *Wallet) ResetToBaseline() {
 	w.StatusEntries = nil
 	w.StatusListCounter = 0
 	w.IssuedAttestations = nil
+	// A pending deferral belongs to the session being wiped, so the poller must
+	// not carry it (or its keys) into the fresh baseline.
+	w.DeferredIssuances = nil
 }
 
 // startDemoReset launches the periodic baseline reset when configured.

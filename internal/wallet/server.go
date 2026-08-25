@@ -48,11 +48,6 @@ type Server struct {
 	storeSyncMu      sync.Mutex
 	staleClientOnce  sync.Once
 	demo             *demoState
-	// deferredIssuanceOwner is the wallet whose deferred credentials the
-	// poller collects. Set on the per-request clone a profile override
-	// creates, so a deferral recorded there is handed back rather than
-	// thrown away with the clone.
-	deferredIssuanceOwner *Wallet
 	// renewalBackoff holds off retrying a credential whose renewal failed.
 	renewalBackoff map[string]time.Time
 	renewalMu      sync.Mutex
@@ -340,7 +335,11 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
 	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
-	s.wallet.DeferredIssuances = append([]DeferredIssuance(nil), reloaded.DeferredIssuances...)
+	// Deferred issuances are not copied from the reloaded state: the poller and
+	// the offer that records one own them in memory and persist them on change.
+	// Overwriting them here would let a request that lands between recording a
+	// deferral and the poller's first attempt wipe it, which is what a busy
+	// demo (constant polling) does, so the credential never arrives.
 	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
 	s.wallet.StatusListCounter = reloaded.StatusListCounter
 	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)

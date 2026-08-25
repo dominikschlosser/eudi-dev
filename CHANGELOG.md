@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A deferred issuance is collected on the public demo.** The demo reloads the wallet from its store on every request (its state is shared), and that reload replaced the deferred issuances the poller works from. A credential the issuer deferred (a transaction id in place of the credential, §9) was recorded and then wiped moments later by the next poll of the page, so the poller never collected it. The poller and the offer that records a deferral now own that list in memory (persisted whenever it changes), so a per-request reload no longer clears it and the credential arrives once the issuer has it ready.
+- **A single credential bound to another key stays presentable.** When a batch-capable issuer hands back one credential bound to a proof key other than the holder key (2.0.1 accepts it), the wallet records that key against the credential, so it signs its key binding (RFC 9901) with the key its cnf names and can be presented.
 - **An issuance that cannot finish says so in the activity log.** After the credential response arrives the flow can still fail (an unusable credential, a deferred response the wallet cannot act on, an import error), and until now the activity log stopped at the last step that succeeded. Any error that ends the flow after the offer was received is now recorded, naming the issuer and the reason, so a failed issuance is visible rather than silent.
 - **The credential card flips cleanly on a phone.** Opening a credential's description flips the card to its back. The 3D perspective is now held steady through the flip, so the front face (its name and logo, mirrored) no longer shows until the animation ends.
 
