@@ -84,7 +84,7 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := s.wallet.CredentialsJSONWindow(offset, limit)
+	data, err := s.wallet.CredentialsListingJSONWindow(offset, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

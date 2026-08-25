@@ -395,7 +395,13 @@ func TestRemoteShowImportLogsInfoViaCLI(t *testing.T) {
 		t.Fatalf("expected 1 remote credential: %v %v", creds, err)
 	}
 	id, _ := creds[0]["id"].(string)
-	raw, _ := creds[0]["raw"].(string)
+	// The listing carries no raw credential (an overview does not need it), so
+	// the raw string comes from the per-credential fetch.
+	one, err := client.Credential(id)
+	if err != nil {
+		t.Fatalf("fetch credential %s: %v", id, err)
+	}
+	raw, _ := one["raw"].(string)
 
 	// show (raw and decoded) must succeed against the remote wallet
 	rootCmd.SetArgs([]string{"wallet", "show", id, "--remote", url})

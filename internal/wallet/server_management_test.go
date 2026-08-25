@@ -133,8 +133,25 @@ func TestIssueCredentialAPIDisplay(t *testing.T) {
 	// The listing references the image by URL, not inline, so the payload stays
 	// small.
 	list := serverRequest(t, srv, http.MethodGet, "/api/credentials", "")
-	if strings.Contains(list.Body.String(), "data:image/") {
+	listBody := list.Body.String()
+	if strings.Contains(listBody, "data:image/") {
 		t.Error("the credential listing still inlines a display image as a data URI")
+	}
+	// The overview does not carry the claim values or the raw credential, only
+	// the count, so an image-heavy wallet is not returned by the megabyte.
+	if strings.Contains(listBody, `"raw":`) {
+		t.Error("the credential listing still ships the raw credential string")
+	}
+	if strings.Contains(listBody, `"claims":`) {
+		t.Error("the credential listing still ships the claim values")
+	}
+	if !strings.Contains(listBody, `"claim_count":`) {
+		t.Error("the credential listing dropped the claim count")
+	}
+	// The single-credential GET still carries the raw credential.
+	one := serverRequest(t, srv, http.MethodGet, "/api/credentials/"+id, "")
+	if !strings.Contains(one.Body.String(), `"raw":`) {
+		t.Error("the single-credential GET dropped the raw credential")
 	}
 
 	// The referenced endpoint serves the image bytes, cached hard with an ETag.

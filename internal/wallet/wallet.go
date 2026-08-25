@@ -1339,6 +1339,30 @@ func batchRepresentative(creds []StoredCredential, member StoredCredential) Stor
 // empty array rather than an error, so a paging client that lands on a
 // stale page simply sees nothing.
 func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
+	return json.Marshal(w.listedSummaries(offset, limit))
+}
+
+// CredentialsListingJSONWindow is the overview listing: the same window trimmed
+// to the fields a card renders. It leaves out the claim values and the raw
+// credential (the per-credential GET and the decoder carry those), so a wallet
+// holding image-heavy credentials is not returned by the megabyte on every
+// refresh. The CLI and the HTTP list share it through TrimCredentialListing.
+func (w *Wallet) CredentialsListingJSONWindow(offset, limit int) ([]byte, error) {
+	summaries := w.listedSummaries(offset, limit)
+	for _, s := range summaries {
+		TrimCredentialListing(s)
+	}
+	return json.Marshal(summaries)
+}
+
+// TrimCredentialListing removes the fields an overview card does not render (the
+// claim values and the raw credential), so a listing stays small.
+func TrimCredentialListing(summary map[string]any) {
+	delete(summary, "raw")
+	delete(summary, "claims")
+}
+
+func (w *Wallet) listedSummaries(offset, limit int) []map[string]any {
 	creds := w.ListedCredentials()
 	// Sorted before the window is taken, or paging would slice the stored
 	// order and then order each page on its own.
@@ -1354,7 +1378,7 @@ func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	for i, c := range creds {
 		summaries[i] = w.CredentialSummaryWithBatch(c)
 	}
-	return json.Marshal(summaries)
+	return summaries
 }
 
 // BatchGroupSize is how many copies a batch holds, so a listing can report the

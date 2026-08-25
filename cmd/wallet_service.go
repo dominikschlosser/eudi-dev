@@ -210,6 +210,9 @@ func (l *localWallet) Credentials() ([]map[string]any, error) {
 	summaries := make([]map[string]any, len(creds))
 	for i, c := range creds {
 		summaries[i] = w.CredentialSummaryWithBatch(c)
+		// The overview drops the claim values and the raw credential, the same
+		// as the HTTP listing, so `wallet list` agrees with a remote instance.
+		wallet.TrimCredentialListing(summaries[i])
 	}
 	return summaries, nil
 }
