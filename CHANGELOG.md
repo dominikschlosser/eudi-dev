@@ -10,12 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **An issuance that cannot finish says so in the activity log.** After the credential response arrives the flow can still fail (an unusable credential, a deferred response the wallet cannot act on, an import error), and until now the activity log stopped at the last step that succeeded. Any error that ends the flow after the offer was received is now recorded, naming the issuer and the reason, so a failed issuance is visible rather than silent.
+- **The credential card flips cleanly on a phone.** Opening a credential's description flips the card to its back. The 3D perspective is now held steady through the flip, so the front face (its name and logo, mirrored) no longer shows until the animation ends.
 
 ## [2.0.1] - 2026-08-25
 
 ### Fixed
 
-- **A batch-capable issuer that issues a single credential is accepted.** An issuer that advertises `batch_credential_issuance` makes the wallet request a batch (several key proofs), but the issuer may hand back a single credential, which OpenID4VCI 1.0 allows ("unless the Issuer decides to issue fewer Credentials"). The wallet now imports that one credential instead of refusing it for not filling every proof key.
+- **A batch-capable issuer that issues a single credential is accepted.** An issuer that advertises `batch_credential_issuance` makes the wallet request a batch (several key proofs), but the issuer may hand back a single credential, which OpenID4VCI 1.0 allows ("unless the Issuer decides to issue fewer Credentials"). The wallet now imports that one credential rather than refusing one that is not bound to its holder key (a credential bound elsewhere reads as bound to another key on its card).
 
 ## [2.0.0] - 2026-08-24
 

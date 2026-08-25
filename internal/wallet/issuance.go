@@ -235,7 +235,7 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 // caller already settled. An offer delivered by reference is dereferenced here
 // even when the consent dialog already fetched it, which is allowed and keeps
 // this the single entry point.
-func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (result *IssuanceResult, err error) {
+func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (_ *IssuanceResult, err error) {
 	offer, err := w.resolveOffer(offerURI, opts.ResolvedOffer)
 	if err != nil {
 		return nil, err
@@ -250,8 +250,10 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 
 	// Any error that ends the flow after the offer was received is recorded, so
 	// the activity log names why issuance did not finish instead of stopping at
-	// the last step that happened to succeed. The step that failed logs its own
-	// detail too, this is the summary that closes the flow.
+	// the last step that happened to succeed. The steps that fail after the
+	// credential response (a credential the wallet cannot use, a deferred
+	// response it cannot act on, an import that fails) log no detail of their
+	// own, so this is the entry that names the failure.
 	defer func() {
 		if err != nil {
 			w.addProtocolLog("issuance", "issuance_failed",

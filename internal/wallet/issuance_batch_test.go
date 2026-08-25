@@ -170,17 +170,20 @@ func TestSelectHolderBoundCredentialSingle(t *testing.T) {
 }
 
 // An issuer that advertises batch_credential_issuance makes the wallet send
-// several proofs, but the issuer may still hand back a single credential (an
-// ordinary non-batch issuance). That one credential is imported rather than
-// refused for not filling every proof key.
-func TestSelectHolderBoundCredentialSingleWithManyProofs(t *testing.T) {
+// several proofs, but OpenID4VCI 1.0 lets it issue fewer credentials. A single
+// credential is imported even when it is bound to a proof key other than the
+// holder key, rather than being refused (its card then reads as bound to another
+// key). The credential is bound to an ephemeral proof key here, which the old
+// matching path refused, so this guards the leniency.
+func TestSelectHolderBoundCredentialSingleNotHolderBound(t *testing.T) {
 	holder := testKey(t)
-	cred := fakeSDJWT(t, &holder.PublicKey)
+	ephemeral := testKey(t)
+	cred := fakeSDJWT(t, &ephemeral.PublicKey)
 	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
-	keys := []*ecdsa.PrivateKey{holder, testKey(t), testKey(t), testKey(t)}
+	keys := []*ecdsa.PrivateKey{holder, ephemeral, testKey(t)}
 	got, err := selectHolderBoundCredential(resp, keys)
 	if err != nil {
-		t.Fatalf("selectHolderBoundCredential with many proofs and one credential: %v", err)
+		t.Fatalf("a single credential should be imported even when it is not holder-bound: %v", err)
 	}
 	if got != cred {
 		t.Fatal("expected the single credential to be imported")

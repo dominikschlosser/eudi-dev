@@ -467,6 +467,11 @@ header h1 {
     border: 0;
     overflow: visible;
     transform-style: preserve-3d;
+    /* Perspective is set in the resting transform too, so only the rotation
+       animates. A perspective that appeared only in the open state would leave
+       the 3D context unstable through the flip, so the front face (its name and
+       logo mirrored) showed until the animation finished. */
+    transform: perspective(1000px) rotateY(0deg);
     transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
   .credential-card.desc-open { transform: perspective(1000px) rotateY(180deg); }
