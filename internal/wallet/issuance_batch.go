@@ -164,13 +164,28 @@ func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
 // an unused copy each time so a Relying Party cannot link two presentations of
 // the same credential (EUDI ARF Annex 2 Topic 10 method C, ISSU_51-54).
 //
-// A single-credential response stores nothing extra. So does a batch collected
-// on a presentation clone: its credentialSink forwards a copy to the real
-// wallet at import time, before the per-copy key could be set, so the copies
-// would land there unpresentable. Such an issuance keeps its holder copy alone.
+// A single-credential response stores nothing extra, unless the one credential
+// is bound to a proof key other than the holder key (a batch-capable issuer
+// that issued fewer credentials than the proofs sent): then that key is recorded
+// against it so the wallet can still present it. A batch collected on a
+// presentation clone keeps its holder copy alone: its credentialSink forwards a
+// copy to the real wallet at import time, before the per-copy key could be set,
+// so the copies would land there unpresentable.
 func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) {
 	creds := credentialStringsFromResponse(credResp)
-	if primary == nil || len(creds) <= 1 || len(keys) <= 1 {
+	if primary == nil {
+		return
+	}
+	if len(creds) <= 1 || len(keys) <= 1 {
+		// One credential bound to an ephemeral proof key is presentable only if
+		// the wallet keeps that key. The holder-bound case needs nothing, since
+		// batchSigningKey falls back to the holder key.
+		if idx := proofKeyIndex(primary.Raw, keys); idx > 0 {
+			if pem, err := encodeECPrivateKeyPEM(keys[idx]); err == nil {
+				w.setBatchFields(primary.ID, "", pem)
+				primary.BindingKeyPEM = pem
+			}
+		}
 		return
 	}
 	if w.credentialSink != nil {

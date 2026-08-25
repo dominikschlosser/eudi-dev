@@ -190,6 +190,34 @@ func TestSelectHolderBoundCredentialSingleNotHolderBound(t *testing.T) {
 	}
 }
 
+// A single credential the issuer bound to an ephemeral proof key (rather than
+// the holder key) stays presentable: the wallet records that key against it, so
+// its key binding is signed with the key its cnf names.
+func TestSingleCredentialBoundToEphemeralKeyIsPresentable(t *testing.T) {
+	w := generateTestWallet(t)
+	ephemeral := testKey(t)
+	keys := []*ecdsa.PrivateKey{w.HolderKey, testKey(t), ephemeral}
+	cred := fakeSDJWT(t, &ephemeral.PublicKey)
+	imported, err := w.ImportCredential(cred)
+	if err != nil {
+		t.Fatalf("importing: %v", err)
+	}
+	resp := map[string]any{"credentials": []any{map[string]any{"credential": cred}}}
+	w.storeBatchSiblings(imported, resp, keys, nil)
+
+	stored, ok := w.GetCredential(imported.ID)
+	if !ok {
+		t.Fatal("the imported credential is missing")
+	}
+	signer, err := w.batchSigningKey(stored)
+	if err != nil {
+		t.Fatalf("resolving the signing key: %v", err)
+	}
+	if !signer.PublicKey.Equal(&ephemeral.PublicKey) {
+		t.Fatal("expected the credential to sign its key binding with the ephemeral proof key it is bound to")
+	}
+}
+
 func TestMdocBindsToKey(t *testing.T) {
 	holder := testKey(t)
 	issuer := testKey(t)
