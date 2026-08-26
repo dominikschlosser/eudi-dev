@@ -553,6 +553,57 @@ func TestAuthorizeSpendsTheRequestURI(t *testing.T) {
 	}
 }
 
+// The login page must widen form-action to the client's redirect_uri. Under
+// the toolkit's global form-action 'self', a browser enforcing form-action
+// across the post-login redirect blocks a cross-origin or custom-scheme
+// redirect_uri (every real mobile wallet), so the login silently does nothing.
+func TestLoginPageAllowsTheRedirectTarget(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	d.SetClientAuthMode(ClientAuthOptional)
+	h := d.IssuerHandler()
+
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	pushed := pushAuthorizationRequest(t, h, "http://wallet.example", holderKey, format.EncodeBase64URL(sum[:]), nil)
+	if pushed.Code != http.StatusCreated {
+		t.Fatalf("pushing the authorization request: %d %s", pushed.Code, pushed.Body.String())
+	}
+	var pushedDoc map[string]any
+	if err := json.Unmarshal(pushed.Body.Bytes(), &pushedDoc); err != nil {
+		t.Fatalf("decoding the pushed authorization response: %v", err)
+	}
+	requestURI, _ := pushedDoc["request_uri"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/authorize?request_uri="+url.QueryEscape(requestURI), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("serving the login page: %d %s", rec.Code, rec.Body.String())
+	}
+	// The helper pushes redirect_uri http://wallet.example/cb, so the login must
+	// let its form submission reach that origin.
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "form-action 'self' http://wallet.example;") {
+		t.Errorf("login CSP must allow the redirect origin, got %q", csp)
+	}
+}
+
+func TestRedirectFormActionSource(t *testing.T) {
+	cases := map[string]string{
+		"https://wallet.example/cb":           "https://wallet.example",
+		"http://wallet.example:8080/cb":       "http://wallet.example:8080",
+		"openid-credential-offer://authorize": "openid-credential-offer:",
+		"eudi-openid4ci://cb":                 "eudi-openid4ci:",
+		"not a url":                           "",
+		"":                                    "",
+	}
+	for in, want := range cases {
+		if got := redirectFormActionSource(in); got != want {
+			t.Errorf("redirectFormActionSource(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // The authorization server metadata is what tells a wallet where to push its
 // request and that PKCE with S256 is required.
 func TestAuthorizationServerMetadata(t *testing.T) {

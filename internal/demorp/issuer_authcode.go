@@ -209,6 +209,7 @@ func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	renderLoginPage(w, loginPageData{
 		Action:      "authorize",
 		RequestURI:  request.requestURI,
+		RedirectURI: request.redirectURI,
 		Title:       "Sign in",
 		Explanation: "Your wallet is collecting a Demo Event Ticket. Sign in to approve it.",
 	})
@@ -297,10 +298,11 @@ func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validDemoAccount(r.PostFormValue("username"), r.PostFormValue("password")) {
 		renderLoginPage(w, loginPageData{
-			Action:     "authorize",
-			RequestURI: request.requestURI,
-			Title:      "Sign in",
-			Error:      "Wrong account. The demo accepts alice / alice.",
+			Action:      "authorize",
+			RequestURI:  request.requestURI,
+			RedirectURI: request.redirectURI,
+			Title:       "Sign in",
+			Error:       "Wrong account. The demo accepts alice / alice.",
 		})
 		return
 	}
@@ -888,6 +890,9 @@ type loginPageData struct {
 	Title       string
 	Explanation string
 	Error       string
+	// RedirectURI is the client's redirect target. It is not rendered: it widens
+	// the page's form-action so the post-login redirect is allowed.
+	RedirectURI string
 }
 
 var loginPageTemplate = template.Must(template.New("login").Parse(`<!DOCTYPE html>
@@ -939,6 +944,9 @@ func renderLoginPage(w http.ResponseWriter, data loginPageData) {
 	if data.Explanation == "" {
 		data.Explanation = "Sign in with the demo account."
 	}
+	// The login page needs its own policy so the post-login redirect to the
+	// client's redirect_uri is not blocked (see loginContentSecurityPolicy).
+	w.Header().Set("Content-Security-Policy", loginContentSecurityPolicy(data.RedirectURI))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	status := http.StatusOK
@@ -947,6 +955,41 @@ func renderLoginPage(w http.ResponseWriter, data loginPageData) {
 	}
 	w.WriteHeader(status)
 	_ = loginPageTemplate.Execute(w, data)
+}
+
+// loginContentSecurityPolicy widens form-action to the client's redirect_uri.
+// The authorization endpoint must redirect the browser there to hand back the
+// code, and a browser enforces form-action across that redirect, so the global
+// 'self' policy would block a cross-origin or custom-scheme redirect_uri. Every
+// other restriction is kept.
+func loginContentSecurityPolicy(redirectURI string) string {
+	formAction := "'self'"
+	if src := redirectFormActionSource(redirectURI); src != "" {
+		formAction += " " + src
+	}
+	return "default-src 'self'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self'; " +
+		"object-src 'none'; " +
+		"base-uri 'none'; " +
+		"form-action " + formAction + "; " +
+		"frame-ancestors 'none'"
+}
+
+// redirectFormActionSource turns a redirect_uri into a CSP form-action source:
+// an http(s) target contributes its origin, a custom scheme the scheme itself.
+func redirectFormActionSource(redirectURI string) string {
+	u, err := url.Parse(strings.TrimSpace(redirectURI))
+	if err != nil || u.Scheme == "" {
+		return ""
+	}
+	if u.Scheme == "http" || u.Scheme == "https" {
+		if u.Host == "" {
+			return ""
+		}
+		return u.Scheme + "://" + u.Host
+	}
+	return u.Scheme + ":"
 }
 
 func writeAuthorizeError(w http.ResponseWriter, message string) {
