@@ -781,6 +781,10 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		log.warn(label+"credential is well-formed (RFC 9901)", fmt.Errorf("%s", warning))
 	}
 
+	// SD-JWT VC requires the issuer-signed JWT to carry typ dc+sd-jwt (vc+sd-jwt
+	// during the transition). The demo warns rather than rejects it.
+	log.warn(label+"issuer-signed JWT declares an SD-JWT VC typ", sdjwt.ValidateVCType(token.Header))
+
 	if err = check("every disclosure is referenced by the credential", checkDisclosuresReferenced(token)); err != nil {
 		return nil, err
 	}
