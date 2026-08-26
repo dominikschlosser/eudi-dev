@@ -114,6 +114,39 @@ func TestVerifyClientID_X509SanDNS(t *testing.T) {
 	}
 }
 
+// x509_san_dns binds the response destination's FQDN to the client_id
+// (OID4VP 1.0 §5.9.1): a signed request from a valid certificate must not send
+// the response, and the disclosed claims, to another host. The DC API is
+// origin-bound and exempt.
+func TestVerifyClientID_X509SanDNSResponseFQDN(t *testing.T) {
+	certB64, _ := testCertDER([]string{"example.com"})
+	req := reqObjWithX5C(certB64)
+	const clientID = "x509_san_dns:example.com"
+
+	for _, tt := range []struct {
+		name          string
+		responseURI   string
+		requestOrigin string
+		wantEmpty     bool
+	}{
+		{"matching response host", "https://example.com/response", "", true},
+		{"matching host with a port", "https://example.com:8443/response", "", true},
+		{"mismatched response host", "https://evil.example/collect", "", false},
+		{"dc api is origin-bound, not checked", "", "https://wallet.example", true},
+		{"no response uri", "", "", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			warning := VerifyClientID(clientID, req, tt.responseURI, tt.requestOrigin)
+			if tt.wantEmpty && warning != "" {
+				t.Errorf("expected no finding, got %q", warning)
+			}
+			if !tt.wantEmpty && warning == "" {
+				t.Error("expected a finding for a mismatched response host")
+			}
+		})
+	}
+}
+
 func TestVerifyClientID_X509Hash(t *testing.T) {
 	certB64, der := testCertDER([]string{"example.com"})
 	hash := sha256.Sum256(der)

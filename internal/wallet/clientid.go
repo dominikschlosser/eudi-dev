@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -174,7 +175,7 @@ func clientIDVerifiesViaX5C(clientID string) bool {
 func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string) string {
 	switch {
 	case strings.HasPrefix(clientID, "x509_san_dns:"):
-		return verifyX509SAN(clientID, "x509_san_dns:", "dns", reqObj)
+		return verifyX509SAN(clientID, "x509_san_dns:", "dns", reqObj, responseURI, requestOrigin)
 	case strings.HasPrefix(clientID, "x509_hash:"):
 		return verifyX509Hash(clientID, reqObj)
 	case strings.HasPrefix(clientID, "origin:"):
@@ -200,8 +201,10 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 	}
 }
 
-// verifyX509SAN checks that the leaf certificate SAN contains the expected DNS name.
-func verifyX509SAN(clientID, prefix, scheme string, reqObj *oid4vc.RequestObjectJWT) string {
+// verifyX509SAN checks that the leaf certificate SAN contains the expected DNS
+// name and, outside the DC API, that the response destination's FQDN matches
+// the client_id (OID4VP 1.0 §5.9.1).
+func verifyX509SAN(clientID, prefix, scheme string, reqObj *oid4vc.RequestObjectJWT, responseURI, requestOrigin string) string {
 	expected := strings.TrimPrefix(clientID, prefix)
 
 	cert, warning := extractLeafCert(reqObj)
@@ -209,14 +212,27 @@ func verifyX509SAN(clientID, prefix, scheme string, reqObj *oid4vc.RequestObject
 		return warning
 	}
 
-	switch scheme {
-	case "dns":
+	if scheme == "dns" {
+		matched := false
 		for _, name := range cert.DNSNames {
 			if name == expected {
-				return ""
+				matched = true
+				break
 			}
 		}
-		return fmt.Sprintf("client_id expects DNS SAN %q but leaf certificate has DNSNames=%v", expected, cert.DNSNames)
+		if !matched {
+			return fmt.Sprintf("client_id expects DNS SAN %q but leaf certificate has DNSNames=%v", expected, cert.DNSNames)
+		}
+	}
+
+	// §5.9.1: outside the DC API (which is origin-bound) and with no trusted
+	// client list to waive it, the FQDN of the response destination MUST match
+	// the client_id. Without this a signed request from a valid certificate
+	// could send the response, and the disclosed claims, to another host.
+	if requestOrigin == "" && responseURI != "" {
+		if parsed, err := url.Parse(responseURI); err != nil || !strings.EqualFold(parsed.Hostname(), expected) {
+			return fmt.Sprintf("x509_san_dns: the response goes to %q, whose host does not match the client_id %q", responseURI, expected)
+		}
 	}
 
 	return ""
