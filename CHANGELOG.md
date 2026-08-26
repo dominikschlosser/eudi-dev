@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-08-26
+
+### Fixed
+
+- **The demo issuer tells the wallet which PID it will accept during issuance.** Before it issues a ticket, the demo issuer asks the wallet to present a PID, and it accepts only a PID that chains to its own CA. The request named no trusted authority, so the wallet could present a PID from another issuer, which the demo then rejected a step later during verification. The request now names that CA as an `aki` trusted authority (the CA key identifier a wallet reads from a credential's `AuthorityKeyIdentifier`), on both the SD-JWT and mdoc alternatives, so the wallet presents only a PID that would pass, or reports it holds none. The demo issuer page notes this when presentation during issuance is selected.
+
 ## [2.0.5] - 2026-08-26
 
 ### Fixed

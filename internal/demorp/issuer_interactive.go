@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
@@ -421,26 +422,34 @@ func (d *DemoRP) newInteractivePIDRequest() *requestState {
 // leaf in the request object with no trust list. When no signing material is
 // available it falls back to the unsigned form the draft's example uses.
 func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]any {
+	sdjwtCred := map[string]any{
+		"id":     req.queryID,
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []string{req.vct}},
+		"claims": claimPaths(req.want),
+	}
+	mdocCred := map[string]any{
+		"id":     req.mdocQueryID,
+		"format": "mso_mdoc",
+		"meta":   map[string]any{"doctype_value": req.docType},
+		"claims": namespacedClaimPaths(req.docType, req.wantMDOC),
+	}
+	// verifyPresentation accepts only a credential chaining to this issuer's own
+	// CA, so the query pins that CA as a trusted authority by its key identifier.
+	// A wallet then offers only a credential that would pass.
+	if aki := d.trustAnchorAKI(); aki != "" {
+		authorities := []map[string]any{{"type": "aki", "values": []string{aki}}}
+		sdjwtCred["trusted_authorities"] = authorities
+		mdocCred["trusted_authorities"] = authorities
+	}
+
 	claims := map[string]any{
 		"response_type":    "vp_token",
 		"response_mode":    "ia_post",
 		"nonce":            req.nonce,
 		"expected_origins": []string{originOf(d.challengeEndpoint())},
 		"dcql_query": map[string]any{
-			"credentials": []map[string]any{
-				{
-					"id":     req.queryID,
-					"format": "dc+sd-jwt",
-					"meta":   map[string]any{"vct_values": []string{req.vct}},
-					"claims": claimPaths(req.want),
-				},
-				{
-					"id":     req.mdocQueryID,
-					"format": "mso_mdoc",
-					"meta":   map[string]any{"doctype_value": req.docType},
-					"claims": namespacedClaimPaths(req.docType, req.wantMDOC),
-				},
-			},
+			"credentials": []map[string]any{sdjwtCred, mdocCred},
 			// Either format satisfies the request, so a wallet holding one of
 			// them is not asked for both.
 			"credential_sets": []map[string]any{{
@@ -481,6 +490,17 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 		return claims
 	}
 	return map[string]any{"request": jar}
+}
+
+// trustAnchorAKI is this issuer's CA key identifier, base64url-encoded, as a
+// wallet reads it from the AuthorityKeyIdentifier of a credential's leaf
+// certificate. Empty when no CA is available.
+func (d *DemoRP) trustAnchorAKI() string {
+	ca := d.wallet.TrustAnchorCertificate()
+	if ca == nil || len(ca.SubjectKeyId) == 0 {
+		return ""
+	}
+	return format.EncodeBase64URL(ca.SubjectKeyId)
 }
 
 func claimPaths(names []string) []map[string]any {

@@ -41,7 +41,9 @@ const AUTHORIZATION_HINTS = {
   presentation:
     "The issuer asks the wallet for a PID before it issues, and verifies that " +
     "presentation itself, so no browser is involved (OpenID4VCI 1.1 interactive " +
-    "authorization). A wallet that does not support it is sent to the sign-in instead.",
+    "authorization). The request names this issuer's CA as a trusted_authorities " +
+    "aki, so the wallet only offers a PID that chains to it. A wallet that does " +
+    "not support interactive authorization is sent to the sign-in instead.",
 };
 
 // What a status list reference buys: without one there is nothing to revoke,

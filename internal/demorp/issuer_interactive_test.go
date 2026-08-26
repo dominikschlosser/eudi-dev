@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
@@ -542,6 +543,62 @@ func startInteractiveSession(t *testing.T, d *DemoRP, provider walletProvider, c
 		t.Fatalf("challenge response carries no session or nonce: %v", response)
 	}
 	return session, nonce
+}
+
+// The presentation request names the issuer's own CA as a trusted authority by
+// its key identifier, and a credential issued under that CA carries the same
+// identifier as its leaf's AuthorityKeyId. So the aki filter never holds back a
+// credential this issuer would have accepted.
+func TestInteractiveRequestPinsTheIssuerCA(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+
+	aki := d.trustAnchorAKI()
+	if aki == "" {
+		t.Fatal("the demo issuer has no trust anchor key identifier")
+	}
+
+	// A leaf issued under the issuer's CA carries that CA's key identifier as its
+	// AuthorityKeyId, which is what the wallet matches the aki against.
+	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	holderKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating a holder key: %v", err)
+	}
+	leaf, err := mock.GenerateLeafCert(d.wallet.CAKey, caCert, &holderKey.PublicKey)
+	if err != nil {
+		t.Fatalf("generating a leaf: %v", err)
+	}
+	if got := format.EncodeBase64URL(leaf.AuthorityKeyId); got != aki {
+		t.Errorf("a credential issued under this CA carries aki %q, but the request pins %q", got, aki)
+	}
+
+	// Both credential entries of the presentation request carry that aki.
+	request := d.interactivePresentationRequest(&requestState{
+		queryID: "pid", mdocQueryID: "pid_mdoc", nonce: "n",
+		vct: mock.DefaultPIDVCT, docType: "org.iso.18013.5.1.mDL",
+		want: []string{"given_name"}, wantMDOC: []string{"given_name"},
+	})
+	jar, ok := request["request"].(string)
+	if !ok {
+		t.Fatalf("expected a signed request object, got %v", request)
+	}
+	dcql, _ := signedRequestClaims(t, jar)["dcql_query"].(map[string]any)
+	credentials, _ := dcql["credentials"].([]any)
+	if len(credentials) != 2 {
+		t.Fatalf("expected 2 credential entries, got %d", len(credentials))
+	}
+	for _, entry := range credentials {
+		cred, _ := entry.(map[string]any)
+		authorities, _ := cred["trusted_authorities"].([]any)
+		if len(authorities) != 1 {
+			t.Fatalf("credential %v carries no trusted_authorities", cred["id"])
+		}
+		authority, _ := authorities[0].(map[string]any)
+		values, _ := authority["values"].([]any)
+		if authority["type"] != "aki" || len(values) != 1 || values[0] != aki {
+			t.Errorf("credential %v trusted_authorities = %v, want one aki %q", cred["id"], authority, aki)
+		}
+	}
 }
 
 // signedRequestClaims decodes the payload of a signed request object JWT.
