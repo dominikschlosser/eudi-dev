@@ -16,11 +16,12 @@
 // (OpenID4VP) mounted on the wallet server, so a deployment can demonstrate
 // complete protocol flows out of the box.
 //
-// Both are deliberately small: pre-authorized and authorization code grants
-// with the issuer as its own authorization server (one hardcoded demo
-// account), plain-parameter authorization requests with direct_post, SD-JWT VC
-// only. Credentials are signed with the wallet's issuer key under a leaf from
-// the wallet CA, so the wallet's own trust list closes the loop.
+// Both are deliberately small: the issuer offers pre-authorized and
+// authorization code grants and is its own authorization server (one hardcoded
+// demo account); the verifier sends a signed request object by reference and
+// takes an encrypted direct_post.jwt response, verifying SD-JWT VC and mdoc.
+// Credentials are signed with the wallet's issuer key under a leaf from the
+// wallet CA, so the wallet's own trust list closes the loop.
 package demorp
 
 import (

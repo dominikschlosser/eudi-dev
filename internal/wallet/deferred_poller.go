@@ -307,11 +307,6 @@ func (s *Server) handleDeferredAttemptError(pending DeferredIssuance, err error)
 	return s.abandonDeferred(pending, err.Error())
 }
 
-// isRetryableDeferredError reports whether an error is worth another attempt: a
-// network hiccup or server fault is, a refused token or unknown transaction is
-// not. A long deferral runs into the second case, since the access token
-// expires in minutes while the issuer may ask the wallet back in an hour.
-
 // isAuthorizationRejected reports whether the issuer refused the credentials
 // the request carried, rather than the request itself.
 func isAuthorizationRejected(err error) bool {
@@ -321,6 +316,10 @@ func isAuthorizationRejected(err error) bool {
 		strings.Contains(message, "invalid_token")
 }
 
+// isRetryableDeferredError reports whether an error is worth another attempt: a
+// network hiccup or server fault is, a refused token or unknown transaction is
+// not. A long deferral runs into the second case, since the access token
+// expires in minutes while the issuer may ask the wallet back in an hour.
 func isRetryableDeferredError(err error) bool {
 	message := err.Error()
 	for _, fatal := range []string{

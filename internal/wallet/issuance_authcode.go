@@ -382,7 +382,6 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
 
-	// This flow always sends DPoP: it refuses issuer metadata without it.
 	credResp, pending, err := w.resolveDeferredCredential(credResp, deferredContext{
 		metadata:      metadata,
 		tokenEndpoint: tokenEndpoint,

@@ -148,7 +148,7 @@ Selective disclosure itself is RFC 9901. The credential profile on top of it is 
 |---------|--------|-------|
 | IssuerSigned CBOR parsing | Implemented | |
 | DeviceResponse generation | Implemented | |
-| COSE_Sign1 verification | Implemented | ES256/384/512, PS256, RS256 |
+| COSE_Sign1 verification | Implemented | ES256/384/512, PS256 |
 | MSO (Mobile Security Object) parsing | Implemented | |
 | Validity info (validFrom, validUntil) | Implemented | |
 | IssuerSignedItem digest verification | Implemented | |

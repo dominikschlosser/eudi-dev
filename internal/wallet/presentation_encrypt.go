@@ -82,8 +82,8 @@ func firstSigningOnlyEncryptionJWK(jwksVal any) map[string]any {
 }
 
 // firstJWK extracts the first usable encryption key from a JWKS value
-// ({"keys": [...]}). Keys the wallet cannot use. Unsupported kty, unsupported
-// curve, or a signing-only use. Are ignored per RFC 7517 §5, so verifiers can
+// ({"keys": [...]}). Keys the wallet cannot use (unsupported kty, unsupported
+// curve, or a signing-only use) are ignored per RFC 7517 §5, so verifiers can
 // advertise e.g. post-quantum keys ahead of wallet support without breaking
 // encryption to the usable key.
 func firstJWK(jwksVal any) map[string]any {
