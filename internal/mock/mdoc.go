@@ -107,6 +107,10 @@ type MDOCConfig struct {
 	// OmitValidityInfo drops the MSO validityInfo, which ISO 18013-5 requires,
 	// for testing how a verifier handles an mdoc that states no validity period.
 	OmitValidityInfo bool
+	// OmitDigestAlgorithm drops the MSO digestAlgorithm, which ISO 18013-5
+	// requires, for testing how a verifier handles its absence. The digests are
+	// still computed with SHA-256.
+	OmitDigestAlgorithm bool
 }
 
 // GenerateMDOC creates a mock mDOC (IssuerSigned) credential.
@@ -178,10 +182,12 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 
 	// Build MSO (Mobile Security Object)
 	mso := map[string]any{
-		"version":         "1.0",
-		"digestAlgorithm": "SHA-256",
-		"docType":         cfg.DocType,
-		"valueDigests":    valueDigestsByNS,
+		"version":      "1.0",
+		"docType":      cfg.DocType,
+		"valueDigests": valueDigestsByNS,
+	}
+	if !cfg.OmitDigestAlgorithm {
+		mso["digestAlgorithm"] = "SHA-256"
 	}
 	if !cfg.OmitValidityInfo {
 		mso["validityInfo"] = map[string]any{

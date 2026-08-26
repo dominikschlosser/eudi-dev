@@ -1012,6 +1012,9 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid: %s", strings.Join(result.Errors, "; "))); err != nil {
 		return nil, log.entries, err
 	}
+	for _, warning := range result.Warnings {
+		log.warn("mdoc MSO declares its required members", fmt.Errorf("%s", warning))
+	}
 	// ISO 18013-5 makes validityInfo (with validUntil) a required MSO member. An
 	// mdoc that omits it has no stated expiry, so the period cannot be checked:
 	// note that rather than affirm a validity that was never verified.

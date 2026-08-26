@@ -557,6 +557,9 @@ func PrintVerifyResultMDOC(r *mdoc.VerifyResult, opts Options) {
 
 	printTimeValidity(r.ValidUntil, r.ValidFrom, r.Expired, r.NotYetValid)
 
+	for _, w := range r.Warnings {
+		warnColor.Printf("  ⚠ %s\n", w)
+	}
 	for _, e := range r.Errors {
 		errorColor.Printf("  ✗ %s\n", e)
 	}

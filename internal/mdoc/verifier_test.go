@@ -16,6 +16,7 @@ package mdoc
 
 import (
 	"crypto"
+	"strings"
 	"testing"
 	"time"
 
@@ -152,6 +153,32 @@ func TestVerify_NoValidityInfo(t *testing.T) {
 	}
 	if result.Expired || result.NotYetValid {
 		t.Errorf("Expired = %v, NotYetValid = %v, want both false", result.Expired, result.NotYetValid)
+	}
+}
+
+// An mdoc whose MSO omits digestAlgorithm still verifies, since the value
+// digests fall back to SHA-256, but ISO 18013-5 requires the member: Verify
+// reports the omission as a warning so a caller need not accept it silently.
+func TestVerify_NoDigestAlgorithm(t *testing.T) {
+	key, _ := mock.GenerateKey()
+	doc := generateTestMDoc(t, mock.MDOCConfig{
+		DocType: "org.iso.18013.5.1.mDL", Namespace: "org.iso.18013.5.1",
+		Claims: mock.DefaultClaims, Key: key, OmitDigestAlgorithm: true,
+	})
+
+	result := Verify(doc, &key.PublicKey)
+
+	if !result.SignatureValid {
+		t.Fatalf("SignatureValid = false, want true (errors: %v)", result.Errors)
+	}
+	found := false
+	for _, w := range result.Warnings {
+		if strings.Contains(w, "digestAlgorithm") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Warnings = %v, want one naming digestAlgorithm", result.Warnings)
 	}
 }
 

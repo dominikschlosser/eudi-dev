@@ -33,6 +33,9 @@ type VerifyResult struct {
 	ValidUntil     *time.Time
 	Signed         *time.Time
 	Errors         []string
+	// Warnings records a signature that verifies but rests on a spec deviation
+	// worked around here, so a caller can pass it on rather than accept it silently.
+	Warnings []string
 }
 
 // Verify verifies the mDOC issuerAuth COSE_Sign1 signature.
@@ -54,17 +57,25 @@ func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
 	}
 
 	mso := doc.IssuerAuth.MSO
-	if mso != nil && mso.ValidityInfo != nil {
-		result.ValidFrom = mso.ValidityInfo.ValidFrom
-		result.ValidUntil = mso.ValidityInfo.ValidUntil
-		result.Signed = mso.ValidityInfo.Signed
-
-		now := time.Now()
-		if mso.ValidityInfo.ValidUntil != nil && now.After(*mso.ValidityInfo.ValidUntil) {
-			result.Expired = true
+	if mso != nil {
+		if mso.DigestAlgorithm == "" {
+			// ISO 18013-5 requires digestAlgorithm. Verifying the value digests
+			// falls back to SHA-256, so the signature still checks out, but the
+			// caller should know the issuer left the algorithm unstated.
+			result.Warnings = append(result.Warnings, "the MSO carries no digestAlgorithm, which ISO 18013-5 requires; assuming SHA-256")
 		}
-		if mso.ValidityInfo.ValidFrom != nil && now.Before(*mso.ValidityInfo.ValidFrom) {
-			result.NotYetValid = true
+		if mso.ValidityInfo != nil {
+			result.ValidFrom = mso.ValidityInfo.ValidFrom
+			result.ValidUntil = mso.ValidityInfo.ValidUntil
+			result.Signed = mso.ValidityInfo.Signed
+
+			now := time.Now()
+			if mso.ValidityInfo.ValidUntil != nil && now.After(*mso.ValidityInfo.ValidUntil) {
+				result.Expired = true
+			}
+			if mso.ValidityInfo.ValidFrom != nil && now.Before(*mso.ValidityInfo.ValidFrom) {
+				result.NotYetValid = true
+			}
 		}
 	}
 
