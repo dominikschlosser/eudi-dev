@@ -1088,47 +1088,37 @@ func getTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer 
 }
 
 // fetchOAuthMetadata fetches the OAuth 2.0 Authorization Server metadata.
-// Tries /.well-known/openid-configuration first, falls back to
-// /.well-known/oauth-authorization-server.
+// fetchOAuthMetadata reads the OAuth 2.0 Authorization Server Metadata
+// (RFC 8414) the server publishes at /.well-known/oauth-authorization-server.
 func fetchOAuthMetadata(authServer string) (map[string]any, error) {
 	oauthURL, err := wellKnownURL(authServer, "oauth-authorization-server")
 	if err != nil {
 		return nil, err
 	}
-	urls := []string{oauthURL}
-
-	for _, u := range urls {
-		resp, err := fetchMetadataDocument(func() (*http.Request, error) {
-			req, err := http.NewRequest("GET", u, nil)
-			if err != nil {
-				return nil, err
-			}
-			req.Header.Set("Accept", "application/json")
-			return req, nil
-		})
+	resp, err := fetchMetadataDocument(func() (*http.Request, error) {
+		req, err := http.NewRequest("GET", oauthURL, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			continue
-		}
-
-		var meta map[string]any
-		err = json.NewDecoder(resp.Body).Decode(&meta)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
-		return meta, nil
+		req.Header.Set("Accept", "application/json")
+		return req, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("no OAuth metadata found at %s: %w", authServer, err)
 	}
-
-	return nil, fmt.Errorf("no OAuth metadata found at %s", authServer)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("no OAuth metadata found at %s: HTTP %d", authServer, resp.StatusCode)
+	}
+	var meta map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		return nil, fmt.Errorf("parsing OAuth metadata from %s: %w", authServer, err)
+	}
+	return meta, nil
 }
 
 func getCredentialEndpoint(metadata map[string]any, issuer string) string {
-	if ep, ok := metadata["credential_endpoint"].(string); ok {
+	if ep, ok := metadata["credential_endpoint"].(string); ok && ep != "" {
 		return ep
 	}
 	return strings.TrimRight(issuer, "/") + "/credential"

@@ -170,6 +170,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 		output.PrintJWT(token, opts)
 
+		if validateHAIP {
+			printHAIPFindings(haipCredentialFindings(token), opts)
+		}
+
 		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
 			output.PrintVerifyResultSDJWT(bestResult, opts)
 			printLeafSourceNote(source, opts)
@@ -212,6 +216,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("parsing mDOC: %w", err)
 		}
 		output.PrintMDOC(doc, opts)
+
+		if validateHAIP {
+			certs, _ := validate.ExtractMDOCX5ChainCertificates(doc)
+			printHAIPFindings(validate.HAIPCredentialChain(certs), opts)
+		}
 
 		leafKey, _ := validate.ExtractMDOCX5ChainLeafKey(doc)
 		if len(pubKeys) > 0 {

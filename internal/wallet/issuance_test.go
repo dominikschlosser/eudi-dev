@@ -388,6 +388,16 @@ func TestGetCredentialEndpoint_TrailingSlash(t *testing.T) {
 	}
 }
 
+// A published but empty credential_endpoint falls back to the default, the same
+// as a missing one, rather than producing an empty request URL.
+func TestGetCredentialEndpoint_EmptyFallsBack(t *testing.T) {
+	metadata := map[string]any{"credential_endpoint": ""}
+	got := getCredentialEndpoint(metadata, "https://issuer.example")
+	if got != "https://issuer.example/credential" {
+		t.Errorf("expected fallback for an empty credential_endpoint, got %q", got)
+	}
+}
+
 func TestGetAuthorizationServer_PreservesTrailingSlash(t *testing.T) {
 	got := getAuthorizationServer(map[string]any{}, "https://issuer.example/test/")
 	if got != "https://issuer.example/test/" {

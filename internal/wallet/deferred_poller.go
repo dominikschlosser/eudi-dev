@@ -198,7 +198,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	}
 	var dpopKey *ecdsa.PrivateKey
 	if pending.UseDPoP {
-		dpopKey = s.wallet.HolderKey
+		dpopKey = s.wallet.HolderKeyPair()
 	}
 
 	// The access token was issued for the credential request and outlives it
@@ -224,7 +224,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if metadataErr != nil {
 		metadata = nil
 	}
-	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, s.wallet.HolderKey)
+	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, s.wallet.HolderKeyPair())
 	if err != nil {
 		return s.rescheduleDeferred(pending, pending.Interval(), err.Error())
 	}
@@ -235,7 +235,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	credResp, err := deferredCredentialAttempt(
 		mode, metadata,
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
+		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKeyPair(), &nonce)
 
 	// An issuer that refuses the authorization may simply have expired the
 	// token earlier than it said. One renewal and one retry is worth it before
@@ -248,7 +248,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 			credResp, err = deferredCredentialAttempt(
 				mode, metadata,
 				pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
-				pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKey, &nonce)
+				pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKeyPair(), &nonce)
 		}
 	}
 
@@ -451,7 +451,7 @@ func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *e
 	}
 	// The issuer that required client authentication for the first token
 	// requires it for this one too.
-	if err := applyClientAuthentication(form, pending.ClientAuth, s.wallet.HolderKey); err != nil {
+	if err := applyClientAuthentication(form, pending.ClientAuth, s.wallet.HolderKeyPair()); err != nil {
 		return pending, err
 	}
 
