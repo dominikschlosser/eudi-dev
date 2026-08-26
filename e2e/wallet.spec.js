@@ -439,10 +439,13 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
 
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
-    const issued = res.body.find(
+    const summary = res.body.find(
       (c) => c.doctype === "org.example.e2e.doctype"
     );
-    expect(issued).toBeDefined();
+    expect(summary).toBeDefined();
+    // The overview listing omits claims; the per-credential endpoint carries them.
+    const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
+      .body;
     expect(issued.claims["org.example.e2e.doctype:given_name"]).toBe("Erika");
     expect(issued.claims["org.example.custom:loyalty_tier"]).toBe("gold");
 
@@ -485,8 +488,11 @@ test.describe("Credential Issuing via UI", () => {
 
     // The issued credential contains the pre-filled PID claims plus the added one
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
-    const issued = res.body.find((c) => c.vct === "urn:example:e2e-test");
-    expect(issued).toBeDefined();
+    const summary = res.body.find((c) => c.vct === "urn:example:e2e-test");
+    expect(summary).toBeDefined();
+    // The overview listing omits claims; the per-credential endpoint carries them.
+    const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
+      .body;
     expect(issued.claims.e2e_marker).toBe("yes");
     expect(issued.claims.given_name).toBeDefined();
   });
@@ -649,8 +655,12 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator("#issue-overlay")).not.toHaveClass(/active/);
 
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
-    const issued = res.body.find((c) => c.vct === "urn:example:e2e-employee");
-    expect(issued).toBeDefined();
+    const summary = res.body.find((c) => c.vct === "urn:example:e2e-employee");
+    expect(summary).toBeDefined();
+    // The overview listing omits claims and the raw credential; the
+    // per-credential endpoint carries both.
+    const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
+      .body;
     expect(issued.claims.department).toBe("IT");
     expect(issued.claims.employee_id).toBe("E-1");
     // department is embedded plainly: it appears in the raw JWT payload
