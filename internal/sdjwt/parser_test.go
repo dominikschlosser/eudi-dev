@@ -18,6 +18,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -102,6 +103,40 @@ func TestParse_BasicSDJWT(t *testing.T) {
 	}
 	if token.ResolvedClaims["family_name"] != "Mustermann" {
 		t.Errorf("resolved family_name = %v, want Mustermann", token.ResolvedClaims["family_name"])
+	}
+}
+
+// RFC 9901 §4 requires the tilde after the last disclosure. An SD-JWT that
+// drops it is still parsed (the last component is read as a disclosure), but
+// Parse records a warning so the deviation is not accepted silently.
+func TestParse_MissingTrailingTilde(t *testing.T) {
+	payload := map[string]any{
+		"iss":     "https://issuer.example",
+		"vct":     "urn:eudi:pid:1",
+		"_sd_alg": "sha-256",
+		"_sd":     nil,
+	}
+	raw := buildTestSDJWT(t, payload, [][]any{
+		{"salt1", "given_name", "Erika"},
+		{"salt2", "family_name", "Mustermann"},
+	})
+	raw = strings.TrimSuffix(raw, "~")
+
+	token, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if len(token.Disclosures) != 2 {
+		t.Fatalf("got %d disclosures, want 2", len(token.Disclosures))
+	}
+	found := false
+	for _, w := range token.Warnings {
+		if strings.Contains(w, "tilde") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Warnings = %v, want one naming the missing tilde", token.Warnings)
 	}
 }
 

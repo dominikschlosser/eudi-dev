@@ -44,8 +44,9 @@ func Parse(raw string) (*Token, error) {
 	}
 	token.ResolvedClaims = resolved
 
-	// Generate warnings for disclosed claims whose children are all undisclosed
-	token.Warnings = checkFullyUndisclosedChildren(token.Disclosures)
+	// Add warnings for disclosed claims whose children are all undisclosed, on
+	// top of any structural warning parseStructure already recorded.
+	token.Warnings = append(token.Warnings, checkFullyUndisclosedChildren(token.Disclosures)...)
 
 	return token, nil
 }
@@ -60,28 +61,35 @@ func Parse(raw string) (*Token, error) {
 // omitted."
 //
 // A single non-empty trailing component that is not a KB-JWT is read as a
-// Disclosure whose trailing tilde was dropped, for issuers that emit that.
-func splitComponents(components []string) ([]string, *JWT, error) {
+// Disclosure whose trailing tilde was dropped, for issuers that emit that. That
+// workaround returns a warning naming the deviation so a caller can pass it on.
+func splitComponents(components []string) ([]string, *JWT, string, error) {
 	if len(components) == 0 {
-		return nil, nil, nil
+		return nil, nil, "", nil
 	}
 
 	discParts := components
 	var kbJWT *JWT
+	var warning string
 	last := strings.TrimSpace(components[len(components)-1])
 	if last == "" {
 		discParts = components[:len(components)-1]
 	} else if jwt := parseKeyBindingJWT(last); jwt != nil {
 		discParts = components[:len(components)-1]
 		kbJWT = jwt
+	} else {
+		// The last component is a Disclosure, so the credential ended without the
+		// final tilde. RFC 9901 §4 requires it (the slot after it, empty here when
+		// there is no KB-JWT, MUST NOT be omitted).
+		warning = "the SD-JWT omits the tilde that RFC 9901 requires after the last disclosure"
 	}
 
 	for i, d := range discParts {
 		if strings.TrimSpace(d) == "" {
-			return nil, nil, fmt.Errorf("invalid SD-JWT: component %d between two tildes is empty", i+1)
+			return nil, nil, "", fmt.Errorf("invalid SD-JWT: component %d between two tildes is empty", i+1)
 		}
 	}
-	return discParts, kbJWT, nil
+	return discParts, kbJWT, warning, nil
 }
 
 // parseKeyBindingJWT decodes a trailing component as a Key Binding JWT.
@@ -370,11 +378,14 @@ func parseStructure(raw string) (*Token, error) {
 		return nil, err
 	}
 
-	discParts, kbJWT, err := splitComponents(parts[1:])
+	discParts, kbJWT, warning, err := splitComponents(parts[1:])
 	if err != nil {
 		return nil, err
 	}
 	token.KeyBindingJWT = kbJWT
+	if warning != "" {
+		token.Warnings = append(token.Warnings, warning)
+	}
 
 	for i, d := range discParts {
 		disc, err := parseDisclosure(d, sdAlg)

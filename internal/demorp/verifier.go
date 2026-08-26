@@ -777,6 +777,9 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 	if err = check("presentation parses as SD-JWT", err); err != nil {
 		return nil, err
 	}
+	for _, warning := range token.Warnings {
+		log.warn(label+"credential is well-formed (RFC 9901)", fmt.Errorf("%s", warning))
+	}
 
 	if err = check("every disclosure is referenced by the credential", checkDisclosuresReferenced(token)); err != nil {
 		return nil, err
