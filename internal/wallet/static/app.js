@@ -1803,7 +1803,9 @@
       claims = '<div class="cl-hd">↗ You will receive<span class="cl-count">' + cred.claims.length +
           ' claim' + (cred.claims.length === 1 ? '' : 's') + '</span></div>' +
         '<div class="consent-claims offer-claims">' + cred.claims.map(claim =>
-          '<div class="consent-claim"><span class="consent-claim-name mono">' + escHtml(claim) + '</span></div>'
+          // A break opportunity after each dot keeps a long mdoc path breaking
+          // at its segments rather than mid-word if it does not fit on one line.
+          '<div class="consent-claim"><span class="consent-claim-name mono">' + escHtml(claim).replace(/\./g, '.<wbr>') + '</span></div>'
         ).join('') + '</div>';
     }
     return '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' + card + claims + '</div>';

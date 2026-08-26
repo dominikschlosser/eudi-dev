@@ -1236,8 +1236,11 @@ header h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The offer preview lists claim names only (no value, not selectable). */
+/* The offer preview lists claim names only (no value, not selectable), so the
+   name spans the whole row instead of the 42% the presentation dialog reserves
+   for a value column. A long mdoc path then fits on one line. */
 .offer-claims .consent-claim { cursor: default; }
+.offer-claims .consent-claim-name { flex: 1 1 auto; }
 .offer-description {
   font-size: 12px;
   color: var(--text-dim);
