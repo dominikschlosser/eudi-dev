@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A presented SD-JWT VC no longer drops a claim nested under a cleartext parent.** When a verifier asked for a claim like `address.street_address` and the credential carried `address` as a plain object with its members selectively disclosable (a common SD-JWT VC shape), the wallet resolved the request only through the credential's top-level `_sd`, found no `address` disclosure, and left the claim out of the presentation even though the consent dialog listed it. The wallet now walks the requested path from the payload root, descending a cleartext parent to reach its selectively disclosable children.
 - **A visitor's credential import, deletion or status change is no longer dropped on a busy shared instance.** These management actions changed the wallet in memory and then saved, but the save was not fenced against the per-request reload a shared demo runs on every request. A reload landing in between reverted the change on disk, so an import, delete or revoke could silently not take. The change and its save now hold the store lock together, so a reload cannot interleave.
 
 - **The demo's Issue Credential form no longer offers logo alt text with the logo field gone.** A shared demo takes no visitor-supplied image, so the form hides the logo and background image inputs. The "Logo alt text" field stayed behind, asking for a description of a logo that could not be set. It is now hidden with the logo field.

@@ -472,6 +472,41 @@ func TestCreateVPToken_SDJWT_NestedSelectiveDisclosure(t *testing.T) {
 	}
 }
 
+// A claim under a cleartext structural parent (the payload carries "address"
+// directly with its children in _sd, as real SD-JWT VCs commonly do) is
+// disclosed when requested, the same as a top-level SD claim. The parent is
+// not itself a disclosure, so resolving through the top-level _sd alone used to
+// drop the child.
+func TestCreateSDJWTPresentation_ClearTextParentChildIsDisclosed(t *testing.T) {
+	w := generateTestWallet(t)
+
+	disclosureRaw := format.EncodeBase64URL([]byte(`["0123456789abcdef","postal_code","12345"]`))
+	sum := sha256.Sum256([]byte(disclosureRaw))
+	digest := format.EncodeBase64URL(sum[:])
+
+	header := format.EncodeBase64URL([]byte(`{"alg":"ES256","typ":"dc+sd-jwt"}`))
+	payload := format.EncodeBase64URL([]byte(`{"vct":"urn:test:address","iss":"https://issuer.example","_sd_alg":"sha-256","address":{"country":"DE","_sd":["` + digest + `"]}}`))
+	cred := StoredCredential{
+		ID:     "addr",
+		Format: "dc+sd-jwt",
+		Raw:    header + "." + payload + ".not-verified~" + disclosureRaw + "~",
+		Disclosures: []sdjwt.Disclosure{{
+			Raw:    disclosureRaw,
+			Name:   "postal_code",
+			Value:  "12345",
+			Digest: digest,
+		}},
+	}
+
+	token, err := w.createSDJWTPresentation(cred, []string{"address.postal_code"}, "nonce", "client", w.HolderKey)
+	if err != nil {
+		t.Fatalf("createSDJWTPresentation: %v", err)
+	}
+	if !strings.Contains(token, disclosureRaw) {
+		t.Error("the postal_code disclosure under a cleartext address parent was dropped from the presentation")
+	}
+}
+
 func TestCreateVPToken_PlainJWT(t *testing.T) {
 	w := generateTestWallet(t)
 

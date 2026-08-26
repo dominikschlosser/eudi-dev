@@ -208,7 +208,6 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 		digestMap[cred.Disclosures[i].Digest] = &cred.Disclosures[i]
 	}
 
-	topLevel := topLevelDisclosureMap(payload, digestMap)
 	includedDigests := make(map[string]bool)
 
 	for _, selector := range selectedKeys {
@@ -216,20 +215,12 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 		if !ok || len(path) == 0 {
 			continue
 		}
-		root, ok := path[0].(string)
-		if !ok {
-			continue
-		}
-		disc := topLevel[root]
-		if disc == nil {
-			continue
-		}
-		includedDigests[disc.Digest] = true
-		if len(path) == 1 {
-			collectAllNestedDisclosureDigests(disc.Value, digestMap, includedDigests)
-			continue
-		}
-		collectPathDisclosureDigests(disc.Value, path[1:], digestMap, includedDigests)
+		// Resolve the whole path from the payload root: at each level it
+		// descends a cleartext structural object and matches an SD claim by
+		// name. So a claim under a cleartext parent (address.street_address,
+		// where address is a plain object carrying its children in _sd) is
+		// disclosed the same as a top-level SD claim.
+		collectPathDisclosureDigests(payload, path, digestMap, includedDigests)
 	}
 
 	// Preserve the original disclosure order from the credential.
@@ -553,23 +544,6 @@ func parseIssuerJWTPayload(issuerJWT string) (map[string]any, error) {
 	}
 
 	return payload, nil
-}
-
-func topLevelDisclosureMap(payload map[string]any, digestMap map[string]*sdjwt.Disclosure) map[string]*sdjwt.Disclosure {
-	topLevel := make(map[string]*sdjwt.Disclosure)
-	sdArr, _ := payload["_sd"].([]any)
-	for _, rawDigest := range sdArr {
-		digest, ok := rawDigest.(string)
-		if !ok {
-			continue
-		}
-		disc := digestMap[digest]
-		if disc == nil || disc.IsArrayEntry || disc.Name == "" {
-			continue
-		}
-		topLevel[disc.Name] = disc
-	}
-	return topLevel
 }
 
 func collectAllNestedDisclosureDigests(value any, digestMap map[string]*sdjwt.Disclosure, digests map[string]bool) {
