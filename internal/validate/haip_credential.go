@@ -81,5 +81,9 @@ func SelfSignedCertificate(cert *x509.Certificate) bool {
 	if cert.Subject.String() != cert.Issuer.String() {
 		return false
 	}
-	return cert.CheckSignatureFrom(cert) == nil
+	// CheckSignature verifies the certificate against its own key. CheckSignatureFrom
+	// enforces CA constraints first and rejects a non-CA certificate before it ever
+	// checks the signature, so it misses a self-signed end-entity leaf, which is
+	// exactly what HAIP §6.1.1 targets.
+	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }
