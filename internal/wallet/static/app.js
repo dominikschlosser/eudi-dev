@@ -1969,11 +1969,14 @@
     // is the issuer, named by its metadata when the issuer published one. The
     // authenticated id always sits on the line carrying #offer-issuer-origin.
     function whoBlock() {
-      let name, cid, chip = '';
+      let name, cid, chip = '', logoHtml = '';
       if (isIssuance) {
         const d = req.offer_details || {};
         name = d.issuer_name || '';
         cid = d.issuer || req.client_id || '';
+        if (d.issuer_logo) {
+          logoHtml = '<img class="who-logo" src="' + escHtml(d.issuer_logo) + '" alt="' + escHtml((name || 'Issuer') + ' logo') + '">';
+        }
       } else {
         name = req.client_name || '';
         cid = req.client_id || '';
@@ -1993,7 +1996,7 @@
         nameHtml = '<span class="who-name mono" id="offer-issuer-origin">' + escHtml(cid) + '</span>';
         sub = '';
       }
-      return '<div class="who"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div>';
+      return '<div class="who">' + logoHtml + '<div class="who-text"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div></div>';
     }
 
     function headerHtml() {

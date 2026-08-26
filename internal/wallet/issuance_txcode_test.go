@@ -161,6 +161,56 @@ func TestApproveRequest_CarriesTxCodeIntoIssuance(t *testing.T) {
 	}
 }
 
+// The issuer's own logo (Credential Issuer Metadata display[].logo) is fetched
+// through the policed client and embedded, so the consent dialog shows it under
+// the wallet's image policy instead of pointing the page at the issuer's host.
+func TestDescribeCredentialOfferEmbedsTheIssuerLogo(t *testing.T) {
+	var serverURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{
+				"credential_issuer":                   serverURL,
+				"credential_endpoint":                 serverURL + "/credential",
+				"credential_configurations_supported": map[string]any{},
+				"display": []any{map[string]any{
+					"name": "Test Issuer",
+					"logo": map[string]any{"uri": serverURL + "/logo.png"},
+				}},
+			})
+		case strings.HasSuffix(r.URL.Path, "/logo.png"):
+			rw.Header().Set("Content-Type", "image/png")
+			rw.Write(tinyPNG)
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	details := generateTestWallet(t).describeCredentialOffer(&oid4vc.CredentialOffer{CredentialIssuer: srv.URL})
+	if details.IssuerName != "Test Issuer" {
+		t.Errorf("issuer name = %q, want Test Issuer", details.IssuerName)
+	}
+	if !strings.HasPrefix(details.IssuerLogo, "data:image/") {
+		t.Errorf("issuer logo was not fetched and embedded, got %.30q", details.IssuerLogo)
+	}
+
+	// --adhoc-display-images keeps card art as a URL, but the issuer logo is
+	// shown once at consent time and never stored, so it is embedded even then.
+	adhoc := generateTestWallet(t)
+	adhoc.AdhocDisplayImages = true
+	adhocDetails := adhoc.describeCredentialOffer(&oid4vc.CredentialOffer{CredentialIssuer: srv.URL})
+	if !strings.HasPrefix(adhocDetails.IssuerLogo, "data:image/") {
+		t.Errorf("issuer logo not embedded under adhoc mode, got %.30q", adhocDetails.IssuerLogo)
+	}
+}
+
 // TestDescribeCredentialOffer_TxCodeShape covers the members the dialog needs
 // to size and label its input, and the fallback hint when the issuer gives no
 // description of its own.

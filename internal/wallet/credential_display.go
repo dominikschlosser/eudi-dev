@@ -472,15 +472,40 @@ func (w *Wallet) cacheDisplayImage(uri, field string) string {
 		// default.
 		return uri
 	}
+	return w.fetchAndEmbedDisplayImage(uri, field)
+}
+
+// embedDisplayImage resolves an image to an embedded data URI, ignoring
+// --adhoc-display-images. It is for an image shown once at consent time and
+// never stored (the issuer logo): there is nothing to keep out of the store,
+// and the consent dialog needs it inline to render it under the wallet's own
+// image policy rather than pointing the page at the issuer's host.
+func (w *Wallet) embedDisplayImage(uri, field string) string {
+	if uri == "" {
+		return ""
+	}
+	if strings.HasPrefix(uri, "data:") {
+		body, mediaType, ok := decodeImageDataURI(uri)
+		if !ok {
+			w.rejectDisplayImage(field, uri, "a data URI must carry a base64 image")
+			return ""
+		}
+		return w.encodeDisplayImage(body, mediaType, field, uri)
+	}
+	return w.fetchAndEmbedDisplayImage(uri, field)
+}
+
+// fetchAndEmbedDisplayImage GETs a non-data image URI and returns it as a
+// cached data URI. The fetch goes through the policed client, like every other
+// issuance fetch: the URI comes from the offer's issuer metadata, which on a
+// shared demo is attacker-controlled, so it must not reach an internal address
+// (ADR-0004).
+func (w *Wallet) fetchAndEmbedDisplayImage(uri, field string) string {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		w.rejectDisplayImage(field, uri, err.Error())
 		return ""
 	}
-	// Through the policed client, like every other issuance fetch: the URI
-	// comes from the offer's issuer metadata, which on a shared demo is
-	// attacker-controlled, so it must not reach an internal address
-	// (ADR-0004).
 	resp, err := doIssuanceRequest(req)
 	if err != nil {
 		w.rejectDisplayImage(field, uri, err.Error())

@@ -1087,10 +1087,24 @@ header h1 {
    authenticated client_id (or the issuer) beneath it, and the request-object
    authentication state. */
 .who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 11px 12px;
   margin-bottom: 12px;
+}
+.who-text { flex: 1; min-width: 0; }
+.who-logo {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  padding: 3px;
 }
 .who-nm {
   display: flex;

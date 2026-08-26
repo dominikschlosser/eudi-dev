@@ -93,6 +93,10 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 		details.MetadataError = err.Error()
 	} else {
 		details.IssuerName, details.IssuerLogo = issuerDisplay(metadata)
+		// Fetch and embed the issuer logo through the same policed path as the
+		// card art, so the consent dialog shows it under the wallet's own image
+		// policy rather than pointing the page at the issuer's host.
+		details.IssuerLogo = w.embedDisplayImage(details.IssuerLogo, "issuer_logo")
 	}
 
 	for _, id := range offer.CredentialConfigurationIDs {
