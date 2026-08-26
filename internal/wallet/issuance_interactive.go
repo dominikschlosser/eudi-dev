@@ -354,7 +354,7 @@ func (w *Wallet) runAuthViaWebInteraction(response map[string]any, setup authori
 			"request_uri":            requestURI,
 		})
 
-	values, err := runAuthorizationCodeRequest(w, setup.authorizationEndpoint, setup.clientID, requestURI, nil, setup.redirectURI, setup.state, setup.issuer, setup.owner, w.Mode())
+	values, err := runAuthorizationCodeRequest(w, setup.authorizationEndpoint, setup.clientID, requestURI, nil, setup.redirectURI, setup.state, setup.issuer, setup.owner, setup.issRequired)
 	if err != nil {
 		return nil, err
 	}

@@ -138,6 +138,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		nonces:                nonces,
 		authorizationEndpoint: authorizationEndpoint,
 		issuer:                oauthIssuer(oauthMeta, ""),
+		issRequired:           issAdvertised(oauthMeta),
 
 		presentationConsented: opts.PresentationConsented,
 		owner:                 opts.Owner,
@@ -209,7 +210,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		"redirect_uri": redirectURI,
 		"state":        state,
 	})
-	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), opts.Owner, w.Mode())
+	callbackValues, err := runAuthorizationCodeRequest(w, authorizationEndpoint, clientID, requestURI, parForm, redirectURI, state, oauthIssuer(oauthMeta, ""), opts.Owner, issAdvertised(oauthMeta))
 	authorizationResponseDetails := map[string]any{
 		"direction": "inbound",
 		"endpoint":  "authorization",
@@ -252,6 +253,10 @@ type authorizationCodeSetup struct {
 	// to, and the issuer the redirect back is checked against.
 	authorizationEndpoint string
 	issuer                string
+	// issRequired is whether the authorization server advertised
+	// authorization_response_iss_parameter_supported, which makes iss REQUIRED
+	// in the response (RFC 9207).
+	issRequired bool
 	// presentationConsented skips the consent for a presentation the issuer
 	// asks for, because the caller already gave it.
 	presentationConsented bool
@@ -557,6 +562,14 @@ func oauthIssuer(oauthMeta map[string]any, fallback string) string {
 		return issuer
 	}
 	return fallback
+}
+
+// issAdvertised reports whether the authorization server metadata advertises
+// authorization_response_iss_parameter_supported, which makes iss REQUIRED in
+// the authorization response (RFC 9207).
+func issAdvertised(oauthMeta map[string]any) bool {
+	supported, _ := oauthMeta["authorization_response_iss_parameter_supported"].(bool)
+	return supported
 }
 
 // attestsClient reports whether to authenticate with the wallet attestation.
@@ -1648,7 +1661,7 @@ func derefString(v *string) string {
 // the wallet itself where no browser can. RFC 9126 §4 says "the client MUST
 // only use a request_uri value once", so only one of them requests the
 // endpoint.
-func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer, owner string, mode ValidationMode) (url.Values, error) {
+func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI string, params url.Values, redirectURI, expectedState, expectedIssuer, owner string, issRequired bool) (url.Values, error) {
 	authURL, err := authorizationRequestURL(endpoint, clientID, requestURI, params)
 	if err != nil {
 		return nil, err
@@ -1666,7 +1679,7 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 		}
 		select {
 		case values := <-callbackCh:
-			if err := validateAuthorizationCodeResponse(mode, values, expectedState, expectedIssuer); err != nil {
+			if err := w.validateAuthorizationCodeResponse(values, expectedState, expectedIssuer, issRequired); err != nil {
 				return nil, err
 			}
 			return values, nil
@@ -1686,7 +1699,7 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 			// authorization continues at the challenge endpoint (OpenID4VCI
 			// 1.1 §6.2.1.2).
 			if valuesOut.Get("code") != "" || valuesOut.Get("error") != "" || valuesOut.Get("auth_session") != "" {
-				if err := validateAuthorizationCodeResponse(mode, valuesOut, expectedState, expectedIssuer); err != nil {
+				if err := w.validateAuthorizationCodeResponse(valuesOut, expectedState, expectedIssuer, issRequired); err != nil {
 					return nil, err
 				}
 				return valuesOut, nil
@@ -1700,36 +1713,35 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 	return nil, fmt.Errorf("authorization requires interactive browser login, but redirect_uri %q is not handled by the running wallet server (body: %s)", redirectURI, truncateBody(body))
 }
 
-func validateAuthorizationCodeResponse(mode ValidationMode, values url.Values, expectedState, expectedIssuer string) error {
+// validateAuthorizationCodeResponse checks the state and issuer of an
+// authorization response. Each deviation is worked around in debug (a warning)
+// and refused in strict, through reportServerDeviation. A missing iss is a
+// deviation only when the authorization server advertised iss support
+// (RFC 9207): otherwise iss is optional and its absence says nothing.
+func (w *Wallet) validateAuthorizationCodeResponse(values url.Values, expectedState, expectedIssuer string, issRequired bool) error {
 	if values == nil {
 		return fmt.Errorf("authorization response is empty")
 	}
-	expectedState = strings.TrimSpace(expectedState)
-	if expectedState != "" {
-		state := values.Get("state")
-		if mode == ValidationModeStrict && state == "" {
-			return fmt.Errorf("authorization response missing state")
+	if expectedState = strings.TrimSpace(expectedState); expectedState != "" {
+		switch state := values.Get("state"); {
+		case state == "":
+			if err := w.reportServerDeviation("the authorization response omitted state, which RFC 6749 §4.1.2 returns when the request carried one"); err != nil {
+				return err
+			}
+		case state != expectedState:
+			if err := w.reportServerDeviation(fmt.Sprintf("the authorization response state %q does not match the request's %q", state, expectedState)); err != nil {
+				return err
+			}
 		}
-		if state != "" && state != expectedState {
-			return fmt.Errorf("authorization response state %q did not match %q", state, expectedState)
-		}
-	}
-
-	if mode != ValidationModeStrict {
-		return nil
 	}
 
 	expectedIssuer = normalizeIssuerURL(expectedIssuer)
-	if expectedIssuer == "" {
-		return nil
-	}
-	issuer := values.Get("iss")
-	actualIssuer := normalizeIssuerURL(issuer)
-	if actualIssuer == "" {
-		return fmt.Errorf("authorization response missing issuer")
-	}
-	if actualIssuer != expectedIssuer {
-		return fmt.Errorf("authorization response issuer %q did not match %q", issuer, expectedIssuer)
+	issuer := normalizeIssuerURL(values.Get("iss"))
+	switch {
+	case issuer == "" && issRequired:
+		return w.reportServerDeviation("the authorization response omitted iss, which RFC 9207 requires when the authorization server advertises authorization_response_iss_parameter_supported")
+	case issuer != "" && expectedIssuer != "" && issuer != expectedIssuer:
+		return w.reportServerDeviation(fmt.Sprintf("the authorization response iss %q does not match the expected issuer %q", values.Get("iss"), expectedIssuer))
 	}
 	return nil
 }

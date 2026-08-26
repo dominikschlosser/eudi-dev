@@ -764,12 +764,13 @@ func TestProcessCredentialOffer_AuthCodeBrowserFallback(t *testing.T) {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"issuer":                                serverURL,
-				"authorization_endpoint":                serverURL + "/authorize",
-				"pushed_authorization_request_endpoint": serverURL + "/par",
-				"token_endpoint":                        serverURL + "/token",
-				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
-				"dpop_signing_alg_values_supported":     []string{"ES256"},
+				"issuer":                                         serverURL,
+				"authorization_endpoint":                         serverURL + "/authorize",
+				"pushed_authorization_request_endpoint":          serverURL + "/par",
+				"token_endpoint":                                 serverURL + "/token",
+				"token_endpoint_auth_methods_supported":          []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":              []string{"ES256"},
+				"authorization_response_iss_parameter_supported": true,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/par":
 			body, _ := io.ReadAll(r.Body)
@@ -879,7 +880,7 @@ func TestRunAuthorizationCodeRequest_NobodyTookTheURL(t *testing.T) {
 	defer func() { httpClient = oldClient }()
 
 	_, err := runAuthorizationCodeRequest(w, authServer.URL+"/authorize", "wallet-client",
-		"urn:ietf:params:oauth:request_uri:example", nil, redirectURI, state, "", "", ValidationModeDebug)
+		"urn:ietf:params:oauth:request_uri:example", nil, redirectURI, state, "", "", false)
 	if err == nil {
 		t.Fatal("expected the issuance to end when nothing can open the authorization URL")
 	}
@@ -921,12 +922,13 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"issuer":                                serverURL,
-				"authorization_endpoint":                serverURL + "/authorize",
-				"pushed_authorization_request_endpoint": serverURL + "/par",
-				"token_endpoint":                        serverURL + "/token",
-				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
-				"dpop_signing_alg_values_supported":     []string{"ES256"},
+				"issuer":                                         serverURL,
+				"authorization_endpoint":                         serverURL + "/authorize",
+				"pushed_authorization_request_endpoint":          serverURL + "/par",
+				"token_endpoint":                                 serverURL + "/token",
+				"token_endpoint_auth_methods_supported":          []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":              []string{"ES256"},
+				"authorization_response_iss_parameter_supported": true,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/par":
 			body, _ := io.ReadAll(r.Body)
@@ -1018,70 +1020,51 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 	}
 }
 
-func TestValidateAuthorizationCodeResponse_StrictChecksStateAndIssuer(t *testing.T) {
+func TestValidateAuthorizationCodeResponse_StrictRefusesDeviations(t *testing.T) {
+	valid := url.Values{"code": {"c"}, "state": {"expected-state"}, "iss": {"https://issuer.example"}}
 	tests := []struct {
 		name           string
 		values         url.Values
 		expectedState  string
 		expectedIssuer string
+		issRequired    bool
 		wantErr        string
 	}{
-		{
-			name: "valid",
-			values: url.Values{
-				"code":  {"issued-code"},
-				"state": {"expected-state"},
-				"iss":   {"https://issuer.example"},
-			},
-			expectedState:  "expected-state",
-			expectedIssuer: "https://issuer.example",
-		},
-		{
-			name: "missing state",
-			values: url.Values{
-				"code": {"issued-code"},
-				"iss":  {"https://issuer.example"},
-			},
-			expectedState:  "expected-state",
-			expectedIssuer: "https://issuer.example",
-			wantErr:        "missing state",
-		},
-		{
-			name: "issuer mismatch",
-			values: url.Values{
-				"code":  {"issued-code"},
-				"state": {"expected-state"},
-				"iss":   {"https://other.example"},
-			},
-			expectedState:  "expected-state",
-			expectedIssuer: "https://issuer.example",
-			wantErr:        "issuer",
-		},
-		{
-			name: "missing issuer",
-			values: url.Values{
-				"code":  {"issued-code"},
-				"state": {"expected-state"},
-			},
-			expectedState:  "expected-state",
-			expectedIssuer: "https://issuer.example",
-			wantErr:        "missing issuer",
-		},
+		{"valid", valid, "expected-state", "https://issuer.example", true, ""},
+		{"missing state", url.Values{"code": {"c"}, "iss": {"https://issuer.example"}}, "expected-state", "https://issuer.example", true, "state"},
+		{"state mismatch", url.Values{"code": {"c"}, "state": {"other"}, "iss": {"https://issuer.example"}}, "expected-state", "https://issuer.example", true, "state"},
+		{"iss mismatch", url.Values{"code": {"c"}, "state": {"expected-state"}, "iss": {"https://other.example"}}, "expected-state", "https://issuer.example", true, "iss"},
+		{"missing iss when advertised", url.Values{"code": {"c"}, "state": {"expected-state"}}, "expected-state", "https://issuer.example", true, "iss"},
+		{"missing iss when not advertised is fine", url.Values{"code": {"c"}, "state": {"expected-state"}}, "expected-state", "https://issuer.example", false, ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateAuthorizationCodeResponse(ValidationModeStrict, tt.values, tt.expectedState, tt.expectedIssuer)
+			w := generateTestWallet(t)
+			w.ValidationMode = ValidationModeStrict
+			err := w.validateAuthorizationCodeResponse(tt.values, tt.expectedState, tt.expectedIssuer, tt.issRequired)
 			if tt.wantErr == "" {
 				if err != nil {
-					t.Fatalf("validateAuthorizationCodeResponse() error = %v", err)
+					t.Fatalf("expected no error, got %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("validateAuthorizationCodeResponse() error = %v, want containing %q", err, tt.wantErr)
+				t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// In debug the same deviations are worked around (the flow proceeds) but warned.
+func TestValidateAuthorizationCodeResponse_DebugWarnsAndProceeds(t *testing.T) {
+	w := generateTestWallet(t) // debug by default
+	values := url.Values{"code": {"c"}, "iss": {"https://other.example"}}
+	if err := w.validateAuthorizationCodeResponse(values, "expected-state", "https://issuer.example", true); err != nil {
+		t.Fatalf("debug should not refuse, got %v", err)
+	}
+	if findLogEntry(w.GetLog(), "server_deviation") == nil {
+		t.Error("debug should warn about the missing state and mismatched iss")
 	}
 }
 
@@ -1113,12 +1096,13 @@ func TestProcessCredentialOffer_StrictRejectsAuthorizationServerIssuerMismatchBe
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"issuer":                                serverURL + "/wrong",
-				"authorization_endpoint":                serverURL + "/authorize",
-				"pushed_authorization_request_endpoint": serverURL + "/par",
-				"token_endpoint":                        serverURL + "/token",
-				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
-				"dpop_signing_alg_values_supported":     []string{"ES256"},
+				"issuer":                                         serverURL + "/wrong",
+				"authorization_endpoint":                         serverURL + "/authorize",
+				"pushed_authorization_request_endpoint":          serverURL + "/par",
+				"token_endpoint":                                 serverURL + "/token",
+				"token_endpoint_auth_methods_supported":          []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":              []string{"ES256"},
+				"authorization_response_iss_parameter_supported": true,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/par":
 			parCalls++
@@ -1184,12 +1168,13 @@ func TestProcessCredentialOffer_StrictRejectsMissingAuthorizationResponseIssuerB
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/.well-known/oauth-authorization-server"):
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{
-				"issuer":                                serverURL,
-				"authorization_endpoint":                serverURL + "/authorize",
-				"pushed_authorization_request_endpoint": serverURL + "/par",
-				"token_endpoint":                        serverURL + "/token",
-				"token_endpoint_auth_methods_supported": []string{"private_key_jwt"},
-				"dpop_signing_alg_values_supported":     []string{"ES256"},
+				"issuer":                                         serverURL,
+				"authorization_endpoint":                         serverURL + "/authorize",
+				"pushed_authorization_request_endpoint":          serverURL + "/par",
+				"token_endpoint":                                 serverURL + "/token",
+				"token_endpoint_auth_methods_supported":          []string{"private_key_jwt"},
+				"dpop_signing_alg_values_supported":              []string{"ES256"},
+				"authorization_response_iss_parameter_supported": true,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/par":
 			body, _ := io.ReadAll(r.Body)
@@ -1229,8 +1214,8 @@ func TestProcessCredentialOffer_StrictRejectsMissingAuthorizationResponseIssuerB
 	offerURI := "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
 
 	_, err := w.ProcessCredentialOffer(offerURI)
-	if err == nil || !strings.Contains(err.Error(), "missing issuer") {
-		t.Fatalf("ProcessCredentialOffer() error = %v, want missing issuer error", err)
+	if err == nil || !strings.Contains(err.Error(), "omitted iss") {
+		t.Fatalf("ProcessCredentialOffer() error = %v, want a refused missing-iss deviation", err)
 	}
 	if tokenCalls != 0 {
 		t.Fatalf("token calls = %d, want 0", tokenCalls)
