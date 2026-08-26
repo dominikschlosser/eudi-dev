@@ -36,10 +36,11 @@ import (
 
 // CredentialDisplay is the appearance a §12.2.4 display entry declares for a
 // credential, kept with the credential so the card renders it without asking
-// the issuer again. The image fields hold data URIs: a remote image is
-// fetched once at issuance and embedded, so rendering a card never calls the
-// issuer (an issuer serving its logo per view would otherwise see every time
-// the wallet opens).
+// the issuer again. The image fields hold a data URI or an "asset:" reference:
+// a remote image is fetched once at issuance and stored, so rendering a card
+// never calls the issuer (an issuer serving its logo per view would otherwise
+// see every time the wallet opens). Under --adhoc-display-images the field
+// instead holds the issuer's https URL, fetched by the card on demand.
 type CredentialDisplay struct {
 	Name            string `json:"name,omitempty"`
 	Description     string `json:"description,omitempty"`
@@ -445,7 +446,9 @@ func (w *Wallet) displayColor(entry map[string]any, field string) string {
 // renders. §12.2.4 names both schemes: a data: URI is read in place, an
 // https: URI is fetched once through the policed client. An image over the
 // cache cap is downscaled to card size before it is stored, so real card art
-// (a multi-megabyte PNG) still ends up on the card.
+// (a multi-megabyte PNG) still ends up on the card. Under
+// --adhoc-display-images an https: URI is kept as the URL instead, for the card
+// to fetch on demand.
 func (w *Wallet) cacheDisplayImage(uri, field string) string {
 	if uri == "" {
 		return ""
@@ -457,6 +460,17 @@ func (w *Wallet) cacheDisplayImage(uri, field string) string {
 			return ""
 		}
 		return w.encodeDisplayImage(body, mediaType, field, uri)
+	}
+	if w.AdhocDisplayImages && strings.HasPrefix(uri, "https://") {
+		// Keep the https URL instead of fetching and storing the image, so the
+		// card fetches it on demand (the issuer's own declared image URL, passed
+		// to the browser as-is by displayImageRef). Only https: is kept: an http
+		// image is mixed content a browser blocks on an https wallet page, so it
+		// falls through and is fetched and stored as usual, and any other scheme
+		// falls through and is rejected below. The card art then loads from the
+		// issuer on every render, which the issuer can see, so this is off by
+		// default.
+		return uri
 	}
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {

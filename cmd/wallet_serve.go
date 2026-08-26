@@ -55,6 +55,7 @@ type walletServeOptions struct {
 	HAIP                    bool
 	VCIVersion              string
 	ClientAttestation       bool
+	AdhocDisplayImages      bool
 	DemoIssuerClientAuth    string
 	VCIClientID             string
 	VCIRedirectURI          string
@@ -111,6 +112,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored, but the issuer sees each render; a data URI, template art, and http URLs are still embedded)")
 	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it). Also selects the attestation-based client authentication draft outgoing wallet attestations follow: 1.0 emits the draft-07 shape OpenID4VCI 1.0 pins, 1.1 the draft-08 shape")
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
@@ -387,6 +389,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 
 	if opts.HAIP {
 		w.RequireHAIP = true
+	}
+	if opts.AdhocDisplayImages {
+		w.AdhocDisplayImages = true
 	}
 	if opts.ClientAttestation {
 		w.ForceClientAttestation = true

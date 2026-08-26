@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"encoding/base64"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -109,5 +110,64 @@ func TestStoreDisplayAssetDedupes(t *testing.T) {
 	// A non data URI is passed through unchanged and writes nothing.
 	if ref, converted := store.storeDisplayAsset("https://issuer.example/logo.svg"); converted || ref != "https://issuer.example/logo.svg" {
 		t.Fatalf("an external URL should pass through unchanged, got %q converted=%v", ref, converted)
+	}
+}
+
+// --adhoc-display-images keeps an http(s) image URL as-is instead of fetching
+// and storing it, so the card fetches it on demand. The URL passes through to
+// the client (not the wallet endpoint), and a data URI is still embedded.
+func TestAdhocDisplayImagesKeepsTheURL(t *testing.T) {
+	w := generateTestWallet(t)
+	w.AdhocDisplayImages = true
+
+	url := "https://issuer.example/logo.png"
+	if got := w.cacheDisplayImage(url, "logo"); got != url {
+		t.Fatalf("ad-hoc mode should keep the URL unfetched, got %q", got)
+	}
+	if entry := findLogEntry(w.GetLog(), "credential_display_image_rejected"); entry != nil {
+		t.Error("keeping a URL for ad-hoc fetch should not log a rejection")
+	}
+	// The listing hands the external URL to the client, which fetches it on
+	// demand (an http(s) URL is not routed through the wallet's own endpoint).
+	if ref := displayImageRef("some-id", "logo", url); ref != url {
+		t.Fatalf("the kept URL should pass through to the client, got %q", ref)
+	}
+	if got := w.cacheDisplayImage(tinyPNGDataURI, "logo"); !strings.HasPrefix(got, "data:") {
+		t.Fatalf("a data URI image should still be embedded in ad-hoc mode, got %.20q", got)
+	}
+	// An http URL is mixed content, so it is not kept ad-hoc: it falls through to
+	// the fetch path (which fails here against the unreachable host, returning "").
+	if got := w.cacheDisplayImage("http://issuer.example/logo.png", "logo"); got == "http://issuer.example/logo.png" {
+		t.Fatal("an http image URL should not be kept ad-hoc")
+	}
+}
+
+// PruneUnreferencedAssets removes asset files no credential references (as a
+// demo reset leaves behind), and keeps the ones still in use.
+func TestPruneUnreferencedAssets(t *testing.T) {
+	store := NewWalletStore(t.TempDir())
+	usedRef, ok1 := store.storeDisplayAsset(tinyPNGDataURI)
+	orphanRef, ok2 := store.storeDisplayAsset("data:image/png;base64," + base64.StdEncoding.EncodeToString(tinyPNG))
+	if !ok1 || !ok2 || usedRef == orphanRef {
+		t.Fatalf("expected two distinct assets, got %q and %q", usedRef, orphanRef)
+	}
+	if entries, _ := os.ReadDir(store.assetsDir()); len(entries) != 2 {
+		t.Fatalf("expected 2 asset files, got %d", len(entries))
+	}
+
+	// A wallet that references only the used asset.
+	w := generateTestWallet(t)
+	w.Credentials = []StoredCredential{{ID: "a", Format: "dc+sd-jwt", Raw: "x~", Display: &CredentialDisplay{LogoURI: usedRef}}}
+	if err := store.Save(w); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	store.PruneUnreferencedAssets()
+
+	if _, err := os.Stat(filepath.Join(store.assetsDir(), strings.TrimPrefix(usedRef, "asset:"))); err != nil {
+		t.Error("the referenced asset was pruned")
+	}
+	if _, err := os.Stat(filepath.Join(store.assetsDir(), strings.TrimPrefix(orphanRef, "asset:"))); err == nil {
+		t.Error("the orphaned asset was not pruned")
 	}
 }

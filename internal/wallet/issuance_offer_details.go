@@ -33,9 +33,10 @@ type OfferedCredential struct {
 	Description string   `json:"description,omitempty"`
 	Claims      []string `json:"claims,omitempty"`
 	// Display is the appearance the issuer declares for this configuration, so
-	// the consent dialog shows the card the user is about to accept. Its
-	// images are fetched now through the policed client, the same defensive
-	// path the issuance itself uses.
+	// the consent dialog shows the card the user is about to accept. Its images
+	// are fetched now through the policed client, the same defensive path the
+	// issuance itself uses (unless --adhoc-display-images keeps the https URL for
+	// the card to fetch on demand).
 	Display *CredentialDisplay `json:"display,omitempty"`
 }
 

@@ -83,8 +83,15 @@ type Wallet struct {
 	// (advertising it is only a SHOULD). Off by default: an attestation reused
 	// across issuers is a correlation handle.
 	ForceClientAttestation bool
-	ValidationMode         ValidationMode `json:"-"`
-	Credentials            []StoredCredential
+	// AdhocDisplayImages keeps a display logo or background named by an http(s)
+	// URL in an issuer's metadata as that URL, instead of fetching it once and
+	// storing the image. The card then fetches it on demand, so nothing is
+	// stored. Off by default (the image is fetched through the policed client
+	// and stored as an asset). A data URI and a template's own art are embedded
+	// either way.
+	AdhocDisplayImages bool           `json:"-"`
+	ValidationMode     ValidationMode `json:"-"`
+	Credentials        []StoredCredential
 	// DeferredIssuances are credentials an issuer deferred, kept until the
 	// wallet manages to collect them.
 	DeferredIssuances []DeferredIssuance
