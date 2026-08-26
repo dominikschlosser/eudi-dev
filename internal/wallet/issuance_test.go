@@ -343,58 +343,59 @@ func TestResolveCredentialFormat_NoConfigs(t *testing.T) {
 	}
 }
 
-func TestGetTokenEndpoint_DirectInMetadata(t *testing.T) {
-	metadata := map[string]any{
-		"token_endpoint": "https://issuer.example/token",
-	}
-	got := getTokenEndpoint(metadata, nil, "https://issuer.example")
-	if got != "https://issuer.example/token" {
-		t.Errorf("expected direct token_endpoint, got %s", got)
+func TestResolveTokenEndpoint_FromMetadata(t *testing.T) {
+	w := generateTestWallet(t)
+	got, err := w.resolveTokenEndpoint(map[string]any{}, map[string]any{"token_endpoint": "https://as.example/token"}, "https://issuer.example")
+	if err != nil || got != "https://as.example/token" {
+		t.Errorf("token endpoint = %q, err = %v; want the authorization server value", got, err)
 	}
 }
 
-func TestGetTokenEndpoint_Fallback(t *testing.T) {
-	metadata := map[string]any{}
-	got := getTokenEndpoint(metadata, nil, "https://issuer.example")
-	// Falls back to issuer + /token when no OAuth metadata can be fetched
-	if got != "https://issuer.example/token" {
-		t.Errorf("expected fallback token endpoint, got %s", got)
+func TestResolveCredentialEndpoint_FromMetadata(t *testing.T) {
+	w := generateTestWallet(t)
+	got, err := w.resolveCredentialEndpoint(map[string]any{"credential_endpoint": "https://issuer.example/credential"}, "https://issuer.example")
+	if err != nil || got != "https://issuer.example/credential" {
+		t.Errorf("credential endpoint = %q, err = %v", got, err)
 	}
 }
 
-func TestGetCredentialEndpoint_DirectInMetadata(t *testing.T) {
-	metadata := map[string]any{
-		"credential_endpoint": "https://issuer.example/credential",
-	}
-	got := getCredentialEndpoint(metadata, "https://issuer.example")
-	if got != "https://issuer.example/credential" {
-		t.Errorf("expected direct credential_endpoint, got %s", got)
-	}
-}
+// A required endpoint that the metadata omits or leaves empty is a deviation:
+// debug warns and works around it with the conventional path, strict refuses.
+func TestResolveEndpoint_MissingOrEmptyIsADeviation(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		resolve func(w *Wallet) (string, error)
+		want    string
+	}{
+		{"token missing", func(w *Wallet) (string, error) {
+			return w.resolveTokenEndpoint(map[string]any{}, nil, "https://issuer.example")
+		}, "https://issuer.example/token"},
+		{"credential missing", func(w *Wallet) (string, error) {
+			return w.resolveCredentialEndpoint(map[string]any{}, "https://issuer.example")
+		}, "https://issuer.example/credential"},
+		{"credential empty", func(w *Wallet) (string, error) {
+			return w.resolveCredentialEndpoint(map[string]any{"credential_endpoint": ""}, "https://issuer.example")
+		}, "https://issuer.example/credential"},
+		{"credential trailing slash", func(w *Wallet) (string, error) {
+			return w.resolveCredentialEndpoint(map[string]any{}, "https://issuer.example/")
+		}, "https://issuer.example/credential"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			debug := generateTestWallet(t)
+			got, err := tc.resolve(debug)
+			if err != nil || got != tc.want {
+				t.Errorf("debug: endpoint = %q, err = %v; want %q", got, err, tc.want)
+			}
+			if findLogEntry(debug.GetLog(), "server_deviation") == nil {
+				t.Error("debug: expected a server_deviation warning")
+			}
 
-func TestGetCredentialEndpoint_Fallback(t *testing.T) {
-	metadata := map[string]any{}
-	got := getCredentialEndpoint(metadata, "https://issuer.example")
-	if got != "https://issuer.example/credential" {
-		t.Errorf("expected fallback credential endpoint, got %s", got)
-	}
-}
-
-func TestGetCredentialEndpoint_TrailingSlash(t *testing.T) {
-	metadata := map[string]any{}
-	got := getCredentialEndpoint(metadata, "https://issuer.example/")
-	if got != "https://issuer.example/credential" {
-		t.Errorf("expected trimmed trailing slash, got %s", got)
-	}
-}
-
-// A published but empty credential_endpoint falls back to the default, the same
-// as a missing one, rather than producing an empty request URL.
-func TestGetCredentialEndpoint_EmptyFallsBack(t *testing.T) {
-	metadata := map[string]any{"credential_endpoint": ""}
-	got := getCredentialEndpoint(metadata, "https://issuer.example")
-	if got != "https://issuer.example/credential" {
-		t.Errorf("expected fallback for an empty credential_endpoint, got %q", got)
+			strict := generateTestWallet(t)
+			strict.ValidationMode = ValidationModeStrict
+			if _, err := tc.resolve(strict); err == nil {
+				t.Error("strict: expected a refusal for a missing required endpoint")
+			}
+		})
 	}
 }
 
@@ -729,15 +730,16 @@ func TestSelectAuthorizationServer(t *testing.T) {
 // token_endpoint is an authorization server metadata parameter (RFC 8414 §2),
 // and §12.2.4 defines none for the Credential Issuer, so the authorization
 // server document wins wherever the two disagree.
-func TestGetTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T) {
+func TestResolveTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T) {
+	w := generateTestWallet(t)
 	metadata := map[string]any{"token_endpoint": "https://issuer.example/token"}
 	oauthMeta := map[string]any{"token_endpoint": "https://as.example/token"}
 
-	if got := getTokenEndpoint(metadata, oauthMeta, "https://issuer.example"); got != "https://as.example/token" {
-		t.Errorf("token endpoint = %q, want the authorization server's", got)
+	if got, err := w.resolveTokenEndpoint(metadata, oauthMeta, "https://issuer.example"); err != nil || got != "https://as.example/token" {
+		t.Errorf("token endpoint = %q, err = %v; want the authorization server's", got, err)
 	}
-	if got := getTokenEndpoint(metadata, nil, "https://issuer.example"); got != "https://issuer.example/token" {
-		t.Errorf("token endpoint = %q, want the issuer's own when no AS metadata was reachable", got)
+	if got, err := w.resolveTokenEndpoint(metadata, nil, "https://issuer.example"); err != nil || got != "https://issuer.example/token" {
+		t.Errorf("token endpoint = %q, err = %v; want the issuer's own when no AS metadata was reachable", got, err)
 	}
 }
 

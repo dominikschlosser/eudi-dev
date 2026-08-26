@@ -297,8 +297,14 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		authServer, oauthMeta, oauthErr = server, meta, nil
 	}
 
-	tokenEndpoint := getTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
-	credentialEndpoint := getCredentialEndpoint(metadata, offer.CredentialIssuer)
+	tokenEndpoint, err := w.resolveTokenEndpoint(metadata, oauthMeta, offer.CredentialIssuer)
+	if err != nil {
+		return nil, err
+	}
+	credentialEndpoint, err := w.resolveCredentialEndpoint(metadata, offer.CredentialIssuer)
+	if err != nil {
+		return nil, err
+	}
 
 	// The profile decides how many checks run, the mode decides what a
 	// violation does. Strict refuses the offer, debug reports every violation
@@ -1071,23 +1077,26 @@ func normalizeIssuerURL(raw string) string {
 	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
-// getTokenEndpoint resolves the token endpoint. token_endpoint is an
+// resolveTokenEndpoint resolves the token endpoint. token_endpoint is an
 // authorization server metadata parameter (RFC 8414 §2) and §12.2.4 defines no
 // Credential Issuer Metadata equivalent, so an issuer publishing one anyway is
-// read only when no authorization server metadata was reachable.
-func getTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer string) string {
+// read only when no authorization server metadata was reachable. A server that
+// publishes none has broken its own metadata: strict refuses, debug warns and
+// works around it with the conventional path.
+func (w *Wallet) resolveTokenEndpoint(metadata map[string]any, oauthMeta map[string]any, issuer string) (string, error) {
 	if ep, ok := oauthMeta["token_endpoint"].(string); ok && ep != "" {
-		return ep
+		return ep, nil
 	}
 	if ep, ok := metadata["token_endpoint"].(string); ok && ep != "" {
-		return ep
+		return ep, nil
 	}
-
-	authServer := getAuthorizationServer(metadata, issuer)
-	return authServer + "/token"
+	fallback := getAuthorizationServer(metadata, issuer) + "/token"
+	if err := w.reportServerDeviation(fmt.Sprintf("the authorization server metadata has no token_endpoint, which RFC 8414 requires; assuming %s", fallback)); err != nil {
+		return "", err
+	}
+	return fallback, nil
 }
 
-// fetchOAuthMetadata fetches the OAuth 2.0 Authorization Server metadata.
 // fetchOAuthMetadata reads the OAuth 2.0 Authorization Server Metadata
 // (RFC 8414) the server publishes at /.well-known/oauth-authorization-server.
 func fetchOAuthMetadata(authServer string) (map[string]any, error) {
@@ -1117,11 +1126,19 @@ func fetchOAuthMetadata(authServer string) (map[string]any, error) {
 	return meta, nil
 }
 
-func getCredentialEndpoint(metadata map[string]any, issuer string) string {
+// resolveCredentialEndpoint resolves the credential endpoint. credential_endpoint
+// is REQUIRED in the Credential Issuer Metadata (OpenID4VCI 1.0), so as with the
+// token endpoint strict refuses a metadata that omits it and debug warns and
+// assumes the conventional path.
+func (w *Wallet) resolveCredentialEndpoint(metadata map[string]any, issuer string) (string, error) {
 	if ep, ok := metadata["credential_endpoint"].(string); ok && ep != "" {
-		return ep
+		return ep, nil
 	}
-	return strings.TrimRight(issuer, "/") + "/credential"
+	fallback := strings.TrimRight(issuer, "/") + "/credential"
+	if err := w.reportServerDeviation(fmt.Sprintf("the credential issuer metadata has no credential_endpoint, which OpenID4VCI 1.0 requires; assuming %s", fallback)); err != nil {
+		return "", err
+	}
+	return fallback, nil
 }
 
 func resolveCredentialFormat(metadata map[string]any, configID string) string {
