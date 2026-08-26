@@ -583,24 +583,6 @@ func collectAllNestedDisclosureDigests(value any, digestMap map[string]*sdjwt.Di
 	}
 }
 
-// collectArrayDigests extracts array entry digests from {"...": digest} objects.
-// It is kept as a narrow helper for tests.
-func collectArrayDigests(value any, digests map[string]bool) {
-	arr, ok := value.([]any)
-	if !ok {
-		return
-	}
-	for _, item := range arr {
-		obj, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if digest, ok := obj["..."].(string); ok {
-			digests[digest] = true
-		}
-	}
-}
-
 func collectPathDisclosureDigests(value any, path []any, digestMap map[string]*sdjwt.Disclosure, digests map[string]bool) {
 	if len(path) == 0 {
 		collectAllNestedDisclosureDigests(value, digestMap, digests)

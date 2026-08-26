@@ -39,7 +39,7 @@ func TestResolveCredentialIdentifier_FromAuthDetails(t *testing.T) {
 		},
 	}
 
-	got := resolveCredentialIdentifier(tokenResp, []string{"pid-config"})
+	got := resolveCredentialIdentifier(tokenResp)
 	if got != "cred-id-abc" {
 		t.Errorf("expected cred-id-abc, got %s", got)
 	}
@@ -50,7 +50,7 @@ func TestResolveCredentialIdentifier_FallbackToConfigID(t *testing.T) {
 		"access_token": "token123",
 	}
 
-	got := resolveCredentialIdentifier(tokenResp, []string{"pid-config"})
+	got := resolveCredentialIdentifier(tokenResp)
 	if got != "" {
 		t.Errorf("expected empty string, got %s", got)
 	}
@@ -62,7 +62,7 @@ func TestResolveCredentialIdentifier_EmptyAuthDetails(t *testing.T) {
 		"authorization_details": []any{},
 	}
 
-	got := resolveCredentialIdentifier(tokenResp, []string{"fallback"})
+	got := resolveCredentialIdentifier(tokenResp)
 	if got != "" {
 		t.Errorf("expected empty string, got %s", got)
 	}
@@ -73,7 +73,7 @@ func TestResolveCredentialIdentifier_NoConfigIDs(t *testing.T) {
 		"access_token": "token123",
 	}
 
-	got := resolveCredentialIdentifier(tokenResp, nil)
+	got := resolveCredentialIdentifier(tokenResp)
 	if got != "" {
 		t.Errorf("expected empty string, got %s", got)
 	}

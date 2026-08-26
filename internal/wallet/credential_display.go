@@ -573,10 +573,13 @@ func (w *Wallet) keepVectorImage(body []byte, field, uri string) string {
 		w.rejectDisplayImage(field, uri, fmt.Sprintf("larger than the %dKB cap", maxDisplayImageBytes>>10))
 		return ""
 	}
-	if bytes.Contains(bytes.ToLower(body), []byte("<script")) {
-		w.rejectDisplayImage(field, uri, "an SVG carrying a script is not kept")
-		return ""
-	}
+	// The SVG is not scanned for active content. It is only ever rendered
+	// through an <img> tag, where an SVG runs in a secure static mode (no
+	// scripts, no event handlers, no external loads), and the endpoint that
+	// serves it carries the wallet's script-src 'self' CSP even when opened on
+	// its own. A blocklist here would catch <script> and miss onload, a
+	// javascript: href and the rest, so it is left out rather than reading as a
+	// safety it does not provide.
 	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(body)
 }
 

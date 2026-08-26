@@ -345,7 +345,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}
 
-	credentialIdentifier := resolveCredentialIdentifier(tokenResp, offer.CredentialConfigurationIDs)
+	credentialIdentifier := resolveCredentialIdentifier(tokenResp)
 	credentialConfigurationID := ""
 	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]

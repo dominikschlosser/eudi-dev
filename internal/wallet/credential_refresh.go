@@ -85,7 +85,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	// for the other: credential_identifier "when an Authorization Details of
 	// type openid_credential was returned from the Token Response",
 	// credential_configuration_id otherwise. The refresh response decides.
-	credentialIdentifier := resolveCredentialIdentifier(tokenResp, nil)
+	credentialIdentifier := resolveCredentialIdentifier(tokenResp)
 	credentialConfigurationID := ""
 	if credentialIdentifier == "" {
 		credentialConfigurationID = renewal.ConfigurationID

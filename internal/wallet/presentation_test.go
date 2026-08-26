@@ -1289,22 +1289,6 @@ func TestEncryptResponse_ErrorWhenJWKMissingAlg(t *testing.T) {
 	}
 }
 
-func TestCollectArrayDigests_NonArray(t *testing.T) {
-	digests := make(map[string]bool)
-	collectArrayDigests("not an array", digests)
-	if len(digests) != 0 {
-		t.Error("expected empty digests for non-array")
-	}
-}
-
-func TestCollectArrayDigests_EmptyArray(t *testing.T) {
-	digests := make(map[string]bool)
-	collectArrayDigests([]any{}, digests)
-	if len(digests) != 0 {
-		t.Error("expected empty digests for empty array")
-	}
-}
-
 func TestVPTokenMapResult_VPToken(t *testing.T) {
 	r := &VPTokenMapResult{
 		TokenMap: map[string]string{

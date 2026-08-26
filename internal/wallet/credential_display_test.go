@@ -385,23 +385,6 @@ func TestProcessCredentialOffer_CredentialDisplay(t *testing.T) {
 		}
 	})
 
-	t.Run("an SVG logo carrying a script is dropped", func(t *testing.T) {
-		w := generateTestWallet(t)
-		svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
-		dataURI := "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(svg)
-		imported := issueWithDisplay(t, w, []map[string]any{{
-			"name": "Test Badge",
-			"logo": map[string]any{"uri": dataURI},
-		}})
-
-		if imported.Display != nil && imported.Display.LogoURI != "" {
-			t.Errorf("an SVG with a script should be dropped, got %.40q", imported.Display.LogoURI)
-		}
-		if findLogEntry(w.GetLog(), "credential_display_image_rejected") == nil {
-			t.Error("expected a credential_display_image_rejected entry")
-		}
-	})
-
 	t.Run("a low-contrast color pair is warned about and kept", func(t *testing.T) {
 		w := generateTestWallet(t)
 		imported := issueWithDisplay(t, w, []map[string]any{{

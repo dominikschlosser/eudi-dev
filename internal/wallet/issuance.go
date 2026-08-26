@@ -432,7 +432,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	}
 
 	// Extract credential_identifiers from authorization_details in token response
-	credentialIdentifier := resolveCredentialIdentifier(tokenResp, offer.CredentialConfigurationIDs)
+	credentialIdentifier := resolveCredentialIdentifier(tokenResp)
 	credentialConfigurationID := ""
 	if credentialIdentifier == "" && len(offer.CredentialConfigurationIDs) > 0 {
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
@@ -1200,7 +1200,7 @@ func createProofJWT(holderKey *ecdsa.PrivateKey, audience, clientID, cNonce stri
 // response's authorization_details. Per OID4VCI 1.0 final, the token response
 // may contain credential_identifiers that should be used instead of the
 // credential_configuration_id from the offer.
-func resolveCredentialIdentifier(tokenResp map[string]any, configIDs []string) string {
+func resolveCredentialIdentifier(tokenResp map[string]any) string {
 	if authDetails, ok := tokenResp["authorization_details"].([]any); ok {
 		for _, detail := range authDetails {
 			d, ok := detail.(map[string]any)
