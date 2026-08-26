@@ -47,10 +47,14 @@ type Server struct {
 	store            *WalletStore
 	storeSyncMu      sync.Mutex
 	// lastWalletMod and lastWalletSize let a per-request reload skip reparsing a
-	// wallet.json that has not changed since the last load. Guarded by
+	// wallet.json that has not changed since the last load. lastReloadAt bounds
+	// how long that skip may hide a change a coarse-resolution filesystem reports
+	// with the same mtime and size (some container and network volumes), so a
+	// stale in-memory view self-corrects within reloadMaxStale. Guarded by
 	// storeSyncMu.
 	lastWalletMod   time.Time
 	lastWalletSize  int64
+	lastReloadAt    time.Time
 	staleClientOnce sync.Once
 	demo            *demoState
 	// renewalBackoff holds off retrying a credential whose renewal failed.
@@ -313,6 +317,12 @@ func (s *Server) withFreshStore(handler http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// reloadMaxStale bounds how long the per-request reload may skip reparsing an
+// unchanged store, so a change a coarse-mtime filesystem reports with the same
+// mtime and size still surfaces. The reparse is cheap now that display images
+// live beside wallet.json rather than in it.
+const reloadMaxStale = 2 * time.Second
+
 func (s *Server) reloadFromStore() error {
 	s.storeSyncMu.Lock()
 	defer s.storeSyncMu.Unlock()
@@ -325,9 +335,11 @@ func (s *Server) reloadFromStore() error {
 	// see each other's changes. Reparsing a wallet.json that carries embedded
 	// card art runs to megabytes, and doing it on every poll, serialized here,
 	// is what makes a busy demo queue up and feel like it hangs. Skip the parse
-	// when the file has not changed since the last load.
+	// when the file has not changed since the last load. A reparse still happens
+	// at least every reloadMaxStale, so a change a coarse-mtime filesystem hides
+	// (same mtime and size) surfaces within that bound rather than never.
 	mod, size, ok := s.store.WalletFileState()
-	if ok && size == s.lastWalletSize && mod.Equal(s.lastWalletMod) {
+	if ok && size == s.lastWalletSize && mod.Equal(s.lastWalletMod) && time.Since(s.lastReloadAt) < reloadMaxStale {
 		return nil
 	}
 
@@ -336,6 +348,7 @@ func (s *Server) reloadFromStore() error {
 		return err
 	}
 	s.applyPersistedWalletState(reloaded)
+	s.lastReloadAt = time.Now()
 	if ok {
 		s.lastWalletMod = mod
 		s.lastWalletSize = size

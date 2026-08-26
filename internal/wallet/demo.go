@@ -269,6 +269,9 @@ func (s *Server) demoReset() error {
 		if err := s.store.Save(s.wallet); err != nil {
 			return err
 		}
+		// Clearing the baseline orphaned the assets of whatever was issued since
+		// the last reset, so sweep them now that the fresh baseline is on disk.
+		s.store.PruneUnreferencedAssets()
 	}
 	// Scheduling belongs to startDemoReset: computing it here would break a
 	// daily schedule, whose ResetInterval is zero.

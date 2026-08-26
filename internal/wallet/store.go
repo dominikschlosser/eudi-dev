@@ -183,6 +183,48 @@ func (s *WalletStore) ReadDisplayAsset(ref string) (contentType string, data []b
 	return assetContentType(name), data, true
 }
 
+// PruneUnreferencedAssets deletes display asset files that no credential in
+// wallet.json references. It reads the current wallet.json under saveMu, so it
+// never races a save that is adding a reference (or an asset), and content
+// addressing means a re-issued image simply rewrites the same file. It is
+// best-effort: a leftover asset is harmless, so errors are ignored. The demo
+// reset calls it, since clearing the baseline orphans the assets of whatever
+// was issued since the last reset.
+func (s *WalletStore) PruneUnreferencedAssets() {
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+
+	referenced := make(map[string]bool)
+	if data, err := os.ReadFile(s.walletPath()); err == nil {
+		var wj walletJSON
+		if json.Unmarshal(data, &wj) == nil {
+			for _, c := range wj.Credentials {
+				if c.Display == nil {
+					continue
+				}
+				for _, uri := range []string{c.Display.LogoURI, c.Display.BackgroundURI} {
+					if name, ok := strings.CutPrefix(uri, "asset:"); ok {
+						referenced[name] = true
+					}
+				}
+			}
+		}
+	}
+
+	entries, err := os.ReadDir(s.assetsDir())
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		// Skip an in-flight temp write and any referenced asset.
+		if entry.IsDir() || strings.Contains(name, ".tmp-") || referenced[name] {
+			continue
+		}
+		_ = os.Remove(filepath.Join(s.assetsDir(), name))
+	}
+}
+
 // assetExtension maps an image content type to a file extension.
 func assetExtension(contentType string) string {
 	switch contentType {
