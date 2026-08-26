@@ -72,6 +72,9 @@ type mockIssuerOpts struct {
 	// rejectFirstNonce answers the first credential request with the
 	// invalid_nonce error of §8.3.1.2, whatever challenge it carried.
 	rejectFirstNonce bool
+	// omitAccessToken drops access_token from the token response, an RFC 6749
+	// §5.1 violation the wallet must fail on with a clear reason.
+	omitAccessToken bool
 }
 
 func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Server, string) {
@@ -147,6 +150,9 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 			resp := map[string]any{
 				"access_token": "test-access-token",
 				"token_type":   "Bearer",
+			}
+			if opts.omitAccessToken {
+				delete(resp, "access_token")
 			}
 			if opts.tokenCNonce != "" {
 				resp["c_nonce"] = opts.tokenCNonce
@@ -568,6 +574,23 @@ func TestProcessCredentialOffer_HappyPath(t *testing.T) {
 		"credential_imported",
 	} {
 		assertWalletLogEvent(t, logs, event)
+	}
+}
+
+// A pre-authorized token response with no access_token (RFC 6749 §5.1 requires
+// it) fails with the real reason, not a later unauthenticated 401.
+func TestProcessCredentialOffer_MissingAccessToken(t *testing.T) {
+	w := generateTestWallet(t)
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{omitAccessToken: true})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	_, err := w.ProcessCredentialOffer(offerURI)
+	if err == nil || !strings.Contains(err.Error(), "access_token") {
+		t.Fatalf("error = %v, want it to name the missing access_token", err)
 	}
 }
 

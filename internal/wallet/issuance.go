@@ -398,6 +398,13 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	})
 
 	accessToken, _ := tokenResp["access_token"].(string)
+	if accessToken == "" {
+		// RFC 6749 §5.1 makes access_token REQUIRED. Without it the credential
+		// request would go out unauthenticated: fail with the real reason rather
+		// than a later, confusing 401 (the authorization code and refresh flows
+		// guard this the same way).
+		return nil, fmt.Errorf("the token response carried no access_token")
+	}
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 

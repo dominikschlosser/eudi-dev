@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The pre-authorized flow fails clearly when the token response carries no access_token.** RFC 6749 §5.1 makes access_token REQUIRED; the pre-authorized code flow read it without checking (unlike the authorization code and refresh flows), so a response omitting it sent the credential request unauthenticated and surfaced a confusing HTTP 401. It now fails naming the missing access_token.
 - **A signed OpenID4VP request can no longer redirect its response to another host.** For an `x509_san_dns` client_id the wallet matched the request signer's certificate to the client_id but never checked where the response went, so a verifier with a valid certificate for its own domain could set `response_uri` to a different host and receive the presented credentials. The wallet now binds the response destination's FQDN to the client_id (OpenID4VP 1.0 §5.9.1): debug warns and strict refuses. The Digital Credentials API is origin-bound and unaffected.
 
 - **`validate --haip` reports HAIP findings for mdoc and JWT credentials, not only SD-JWT.** The flag advertised a HAIP check on the credential but ran it only on the SD-JWT path. An mdoc's certificate chain and a JWT credential are now checked too.
