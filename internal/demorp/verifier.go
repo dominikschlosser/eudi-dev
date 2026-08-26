@@ -871,10 +871,14 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		return nil, err
 	}
 
-	// sd_hash covers everything up to and including the final ~.
+	// sd_hash covers everything up to and including the final ~, hashed with the
+	// credential's own _sd_alg (RFC 9901 §4.3), not SHA-256 unconditionally. Parse
+	// already rejected an unsupported _sd_alg, so this only guards the impossible.
 	prefix := presentation[:strings.LastIndex(presentation, "~")+1]
-	digest := sha256.Sum256([]byte(prefix))
-	wantHash := base64.RawURLEncoding.EncodeToString(digest[:])
+	wantHash, hErr := sdjwt.SDHash(prefix, token.SDAlg())
+	if hErr != nil {
+		return nil, check("sd_hash algorithm is supported", hErr)
+	}
 	gotHash, _ := kbJWT.payload["sd_hash"].(string)
 	if err = check("sd_hash matches the presentation", errIf(gotHash != wantHash, "sd_hash does not match")); err != nil {
 		return nil, err

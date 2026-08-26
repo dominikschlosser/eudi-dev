@@ -263,6 +263,28 @@ func hashForSDAlg(sdAlg string) (func() hash.Hash, error) {
 	}
 }
 
+// SDAlg returns the hash algorithm this SD-JWT uses for its digests, read from
+// the payload's _sd_alg and defaulting to sha-256 per RFC 9901 §4.1.1.
+func (t *Token) SDAlg() string {
+	return SDAlgFromPayload(t.Payload)
+}
+
+// SDAlgFromPayload returns the _sd_alg an issuer-signed JWT payload declares,
+// defaulting to sha-256 per RFC 9901 §4.1.1.
+func SDAlgFromPayload(payload map[string]any) string {
+	if alg, ok := payload["_sd_alg"].(string); ok && alg != "" {
+		return alg
+	}
+	return defaultSDAlg
+}
+
+// SDHash returns the base64url digest of data under the named _sd_alg. It is
+// the hash a KB-JWT's sd_hash covers (RFC 9901 §4.3), computed with the same
+// algorithm the credential's disclosures use.
+func SDHash(data, sdAlg string) (string, error) {
+	return computeDigest(data, sdAlg)
+}
+
 func computeDigest(raw string, sdAlg string) (string, error) {
 	newHash, err := hashForSDAlg(sdAlg)
 	if err != nil {

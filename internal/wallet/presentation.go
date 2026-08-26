@@ -16,7 +16,6 @@ package wallet
 
 import (
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -243,9 +242,13 @@ func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []s
 		return withoutKB, nil
 	}
 
-	// Compute sd_hash = base64url(SHA-256(sd-jwt-without-kb))
-	sdHash := sha256.Sum256([]byte(withoutKB))
-	sdHashB64 := format.EncodeBase64URL(sdHash[:])
+	// sd_hash covers the SD-JWT without the KB-JWT, hashed with the credential's
+	// own _sd_alg (RFC 9901 §4.3), so an issuer that chose SHA-384 or SHA-512
+	// still gets a matching hash.
+	sdHashB64, err := sdjwt.SDHash(withoutKB, sdjwt.SDAlgFromPayload(payload))
+	if err != nil {
+		return "", fmt.Errorf("computing sd_hash: %w", err)
+	}
 
 	// Create Key Binding JWT
 	kbJWT, err := w.createKBJWT(nonce, clientID, sdHashB64, signingKey)

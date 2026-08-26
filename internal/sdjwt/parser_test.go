@@ -197,6 +197,31 @@ func TestParse_UnsupportedHashAlg(t *testing.T) {
 	}
 }
 
+func TestSDAlgFromPayload(t *testing.T) {
+	if got := SDAlgFromPayload(map[string]any{}); got != "sha-256" {
+		t.Errorf("no _sd_alg: got %q, want the sha-256 default", got)
+	}
+	if got := SDAlgFromPayload(map[string]any{"_sd_alg": "sha-384"}); got != "sha-384" {
+		t.Errorf("_sd_alg sha-384: got %q, want sha-384", got)
+	}
+}
+
+// The KB-JWT sd_hash follows the credential's _sd_alg, so a credential issued
+// under SHA-384 must hash with SHA-384, not the SHA-256 default.
+func TestSDHash_FollowsSDAlg(t *testing.T) {
+	h256, err := SDHash("data~", "sha-256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h384, err := SDHash("data~", "sha-384")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h256 == h384 {
+		t.Error("SHA-256 and SHA-384 produced the same sd_hash")
+	}
+}
+
 func TestComputeDigest_SHA256(t *testing.T) {
 	digest, err := computeDigest("test", "sha-256")
 	if err != nil {
