@@ -110,6 +110,66 @@ func transcriptFor(t *testing.T, nonce string) []byte {
 	return encoded
 }
 
+// signDeviceAuthVerbatim signs like the wallet does: it embeds the session
+// transcript bytes as-is, without the decode and re-encode signDeviceAuth uses.
+func signDeviceAuthVerbatim(t *testing.T, key *ecdsa.PrivateKey, sessionTranscript []byte, docType string) []byte {
+	t.Helper()
+	emptyNamespaces, err := tag24(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication, err := cbor.Marshal([]any{
+		"DeviceAuthentication", cbor.RawMessage(sessionTranscript), docType, cbor.RawMessage(emptyNamespaces),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := tag24Raw(authentication)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := cose.NewSigner(cose.AlgorithmES256, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := cose.UntaggedSign1Message{
+		Headers: cose.Headers{Protected: cose.ProtectedHeader{cose.HeaderLabelAlgorithm: cose.AlgorithmES256}},
+		Payload: payload,
+	}
+	if err := msg.Sign(rand.Reader, nil, signer); err != nil {
+		t.Fatal(err)
+	}
+	msg.Payload = nil
+	encoded, err := msg.MarshalCBOR()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+// The verifier embeds the session transcript bytes verbatim, as the holder
+// signed them. A transcript that a decode and re-encode would not reproduce
+// unchanged (here an indefinite-length item that re-encodes to a definite one,
+// as an mdoc handover's maps and tags can) still verifies.
+func TestVerifyDeviceAuthEmbedsTheTranscriptVerbatim(t *testing.T) {
+	key := testKey(t)
+	transcript := []byte{0x9f, 0x00, 0xff} // indefinite-length array holding [0]
+	doc := &Document{
+		DocType: testDocType,
+		IssuerAuth: &IssuerAuth{MSO: &MSO{
+			DeviceKeyInfo: map[string]any{"deviceKey": map[string]any{}},
+			DeviceKeyCBOR: deviceKeyCBOR(t, &key.PublicKey),
+		}},
+		DeviceSigned: &DeviceSigned{
+			DeviceAuth:         map[string]any{"deviceSignature": []any{}},
+			RawDeviceSignature: signDeviceAuthVerbatim(t, key, transcript, testDocType),
+		},
+	}
+	if err := VerifyDeviceAuth(doc, transcript); err != nil {
+		t.Errorf("a verbatim-signed transcript that does not canonically round-trip failed to verify: %v", err)
+	}
+}
+
 func signedDoc(t *testing.T, key *ecdsa.PrivateKey, transcript []byte) *Document {
 	t.Helper()
 	return &Document{
@@ -223,14 +283,14 @@ func TestVerifyDeviceAuthErrors(t *testing.T) {
 		{
 			"a session transcript that is not CBOR",
 			func() *Document { return signedDoc(t, key, transcript) },
-			"decoding the session transcript",
+			"the session transcript is not valid CBOR",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := transcript
-			if tt.want == "decoding the session transcript" {
+			if tt.want == "the session transcript is not valid CBOR" {
 				st = []byte{0xff, 0xff, 0xff}
 			}
 			err := VerifyDeviceAuth(tt.doc(), st)

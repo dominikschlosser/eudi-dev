@@ -94,12 +94,15 @@ func VerifyDeviceAuth(doc *Document, sessionTranscript []byte) error {
 	if err != nil {
 		return err
 	}
-	var transcript any
-	if err := cbor.Unmarshal(sessionTranscript, &transcript); err != nil {
-		return fmt.Errorf("decoding the session transcript: %w", err)
+	// The holder signed over the session transcript bytes verbatim (the signer
+	// embeds them as-is), so they go back in unchanged. Decoding and re-encoding
+	// would only reproduce them for a transcript that round-trips canonically and
+	// would fail an mdoc handover carrying a map or a tag.
+	if err := cbor.Wellformed(sessionTranscript); err != nil {
+		return fmt.Errorf("the session transcript is not valid CBOR: %w", err)
 	}
 	authentication, err := cbor.Marshal([]any{
-		"DeviceAuthentication", transcript, doc.DocType, cbor.RawMessage(emptyNamespaces),
+		"DeviceAuthentication", cbor.RawMessage(sessionTranscript), doc.DocType, cbor.RawMessage(emptyNamespaces),
 	})
 	if err != nil {
 		return fmt.Errorf("encoding DeviceAuthentication: %w", err)
