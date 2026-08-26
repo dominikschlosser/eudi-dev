@@ -68,25 +68,18 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		return VPTokenResult{}, fmt.Errorf("parsing IssuerSigned CBOR: %w", err)
 	}
 
-	// Filter namespaces to only include selected data elements
+	// Filter namespaces to only include selected data elements. Each item's
+	// RawCBOR is the exact Tag-24 the issuer signed and the MSO digest covers,
+	// so a selected element goes out byte for byte. Taking it from the parsed
+	// item, not from the raw array by position, keeps them aligned: the parser
+	// skips unparseable items and drops repeated element identifiers, so the raw
+	// array can be shorter or reordered.
 	filteredNS := make(map[string][]cbor.RawMessage)
 	for ns, items := range cred.NameSpaces {
-		// Re-parse the raw namespace items from the original
-		var rawNSItems []cbor.RawMessage
-		var allNS map[string][]cbor.RawMessage
-		if nsRaw, ok := issuerSigned["nameSpaces"]; ok {
-			if err := cbor.Unmarshal(nsRaw, &allNS); err == nil {
-				rawNSItems = allNS[ns]
-			}
-		}
-
 		var filtered []cbor.RawMessage
-		for i, item := range items {
-			key := ns + ":" + item.ElementIdentifier
-			if selected[key] {
-				if i < len(rawNSItems) {
-					filtered = append(filtered, rawNSItems[i])
-				}
+		for _, item := range items {
+			if selected[ns+":"+item.ElementIdentifier] && len(item.RawCBOR) > 0 {
+				filtered = append(filtered, cbor.RawMessage(item.RawCBOR))
 			}
 		}
 		if len(filtered) > 0 {
