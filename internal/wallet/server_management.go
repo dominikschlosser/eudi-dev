@@ -259,14 +259,20 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := s.wallet.IssueSummary(opts)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	var summary map[string]any
+	var issueErr error
+	s.saveMutation(func() bool {
+		summary, issueErr = s.wallet.IssueSummary(opts)
+		if issueErr != nil {
+			return false
+		}
+		s.wallet.AddLog("management", fmt.Sprintf("Issued %s credential %s", summary["format"], credentialTypeLabel(summary)), true)
+		return true
+	})
+	if issueErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": issueErr.Error()})
 		return
 	}
-	s.wallet.AddLog("management", fmt.Sprintf("Issued %s credential %s", summary["format"], credentialTypeLabel(summary)), true)
-	s.triggerSave()
-
 	writeJSON(w, http.StatusCreated, summary)
 }
 
@@ -299,12 +305,18 @@ func (s *Server) handleGeneratePID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.wallet.GenerateDefaultCredentials(req.Claims, req.VCT); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	var genErr error
+	s.saveMutation(func() bool {
+		if genErr = s.wallet.GenerateDefaultCredentials(req.Claims, req.VCT); genErr != nil {
+			return false
+		}
+		s.wallet.AddLog("management", "Regenerated default PID credentials", true)
+		return true
+	})
+	if genErr != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": genErr.Error()})
 		return
 	}
-	s.wallet.AddLog("management", "Regenerated default PID credentials", true)
-	s.triggerSave()
 
 	data, err := s.wallet.CredentialsJSON()
 	if err != nil {

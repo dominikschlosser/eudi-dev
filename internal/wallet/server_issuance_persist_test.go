@@ -14,7 +14,50 @@
 
 package wallet
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// The synchronous management handlers (import, delete, set-status, issue,
+// generate-pid) mutate the wallet and save through saveMutation, which must
+// hold storeSyncMu across the change and its save so a per-request reload
+// cannot land in between and drop the write. A reload therefore blocks while a
+// mutation is in flight.
+func TestSaveMutationFencesOutAReload(t *testing.T) {
+	srv := newTestServer(t, true)
+	store := NewWalletStore(t.TempDir())
+	if _, err := store.LoadOrCreate(); err != nil {
+		t.Fatalf("initializing store: %v", err)
+	}
+	srv.SetStore(store)
+	srv.onSave = func() {}
+
+	inside := make(chan struct{})
+	release := make(chan struct{})
+	reloadDone := make(chan struct{})
+
+	go srv.saveMutation(func() bool {
+		close(inside) // now holding storeSyncMu
+		<-release     // keep holding it until the test says so
+		return true
+	})
+
+	<-inside
+	go func() {
+		_ = srv.reloadFromStore()
+		close(reloadDone)
+	}()
+
+	select {
+	case <-reloadDone:
+		t.Fatal("a reload ran while a mutation held the store lock")
+	case <-time.After(50 * time.Millisecond):
+		// Expected: the reload is blocked on storeSyncMu.
+	}
+	close(release)
+	<-reloadDone
+}
 
 // An issuance flow can stay open for a long time: an authorization code flow
 // waits for the user to sign in at the issuer, and meanwhile every request

@@ -415,6 +415,24 @@ func (s *Server) triggerSave() {
 	s.wallet.NotifyStateChanged()
 }
 
+// saveMutation applies mutate and persists the result under storeSyncMu, so a
+// per-request reload (which replaces the credential, status and log state
+// wholesale from disk) cannot land between the change and its save and drop it.
+// mutate reports whether it changed anything: a no-op skips the save. The save
+// and the notify run after, outside any client I/O, so a slow reader never
+// holds the reload lock.
+func (s *Server) saveMutation(mutate func() bool) {
+	s.storeSyncMu.Lock()
+	changed := mutate()
+	if changed && s.onSave != nil {
+		s.onSave()
+	}
+	s.storeSyncMu.Unlock()
+	if changed {
+		s.wallet.NotifyStateChanged()
+	}
+}
+
 // saveIssuedCredential persists a credential an issuance flow just imported.
 // A long-running flow (an authorization code sign-in) is interleaved with
 // requests that reload the wallet from disk, and a reload landing between the

@@ -140,15 +140,20 @@ func (s *Server) handleImportCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	imported, err := s.wallet.ImportCredential(raw)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	var imported *StoredCredential
+	var importErr error
+	s.saveMutation(func() bool {
+		imported, importErr = s.wallet.ImportCredential(raw)
+		if importErr != nil {
+			return false
+		}
+		s.wallet.AddLog("management", fmt.Sprintf("Imported %s credential %s", imported.Format, credentialLabel(*imported)), true)
+		return true
+	})
+	if importErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": importErr.Error()})
 		return
 	}
-
-	s.wallet.AddLog("management", fmt.Sprintf("Imported %s credential %s", imported.Format, credentialLabel(*imported)), true)
-
-	s.triggerSave()
 	writeJSON(w, http.StatusCreated, s.wallet.CredentialSummaryWithStatus(*imported))
 }
 
@@ -169,12 +174,19 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 		})
 		return
 	}
-	if !s.wallet.RemoveCredential(id) {
+	var removed bool
+	s.saveMutation(func() bool {
+		removed = s.wallet.RemoveCredential(id)
+		if !removed {
+			return false
+		}
+		s.wallet.AddLog("management", fmt.Sprintf("Deleted credential %s", label), true)
+		return true
+	})
+	if !removed {
 		http.Error(w, "credential not found", http.StatusNotFound)
 		return
 	}
-	s.wallet.AddLog("management", fmt.Sprintf("Deleted credential %s", label), true)
-	s.triggerSave()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -211,21 +223,27 @@ func (s *Server) handleSetCredentialStatus(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	entry, ok := s.wallet.SetCredentialStatus(id, body.Status)
+	var entry StatusEntry
+	var ok bool
+	s.saveMutation(func() bool {
+		entry, ok = s.wallet.SetCredentialStatus(id, body.Status)
+		if !ok {
+			return false
+		}
+		verb := fmt.Sprintf("Set status %d on", body.Status)
+		switch body.Status {
+		case 0:
+			verb = "Activated"
+		case 1:
+			verb = "Revoked"
+		}
+		s.wallet.AddLog("management", fmt.Sprintf("%s credential %s", verb, id), true)
+		return true
+	})
 	if !ok {
 		http.Error(w, "credential has no status entry", http.StatusNotFound)
 		return
 	}
-
-	verb := fmt.Sprintf("Set status %d on", body.Status)
-	switch body.Status {
-	case 0:
-		verb = "Activated"
-	case 1:
-		verb = "Revoked"
-	}
-	s.wallet.AddLog("management", fmt.Sprintf("%s credential %s", verb, id), true)
-	s.triggerSave()
 	writeJSON(w, http.StatusOK, entry)
 }
 
