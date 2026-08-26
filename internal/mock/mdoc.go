@@ -104,6 +104,9 @@ type MDOCConfig struct {
 	StatusListURI   string              // optional: status list URI for revocation
 	StatusListIdx   int                 // optional: index in the status list
 	CertChain       []*x509.Certificate // optional: x5chain certificate chain [leaf, CA]
+	// OmitValidityInfo drops the MSO validityInfo, which ISO 18013-5 requires,
+	// for testing how a verifier handles an mdoc that states no validity period.
+	OmitValidityInfo bool
 }
 
 // GenerateMDOC creates a mock mDOC (IssuerSigned) credential.
@@ -179,11 +182,13 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		"digestAlgorithm": "SHA-256",
 		"docType":         cfg.DocType,
 		"valueDigests":    valueDigestsByNS,
-		"validityInfo": map[string]any{
+	}
+	if !cfg.OmitValidityInfo {
+		mso["validityInfo"] = map[string]any{
 			"signed":     cbor.Tag{Number: 0, Content: now.Format(time.RFC3339)},
 			"validFrom":  cbor.Tag{Number: 0, Content: validFrom.Format(time.RFC3339)},
 			"validUntil": cbor.Tag{Number: 0, Content: validUntil.Format(time.RFC3339)},
-		},
+		}
 	}
 
 	// Add status list reference

@@ -132,6 +132,29 @@ func TestVerify(t *testing.T) {
 	}
 }
 
+// An mdoc whose MSO omits validityInfo states no validity period. ISO 18013-5
+// requires it, so Verify cannot report the credential as current: it leaves the
+// dates nil and marks neither Expired nor NotYetValid, letting the caller warn.
+func TestVerify_NoValidityInfo(t *testing.T) {
+	key, _ := mock.GenerateKey()
+	doc := generateTestMDoc(t, mock.MDOCConfig{
+		DocType: "org.iso.18013.5.1.mDL", Namespace: "org.iso.18013.5.1",
+		Claims: mock.DefaultClaims, Key: key, OmitValidityInfo: true,
+	})
+
+	result := Verify(doc, &key.PublicKey)
+
+	if !result.SignatureValid {
+		t.Fatalf("SignatureValid = false, want true (errors: %v)", result.Errors)
+	}
+	if result.ValidUntil != nil || result.ValidFrom != nil || result.Signed != nil {
+		t.Errorf("validity dates = (from %v, until %v, signed %v), want all nil", result.ValidFrom, result.ValidUntil, result.Signed)
+	}
+	if result.Expired || result.NotYetValid {
+		t.Errorf("Expired = %v, NotYetValid = %v, want both false", result.Expired, result.NotYetValid)
+	}
+}
+
 func TestCoseAlgName(t *testing.T) {
 	tests := []struct {
 		id   int64

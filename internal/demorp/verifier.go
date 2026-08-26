@@ -1012,7 +1012,13 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid: %s", strings.Join(result.Errors, "; "))); err != nil {
 		return nil, log.entries, err
 	}
-	if err = check("credential is within its validity period",
+	// ISO 18013-5 makes validityInfo (with validUntil) a required MSO member. An
+	// mdoc that omits it has no stated expiry, so the period cannot be checked:
+	// note that rather than affirm a validity that was never verified.
+	if result.ValidUntil == nil {
+		log.warn("credential is within its validity period",
+			fmt.Errorf("the mdoc MSO carries no validUntil, so its validity cannot be checked (ISO 18013-5 requires validityInfo)"))
+	} else if err = check("credential is within its validity period",
 		errIf(result.Expired || result.NotYetValid, "credential is expired or not yet valid")); err != nil {
 		return nil, log.entries, err
 	}
