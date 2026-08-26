@@ -405,6 +405,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		// guard this the same way).
 		return nil, fmt.Errorf("the token response carried no access_token")
 	}
+	if err := w.checkTokenType(tokenResp, dpopKey != nil); err != nil {
+		return nil, err
+	}
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 

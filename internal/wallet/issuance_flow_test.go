@@ -75,6 +75,9 @@ type mockIssuerOpts struct {
 	// omitAccessToken drops access_token from the token response, an RFC 6749
 	// §5.1 violation the wallet must fail on with a clear reason.
 	omitAccessToken bool
+	// omitTokenType drops token_type from the token response, which RFC 6749
+	// §5.1 also requires: a deviation strict refuses and debug works around.
+	omitTokenType bool
 }
 
 func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Server, string) {
@@ -153,6 +156,9 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 			}
 			if opts.omitAccessToken {
 				delete(resp, "access_token")
+			}
+			if opts.omitTokenType {
+				delete(resp, "token_type")
 			}
 			if opts.tokenCNonce != "" {
 				resp["c_nonce"] = opts.tokenCNonce
@@ -1739,6 +1745,53 @@ func TestProcessCredentialOffer_MetadataAcceptHeader(t *testing.T) {
 // from the Nonce Endpoint as defined in Section 7." An issuer that puts one in
 // the token response instead is pre-1.0, and strict mode is where the wallet
 // refuses to paper over that. Debug mode completes the flow and says so.
+// RFC 6749 §5.1 makes token_type REQUIRED. A response omitting it is refused in
+// strict and worked around in debug (assuming Bearer here, no DPoP was sent),
+// which the wallet records as a server deviation either way.
+func TestProcessCredentialOffer_MissingTokenTypeByValidationMode(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mode    ValidationMode
+		wantErr bool
+	}{
+		{"strict refuses", ValidationModeStrict, true},
+		{"debug works around", ValidationModeDebug, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := generateTestWallet(t)
+			w.ValidationMode = tc.mode
+
+			srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{omitTokenType: true})
+			defer srv.Close()
+
+			oldClient := httpClient
+			httpClient = srv.Client()
+			defer func() { httpClient = oldClient }()
+
+			_, err := w.ProcessCredentialOffer(offerURI)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "token_type") {
+					t.Fatalf("error = %v, want it to name the missing token_type", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ProcessCredentialOffer: %v", err)
+			}
+
+			found := false
+			for _, entry := range w.GetLog() {
+				if strings.Contains(entry.Detail, "token_type") {
+					found = true
+				}
+			}
+			if !found {
+				t.Error("the activity log does not name the missing token_type")
+			}
+		})
+	}
+}
+
 func TestProcessCredentialOffer_TokenResponseCNonceByValidationMode(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

@@ -325,6 +325,9 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 	if accessToken == "" {
 		return nil, fmt.Errorf("token response missing access_token")
 	}
+	if err := w.checkTokenType(tokenResp, dpopKey != nil); err != nil {
+		return nil, err
+	}
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
 	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
@@ -1118,6 +1121,21 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 		}
 	}
 	return details
+}
+
+// checkTokenType reports a token response whose token_type deviates from RFC
+// 6749 §5.1, which requires it. A missing type is worked around (DPoP when a
+// proof was sent, else Bearer), and an unrecognized one is treated as Bearer;
+// strict refuses either, debug warns and proceeds on the assumption.
+func (w *Wallet) checkTokenType(tokenResp map[string]any, sentDPoP bool) error {
+	tokenType, _ := tokenResp["token_type"].(string)
+	if tokenType == "" {
+		return w.reportServerDeviation(fmt.Sprintf("the token response omitted token_type, which RFC 6749 §5.1 requires; assuming %s", accessTokenScheme(tokenResp, sentDPoP)))
+	}
+	if !strings.EqualFold(tokenType, "Bearer") && !strings.EqualFold(tokenType, "DPoP") {
+		return w.reportServerDeviation(fmt.Sprintf("the token response token_type %q is neither Bearer (RFC 6749) nor DPoP (RFC 9449); treating it as Bearer", tokenType))
+	}
+	return nil
 }
 
 // accessTokenScheme picks the HTTP authorization scheme for an access token.
