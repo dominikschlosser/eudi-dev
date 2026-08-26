@@ -491,6 +491,13 @@ header h1 {
     border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--bg-surface);
+    /* iOS WebKit only culls a hidden backface on an element that is itself
+       3D-transformed. The back face rotates, so it is culled; the front face
+       had no transform, so its mirrored name and logo showed through the whole
+       flip. An identity rotation gives it the same 3D layer, so it is culled
+       too. */
+    transform: rotateY(0deg);
+    -webkit-transform: rotateY(0deg);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
   }
