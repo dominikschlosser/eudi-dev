@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] - 2026-08-26
+
+### Fixed
+
+- **The JWT key proof names the client as `iss` when the wallet has one.** OpenID4VCI 1.0 Appendix F.1 defines the proof's `iss` claim as the `client_id` of the client making the credential request. The wallet left it out entirely, so an issuer that binds the access token to a registered OAuth client and checks the proof against it (many do) rejected the credential request with `invalid_proof`. The proof now carries `iss` when the wallet obtained the token as an identified client (the authorization code flow, or a pre-authorized flow that authenticated the client), and still omits it for an anonymous pre-authorized flow, where naming a client the token is not bound to would fail that same check. Thanks to Massimiliano Perrone for the detailed report (#13).
+
 ## [2.0.4] - 2026-08-25
 
 ### Added

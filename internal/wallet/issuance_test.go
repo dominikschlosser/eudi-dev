@@ -738,7 +738,7 @@ func TestGetTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T) {
 func TestCreateProofJWT_OmitsEmptyNonce(t *testing.T) {
 	key := testKey(t)
 
-	withoutNonce, err := createProofJWT(key, "https://issuer.example", "", nil)
+	withoutNonce, err := createProofJWT(key, "https://issuer.example", "", "", nil)
 	if err != nil {
 		t.Fatalf("createProofJWT: %v", err)
 	}
@@ -747,12 +747,36 @@ func TestCreateProofJWT_OmitsEmptyNonce(t *testing.T) {
 		t.Errorf("proof carries a nonce claim %v when the issuer gave none", payload["nonce"])
 	}
 
-	withNonce, err := createProofJWT(key, "https://issuer.example", "abc123", nil)
+	withNonce, err := createProofJWT(key, "https://issuer.example", "", "abc123", nil)
 	if err != nil {
 		t.Fatalf("createProofJWT with nonce: %v", err)
 	}
 	payload = decodeJWTPart(t, withNonce, 1)
 	if payload["nonce"] != "abc123" {
 		t.Errorf("nonce = %v, want abc123", payload["nonce"])
+	}
+}
+
+// The key proof names the client as iss when the wallet has one (OID4VCI 1.0
+// Appendix F.1), so an issuer that binds the access token to a client can match
+// it, and leaves it out for an anonymous flow, where naming an unbound client
+// would fail that check.
+func TestCreateProofJWT_IssMatchesClientID(t *testing.T) {
+	key := testKey(t)
+
+	withClient, err := createProofJWT(key, "https://issuer.example", "wallet-client-id", "", nil)
+	if err != nil {
+		t.Fatalf("createProofJWT: %v", err)
+	}
+	if got := decodeJWTPart(t, withClient, 1)["iss"]; got != "wallet-client-id" {
+		t.Errorf("iss = %v, want wallet-client-id", got)
+	}
+
+	anonymous, err := createProofJWT(key, "https://issuer.example", "", "", nil)
+	if err != nil {
+		t.Fatalf("createProofJWT anonymous: %v", err)
+	}
+	if _, present := decodeJWTPart(t, anonymous, 1)["iss"]; present {
+		t.Error("proof carries an iss claim when the flow named no client")
 	}
 }

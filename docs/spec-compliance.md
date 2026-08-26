@@ -58,6 +58,7 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 | Pushed Authorization Request (PAR) | Implemented | Used by the authorization-code flow |
 | Token endpoint | Implemented | Exchanges pre-authorized code or authorization code for access token |
 | Credential endpoint | Implemented | Uses OID4VCI 1.0 final `proofs.jwt` and sends `credential_identifier` or `credential_configuration_id` as required (§8.2 forbids both together and forbids either one where the token response did not call for it) |
+| Key proof `iss` | Implemented | The JWT key proof names the client as `iss` (Appendix F.1) when the wallet obtained the access token as an identified client (the authorization code flow, or a pre-authorized flow that authenticated the client), so an issuer that binds the token to a client can match it. An anonymous pre-authorized flow omits `iss` |
 | Nonce endpoint | Implemented | The only source of the key-proof challenge (§8.2). The request is unauthenticated, as §7.1 says it is not a protected resource. Strict mode refuses a `c_nonce` in the token response, debug mode uses it and logs the issuer as pre-1.0 |
 | `invalid_nonce` retry | Implemented | A rejected challenge is fetched again from the Nonce Endpoint and the request is sent once more with rebuilt proofs (§8.3.1.2) |
 | Credential response shape | Enforced | Only the `credentials` array of objects of §8.3 is read. A top-level `credential` string and an array of bare strings are draft shapes and are refused |

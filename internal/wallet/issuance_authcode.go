@@ -367,7 +367,10 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		responseEncryption:        responseEncryption,
 		dpopKey:                   dpopKey,
 		proofKeys:                 proofKeys,
-		nonce:                     &nonces.resource,
+		// The authorization code flow always identifies the client, so the key
+		// proof names it as iss for an issuer that binds the token to it.
+		clientID: clientID,
+		nonce:    &nonces.resource,
 	}
 	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {

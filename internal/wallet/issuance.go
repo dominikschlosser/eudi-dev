@@ -432,6 +432,13 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		credentialConfigurationID = offer.CredentialConfigurationIDs[0]
 	}
 
+	// A pre-authorized flow names the client in the key proof only when it
+	// authenticated as one (its attestation, above). An anonymous exchange
+	// leaves iss out, since the token is bound to no client to match it against.
+	proofClientID := ""
+	if clientAuth != nil {
+		proofClientID = clientAuth.ClientID
+	}
 	attempt := credentialRequestAttempt{
 		metadata:                  metadata,
 		endpoint:                  credentialEndpoint,
@@ -444,6 +451,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		responseEncryption:        responseEncryption,
 		dpopKey:                   dpopKey,
 		proofKeys:                 proofKeys,
+		clientID:                  proofClientID,
 		nonce:                     &nonces.resource,
 	}
 	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
@@ -1140,7 +1148,7 @@ func resolveCredentialFormat(metadata map[string]any, configID string) string {
 }
 
 // createProofJWT creates an OID4VCI proof of possession JWT.
-func createProofJWT(holderKey *ecdsa.PrivateKey, audience, cNonce string, extraHeader map[string]any) (string, error) {
+func createProofJWT(holderKey *ecdsa.PrivateKey, audience, clientID, cNonce string, extraHeader map[string]any) (string, error) {
 	// Build JWK for holder public key
 	jwkJSON := mock.PublicKeyJWK(&holderKey.PublicKey)
 	var jwk map[string]any
@@ -1160,6 +1168,16 @@ func createProofJWT(holderKey *ecdsa.PrivateKey, audience, cNonce string, extraH
 	payload := map[string]any{
 		"aud": audience,
 		"iat": time.Now().Unix(),
+	}
+	// OID4VCI 1.0 Appendix F.1: iss is the client_id of the client making the
+	// credential request. It is sent when the wallet obtained the access token
+	// as an identified OAuth client (the authorization code flow, or a
+	// pre-authorized flow that authenticated the client), so an issuer that
+	// binds the token to a client can match it. It is omitted for an anonymous
+	// pre-authorized flow, where naming a client the token is not bound to
+	// would fail that check.
+	if clientID != "" {
+		payload["iss"] = clientID
 	}
 	// The nonce claim echoes a c_nonce the issuer provided. An issuer that
 	// provided none expects the claim to be absent, and an empty string is not
@@ -1417,6 +1435,10 @@ type credentialRequestAttempt struct {
 	responseEncryption        map[string]any
 	dpopKey                   *ecdsa.PrivateKey
 	proofKeys                 []*ecdsa.PrivateKey
+	// clientID is the OAuth client_id the access token was issued to, echoed as
+	// the key proof's iss claim. Empty for an anonymous pre-authorized flow,
+	// where there is no client to name.
+	clientID string
 	// nonce is the DPoP nonce state of the resource server, not the c_nonce.
 	nonce *string
 }
@@ -1428,7 +1450,7 @@ func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string
 	if err != nil {
 		return nil, fmt.Errorf("building credential proof header: %w", err)
 	}
-	proofs, err := createProofJWTs(a.proofKeys, a.issuer, cNonce, header)
+	proofs, err := createProofJWTs(a.proofKeys, a.issuer, a.clientID, cNonce, header)
 	if err != nil {
 		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}

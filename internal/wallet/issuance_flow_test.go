@@ -512,6 +512,14 @@ func TestProcessCredentialOffer_HappyPath(t *testing.T) {
 			if !ok || len(jwts) != 1 {
 				t.Fatalf("expected single jwt proof, got %v", proofs["jwt"])
 			}
+			// This issuer authenticates no client, so the pre-authorized exchange
+			// is anonymous and the key proof leaves iss out (OID4VCI 1.0 Appendix
+			// F.1): naming a client the token is not bound to would fail an
+			// issuer's iss check.
+			proofJWT, _ := jwts[0].(string)
+			if _, present := decodeJWTPart(t, proofJWT, 1)["iss"]; present {
+				t.Error("an anonymous pre-authorized flow must omit iss from the key proof")
+			}
 			if reqBody["credential_configuration_id"] != "test-config" {
 				t.Fatalf("expected credential_configuration_id=test-config, got %v", reqBody["credential_configuration_id"])
 			}
@@ -867,8 +875,9 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 
 	credRaw := generateTestCredential(t, w)
 	var (
-		serverURL string
-		parState  string
+		serverURL        string
+		parState         string
+		capturedProofJWT string
 	)
 
 	issuer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -920,6 +929,14 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 				"c_nonce":      "test-c-nonce",
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/credential":
+			body, _ := io.ReadAll(r.Body)
+			var reqBody map[string]any
+			_ = json.Unmarshal(body, &reqBody)
+			if proofs, ok := reqBody["proofs"].(map[string]any); ok {
+				if jwts, ok := proofs["jwt"].([]any); ok && len(jwts) > 0 {
+					capturedProofJWT, _ = jwts[0].(string)
+				}
+			}
 			rw.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 		default:
@@ -966,6 +983,15 @@ func TestProcessCredentialOffer_AuthCodeDirectRedirect(t *testing.T) {
 	}
 	if result.CredentialID == "" {
 		t.Fatal("expected imported credential ID")
+	}
+	// The authorization code flow identifies the client, so its key proof names
+	// that client as iss (OID4VCI 1.0 Appendix F.1) for an issuer that binds the
+	// access token to it (github.com/dominikschlosser/eudi-dev issue 13).
+	if capturedProofJWT == "" {
+		t.Fatal("credential request carried no key proof")
+	}
+	if got := decodeJWTPart(t, capturedProofJWT, 1)["iss"]; got != "wallet-client" {
+		t.Errorf("key proof iss = %v, want the configured client_id wallet-client", got)
 	}
 }
 

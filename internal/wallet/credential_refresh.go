@@ -103,7 +103,10 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		responseEncryption:        responseEncryption,
 		dpopKey:                   dpopKey,
 		proofKeys:                 proofKeys,
-		nonce:                     &nonce,
+		// A refresh replays the original client identity, so the key proof names
+		// it as iss just as the first request did (empty for an anonymous flow).
+		clientID: renewal.ClientID,
+		nonce:    &nonce,
 	}
 	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {

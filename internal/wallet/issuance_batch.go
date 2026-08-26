@@ -80,12 +80,12 @@ func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, con
 }
 
 // createProofJWTs creates one proof JWT per key. All proofs share the same
-// audience, nonce, and extra header members (e.g. a key_attestation covering
-// every proof key).
-func createProofJWTs(keys []*ecdsa.PrivateKey, audience, cNonce string, extraHeader map[string]any) ([]string, error) {
+// audience, client id, nonce, and extra header members (e.g. a key_attestation
+// covering every proof key).
+func createProofJWTs(keys []*ecdsa.PrivateKey, audience, clientID, cNonce string, extraHeader map[string]any) ([]string, error) {
 	proofs := make([]string, 0, len(keys))
 	for _, key := range keys {
-		proof, err := createProofJWT(key, audience, cNonce, extraHeader)
+		proof, err := createProofJWT(key, audience, clientID, cNonce, extraHeader)
 		if err != nil {
 			return nil, err
 		}
