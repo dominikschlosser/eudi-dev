@@ -131,17 +131,9 @@ func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestPara
 
 // warnRegistrationCertificate records the registration certificate findings as
 // a single activity log entry, so a certificate with several problems does not
-// flood the log. One finding is shown as its own message. Several are collapsed
-// to a count, with the full list in the entry details.
+// flood the log.
 func (w *Wallet) warnRegistrationCertificate(scope string, findings []string) {
-	switch len(findings) {
-	case 0:
-		return
-	case 1:
-		w.AddWarning(scope, findings[0], nil)
-	default:
-		w.AddWarning(scope, fmt.Sprintf("The relying party registration certificate has %d findings against the ARF and ETSI TS 119 475 (see details).", len(findings)), map[string]any{"findings": findings})
-	}
+	w.warnFindings(scope, "The relying party registration certificate does not follow the ARF and ETSI TS 119 475", findings)
 }
 
 // registrationCertificateContentFindings checks a verified WRPRC against the

@@ -423,7 +423,7 @@ func TestConsentPurposesSummarizesCertificateFindings(t *testing.T) {
 	summaries := 0
 	var details map[string]any
 	for _, entry := range w.GetLog() {
-		if strings.Contains(entry.Detail, "findings against the ARF") {
+		if strings.Contains(entry.Detail, "findings, see details") {
 			summaries++
 			details = entry.Details
 		}

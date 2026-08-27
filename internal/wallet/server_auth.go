@@ -239,8 +239,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	}
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
-		s.wallet.AddWarning("presentation", fmt.Sprintf("Request does not follow the profile: %s", finding), nil)
 	}
+	s.wallet.warnFindings("presentation", "The request does not follow the profile", findings)
 
 	// Log DCQL query
 	if authReq.DCQLQuery != nil {

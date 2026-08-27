@@ -1098,6 +1098,22 @@ func (w *Wallet) AddWarning(action, detail string, details map[string]any) {
 	})
 }
 
+// warnFindings records a set of findings as a single activity log entry, so a
+// long list does not fill the log's main description or spread across an entry
+// each. One finding is shown as its own message. Several are collapsed to a
+// count, summary naming what they are about, with the full list in the entry
+// details for the UI to expand.
+func (w *Wallet) warnFindings(action, summary string, findings []string) {
+	switch len(findings) {
+	case 0:
+		return
+	case 1:
+		w.AddWarning(action, findings[0], nil)
+	default:
+		w.AddWarning(action, fmt.Sprintf("%s (%d findings, see details)", summary, len(findings)), map[string]any{"findings": findings})
+	}
+}
+
 // maxLogEntries is how much activity history a wallet keeps. The log is
 // persisted and re-read at every request boundary, so an unbounded one costs a
 // growing parse on each reload. logTrimSlack lets it run past the cap before

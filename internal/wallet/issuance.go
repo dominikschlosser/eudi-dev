@@ -312,18 +312,8 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	// counterparty that does not follow the profile worth watching.
 	if w.RequireHAIP {
 		if violations := ValidateHAIPIssuanceCompliance(offer, oauthMeta); len(violations) > 0 {
-			detail := fmt.Sprintf("Credential offer does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
-			details := map[string]any{
-				"issuer":     offer.CredentialIssuer,
-				"violations": violations,
-			}
-			if w.Mode() == ValidationModeStrict {
-				w.addProtocolLog("issuance", "haip_violation", detail, false, details)
-				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
-			}
-			w.addProtocolWarning("issuance", "haip_violation", detail, details)
-			for _, v := range violations {
-				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
+			if err := w.reportHAIPViolations("Credential offer", offer.CredentialIssuer, violations); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -524,18 +514,8 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	// saying so here is what turns a rejection later into a finding now.
 	if w.RequireHAIP {
 		if violations := w.haipCredentialViolations(credential); len(violations) > 0 {
-			detail := fmt.Sprintf("Credential does not follow HAIP 1.0: %s", strings.Join(violations, "; "))
-			details := map[string]any{
-				"issuer":     offer.CredentialIssuer,
-				"violations": violations,
-			}
-			if w.Mode() == ValidationModeStrict {
-				w.addProtocolLog("issuance", "haip_violation", detail, false, details)
-				return nil, fmt.Errorf("HAIP 1.0 compliance check failed: %s", strings.Join(violations, "; "))
-			}
-			w.addProtocolWarning("issuance", "haip_violation", detail, details)
-			for _, v := range violations {
-				log.Printf("[VCI] WARNING: HAIP violation: %s", v)
+			if err := w.reportHAIPViolations("Credential", offer.CredentialIssuer, violations); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -1415,6 +1395,24 @@ func selectCredentialRequestEncryption(mode ValidationMode, metadata map[string]
 func credentialRequestEncryptionRequired(raw map[string]any) bool {
 	required, _ := raw["encryption_required"].(bool)
 	return required
+}
+
+// reportHAIPViolations records HAIP findings as one activity log entry whose
+// message is a count, with the findings in its details rather than joined into
+// the message. subject names what was checked. It returns the error strict mode
+// fails the flow with, and nil in debug mode where the flow carries on.
+func (w *Wallet) reportHAIPViolations(subject, issuer string, violations []string) error {
+	detail := fmt.Sprintf("%s does not follow HAIP 1.0 (%d findings, see details)", subject, len(violations))
+	details := map[string]any{"issuer": issuer, "violations": violations}
+	for _, v := range violations {
+		log.Printf("[VCI] WARNING: HAIP violation: %s", v)
+	}
+	if w.Mode() == ValidationModeStrict {
+		w.addProtocolLog("issuance", "haip_violation", detail, false, details)
+		return fmt.Errorf("%s does not follow HAIP 1.0: %s", strings.ToLower(subject), strings.Join(violations, ", "))
+	}
+	w.addProtocolWarning("issuance", "haip_violation", detail, details)
+	return nil
 }
 
 // issuanceChallenge obtains the c_nonce the key proofs are signed over. §8.2

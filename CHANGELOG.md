@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **In debug mode the wallet can present a credential whose issuer the request's trusted_authorities do not match.** A verifier can limit a request to specific issuers (DCQL trusted_authorities). Strict mode offers only the credentials that match. Debug mode also offers the ones that do not, flagged in the consent dialog, so a verifier can be tested against a wallet that ignores the restriction. A matching credential stays the wallet's default pick.
 - **The wallet checks the relying party registration certificate against the ARF content rules.** A presentation request should carry a registration certificate (an rc-wrp+jwt in verifier_info) that the ARF requires of every request (RPRC_19). The wallet now warns when it is absent, and when present it validates the certificate against the mandatory content of ETSI TS 119 475 V1.2.1 §5.2.4 (trade name, relying party identifier, service description, entitlements, privacy policy, data deletion contact, supervisory authority, registered credentials) and a validity window no longer than 12 months, and it runs the ARF RPRC_21 over-asking check (every claim the request asks for has to be one the certificate registered). Each finding is a warning in every mode, since validation mode is OpenID4VP and HAIP strict and the ARF rules are not part of it. The demo verifier and demo issuer now present a fully conformant registration certificate.
 
+### Changed
+
+- **A request or credential that fails several checks is one activity log entry, not a long line or an entry per finding.** The HAIP profile findings on an offer or credential, the OpenID4VP profile findings on a presentation request, and the registration certificate findings used to be joined into the entry's main line or logged one entry each. Each now records a single warning naming the count, with the full list in the entry details for the UI to expand.
+
 ## [2.0.7] - 2026-08-27
 
 ### Fixed

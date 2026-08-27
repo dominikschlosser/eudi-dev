@@ -88,7 +88,7 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 	}
 
 	if mode == ValidationModeStrict && len(findings) > 0 {
-		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, "; "))
+		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, ", "))
 	}
 
 	return findings, nil
