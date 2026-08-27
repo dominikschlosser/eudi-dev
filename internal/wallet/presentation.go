@@ -104,6 +104,10 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 	}
 	log.Printf("[VP] Creating VP token: format=%s type=%s claims=%v", cred.Format, typeLabel, match.SelectedKeys)
 
+	for _, claim := range match.EmptyArrayClaims {
+		w.AddWarning("presentation", fmt.Sprintf("The request selects the array %s but none of its selectively disclosable elements, so it is disclosed as an empty array. The verifier selects the elements by ending the path with null (all) or an index (OpenID4VP 1.0 §7.1).", claim), nil)
+	}
+
 	switch cred.Format {
 	case "dc+sd-jwt":
 		audience := sdJWTAudience(params)
@@ -530,6 +534,79 @@ func (w *Wallet) SubmitAuthorizationError(errorCode, errorDescription, state, re
 	}
 }
 
+// disclosesEmptyArray reports whether presenting path against cred discloses an
+// array whose selectively disclosable elements the path did not select, so the
+// verifier receives an empty array. This is what the strict presentation of a
+// whole path onto an array of disclosable elements produces. A null or an index
+// at the end of the path selects the elements, so those return false, and so
+// does an array whose elements are not selectively disclosable.
+func disclosesEmptyArray(cred StoredCredential, path []any) bool {
+	if cred.Format != "dc+sd-jwt" || len(path) == 0 {
+		return false
+	}
+	switch path[len(path)-1].(type) {
+	case nil, float64, int:
+		return false
+	}
+	parts := strings.Split(cred.Raw, "~")
+	payload, err := parseIssuerJWTPayload(parts[0])
+	if err != nil {
+		return false
+	}
+	digestMap := make(map[string]*sdjwt.Disclosure, len(cred.Disclosures))
+	for i := range cred.Disclosures {
+		digestMap[cred.Disclosures[i].Digest] = &cred.Disclosures[i]
+	}
+	arr, ok := placeholderValueAtPath(payload, path, digestMap).([]any)
+	if !ok || len(arr) == 0 {
+		return false
+	}
+	for _, item := range arr {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			return false
+		}
+		if _, ok := obj["..."].(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// placeholderValueAtPath walks a claims path (string components only) to its
+// terminal value in the credential's placeholder form: a selectively
+// disclosable member resolves to its disclosure value, which for an array of
+// disclosable elements is a list of {"...": digest} references.
+func placeholderValueAtPath(value any, path []any, digestMap map[string]*sdjwt.Disclosure) any {
+	if len(path) == 0 {
+		return value
+	}
+	segment, ok := path[0].(string)
+	if !ok {
+		return nil
+	}
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	if next, ok := obj[segment]; ok {
+		return placeholderValueAtPath(next, path[1:], digestMap)
+	}
+	sdArr, _ := obj["_sd"].([]any)
+	for _, item := range sdArr {
+		digest, ok := item.(string)
+		if !ok {
+			continue
+		}
+		disc := digestMap[digest]
+		if disc == nil || disc.IsArrayEntry || disc.Name != segment {
+			continue
+		}
+		return placeholderValueAtPath(disc.Value, path[1:], digestMap)
+	}
+	return nil
+}
+
 func parseIssuerJWTPayload(issuerJWT string) (map[string]any, error) {
 	parts := strings.Split(issuerJWT, ".")
 	if len(parts) != 3 {
@@ -573,11 +650,13 @@ func collectAllNestedDisclosureDigests(value any, digestMap map[string]*sdjwt.Di
 	case []any:
 		for _, item := range v {
 			if obj, ok := item.(map[string]any); ok {
-				if digest, ok := obj["..."].(string); ok {
-					digests[digest] = true
-					if disc := digestMap[digest]; disc != nil {
-						collectAllNestedDisclosureDigests(disc.Value, digestMap, digests)
-					}
+				if _, ok := obj["..."].(string); ok {
+					// A selectively disclosable array element the request did not
+					// select stays undisclosed, so the verifier receives an array
+					// without it. OID4VP 1.0 §7.1 selects array elements with a
+					// null or an index, and §6.4 forbids sending a claim the path
+					// did not select. A whole path onto the array (no null or
+					// index) discloses the array but none of its elements.
 					continue
 				}
 			}

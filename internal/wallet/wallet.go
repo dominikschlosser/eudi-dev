@@ -392,6 +392,11 @@ type CredentialMatch struct {
 	// not match, offered anyway in debug mode. The consent dialog flags it so a
 	// developer sees the constraint a conformant wallet would have enforced.
 	UntrustedAuthority bool `json:"untrusted_authority,omitempty"`
+	// EmptyArrayClaims are the requested claim paths that select an array of
+	// selectively disclosable elements without selecting the elements. Presenting
+	// them discloses an empty array, so the consent dialog and the activity log
+	// warn that the verifier has to request the elements with a null or an index.
+	EmptyArrayClaims []string `json:"empty_array_claims,omitempty"`
 }
 
 // ConsentCredentialOptions carries every way the wallet could answer a

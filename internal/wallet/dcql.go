@@ -126,6 +126,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				Claims:             filterClaims(cred, selection.selectedKeys),
 				SelectedKeys:       selection.selectedKeys,
 				UntrustedAuthority: untrustedAuthority,
+				EmptyArrayClaims:   selection.emptyArrays,
 			})
 		}
 	}
@@ -446,7 +447,11 @@ func sortMatchesByPreferredFormat(matches []CredentialMatch, preferred string) {
 type claimSelection struct {
 	selectedKeys    []string
 	missingRequired []string
-	match           bool
+	// emptyArrays holds the claim paths that select an array of selectively
+	// disclosable elements without selecting the elements, so presenting them
+	// discloses an empty array (see disclosesEmptyArray).
+	emptyArrays []string
+	match       bool
 }
 
 // matchesFormat checks if a credential matches the requested format. §6.1
@@ -625,6 +630,7 @@ func claimSelectorFor(cred StoredCredential, cqMap map[string]any) string {
 func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSelection {
 	var selected []string
 	var missingRequired []string
+	var emptyArrays []string
 	for _, cq := range claimsQuery {
 		cqMap, ok := cq.(map[string]any)
 		if !ok {
@@ -637,6 +643,9 @@ func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSel
 
 		if selector := claimSelectorFor(cred, cqMap); selector != "" {
 			selected = append(selected, selector)
+			if disclosesEmptyArray(cred, path) {
+				emptyArrays = append(emptyArrays, claimPathString(path))
+			}
 		} else {
 			missingRequired = append(missingRequired, claimPathString(path))
 		}
@@ -648,6 +657,7 @@ func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSel
 	return claimSelection{
 		selectedKeys:    selected,
 		missingRequired: missingRequired,
+		emptyArrays:     emptyArrays,
 		match:           true,
 	}
 }

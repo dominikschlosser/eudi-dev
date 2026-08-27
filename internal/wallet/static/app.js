@@ -2053,6 +2053,7 @@
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
         untrustedAuthorityNote(mc) +
+        emptyArrayNote(mc) +
         claimChecklist(mc.credential_id, mc.claims, kept) +
       '</div>';
     }
@@ -2065,6 +2066,18 @@
       return '<div class="consent-untrusted" role="note">⚠ Trusted authorities do not match. ' +
         'The verifier limited this request to specific issuers and this credential could not be matched to them. ' +
         'It is offered because debug mode ignores the restriction.</div>';
+    }
+
+    // emptyArrayNote flags a requested claim that selects an array of
+    // selectively disclosable elements without selecting the elements, so only
+    // an empty array is disclosed. The verifier reaches the elements with a null
+    // or an index at the end of the path (OpenID4VP 1.0 §7.1).
+    function emptyArrayNote(mc) {
+      if (!mc || !mc.empty_array_claims || !mc.empty_array_claims.length) return '';
+      const claims = mc.empty_array_claims.map(escHtml).join(', ');
+      return '<div class="consent-untrusted" role="note">⚠ Only an empty array is disclosed for ' + claims + '. ' +
+        'The request selects the array but none of its selectively disclosable elements. ' +
+        'The verifier receives the values by ending the path with null (all elements) or an index.</div>';
     }
 
     // The Edit view: the set options and, per query id of the chosen
@@ -2132,7 +2145,7 @@
                   ' href="/decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
                   ' title="Open in decoder">Show</a>' +
               '</div>' +
-            '</div>' + untrustedAuthorityNote(c) + '</div>';
+            '</div>' + untrustedAuthorityNote(c) + emptyArrayNote(c) + '</div>';
         });
         html += '</div>';
       });
