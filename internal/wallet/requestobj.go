@@ -71,6 +71,15 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 			"x509_hash",
 		},
 		"request_object_signing_alg_values_supported": []string{"ES256"},
+		// §10 makes the wallet metadata an Authorization Server Metadata document
+		// (RFC 8414), which requires response_types_supported. The wallet answers
+		// an OpenID4VP request with a vp_token (§5.6).
+		"response_types_supported": []string{"vp_token"},
+		// The response modes the wallet returns a vp_token in. Without this a
+		// verifier reads the RFC 8414 default (query and fragment), which does not
+		// describe this wallet, so it is stated even though RFC 8414 leaves it
+		// optional.
+		"response_modes_supported": []string{"direct_post", "direct_post.jwt", "dc_api", "dc_api.jwt"},
 	}
 
 	if x, y, err := encryptionKeyCoords(w); err == nil && x != nil {

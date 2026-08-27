@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A W3C JWT VC (jwt_vc_json) shows its credential type, not its format.** The wallet read the display type only from a vct claim, which a W3C Verifiable Credential does not carry, so the listing fell back to the format and showed jwt_vc_json for the type. It now reads the type from the VC type array (in the vc claim or at the payload root), so a credential like NFEmployeeCredential shows its type.
+- **The wallet metadata sent in the request_uri POST carries response_types_supported.** OpenID4VP 1.0 §10 makes the wallet metadata an RFC 8414 Authorization Server Metadata document, where response_types_supported is REQUIRED, and the wallet omitted it, so a verifier that parses the metadata (such as the EUDI reference verifier) rejected the request_uri_method=post request. It now carries response_types_supported (vp_token, per §5.6 and the §13.1.2 example). It also states response_modes_supported (direct_post, direct_post.jwt, dc_api, dc_api.jwt), which RFC 8414 leaves optional but whose default of query and fragment does not describe this wallet.
 
 ## [2.0.7] - 2026-08-27
 

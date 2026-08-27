@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -38,6 +39,17 @@ func TestBuildWalletMetadata_Basic(t *testing.T) {
 	}
 	if meta["request_object_signing_alg_values_supported"] == nil {
 		t.Fatal("expected request_object_signing_alg_values_supported")
+	}
+	// §10 wallet metadata is Authorization Server Metadata (RFC 8414), which
+	// requires response_types_supported. The wallet answers with a vp_token.
+	if rts, _ := meta["response_types_supported"].([]string); len(rts) != 1 || rts[0] != "vp_token" {
+		t.Errorf("response_types_supported = %v, want [vp_token]", meta["response_types_supported"])
+	}
+	// The RFC 8414 default (query, fragment) does not describe this wallet, so
+	// the response modes it actually returns a vp_token in are stated.
+	rms, _ := meta["response_modes_supported"].([]string)
+	if !slices.Contains(rms, "direct_post") || !slices.Contains(rms, "direct_post.jwt") {
+		t.Errorf("response_modes_supported = %v, want it to include direct_post and direct_post.jwt", rms)
 	}
 	// Should not have encryption keys without RequireEncryptedRequest
 	if meta["jwks"] != nil {
