@@ -237,13 +237,42 @@ func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCreden
 		BindingKeyPEM: bindingKeyPEM,
 	}
 
-	if vct, ok := payload["vct"].(string); ok {
+	if vct, ok := payload["vct"].(string); ok && vct != "" {
 		cred.VCT = vct
+	} else {
+		cred.VCT = jwtVCType(payload)
 	}
 
 	stored := w.appendCredential(cred)
 	_ = w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: cred.Format, VCT: cred.VCT, DocType: cred.DocType})
 	return stored, nil
+}
+
+// jwtVCType reads the credential type from a W3C JWT VC (jwt_vc_json), so the
+// listing shows the type rather than the format. VC Data Model 1.1 carries the
+// type array in the vc claim under the JWT encoding, and some issuers flatten it
+// to the payload root. The specific type is the last entry that is not the base
+// VerifiableCredential type.
+func jwtVCType(payload map[string]any) string {
+	types := payload["type"]
+	if vc, ok := payload["vc"].(map[string]any); ok && vc["type"] != nil {
+		types = vc["type"]
+	}
+	switch v := types.(type) {
+	case string:
+		if v != "VerifiableCredential" {
+			return v
+		}
+	case []any:
+		specific := ""
+		for _, t := range v {
+			if s, ok := t.(string); ok && s != "" && s != "VerifiableCredential" {
+				specific = s
+			}
+		}
+		return specific
+	}
+	return ""
 }
 
 func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential, error) {

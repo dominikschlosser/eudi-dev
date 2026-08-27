@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A request or credential that fails several checks is one activity log entry, not a long line or an entry per finding.** The HAIP profile findings on an offer or credential, the OpenID4VP profile findings on a presentation request, and the registration certificate findings used to be joined into the entry's main line or logged one entry each. Each now records a single warning naming the count, with the full list in the entry details for the UI to expand.
 
+### Fixed
+
+- **A W3C JWT VC (jwt_vc_json) shows its credential type, not its format.** The wallet read the display type only from a vct claim, which a W3C Verifiable Credential does not carry, so the listing fell back to the format and showed jwt_vc_json for the type. It now reads the type from the VC type array (in the vc claim or at the payload root), so a credential like NFEmployeeCredential shows its type.
+
 ## [2.0.7] - 2026-08-27
 
 ### Fixed
