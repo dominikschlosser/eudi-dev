@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] - 2026-08-27
+
+### Fixed
+
+- **The wallet records the nonce request and handles a nonce endpoint that does not answer.** The key proof challenge comes from the Nonce Endpoint (OpenID4VCI 1.0 §7.1, an HTTP POST). The pre-authorized flow fetched it without recording the call, so a nonce endpoint that failed left no trace and surfaced only later as a rejected proof. The nonce request and its response are now in the activity log for both issuance flows. When an advertised nonce endpoint returns no c_nonce, strict mode refuses the issuance naming the endpoint, and debug mode warns and sends the proof without a c_nonce so the issuer's rejection is the finding. When the endpoint answers the POST with 405 and serves the c_nonce only over GET (a §7.1 deviation), debug mode fetches it over GET with a warning.
+
 ## [2.0.6] - 2026-08-27
 
 ### Added

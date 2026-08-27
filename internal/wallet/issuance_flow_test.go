@@ -37,6 +37,10 @@ type mockIssuerOpts struct {
 	tokenCNonce string
 	// nonceEndpoint, if true, serves a nonce endpoint.
 	nonceEndpoint bool
+	// nonceOnlyGET makes the nonce endpoint answer the POST that §7.1 requires
+	// with 405 and serve the c_nonce over GET instead, like an issuer whose
+	// nonce endpoint is misconfigured.
+	nonceOnlyGET bool
 	// captureNotification, if set, is handed the Notification Request the
 	// wallet sent, so a test can hold it to §11.1.
 	captureNotification func(*http.Request, []byte)
@@ -169,7 +173,11 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 			rw.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(rw).Encode(resp)
 
-		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/nonce"):
+		case opts.nonceOnlyGET && r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/nonce"):
+			rw.Header().Set("Allow", "GET")
+			rw.WriteHeader(http.StatusMethodNotAllowed)
+
+		case strings.HasSuffix(r.URL.Path, "/nonce") && (r.Method == "POST" || (opts.nonceOnlyGET && r.Method == "GET")):
 			if opts.inspectNonceRequest != nil {
 				opts.inspectNonceRequest(t, r)
 			}
@@ -625,6 +633,67 @@ func TestProcessCredentialOffer_NonceFallback(t *testing.T) {
 	creds := w.GetCredentials()
 	if len(creds) != 1 {
 		t.Fatalf("expected 1 credential, got %d", len(creds))
+	}
+}
+
+// An issuer whose nonce endpoint answers the required POST with 405 and only
+// serves the c_nonce over GET (a §7.1 deviation) is worked around in debug: the
+// wallet fetches the nonce over GET, warns, and issuance completes.
+func TestProcessCredentialOffer_NonceEndpointOnlyGET(t *testing.T) {
+	w := generateTestWallet(t)
+
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{nonceEndpoint: true, nonceOnlyGET: true})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatalf("ProcessCredentialOffer against a GET-only nonce endpoint: %v", err)
+	}
+	if result.CredentialID == "" {
+		t.Error("expected the credential to be issued after the GET workaround")
+	}
+
+	warned, logged := false, false
+	for _, entry := range w.GetLog() {
+		if strings.Contains(entry.Detail, "GET as a workaround") {
+			warned = true
+		}
+		if strings.Contains(entry.Detail, "Nonce response") {
+			logged = true
+		}
+	}
+	if !warned {
+		t.Error("the wallet should warn that it used GET as a workaround for the 405")
+	}
+	if !logged {
+		t.Error("the nonce exchange should show in the activity log")
+	}
+}
+
+// Strict mode does not work around the GET-only nonce endpoint. It refuses the
+// issuance, naming the nonce endpoint, rather than send a proof it knows the
+// issuer will reject.
+func TestProcessCredentialOffer_NonceEndpointOnlyGETStrictRefuses(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{nonceEndpoint: true, nonceOnlyGET: true})
+	defer srv.Close()
+
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	_, err := w.ProcessCredentialOffer(offerURI)
+	if err == nil || !strings.Contains(err.Error(), "nonce endpoint") {
+		t.Fatalf("error = %v, want strict to refuse naming the nonce endpoint", err)
+	}
+	if len(w.GetCredentials()) != 0 {
+		t.Error("strict should not have issued a credential")
 	}
 }
 

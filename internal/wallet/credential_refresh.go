@@ -71,7 +71,10 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
 	}
 
-	cNonce := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
+	cNonce, err := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
+	if err != nil {
+		return nil, err
+	}
 	responseEncryption, err := buildCredentialResponseEncryptionRequest(w.Mode(), metadata, w.HolderKey)
 	if err != nil {
 		return nil, err

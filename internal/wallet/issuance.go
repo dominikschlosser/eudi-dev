@@ -411,7 +411,10 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	refreshToken, expiresIn := tokenGrantRenewal(tokenResp)
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
-	cNonce := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
+	cNonce, err := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
+	if err != nil {
+		return nil, err
+	}
 
 	log.Printf("[VCI] Token endpoint: %s", tokenEndpoint)
 	log.Printf("[VCI] Credential endpoint: %s", credentialEndpoint)
@@ -1418,22 +1421,32 @@ func credentialRequestEncryptionRequired(raw map[string]any) bool {
 // leaves one source: "The c_nonce value is retrieved from the Nonce Endpoint
 // as defined in Section 7." A c_nonce in the token response is a pre-1.0
 // issuer showing through, which strict ignores and debug uses after saying so.
-func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer string, dpopNonce *string) string {
-	if cNonce := fetchNonce(metadata, dpopNonce); cNonce != "" {
-		return cNonce
+func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer string, dpopNonce *string) (string, error) {
+	if cNonce := w.fetchNonce(metadata, dpopNonce); cNonce != "" {
+		return cNonce, nil
+	}
+	// A nonce endpoint that was advertised but gave no challenge is a §7.1
+	// deviation. Strict refuses, debug warns and sends the proof without a
+	// c_nonce so the issuer's rejection is the finding.
+	if ep, _ := metadata["nonce_endpoint"].(string); ep != "" {
+		if w.Mode() == ValidationModeStrict {
+			return "", fmt.Errorf("the nonce endpoint %s that %s advertises returned no c_nonce (OpenID4VCI 1.0 §7.1)", ep, issuer)
+		}
+		w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s that %s advertises returned no c_nonce (OpenID4VCI 1.0 §7.1). The key proof goes out without a c_nonce and the credential endpoint rejects it.", ep, issuer), nil)
+		return "", nil
 	}
 	cNonce, _ := tokenResp["c_nonce"].(string)
 	if cNonce == "" {
-		return ""
+		return "", nil
 	}
 	if w.Mode() == ValidationModeStrict {
 		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OpenID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
 		w.AddWarning("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), nil)
-		return ""
+		return "", nil
 	}
-	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define; this issuer is pre-1.0", issuer)
+	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define, so this issuer is pre-1.0", issuer)
 	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0. Strict mode refuses it", issuer), nil)
-	return cNonce
+	return cNonce, nil
 }
 
 // credentialRequestAttempt is one credential request in every detail it takes
@@ -1482,7 +1495,7 @@ func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, pro
 	if err == nil || !isInvalidNonceError(err) {
 		return credResp, err
 	}
-	cNonce := fetchNonce(a.metadata, a.nonce)
+	cNonce := w.fetchNonce(a.metadata, a.nonce)
 	if cNonce == "" {
 		return nil, err
 	}

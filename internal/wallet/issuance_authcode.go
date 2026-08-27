@@ -330,22 +330,9 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 	}
 	authScheme := accessTokenScheme(tokenResp, dpopKey != nil)
 
-	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
-		w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", nonceEndpoint), true, map[string]any{
-			"direction": "outbound",
-			"method":    "POST",
-			"url":       nonceEndpoint,
-			"endpoint":  "nonce",
-		})
-	}
-	cNonce := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
-	if nonceEndpoint, _ := metadata["nonce_endpoint"].(string); nonceEndpoint != "" {
-		w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", nonceEndpoint), cNonce != "", map[string]any{
-			"direction": "inbound",
-			"url":       nonceEndpoint,
-			"endpoint":  "nonce",
-			"c_nonce":   cNonce,
-		})
+	cNonce, err := w.issuanceChallenge(metadata, tokenResp, offer.CredentialIssuer, &nonces.resource)
+	if err != nil {
+		return nil, err
 	}
 
 	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
@@ -1530,25 +1517,78 @@ func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID 
 	return statusCode, respBody, nil
 }
 
-// fetchNonce asks the Nonce Endpoint for a challenge. Nothing is presented
-// with it: §7.1 says "The Nonce Endpoint is not a protected resource". The
-// DPoP nonce state is still carried in, since §7.2 lets the issuer hand out a
-// DPoP nonce here.
-func fetchNonce(metadata map[string]any, nonce *string) string {
+// fetchNonce asks the Nonce Endpoint for a challenge and records the exchange
+// in the activity log, so a nonce request that fails is visible rather than
+// surfacing later only as a rejected proof. §7.1 makes the request an HTTP POST
+// to an endpoint that is not protected. When that POST is met with 405, debug
+// mode retries with GET, a workaround for an issuer whose nonce endpoint only
+// serves the c_nonce over GET (a §7.1 deviation), and warns. Strict mode does
+// not. Whether an empty result stops the flow is the caller's decision. The
+// DPoP nonce state is carried in, since §7.2 lets the issuer hand out a DPoP
+// nonce here.
+func (w *Wallet) fetchNonce(metadata map[string]any, nonce *string) string {
 	ep, _ := metadata["nonce_endpoint"].(string)
 	if ep == "" {
 		return ""
 	}
-	respBody, _, err := doDPoPRequest("POST", ep, "", "", nil, "", "", nil, nonce, nil)
+	w.addProtocolLog("issuance", "nonce_request", fmt.Sprintf("Request nonce from %s", ep), true, map[string]any{
+		"direction": "outbound",
+		"method":    "POST",
+		"url":       ep,
+		"endpoint":  "nonce",
+	})
+
+	cNonce, status, err := nonceRequest("POST", ep, nonce)
+	reason := nonceFailureReason(status, err)
+	if cNonce == "" && status == http.StatusMethodNotAllowed && w.Mode() == ValidationModeDebug {
+		if getNonce, getStatus, getErr := nonceRequest("GET", ep, nonce); getNonce != "" {
+			w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s answered the HTTP POST that OpenID4VCI 1.0 §7.1 requires with 405 and serves a c_nonce only over GET. Debug mode uses GET as a workaround, strict mode refuses it.", ep), nil)
+			cNonce, reason = getNonce, ""
+		} else {
+			reason = nonceFailureReason(getStatus, getErr)
+		}
+	}
+
+	details := map[string]any{
+		"direction": "inbound",
+		"url":       ep,
+		"endpoint":  "nonce",
+		"c_nonce":   cNonce,
+	}
+	if cNonce == "" {
+		details["error"] = reason
+	}
+	w.addProtocolLog("issuance", "nonce_response", fmt.Sprintf("Nonce response from %s", ep), cNonce != "", details)
+	return cNonce
+}
+
+// nonceRequest sends one Nonce Endpoint request and reads the c_nonce out of a
+// 2xx response (§7.2). It returns the HTTP status so the caller can tell a 405
+// apart from other failures.
+func nonceRequest(method, ep string, nonce *string) (string, int, error) {
+	respBody, status, err := doDPoPRequest(method, ep, "", "", nil, "", "", nil, nonce, nil)
 	if err != nil {
-		return ""
+		return "", status, err
 	}
 	var resp map[string]any
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return ""
+		return "", status, err
 	}
 	value, _ := resp["c_nonce"].(string)
-	return value
+	return value, status, nil
+}
+
+// nonceFailureReason describes a failed nonce request by its HTTP status,
+// keeping a long error-page body out of the log and the warning. A transport
+// error that never reached a status is reported by its message instead.
+func nonceFailureReason(status int, err error) string {
+	if status >= 400 {
+		return fmt.Sprintf("HTTP %d", status)
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return "the response carried no c_nonce"
 }
 
 // credentialAccept returns the Accept header for a credential request.
