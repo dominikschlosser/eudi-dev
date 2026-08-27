@@ -528,8 +528,15 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
     credentials = wallet_request(wallet_url, "GET", "/api/credentials")
     holder_jwk = None
     for credential in credentials:
-        claims = credential.get("claims", {})
-        cnf = claims.get("cnf", {})
+        # The listing carries a claim_count, not the claims, so the holder
+        # binding key is read from the per-credential detail.
+        claims = credential.get("claims")
+        if not claims:
+            cred_id = credential.get("id")
+            if cred_id:
+                detail = wallet_request(wallet_url, "GET", f"/api/credentials/{cred_id}")
+                claims = detail.get("claims")
+        cnf = (claims or {}).get("cnf", {})
         candidate = cnf.get("jwk")
         if isinstance(candidate, dict):
             holder_jwk = candidate

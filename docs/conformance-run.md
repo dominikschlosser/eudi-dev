@@ -39,7 +39,7 @@ java -jar target/fapi-test-suite.jar \
   --fintechlabs.startredir=true \
   --fintechlabs.base_url=https://localhost:8443 \
   --fintechlabs.base_mtls_url=https://localhost:8444 \
-  --spring.data.mongodb.uri=mongodb://127.0.0.1:27017/test_suite
+  --spring.mongodb.uri=mongodb://127.0.0.1:27017/test_suite
 ```
 
 The suite must advertise the same host in generated authorization, callback, and helper URLs:

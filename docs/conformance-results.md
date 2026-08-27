@@ -24,6 +24,23 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
 
 The full matrix runs in one pass: 14 plans, 160 modules, 111 `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`, 16,305 condition successes against 1 condition failure. The skips and the condition failure are both accounted for below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
 
+## Run of 2026-08-27
+
+First run on suite `release-v5.2.4` (version `5.2.4`, revision `ab35a8d`), strict mode, after the strict array disclosure and demo custom-request-builder work of the 2.1.0 release. The scenario set exported 12 plans and 116 modules: **49 `PASSED`, 43 negative modules `REVIEW`, 21 `WARNING`, 2 `SKIPPED`, 1 `FAILED`**. The SD-JWT VC flows (happy path, request_uri, request_uri_method=post, fewer claims, optional set, no claims) are clean. The warnings, the skip and the one failure are all mdoc, and are accounted for below.
+
+The 21 `WARNING` modules all carry the same two conditions, both new in 5.2.4 (neither existed in 5.2.2), which validate the wallet's mdoc certificates against the ISO 18013-5 Annex B profile:
+
+- `ValidateMdocDsCertificateProfile` on the document signer certificate (CN=EUDI Dev Wallet PID Provider): no countryName in the subject, no subject key identifier extension, no extended key usage extension (which must be present, critical, and name the document signing purpose), no CRL distribution points extension, no issuer alternative name extension.
+- `ValidateMdocTrustAnchorIacaCertificateProfile` on the IACA trust anchor (CN=OID4VC Dev Wallet CA): no countryName in the subject, a subject key identifier that is not the SHA-1 of the subject public key, a basicConstraints pathLenConstraint of 1 where Table B.1 requires 0, no issuer alternative name extension.
+
+These are real profile gaps in the wallet's mdoc certificate generation, surfaced (not caused) by the suite bump, and unrelated to the 2.1.0 disclosure change. They are advisory (`WARNING`, never `FAILURE`), so no module fails on them. The SD-JWT VC profile has no equivalent certificate profile, so its flows stay clean.
+
+The 1 `FAILED` module is `oid4vp-1final-wallet-negative-test-unknown-transaction-data-type` in the HAIP mdoc direct_post.jwt plan. Its own assertion passed first: the wallet refused the unknown transaction_data type (the response carried `invalid_transaction_data`) and the module's `ExpectUnknownTransactionDataTypeErrorPage` resolved to `REVIEW`. The `FAILED` came after, from an unrelated second request_uri hitting the shared wallet, which the module counted as unexpected. Re-running that one plan returned the module to `REVIEW` with 0 condition failures, confirming the artifact. This is the shared-wallet sequencing family (the same negative module also `REVIEW`s in the plain plan). The 2 `SKIPPED` are the deliberate mdoc `batch-credential-issuance` skips described below.
+
+On the question the metadata fix in this release answered: 5.2.4 still does not validate `wallet_metadata.response_types_supported`. The `request_uri_method=post` module parses the posted wallet metadata for JSON validity and to read the wallet nonce (`ExtractWalletMetadataAndNonceFromRequestUriPost`), stores it as `received_wallet_metadata`, and never reads it again, so the module `PASSED` without checking the field. The reference verifier that caught the omission checks what the suite does not.
+
+The runner needed one fix for the current wallet: the `/api/credentials` listing now carries a `claim_count` rather than the claims, so `fetch_wallet_materials` reads the holder `cnf.jwk` from the per-credential detail (`/api/credentials/{id}`) instead.
+
 ## Run of 2026-08-24
 
 Full matrix on suite `release-v5.2.2` (version `5.2.2`, revision `321bc5b`), strict mode, after the batch-issuance, deferred-issuance and credential-display UI work of the 2.0.0 release: **111 modules `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`**, 0 condition failures and 0 warnings across all 14 plans. The 5 skips are the same deliberate mdoc `batch-credential-issuance` skips described below, so the run exits non-zero on the expected skip artifact.
