@@ -99,8 +99,8 @@ func verifiedRegistrationCertificates(payload map[string]any) (certs []map[strin
 //
 // The registration certificate is an ARF requirement (RPRC_19), so its absence
 // and its content are checked against ETSI TS 119 475 and the ARF. These are
-// always warnings, in every mode: validation mode is OpenID4VP and HAIP strict,
-// which the ARF rules are not part of.
+// always warnings, in every mode. Validation mode is OpenID4VP and HAIP strict.
+// The ARF rules are not part of it.
 func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestParams) []string {
 	if authReq == nil {
 		return nil
@@ -125,15 +125,8 @@ func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestPara
 			}
 		}
 	}
-	w.warnRegistrationCertificate(scope, findings)
-	return purposes
-}
-
-// warnRegistrationCertificate records the registration certificate findings as
-// a single activity log entry, so a certificate with several problems does not
-// flood the log.
-func (w *Wallet) warnRegistrationCertificate(scope string, findings []string) {
 	w.warnFindings(scope, "The relying party registration certificate does not follow the ARF and ETSI TS 119 475", findings)
+	return purposes
 }
 
 // registrationCertificateContentFindings checks a verified WRPRC against the
@@ -207,11 +200,14 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 		return nil
 	}
 	var findings []string
+	overAsk := func(what string) {
+		findings = append(findings, fmt.Sprintf("the request asks for %s, which the registration certificate does not register (ARF RPRC_21 over-asking)", what))
+	}
 	for _, cq := range listOfMaps(dcql["credentials"]) {
 		format, _ := cq["format"].(string)
 		types := credentialTypes(cq["meta"])
 		if !registersCredential(registered, format, types) {
-			findings = append(findings, fmt.Sprintf("the request asks for %s, which the registration certificate does not register (ARF RPRC_21 over-asking)", credentialTypeName(format, types)))
+			overAsk(credentialTypeName(format, types))
 			continue
 		}
 		for _, claim := range listOfMaps(cq["claims"]) {
@@ -220,7 +216,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 				continue
 			}
 			if !registeredCovers(registered, format, types, path) {
-				findings = append(findings, fmt.Sprintf("the request asks for %s, which the registration certificate does not register (ARF RPRC_21 over-asking)", describeClaim(format, types, path)))
+				overAsk(describeClaim(format, types, path))
 			}
 		}
 	}
@@ -231,10 +227,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 // this format and type at all, regardless of which attributes it names.
 func registersCredential(registered []registeredCredential, format string, types []string) bool {
 	for _, rc := range registered {
-		if format != "" && rc.format != "" && rc.format != format {
-			continue
-		}
-		if typesOverlap(types, rc.types) {
+		if rc.matches(format, types) {
 			return true
 		}
 	}
@@ -250,6 +243,15 @@ type registeredCredential struct {
 	types           []string
 	paths           [][]any
 	anyClaimAllowed bool
+}
+
+// matches reports whether this registered credential covers the format and type
+// a request asks for. An empty format or type on either side is not a mismatch.
+func (rc registeredCredential) matches(format string, types []string) bool {
+	if format != "" && rc.format != "" && rc.format != format {
+		return false
+	}
+	return typesOverlap(types, rc.types)
 }
 
 func registeredCredentials(cert map[string]any) []registeredCredential {
@@ -277,10 +279,7 @@ func registeredCredentials(cert map[string]any) []registeredCredential {
 
 func registeredCovers(registered []registeredCredential, format string, types []string, path []any) bool {
 	for _, rc := range registered {
-		if format != "" && rc.format != "" && rc.format != format {
-			continue
-		}
-		if !typesOverlap(types, rc.types) {
+		if !rc.matches(format, types) {
 			continue
 		}
 		if rc.anyClaimAllowed {

@@ -1099,10 +1099,9 @@ func (w *Wallet) AddWarning(action, detail string, details map[string]any) {
 }
 
 // warnFindings records a set of findings as a single activity log entry, so a
-// long list does not fill the log's main description or spread across an entry
-// each. One finding is shown as its own message. Several are collapsed to a
-// count, summary naming what they are about, with the full list in the entry
-// details for the UI to expand.
+// long list does not fill the log's main description. One finding is shown as
+// its own message. Several become one entry naming the count, with the full
+// list in the entry details for the UI to expand.
 func (w *Wallet) warnFindings(action, summary string, findings []string) {
 	switch len(findings) {
 	case 0:

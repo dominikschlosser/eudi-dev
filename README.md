@@ -24,14 +24,12 @@ An unofficial developer toolkit for the EUDI and OpenID4VC ecosystem. Decode, is
 ## Highlights
 
 - **Testing Wallet**: stateful CLI wallet with file persistence, OID4VP/VCI flows, QR scanning, and OS URL scheme registration ([wallet](#wallet))
-- **Credential Cards**: the web wallet renders the appearance an issuer declares, with batch and deferred issuance and unbound (bearer) test credentials ([wallet](docs/wallet.md))
 - **Reverse Proxy**: intercept, classify, and decode OID4VP/VCI wallet traffic in real time ([proxy](#proxy))
 - **Web UI**: paste, decode, and validate credentials in a split-pane browser interface ([serve](#serve))
 - **Unified Decode**: a single `decode` command handles SD-JWT, JWT VC, JWT, mDOC, OID4VCI offers, OID4VP requests, and ETSI trust lists
 - **QR Screen Capture**: scan a QR code straight from your screen to decode credentials or OpenID requests ([decode --screen](#decode))
 - **Offline Decode & Validate**: SD-JWT, JWT VC, mDOC, JWT with signature verification and trust list support
 - **DCQL Generation**: generate Digital Credentials Query Language queries from existing credentials
-- **Credential Type Inheritance**: a request for `urn:eudi:pid:1` is answered by a domestic PID such as `urn:eudi:pid:de:1` ([inheritance](docs/wallet.md#credential-type-inheritance))
 
 ## Compared to other EUDI tooling
 
