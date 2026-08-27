@@ -2052,8 +2052,19 @@
       const kept = options ? selection.claims[mc.credential_id] : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
+        untrustedAuthorityNote(mc) +
         claimChecklist(mc.credential_id, mc.claims, kept) +
       '</div>';
+    }
+
+    // untrustedAuthorityNote flags a credential the request's trusted_authorities
+    // did not match. Debug mode offers it anyway, so the dialog names the
+    // constraint a conformant wallet would have enforced.
+    function untrustedAuthorityNote(mc) {
+      if (!mc || !mc.untrusted_authority) return '';
+      return '<div class="consent-untrusted" role="note">⚠ Trusted authorities do not match. ' +
+        'The verifier limited this request to specific issuers and this credential could not be matched to them. ' +
+        'It is offered because debug mode ignores the restriction.</div>';
     }
 
     // The Edit view: the set options and, per query id of the chosen
@@ -2121,7 +2132,7 @@
                   ' href="/decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
                   ' title="Open in decoder">Show</a>' +
               '</div>' +
-            '</div></div>';
+            '</div>' + untrustedAuthorityNote(c) + '</div>';
         });
         html += '</div>';
       });

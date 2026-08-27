@@ -1242,6 +1242,15 @@ header h1 {
   cursor: pointer;
 }
 .consent-claim:last-child { border-bottom: none; }
+.consent-untrusted {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 8px;
+}
 .consent-claim input[type="checkbox"] {
   accent-color: var(--accent);
   flex: 0 0 auto;

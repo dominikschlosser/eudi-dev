@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-27
+
+### Added
+
+- **In debug mode the wallet can present a credential whose issuer the request's trusted_authorities do not match.** A verifier can limit a request to specific issuers (DCQL trusted_authorities). Strict mode offers only the credentials that match. Debug mode also offers the ones that do not, flagged in the consent dialog, so a verifier can be tested against a wallet that ignores the restriction. A matching credential stays the wallet's default pick.
+
 ## [2.0.7] - 2026-08-27
 
 ### Fixed

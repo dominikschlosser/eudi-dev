@@ -388,6 +388,10 @@ type CredentialMatch struct {
 	DocType      string         `json:"doctype,omitempty"`
 	Claims       map[string]any `json:"claims"`
 	SelectedKeys []string       `json:"selected_keys"` // exact claim selectors to disclose
+	// UntrustedAuthority marks a credential the request's trusted_authorities did
+	// not match, offered anyway in debug mode. The consent dialog flags it so a
+	// developer sees the constraint a conformant wallet would have enforced.
+	UntrustedAuthority bool `json:"untrusted_authority,omitempty"`
 }
 
 // ConsentCredentialOptions carries every way the wallet could answer a

@@ -922,9 +922,22 @@ func TestEvaluateDCQL_TrustedAuthorities_NoMatch(t *testing.T) {
 		},
 	}
 
+	assertUntrustedAuthorityBehavior(t, w, query)
+}
+
+// assertUntrustedAuthorityBehavior checks the two modes for a query whose
+// trusted_authorities the wallet's credential does not match: debug offers the
+// credential once, flagged UntrustedAuthority, and strict returns none.
+func assertUntrustedAuthorityBehavior(t *testing.T, w *Wallet, query map[string]any) {
+	t.Helper()
+	w.ValidationMode = ValidationModeDebug
 	matches := w.EvaluateDCQL(query)
-	if len(matches) != 0 {
-		t.Fatalf("expected 0 matches (untrusted issuer), got %d", len(matches))
+	if len(matches) != 1 || !matches[0].UntrustedAuthority {
+		t.Fatalf("debug mode: want 1 match flagged UntrustedAuthority, got %d matches (flag on first: %v)", len(matches), len(matches) > 0 && matches[0].UntrustedAuthority)
+	}
+	w.ValidationMode = ValidationModeStrict
+	if strict := w.EvaluateDCQL(query); len(strict) != 0 {
+		t.Fatalf("strict mode: want 0 matches, got %d", len(strict))
 	}
 }
 
@@ -957,6 +970,51 @@ func TestEvaluateDCQL_TrustedAuthorities_AKIMatch(t *testing.T) {
 	}
 }
 
+// In debug mode, when the wallet holds both a credential the trusted_authorities
+// match and one they do not, the matching credential is the auto-pick and the
+// other is offered as an alternative flagged UntrustedAuthority.
+func TestEvaluateDCQL_TrustedAuthorities_TrustedIsTheDefault(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	aki := w.CertChain[0].AuthorityKeyId
+
+	// A second PID with no x5c cannot match the aki trusted authority.
+	untrusted, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer: "https://issuer.example", VCT: mock.DefaultPIDVCT,
+		Claims: mock.SDJWTPIDClaims, Key: w.IssuerKey, CertChain: nil,
+	})
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	if _, err := w.ImportCredential(untrusted); err != nil {
+		t.Fatalf("ImportCredential: %v", err)
+	}
+
+	query := map[string]any{
+		"credentials": []any{
+			map[string]any{
+				"id":     "pid",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+				"claims": []any{map[string]any{"path": []any{"given_name"}}},
+				"trusted_authorities": []any{
+					map[string]any{"type": "aki", "values": []any{format.EncodeBase64URL(aki)}},
+				},
+			},
+		},
+	}
+
+	matches, options := w.EvaluateDCQLWithOptions(query)
+	if len(matches) != 1 || matches[0].UntrustedAuthority {
+		t.Fatalf("auto-pick should be the trusted credential, got %d matches (untrusted first: %v)", len(matches), len(matches) > 0 && matches[0].UntrustedAuthority)
+	}
+	if options == nil || len(options.Queries) != 1 || len(options.Queries[0].Candidates) != 2 {
+		t.Fatalf("want both credentials offered as candidates, got %+v", options)
+	}
+	if options.Queries[0].Candidates[0].UntrustedAuthority || !options.Queries[0].Candidates[1].UntrustedAuthority {
+		t.Errorf("candidates should be ordered trusted then untrusted, got %+v", options.Queries[0].Candidates)
+	}
+}
+
 func TestEvaluateDCQL_TrustedAuthorities_AKINoMatch(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
@@ -976,10 +1034,7 @@ func TestEvaluateDCQL_TrustedAuthorities_AKINoMatch(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
-	if len(matches) != 0 {
-		t.Fatalf("expected 0 matches (AKI mismatch), got %d", len(matches))
-	}
+	assertUntrustedAuthorityBehavior(t, w, query)
 }
 
 func TestEvaluateDCQL_TrustedAuthorities_UnsupportedType(t *testing.T) {
@@ -1001,10 +1056,7 @@ func TestEvaluateDCQL_TrustedAuthorities_UnsupportedType(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
-	if len(matches) != 0 {
-		t.Fatalf("expected 0 matches (unsupported trusted_authority type), got %d", len(matches))
-	}
+	assertUntrustedAuthorityBehavior(t, w, query)
 }
 
 func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
@@ -1045,10 +1097,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 		},
 	}
 
-	matches := w.EvaluateDCQL(query)
-	if len(matches) != 0 {
-		t.Fatalf("expected 0 matches (no x5c in credential), got %d", len(matches))
-	}
+	assertUntrustedAuthorityBehavior(t, w, query)
 }
 
 // credential_sets does two jobs: several entries ask for several credentials

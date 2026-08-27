@@ -101,22 +101,31 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				continue
 			}
 
+			untrustedAuthority := false
 			if taList, ok := cqMap["trusted_authorities"].([]any); ok && len(taList) > 0 {
 				if !checkTrustedAuthorities(cred, taList) {
-					log.Printf("[DCQL]   query=%s: credential %s (%s) skipped: not trusted by any trusted_authority", queryID, typeLabel, cred.Format)
-					continue
+					if w.ValidationMode != ValidationModeDebug {
+						log.Printf("[DCQL]   query=%s: credential %s (%s) skipped: not trusted by any trusted_authority", queryID, typeLabel, cred.Format)
+						continue
+					}
+					// Debug mode offers the credential anyway, flagged for the
+					// consent dialog. Strict mode skips it above.
+					untrustedAuthority = true
+					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) is not trusted by any trusted_authority, offered in debug mode",
+						queryID, typeLabel, cred.Format)
 				}
 			}
 
 			log.Printf("[DCQL]   query=%s: credential %s (%s) matched, selected claims: %v", queryID, typeLabel, cred.Format, selection.selectedKeys)
 			matches = append(matches, CredentialMatch{
-				QueryID:      queryID,
-				CredentialID: cred.ID,
-				Format:       cred.Format,
-				VCT:          cred.VCT,
-				DocType:      cred.DocType,
-				Claims:       filterClaims(cred, selection.selectedKeys),
-				SelectedKeys: selection.selectedKeys,
+				QueryID:            queryID,
+				CredentialID:       cred.ID,
+				Format:             cred.Format,
+				VCT:                cred.VCT,
+				DocType:            cred.DocType,
+				Claims:             filterClaims(cred, selection.selectedKeys),
+				SelectedKeys:       selection.selectedKeys,
+				UntrustedAuthority: untrustedAuthority,
 			})
 		}
 	}
@@ -130,6 +139,8 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	if w.PreferredFormat != "" {
 		sortMatchesByPreferredFormat(matches, w.PreferredFormat)
 	}
+
+	sortMatchesTrustedFirst(matches)
 
 	// Everything that matched, in preference order: the collapse below keeps
 	// the first entry per query, so per query the first candidate is the
@@ -380,6 +391,20 @@ func sortMatchesNewestFirst(matches []CredentialMatch, credentials []StoredCrede
 			return b.IsZero()
 		}
 		return a.After(b)
+	})
+}
+
+// sortMatchesTrustedFirst moves the credentials whose trusted_authorities
+// matched ahead of the ones offered only by debug leniency, within each query
+// id, so the wallet's own auto-pick is a conformant credential when it holds
+// one. Applied last, it is the primary key and leaves the newest-first and
+// preferred-format order intact within each group.
+func sortMatchesTrustedFirst(matches []CredentialMatch) {
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].QueryID != matches[j].QueryID {
+			return false
+		}
+		return !matches[i].UntrustedAuthority && matches[j].UntrustedAuthority
 	})
 }
 
