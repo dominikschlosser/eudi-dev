@@ -588,6 +588,50 @@ func TestLoginPageAllowsTheRedirectTarget(t *testing.T) {
 	}
 }
 
+// The sign-in page's debug panel shows the client authentication the wallet
+// sent, so a wallet developer can inspect the client_id, the attestation and
+// the attestation PoP their client presented.
+func TestLoginPageDebugPanelShowsClientAuthentication(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	attestation := provider.attest(t, "wallet", clientKey)
+	pop := attestationPoP(t, clientKey, demoIssuerID)
+
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	pushed := pushAuthorizationRequest(t, h, "wallet", holderKey, format.EncodeBase64URL(sum[:]), map[string]string{
+		"OAuth-Client-Attestation":     attestation,
+		"OAuth-Client-Attestation-PoP": pop,
+	})
+	if pushed.Code != http.StatusCreated {
+		t.Fatalf("pushing the authorization request: %d %s", pushed.Code, pushed.Body.String())
+	}
+	var pushedDoc map[string]any
+	if err := json.Unmarshal(pushed.Body.Bytes(), &pushedDoc); err != nil {
+		t.Fatalf("decoding the pushed authorization response: %v", err)
+	}
+	requestURI, _ := pushedDoc["request_uri"].(string)
+
+	req := httptest.NewRequest(http.MethodGet, "/authorize?request_uri="+url.QueryEscape(requestURI), nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("serving the login page: %d %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{">wallet<", attestation, pop} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the debug panel does not show %q\nbody = %s", want, body)
+		}
+	}
+}
+
 func TestRedirectFormActionSource(t *testing.T) {
 	cases := map[string]string{
 		"https://wallet.example/cb":           "https://wallet.example",

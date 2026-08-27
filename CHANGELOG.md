@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.0.6] - 2026-08-27
 
+### Added
+
+- **The demo issuer's sign-in page has a debug panel showing the wallet's client authentication.** During the authorization code flow the page now carries a collapsible panel with the client_id, the OAuth-Client-Attestation and the OAuth-Client-Attestation-PoP the wallet sent at the PAR endpoint (or a note when the client authenticated with nothing), so a wallet developer can inspect what their client presented.
+
 ### Fixed
 
 - **A deviating `iss` or `state` in the authorization response is reported, not silently accepted in debug.** RFC 9207 `iss` and RFC 6749 §4.1.2 `state` were checked only in strict mode, so in debug a mismatched value (or, when the server advertised iss support, a missing one) passed with no warning. Each is now worked around in debug with a warning and refused in strict. A missing `iss` is a deviation only when the server advertises `authorization_response_iss_parameter_supported`.

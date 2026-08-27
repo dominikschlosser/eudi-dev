@@ -113,10 +113,15 @@ type authRequestState struct {
 	scope         string
 	codeChallenge string
 	issuerState   string
-	code          string
-	codeUsed      bool
-	resolved      bool
-	subject       string
+	// clientAttestation and clientAttestationPoP are the raw compact JWTs the
+	// wallet sent to authenticate the client at the PAR endpoint, kept only to
+	// show them on the sign-in page's debug panel.
+	clientAttestation    string
+	clientAttestationPoP string
+	code                 string
+	codeUsed             bool
+	resolved             bool
+	subject              string
 	// holderClaims are the claims of a credential presented to obtain this
 	// code, which only interactive authorization produces.
 	holderClaims map[string]any
@@ -207,11 +212,14 @@ func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderLoginPage(w, loginPageData{
-		Action:      "authorize",
-		RequestURI:  request.requestURI,
-		RedirectURI: request.redirectURI,
-		Title:       "Sign in",
-		Explanation: "Your wallet is collecting a Demo Event Ticket. Sign in to approve it.",
+		Action:         "authorize",
+		RequestURI:     request.requestURI,
+		RedirectURI:    request.redirectURI,
+		ClientID:       request.clientID,
+		Attestation:    request.clientAttestation,
+		AttestationPoP: request.clientAttestationPoP,
+		Title:          "Sign in",
+		Explanation:    "Your wallet is collecting a Demo Event Ticket. Sign in to approve it.",
 	})
 }
 
@@ -258,14 +266,16 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 	}
 
 	request := &authRequestState{
-		requestURI:    requestURIPrefix + randToken(),
-		clientID:      clientID,
-		redirectURI:   redirectURI,
-		state:         r.PostFormValue("state"),
-		scope:         r.PostFormValue("scope"),
-		codeChallenge: challenge,
-		issuerState:   r.PostFormValue("issuer_state"),
-		expires:       time.Now().Add(authRequestTTL),
+		requestURI:           requestURIPrefix + randToken(),
+		clientID:             clientID,
+		redirectURI:          redirectURI,
+		state:                r.PostFormValue("state"),
+		scope:                r.PostFormValue("scope"),
+		codeChallenge:        challenge,
+		issuerState:          r.PostFormValue("issuer_state"),
+		clientAttestation:    strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation")),
+		clientAttestationPoP: strings.TrimSpace(r.Header.Get("OAuth-Client-Attestation-PoP")),
+		expires:              time.Now().Add(authRequestTTL),
 	}
 	d.mu.Lock()
 	d.pruneLocked()
@@ -298,11 +308,14 @@ func (d *DemoRP) handleAuthorizeSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if !validDemoAccount(r.PostFormValue("username"), r.PostFormValue("password")) {
 		renderLoginPage(w, loginPageData{
-			Action:      "authorize",
-			RequestURI:  request.requestURI,
-			RedirectURI: request.redirectURI,
-			Title:       "Sign in",
-			Error:       "Wrong account. The demo accepts alice / alice.",
+			Action:         "authorize",
+			RequestURI:     request.requestURI,
+			RedirectURI:    request.redirectURI,
+			ClientID:       request.clientID,
+			Attestation:    request.clientAttestation,
+			AttestationPoP: request.clientAttestationPoP,
+			Title:          "Sign in",
+			Error:          "Wrong account. The demo accepts alice / alice.",
 		})
 		return
 	}
@@ -890,6 +903,13 @@ type loginPageData struct {
 	Title       string
 	Explanation string
 	Error       string
+	// ClientID, Attestation and AttestationPoP are the client authentication
+	// material the wallet sent, shown in a debug panel so a wallet developer can
+	// inspect what their client presented. Attestation and AttestationPoP are the
+	// raw compact JWTs, empty for an unauthenticated client.
+	ClientID       string
+	Attestation    string
+	AttestationPoP string
 	// RedirectURI is the client's redirect target. It is not rendered: it widens
 	// the page's form-action so the post-login redirect is allowed.
 	RedirectURI string
@@ -916,6 +936,13 @@ label { display:block; font-size:11px; color:var(--text-dim); margin:10px 0 4px;
 input { font:inherit; font-size:12px; width:100%; padding:8px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; }
 .btn { font:inherit; font-size:12px; margin-top:16px; padding:8px 16px; border:1px solid var(--accent); border-radius:4px; background:var(--bg); color:var(--accent); cursor:pointer; }
 .note { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); font-size:10px; line-height:1.5; color:var(--text-dim); }
+.debug { margin-bottom:14px; border:1px solid var(--border); border-radius:4px; }
+.debug summary { font-size:11px; color:var(--text-dim); padding:8px 10px; cursor:pointer; }
+.debug .body { padding:0 10px 8px; }
+.debug .field { margin-top:8px; }
+.debug .field span { display:block; font-size:10px; color:var(--text-dim); margin-bottom:2px; }
+.debug .field code { display:block; font-size:11px; color:var(--text); word-break:break-all; max-height:120px; overflow:auto; padding:6px 8px; background:var(--bg); border:1px solid var(--border); border-radius:4px; }
+.debug .empty { font-size:10px; color:var(--text-dim); margin-top:8px; }
 .error { color:#f7768e; font-size:12px; margin-top:12px; }
 </style>
 </head>
@@ -923,6 +950,15 @@ input { font:inherit; font-size:12px; width:100%; padding:8px; background:var(--
 <div class="card">
   <h1>{{.Title}}</h1>
   <p>{{.Explanation}}</p>
+  <details class="debug">
+    <summary>Client authentication (debug)</summary>
+    <div class="body">
+      <div class="field"><span>client_id</span><code>{{.ClientID}}</code></div>
+      {{if .Attestation}}<div class="field"><span>OAuth-Client-Attestation</span><code>{{.Attestation}}</code></div>{{end}}
+      {{if .AttestationPoP}}<div class="field"><span>OAuth-Client-Attestation-PoP</span><code>{{.AttestationPoP}}</code></div>{{end}}
+      {{if not .Attestation}}<p class="empty">The wallet sent no attestation (unauthenticated client).</p>{{end}}
+    </div>
+  </details>
   <form method="POST" action="{{.Action}}">
     {{if .RequestURI}}<input type="hidden" name="request_uri" value="{{.RequestURI}}">{{end}}
     <label for="username">Username</label>
