@@ -62,6 +62,21 @@
     .toggle-option + .toggle-option { border-left: 1px solid var(--border); }
     .toggle-option.selected { background: var(--accent); color: #fff; }
     .format-hint { font-size: 11px; margin-bottom: 12px; }
+    #custom-panel { margin-bottom: 12px; }
+    .cred { border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+    .cred-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .cred input[type="text"], #client-id-input, textarea {
+      font: inherit; font-size: 11px; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; }
+    .cred .type-input, #client-id-input { flex: 1; min-width: 160px; }
+    .claim-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .claim-row input { flex: 1; }
+    .btn.small { font-size: 11px; padding: 4px 8px; margin: 0; }
+    .btn.icon { padding: 4px 9px; color: var(--red); border-color: var(--border); }
+    .claims-label { font-size: 11px; color: var(--text-dim); margin: 8px 0 4px; }
+    details.advanced { margin-top: 8px; }
+    details.advanced summary { font-size: 11px; color: var(--text-dim); cursor: pointer; }
+    textarea { width: 100%; min-height: 68px; margin-bottom: 6px; resize: vertical; white-space: pre; }
   </style>
 </head>
 <body>
@@ -87,6 +102,7 @@
         <button type="button" class="toggle-option selected" data-credential="ticket" role="radio" aria-checked="true">Demo ticket</button>
         <button type="button" class="toggle-option" data-credential="pid" role="radio" aria-checked="false">PID</button>
         <button type="button" class="toggle-option" data-credential="pid-de" role="radio" aria-checked="false">German PID</button>
+        <button type="button" class="toggle-option" data-credential="custom" role="radio" aria-checked="false">Custom</button>
       </div>
     </div>
     <div class="format-row" id="format-row" hidden>
@@ -100,6 +116,40 @@
     <p class="format-hint" id="format-hint" hidden>
       The request asks for either format and the wallet answers with the one it holds.
     </p>
+    <div id="custom-panel" hidden>
+      <p class="format-hint">
+        Build a DCQL query by hand. Each path selects a claim. A path onto an
+        array of selectively disclosable elements (such as
+        <code>nationalities</code>) discloses an empty array, so end it with
+        <code>[*]</code> for all elements or <code>[n]</code> for one. Nest with
+        dots (<code>address.locality</code>).
+      </p>
+      <div class="format-row">
+        <span class="format-label">Client ID scheme</span>
+        <div class="toggle" id="scheme-toggle" role="radiogroup" aria-label="Client identifier scheme">
+          <button type="button" class="toggle-option selected" data-scheme="x509_hash" role="radio" aria-checked="true">x509_hash</button>
+          <button type="button" class="toggle-option" data-scheme="x509_san_dns" role="radio" aria-checked="false">x509_san_dns</button>
+          <button type="button" class="toggle-option" data-scheme="redirect_uri" role="radio" aria-checked="false">redirect_uri</button>
+          <button type="button" class="toggle-option" data-scheme="pre-registered" role="radio" aria-checked="false">pre-registered</button>
+        </div>
+      </div>
+      <p class="format-hint" id="scheme-hint">
+        The request object is signed and delivered behind <code>request_uri</code>.
+      </p>
+      <div class="format-row" id="client-id-row" hidden>
+        <span class="format-label">Client ID</span>
+        <input type="text" id="client-id-input" class="type-input" placeholder="eudi-dev-demo-verifier">
+      </div>
+      <div id="credentials-list"></div>
+      <button type="button" class="btn" id="add-credential">+ Credential</button>
+      <details class="advanced">
+        <summary>Advanced: signing key and verifier_info</summary>
+        <div class="label">Request object signing key (PEM: an EC private key and its certificate chain). Empty uses the demo verifier's own certificate.</div>
+        <textarea id="signing-key" spellcheck="false" placeholder="-----BEGIN EC PRIVATE KEY-----&#10;…&#10;-----BEGIN CERTIFICATE-----&#10;…"></textarea>
+        <div class="label">verifier_info (a JSON array, only with a signed scheme). Empty uses the demo's registration certificate.</div>
+        <textarea id="verifier-info" spellcheck="false" placeholder='[{"format":"registration_cert","data":"…"}]'></textarea>
+      </details>
+    </div>
     <button class="btn primary" id="create-request">Create request</button>
     <div class="result" id="request-box">
       <div class="label">Open in the wallet on this host</div>

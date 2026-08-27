@@ -19,8 +19,10 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -81,6 +83,11 @@ type requestState struct {
 	// them even though a plain direct_post would be simpler.
 	requestObject string
 	encKey        *ecdsa.PrivateKey
+
+	// custom drives verification of a request built by hand (the UI-guided
+	// custom request), one entry per DCQL credential query. When it is set the
+	// preset query ids above are not used.
+	custom []customEntry
 
 	status string // pending | verified | failed
 	err    string
@@ -144,7 +151,7 @@ func (d *DemoRP) handleRequestObject(w http.ResponseWriter, r *http.Request) {
 }
 
 type createRequestBody struct {
-	Type string `json:"type"` // "ticket" (default) or "pid"
+	Type string `json:"type"` // "ticket" (default), "pid", or "custom"
 	// Format narrows a PID request to one credential format: "sd-jwt",
 	// "mdoc", or "both" (the default). It does not apply to the ticket,
 	// which the demo issuer only ever issues as an SD-JWT VC.
@@ -159,6 +166,42 @@ type createRequestBody struct {
 	// one option next to a PID-only option, "optional" adds a second set the
 	// wallet may skip (required: false).
 	Ticket string `json:"ticket"`
+	// Credentials builds a request by hand, one DCQL credential query each,
+	// used with type "custom".
+	Credentials []customCredentialTO `json:"credentials"`
+	// ClientIDScheme selects the client identifier prefix a custom request
+	// runs under: "x509_hash" (the default), "x509_san_dns", "redirect_uri"
+	// or "pre-registered". The x509 schemes deliver a signed request object,
+	// the others an unsigned request.
+	ClientIDScheme string `json:"client_id_scheme"`
+	// ClientID sets the bare identifier for the pre-registered scheme, which the
+	// other schemes derive from the certificate or the response endpoint. Empty
+	// uses a default.
+	ClientID string `json:"client_id"`
+	// SigningKey optionally supplies the request object signing material as a
+	// PEM bundle (an EC private key and its certificate chain). Empty uses the
+	// demo verifier's own certificate.
+	SigningKey string `json:"signing_key"`
+	// VerifierInfo optionally replaces the verifier_info array (OpenID4VP 1.0
+	// §5.1) the request carries. Empty uses the demo's registration certificate.
+	VerifierInfo []any `json:"verifier_info"`
+}
+
+// customCredentialTO is one credential query of a request built by hand.
+type customCredentialTO struct {
+	Format  string  `json:"format"`  // dc+sd-jwt or mso_mdoc
+	VCT     string  `json:"vct"`     // the type for dc+sd-jwt
+	DocType string  `json:"doctype"` // the doctype for mso_mdoc
+	Claims  [][]any `json:"claims"`  // each a DCQL claims path (strings, null, integers)
+}
+
+// customEntry drives verification of one credential query of a custom request.
+type customEntry struct {
+	queryID string
+	format  string
+	vct     string
+	docType string
+	want    []string
 }
 
 // normalizePIDFormat maps what the API accepts onto the two formats a PID
@@ -196,6 +239,11 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	var body createRequestBody
 	if err := decodeJSONBody(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	if body.Type == "custom" {
+		d.createCustomRequest(w, body)
 		return
 	}
 
@@ -390,21 +438,29 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		dcql["credential_sets"] = sets
 	}
 
-	// The purpose this verifier registered for the request, carried in a
-	// wallet-relying-party registration certificate (rc-wrp+jwt, ETSI TS
-	// 119 475) in verifier_info (OpenID4VP 1.0 §5.1), which is where the
-	// wallet's consent dialog reads it from.
 	purpose := "Admission to the demo event: checking your ticket"
 	if body.Type == "pid" {
 		purpose = "Confirming your identity for the demo"
 	}
+	d.finalizeRequest(w, req, dcql, credentials, responseURI, base, purpose, signingKey, chain, nil)
+}
+
+// finalizeRequest signs the registration certificate and the request object for
+// a built request, stores it, and returns the wallet URL. The purpose is
+// carried in a wallet-relying-party registration certificate (rc-wrp+jwt, ETSI
+// TS 119 475) in verifier_info (OpenID4VP 1.0 §5.1), which is where the wallet's
+// consent dialog reads it from.
+func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, credentials []map[string]any, responseURI, base, purpose string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
 	now := time.Now()
-	registration, err := wallet.SignRegistrationCertificateJWT(
-		d.registrationCertificateClaims("EUDI-DEV-DEMO-VERIFIER", "Demo Verifier", purpose, credentials),
-		signingKey, chain)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
-		return
+	if len(verifierInfo) == 0 {
+		registration, err := wallet.SignRegistrationCertificateJWT(
+			d.registrationCertificateClaims("EUDI-DEV-DEMO-VERIFIER", "Demo Verifier", purpose, credentials),
+			signingKey, chain)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
+			return
+		}
+		verifierInfo = []any{map[string]any{"format": "registration_cert", "data": registration}}
 	}
 
 	// Signed request object. Everything the wallet needs is inside it,
@@ -421,11 +477,8 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"nonce":           req.nonce,
 		"state":           req.id,
 		"dcql_query":      dcql,
-		"client_metadata": responseEncryptionMetadata(encKey),
-		"verifier_info": []map[string]any{{
-			"format": "registration_cert",
-			"data":   registration,
-		}},
+		"client_metadata": responseEncryptionMetadata(req.encKey),
+		"verifier_info":   verifierInfo,
 	}, signingKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing request object: " + err.Error()})
@@ -455,6 +508,251 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"wallet_url": base + "/authorize?" + params,
 		"scheme_uri": "openid4vp://?" + params,
 	})
+}
+
+// createCustomRequest builds a request from the credential queries a caller
+// assembled by hand: each carries a format, a type, and DCQL claim paths. The
+// client id scheme selects how the request is delivered, and an optional
+// signing key and verifier_info override the defaults.
+func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBody) {
+	if len(body.Credentials) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a custom request needs at least one credential"})
+		return
+	}
+	scheme := strings.TrimSpace(body.ClientIDScheme)
+	if scheme == "" {
+		scheme = "x509_hash"
+	}
+	signed := scheme == "x509_hash" || scheme == "x509_san_dns"
+
+	signingKey, chain, err := d.customSigningMaterial(body.SigningKey)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if strings.TrimSpace(body.SigningKey) != "" {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, map[string]string{"error": "signing material: " + err.Error()})
+		return
+	}
+	encKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "generating response encryption key: " + err.Error()})
+		return
+	}
+	base := d.baseURL()
+	req := &requestState{
+		id:      randToken(),
+		nonce:   randToken(),
+		status:  "pending",
+		expires: time.Now().Add(entryTTL),
+		encKey:  encKey,
+	}
+	responseURI := base + "/verifier/response/" + req.id
+	req.clientID, err = customClientID(scheme, chain, responseURI, body.ClientID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(body.VerifierInfo) > 0 && !signed {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a custom verifier_info needs a signed client_id scheme (x509_hash or x509_san_dns)"})
+		return
+	}
+
+	credentials := make([]map[string]any, 0, len(body.Credentials))
+	for i, c := range body.Credentials {
+		format := strings.TrimSpace(c.Format)
+		var meta map[string]any
+		switch format {
+		case "dc+sd-jwt":
+			if strings.TrimSpace(c.VCT) == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a dc+sd-jwt credential needs a vct"})
+				return
+			}
+			meta = map[string]any{"vct_values": []string{c.VCT}}
+		case "mso_mdoc":
+			if strings.TrimSpace(c.DocType) == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "an mso_mdoc credential needs a doctype"})
+				return
+			}
+			meta = map[string]any{"doctype_value": c.DocType}
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "format must be dc+sd-jwt or mso_mdoc"})
+			return
+		}
+
+		dcqlClaims := make([]map[string]any, 0, len(c.Claims))
+		seen := map[string]bool{}
+		var want []string
+		addWant := func(name string) {
+			if name != "" && !seen[name] {
+				seen[name] = true
+				want = append(want, name)
+			}
+		}
+		for _, path := range c.Claims {
+			if len(path) == 0 {
+				continue
+			}
+			dcqlClaims = append(dcqlClaims, map[string]any{"path": path})
+			if format == "mso_mdoc" {
+				addWant(lastStringComponent(path))
+			} else if name, ok := path[0].(string); ok {
+				addWant(name)
+			}
+		}
+
+		id := fmt.Sprintf("cred_%d", i)
+		q := map[string]any{"id": id, "format": format, "meta": meta}
+		if len(dcqlClaims) > 0 {
+			q["claims"] = dcqlClaims
+		}
+		credentials = append(credentials, q)
+		req.custom = append(req.custom, customEntry{queryID: id, format: format, vct: c.VCT, docType: c.DocType, want: want})
+	}
+
+	dcql := map[string]any{"credentials": credentials}
+	if signed {
+		d.finalizeRequest(w, req, dcql, credentials, responseURI, base, "A request built by hand for testing", signingKey, chain, body.VerifierInfo)
+		return
+	}
+	d.deliverUnsignedRequest(w, req, dcql, responseURI, base)
+}
+
+// customClientID forms the client identifier for a request built by hand under
+// the selected prefix (OpenID4VP 1.0 §5.9). The x509 prefixes take the request
+// object signing certificate, redirect_uri binds to the response endpoint, and
+// pre-registered is a bare identifier the wallet has no key for.
+func customClientID(scheme string, chain []*x509.Certificate, responseURI, preRegistered string) (string, error) {
+	switch scheme {
+	case "x509_hash":
+		if len(chain) == 0 {
+			return "", fmt.Errorf("x509_hash needs a signing certificate")
+		}
+		return wallet.X509HashClientID(chain[0]), nil
+	case "x509_san_dns":
+		if len(chain) == 0 {
+			return "", fmt.Errorf("x509_san_dns needs a signing certificate")
+		}
+		if len(chain[0].DNSNames) == 0 {
+			return "", fmt.Errorf("x509_san_dns needs a certificate with a DNS SAN, so supply a signing key whose certificate carries one")
+		}
+		return "x509_san_dns:" + chain[0].DNSNames[0], nil
+	case "redirect_uri":
+		return "redirect_uri:" + responseURI, nil
+	case "pre-registered":
+		if id := strings.TrimSpace(preRegistered); id != "" {
+			return id, nil
+		}
+		return "eudi-dev-demo-verifier", nil
+	default:
+		return "", fmt.Errorf("unknown client_id scheme %q, use x509_hash, x509_san_dns, redirect_uri or pre-registered", scheme)
+	}
+}
+
+// deliverUnsignedRequest stores a request whose prefix (redirect_uri or
+// pre-registered) carries no signed request object and hands it to the wallet
+// as plain query parameters (OpenID4VP 1.0 §5.10). The response is still
+// encrypted to the per-request key the client_metadata publishes.
+func (d *DemoRP) deliverUnsignedRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, responseURI, base string) {
+	dcqlJSON, err := json.Marshal(dcql)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encoding dcql_query: " + err.Error()})
+		return
+	}
+	metaJSON, err := json.Marshal(responseEncryptionMetadata(req.encKey))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encoding client_metadata: " + err.Error()})
+		return
+	}
+
+	d.mu.Lock()
+	d.pruneLocked()
+	if len(d.requests) >= maxEntries {
+		d.mu.Unlock()
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many open requests, try again later"})
+		return
+	}
+	d.requests[req.id] = req
+	d.mu.Unlock()
+
+	params := url.Values{
+		"client_id":       {req.clientID},
+		"response_type":   {"vp_token"},
+		"response_mode":   {"direct_post.jwt"},
+		"response_uri":    {responseURI},
+		"nonce":           {req.nonce},
+		"state":           {req.id},
+		"dcql_query":      {string(dcqlJSON)},
+		"client_metadata": {string(metaJSON)},
+	}.Encode()
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":         req.id,
+		"wallet_url": base + "/authorize?" + params,
+		"scheme_uri": "openid4vp://?" + params,
+	})
+}
+
+// customSigningMaterial parses the request object signing key from a PEM bundle
+// (an EC private key and its certificate chain), or returns the demo verifier's
+// own certificate when the bundle is empty.
+func (d *DemoRP) customSigningMaterial(pemBundle string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	if strings.TrimSpace(pemBundle) == "" {
+		return d.wallet.DefaultSigningMaterial()
+	}
+	var key *ecdsa.PrivateKey
+	var chain []*x509.Certificate
+	rest := []byte(pemBundle)
+	for {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		switch block.Type {
+		case "EC PRIVATE KEY":
+			k, err := x509.ParseECPrivateKey(block.Bytes)
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing EC private key: %w", err)
+			}
+			key = k
+		case "PRIVATE KEY":
+			k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing private key: %w", err)
+			}
+			ec, ok := k.(*ecdsa.PrivateKey)
+			if !ok {
+				return nil, nil, fmt.Errorf("the signing key must be an EC key")
+			}
+			key = ec
+		case "CERTIFICATE":
+			c, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing certificate: %w", err)
+			}
+			chain = append(chain, c)
+		}
+	}
+	if key == nil {
+		return nil, nil, fmt.Errorf("the signing key PEM carries no private key")
+	}
+	if len(chain) == 0 {
+		return nil, nil, fmt.Errorf("the signing key PEM carries no certificate")
+	}
+	return key, chain, nil
+}
+
+// lastStringComponent returns the last string element of a claims path, which
+// for an mdoc path [namespace, element] is the element name.
+func lastStringComponent(path []any) string {
+	name := ""
+	for _, p := range path {
+		if s, ok := p.(string); ok {
+			name = s
+		}
+	}
+	return name
 }
 
 // registrationCertificateClaims builds a wallet-relying-party registration
@@ -731,6 +1029,11 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	if err := json.Unmarshal([]byte(vpToken), &tokenDoc); err != nil {
 		return nil, log.entries, check("vp_token parses", fmt.Errorf("vp_token is not a JSON object of query id to presentations: %w", err))
 	}
+
+	if len(req.custom) > 0 {
+		return d.verifyCustomPresentation(req, tokenDoc, log)
+	}
+
 	// A PID request can offer both formats, so the wallet answers under
 	// whichever query id it could satisfy.
 	var presentations []string
@@ -792,6 +1095,51 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	}
 
 	return resultClaims, log.entries, nil
+}
+
+// verifyCustomPresentation verifies a request built by hand: each credential
+// query is verified on its own, dispatched by format. A query the wallet did
+// not answer is noted rather than failed, since a custom request may ask for
+// more than one credential.
+func (d *DemoRP) verifyCustomPresentation(req *requestState, tokenDoc map[string][]string, log *checklist) (map[string]any, []map[string]any, error) {
+	check := log.record
+	result := map[string]any{}
+	recorded := false
+	for _, entry := range req.custom {
+		presentations := tokenDoc[entry.queryID]
+		label := entry.queryID + ": "
+		if len(presentations) == 0 {
+			_ = check(label+"not presented", nil)
+			continue
+		}
+		if !recorded {
+			d.recordPresentation(req, presentations[0])
+			recorded = true
+		}
+		if err := check(label+"vp_token holds exactly one presentation",
+			errIf(len(presentations) != 1, "expected 1 presentation, got %d", len(presentations))); err != nil {
+			d.recordPresentation(req, presentations[0])
+			return nil, log.entries, err
+		}
+		var claims map[string]any
+		var err error
+		if entry.format == "mso_mdoc" {
+			req.docType, req.wantMDOC = entry.docType, entry.want
+			claims, _, err = d.verifyMDOCPresentation(req, presentations[0], log)
+		} else {
+			claims, err = d.verifySDJWTEntry(req, presentations[0], entry.vct, entry.want, label, log)
+		}
+		if err != nil {
+			// A presentation that failed verification is the one worth decoding.
+			d.recordPresentation(req, presentations[0])
+			return nil, log.entries, err
+		}
+		result[entry.queryID] = claims
+	}
+	if len(result) == 0 {
+		return nil, log.entries, check("vp_token answers a requested credential", fmt.Errorf("the response carried no presentation for any requested credential"))
+	}
+	return result, log.entries, nil
 }
 
 // verifySDJWTEntry validates one SD-JWT presentation of the vp_token: the
