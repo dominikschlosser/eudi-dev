@@ -1235,6 +1235,7 @@ header h1 {
 .consent-claim {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 7px 10px;
   font-size: 12px;
@@ -1265,6 +1266,19 @@ header h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.consent-claim-warn { color: var(--yellow); margin-right: 6px; }
+/* The note sits on a full row of its own below the claim, always shown so it
+   needs neither a hover (touch has none) nor a tap. */
+.consent-claim-hint {
+  flex-basis: 100%;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--yellow);
+}
+.consent-claim-missing .consent-claim-name,
+.consent-claim-missing .consent-claim-value {
+  color: var(--text-dim);
 }
 /* The offer preview lists claim names only (no value, not selectable), so the
    name spans the whole row instead of the 42% the presentation dialog reserves

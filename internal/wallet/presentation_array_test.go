@@ -15,7 +15,9 @@
 package wallet
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -83,6 +85,116 @@ func TestPresentation_BareArrayPathDisclosesEmptyArray(t *testing.T) {
 	}
 	if arr, ok := presentedNationalities(t, w, matches[0]).([]any); !ok || len(arr) != 0 {
 		t.Errorf("disclosed nationalities = %v, want an empty array", presentedNationalities(t, w, matches[0]))
+	}
+}
+
+// A path with an array index the credential cannot satisfy (index 1 on a
+// one-element array) leaves the claim unsatisfiable. Debug mode still offers the
+// credential on its other claims and marks the claim missing, so the consent
+// dialog shows it as not disclosed. Strict mode refuses the whole request.
+func TestPresentation_OutOfRangeIndexIsMissingNotDisclosed(t *testing.T) {
+	w := generateTestWallet(t)
+	importNationalitiesPID(t, w)
+
+	query := map[string]any{"credentials": []any{map[string]any{
+		"id":     "pid",
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+		"claims": []any{
+			map[string]any{"path": []any{"given_name"}},
+			map[string]any{"path": []any{"nationalities", float64(1)}},
+		},
+	}}}
+
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 1 {
+		t.Fatalf("want one match in debug mode, got %d", len(matches))
+	}
+	m := matches[0]
+	if !slices.Contains(m.MissingClaims, "nationalities[1]") {
+		t.Errorf("MissingClaims = %v, want it to name nationalities[1]", m.MissingClaims)
+	}
+	if _, ok := m.Claims["nationalities"]; ok {
+		t.Errorf("nationalities should not be disclosed, got %v", m.Claims["nationalities"])
+	}
+	if _, ok := m.Claims["given_name"]; !ok {
+		t.Errorf("given_name should be disclosed, claims = %v", m.Claims)
+	}
+
+	w.ValidationMode = ValidationModeStrict
+	if got := w.EvaluateDCQL(query); len(got) != 0 {
+		t.Errorf("strict mode should not match an unsatisfiable request, got %d", len(got))
+	}
+}
+
+// Presenting a credential that cannot disclose every requested claim records
+// one grouped activity log warning, covering both an array disclosed empty and
+// a claim no matching credential provides.
+func TestPresentation_UndisclosedClaimsLoggedGrouped(t *testing.T) {
+	w := generateTestWallet(t)
+	importNationalitiesPID(t, w)
+
+	query := map[string]any{"credentials": []any{map[string]any{
+		"id":     "pid",
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+		"claims": []any{
+			map[string]any{"path": []any{"nationalities"}},             // disclosed as []
+			map[string]any{"path": []any{"nationalities", float64(1)}}, // out of range, missing
+		},
+	}}}
+	matches := w.EvaluateDCQL(query)
+	if len(matches) != 1 {
+		t.Fatalf("want one match, got %d", len(matches))
+	}
+	if _, err := w.CreateVPToken(matches[0], PresentationParams{Nonce: "n", ClientID: "verifier"}); err != nil {
+		t.Fatalf("CreateVPToken: %v", err)
+	}
+
+	var warning *LogEntry
+	entries := w.GetLog()
+	for i, e := range entries {
+		if e.Severity == severityWarning && strings.Contains(e.Detail, "does not disclose every requested claim") {
+			warning = &entries[i]
+			break
+		}
+	}
+	if warning == nil {
+		t.Fatal("no grouped presentation warning was logged")
+	}
+	if !strings.Contains(warning.Detail, "2 findings") {
+		t.Errorf("warning detail = %q, want it to group 2 findings", warning.Detail)
+	}
+	findings := warning.Details["findings"]
+	if !strings.Contains(fmt.Sprint(findings), "nationalities[1]") {
+		t.Errorf("grouped findings %v do not mention the missing claim nationalities[1]", findings)
+	}
+}
+
+// A credential that satisfies every requested claim is preferred over one that
+// leaves some unsatisfiable, so it is the wallet's auto-selection.
+func TestSortMatchesCompleteFirst(t *testing.T) {
+	matches := []CredentialMatch{
+		{QueryID: "q", CredentialID: "partial", MissingClaims: []string{"x"}},
+		{QueryID: "q", CredentialID: "complete"},
+	}
+	sortMatchesCompleteFirst(matches)
+	if matches[0].CredentialID != "complete" {
+		t.Errorf("want the complete match first, got %q", matches[0].CredentialID)
+	}
+}
+
+// A missing claim is labelled in the same form as the claims the credential
+// discloses: namespace:element for an mdoc data element, and the dotted path
+// with array brackets for an SD-JWT VC.
+func TestMissingClaimLabel(t *testing.T) {
+	mdoc := StoredCredential{Format: "mso_mdoc"}
+	if got := missingClaimLabel(mdoc, []any{"eu.europa.ec.eudi.pid.1", "given_name"}); got != "eu.europa.ec.eudi.pid.1:given_name" {
+		t.Errorf("mdoc label = %q, want the namespace:element form", got)
+	}
+	sdjwt := StoredCredential{Format: "dc+sd-jwt"}
+	if got := missingClaimLabel(sdjwt, []any{"nationalities", float64(1)}); got != "nationalities[1]" {
+		t.Errorf("sd-jwt label = %q, want nationalities[1]", got)
 	}
 }
 

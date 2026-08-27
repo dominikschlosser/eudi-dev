@@ -1353,3 +1353,96 @@ test.describe("Demo mode hardening", () => {
     await expect(page.locator("#decoder-link")).toBeVisible();
   });
 });
+
+// The verifier page can build a DCQL query by hand, which is how the strict
+// array disclosure is exercised: a bare array path discloses an empty array
+// and warns, while ending it with [*] discloses the elements.
+test.describe("Custom verifier request builder", () => {
+  test.beforeEach(async () => {
+    await clearPending();
+  });
+
+  async function verifierResult(id) {
+    const res = await fetch(`${BASE}/verifier/api/requests/${id}`);
+    return await res.json();
+  }
+
+  // Opens the custom builder, optionally rewrites the nationalities claim, and
+  // creates the request, returning its id and authorization scheme URI.
+  async function buildCustom(page, nationalitiesPath) {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator('#credential-toggle [data-credential="custom"]').click();
+    await expect(page.locator("#custom-panel")).toBeVisible();
+    if (nationalitiesPath) {
+      // The seed's second claim is nationalities.
+      await page.locator(".claim-input").nth(1).fill(nationalitiesPath);
+    }
+    const [resp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().endsWith("/verifier/api/requests") && r.request().method() === "POST"
+      ),
+      page.locator("#create-request").click(),
+    ]);
+    const body = await resp.json();
+    const schemeURI = (await page.locator("#scheme-uri").textContent()) || "";
+    return { id: body.id, walletURL: body.wallet_url, schemeURI };
+  }
+
+  async function present(page, schemeURI) {
+    const owner = await openAsSchemeHandler(page);
+    submitAsSchemeHandler("/api/presentations", schemeURI, owner);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+  }
+
+  test("a bare array path discloses an empty array and the consent warns", async ({ page }) => {
+    const { id, schemeURI } = await buildCustom(page); // seed: given_name, nationalities
+
+    await present(page, schemeURI);
+    // The nationalities row shows the empty array with a warning marker whose
+    // tooltip explains that only an empty array is disclosed.
+    const natRow = page.locator("#consent-dialog .consent-claim", { hasText: "nationalities" });
+    await expect(natRow.locator(".consent-claim-value")).toContainText("[]");
+    // The note explaining the empty array is shown inline, no hover or tap.
+    await expect(natRow.locator(".consent-claim-hint")).toBeVisible();
+    await expect(natRow.locator(".consent-claim-hint")).toContainText(/empty array/i);
+    await expect(natRow.locator('input[type="checkbox"]')).toBeChecked();
+
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+
+    const result = await verifierResult(id);
+    expect(result.status).toBe("verified");
+    expect(result.claims.cred_0.nationalities).toEqual([]);
+  });
+
+  test("ending the path with [*] discloses the array elements", async ({ page }) => {
+    const { id, schemeURI } = await buildCustom(page, "nationalities[*]");
+
+    await present(page, schemeURI);
+    // No warning marker, since the elements are selected and disclosed.
+    await expect(page.locator("#consent-dialog .consent-claim-warn")).toHaveCount(0);
+
+    await page.locator("#consent-approve").click();
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+
+    const result = await verifierResult(id);
+    expect(result.status).toBe("verified");
+    expect(result.claims.cred_0.nationalities).toEqual(["NL"]);
+  });
+
+  test("the client id scheme selection reaches the request", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator('#credential-toggle [data-credential="custom"]').click();
+    await page.locator('#scheme-toggle [data-scheme="redirect_uri"]').click();
+    const [resp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().endsWith("/verifier/api/requests") && r.request().method() === "POST"
+      ),
+      page.locator("#create-request").click(),
+    ]);
+    const body = await resp.json();
+    // A redirect_uri request is unsigned plain parameters, so the client id
+    // rides in the wallet URL rather than behind request_uri.
+    expect(body.wallet_url).toContain("client_id=redirect_uri");
+  });
+});

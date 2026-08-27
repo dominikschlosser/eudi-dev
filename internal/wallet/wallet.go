@@ -397,6 +397,12 @@ type CredentialMatch struct {
 	// them discloses an empty array, so the consent dialog and the activity log
 	// warn that the verifier has to request the elements with a null or an index.
 	EmptyArrayClaims []string `json:"empty_array_claims,omitempty"`
+	// MissingClaims are the requested claim paths this credential cannot satisfy
+	// (a claim it does not carry, or an array index out of range). Strict mode
+	// refuses such a request, but debug mode offers the credential on its
+	// satisfiable claims and the consent dialog shows these as not disclosed. A
+	// credential that satisfies every claim is preferred over one that does not.
+	MissingClaims []string `json:"missing_claims,omitempty"`
 }
 
 // ConsentCredentialOptions carries every way the wallet could answer a

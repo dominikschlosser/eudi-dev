@@ -104,9 +104,18 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 	}
 	log.Printf("[VP] Creating VP token: format=%s type=%s claims=%v", cred.Format, typeLabel, match.SelectedKeys)
 
+	// A requested claim the presentation does not disclose as asked is a finding,
+	// grouped into one activity log entry: an array selected without its elements
+	// (disclosed empty), or a claim this credential cannot satisfy (debug mode
+	// presents it anyway).
+	var undisclosed []string
 	for _, claim := range match.EmptyArrayClaims {
-		w.AddWarning("presentation", fmt.Sprintf("The request selects the array %s but none of its selectively disclosable elements, so it is disclosed as an empty array. The verifier selects the elements by ending the path with null (all) or an index (OpenID4VP 1.0 §7.1).", claim), nil)
+		undisclosed = append(undisclosed, fmt.Sprintf("The request selects the array %s but none of its selectively disclosable elements, so it is disclosed as an empty array. The verifier selects the elements by ending the path with null (all) or an index (OpenID4VP 1.0 §7.1).", claim))
 	}
+	for _, claim := range match.MissingClaims {
+		undisclosed = append(undisclosed, fmt.Sprintf("The request asks for %s, which the selected credential does not provide (a claim it does not carry, or an array index out of range), so it is not disclosed.", claim))
+	}
+	w.warnFindings("presentation", "The presentation does not disclose every requested claim as asked", undisclosed)
 
 	switch cred.Format {
 	case "dc+sd-jwt":

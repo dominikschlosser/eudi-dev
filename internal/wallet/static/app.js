@@ -2021,21 +2021,50 @@
     // The disclosed fields for a credential, as selective-disclosure
     // checkboxes. Every claim stays uncheckable, including required ones, so a
     // test wallet can withhold a field and see how the verifier reacts.
-    function claimChecklist(credID, claims, kept) {
+    // warnMarker is the note explaining a claim, a warning sign then the text,
+    // on its own full-width row below the claim (a direct child of the flex row,
+    // not inside the value column, so it wraps instead of being clipped). Always
+    // shown, so it needs no hover (touch has none) and no tap.
+    function warnMarker(hint) {
+      return '<span class="consent-claim-hint"><span class="consent-claim-warn" aria-hidden="true">⚠</span>' + escHtml(hint) + '</span>';
+    }
+
+    function claimChecklist(credID, claims, kept, emptyArrays, missing) {
       const keys = Object.keys(claims || {});
       const shared = keys.filter(k => (kept ? kept.includes(k) : true)).length;
+      const empties = emptyArrays || [];
+      const missingList = missing || [];
+      const total = keys.length + missingList.length;
       let rows = '';
       keys.forEach(key => {
-        const val = typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]);
+        // A claim whose path selected an array but none of its selectively
+        // disclosable elements discloses an empty array, so the disclosed value
+        // is [], not the credential's value. A warning marker carries the reason.
+        const empty = empties.includes(key);
+        const val = empty ? '[]'
+          : (typeof claims[key] === 'object' ? JSON.stringify(claims[key]) : String(claims[key]));
+        const warn = empty ? warnMarker('Empty array disclosed. Use a null or index path for the values.') : '';
         const checked = kept ? kept.includes(key) : true;
         rows += '<label class="consent-claim">' +
           '<input type="checkbox"' + (checked ? ' checked' : '') + ' data-cred="' + credID + '" data-claim="' + escHtml(key) + '">' +
           '<span class="consent-claim-name mono">' + escHtml(key) + '</span>' +
-          '<span class="consent-claim-value mono">' + escHtml(val) + '</span>' +
+          '<span class="consent-claim-value mono">' + escHtml(val) + '</span>' + warn +
         '</label>';
       });
+      // Requested claims this credential cannot satisfy (a claim it does not
+      // carry, or an array index out of range). Debug mode still offers the
+      // credential, so the dialog shows them as not disclosed rather than
+      // hiding that the request asked for them.
+      missingList.forEach(path => {
+        rows += '<div class="consent-claim consent-claim-missing">' +
+          '<input type="checkbox" disabled aria-hidden="true">' +
+          '<span class="consent-claim-name mono">' + escHtml(path) + '</span>' +
+          '<span class="consent-claim-value mono">(not disclosed)</span>' +
+          warnMarker('Not provided by the selected credential.') +
+        '</div>';
+      });
       return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">' +
-          shared + ' of ' + keys.length + ' field' + (keys.length === 1 ? '' : 's') + '</span></div>' +
+          shared + ' of ' + total + ' field' + (total === 1 ? '' : 's') + '</span></div>' +
         '<div class="consent-claims">' + rows + '</div>';
     }
 
@@ -2053,8 +2082,7 @@
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
         untrustedAuthorityNote(mc) +
-        emptyArrayNote(mc) +
-        claimChecklist(mc.credential_id, mc.claims, kept) +
+        claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims) +
       '</div>';
     }
 
@@ -2066,18 +2094,6 @@
       return '<div class="consent-untrusted" role="note">⚠ Trusted authorities do not match. ' +
         'The verifier limited this request to specific issuers and this credential could not be matched to them. ' +
         'It is offered because debug mode ignores the restriction.</div>';
-    }
-
-    // emptyArrayNote flags a requested claim that selects an array of
-    // selectively disclosable elements without selecting the elements, so only
-    // an empty array is disclosed. The verifier reaches the elements with a null
-    // or an index at the end of the path (OpenID4VP 1.0 §7.1).
-    function emptyArrayNote(mc) {
-      if (!mc || !mc.empty_array_claims || !mc.empty_array_claims.length) return '';
-      const claims = mc.empty_array_claims.map(escHtml).join(', ');
-      return '<div class="consent-untrusted" role="note">⚠ Only an empty array is disclosed for ' + claims + '. ' +
-        'The request selects the array but none of its selectively disclosable elements. ' +
-        'The verifier receives the values by ending the path with null (all elements) or an index.</div>';
     }
 
     // The Edit view: the set options and, per query id of the chosen
@@ -2145,7 +2161,7 @@
                   ' href="/decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
                   ' title="Open in decoder">Show</a>' +
               '</div>' +
-            '</div>' + untrustedAuthorityNote(c) + emptyArrayNote(c) + '</div>';
+            '</div>' + untrustedAuthorityNote(c) + '</div>';
         });
         html += '</div>';
       });

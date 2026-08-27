@@ -127,6 +127,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				SelectedKeys:       selection.selectedKeys,
 				UntrustedAuthority: untrustedAuthority,
 				EmptyArrayClaims:   selection.emptyArrays,
+				MissingClaims:      selection.missingRequired,
 			})
 		}
 	}
@@ -142,6 +143,10 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	}
 
 	sortMatchesTrustedFirst(matches)
+
+	// Applied last so it wins: a credential that answers every requested claim
+	// is the auto-selection over one that leaves some unsatisfiable.
+	sortMatchesCompleteFirst(matches)
 
 	// Everything that matched, in preference order: the collapse below keeps
 	// the first entry per query, so per query the first candidate is the
@@ -409,6 +414,19 @@ func sortMatchesTrustedFirst(matches []CredentialMatch) {
 	})
 }
 
+// sortMatchesCompleteFirst prefers a credential that satisfies every requested
+// claim over one that leaves some unsatisfiable (debug mode offers the latter).
+// It runs last, so a complete match is the wallet's auto-selection when one
+// exists.
+func sortMatchesCompleteFirst(matches []CredentialMatch) {
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].QueryID != matches[j].QueryID {
+			return false
+		}
+		return len(matches[i].MissingClaims) == 0 && len(matches[j].MissingClaims) > 0
+	})
+}
+
 // keepOnePresentationPerQuery reduces the candidates for each query id to the
 // one credential that will be presented. OID4VP 1.0 allows several only when
 // the query sets `multiple`, which this wallet does not implement. It happens
@@ -647,7 +665,7 @@ func selectAllRequestedClaims(cred StoredCredential, claimsQuery []any) claimSel
 				emptyArrays = append(emptyArrays, claimPathString(path))
 			}
 		} else {
-			missingRequired = append(missingRequired, claimPathString(path))
+			missingRequired = append(missingRequired, missingClaimLabel(cred, path))
 		}
 	}
 
@@ -676,6 +694,20 @@ func claimSelectorFromPath(cred StoredCredential, path []any) string {
 		return ""
 	}
 
+	return claimPathString(path)
+}
+
+// missingClaimLabel names a requested claim a credential cannot satisfy, in the
+// same form as the claims the credential does disclose: namespace:element for an
+// mdoc data element, and the dotted path with array brackets otherwise.
+func missingClaimLabel(cred StoredCredential, path []any) string {
+	if cred.Format == "mso_mdoc" && len(path) == 2 {
+		ns, nsOK := path[0].(string)
+		el, elOK := path[1].(string)
+		if nsOK && elOK {
+			return ns + ":" + el
+		}
+	}
 	return claimPathString(path)
 }
 
