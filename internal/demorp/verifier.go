@@ -399,12 +399,9 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		purpose = "Confirming your identity for the demo"
 	}
 	now := time.Now()
-	registration, err := wallet.SignRegistrationCertificateJWT(map[string]any{
-		"sub":     "EUDI-DEV-DEMO-VERIFIER",
-		"name":    "Demo Verifier",
-		"iat":     now.Unix(),
-		"purpose": []map[string]any{{"lang": "en", "value": purpose}},
-	}, signingKey, chain)
+	registration, err := wallet.SignRegistrationCertificateJWT(
+		d.registrationCertificateClaims("EUDI-DEV-DEMO-VERIFIER", "Demo Verifier", purpose, credentials),
+		signingKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
 		return
@@ -458,6 +455,40 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		"wallet_url": base + "/authorize?" + params,
 		"scheme_uri": "openid4vp://?" + params,
 	})
+}
+
+// registrationCertificateClaims builds a wallet-relying-party registration
+// certificate payload the wallet's ARF content checks pass (ETSI TS 119 475
+// §5.2.4). Its credentials register exactly the credential queries the request
+// asks for, so the over-asking check (ARF RPRC_21) sees the demo request only
+// what it registered for. dcqlCredentials are the request's DCQL credential
+// queries, whose claims become the registered claim paths.
+func (d *DemoRP) registrationCertificateClaims(sub, name, purpose string, dcqlCredentials []map[string]any) map[string]any {
+	registered := make([]map[string]any, 0, len(dcqlCredentials))
+	for _, c := range dcqlCredentials {
+		registered = append(registered, map[string]any{
+			"format": c["format"],
+			"meta":   c["meta"],
+			"claim":  c["claims"],
+		})
+	}
+	now := time.Now()
+	base := d.baseURL()
+	return map[string]any{
+		"sub":                   sub,
+		"name":                  name,
+		"country":               "EU",
+		"registry_uri":          base + "/registrar",
+		"srv_description":       []map[string]any{{"lang": "en", "value": name}},
+		"entitlements":          []string{"https://uri.etsi.org/19475/Entitlement/Service_Provider"},
+		"privacy_policy":        base + "/privacy-policy",
+		"support_uri":           base + "/support",
+		"supervisory_authority": map[string]any{"email": "dpa@eudi-test.dev", "uri": base + "/supervisory-authority"},
+		"iat":                   now.Unix(),
+		"exp":                   now.AddDate(0, 6, 0).Unix(),
+		"purpose":               []map[string]any{{"lang": "en", "value": purpose}},
+		"credentials":           registered,
+	}
 }
 
 // checkPresentationAudience holds a Key Binding JWT to the party that asked for

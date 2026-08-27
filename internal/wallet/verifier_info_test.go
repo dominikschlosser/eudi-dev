@@ -279,3 +279,159 @@ func TestVerifierInfoPurposesHidesAnUncheckableCertificate(t *testing.T) {
 		t.Errorf("findings = %v, want one saying the signature cannot be checked", findings)
 	}
 }
+
+// conformantRegistrationCert is a WRPRC payload (JSON-decoded shapes) that
+// carries every field the ARF content checks require, registering given_name
+// of urn:eudi:pid:1.
+func conformantRegistrationCert() map[string]any {
+	return map[string]any{
+		"name":                  "Test Verifier",
+		"sub":                   "LEIEU-TEST",
+		"country":               "EU",
+		"registry_uri":          "https://registrar.example",
+		"srv_description":       []any{map[string]any{"lang": "en", "value": "Test service"}},
+		"entitlements":          []any{"https://uri.etsi.org/19475/Entitlement/Service_Provider"},
+		"privacy_policy":        "https://example/privacy",
+		"support_uri":           "https://example/support",
+		"supervisory_authority": map[string]any{"email": "dpa@example"},
+		"iat":                   float64(time.Now().Unix()),
+		"credentials": []any{map[string]any{
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claim":  []any{map[string]any{"path": []any{"given_name"}}},
+		}},
+	}
+}
+
+func TestRegistrationCertificateContentFindings(t *testing.T) {
+	if findings := registrationCertificateContentFindings(conformantRegistrationCert()); len(findings) != 0 {
+		t.Errorf("a conformant certificate should have no findings, got %v", findings)
+	}
+
+	// A certificate carrying only sub, name and iat is missing the rest.
+	sparse := map[string]any{"name": "X", "sub": "Y", "iat": float64(time.Now().Unix())}
+	findings := registrationCertificateContentFindings(sparse)
+	for _, want := range []string{"privacy_policy", "srv_description", "entitlements", "support_uri", "supervisory_authority", "credentials"} {
+		if !containsSubstring(findings, want) {
+			t.Errorf("findings %v should name the missing %s", findings, want)
+		}
+	}
+}
+
+func TestRegistrationValidityFindings(t *testing.T) {
+	now := time.Now()
+	longLived := map[string]any{"iat": float64(now.Unix()), "exp": float64(now.AddDate(2, 0, 0).Unix())}
+	if !containsSubstring(registrationValidityFindings(longLived), "more than 12 months") {
+		t.Error("a certificate valid for two years should be flagged")
+	}
+	expired := map[string]any{"iat": float64(now.AddDate(0, -2, 0).Unix()), "exp": float64(now.AddDate(0, -1, 0).Unix())}
+	if !containsSubstring(registrationValidityFindings(expired), "expired") {
+		t.Error("an expired certificate should be flagged")
+	}
+	if findings := registrationValidityFindings(map[string]any{"iat": float64(now.Unix())}); len(findings) != 0 {
+		t.Errorf("a certificate with iat and no exp should pass, got %v", findings)
+	}
+}
+
+func TestOverAskingFindings(t *testing.T) {
+	cert := conformantRegistrationCert() // registers given_name of urn:eudi:pid:1
+
+	asksGivenName := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		"claims": []any{map[string]any{"path": []any{"given_name"}}},
+	}}}
+	if findings := overAskingFindings(cert, asksGivenName); len(findings) != 0 {
+		t.Errorf("asking a registered claim should not be over-asking, got %v", findings)
+	}
+
+	asksFamilyName := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		"claims": []any{map[string]any{"path": []any{"family_name"}}},
+	}}}
+	if !containsSubstring(overAskingFindings(cert, asksFamilyName), "family_name") {
+		t.Error("asking an unregistered claim should be over-asking")
+	}
+
+	// A registered parent path covers a requested child path.
+	parent := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		"claim":  []any{map[string]any{"path": []any{"address"}}},
+	}}}
+	asksChild := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		"claims": []any{map[string]any{"path": []any{"address", "street_address"}}},
+	}}}
+	if findings := overAskingFindings(parent, asksChild); len(findings) != 0 {
+		t.Errorf("a registered parent path should cover a child, got %v", findings)
+	}
+
+	// A request for a credential type the certificate never registers is one
+	// finding for the whole query, not one per requested claim.
+	asksUnregisteredType := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{"urn:eudi:other:1"}},
+		"claims": []any{
+			map[string]any{"path": []any{"given_name"}},
+			map[string]any{"path": []any{"family_name"}},
+		},
+	}}}
+	if findings := overAskingFindings(cert, asksUnregisteredType); len(findings) != 1 {
+		t.Errorf("an unregistered type should be one finding for the query, got %v", findings)
+	}
+
+	// A certificate with no credentials list is already a content finding, so
+	// the over-asking check adds nothing rather than one finding per claim.
+	noCredentials := map[string]any{"name": "X"}
+	if findings := overAskingFindings(noCredentials, asksGivenName); len(findings) != 0 {
+		t.Errorf("a certificate with no credentials should produce no over-asking findings, got %v", findings)
+	}
+}
+
+// A request with no registration certificate is warned about (ARF RPRC_19),
+// even though the OpenID4VP parameter itself is optional.
+func TestConsentPurposesWarnsOnMissingRegistrationCertificate(t *testing.T) {
+	w := generateTestWallet(t)
+	authReq := &AuthorizationRequestParams{RequestPayload: map[string]any{"dcql_query": map[string]any{}}}
+	w.consentPurposes("presentation", authReq)
+	found := false
+	for _, entry := range w.GetLog() {
+		if strings.Contains(entry.Detail, "RPRC_19") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a request without a registration certificate should log the RPRC_19 warning")
+	}
+}
+
+// A certificate with several problems is one summarized activity log entry with
+// the findings in its details, not one entry per finding.
+func TestConsentPurposesSummarizesCertificateFindings(t *testing.T) {
+	w := generateTestWallet(t)
+	// A minimal certificate is missing most mandatory fields, so it has several
+	// content findings.
+	cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
+	authReq := &AuthorizationRequestParams{
+		RequestPayload: verifierInfoPayload(map[string]any{"format": "registration_cert", "data": cert}),
+	}
+	w.consentPurposes("presentation", authReq)
+
+	summaries := 0
+	var details map[string]any
+	for _, entry := range w.GetLog() {
+		if strings.Contains(entry.Detail, "findings against the ARF") {
+			summaries++
+			details = entry.Details
+		}
+	}
+	if summaries != 1 {
+		t.Fatalf("want exactly one summarized registration certificate warning, got %d", summaries)
+	}
+	if list, _ := details["findings"].([]string); len(list) < 2 {
+		t.Errorf("the summary should carry the findings list in its details, got %v", details)
+	}
+}

@@ -465,15 +465,13 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 
 	// The purpose of the request, carried in a registration certificate
 	// (rc-wrp+jwt) in verifier_info (OpenID4VP 1.0 §5.1) like the demo
-	// verifier's requests.
-	registration, rerr := wallet.SignRegistrationCertificateJWT(map[string]any{
-		"sub":  "EUDI-DEV-DEMO-ISSUER",
-		"name": "Demo Issuer",
-		"iat":  time.Now().Unix(),
-		"purpose": []map[string]any{
-			{"lang": "en", "value": "Proving who you are before the ticket is issued"},
-		},
-	}, signingKey, chain)
+	// verifier's requests. It registers the same credential queries the request
+	// asks for, so the wallet's over-asking check (ARF RPRC_21) passes.
+	registration, rerr := wallet.SignRegistrationCertificateJWT(
+		d.registrationCertificateClaims("EUDI-DEV-DEMO-ISSUER", "Demo Issuer",
+			"Proving who you are before the ticket is issued",
+			[]map[string]any{sdjwtCred, mdocCred}),
+		signingKey, chain)
 	if rerr == nil {
 		claims["verifier_info"] = []map[string]any{{
 			"format": "registration_cert",
