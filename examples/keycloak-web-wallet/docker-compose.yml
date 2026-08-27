@@ -6,7 +6,7 @@
 # APP_PORT values when the defaults are taken (override them to pin ports).
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: quay.io/keycloak/keycloak:26.7.2
     command:
       - start-dev
       - --import-realm

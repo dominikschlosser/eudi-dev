@@ -205,6 +205,7 @@ def run_wallet_accept(wallet_url):
         "wallet",
         "accept",
         "--auto-accept",
+        "--docker",
         "--port",
         str(OID4VC_WALLET_PORT),
         wallet_url,

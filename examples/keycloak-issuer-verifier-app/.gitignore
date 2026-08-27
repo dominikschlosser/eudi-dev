@@ -3,13 +3,9 @@
 __pycache__/
 providers/*.jar
 !providers/.gitkeep
-link-provider/target/
-keycloak-ca-cert.pem
-keycloak-ca-key.pem
-keycloak-cert.pem
-keycloak-key.pem
 keycloak-signing-cert.pem
 keycloak-signing-key.pem
-keycloak-trustlist.jwt
+keycloak-signing-ca-cert.pem
+keycloak-signing-ca-key.pem
+keycloak-signing-ca-cert.srl
 wallet-ca-cert.pem
-wallet-ca-key.pem

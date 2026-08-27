@@ -1,10 +1,10 @@
 services:
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.0
+    image: quay.io/keycloak/keycloak:26.7.2
     command:
       - start-dev
       - --import-realm
-      - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1
+      - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer
       - --http-port=8080
       - --proxy-headers=xforwarded
     environment:

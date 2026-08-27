@@ -1,149 +1,59 @@
 # Keycloak Issuer + Verifier Demo App
 
-This example combines OpenID4VCI issuance and OpenID4VP verification around one Keycloak realm and one small sample application.
+This example runs Keycloak as an OpenID4VP verifier that signs users in with their wallet, and issues them a credential during that login. It uses the `keycloak-extension-oid4vp` subject-binding model.
 
-Compared with the smaller examples in this directory, this scenario still needs a small dynamic bootstrap for runtime-generated trust material and the persistent signing key. The static realm import already contains the fixed app client, credential scope, custom first-broker flow, OID4VP identity provider, and the wallet-login session-note mapper. The UI itself is kept separate from the Go handlers in `app/templates/` and `app/static/`.
+The user holds a PID (a country-independent EUDI PID from `oid4vc-dev`). A PID identifies nobody to this realm on its own, so the first wallet login asks for a password and then issues a `membership` credential that carries an opaque subject bound to that account. Every later login presents the PID together with the membership credential, and the subject in the membership credential signs the user in without a password.
 
-The example always starts:
+The example starts Keycloak (26.7.2), a local `eudi wallet serve --docker` wallet holding the PID, and a small Go relying party. Everything runs locally over HTTP.
 
-- Keycloak
-- the demo app
-- a local `eudi wallet serve --docker` wallet
-- a local `eudi proxy` in front of a single-host route proxy that exposes both Keycloak and the app through one hostname
+## The Flow
 
-The only exposure switch is ngrok:
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant APP as Demo App
+    participant KC as Keycloak (OID4VP verifier)
+    participant BROKER as First broker login
+    participant W as eudi wallet
 
-- default: use ngrok automatically when sandbox verifier files are available
-- `--ngrok`: publish Keycloak and the app through one ngrok HTTPS hostname
-- `--no-ngrok`: keep Keycloak and the app local
-- `--http` / `--https`: choose the local Keycloak transport when ngrok is disabled
+    rect rgb(245, 245, 245)
+    note over U, W: First login, the wallet holds the PID only
+    U->>APP: Sign in with your wallet
+    APP->>KC: Authorization request (client wallet-app)
+    KC->>W: haip-vp:// request, credential_sets [[pid, membership], [pid]]
+    W->>KC: vp_token with the PID alone
+    KC->>KC: Verify the PID against the wallet trust list, no subject credential
+    KC->>BROKER: Brokered identity of a generated subject
+    BROKER->>U: Ask for username and password (alice / alice)
+    BROKER->>BROKER: oid4vp-subject-binding binds the login to the user and entitles the credential
+    BROKER->>U: Credential offer required action
+    U->>W: Accept the offer
+    W->>KC: Redeem the pre-authorized code as client wallet-vci
+    KC->>W: Membership credential with the bound subject and reference binding
+    end
 
-The start script derives the runtime URLs itself. When ngrok is enabled, issuance, login, and wallet presentation offers use the public ngrok URL and traffic passes through the `eudi proxy` dashboard.
+    rect rgb(235, 242, 250)
+    note over U, W: Next login, the wallet holds both credentials
+    U->>APP: Sign in with your wallet
+    APP->>KC: Authorization request
+    KC->>W: haip-vp:// request, credential_sets [[pid, membership], [pid]]
+    W->>KC: vp_token with the PID and the membership credential
+    KC->>KC: Read the subject from the membership credential, match the stored link
+    KC-->>APP: Signed in, no password and no offer
+    end
+```
 
 ## How It Works
 
-The static realm import provides the stable parts of the example. `bootstrap.sh` fills in the runtime parts: the persistent RS256 signing key, the verifier request settings, and the HTTP-only admin setting for the local demo.
+The static realm import (`realm/wallet-app-demo-realm.json`) carries the whole configuration.
 
-### Trust And Verifier Modes
+- The `oid4vp` identity provider enforces HAIP (`x509_hash`, `direct_post.jwt`) and requests `credential_sets` `[[pid, membership], [pid]]`. `allowMissingSubjectCredential` accepts the PID alone, and `principalAttributes` reads the subject from `membership:sub`.
+- The first broker login flow runs `idp-username-password-form` followed by `oid4vp-subject-binding`. The authenticator binds the login to the user, entitles them to the `membership-credential` configuration, and offers it through the credential-offer required action to the client `wallet-vci`.
+- The `membership-credential` scope issues an SD-JWT credential whose `oid4vp-bound-subject-mapper` writes the opaque subject and a reference credential binding. The binding ties the credential to the PID it was issued next to (a keyed digest of the PID mandatory attributes), so it cannot sign in beside a different person's PID.
+- Trust is resolved per credential. The `pid-trust-list` provider (an `etsi-trust-list`) serves the PID trust anchors from the wallet, and the `keycloak-realm-issuer` provider verifies the membership credential against this realm's own signing keys.
 
-- The presented credential is the custom membership credential issued by this Keycloak realm.
-- The verifier always enforces HAIP and uses `x509_hash` plus `direct_post.jwt`.
-- Local/no-ngrok mode verifies that credential through issuer metadata / JWKS.
-- Ngrok mode is the external-wallet path. It exposes a public Keycloak signing-certificate trust list at `<public-url>/keycloak-trustlist.jwt`.
-- The local wallet is still started in ngrok mode, so the same public issuer/verifier setup can be exercised with either the local wallet or an external wallet.
-- Sandbox verifier files are discovered from `sandbox/sandbox-ngrok-combined.pem` and `sandbox/sandbox-verifier-info.json` by default, from another git worktree's root `sandbox/` directory, or from `SANDBOX_DIR`, `EXAMPLES_SANDBOX_PEM`, and `EXAMPLES_SANDBOX_VERIFIER_INFO`.
-
-## High-Level Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant APP as Demo App
-    participant KC as Keycloak
-    participant EXT as keycloak-extension-oid4vp
-    participant BROKER as Custom Broker Authenticator
-    participant W as eudi wallet
-
-    U->>APP: Sign in with password
-    APP->>KC: standard login
-    KC-->>APP: app session for alice
-    U->>APP: Issue membership credential
-    APP->>KC: create-credential-offer
-    KC-->>APP: issuer + nonce
-    APP->>W: haip-vci://...?credential_offer=...
-    W->>KC: redeem credential
-    KC-->>W: sd-jwt credential with keycloak_user_id
-
-    U->>APP: Log out, then sign in again
-    APP->>KC: standard login
-    KC->>EXT: brokered wallet login
-    EXT-->>W: haip-vp://authorize?request_uri=...
-    W->>EXT: present wallet credential
-    EXT->>KC: verified user with keycloak_user_id
-    KC->>BROKER: auto-link existing user
-    KC-->>APP: app session for the same user
-```
-
-## Detailed Flows
-
-### Issuance
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant APP as Demo App
-    participant KC as Keycloak
-    participant W as oid4vc-dev
-
-    U->>APP: POST /issue
-    APP->>KC: GET /realms/wallet-app-demo/protocol/oid4vc/create-credential-offer?credential_configuration_id=membership-credential&pre_authorized=true&type=uri
-    Note over APP,KC: Authorization: Bearer <wallet-app access_token>
-    KC-->>APP: {issuer, nonce}
-    APP->>KC: GET public credential-offer URI once
-    APP-->>U: HTML page with haip-vci://?credential_offer=...
-
-    U->>W: wallet accept 'haip-vci://...?credential_offer=...'
-    W->>KC: GET /realms/wallet-app-demo/.well-known/openid-credential-issuer
-    W->>KC: POST /realms/wallet-app-demo/protocol/oid4vc/credential
-    Note over W,KC: pre-authorized flow<br/>proof.jwt=...
-    KC-->>W: dc+sd-jwt credential
-```
-
-### Verification
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant APP as Demo App
-    participant KC as Keycloak
-    participant EXT as keycloak-extension-oid4vp
-    participant W as oid4vc-dev
-
-    U->>APP: Open Keycloak sign-in again
-    APP->>KC: GET /realms/wallet-app-demo/protocol/openid-connect/auth?client_id=wallet-app&redirect_uri=http://127.0.0.1:8090/callback&response_type=code&scope=openid&kc_idp_hint=oid4vp
-    KC->>EXT: start brokered login for alias oid4vp
-    EXT-->>W: haip-vp://authorize?request_uri=...
-    Note over EXT,W: request object fields that matter:<br/>response_mode=direct_post.jwt<br/>walletScheme=haip-vp://<br/>dcqlQuery.credentials[0].id=membership_sd_jwt<br/>dcqlQuery.credentials[0].format=dc+sd-jwt<br/>dcqlQuery.credentials[0].meta.vct_values[0]=https://credentials.example.com/membership<br/>dcqlQuery.credentials[0].claims=[keycloak_user_id, given_name, family_name, email]
-
-    W->>EXT: GET request_uri
-    W->>EXT: POST response_uri
-    Note over W,EXT: vp_token=...<br/>presentation_submission=...
-
-    EXT->>KC: verified brokered identity with keycloak_user_id
-    KC->>BROKER: firstBrokerLoginFlow = oid4vp-user-id-auto-link
-    KC-->>APP: 302 /callback?code=...&state=...
-    APP->>KC: POST /realms/wallet-app-demo/protocol/openid-connect/token
-    KC-->>APP: access_token, id_token, refresh_token
-```
-
-## Files
-
-- `start.sh`: runs the full setup. Starts the wallet and proxy every time, and uses `--ngrok` / `--no-ngrok` for public exposure
-- `docker-compose.yml`: starts the HTTP Keycloak setup and imports the base realm from `realm/`
-- `docker-compose.https.yml`: overrides the base compose file for HTTPS mode
-- `realm/wallet-app-demo-realm.json`: source-of-truth base realm with the static user, app client, and credential scope
-- `scripts/download-extension.sh`: downloads `keycloak-extension-oid4vp` `0.6.1`
-- `scripts/build-link-provider.sh`: builds the custom Keycloak first-broker authenticator
-- `scripts/generate-keycloak-cert.sh`: generates the local HTTPS certificate for Keycloak in `--https` mode
-- `scripts/generate-keycloak-signing-cert.sh`: creates and reuses the persistent Keycloak RS256 signing keypair used in both HTTP and HTTPS mode
-- `scripts/generate-keycloak-trustlist.go`: optional helper for explicit trust-list experiments
-- `scripts/bootstrap.sh`: configures issuance, verification, user profile, and first-broker flow
-- `scripts/start-app.sh`: starts the Go sample app
-- `scripts/smoke.py`: runs the complete password-login, issuance, redemption, and wallet-login flow
-- `app/main.go`: sample application routes and OIDC flow handling
-- `app/templates/`: external HTML templates for the demo UI
-- `app/static/`: CSS for the demo UI
-
-## Why Inline `credential_offer`
-
-This example uses the OpenID4VCI by-value `credential_offer` form instead of handing wallets a `credential_offer_uri`.
-
-- OpenID4VCI allows both by-value and by-reference offers.
-- The Keycloak `create-credential-offer` endpoint in 26.6 creates an internal offer URI and does not directly return by-value JSON.
-- Some external wallets dereference `credential_offer_uri` more than once across parse and issuance steps.
-- Current Keycloak behavior for that generated offer URI is effectively one-shot in this flow, so the second fetch fails with `invalid_credential_offer_request`.
-- The example therefore resolves the offer once server-side and gives the wallet an inline `credential_offer=...` URI instead.
-- The demo realm omits `vc.credential_identifier`, so wallets can request the final credential by `credential_configuration_id`. Keycloak 26.6 rejects that request shape when the scope sets `vc.credential_identifier`.
+`bootstrap.sh` adds the runtime piece the import cannot carry: a CA-issued RS256 realm signing key (Keycloak refuses to issue an SD-JWT credential signed with a self-signed certificate). `docker-compose.yml` trusts the wallet CA so Keycloak can reach the wallet status list over HTTPS.
 
 ## Quick Start
 
@@ -152,92 +62,39 @@ cd examples/keycloak-issuer-verifier-app
 ./start.sh
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
+If `oid4vc-dev` is not installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
-Local setup:
+Open the demo app at `http://127.0.0.1:8090` and choose "Sign in with your wallet". The first login asks for the `alice` / `alice` password and issues the membership credential into the wallet. Sign out and sign in again to see the passwordless login.
 
-```bash
-./start.sh --no-ngrok
-./start.sh --no-ngrok --https
-```
-
-Ngrok setup:
+Headless check of the same flow:
 
 ```bash
-mkdir -p sandbox
-# Put the sandbox verifier files here, or set SANDBOX_DIR to another directory:
-#   sandbox/sandbox-ngrok-combined.pem
-#   sandbox/sandbox-verifier-info.json
-./start.sh --ngrok
+./start.sh --smoke
 ```
 
-When both sandbox verifier files are present, `./start.sh` defaults to ngrok mode. Use `--no-ngrok` to force local-only startup. Passing `--ngrok` explicitly requires those sandbox verifier files.
+Start the stack and leave it running for manual exploration:
 
 ```bash
-./start.sh --wallet-port 8087
+./start.sh --setup-only
+./scripts/smoke.py
 ```
 
-`--ngrok` also accepts a fixed ngrok hostname through `--keycloak-domain` / `--domain`. Otherwise it detects the hostname from the sandbox certificate SAN, including when the sandbox files were found in a sibling worktree.
+## Files
 
-Each `./start.sh` run recreates the Keycloak container state and imports `realm/wallet-app-demo-realm.json` from scratch. Then open the printed public URL in ngrok mode, or `http://127.0.0.1:8090/` in local mode, and:
-
-1. log in as `alice` / `alice`
-2. issue the membership credential
-3. open the offer in `oid4vc-dev`
-4. log out, sign in again, and choose the wallet option in Keycloak
-5. present the credential back to Keycloak
-
-`./start.sh` starts the local wallet server with `--register`, so custom scheme handlers are installed while the wallet UI remains available at `http://localhost:8087/` by default. On macOS registration installs the custom scheme handlers so `haip-vci://` and `haip-vp://` links hand the URI to `oid4vc-dev` and open the wallet UI in interactive mode. On Linux and Windows the command is a no-op.
-
-If your system does not handle the custom scheme directly:
-
-- issuance: use the offer page in the demo app and run the printed `eudi wallet accept '<haip-vci://...>'` command
-- verification: when Keycloak shows the wallet login page, copy the `haip-vp://...` link target and run `eudi wallet accept '<haip-vp://...>'`
-
-Manual registration is still available if you want to run it yourself:
-
-```bash
-eudi wallet register
-```
-
-Headless verification:
-
-```bash
-./start.sh --no-ngrok --smoke
-./start.sh --no-ngrok --https --smoke
-```
-
-Setup only:
-
-```bash
-./start.sh --no-ngrok --setup-only
-./start.sh --ngrok --setup-only
-```
-
-## Useful Overrides
-
-These are optional. The normal demo path does not require setting URL or trust-mode variables manually.
-
-```bash
-KEYCLOAK_CA_CERT=$(pwd)/keycloak-ca-cert.pem
-KEYCLOAK_REALM=wallet-app-demo
-APP_CLIENT_ID=wallet-app
-OID4VCI_CREDENTIAL_SCOPE=membership-credential
-KEYCLOAK_TRUST_LIST_PATH=$(pwd)/keycloak-trustlist.jwt
-OID4VC_WALLET_PORT=8087
-PUBLIC_PROXY_PORT=9090
-OID4VC_PROXY_DASHBOARD_PORT=9091
-OID4VP_NGROK=auto
-SANDBOX_DIR=$(pwd)/sandbox
-OID4VP_SANDBOX_PEM_PATH=$(pwd)/sandbox/sandbox-ngrok-combined.pem
-OID4VP_SANDBOX_VERIFIER_INFO_PATH=$(pwd)/sandbox/sandbox-verifier-info.json
-```
+- `start.sh`: seeds the wallet with a PID, starts the wallet and Keycloak, bootstraps the signing key, and runs the app or the smoke check
+- `docker-compose.yml`: Keycloak with the OID4VP provider jar, the realm import, and the wallet CA in its truststore
+- `realm/wallet-app-demo-realm.json`: the verifier, the subject-binding first broker login flow, the membership credential scope, and the trust material
+- `scripts/download-extension.sh`: downloads `keycloak-extension-oid4vp` `0.11.1`
+- `scripts/generate-keycloak-signing-cert.sh`: creates the CA-issued RS256 realm signing key
+- `scripts/bootstrap.sh`: imports the signing key and allows the master admin over HTTP for the local demo
+- `scripts/start-app.sh`: starts the Go relying party
+- `scripts/smoke.py`: drives the first (password plus offer) and second (passwordless) wallet login
+- `app/`: the relying party, its templates, and its CSS
 
 ## Cleanup
 
 ```bash
 docker compose down -v
 eudi wallet remove --all
-rm -f keycloak-trustlist.jwt
-rm -f keycloak-ca-cert.pem keycloak-ca-key.pem keycloak-cert.pem keycloak-key.pem
+rm -f wallet-ca-cert.pem keycloak-signing-*.pem
 ```

@@ -4,9 +4,9 @@ This example runs a local same-device OpenID4VP login against Keycloak using `oi
 
 ## How It Works
 
-1. `./scripts/download-extension.sh` downloads `keycloak-extension-oid4vp` `0.6.1` into `providers/`.
+1. `./scripts/download-extension.sh` downloads `keycloak-extension-oid4vp` `0.11.1` into `providers/`.
 2. `./scripts/generate-wallet.sh` prepares the standard `oid4vc-dev` wallet with PID credentials and a trust list endpoint reachable from Docker as `http://host.docker.internal:8085`.
-3. `docker compose up --force-recreate` starts Keycloak `26.6.0`, mounts `realm/wallet-demo-realm.json`, imports the realm on startup, and loads the OID4VP provider jar.
+3. `docker compose up --force-recreate` starts Keycloak `26.7.2`, mounts `realm/wallet-demo-realm.json`, imports the realm on startup, and loads the OID4VP provider jar.
 4. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the public endpoints.
 5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, hands it to `eudi wallet accept --auto-accept` for the automated headless path, follows the broker flow, and exchanges the returned code for tokens.
 
@@ -15,8 +15,8 @@ This example runs a local same-device OpenID4VP login against Keycloak using `oi
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant KC as Keycloak 26.6.0
-    participant EXT as keycloak-extension-oid4vp 0.6.1
+    participant KC as Keycloak 26.7.2
+    participant EXT as keycloak-extension-oid4vp 0.11.1
     participant W as eudi wallet
 
     U->>W: generate-pid --docker --base-url http://host.docker.internal:8085
@@ -38,7 +38,7 @@ sequenceDiagram
 - `start.sh`: runs the full setup and by default executes the headless same-device verifier flow
 - `docker-compose.yml`: starts Keycloak, mounts provider jars from `providers/`, and imports the realm from `realm/`
 - `realm/wallet-demo-realm.json`: source-of-truth Keycloak realm config for the example
-- `scripts/download-extension.sh`: downloads `keycloak-extension-oid4vp` `0.6.1`
+- `scripts/download-extension.sh`: downloads `keycloak-extension-oid4vp` `0.11.1`
 - `scripts/bootstrap.sh`: waits for the imported realm and prints the useful endpoints
 - `scripts/generate-wallet.sh`: creates the wallet, PID credentials, wallet CA, and trust list endpoint
 - `scripts/login.py`: runs the same-device flow end to end and exchanges the returned code
@@ -77,7 +77,7 @@ Setup only:
 
 | Parameter | Value |
 |---|---|
-| Image | `quay.io/keycloak/keycloak:26.6.0` |
+| Image | `quay.io/keycloak/keycloak:26.7.2` |
 | Startup flags | `start-dev`, `--http-port=8080`, `--proxy-headers=xforwarded`, `--truststore-paths=/opt/keycloak/conf/oid4vc-wallet-ca.pem`, `--tls-hostname-verifier=ANY` |
 | Mounted provider jar | `providers/keycloak-extension-oid4vp.jar` |
 | Realm | `wallet-demo` |
@@ -90,7 +90,7 @@ Setup only:
 
 | Parameter | Value |
 |---|---|
-| Version | `0.6.1` |
+| Version | `0.11.1` |
 | Provider alias | `oid4vp` |
 | `firstBrokerLoginFlowAlias` | `first broker login` |
 | `sameDeviceEnabled` | `true` |

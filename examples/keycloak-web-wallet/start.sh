@@ -77,9 +77,9 @@ resolve_port KEYCLOAK_PORT 9080
 resolve_port WALLET_PORT 9085 2
 resolve_port APP_PORT 9090
 
-# Wallet web-URL support in walletScheme is not released yet (> 0.6.4), so the
-# extension jar is built from a local checkout of keycloak-extension-oid4vp.
-# Once released, scripts/download-extension.sh takes over as the fallback.
+# The extension jar comes from scripts/download-extension.sh (0.11.1). A local
+# checkout of keycloak-extension-oid4vp is preferred when present, so changes to
+# the extension can be tested before release.
 EXTENSION_REPO="${KEYCLOAK_OID4VP_REPO:-${SCRIPT_DIR}/../../../keycloak-extension-oid4vp}"
 if [[ ! -f providers/keycloak-extension-oid4vp.jar ]]; then
   if [[ -d "${EXTENSION_REPO}" ]] && command -v mvn >/dev/null 2>&1; then
@@ -89,7 +89,7 @@ if [[ ! -f providers/keycloak-extension-oid4vp.jar ]]; then
   elif ! ./scripts/download-extension.sh; then
     echo >&2
     echo "No local keycloak-extension-oid4vp checkout found and the download failed." >&2
-    echo "Set KEYCLOAK_OID4VP_REPO to a checkout with wallet web-URL support (> 0.6.4)," >&2
+    echo "Set KEYCLOAK_OID4VP_REPO to a keycloak-extension-oid4vp checkout," >&2
     echo "or build the jar there (mvn -pl core -am package -DskipTests) and copy" >&2
     echo "core/target/keycloak-extension-oid4vp.jar into providers/." >&2
     exit 1

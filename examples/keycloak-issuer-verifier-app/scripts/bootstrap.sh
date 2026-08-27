@@ -14,22 +14,6 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-wallet-app-demo}"
 KEYCLOAK_SIGNING_KEY_PATH="${KEYCLOAK_SIGNING_KEY_PATH:-${SCENARIO_DIR}/keycloak-signing-key.pem}"
 KEYCLOAK_SIGNING_CERT_PATH="${KEYCLOAK_SIGNING_CERT_PATH:-${SCENARIO_DIR}/keycloak-signing-cert.pem}"
 
-OID4VCI_USER="${OID4VCI_USER:-alice}"
-OID4VCI_USER_PASSWORD="${OID4VCI_USER_PASSWORD:-alice}"
-OID4VCI_CREDENTIAL_SCOPE="${OID4VCI_CREDENTIAL_SCOPE:-membership-credential}"
-APP_CLIENT_ID="${APP_CLIENT_ID:-wallet-app}"
-APP_BASE_URL="${APP_BASE_URL:-http://127.0.0.1:8090}"
-APP_REDIRECT_URI="${APP_REDIRECT_URI:-${APP_BASE_URL%/}/callback}"
-OID4VP_FIRST_BROKER_FLOW_ALIAS="${OID4VP_FIRST_BROKER_FLOW_ALIAS:-oid4vp-user-id-auto-link}"
-ALLOWED_ISSUER="${ALLOWED_ISSUER:-${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}}"
-OID4VP_TRUST_LIST_URL="${OID4VP_TRUST_LIST_URL:-http://host.docker.internal:8090/keycloak-trustlist.jwt}"
-OID4VP_TRUST_LIST_LOTE_TYPE="${OID4VP_TRUST_LIST_LOTE_TYPE:-http://uri.etsi.org/19602/LoTEType/local}"
-KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH:-${SCENARIO_DIR}/keycloak-trustlist.jwt}"
-OID4VP_TRUST_MODE="${OID4VP_TRUST_MODE:-metadata}"
-OID4VP_PUBLIC_WALLET="${OID4VP_PUBLIC_WALLET:-false}"
-OID4VP_SANDBOX_PEM_PATH="${OID4VP_SANDBOX_PEM_PATH:-}"
-OID4VP_SANDBOX_VERIFIER_INFO_PATH="${OID4VP_SANDBOX_VERIFIER_INFO_PATH:-}"
-
 need() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Missing required command: $1" >&2
@@ -40,9 +24,6 @@ need() {
 need curl
 need jq
 need openssl
-if [[ "${OID4VP_TRUST_MODE}" == "trustlist" ]]; then
-  need go
-fi
 
 curl_common() {
   if [[ "${KEYCLOAK_BASE_URL}" == https://* ]] && [[ -n "${KEYCLOAK_CA_CERT:-}" ]] && [[ -f "${KEYCLOAK_CA_CERT}" ]]; then
@@ -99,10 +80,6 @@ api_json() {
     --data-binary @- <<<"$payload"
 }
 
-json_payload() {
-  jq -c -n "$@"
-}
-
 require_file() {
   local path="$1"
   if [[ ! -f "$path" ]]; then
@@ -111,23 +88,15 @@ require_file() {
   fi
 }
 
-optional_file() {
-  local path="$1"
-  if [[ -n "${path}" ]] && [[ -f "${path}" ]]; then
-    printf '%s\n' "${path}"
-  fi
-}
-
 realm_id() {
   api GET "/admin/realms/${KEYCLOAK_REALM}" | jq -er '.id'
 }
 
-lookup_user_id() {
-  local username="$1"
-  api GET "/admin/realms/${KEYCLOAK_REALM}/users?username=${username}&exact=true" \
-    | jq -er '.[0].id'
-}
-
+# The membership credential is an SD-JWT credential this Keycloak issues itself,
+# and Keycloak refuses to sign one with a self-signed certificate. The realm's
+# active RS256 signing key is therefore a leaf a small demo CA issued. The
+# keycloak-realm-issuer trust material verifies presented membership credentials
+# against this realm's own published keys.
 configure_static_realm_signing_key() {
   local realm_id_value="$1"
   local cert_b64 existing_id
@@ -197,129 +166,10 @@ set_realm_ssl_required() {
     "$(printf '%s' "$realm_rep" | jq -c --arg ssl_required "$ssl_required" '.sslRequired = $ssl_required')" >/dev/null
 }
 
-set_user_password() {
-  local user_id="$1"
-  api_json PUT "/admin/realms/${KEYCLOAK_REALM}/users/${user_id}/reset-password" \
-    "$(json_payload --arg password "$OID4VCI_USER_PASSWORD" '{
-      type: "password",
-      temporary: false,
-      value: $password
-    }')" >/dev/null
-}
-
-normalize_credential_scope() {
-  local scope_name="$1"
-  local scope
-  local scope_id
-
-  scope="$(
-    api GET "/admin/realms/${KEYCLOAK_REALM}/client-scopes" \
-      | jq -c --arg scope_name "$scope_name" '.[] | select(.name == $scope_name)' \
-      | head -n 1
-  )"
-  if [[ -z "${scope}" ]]; then
-    echo "Credential client scope not found: ${scope_name}" >&2
-    exit 1
-  fi
-  scope_id="$(printf '%s' "${scope}" | jq -er '.id')"
-
-  api_json PUT "/admin/realms/${KEYCLOAK_REALM}/client-scopes/${scope_id}" \
-    "$(printf '%s' "${scope}" | jq -c '
-      .attributes |= del(."vc.credential_identifier")
-    ')" >/dev/null
-}
-
-update_identity_provider() {
-  local instance_json
-  local sandbox_pem_path
-  local sandbox_verifier_info_path="/dev/null"
-  local public_wallet_flag="false"
-
-  sandbox_pem_path="$(
-    optional_file "${OID4VP_SANDBOX_PEM_PATH}" \
-      || example_find_sandbox_pem "${REPO_ROOT}" "${SCENARIO_DIR}" \
-      || true
-  )"
-  require_file "${sandbox_pem_path}"
-
-  sandbox_verifier_info_path="$(
-    optional_file "${OID4VP_SANDBOX_VERIFIER_INFO_PATH}" \
-      || example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCENARIO_DIR}" \
-      || true
-  )"
-  if [[ -z "${sandbox_verifier_info_path}" ]]; then
-    sandbox_verifier_info_path="/dev/null"
-  fi
-
-  if [[ "${OID4VP_PUBLIC_WALLET}" == "true" ]]; then
-    public_wallet_flag="true"
-    require_file "${sandbox_verifier_info_path}"
-  fi
-
-  instance_json="$(
-    api GET "/admin/realms/${KEYCLOAK_REALM}/identity-provider/instances/oid4vp" \
-      | jq -c \
-        --arg allowed_issuer "$ALLOWED_ISSUER" \
-        --arg trust_list_url "$OID4VP_TRUST_LIST_URL" \
-        --arg trust_list_lote_type "$OID4VP_TRUST_LIST_LOTE_TYPE" \
-        --arg trust_mode "$OID4VP_TRUST_MODE" \
-        --arg dcql_query "$DCQL_QUERY" \
-        --arg first_broker_flow_alias "$OID4VP_FIRST_BROKER_FLOW_ALIAS" \
-        --arg public_wallet_flag "$public_wallet_flag" \
-        --rawfile sandbox_pem "${sandbox_pem_path}" \
-        --rawfile verifier_info "${sandbox_verifier_info_path}" '
-          .firstBrokerLoginFlowAlias = $first_broker_flow_alias
-          | .config.allowedIssuers = $allowed_issuer
-          | .config.sameDeviceEnabled = "true"
-          | .config.crossDeviceEnabled = (if $public_wallet_flag == "true" then "true" else "false" end)
-          | .config.enforceHaip = "true"
-          | .config.walletScheme = "haip-vp://"
-          | .config.responseMode = "direct_post.jwt"
-          | .config.clientIdScheme = "x509_hash"
-          | .config.trustedAuthoritiesMode = "none"
-          | .config.dcqlQuery = $dcql_query
-          | if $trust_mode == "trustlist" then
-              .config.trustListUrl = $trust_list_url
-              | .config.trustListLoTEType = $trust_list_lote_type
-            else
-              .config |= del(.trustListUrl, .trustListLoTEType)
-            end
-          | if ($sandbox_pem | length) > 0 then
-              .config.x509CertificatePem = $sandbox_pem
-            else
-              .
-            end
-          | if ($verifier_info | length) > 0 then
-              .config.verifierInfo = $verifier_info
-            else
-              .config |= del(.verifierInfo)
-            end
-        '
-  )"
-  api_json PUT "/admin/realms/${KEYCLOAK_REALM}/identity-provider/instances/oid4vp" "${instance_json}" >/dev/null
-}
-
-DCQL_QUERY="$(jq -c -n '{
-  credentials: [
-    {
-      id: "membership_sd_jwt",
-      format: "dc+sd-jwt",
-      meta: {vct_values: ["https://credentials.example.com/membership"]},
-      claims: [
-        {path: ["keycloak_user_id"]},
-        {path: ["given_name"]},
-        {path: ["family_name"]},
-        {path: ["email"]}
-      ]
-    }
-  ]
-}')"
-
-require_file "${SCENARIO_DIR}/providers/keycloak-extension-oid4vp.jar"
-require_file "${SCENARIO_DIR}/providers/oid4vp-user-id-link-provider.jar"
 "${SCENARIO_DIR}/scripts/generate-keycloak-signing-cert.sh"
 require_file "${KEYCLOAK_SIGNING_KEY_PATH}"
 require_file "${KEYCLOAK_SIGNING_CERT_PATH}"
+require_file "${SCENARIO_DIR}/providers/keycloak-extension-oid4vp.jar"
 
 echo "Waiting for Keycloak at ${KEYCLOAK_BASE_URL}..."
 wait_for_endpoint "${KEYCLOAK_BASE_URL}/realms/master"
@@ -328,57 +178,17 @@ ADMIN_TOKEN="$(admin_token)"
 
 REALM_ID="$(realm_id)"
 
-echo "Importing persistent RS256 realm signing key..."
+echo "Importing persistent CA-issued RS256 realm signing key..."
 configure_static_realm_signing_key "${REALM_ID}"
 assert_static_realm_signing_key_active
-
-USER_ID="$(lookup_user_id "${OID4VCI_USER}")"
 
 echo "Allowing the master admin UI over HTTP for the local demo..."
 set_realm_ssl_required "master" "NONE"
 
-echo "Setting password for ${OID4VCI_USER}..."
-set_user_password "${USER_ID}"
-
-echo "Normalizing credential scope for credential_configuration_id requests..."
-normalize_credential_scope "${OID4VCI_CREDENTIAL_SCOPE}"
-
-if [[ "${OID4VP_TRUST_MODE}" == "trustlist" ]]; then
-  echo "Generating trust list for the Keycloak signing certificate..."
-  (
-    cd "${SCENARIO_DIR}/../.."
-    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    KEYCLOAK_TRUST_LIST_PATH="${KEYCLOAK_TRUST_LIST_PATH}" \
-    go run ./examples/keycloak-issuer-verifier-app/scripts/generate-keycloak-trustlist.go
-  )
-else
-  rm -f "${KEYCLOAK_TRUST_LIST_PATH}"
-fi
-
-echo "Updating OID4VP identity provider for ${OID4VP_TRUST_MODE} mode..."
-update_identity_provider
-
 echo
 echo "Ready:"
 echo "  realm=${KEYCLOAK_REALM}"
-echo "  app_client=${APP_CLIENT_ID}"
-echo "  allowed_issuer=${ALLOWED_ISSUER}"
-if [[ "${OID4VP_TRUST_MODE}" == "trustlist" ]]; then
-  echo "  trust_list_url=${OID4VP_TRUST_LIST_URL}"
-  echo "  trust_list_lote_type=${OID4VP_TRUST_LIST_LOTE_TYPE}"
-else
-  echo "  trust_mode=metadata"
-fi
-echo "  credential_configuration_id=${OID4VCI_CREDENTIAL_SCOPE}"
-echo "  first_broker_flow=${OID4VP_FIRST_BROKER_FLOW_ALIAS}"
-echo "  app_redirect_uri=${APP_REDIRECT_URI}"
-if [[ "${OID4VP_PUBLIC_WALLET}" == "true" ]]; then
-  echo "  cross_device_enabled=true"
-  if [[ -n "$(optional_file "${OID4VP_SANDBOX_PEM_PATH}" || example_find_sandbox_pem "${REPO_ROOT}" "${SCENARIO_DIR}" || true)" ]]; then
-    echo "  verifier_cert=sandbox"
-  fi
-  if [[ -n "$(optional_file "${OID4VP_SANDBOX_VERIFIER_INFO_PATH}" || example_find_sandbox_verifier_info "${REPO_ROOT}" "${SCENARIO_DIR}" || true)" ]]; then
-    echo "  verifier_info=sandbox"
-  fi
-fi
+echo "  app_client=wallet-app"
+echo "  vci_client=wallet-vci"
+echo "  credential_configuration_id=membership-credential"
+echo "  first_broker_flow=oid4vp first broker login"

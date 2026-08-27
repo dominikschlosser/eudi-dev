@@ -45,17 +45,17 @@ Every service joins Keycloak's network namespace (`network_mode: service:keycloa
 
 Services:
 
-- `keycloak`. Keycloak `26.7.0` with OID4VCI enabled and the `keycloak-extension-oid4vp` provider jar, importing two static realms: `oid4vc-demo` (issuer, from the `keycloak-issuer-wallet` example) and `wallet-demo` (verifier, from the `keycloak-verifier-oid4vp` example)
+- `keycloak`. Keycloak `26.7.2` with OID4VCI enabled and the `keycloak-extension-oid4vp` provider jar, importing two static realms: `oid4vc-demo` (issuer, from the `keycloak-issuer-wallet` example) and `wallet-demo` (verifier, from the `keycloak-verifier-oid4vp` example)
 - `wallet`. `oid4vc-dev` built from this repository, running `wallet serve --pid --base-url http://localhost:9085` (interactive mode: presentations and offers wait for consent in the wallet UI)
 - `app`. The demo UI (`app/app.py`, Python stdlib): an ordinary OIDC client of the `wallet-demo` realm plus an issuance helper that turns Keycloak offers into wallet links
 - `demo`. A one-shot container for the headless demo scripts
 - `wallet-init`. Setup-only helper to export the wallet CA before Keycloak starts
 
-`start.sh` runs `scripts/configure-wallet-links.py` after startup, which sets the verifier identity provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and `trustListUrl` to the wallet's trust list via the admin API. That is the whole "integration": from then on Keycloak's login page links straight to the wallet.
+`start.sh` runs `scripts/configure-wallet-links.py` after startup, which sets the `oid4vp` provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and the `demo-trust-list` provider's `trustListUrl` to the wallet's trust list via the admin API. That is the whole "integration": from then on Keycloak's login page links straight to the wallet.
 
-Keycloak `26.7.0` notes: the `create-credential-offer` REST endpoint sits behind the new `oid4vc-vci-rest-credential-offer` feature flag, and offers can only be created for credentials assigned to the user. The demo assigns `membership-credential` to `alice` via the admin API (`POST /admin/realms/{realm}/users/{id}/vc/credentials`) before creating an offer.
+Keycloak `26.7.2` notes: the `create-credential-offer` REST endpoint sits behind the new `oid4vc-vci-rest-credential-offer` feature flag, and offers can only be created for credentials assigned to the user. The demo assigns `membership-credential` to `alice` via the admin API (`POST /admin/realms/{realm}/users/{id}/vc/credentials`) before creating an offer.
 
-**Extension version**: full wallet URLs in `walletScheme` need `keycloak-extension-oid4vp` **> 0.6.4** (0.6.4 and older append `://` to the value). Until that is released, `start.sh` builds the snapshot jar from a local checkout of the extension repository. Expected next to this repository, or pointed to via `KEYCLOAK_OID4VP_REPO`. And falls back to `scripts/download-extension.sh` otherwise.
+**Extension version**: this example uses `keycloak-extension-oid4vp` `0.11.1`, downloaded by `scripts/download-extension.sh`. A local checkout of the extension next to this repository (or pointed to via `KEYCLOAK_OID4VP_REPO`) is preferred when present, so changes to the extension can be tested before release.
 
 ### Issuance (`demo-issuance.py`)
 

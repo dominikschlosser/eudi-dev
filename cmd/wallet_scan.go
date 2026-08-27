@@ -125,6 +125,7 @@ func walletAcceptCmd() *cobra.Command {
 		sessionTranscript string
 		txCode            string
 		haip              bool
+		docker            bool
 	)
 
 	cmd := &cobra.Command{
@@ -151,12 +152,14 @@ request boundaries, so later presentation requests see the new credential.`,
 				txCode:            txCode,
 				haip:              haip,
 				mode:              walletValidationMode,
+				docker:            docker,
 			})
 		},
 	}
 
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Server port for OID4VP (serves trust list and consent UI)")
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve OID4VP presentations")
+	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
@@ -171,6 +174,7 @@ func walletScanCmd() *cobra.Command {
 		sessionTranscript string
 		txCode            string
 		haip              bool
+		docker            bool
 	)
 
 	cmd := &cobra.Command{
@@ -223,6 +227,7 @@ func walletScanCmd() *cobra.Command {
 				txCode:            txCode,
 				haip:              haip,
 				mode:              walletValidationMode,
+				docker:            docker,
 			})
 		},
 	}
@@ -230,6 +235,7 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Server port (serves trust list and consent UI)")
 	cmd.Flags().BoolVar(&screen, "screen", false, "Interactive screen capture (macOS)")
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve presentations")
+	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")

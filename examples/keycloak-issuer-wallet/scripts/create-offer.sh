@@ -34,6 +34,7 @@ USER_TOKEN="$(
     -d "client_id=${OID4VCI_CLIENT_ID}" \
     -d "username=${OID4VCI_USER}" \
     -d "password=${OID4VCI_USER_PASSWORD}" \
+    -d "scope=openid ${OID4VCI_CREDENTIAL_SCOPE}" \
     | jq -er '.access_token'
 )"
 

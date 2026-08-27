@@ -46,6 +46,10 @@ type dispatchOID4Opts struct {
 	txCode            string
 	haip              bool
 	mode              string
+	// docker serves the presentation trust and status lists under
+	// host.docker.internal, so a verifier in a container reaches them and the
+	// status list token subject matches the URI the credential carries.
+	docker bool
 	// resolvedOffer is the offer a transaction-code prompt already read from
 	// the URI, which the issuance falls back to when reading it again fails.
 	resolvedOffer *oid4vc.CredentialOffer
@@ -84,7 +88,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if err != nil {
 			return err
 		}
-		return runPresent(w, store, uri, port)
+		return runPresent(w, store, uri, port, opts.docker)
 
 	case format.FormatOID4VCI:
 		return processCredentialOffer(uri, opts.txCode, opts.resolvedOffer)
@@ -96,7 +100,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 
 // runPresent handles an OID4VP authorization request: evaluates credentials,
 // optionally shows a consent UI, creates VP tokens, and submits the response.
-func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port int) error {
+func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port int, docker bool) error {
 	parsed, err := wallet.ParseAuthorizationRequestWithOptions(uri, oid4vc.ParseOptions{
 		FetchRequestURI: wallet.MakeFetchRequestURI(w, nil),
 	})
@@ -140,7 +144,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	dim := color.New(color.Faint)
 
 	// Start server so the trust list is available during verification
-	setLocalPresentationIssuerURL(w, port)
+	setLocalPresentationIssuerURL(w, port, docker)
 	srv := wallet.NewServer(w, port, nil)
 	if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 		return err
@@ -178,9 +182,9 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	return nil
 }
 
-func setLocalPresentationIssuerURL(w *wallet.Wallet, port int) {
+func setLocalPresentationIssuerURL(w *wallet.Wallet, port int, docker bool) {
 	port = effectivePresentationPort(port)
-	w.IssuerURL = wallet.LocalIssuerURL(port+1, false)
+	w.IssuerURL = wallet.LocalIssuerURL(port+1, docker)
 }
 
 func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int, error) {

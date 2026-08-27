@@ -180,10 +180,20 @@ func TestApplyValidationMode(t *testing.T) {
 func TestSetLocalPresentationIssuerURL(t *testing.T) {
 	w := &wallet.Wallet{IssuerURL: "https://localhost:8086"}
 
-	setLocalPresentationIssuerURL(w, 31127)
+	setLocalPresentationIssuerURL(w, 31127, false)
 
 	if got, want := w.IssuerURL, "https://localhost:31128"; got != want {
 		t.Fatalf("setLocalPresentationIssuerURL() = %q, want %q", got, want)
+	}
+}
+
+func TestSetLocalPresentationIssuerURL_Docker(t *testing.T) {
+	w := &wallet.Wallet{}
+
+	setLocalPresentationIssuerURL(w, 31127, true)
+
+	if got, want := w.IssuerURL, "https://host.docker.internal:31128"; got != want {
+		t.Fatalf("setLocalPresentationIssuerURL(docker) = %q, want %q", got, want)
 	}
 }
 

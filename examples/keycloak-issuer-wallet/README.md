@@ -4,7 +4,7 @@ This example runs a local OpenID4VCI issuance flow from Keycloak into `oid4vc-de
 
 ## How It Works
 
-1. `docker compose up --force-recreate` starts Keycloak `26.6.0`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
+1. `docker compose up --force-recreate` starts Keycloak `26.7.2`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
 2. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the issuer endpoints.
 3. `./scripts/create-offer.sh` logs in as `alice`, calls Keycloak's `create-credential-offer` endpoint, resolves the generated offer once, and emits an inline `openid-credential-offer://?credential_offer=...` URI.
 4. `eudi wallet accept` resolves the offer URI, fetches issuer metadata and authorization details from Keycloak, creates proof-of-possession material, and stores the returned SD-JWT VC in the local wallet directory.
@@ -14,7 +14,7 @@ This example runs a local OpenID4VCI issuance flow from Keycloak into `oid4vc-de
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant KC as Keycloak 26.6.0
+    participant KC as Keycloak 26.7.2
     participant W as eudi wallet
 
     U->>KC: import static realm, user, client, credential scope
@@ -67,7 +67,7 @@ eudi wallet accept "$OFFER_URI"
 
 | Parameter | Value |
 |---|---|
-| Image | `quay.io/keycloak/keycloak:26.6.0` |
+| Image | `quay.io/keycloak/keycloak:26.7.2` |
 | Startup flags | `start-dev`, `--features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1`, `--http-port=8080`, `--proxy-headers=xforwarded` |
 | Realm | `oid4vc-demo` |
 | Admin user | `admin` / `admin` |

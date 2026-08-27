@@ -1,19 +1,20 @@
 {
   "realm": "wallet-app-demo",
   "enabled": true,
-  "sslRequired": "NONE",
+  "sslRequired": "none",
+  "registrationAllowed": false,
   "verifiableCredentialsEnabled": true,
+  "eventsEnabled": true,
+  "accessCodeLifespanLogin": 3600,
+  "accessCodeLifespanUserAction": 3600,
   "users": [
     {
       "username": "alice",
       "enabled": true,
       "emailVerified": true,
       "firstName": "Alice",
-      "lastName": "Issuer",
+      "lastName": "Example",
       "email": "alice@example.com",
-      "realmRoles": [
-        "credential-offer-create"
-      ],
       "credentials": [
         {
           "type": "password",
@@ -30,71 +31,24 @@
       "attributes": {
         "include.in.token.scope": "true",
         "vc.credential_configuration_id": "membership-credential",
-        "vc.format": "dc+sd-jwt",
+        "vc.credential_identifier": "membership-credential",
         "vc.verifiable_credential_type": "https://credentials.example.com/membership",
+        "vc.format": "dc+sd-jwt",
         "vc.credential_signing_alg": "RS256",
-        "vc.credential_build_config.token_jws_type": "dc+sd-jwt",
+        "vc.include_in_metadata": "true",
+        "vc.cryptographic_binding_methods_supported": "jwk",
         "vc.binding_required": "true",
         "vc.binding_required_proof_types": "jwt",
-        "vc.cryptographic_binding_methods_supported": "jwk"
+        "vc.credential_build_config.sd_jwt.visible_claims": "id,iat,nbf,exp,jti,oid4vp_reference_binding",
+        "vc.expiry_in_seconds": "31536000"
       },
       "protocolMappers": [
         {
-          "name": "keycloak-user-id-mapper",
+          "name": "membership-subject-id",
           "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-user-id-claim-mapper",
-          "config": {}
-        },
-        {
-          "name": "given-name-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-user-attribute-mapper",
+          "protocolMapper": "oid4vp-bound-subject-mapper",
           "config": {
-            "claim.name": "given_name",
-            "userAttribute": "firstName"
-          }
-        },
-        {
-          "name": "family-name-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-user-attribute-mapper",
-          "config": {
-            "claim.name": "family_name",
-            "userAttribute": "lastName"
-          }
-        },
-        {
-          "name": "email-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-user-attribute-mapper",
-          "config": {
-            "claim.name": "email",
-            "userAttribute": "email"
-          }
-        },
-        {
-          "name": "preferred-username-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-user-attribute-mapper",
-          "config": {
-            "claim.name": "preferred_username",
-            "userAttribute": "username"
-          }
-        },
-        {
-          "name": "jti-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-generated-id-mapper",
-          "config": {
-            "claim.name": "jti"
-          }
-        },
-        {
-          "name": "iat-mapper",
-          "protocol": "oid4vc",
-          "protocolMapper": "oid4vc-issued-at-time-claim-mapper",
-          "config": {
-            "claim.name": "iat"
+            "claim.name": "sub"
           }
         }
       ]
@@ -102,27 +56,37 @@
   ],
   "authenticationFlows": [
     {
-      "alias": "oid4vp-user-id-auto-link",
-      "description": "Automatically link OID4VP wallet logins to existing Keycloak users via keycloak_user_id",
+      "alias": "oid4vp first broker login",
+      "description": "Subject-binding first broker login: password then oid4vp-subject-binding",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
       "authenticationExecutions": [
         {
-          "authenticator": "oid4vp-detect-user-by-id",
+          "authenticator": "idp-username-password-form",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
-          "priority": 0,
+          "priority": 10,
           "userSetupAllowed": false
         },
         {
-          "authenticator": "idp-auto-link",
+          "authenticator": "oid4vp-subject-binding",
           "authenticatorFlow": false,
           "requirement": "REQUIRED",
-          "priority": 1,
-          "userSetupAllowed": false
+          "priority": 20,
+          "userSetupAllowed": false,
+          "authenticatorConfig": "oid4vp-subject-binding-config"
         }
       ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "oid4vp-subject-binding-config",
+      "config": {
+        "credentialConfigurationId": "membership-credential",
+        "offerClientId": "wallet-vci"
+      }
     }
   ],
   "identityProviders": [
@@ -136,7 +100,7 @@
       "addReadTokenRoleOnCreate": false,
       "authenticateByDefault": false,
       "linkOnly": false,
-      "firstBrokerLoginFlowAlias": "oid4vp-user-id-auto-link",
+      "firstBrokerLoginFlowAlias": "oid4vp first broker login",
       "config": {
         "clientId": "not-used",
         "clientSecret": "not-used",
@@ -144,19 +108,97 @@
         "crossDeviceEnabled": "false",
         "walletScheme": "haip-vp://",
         "responseMode": "direct_post.jwt",
-        "enforceHaip": "true",
         "clientIdScheme": "x509_hash",
-        "trustedAuthoritiesMode": "none",
-        "allowedIssuers": "http://localhost:8080/realms/wallet-app-demo",
-        "trustListUrl": "http://host.docker.internal:8090/keycloak-trustlist.jwt",
-        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/local",
-        "userMappingClaim": "keycloak_user_id",
-        "userMappingClaimMdoc": "keycloak_user_id",
-        "dcqlQuery": "{\"credentials\":[{\"id\":\"membership_sd_jwt\",\"format\":\"dc+sd-jwt\",\"meta\":{\"vct_values\":[\"https://credentials.example.com/membership\"]},\"claims\":[{\"path\":[\"keycloak_user_id\"]},{\"path\":[\"given_name\"]},{\"path\":[\"family_name\"]},{\"path\":[\"email\"]}]}]}"
+        "x509CertificatePem": "-----BEGIN CERTIFICATE-----\nMIIBkjCCATmgAwIBAgIUS/rJ933jid0GnOTYCOIu/yrjsKQwCgYIKoZIzj0EAwIw\nFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDgyODA4MDAxMloXDTI4MDgyNzA4\nMDAxMlowFDESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0D\nAQcDQgAEmjhmwX36C1bbamtedToF8aaynF3R2oejXbLS2A/5iIRrRkpbi7FNZZQk\nNgJUEOpGHRaMOlKKWHIOBZar+XUVXqNpMGcwHQYDVR0OBBYEFIqikxWGQD22+7oM\noJF37IJ+l8+KMB8GA1UdIwQYMBaAFIqikxWGQD22+7oMoJF37IJ+l8+KMA8GA1Ud\nEwEB/wQFMAMBAf8wFAYDVR0RBA0wC4IJbG9jYWxob3N0MAoGCCqGSM49BAMCA0cA\nMEQCIB+YUPTPOb3D1XlRJzvm+2Gl+Kb9PTisSfM8g40iWb+zAiAHr0YDsXJlBuZ8\nAAl/vAf7ey2eD5wNt+hjVsqkWapjnw==\n-----END CERTIFICATE-----\n-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgwW6LwnTOik69+7bS\nb9mf7+6flPwDcKuOl49spDDzF++hRANCAASaOGbBffoLVttqa151OgXxprKcXdHa\nh6NdstLYD/mIhGtGSluLsU1llCQ2AlQQ6kYdFow6UopYcg4Flqv5dRVe\n-----END PRIVATE KEY-----\n",
+        "credentialSets": "[{\"purpose\": \"Login\", \"options\": [[\"pid\", \"membership\"], [\"pid\"]]}]",
+        "principalAttributes": "membership:sub",
+        "allowMissingSubjectCredential": "true",
+        "trustMaterialIdps": "pid-trust-list,keycloak-realm-issuer",
+        "allowedIssuers": "*",
+        "statusListMaxCacheTtlSeconds": "0"
+      }
+    },
+    {
+      "alias": "pid-trust-list",
+      "displayName": "PID Trust List",
+      "providerId": "etsi-trust-list",
+      "enabled": true,
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "config": {
+        "trustListUrl": "http://host.docker.internal:8087/api/trustlist",
+        "trustListLoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
+        "servedCredentialTypes": "urn:eudi:pid:1",
+        "advertiseTrustedAuthorities": "aki"
+      }
+    },
+    {
+      "alias": "keycloak-realm-issuer",
+      "displayName": "Keycloak Realm Issuer",
+      "providerId": "keycloak-realm-issuer",
+      "enabled": true,
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "config": {
+        "servedCredentialTypes": "https://credentials.example.com/membership"
       }
     }
   ],
   "identityProviderMappers": [
+    {
+      "name": "pid-family_name",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.id": "pid",
+        "credential.type": "urn:eudi:pid:1",
+        "claim": "family_name",
+        "user.attribute": "lastName"
+      }
+    },
+    {
+      "name": "pid-given_name",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.id": "pid",
+        "credential.type": "urn:eudi:pid:1",
+        "claim": "given_name",
+        "user.attribute": "firstName"
+      }
+    },
+    {
+      "name": "pid-birthdate",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.id": "pid",
+        "credential.type": "urn:eudi:pid:1",
+        "claim": "birthdate",
+        "user.attribute": "birthdate"
+      }
+    },
+    {
+      "name": "membership-subject",
+      "identityProviderAlias": "oid4vp",
+      "identityProviderMapper": "oid4vp-sd-jwt-user-session-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "credential.id": "membership",
+        "credential.type": "https://credentials.example.com/membership",
+        "claim": "sub",
+        "attribute": "membershipSubject"
+      }
+    },
     {
       "name": "login-type-wallet",
       "identityProviderAlias": "oid4vp",
@@ -182,24 +224,43 @@
       ],
       "protocol": "openid-connect",
       "attributes": {
-        "pkce.code.challenge.method": "S256",
-        "oid4vci.enabled": "true"
+        "pkce.code.challenge.method": "S256"
       },
-      "optionalClientScopes": [
-        "membership-credential"
-      ],
       "protocolMappers": [
         {
           "name": "login-type",
           "protocol": "openid-connect",
-          "protocolMapper": "oid4vc-login-type-protocol-mapper",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
           "consentRequired": false,
           "config": {
+            "user.session.note": "login_type",
+            "claim.name": "login_type",
+            "jsonType.label": "String",
             "access.token.claim": "true",
             "id.token.claim": "true",
             "introspection.token.claim": "true"
           }
         }
+      ]
+    },
+    {
+      "clientId": "wallet-vci",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "protocol": "openid-connect",
+      "attributes": {
+        "oid4vci.enabled": "true"
+      },
+      "optionalClientScopes": [
+        "membership-credential"
       ]
     }
   ]
