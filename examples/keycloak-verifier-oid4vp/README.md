@@ -1,14 +1,14 @@
 # Keycloak Verifier + `keycloak-extension-oid4vp`
 
-This example runs a local same-device OpenID4VP login against Keycloak using `oid4vc-dev` as the wallet.
+This example runs a local same-device OpenID4VP login against Keycloak using `eudi-dev` as the wallet.
 
 ## How It Works
 
 1. `./scripts/download-extension.sh` downloads `keycloak-extension-oid4vp` `0.11.1` into `providers/`.
-2. `./scripts/generate-wallet.sh` prepares the standard `oid4vc-dev` wallet with PID credentials and a trust list endpoint reachable from Docker as `http://host.docker.internal:8085`.
+2. `./scripts/generate-wallet.sh` prepares the standard `eudi-dev` wallet with PID credentials and a trust list endpoint reachable from Docker as `http://host.docker.internal:8085`.
 3. `docker compose up --force-recreate` starts Keycloak `26.7.2`, mounts `realm/wallet-demo-realm.json`, imports the realm on startup, and loads the OID4VP provider jar.
-4. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the public endpoints.
-5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, hands it to `eudi wallet accept --auto-accept` for the automated headless path, follows the broker flow, and exchanges the returned code for tokens.
+4. `./scripts/bootstrap.sh` waits for the imported realm and prints the endpoints.
+5. `./scripts/login.py` starts the OIDC browser login, extracts the `openid4vp://` request, hands it to `eudi wallet accept --auto-accept --docker --port 8085` for the automated headless path, follows the broker flow, and exchanges the returned code for tokens.
 
 ## Flow Diagram
 
@@ -24,7 +24,7 @@ sequenceDiagram
     U->>KC: start OIDC authorize request
     KC->>EXT: invoke oid4vp identity provider
     EXT-->>U: same-device login page with openid4vp:// request
-    U->>W: wallet accept --auto-accept --port 8085 openid4vp://... (headless script)
+    U->>W: wallet accept --auto-accept --docker --port 8085 openid4vp://... (headless script)
     W->>EXT: direct_post VP token
     EXT->>W: trust list and issuer metadata verification
     EXT-->>KC: brokered identity
@@ -39,10 +39,10 @@ sequenceDiagram
 - `docker-compose.yml`: starts Keycloak, mounts provider jars from `providers/`, and imports the realm from `realm/`
 - `realm/wallet-demo-realm.json`: source-of-truth Keycloak realm config for the example
 - `scripts/download-extension.sh`: downloads `keycloak-extension-oid4vp` `0.11.1`
-- `scripts/bootstrap.sh`: waits for the imported realm and prints the useful endpoints
-- `scripts/generate-wallet.sh`: creates the wallet, PID credentials, wallet CA, and trust list endpoint
+- `scripts/bootstrap.sh`: waits for the imported realm and prints the endpoints
+- `scripts/generate-wallet.sh`: generates the wallet's PID credentials and exports the wallet CA
 - `scripts/login.py`: runs the same-device flow end to end and exchanges the returned code
-- `scripts/test-oidc-flow.sh`: starts a browser-driven flow for a system-registered `oid4vc-dev` wallet
+- `scripts/test-oidc-flow.sh`: starts a browser-driven flow for a system-registered `eudi-dev` wallet
 
 ## Quick Start
 
@@ -51,7 +51,7 @@ cd examples/keycloak-verifier-oid4vp
 ./start.sh
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
+If `eudi-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Browser-driven flow:
 
@@ -78,7 +78,7 @@ Setup only:
 | Parameter | Value |
 |---|---|
 | Image | `quay.io/keycloak/keycloak:26.7.2` |
-| Startup flags | `start-dev`, `--http-port=8080`, `--proxy-headers=xforwarded`, `--truststore-paths=/opt/keycloak/conf/oid4vc-wallet-ca.pem`, `--tls-hostname-verifier=ANY` |
+| Startup flags | `start-dev`, `--import-realm`, `--http-port=8080`, `--proxy-headers=xforwarded`, `--truststore-paths=/opt/keycloak/conf/oid4vc-wallet-ca.pem`, `--tls-hostname-verifier=ANY` |
 | Mounted provider jar | `providers/keycloak-extension-oid4vp.jar` |
 | Realm | `wallet-demo` |
 | Admin user | `admin` / `admin` |
@@ -98,18 +98,30 @@ Setup only:
 | `walletScheme` | `openid4vp://` |
 | `responseMode` | `direct_post` |
 | `clientIdScheme` | `plain` |
-| `enforceHaip` | `false` |
-| `trustedAuthoritiesMode` | `none` |
+| `principalAttributes` | `sdjwt_urn_eudi_pid_1:personal_administrative_number` |
+| `trustMaterialIdps` | `demo-trust-list` |
+
+The brokered Keycloak username comes from the PID `personal_administrative_number` (a stable identifier), because the ARF PID specimen family name (`'t Hart`) is not a valid Keycloak username.
+
+The DCQL query is generated from the OID4VP mappers on the `oid4vp` provider. Each maps a claim of the `urn:eudi:pid:1` SD-JWT credential (id `sdjwt_urn_eudi_pid_1`) to a user attribute:
+
+| Mapper claim | User attribute |
+|---|---|
+| `family_name` | `lastName` |
+| `given_name` | `firstName` |
+| `birthdate` | `birthdate` |
+
+The extension adds the principal claim (`personal_administrative_number`) to the request, so the generated query asks the wallet for those four claims of `urn:eudi:pid:1` in `dc+sd-jwt`.
+
+Trust material lives on a separate provider referenced by `trustMaterialIdps`:
+
+| Parameter (`demo-trust-list`) | Value |
+|---|---|
+| `providerId` | `etsi-trust-list` |
 | `trustListUrl` | `http://host.docker.internal:8085/api/trustlist` |
 | `trustListLoTEType` | `http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList` |
-| `userMappingClaim` | `family_name` |
-| `userMappingClaimMdoc` | `family_name` |
-| DCQL credential id | `pid_sd_jwt` |
-| DCQL format | `dc+sd-jwt` |
-| DCQL `vct` | `urn:eudi:pid:1` |
-| DCQL requested claims | `family_name`, `given_name`, `birthdate` |
 
-### oid4vc-dev
+### eudi-dev
 
 | Parameter | Value |
 |---|---|
@@ -126,8 +138,6 @@ KEYCLOAK_BASE_URL=http://localhost:8080
 KEYCLOAK_REALM=wallet-demo
 OIDC_CLIENT_ID=wallet-mock
 OIDC_REDIRECT_URI=http://127.0.0.1:18080/callback
-OID4VP_TRUST_LIST_URL=http://host.docker.internal:8085/api/trustlist
-OID4VP_TRUST_LIST_LOTE_TYPE=http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList
 OID4VC_WALLET_PORT=8085
 ```
 

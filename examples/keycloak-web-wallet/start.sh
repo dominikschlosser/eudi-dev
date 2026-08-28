@@ -18,7 +18,7 @@ done
 
 # The compose file publishes KEYCLOAK_PORT, WALLET_PORT and APP_PORT with
 # listen port == published port (see docker-compose.yml). The defaults live in
-# the 9xxx range so they don't collide with a locally running oid4vc-dev
+# the 9xxx range so they don't collide with a locally running eudi-dev
 # wallet (8085) or Keycloak (8080); if one is taken anyway, pick the next free
 # port instead of failing in `docker compose up`. Explicit overrides are
 # validated but respected, and a port held by this project's own keycloak

@@ -341,7 +341,7 @@ def main():
         if not wallet_url:
             fail("Could not find the same-device wallet link on the OID4VP broker page.")
 
-        print("Submitting the presentation with oid4vc-dev...")
+        print("Submitting the presentation with eudi-dev...")
         redirect_uri, wallet_output = run_wallet_accept(wallet_url)
         print(wallet_output)
 

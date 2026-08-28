@@ -35,7 +35,7 @@ PAGE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>oid4vc-dev · wallet-URL demo</title>
+<title>eudi-dev · wallet-URL demo</title>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: -apple-system, system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
@@ -54,7 +54,7 @@ PAGE = """<!DOCTYPE html>
 </style>
 </head>
 <body>
-<h1>oid4vc-dev — invoking the wallet by URL</h1>
+<h1>eudi-dev — invoking the wallet by URL</h1>
 <p class="muted">Custom-scheme links (<code>openid-credential-offer://</code>, <code>openid4vp://</code>) need
 OS-level handler registration. Here everything runs on plain localhost URLs instead: offer links target the
 wallet's <code>/credential-offer</code> endpoint, and Keycloak's login page links to the wallet's

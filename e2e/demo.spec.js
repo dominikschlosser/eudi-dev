@@ -1391,24 +1391,28 @@ test.describe("Custom verifier request builder", () => {
   async function present(page, schemeURI) {
     const owner = await openAsSchemeHandler(page);
     submitAsSchemeHandler("/api/presentations", schemeURI, owner);
-    await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
+    // The interactive submit is fire-and-forget (it blocks on consent), so wait
+    // for the request to reach the wallet before the consent overlay is checked,
+    // rather than racing the POST under a loaded CI runner.
+    await waitForPending(1, owner);
+    await expect(page.locator("#consent-overlay")).toHaveClass(/active/, { timeout: 15_000 });
   }
 
   test("a bare array path discloses an empty array and the consent warns", async ({ page }) => {
     const { id, schemeURI } = await buildCustom(page); // seed: given_name, nationalities
 
     await present(page, schemeURI);
-    // The nationalities row shows the empty array with a warning marker whose
-    // tooltip explains that only an empty array is disclosed.
+    // The nationalities row shows the empty array with an inline note that only
+    // an empty array is disclosed.
     const natRow = page.locator("#consent-dialog .consent-claim", { hasText: "nationalities" });
     await expect(natRow.locator(".consent-claim-value")).toContainText("[]");
-    // The note explaining the empty array is shown inline, no hover or tap.
+    // The note is shown inline, no hover or tap.
     await expect(natRow.locator(".consent-claim-hint")).toBeVisible();
     await expect(natRow.locator(".consent-claim-hint")).toContainText(/empty array/i);
     await expect(natRow.locator('input[type="checkbox"]')).toBeChecked();
 
     await page.locator("#consent-approve").click();
-    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 20_000 });
 
     const result = await verifierResult(id);
     expect(result.status).toBe("verified");
@@ -1423,7 +1427,7 @@ test.describe("Custom verifier request builder", () => {
     await expect(page.locator("#consent-dialog .consent-claim-warn")).toHaveCount(0);
 
     await page.locator("#consent-approve").click();
-    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 20_000 });
 
     const result = await verifierResult(id);
     expect(result.status).toBe("verified");

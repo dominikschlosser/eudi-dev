@@ -1,11 +1,11 @@
-# Keycloak Issuer + oid4vc-dev Wallet
+# Keycloak Issuer + eudi-dev Wallet
 
-This example runs a local OpenID4VCI issuance flow from Keycloak into `oid4vc-dev`.
+This example runs a local OpenID4VCI issuance flow from Keycloak into `eudi-dev`.
 
 ## How It Works
 
-1. `docker compose up --force-recreate` starts Keycloak `26.7.2`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
-2. `./scripts/bootstrap.sh` only waits for the imported realm to become ready and prints the issuer endpoints.
+1. `docker compose up -d --force-recreate` starts Keycloak `26.7.2`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
+2. `./scripts/bootstrap.sh` waits for the imported realm, assigns the `membership-credential` to `alice` through the admin API (Keycloak 26.7.2 mints an offer only for a credential the user already holds), and prints the issuer endpoints.
 3. `./scripts/create-offer.sh` logs in as `alice`, calls Keycloak's `create-credential-offer` endpoint, resolves the generated offer once, and emits an inline `openid-credential-offer://?credential_offer=...` URI.
 4. `eudi wallet accept` resolves the offer URI, fetches issuer metadata and authorization details from Keycloak, creates proof-of-possession material, and stores the returned SD-JWT VC in the local wallet directory.
 
@@ -18,6 +18,7 @@ sequenceDiagram
     participant W as eudi wallet
 
     U->>KC: import static realm, user, client, credential scope
+    U->>KC: assign membership-credential to alice (admin API)
     U->>KC: password grant as alice
     KC-->>U: access token
     U->>KC: GET /protocol/oid4vc/create-credential-offer
@@ -31,12 +32,12 @@ sequenceDiagram
 
 ## Files
 
-- `start.sh`: starts Keycloak, bootstraps the issuer, and by default redeems a credential into `oid4vc-dev`
+- `start.sh`: starts Keycloak, bootstraps the issuer, and by default redeems a credential into `eudi-dev`
 - `docker-compose.yml`: starts Keycloak with OID4VCI enabled and imports the realm from `realm/`
 - `realm/oid4vc-demo-realm.json`: source-of-truth Keycloak realm config for the example
-- `scripts/bootstrap.sh`: waits for the imported realm and prints the issuer endpoints
+- `scripts/bootstrap.sh`: waits for the imported realm, assigns the credential to `alice`, and prints the issuer endpoints
 - `scripts/create-offer.sh`: creates a fresh pre-authorized offer URI
-- `scripts/redeem-offer.sh`: creates an offer and passes it into `oid4vc-dev`
+- `scripts/redeem-offer.sh`: creates an offer and passes it into `eudi-dev`
 
 ## Quick Start
 
@@ -46,7 +47,7 @@ cd examples/keycloak-issuer-wallet
 eudi wallet list
 ```
 
-If `oid4vc-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
+If `eudi-dev` is not already installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Setup only:
 
@@ -68,7 +69,7 @@ eudi wallet accept "$OFFER_URI"
 | Parameter | Value |
 |---|---|
 | Image | `quay.io/keycloak/keycloak:26.7.2` |
-| Startup flags | `start-dev`, `--features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1`, `--http-port=8080`, `--proxy-headers=xforwarded` |
+| Startup flags | `start-dev`, `--features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer`, `--http-port=8080`, `--proxy-headers=xforwarded` |
 | Realm | `oid4vc-demo` |
 | Admin user | `admin` / `admin` |
 | Demo user | `alice` / `alice` |
@@ -87,7 +88,7 @@ eudi wallet accept "$OFFER_URI"
 | Offer endpoint | `/realms/oid4vc-demo/protocol/oid4vc/create-credential-offer` |
 | Issuer metadata | `/realms/oid4vc-demo/.well-known/openid-credential-issuer` |
 
-### oid4vc-dev
+### eudi-dev
 
 | Parameter | Value |
 |---|---|
@@ -102,11 +103,7 @@ This example uses the OpenID4VCI by-value `credential_offer` form instead of `cr
 - Some wallets dereference `credential_offer_uri` more than once across preview and issuance steps.
 - Current Keycloak offer-URI behavior is effectively one-shot for this flow, which breaks those wallets on the second fetch.
 - Resolving the offer once in the example and handing the wallet the inline JSON avoids that interoperability issue while staying within the spec.
-- The demo realm also omits `vc.credential_identifier`, so wallets that still request credentials by `credential_configuration_id` keep working. With that attribute set, Keycloak 26.6 requires a final `credential_identifier` field on the credential request.
-
-### Result
-
-Imported `dc+sd-jwt` VC in the local wallet store.
+- The demo realm also omits `vc.credential_identifier`, so wallets that still request credentials by `credential_configuration_id` keep working. With that attribute set, Keycloak 26.7.2 requires a final `credential_identifier` field on the credential request.
 
 ## Useful Overrides
 

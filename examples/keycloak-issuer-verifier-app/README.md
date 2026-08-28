@@ -2,9 +2,9 @@
 
 This example runs Keycloak as an OpenID4VP verifier that signs users in with their wallet, and issues them a credential during that login. It uses the `keycloak-extension-oid4vp` subject-binding model.
 
-The user holds a PID (a country-independent EUDI PID from `oid4vc-dev`). A PID identifies nobody to this realm on its own, so the first wallet login asks for a password and then issues a `membership` credential that carries an opaque subject bound to that account. Every later login presents the PID together with the membership credential, and the subject in the membership credential signs the user in without a password.
+The user holds a PID (a country-independent EUDI PID from `eudi-dev`). On its own, a PID identifies no one to this realm, so the first wallet login asks for a password and then issues a `membership` credential that carries an opaque subject bound to that account. Every later login presents the PID together with the membership credential, and the subject in the membership credential signs the user in without a password.
 
-The example starts Keycloak (26.7.2), a local `eudi wallet serve --docker` wallet holding the PID, and a small Go relying party. Everything runs locally over HTTP.
+The example starts Keycloak (26.7.2), a local `eudi wallet serve --docker` wallet holding the PID, and a Go relying party. Everything runs locally over HTTP.
 
 ## The Flow
 
@@ -50,7 +50,7 @@ The static realm import (`realm/wallet-app-demo-realm.json`) carries the whole c
 
 - The `oid4vp` identity provider enforces HAIP (`x509_hash`, `direct_post.jwt`) and requests `credential_sets` `[[pid, membership], [pid]]`. `allowMissingSubjectCredential` accepts the PID alone, and `principalAttributes` reads the subject from `membership:sub`.
 - The first broker login flow runs `idp-username-password-form` followed by `oid4vp-subject-binding`. The authenticator binds the login to the user, entitles them to the `membership-credential` configuration, and offers it through the credential-offer required action to the client `wallet-vci`.
-- The `membership-credential` scope issues an SD-JWT credential whose `oid4vp-bound-subject-mapper` writes the opaque subject and a reference credential binding. The binding ties the credential to the PID it was issued next to (a keyed digest of the PID mandatory attributes), so it cannot sign in beside a different person's PID.
+- The `membership-credential` scope issues an SD-JWT credential whose `oid4vp-bound-subject-mapper` writes the opaque subject and a reference credential binding. The binding ties the credential to the PID it was issued next to (a keyed digest of the PID mandatory attributes), so the membership credential cannot sign a user in next to a different person's PID.
 - Trust is resolved per credential. The `pid-trust-list` provider (an `etsi-trust-list`) serves the PID trust anchors from the wallet, and the `keycloak-realm-issuer` provider verifies the membership credential against this realm's own signing keys.
 
 `bootstrap.sh` adds the runtime piece the import cannot carry: a CA-issued RS256 realm signing key (Keycloak refuses to issue an SD-JWT credential signed with a self-signed certificate). `docker-compose.yml` trusts the wallet CA so Keycloak can reach the wallet status list over HTTPS.
@@ -62,7 +62,7 @@ cd examples/keycloak-issuer-verifier-app
 ./start.sh
 ```
 
-If `oid4vc-dev` is not installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
+If `eudi-dev` is not installed, `start.sh` installs the latest release with `go install github.com/dominikschlosser/eudi-dev@latest`.
 
 Open the demo app at `http://127.0.0.1:8090` and choose "Sign in with your wallet". The first login asks for the `alice` / `alice` password and issues the membership credential into the wallet. Sign out and sign in again to see the passwordless login.
 

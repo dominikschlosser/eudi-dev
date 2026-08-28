@@ -9,3 +9,4 @@ keycloak-signing-ca-cert.pem
 keycloak-signing-ca-key.pem
 keycloak-signing-ca-cert.srl
 wallet-ca-cert.pem
+app/app

@@ -5,7 +5,7 @@ Runs a same-device OpenID4VP login against Keycloak (keycloak-extension-oid4vp)
 and invokes the wallet by URL: the openid4vp:// link from the login page is
 converted to the wallet's /authorize endpoint — same query string, no custom
 URL scheme involved. Adapted from keycloak-verifier-oid4vp/scripts/login.py,
-which drives the wallet through the oid4vc-dev CLI instead.
+which drives the wallet through the eudi-dev CLI instead.
 """
 import sys
 import tempfile
