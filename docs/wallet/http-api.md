@@ -327,25 +327,22 @@ OID4VP 1.0 Section 5.10 defines an optional mechanism where the wallet POSTs its
 
 **Note:** This is an OID4VP 1.0 feature. HAIP 1.0 does not mention `wallet_metadata`, `wallet_nonce`, or `request_uri_method`. Use this to test verifiers that support the optional encrypted request object flow.
 
-Enable with `--require-encrypted-request`:
+When a request sets `request_uri_method=post`, the wallet:
+
+1. Holds an ECDSA P-256 encryption key (generated at startup)
+2. POSTs to the `request_uri` with:
+   - `wallet_metadata`. A JSON object with `vp_formats_supported`, `response_types_supported`, the response modes, the Authorization Response encryption algorithms (`authorization_encryption_alg/enc_values_supported`), `request_object_signing_alg_values_supported` when the client identifier prefix permits a signed Request Object, `jwks` with the wallet's public encryption key, and the `request_object_encryption_alg/enc_values_supported` algorithms for it
+   - `wallet_nonce`. A base64url-encoded random nonce for replay protection
+3. Accepts either an encrypted request object (a JWE using ECDH-ES with A128GCM or A256GCM, which it decrypts with its key) or a signed or unsecured request object JWT
+4. Checks that a `wallet_nonce` echoed in the request object matches the one sent, and stops the flow on a mismatch (a request object without one is accepted and logged, the parameter is optional in the response)
+
+The wallet always sends the encryption key, so a verifier can encrypt the request object. To make encryption mandatory (reject a `request_uri` response that is not a compact JWE), start with `--require-encrypted-request`:
 
 ```bash
 eudi wallet serve --auto-accept --pid --require-encrypted-request
 ```
 
-When enabled, the wallet:
-
-1. Generates an ECDSA P-256 encryption key at startup
-2. When `request_uri_method=post` is set in the authorization request, POSTs to the `request_uri` with:
-   - `wallet_metadata`. JSON object containing `vp_formats_supported`, `request_object_signing_alg_values_supported`, `jwks` with the wallet's public encryption key, and the `request_object_encryption_alg/enc_values_supported` algorithms for it
-   - `wallet_nonce`. Base64url-encoded random nonce for replay protection
-3. Expects the verifier to encrypt the request object as a JWE (ECDH-ES + A128GCM or A256GCM) using the wallet's public key
-4. Decrypts the received JWE to extract the signed JWT request object
-5. Checks that a `wallet_nonce` echoed in the request object matches the one sent, and stops the flow on a mismatch. A request object without one is accepted and logged (the parameter is optional in the response)
-
 The proxy dashboard surfaces `request_uri_method`, `wallet_metadata`, and `wallet_nonce` in the decoded traffic view when these fields are present.
-
-Without `--require-encrypted-request`, the wallet still supports `request_uri_method=post` (sending `wallet_metadata` without encryption keys and validating `wallet_nonce`), but does not include encryption keys or attempt JWE decryption.
 
 ### Example: E2E test flow
 

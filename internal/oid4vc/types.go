@@ -74,5 +74,5 @@ type ParseOptions struct {
 	// FetchRequestURI is called to retrieve the request object from request_uri.
 	// url is the request_uri value, method is "get" or "post".
 	// If nil, format.FetchURL (HTTP GET) is used regardless of method.
-	FetchRequestURI func(url string, method string) (string, error)
+	FetchRequestURI func(url string, method string, clientID string) (string, error)
 }

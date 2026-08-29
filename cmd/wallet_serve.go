@@ -30,7 +30,6 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/demorp"
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/imprint"
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 	"github.com/dominikschlosser/eudi-dev/internal/web"
@@ -109,7 +108,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.BaseURL, "base-url", "", "Base URL for the wallet's HTTP endpoints; its host is also reused for HTTPS wallet endpoints")
 	cmd.Flags().BoolVar(&opts.Docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
 	cmd.Flags().StringVar(&opts.PreferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
-	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Require verifiers to encrypt request objects (sends encryption key in wallet_metadata)")
+	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Reject a Verifier's Request Object that is not encrypted (the wallet always sends an encryption key in wallet_metadata, so this only requires the Verifier to use it)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored, but the issuer sees each render; a data URI, template art, and http URLs are still embedded)")
@@ -378,14 +377,13 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		w.PreferredFormat = opts.PreferredFormat
 	}
 
-	if opts.RequireEncryptedRequest {
-		encKey, err := mock.GenerateKey()
-		if err != nil {
-			return fmt.Errorf("generating request encryption key: %w", err)
-		}
-		w.RequireEncryptedRequest = true
-		w.RequestEncryptionKey = encKey
+	// Always hold a request-object encryption key so wallet_metadata can offer
+	// it. Requiring the Verifier to actually encrypt the Request Object is the
+	// separate --require-encrypted-request opt-in.
+	if err := w.EnsureRequestEncryptionKey(); err != nil {
+		return err
 	}
+	w.RequireEncryptedRequest = opts.RequireEncryptedRequest
 
 	if opts.HAIP {
 		w.RequireHAIP = true

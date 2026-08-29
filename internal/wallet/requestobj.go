@@ -29,17 +29,20 @@ import (
 )
 
 // encryptionKeyCoords returns the JWK coordinates of the request encryption
-// key when the wallet requires encrypted requests and holds one, and nil
-// coordinates otherwise.
+// key when the wallet holds one, and nil coordinates otherwise. The key is
+// offered in wallet_metadata regardless of whether the wallet requires an
+// encrypted request object, so a Verifier that wants to encrypt one can.
 func encryptionKeyCoords(w *Wallet) (x, y []byte, err error) {
-	if !w.RequireEncryptedRequest || w.RequestEncryptionKey == nil {
+	if w.RequestEncryptionKey == nil {
 		return nil, nil, nil
 	}
 	return format.ECPublicCoords(&w.RequestEncryptionKey.PublicKey)
 }
 
 // BuildWalletMetadata builds the wallet_metadata JSON object per OID4VP 1.0 §10.
-func BuildWalletMetadata(w *Wallet) map[string]any {
+// clientID is the Client Identifier of the request being fetched, whose prefix
+// decides whether the wallet may advertise Request Object signing algorithms.
+func BuildWalletMetadata(w *Wallet, clientID string) map[string]any {
 	meta := map[string]any{
 		// Appendix B names the members of each format profile. For dc+sd-jwt
 		// they are sd-jwt_alg_values and kb-jwt_alg_values, and for mso_mdoc
@@ -70,7 +73,6 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 			"x509_san_dns",
 			"x509_hash",
 		},
-		"request_object_signing_alg_values_supported": []string{"ES256"},
 		// §10 makes the wallet metadata an Authorization Server Metadata document
 		// (RFC 8414), which requires response_types_supported. The wallet answers
 		// an OpenID4VP request with a vp_token (§5.6).
@@ -80,6 +82,19 @@ func BuildWalletMetadata(w *Wallet) map[string]any {
 		// describe this wallet, so it is stated even though RFC 8414 leaves it
 		// optional.
 		"response_modes_supported": []string{"direct_post", "direct_post.jwt", "dc_api", "dc_api.jwt"},
+		// §10: the algorithms the wallet supports to encrypt an Authorization
+		// Response, used with the direct_post.jwt and dc_api.jwt response modes.
+		// ECDH-ES on P-256 is the OID4VP baseline, with A128GCM and A256GCM as
+		// the content encryption (both of which HAIP requires).
+		"authorization_encryption_alg_values_supported": []string{"ECDH-ES"},
+		"authorization_encryption_enc_values_supported": []string{"A128GCM", "A256GCM"},
+	}
+
+	// §10: advertise Request Object signing algorithms only when the Client
+	// Identifier Prefix permits a signed Request Object. The redirect_uri prefix
+	// precludes one (OID4VP 1.0 §5.9.1), so the wallet omits the parameter then.
+	if !strings.HasPrefix(clientID, "redirect_uri:") {
+		meta["request_object_signing_alg_values_supported"] = []string{"ES256"}
 	}
 
 	if x, y, err := encryptionKeyCoords(w); err == nil && x != nil {
@@ -119,10 +134,10 @@ func GenerateWalletNonce() (string, error) {
 // When method is "post", it POSTs wallet_metadata and wallet_nonce to the request_uri.
 // When method is "get" or empty, it performs a plain GET.
 // If the response is a JWE (encrypted request object) and the wallet has an encryption key, it decrypts it.
-func MakeFetchRequestURI(w *Wallet, logFn func(string, ...any)) func(url string, method string) (string, error) {
-	return func(requestURI string, method string) (string, error) {
+func MakeFetchRequestURI(w *Wallet, logFn func(string, ...any)) func(url, method, clientID string) (string, error) {
+	return func(requestURI, method, clientID string) (string, error) {
 		if method == "post" {
-			return fetchRequestURIPOST(w, requestURI, logFn)
+			return fetchRequestURIPOST(w, requestURI, clientID, logFn)
 		}
 		return fetchRequestURIGET(w, requestURI)
 	}
@@ -175,8 +190,8 @@ func (w *Wallet) judgeRequestURIMediaType(contentType string) error {
 }
 
 // fetchRequestURIPOST implements the request_uri_method=post flow per OID4VP 1.0 §5.10.
-func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any)) (string, error) {
-	walletMeta := BuildWalletMetadata(w)
+func fetchRequestURIPOST(w *Wallet, requestURI, clientID string, logFn func(string, ...any)) (string, error) {
+	walletMeta := BuildWalletMetadata(w, clientID)
 	walletMetaJSON, err := json.Marshal(walletMeta)
 	if err != nil {
 		return "", fmt.Errorf("marshaling wallet_metadata: %w", err)
@@ -191,9 +206,9 @@ func fetchRequestURIPOST(w *Wallet, requestURI string, logFn func(string, ...any
 		logFn("  request_uri_method: post")
 		logFn("  wallet_nonce:       %s", walletNonce)
 		if w.RequireEncryptedRequest {
-			logFn("  wallet_metadata:    includes encryption keys (require encrypted request object)")
+			logFn("  wallet_metadata:    sends encryption keys (encrypted request object required)")
 		} else {
-			logFn("  wallet_metadata:    sent (no encryption keys)")
+			logFn("  wallet_metadata:    sends encryption keys")
 		}
 	}
 

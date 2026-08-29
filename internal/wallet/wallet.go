@@ -17,6 +17,8 @@ package wallet
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -71,7 +73,7 @@ type Wallet struct {
 	AutoAccept              bool
 	SessionTranscript       SessionTranscriptMode // "oid4vp" (default) or "iso"
 	PreferredFormat         string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"
-	RequireEncryptedRequest bool                  // when true, sends encryption keys in wallet_metadata
+	RequireEncryptedRequest bool                  // when true, rejects a request_uri response that is not a JWE (the encryption key is advertised regardless)
 	RequestEncryptionKey    *ecdsa.PrivateKey     // key for decrypting encrypted request objects
 	RequireHAIP             bool                  // when true, enforce HAIP 1.0 compliance checks
 	// VCIVersion is the OpenID4VCI feature level the wallet uses as a client.
@@ -194,6 +196,21 @@ func (w *Wallet) StatusListIssuer() string {
 		return issuer
 	}
 	return strings.TrimRight(w.BaseURL, "/")
+}
+
+// EnsureRequestEncryptionKey generates a request-object encryption key if the
+// wallet has none, so it can always advertise one in wallet_metadata and accept
+// an encrypted Request Object. The key is ephemeral (per wallet instance).
+func (w *Wallet) EnsureRequestEncryptionKey() error {
+	if w == nil || w.RequestEncryptionKey != nil {
+		return nil
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generating request encryption key: %w", err)
+	}
+	w.RequestEncryptionKey = key
+	return nil
 }
 
 // WalletError is an error event that can be displayed in the UI.

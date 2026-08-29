@@ -77,6 +77,9 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if err := applySessionTranscriptMode(w, opts.sessionTranscript); err != nil {
 			return err
 		}
+		if err := w.EnsureRequestEncryptionKey(); err != nil {
+			return err
+		}
 		handled, err := tryPresentViaRunningServer(uri, opts)
 		if err != nil {
 			return err

@@ -198,7 +198,7 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 		var fetched string
 		var err error
 		if opts.FetchRequestURI != nil {
-			fetched, err = opts.FetchRequestURI(requestURI, method)
+			fetched, err = opts.FetchRequestURI(requestURI, method, req.ClientID)
 		} else {
 			fetched, err = format.FetchURL(requestURI)
 		}

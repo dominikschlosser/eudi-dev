@@ -96,13 +96,13 @@ sequenceDiagram
     participant Wallet as eudi-dev
 
     Verifier-->>Wallet: Authorization request with request_uri and request_uri_method=post
-    Wallet->>Verifier: POST request_uri<br/>wallet_metadata + wallet_nonce
-    alt Wallet started with --require-encrypted-request
-        Note over Wallet,Verifier: wallet_metadata includes the wallet encryption JWK.
+    Wallet->>Verifier: POST request_uri<br/>wallet_metadata (always sends an encryption JWK) + wallet_nonce
+    alt Verifier encrypts the request object
         Verifier-->>Wallet: Encrypted request object JWE
         Wallet->>Wallet: Decrypt JWE and continue with normal request validation
-    else Plain POST-based request object fetch
+    else Verifier sends it unencrypted
         Verifier-->>Wallet: Signed or unsecured request object JWT
+        Note over Wallet: Accepted (rejected only under --require-encrypted-request)
     end
     Wallet->>Wallet: Check wallet_nonce if the verifier echoed it back
 ```
@@ -113,9 +113,9 @@ sequenceDiagram
 |-----------------|----------|
 | `request_uri` | The wallet dereferences this URI instead of relying only on outer query parameters. |
 | `request_uri_method=post` | Switches the request-object fetch from GET to POST. |
-| `wallet_metadata` | Sent by `eudi-dev`. Includes supported formats and signing algorithms, plus an encryption JWK when `--require-encrypted-request` is enabled. |
+| `wallet_metadata` | Sent by `eudi-dev`. Includes supported formats, the Request Object signing algorithms (only when the client identifier prefix permits a signed Request Object), the Authorization Response encryption algorithms, and an encryption JWK the wallet always sends. |
 | `wallet_nonce` | Sent by the wallet for replay protection and checked if returned inside the request object. |
-| `--require-encrypted-request` | Makes the wallet advertise an encryption key and require the POSTed `request_uri` response to be a compact JWE. |
+| `--require-encrypted-request` | Makes the wallet reject a POSTed `request_uri` response that is not a compact JWE. The encryption JWK is sent either way. |
 | Request object `Content-Type` | `eudi-dev` expects `application/oauth-authz-req+jwt` on the POST response. |
 
 ## Browser API Flow

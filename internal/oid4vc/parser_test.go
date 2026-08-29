@@ -651,7 +651,7 @@ func TestParseVPRequestURIObjectOutranksTheQueryString(t *testing.T) {
 		url.QueryEscape("https://verifier.example/req") + "&nonce=attacker-nonce"
 
 	_, result, err := ParseWithOptions(uri, ParseOptions{
-		FetchRequestURI: func(string, string) (string, error) { return jwt, nil },
+		FetchRequestURI: func(string, string, string) (string, error) { return jwt, nil },
 	})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

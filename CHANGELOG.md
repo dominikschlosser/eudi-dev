@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **A request or credential that fails several checks is one activity log entry, not a long line or an entry per finding.** The HAIP profile findings on an offer or credential, the OpenID4VP profile findings on a presentation request, and the registration certificate findings used to be joined into the entry's main line or logged one entry each. Each now records a single warning naming the count, with the full list in the entry details for the UI to expand.
+- **The wallet always sends a Request Object encryption key in `wallet_metadata`.** Before, the encryption JWK was in the `request_uri` POST only under `--require-encrypted-request`. It is always sent now (OID4VP 1.0 §10), so a Verifier can encrypt the Request Object. `--require-encrypted-request` now only rejects a `request_uri` response that is not a JWE, so a Verifier that signs the Request Object without encrypting it still works without the flag. The metadata also lists the Authorization Response encryption algorithms (`authorization_encryption_alg_values_supported`, `authorization_encryption_enc_values_supported`), and lists `request_object_signing_alg_values_supported` only when the Client Identifier Prefix allows a signed Request Object (not under `redirect_uri`, which forbids one).
 
 ### Fixed
 

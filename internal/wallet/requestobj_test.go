@@ -32,7 +32,7 @@ import (
 
 func TestBuildWalletMetadata_Basic(t *testing.T) {
 	w := &Wallet{}
-	meta := BuildWalletMetadata(w)
+	meta := BuildWalletMetadata(w, "")
 
 	if meta["vp_formats_supported"] == nil {
 		t.Fatal("expected vp_formats_supported")
@@ -51,9 +51,18 @@ func TestBuildWalletMetadata_Basic(t *testing.T) {
 	if !slices.Contains(rms, "direct_post") || !slices.Contains(rms, "direct_post.jwt") {
 		t.Errorf("response_modes_supported = %v, want it to include direct_post and direct_post.jwt", rms)
 	}
-	// Should not have encryption keys without RequireEncryptedRequest
+	// The Authorization Response encryption algorithms are always advertised, for
+	// the direct_post.jwt and dc_api.jwt response modes.
+	if algs, _ := meta["authorization_encryption_alg_values_supported"].([]string); len(algs) != 1 || algs[0] != "ECDH-ES" {
+		t.Errorf("authorization_encryption_alg_values_supported = %v, want [ECDH-ES]", meta["authorization_encryption_alg_values_supported"])
+	}
+	if encs, _ := meta["authorization_encryption_enc_values_supported"].([]string); !slices.Contains(encs, "A128GCM") || !slices.Contains(encs, "A256GCM") {
+		t.Errorf("authorization_encryption_enc_values_supported = %v, want it to include A128GCM and A256GCM", meta["authorization_encryption_enc_values_supported"])
+	}
+	// This wallet holds no encryption key, so it offers none. Holding one, it
+	// always offers it (see TestBuildWalletMetadata_OffersEncryptionKey).
 	if meta["jwks"] != nil {
-		t.Error("should not include jwks without RequireEncryptedRequest")
+		t.Error("should not include jwks when the wallet holds no encryption key")
 	}
 
 	// Appendix B names issuerauth_alg_values for mso_mdoc, and its values are
@@ -76,7 +85,7 @@ func TestBuildWalletMetadata_WithEncryption(t *testing.T) {
 		RequireEncryptedRequest: true,
 		RequestEncryptionKey:    key,
 	}
-	meta := BuildWalletMetadata(w)
+	meta := BuildWalletMetadata(w, "")
 
 	jwks, ok := meta["jwks"].(map[string]any)
 	if !ok {
@@ -104,6 +113,40 @@ func TestBuildWalletMetadata_WithEncryption(t *testing.T) {
 	encSupported := meta["request_object_encryption_enc_values_supported"].([]string)
 	if len(encSupported) != 2 {
 		t.Errorf("expected 2 enc values, got %d", len(encSupported))
+	}
+}
+
+// TestBuildWalletMetadata_OffersEncryptionKey pins that a held encryption key is
+// advertised even when the wallet does not require an encrypted request object,
+// so a Verifier that wants to encrypt one can.
+func TestBuildWalletMetadata_OffersEncryptionKey(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &Wallet{RequireEncryptedRequest: false, RequestEncryptionKey: key}
+	meta := BuildWalletMetadata(w, "")
+
+	if meta["jwks"] == nil {
+		t.Fatal("expected jwks to be offered even without RequireEncryptedRequest")
+	}
+	if algs, _ := meta["request_object_encryption_alg_values_supported"].([]string); len(algs) != 1 || algs[0] != "ECDH-ES" {
+		t.Errorf("request_object_encryption_alg_values_supported = %v, want [ECDH-ES]", meta["request_object_encryption_alg_values_supported"])
+	}
+}
+
+// TestBuildWalletMetadata_SigningAlgsGatedOnPrefix pins that Request Object
+// signing algorithms are advertised only when the Client Identifier Prefix
+// permits a signed Request Object. The redirect_uri prefix precludes one.
+func TestBuildWalletMetadata_SigningAlgsGatedOnPrefix(t *testing.T) {
+	signed := []string{"x509_hash:abc", "x509_san_dns:verifier.example", "pre-registered", "verifier.example", ""}
+	for _, clientID := range signed {
+		if meta := BuildWalletMetadata(&Wallet{}, clientID); meta["request_object_signing_alg_values_supported"] == nil {
+			t.Errorf("client_id %q permits a signed request object, want request_object_signing_alg_values_supported", clientID)
+		}
+	}
+	if meta := BuildWalletMetadata(&Wallet{}, "redirect_uri:https://verifier.example/cb"); meta["request_object_signing_alg_values_supported"] != nil {
+		t.Error("redirect_uri prefix precludes a signed request object, so request_object_signing_alg_values_supported MUST NOT appear")
 	}
 }
 
@@ -141,7 +184,7 @@ func TestMakeFetchRequestURI_GET(t *testing.T) {
 
 	w := &Wallet{}
 	fetch := MakeFetchRequestURI(w, nil)
-	result, err := fetch(srv.URL, "get")
+	result, err := fetch(srv.URL, "get", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +229,7 @@ func TestMakeFetchRequestURI_POST(t *testing.T) {
 	}
 
 	fetch := MakeFetchRequestURI(wallet, logFn)
-	result, err := fetch(srv.URL, "post")
+	result, err := fetch(srv.URL, "post", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +272,7 @@ func TestMakeFetchRequestURI_POST_WalletNonceMismatch(t *testing.T) {
 
 	wallet := &Wallet{}
 	fetch := MakeFetchRequestURI(wallet, nil)
-	_, err := fetch(srv.URL, "post")
+	_, err := fetch(srv.URL, "post", "")
 	if err == nil {
 		t.Fatal("expected error for wallet_nonce mismatch")
 	}
@@ -250,7 +293,7 @@ func TestMakeFetchRequestURI_POST_AllowsMissingWalletNonce(t *testing.T) {
 
 	wallet := &Wallet{}
 	fetch := MakeFetchRequestURI(wallet, nil)
-	result, err := fetch(srv.URL, "post")
+	result, err := fetch(srv.URL, "post", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,7 +314,7 @@ func TestMakeFetchRequestURI_POST_AllowsUnsignedRequestObject(t *testing.T) {
 
 	wallet := &Wallet{}
 	fetch := MakeFetchRequestURI(wallet, nil)
-	result, err := fetch(srv.URL, "post")
+	result, err := fetch(srv.URL, "post", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -422,7 +465,7 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 	defer srv.Close()
 
 	fetch := MakeFetchRequestURI(wallet, nil)
-	result, err := fetch(srv.URL, "post")
+	result, err := fetch(srv.URL, "post", "")
 	if err != nil {
 		t.Fatalf("fetch with encrypted response: %v", err)
 	}
@@ -463,7 +506,7 @@ func TestMakeFetchRequestURI_POST_RequireEncryptedRequestRejectsPlainJWT(t *test
 	defer srv.Close()
 
 	fetch := MakeFetchRequestURI(wallet, nil)
-	_, err = fetch(srv.URL, "post")
+	_, err = fetch(srv.URL, "post", "")
 	if err == nil {
 		t.Fatal("expected error when encrypted request objects are required but verifier returned plain JWT")
 	}
@@ -532,13 +575,13 @@ func TestRequestURIMediaTypeFollowsTheValidationMode(t *testing.T) {
 	for _, method := range []string{"get", "post"} {
 		t.Run(method+" strict", func(t *testing.T) {
 			w := &Wallet{ValidationMode: ValidationModeStrict}
-			if _, err := MakeFetchRequestURI(w, nil)(srv.URL, method); err == nil {
+			if _, err := MakeFetchRequestURI(w, nil)(srv.URL, method, ""); err == nil {
 				t.Fatal("expected the wrong media type to be refused in strict mode")
 			}
 		})
 		t.Run(method+" debug", func(t *testing.T) {
 			w := &Wallet{ValidationMode: ValidationModeDebug}
-			result, err := MakeFetchRequestURI(w, nil)(srv.URL, method)
+			result, err := MakeFetchRequestURI(w, nil)(srv.URL, method, "")
 			if err != nil {
 				t.Fatalf("debug mode should read the request object: %v", err)
 			}
@@ -583,7 +626,7 @@ func containsStr(s, substr string) bool {
 // so a wallet that stays silent is understood to accept pre-registered clients
 // only and will never be sent an x509_hash request.
 func TestWalletMetadataAdvertisesTheClientIDPrefixesItAccepts(t *testing.T) {
-	meta := BuildWalletMetadata(generateTestWallet(t))
+	meta := BuildWalletMetadata(generateTestWallet(t), "")
 
 	prefixes, _ := meta["client_id_prefixes_supported"].([]string)
 	if len(prefixes) == 0 {
@@ -618,7 +661,7 @@ func TestWalletMetadataAdvertisesTheClientIDPrefixesItAccepts(t *testing.T) {
 // alg_values_supported is not one of them, so a Verifier reading it learns
 // nothing about what this wallet can verify.
 func TestWalletMetadataNamesTheFormatProfileMembers(t *testing.T) {
-	meta := BuildWalletMetadata(generateTestWallet(t))
+	meta := BuildWalletMetadata(generateTestWallet(t), "")
 
 	formats, _ := meta["vp_formats_supported"].(map[string]any)
 	sdjwt, _ := formats["dc+sd-jwt"].(map[string]any)

@@ -2812,7 +2812,7 @@ func TestFetchRequestURIPOST_AcceptsLocalSelfSignedTLS(t *testing.T) {
 	}))
 	defer requestURIServer.Close()
 
-	result, err := fetchRequestURIPOST(w, requestURIServer.URL, nil)
+	result, err := fetchRequestURIPOST(w, requestURIServer.URL, "", nil)
 	if err != nil {
 		t.Fatalf("fetchRequestURIPOST: %v", err)
 	}
