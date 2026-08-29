@@ -29,7 +29,7 @@ JSON_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9._-]+\.json)\}")
 TERMINAL_STATES = {"FINISHED", "INTERRUPTED"}
 WALLET_MODE = os.environ.get("OIDF_WALLET_MODE", "strict")
 POLL_INTERVAL = 1.0
-REQUEST_TIMEOUT = 20
+REQUEST_TIMEOUT = int(os.environ.get("OIDF_REQUEST_TIMEOUT", "20"))
 DEFAULT_MODULE_IDLE_TIMEOUT = 180
 SCREENSHOT_DATA_URL = (
     "data:image/png;base64,"
@@ -928,7 +928,25 @@ def wallet_mode_for(test_name: str | None, requires_haip: bool) -> str:
         return WALLET_MODE
     if test_name and "negative" in test_name:
         return WALLET_MODE
+    if test_name and is_rejection_fapi2_client_test(test_name):
+        return WALLET_MODE
     return "debug"
+
+
+# A FAPI2 client test whose name marks a bad authorization server response (a
+# mismatched discovery issuer, an invalid, missing, or removed value, a response
+# the client must fail) passes only when the wallet refuses that response, so it
+# runs in the enforcing mode. Its happy-path and valid-* siblings complete a
+# clean exchange and stay in debug. The debug rationale above is the VP verifier's
+# encryption-metadata gap, which these issuance tests do not touch, so enforcing
+# the negative ones is safe.
+_FAPI2_REJECTION_MARKERS = ("mismatch", "invalid", "-fails", "remove-authorization", "without-")
+
+
+def is_rejection_fapi2_client_test(test_name: str) -> bool:
+    if not test_name.startswith("fapi2-security-profile-final-client-test-"):
+        return False
+    return any(marker in test_name for marker in _FAPI2_REJECTION_MARKERS)
 
 
 def set_wallet_conformance(wallet_url: str, mode: str, requires_haip: bool) -> None:
@@ -1041,6 +1059,14 @@ def synthetic_fapi_vci_offer_url(info: dict, state: dict) -> str | None:
         return None
     variant = module_variant(info, state)
     if variant.get("fapi_profile") not in {"vci", "vci_haip"}:
+        return None
+    # An issuer-initiated flow is driven by the credential offer the suite itself
+    # generates, which carries the issuer_state the suite then matches against the
+    # wallet's authorization request (VCIVerifyIssuerStateInAuthorizationRequest).
+    # handle_module submits that real offer from credential_offer_redirect_url, so
+    # the wallet must use it. The synthetic offer is only for a wallet-initiated
+    # flow, which the suite does not seed with an offer.
+    if variant.get("vci_authorization_code_flow_variant") == "issuer_initiated":
         return None
     credential_offer_endpoint = module_credential_offer_endpoint(info, state)
     if not credential_offer_endpoint:
