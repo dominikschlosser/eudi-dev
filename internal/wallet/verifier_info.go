@@ -79,11 +79,11 @@ func verifiedRegistrationCertificates(payload map[string]any) (certs []map[strin
 		}
 		key, err := validate.ExtractX5CLeafKey(header)
 		if err != nil || key == nil {
-			findings = append(findings, "the registration certificate carries no readable x5c certificate, so its signature cannot be checked and its purpose is not shown")
+			findings = append(findings, "The registration certificate carries no readable x5c certificate, so its signature cannot be checked and its purpose is not shown")
 			continue
 		}
 		if _, err := jws.Verify(data, key); err != nil {
-			findings = append(findings, fmt.Sprintf("the registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
+			findings = append(findings, fmt.Sprintf("The registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
 			continue
 		}
 		certs = append(certs, claims)
@@ -112,7 +112,7 @@ func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestPara
 
 	certs, findings := verifiedRegistrationCertificates(payload)
 	if len(certs) == 0 {
-		findings = append(findings, "the request carries no relying party registration certificate (verifier_info with an rc-wrp+jwt), which ARF RPRC_19 requires in every presentation request")
+		findings = append(findings, "The request carries no relying party registration certificate (verifier_info with an rc-wrp+jwt), which ARF RPRC_19 requires in every presentation request")
 	}
 
 	var purposes []string
@@ -135,7 +135,7 @@ func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestPara
 func registrationCertificateContentFindings(cert map[string]any) []string {
 	var findings []string
 	miss := func(field, rule string) {
-		findings = append(findings, fmt.Sprintf("the registration certificate has no %s, which %s requires", field, rule))
+		findings = append(findings, fmt.Sprintf("The registration certificate has no %s, which %s requires", field, rule))
 	}
 	if stringClaim(cert["name"]) == "" {
 		miss("name (trade name)", "ARF RPRC_06")
@@ -171,7 +171,7 @@ func registrationValidityFindings(cert map[string]any) []string {
 	var findings []string
 	iat, hasIat := numberClaim(cert["iat"])
 	if !hasIat {
-		findings = append(findings, "the registration certificate has no iat, which ETSI TS 119 475 §5.2.4 requires")
+		findings = append(findings, "The registration certificate has no iat, which ETSI TS 119 475 §5.2.4 requires")
 	}
 	exp, hasExp := numberClaim(cert["exp"])
 	if !hasExp {
@@ -179,10 +179,10 @@ func registrationValidityFindings(cert map[string]any) []string {
 	}
 	expTime := time.Unix(int64(exp), 0)
 	if expTime.Before(time.Now()) {
-		findings = append(findings, "the registration certificate has expired (ARF RPRC_17)")
+		findings = append(findings, "The registration certificate has expired (ARF RPRC_17)")
 	}
 	if hasIat && expTime.After(time.Unix(int64(iat), 0).AddDate(1, 0, 0)) {
-		findings = append(findings, "the registration certificate is valid for more than 12 months (ETSI TS 119 475 GEN-5.2.4-08)")
+		findings = append(findings, "The registration certificate is valid for more than 12 months (ETSI TS 119 475 GEN-5.2.4-08)")
 	}
 	return findings
 }
@@ -201,7 +201,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	}
 	var findings []string
 	overAsk := func(what string) {
-		findings = append(findings, fmt.Sprintf("the request asks for %s, which the registration certificate does not register (ARF RPRC_21 over-asking)", what))
+		findings = append(findings, fmt.Sprintf("The request asks for %s, which the registration certificate does not register (ARF RPRC_21 over-asking)", what))
 	}
 	for _, cq := range listOfMaps(dcql["credentials"]) {
 		format, _ := cq["format"].(string)

@@ -125,7 +125,7 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 		case hasDCQL && hasScope:
 			findings = append(findings, "dcql_query and scope must not both be present")
 		case !hasDCQL && !hasScope:
-			findings = append(findings, "a vp_token request must carry either dcql_query or scope")
+			findings = append(findings, "A vp_token request must carry either dcql_query or scope")
 		}
 	}
 	// §6.1 makes format, meta and the syntax of a credential query id
