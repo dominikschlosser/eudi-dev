@@ -627,7 +627,7 @@ func TestValidate_MDOCStatusWrapping(t *testing.T) {
 	}
 
 	// Call checkMDOCStatus with CheckStatus=false. Should skip
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: false})
+	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: false})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when CheckStatus=false, got %s", result.Status)
 	}
@@ -644,7 +644,7 @@ func TestValidate_MDOCStatusNoStatus(t *testing.T) {
 		},
 	}
 
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})
+	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no status in MSO, got %s", result.Status)
 	}
@@ -875,7 +875,7 @@ func TestHandleValidate_SDJWTValidExpiry(t *testing.T) {
 func TestValidate_MDOCStatusNilIssuerAuth(t *testing.T) {
 	doc := &mdoc.Document{}
 
-	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})
+	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no issuerAuth, got %s", result.Status)
 	}
@@ -941,7 +941,7 @@ func TestValidate_SDJWTStatusSkippedNotRequested(t *testing.T) {
 		},
 	}
 
-	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: false})
+	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: false})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped, got %s", result.Status)
 	}
@@ -955,7 +955,7 @@ func TestValidate_SDJWTStatusNoRef(t *testing.T) {
 		ResolvedClaims: map[string]any{"sub": "user"},
 	}
 
-	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: true})
+	result := checkSDJWTStatus(token, ValidateOpts{CheckStatus: true})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when no status ref, got %s", result.Status)
 	}

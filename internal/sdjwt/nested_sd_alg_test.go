@@ -1,0 +1,67 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package sdjwt
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// A PID from a real issuer repeats the SD structure into a credentialSubject
+// object and carries a second _sd_alg there. RFC 9901 §4.1.1 forbids the nested
+// copy, but it names the same hash the top level already fixed, so parsing
+// tolerates it: the claims still resolve and the rule break is a deviation.
+func TestParse_NestedSDAlgIsTolerated(t *testing.T) {
+	raw, err := os.ReadFile("testdata/nested_sd_alg.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	input := strings.TrimSpace(string(raw))
+
+	// Strict Parse rejects it, naming the rule break.
+	if _, err := Parse(input); err == nil {
+		t.Fatal("Parse accepted a credential with a nested _sd_alg, want rejection")
+	}
+
+	// Lenient parsing tolerates it and resolves the claims.
+	token, err := ParseLenient(input)
+	if err != nil {
+		t.Fatalf("ParseLenient rejected a credential with a nested _sd_alg: %v", err)
+	}
+
+	// The credentialSubject copy triggers two tolerated rule breaks: the nested
+	// _sd_alg and, because it repeats the top-level digests, a duplicate digest.
+	joined := strings.Join(token.Deviations, "\n")
+	if !strings.Contains(joined, "_sd_alg is inside a nested object") {
+		t.Fatalf("missing nested-_sd_alg deviation, got %v", token.Deviations)
+	}
+	if !strings.Contains(joined, "appears more than once") {
+		t.Fatalf("missing duplicate-digest deviation, got %v", token.Deviations)
+	}
+
+	// The disclosed claims resolve despite the nested _sd_alg.
+	if got, _ := token.ResolvedClaims["family_name"].(string); got != "Mustermann" {
+		t.Fatalf("family_name did not resolve, got %q", got)
+	}
+	cs, ok := token.ResolvedClaims["credentialSubject"].(map[string]any)
+	if !ok {
+		t.Fatalf("credentialSubject missing from resolved claims")
+	}
+	if _, present := cs["_sd_alg"]; present {
+		t.Fatalf("the nested _sd_alg leaked into the resolved credentialSubject")
+	}
+}

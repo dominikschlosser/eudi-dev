@@ -84,6 +84,33 @@ func formatDuration(d time.Duration) string {
 }
 
 // BuildSDJWTJSON returns the JSON-serializable map for an SD-JWT token.
+// addTokenNotes copies a decoded token's structural findings onto out.
+func addTokenNotes(out map[string]any, token *sdjwt.Token) {
+	if len(token.Warnings) > 0 {
+		out["warnings"] = token.Warnings
+	}
+	if len(token.Deviations) > 0 {
+		out["deviations"] = token.Deviations
+	}
+}
+
+// printTokenNotes prints a decoded token's structural findings, each under its
+// own section.
+func printTokenNotes(token *sdjwt.Token) {
+	if len(token.Warnings) > 0 {
+		printSection("Warnings")
+		for _, w := range token.Warnings {
+			warnColor.Printf("  ⚠ %s\n", w)
+		}
+	}
+	if len(token.Deviations) > 0 {
+		printSection("Deviations")
+		for _, d := range token.Deviations {
+			warnColor.Printf("  ⚠ %s\n", d)
+		}
+	}
+}
+
 func BuildSDJWTJSON(token *sdjwt.Token) map[string]any {
 	out := map[string]any{
 		"format":         "dc+sd-jwt",
@@ -92,9 +119,7 @@ func BuildSDJWTJSON(token *sdjwt.Token) map[string]any {
 		"disclosures":    formatDisclosuresJSON(token, token.Disclosures),
 		"resolvedClaims": token.ResolvedClaims,
 	}
-	if len(token.Warnings) > 0 {
-		out["warnings"] = token.Warnings
-	}
+	addTokenNotes(out, token)
 	if token.KeyBindingJWT != nil {
 		out["keyBindingJWT"] = map[string]any{
 			"header":  token.KeyBindingJWT.Header,
@@ -141,13 +166,7 @@ func PrintSDJWT(token *sdjwt.Token, opts Options) {
 		}
 	}
 
-	// Warnings
-	if len(token.Warnings) > 0 {
-		printSection("Warnings")
-		for _, w := range token.Warnings {
-			warnColor.Printf("  ⚠ %s\n", w)
-		}
-	}
+	printTokenNotes(token)
 
 	// Key Binding JWT
 	if token.KeyBindingJWT != nil {
@@ -166,11 +185,13 @@ func PrintSDJWT(token *sdjwt.Token, opts Options) {
 
 // BuildJWTJSON returns the JSON-serializable map for a plain JWT token.
 func BuildJWTJSON(token *sdjwt.Token) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"format":  "jwt",
 		"header":  token.Header,
 		"payload": token.Payload,
 	}
+	addTokenNotes(out, token)
+	return out
 }
 
 // PrintJWT prints a decoded plain JWT to the terminal.
@@ -191,6 +212,8 @@ func PrintJWT(token *sdjwt.Token, opts Options) {
 	printSection("Payload")
 	printMap(token.Payload, 1)
 
+	printTokenNotes(token)
+
 	fmt.Println()
 }
 
@@ -200,6 +223,9 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 		"format":  "mso_mdoc",
 		"docType": doc.DocType,
 		"claims":  formatMDOCClaimsJSON(doc),
+	}
+	if len(doc.Deviations) > 0 {
+		out["deviations"] = doc.Deviations
 	}
 	if doc.IsDeviceResponse {
 		out["isDeviceResponse"] = true
@@ -441,6 +467,13 @@ func PrintMDOC(doc *mdoc.Document, opts Options) {
 
 	if doc.IsDeviceResponse {
 		dimColor.Println("  (parsed from DeviceResponse)")
+	}
+
+	if len(doc.Deviations) > 0 {
+		printSection("Deviations")
+		for _, d := range doc.Deviations {
+			warnColor.Printf("  ⚠ %s\n", d)
+		}
 	}
 
 	printSection("Document Info")

@@ -392,7 +392,7 @@ func metadataListContains(meta map[string]any, key, want string) bool {
 // in another format, or one this wallet cannot parse, is left to the checks
 // that own it: the section is the IETF SD-JWT VC profile.
 func (w *Wallet) haipCredentialViolations(raw string) []string {
-	token, err := sdjwt.Parse(strings.TrimSpace(raw))
+	token, err := sdjwt.ParseLenient(strings.TrimSpace(raw))
 	if err != nil {
 		return nil
 	}

@@ -26,14 +26,20 @@ type processor struct {
 	seen map[string]bool
 	// used records the digests that resolved to a Disclosure, for step 5.
 	used map[string]bool
+	// deviations collects rule breaks that a strict consumer rejects but that
+	// still leave the payload resolvable, so lenient parsing can carry on.
+	deviations []string
+	// reportedDuplicateDigest keeps the mirrored-claims deviation to one entry
+	// however many digests repeat.
+	reportedDuplicateDigest bool
 }
 
 // processPayload applies RFC 9901 §7.1 steps 3 to 5 and returns the Processed
-// SD-JWT Payload. Any condition the specification marks MUST-reject is
-// returned as an error instead of being silently repaired or skipped, because
-// §7.1 closes with "If any step fails, the SD-JWT is not valid, and
-// processing MUST be aborted."
-func processPayload(payload map[string]any, disclosures []Disclosure) (map[string]any, error) {
+// SD-JWT Payload with the deviations it found. A condition the specification
+// marks MUST-reject is recorded as a deviation and the payload resolved around
+// it, so lenient parsing stays usable; Parse turns any deviation into the
+// rejection §7.1 requires.
+func processPayload(payload map[string]any, disclosures []Disclosure) (map[string]any, []string, error) {
 	p := &processor{
 		byDigest: make(map[string]*Disclosure, len(disclosures)),
 		seen:     make(map[string]bool),
@@ -43,35 +49,35 @@ func processPayload(payload map[string]any, disclosures []Disclosure) (map[strin
 		d := &disclosures[i]
 		// RFC 9901 §4: "A Holder MUST NOT send a Disclosure that was not
 		// included in the issued SD-JWT or send a Disclosure more than once."
+		// The duplicate resolves to the same claim, so the extra copy is ignored.
 		if _, duplicate := p.byDigest[d.Digest]; duplicate {
-			return nil, fmt.Errorf("disclosure %s is present more than once", shortDigest(d.Digest))
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s is present more than once, so the extra copy is ignored", shortDigest(d.Digest)))
+			continue
 		}
 		p.byDigest[d.Digest] = d
 	}
 
-	resolved, err := p.object(payload, true)
-	if err != nil {
-		return nil, err
-	}
+	resolved := p.object(payload, true)
 
 	// Step 5: "If any Disclosure was not referenced by digest value in the
 	// Issuer-signed JWT (directly or recursively via other Disclosures), the
-	// SD-JWT MUST be rejected."
+	// SD-JWT MUST be rejected." An unreferenced disclosure is simply never
+	// inserted, so it is ignored.
 	for i := range disclosures {
 		d := &disclosures[i]
 		if !p.used[d.Digest] {
-			return nil, fmt.Errorf("disclosure %s (%s) is not referenced by any digest in the credential", shortDigest(d.Digest), disclosureLabel(d))
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s (%s) is not referenced by any digest in the credential, so it is ignored", shortDigest(d.Digest), disclosureLabel(d)))
 		}
 	}
 
-	return resolved, nil
+	return resolved, p.deviations, nil
 }
 
 // object processes one JSON object of the payload: it keeps the claims that
 // are already there, inserts the claims disclosed by the digests in its "_sd"
 // array, and drops the "_sd" key itself (§7.1 steps 3.b.i, 3.c.ii and 3.e).
 // top marks the SD-JWT payload itself, the only object where _sd_alg belongs.
-func (p *processor) object(obj map[string]any, top bool) (map[string]any, error) {
+func (p *processor) object(obj map[string]any, top bool) map[string]any {
 	result := make(map[string]any, len(obj))
 
 	for k, v := range obj {
@@ -81,41 +87,46 @@ func (p *processor) object(obj map[string]any, top bool) (map[string]any, error)
 			// Issuer-signed JWT payload."
 			continue
 		case "_sd_alg":
-			// Step 3.f removes _sd_alg from the payload. RFC 9901 §4.1.1
-			// says of the claim: "When used, this claim MUST appear at the
-			// top level of the SD-JWT payload. It MUST NOT be used in any
-			// object nested within the payload."
-			if top {
-				continue
+			// Step 3.f removes _sd_alg from the payload. RFC 9901 §4.1.1 keeps
+			// it at the top level only, and a nested copy names the same hash
+			// the top level already fixed, so it is redundant: drop it and
+			// record the rule break for a strict caller.
+			if !top {
+				p.deviations = append(p.deviations, "_sd_alg is inside a nested object. RFC 9901 §4.1.1 allows it only at the top level.")
 			}
-			return nil, fmt.Errorf("_sd_alg appears in an object nested within the payload")
+			continue
 		}
-		resolved, err := p.value(v)
-		if err != nil {
-			return nil, err
-		}
-		result[k] = resolved
+		result[k] = p.value(v)
 	}
 
 	rawSD, present := obj["_sd"]
 	if !present {
-		return result, nil
+		return result
 	}
 	// RFC 9901 §4.2.4.1: "The _sd key MUST refer to an array of strings, each
 	// string being a digest of a Disclosure or a decoy digest".
 	entries, ok := rawSD.([]any)
 	if !ok {
-		return nil, fmt.Errorf(`"_sd" is not an array`)
+		p.deviations = append(p.deviations, `the "_sd" value is not an array, which RFC 9901 §4.2.4.1 requires, so its disclosures are skipped`)
+		return result
 	}
 
+	localSeen := make(map[string]bool, len(entries))
 	for _, entry := range entries {
 		digest, ok := entry.(string)
 		if !ok {
-			return nil, fmt.Errorf(`"_sd" contains an entry that is not a string`)
+			p.deviations = append(p.deviations, `an "_sd" array entry is not a string, which RFC 9901 §4.2.4.1 requires, so it is skipped`)
+			continue
 		}
-		if err := p.markSeen(digest); err != nil {
-			return nil, err
+		// A digest repeated in one _sd array would insert the same claim twice,
+		// so the repeat is skipped. markSeen handles the same digest reached
+		// through different objects, which is the mirrored-claims pattern.
+		if localSeen[digest] {
+			p.deviations = append(p.deviations, fmt.Sprintf("digest %s appears more than once in one _sd array, so the repeat is skipped", shortDigest(digest)))
+			continue
 		}
+		localSeen[digest] = true
+		p.markSeen(digest)
 		disc, found := p.byDigest[digest]
 		if !found {
 			// Step 3.c.i: "If no such Disclosure can be found, the digest
@@ -124,62 +135,48 @@ func (p *processor) object(obj map[string]any, top bool) (map[string]any, error)
 			continue
 		}
 		if disc.IsArrayEntry {
-			// Step 3.c.ii.1: "If the contents of the respective Disclosure is
-			// not a JSON array of three elements (salt, claim name, claim
-			// value), the SD-JWT MUST be rejected."
-			return nil, fmt.Errorf("disclosure %s is referenced from an _sd array but holds two elements instead of a salt, claim name and claim value", shortDigest(digest))
+			// Step 3.c.ii.1 wants three elements (salt, claim name, value) here.
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s in an _sd array holds two elements, but RFC 9901 §7.1 expects three (salt, claim name, value), so it is skipped", shortDigest(digest)))
+			continue
 		}
 		if disc.Name == "_sd" || disc.Name == "..." {
-			// Step 3.c.ii.2: "If the claim name is _sd or ..., the SD-JWT
-			// MUST be rejected."
-			return nil, fmt.Errorf("disclosure %s discloses a claim named %q", shortDigest(digest), disc.Name)
+			// Step 3.c.ii.2: a disclosure MUST NOT be named _sd or ...
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s discloses a claim named %q, which RFC 9901 §7.1 does not allow, so it is skipped", shortDigest(digest), disc.Name))
+			continue
 		}
 		if _, exists := result[disc.Name]; exists {
-			// Step 3.c.ii.3: "If the claim name already exists at the level
-			// of the _sd key, the SD-JWT MUST be rejected." Without this a
-			// Disclosure can shadow a signed claim such as vct, leaving the
-			// resolved claims and the payload stating different things.
-			return nil, fmt.Errorf("disclosure %s discloses claim %q, which already exists at the level of its _sd key", shortDigest(digest), disc.Name)
+			// Step 3.c.ii.3: a disclosure MUST NOT redefine a claim that already
+			// exists at this level (a signed vct, say). The existing value stays.
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s discloses claim %q, which already exists at this level (RFC 9901 §7.1 does not let a disclosure redefine an existing claim), so the existing value stays", shortDigest(digest), disc.Name))
+			continue
 		}
 		p.used[digest] = true
-
-		// Step 3.c.ii.5 recurses into the disclosed value before it lands in
-		// the payload, so nested digests are resolved and checked as well.
-		resolved, err := p.value(disc.Value)
-		if err != nil {
-			return nil, err
-		}
-		// Step 3.c.ii.4: "Insert, at the level of the _sd key, a new claim
-		// using the claim name and claim value from the Disclosure."
-		result[disc.Name] = resolved
+		// Step 3.c.ii.5 recurses into the disclosed value, then 3.c.ii.4 inserts
+		// it under the claim name.
+		result[disc.Name] = p.value(disc.Value)
 	}
 
-	return result, nil
+	return result
 }
 
 // array processes one JSON array: each {"...": digest} placeholder is
 // replaced by its disclosed value, and a placeholder with no Disclosure is
 // dropped (§7.1 steps 3.c.iii and 3.d).
-func (p *processor) array(arr []any) ([]any, error) {
+func (p *processor) array(arr []any) []any {
 	result := make([]any, 0, len(arr))
 
 	for _, item := range arr {
 		digest, isPlaceholder, err := arrayElementDigest(item)
 		if err != nil {
-			return nil, err
+			p.deviations = append(p.deviations, err.Error()+", so the element is dropped")
+			continue
 		}
 		if !isPlaceholder {
-			resolved, err := p.value(item)
-			if err != nil {
-				return nil, err
-			}
-			result = append(result, resolved)
+			result = append(result, p.value(item))
 			continue
 		}
 
-		if err := p.markSeen(digest); err != nil {
-			return nil, err
-		}
+		p.markSeen(digest)
 		disc, found := p.byDigest[digest]
 		if !found {
 			// Step 3.d: "Remove all array elements for which the digest was
@@ -189,34 +186,27 @@ func (p *processor) array(arr []any) ([]any, error) {
 			continue
 		}
 		if !disc.IsArrayEntry {
-			// Step 3.c.iii.1: "If the contents of the respective Disclosure
-			// is not a JSON array of two elements (salt, value), the SD-JWT
-			// MUST be rejected."
-			return nil, fmt.Errorf("disclosure %s is referenced from an array element but holds three elements instead of a salt and a value", shortDigest(digest))
+			// Step 3.c.iii.1 wants two elements (salt, value) here.
+			p.deviations = append(p.deviations, fmt.Sprintf("disclosure %s holds three elements but sits in an array element, where RFC 9901 §7.1 expects two (salt, value), so the element is dropped", shortDigest(digest)))
+			continue
 		}
 		p.used[digest] = true
-
-		// Step 3.c.iii.3 recurses into the disclosed value.
-		resolved, err := p.value(disc.Value)
-		if err != nil {
-			return nil, err
-		}
-		// Step 3.c.iii.2: "Replace the array element with the value from the
-		// Disclosure."
-		result = append(result, resolved)
+		// Step 3.c.iii.3 recurses into the value, then 3.c.iii.2 replaces the
+		// array element with it.
+		result = append(result, p.value(disc.Value))
 	}
 
-	return result, nil
+	return result
 }
 
-func (p *processor) value(v any) (any, error) {
+func (p *processor) value(v any) any {
 	switch val := v.(type) {
 	case map[string]any:
 		return p.object(val, false)
 	case []any:
 		return p.array(val)
 	default:
-		return v, nil
+		return v
 	}
 }
 
@@ -225,12 +215,18 @@ func (p *processor) value(v any) (any, error) {
 // payload (directly or recursively via other Disclosures), the SD-JWT MUST be
 // rejected." §4.1 states the same rule for the Issuer: "The same digest value
 // MUST NOT appear more than once in the SD-JWT."
-func (p *processor) markSeen(digest string) error {
+// A digest reached through two objects (a mirrored credentialSubject copy)
+// hits this rule but resolves the same disclosure into both. Lenient parsing
+// records the break once as a deviation.
+func (p *processor) markSeen(digest string) {
 	if p.seen[digest] {
-		return fmt.Errorf("digest %s appears more than once in the credential", shortDigest(digest))
+		if !p.reportedDuplicateDigest {
+			p.reportedDuplicateDigest = true
+			p.deviations = append(p.deviations, "the same disclosure digest appears more than once (the credential repeats its claims in a second object). RFC 9901 §4.1 does not allow this.")
+		}
+		return
 	}
 	p.seen[digest] = true
-	return nil
 }
 
 // arrayElementDigest reports the digest an array element hides, if it is a

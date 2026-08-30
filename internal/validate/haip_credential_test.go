@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,4 +81,32 @@ func TestSelfSignedCertificate(t *testing.T) {
 			t.Errorf("SelfSignedCertificate(%s) = %v, want %v", tc.name, got, tc.want)
 		}
 	}
+}
+
+// HAIP 1.0 §6.1 requires a status claim to contain status_list. A W3C
+// StatusList2021Entry does not and is a finding, a proper status_list or no
+// status at all is not.
+func TestHAIPCredentialFindings_StatusList(t *testing.T) {
+	w3c := map[string]any{"status": map[string]any{"type": "StatusList2021Entry", "statusListIndex": "0"}}
+	if findings := HAIPCredentialFindings(map[string]any{}, w3c); !containsSubstr(findings, "not a Token Status List") {
+		t.Fatalf("expected a §6.1 status finding, got %v", findings)
+	}
+
+	ietf := map[string]any{"status": map[string]any{"status_list": map[string]any{"uri": "https://issuer/sl", "idx": 0}}}
+	if findings := HAIPCredentialFindings(map[string]any{}, ietf); containsSubstr(findings, "Token Status List") {
+		t.Fatalf("a status_list status should raise no status finding, got %v", findings)
+	}
+
+	if findings := HAIPCredentialFindings(map[string]any{}, map[string]any{}); containsSubstr(findings, "Token Status List") {
+		t.Fatalf("no status claim should raise no status finding, got %v", findings)
+	}
+}
+
+func containsSubstr(findings []string, sub string) bool {
+	for _, f := range findings {
+		if strings.Contains(f, sub) {
+			return true
+		}
+	}
+	return false
 }

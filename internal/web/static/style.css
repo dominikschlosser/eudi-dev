@@ -226,7 +226,9 @@ main {
   overflow: hidden;
 }
 
-textarea {
+/* Only the credential editor's textarea is the overlay; scoping keeps this off
+   other textareas (the signature verify box, say). */
+.input-editor textarea {
   position: absolute;
   top: 0;
   left: 0;
@@ -250,17 +252,17 @@ textarea {
 }
 
 /* When colorized view is active, make textarea text invisible but keep caret */
-textarea.colorized {
+.input-editor textarea.colorized {
   background: transparent;
   color: transparent;
   caret-color: var(--text);
 }
 
-textarea::placeholder {
+.input-editor textarea::placeholder {
   color: var(--text-dim);
 }
 
-textarea.colorized::placeholder {
+.input-editor textarea.colorized::placeholder {
   color: transparent;
 }
 
@@ -441,45 +443,104 @@ textarea.colorized::placeholder {
 /* Validity banner */
 .validity-banner {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border-radius: 6px;
+  border: 1px solid var(--border);
   font-size: 12px;
-  font-weight: 600;
+  color: var(--text);
   margin-bottom: 12px;
 }
 
-.validity-banner.valid {
-  background: rgba(158, 206, 106, 0.12);
-  color: var(--green);
+/* A subtle tint per verdict; the verdict word carries the colour. */
+.validity-banner.valid { background: rgba(158, 206, 106, 0.08); }
+.validity-banner.expired { background: rgba(247, 118, 142, 0.08); }
+.validity-banner.unverified { background: rgba(224, 175, 104, 0.08); }
+.validity-banner.checking { background: var(--bg-surface); }
+
+.verification-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-.validity-banner.expiring {
-  background: rgba(224, 175, 104, 0.12);
-  color: var(--yellow);
+.verification-verdict {
+  font-weight: 700;
 }
 
-.validity-banner.expired {
-  background: rgba(247, 118, 142, 0.12);
-  color: var(--red);
+.validity-banner.valid .verification-verdict { color: var(--green); }
+.validity-banner.expired .verification-verdict { color: var(--red); }
+.validity-banner.unverified .verification-verdict { color: var(--yellow); }
+.validity-banner.checking .verification-verdict { color: var(--text-dim); }
+
+.verification-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-/* Checks that only the issuer can answer are still in flight */
-.validity-banner.checking {
-  background: var(--bg-surface);
+.verification-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vg-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  font-weight: 700;
+}
+
+.vg-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  line-height: 1.4;
+}
+
+.vg-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+.vg-name {
+  flex-shrink: 0;
+  min-width: 72px;
+  font-weight: 600;
+}
+
+.vg-detail {
   color: var(--text-dim);
 }
 
-.validity-banner.not-yet-valid {
-  background: rgba(224, 175, 104, 0.12);
-  color: var(--yellow);
+.vg-violations .vg-icon { color: var(--red); }
+.vg-cant .vg-icon { color: var(--text-dim); }
+.vg-valid .vg-icon { color: var(--green); }
+
+.verify-details {
+  max-width: 460px;
+}
+
+.verify-details summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.verify-details[open] summary {
+  margin-bottom: 6px;
 }
 
 .validity-detail {
   font-weight: 400;
   color: var(--text-dim);
-  margin-left: 4px;
 }
 
 /* Timestamp hover */
@@ -714,65 +775,12 @@ textarea.colorized::placeholder {
   opacity: 1;
 }
 
-/* Validity banner — unverified state */
-.validity-banner.unverified {
-  background: rgba(224, 175, 104, 0.12);
-  color: var(--yellow);
-  cursor: pointer;
-  position: relative;
-}
-
-/* Make all banners support popover */
-.validity-banner {
-  position: relative;
-  cursor: pointer;
-}
-
-/* Validity checks popover */
-.validity-banner .validity-checks {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 12px;
-  /* padding-top includes bridge area so hover doesn't break when moving to popover */
-  margin-top: 0;
-  padding-top: 12px;
-  font-size: 12px;
-  font-weight: 400;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-/* Invisible bridge so mouse can travel from banner to popover without gap */
-.validity-banner .validity-checks::before {
-  content: "";
-  position: absolute;
-  top: -8px;
-  left: 0;
-  right: 0;
-  height: 8px;
-}
-
-.validity-banner:hover .validity-checks,
-.validity-banner.popover-pinned .validity-checks {
-  display: block;
-}
-
-/* Inline verify form inside the popover */
-.verify-inline-sep {
-  border-top: 1px solid var(--border);
-  margin: 6px 0;
-}
-
+/* Signature (re-)verification form, inside the verification panel's details. */
 .verify-inline {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  max-width: 460px;
 }
 
 .verify-label {
@@ -782,6 +790,8 @@ textarea.colorized::placeholder {
 }
 
 .verify-input {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -817,46 +827,6 @@ textarea.colorized::placeholder {
 .verify-btn:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-.validity-check-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  color: var(--text);
-}
-
-.check-icon {
-  font-size: 13px;
-  width: 18px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.check-pass .check-icon {
-  color: var(--green);
-}
-
-.check-fail .check-icon {
-  color: var(--red);
-}
-
-.check-skipped .check-icon {
-  color: var(--text-dim);
-}
-
-.check-pending .check-icon {
-  color: var(--cyan);
-}
-
-.check-name {
-  font-weight: 600;
-  min-width: 70px;
-}
-
-.check-detail {
-  color: var(--text-dim);
 }
 
 /* Responsive */

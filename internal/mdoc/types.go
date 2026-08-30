@@ -31,6 +31,10 @@ type Document struct {
 	ResponseStatus  *uint64
 	// IsDeviceResponse indicates this was parsed from a DeviceResponse wrapper.
 	IsDeviceResponse bool
+	// Deviations records parts the parser dropped because it could not read them
+	// (a malformed namespace, a repeated element). The rest of the document
+	// still displays, and strict mode turns a deviation into a rejection.
+	Deviations []string
 }
 
 // DeviceSigned contains the device-signed portion of a DeviceResponse document.

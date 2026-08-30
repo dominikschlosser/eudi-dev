@@ -29,10 +29,10 @@ type Token struct {
 	ResolvedClaims map[string]any
 	// Warnings contains informational warnings about the credential structure.
 	Warnings []string
-	// Violation names the RFC 9901 §7.1 rule that makes this credential
-	// invalid, set only by Inspect. Parse returns an error instead, so a
-	// token from Parse never carries one.
-	Violation string
+	// Deviations names rules a strict consumer rejects but lenient parsing
+	// tolerates, resolving the claims anyway (an _sd_alg in a nested object,
+	// say). Parse records them, a strict caller turns them into a rejection.
+	Deviations []string
 }
 
 // JWT represents a decoded JWT (header.payload.signature).

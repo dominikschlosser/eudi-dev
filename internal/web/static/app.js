@@ -357,7 +357,7 @@
         lastData = data;
         lastValidation = data.validation || null;
         if (renderedSeq === seq) {
-          replaceValidationBanner(data.validation && data.validation.checks, {});
+          replaceValidationBanner(data.validation && data.validation.checks, data.deviations, {});
           return;
         }
         render(seq, data, {});
@@ -366,7 +366,7 @@
         // The network checks stay unanswered, so the banner falls back to
         // what the offline pass reported about them.
         if (seq === decodeSeq && renderedSeq === seq) {
-          replaceValidationBanner(lastValidation && lastValidation.checks, {});
+          replaceValidationBanner(lastValidation && lastValidation.checks, lastData && lastData.deviations, {});
         }
       });
   }
@@ -389,11 +389,11 @@
 
   // Swaps the banner in place so the rest of the output (and which sections the
   // reader collapsed) survives the online pass landing.
-  function replaceValidationBanner(checks, opts) {
+  function replaceValidationBanner(checks, deviations, opts) {
     if (!checks) return;
     const existing = outputEl.querySelector(".validity-banner");
     if (!existing) return;
-    existing.replaceWith(renderValidationBanner(checks, opts));
+    existing.replaceWith(renderValidationBanner(checks, deviations, opts));
   }
 
   // Re-validate with a public key or trust list for signature verification
@@ -464,7 +464,7 @@
 
     // Validation banner (always from server checks now)
     if (data.validation && data.validation.checks) {
-      outputEl.appendChild(renderValidationBanner(data.validation.checks, opts));
+      outputEl.appendChild(renderValidationBanner(data.validation.checks, data.deviations, opts));
     }
 
     const fmt = data.format;
@@ -536,130 +536,103 @@
     }
   }
 
-  // Validation banner with hover checklist + clickable signature verify popover.
+  // The verification panel: a verdict, then the checks sorted into what is
+  // valid, what could not be checked, and what is a clear violation (a failed
+  // check, or a structural break the parser recorded as a deviation).
   // opts.awaitingNetworkChecks means the online pass is still running, so the
   // checks it owns are shown as in flight rather than as an outcome.
-  function renderValidationBanner(checks, opts) {
+  function renderValidationBanner(checks, deviations, opts) {
     const banner = document.createElement("div");
     banner.className = "validity-banner";
 
+    checks = checks || [];
+    deviations = deviations || [];
     const awaiting = !!(opts && opts.awaitingNetworkChecks);
     const isPending = (c) => awaiting && c.needsNetwork === true;
     const pending = checks.filter(isPending);
 
-    const hasFailure = checks.some((c) => c.status === "fail");
-    const sigCheck = checks.find((c) => c.name === "signature");
-    const sigSkipped = sigCheck && sigCheck.status === "skipped" && !isPending(sigCheck);
-    const nonSkipped = checks.filter((c) => c.status !== "skipped");
-    const allNonSkippedPass = nonSkipped.length > 0 && nonSkipped.every((c) => c.status === "pass");
+    const valid = [];
+    const cantCheck = [];
+    const violations = [];
+    checks.forEach((c) => {
+      if (isPending(c)) return;
+      const item = { name: c.name, detail: c.detail };
+      if (c.status === "pass") valid.push(item);
+      else if (c.status === "fail") violations.push(item);
+      else cantCheck.push(item); // skipped or a warning that could not resolve
+    });
+    deviations.forEach((d) => violations.push({ name: "structure", detail: d }));
 
-    let icon, label, cls;
-    if (hasFailure) {
-      icon = "\u2717";
-      label = "Invalid";
-      cls = "expired"; // red
-    } else if (pending.length > 0) {
-      // A check still running can still come back revoked, so nothing here
-      // claims a verdict yet.
-      icon = "\u22ef";
-      label = "Checking";
-      cls = "checking";
-    } else if (sigSkipped) {
-      icon = "\u26A0";
-      label = "Unverified";
-      cls = "unverified"; // yellow
-    } else if (allNonSkippedPass) {
-      icon = "\u2713";
-      label = "Valid";
-      cls = "valid"; // green
+    const sig = checks.find((c) => c.name === "signature");
+    const sigValid = sig && sig.status === "pass";
+
+    let icon, label, cls, summary;
+    if (pending.length > 0) {
+      icon = "\u22ef"; label = "Checking"; cls = "checking";
+      summary = pending.map((c) => c.name).join(", ") + " at the issuer";
+    } else if (violations.length > 0) {
+      icon = "\u2717"; label = "Invalid"; cls = "expired";
+      summary = violations.length === 1 ? "1 violation" : violations.length + " violations";
+    } else if (sigValid) {
+      icon = "\u2713"; label = "Valid"; cls = "valid";
+      summary = cantCheck.length > 0 ? cantCheck.length + " not checked" : "signature verified";
     } else {
-      icon = "\u26A0";
-      label = "Unverified";
-      cls = "unverified";
+      icon = "\u26a0"; label = "Unverified"; cls = "unverified";
+      summary = "signature not verified";
     }
-
     banner.classList.add(cls);
 
-    // A failure names itself. Everything passing names every check that ran,
-    // so the banner says what was looked at rather than only the last thing.
-    let detail = "";
-    const firstFailed = checks.find((c) => c.status === "fail");
-    if (firstFailed) {
-      detail = firstFailed.name + ": " + firstFailed.detail;
-    } else if (pending.length > 0) {
-      detail = pending.map((c) => c.name).join(", ") + " at the issuer";
-    } else if (nonSkipped.length > 0) {
-      detail = "checked " + nonSkipped.map((c) => c.name).join(", ");
-    }
+    let html = '<div class="verification-head">';
+    html += '<span class="verification-verdict">' + icon + " " + label + "</span>";
+    if (summary) html += '<span class="validity-detail">' + escapeHtml(summary) + "</span>";
+    html += "</div>";
 
-    let html = '<span class="validity-banner-text">' + icon + " " + label;
-    if (detail) {
-      html += '<span class="validity-detail"> (' + escapeHtml(detail) + ")</span>";
-    }
-    html += "</span>";
+    html += '<div class="verification-groups">';
+    html += verificationGroup("Violations", "vg-violations", "\u2717", violations);
+    html += verificationGroup("Cannot be checked", "vg-cant", "\u2014", cantCheck);
+    html += verificationGroup("Valid", "vg-valid", "\u2713", valid);
+    html += "</div>";
 
-    // Hover checklist
-    html += '<div class="validity-checks">';
-    checks.forEach((c) => {
-      let cIcon, cCls, cDetail = c.detail;
-      if (isPending(c)) { cIcon = "\u22ef"; cCls = "check-pending"; cDetail = "checking\u2026"; }
-      else if (c.status === "pass") { cIcon = "\u2713"; cCls = "check-pass"; }
-      else if (c.status === "fail") { cIcon = "\u2717"; cCls = "check-fail"; }
-      else { cIcon = "\u2014"; cCls = "check-skipped"; }
-
-      html += '<div class="validity-check-item ' + cCls + '">';
-      html += '<span class="check-icon">' + cIcon + "</span>";
-      html += '<span class="check-name">' + escapeHtml(c.name) + "</span>";
-      html += '<span class="check-detail">' + escapeHtml(cDetail) + "</span>";
-      html += "</div>";
-    });
-
-    // Always show the inline verify form so users can (re-)verify with different keys
-    const verifyLabel = sigSkipped ? "Verify Signature" : "Re-verify Signature";
-    html += '<div class="verify-inline-sep"></div>';
+    const verifyLabel = sigValid ? "Re-verify signature" : "Verify signature";
+    html += '<details class="verify-details"><summary>' + verifyLabel + " with a key or trust list</summary>";
     html += '<div class="verify-inline">';
     html += '<label class="verify-label">Public Key (PEM or JWK)</label>';
     html += '<textarea class="verify-input verify-inline-key" rows="3" placeholder="Paste PEM or JWK..." spellcheck="false"></textarea>';
     html += '<label class="verify-label">Trust List URL</label>';
     html += '<input class="verify-input verify-inline-tl" type="text" placeholder="https://...">';
-    html += '<button class="btn verify-btn verify-inline-btn">' + verifyLabel + '</button>';
-    html += "</div>";
-
-    html += "</div>";
+    html += '<button class="btn verify-btn verify-inline-btn">' + verifyLabel + "</button>";
+    html += "</div></details>";
 
     banner.innerHTML = html;
 
-    // Wire up the inline verify button
-    {
-      const verifyInlineBtn = banner.querySelector(".verify-inline-btn");
-      const keyInput = banner.querySelector(".verify-inline-key");
-      const tlInput = banner.querySelector(".verify-inline-tl");
-
-      // Prevent clicks on the form from closing the popover
-      banner.querySelector(".validity-checks").addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
-
-      verifyInlineBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const keyText = keyInput.value.trim();
-        const tlUrl = tlInput.value.trim();
-        if (!keyText && !tlUrl) {
-          showToast("Provide a public key or trust list URL");
-          return;
-        }
-        verifyInlineBtn.disabled = true;
-        verifyInlineBtn.textContent = "Verifying...";
-        verifySignature(keyText, tlUrl);
-      });
-    }
-
-    // Click banner to toggle the popover open (for non-hover devices / to pin it)
-    banner.addEventListener("click", () => {
-      banner.classList.toggle("popover-pinned");
+    const verifyInlineBtn = banner.querySelector(".verify-inline-btn");
+    const keyInput = banner.querySelector(".verify-inline-key");
+    const tlInput = banner.querySelector(".verify-inline-tl");
+    verifyInlineBtn.addEventListener("click", () => {
+      const keyText = keyInput.value.trim();
+      const tlUrl = tlInput.value.trim();
+      if (!keyText && !tlUrl) {
+        showToast("Provide a public key or trust list URL");
+        return;
+      }
+      verifyInlineBtn.disabled = true;
+      verifyInlineBtn.textContent = "Verifying...";
+      verifySignature(keyText, tlUrl);
     });
 
     return banner;
+  }
+
+  function verificationGroup(title, cls, icon, items) {
+    if (items.length === 0) return "";
+    let h = '<div class="verification-group ' + cls + '"><div class="vg-title">' + title + "</div>";
+    items.forEach((it) => {
+      h += '<div class="vg-item"><span class="vg-icon">' + icon + "</span>";
+      h += '<span class="vg-name">' + escapeHtml(it.name) + "</span>";
+      if (it.detail) h += '<span class="vg-detail">' + escapeHtml(it.detail) + "</span>";
+      h += "</div>";
+    });
+    return h + "</div>";
   }
 
   function relativeTime(date) {
@@ -775,6 +748,8 @@
       appendSection("Key Binding JWT", kb, data.keyBindingJWT, "kb-jwt");
     }
 
+    // Deviations are shown in the verification panel. These are the benign
+    // structural notes that do not make the credential invalid.
     if (data.warnings && data.warnings.length > 0) {
       const w = document.createElement("div");
       data.warnings.forEach((msg) => {
@@ -783,7 +758,7 @@
         p.textContent = "\u26A0 " + msg;
         w.appendChild(p);
       });
-      appendSection("Warnings", w);
+      appendSection("Notes", w);
     }
   }
 

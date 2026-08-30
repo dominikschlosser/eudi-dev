@@ -50,7 +50,7 @@ func credentialIssuerIdentity(c StoredCredential) map[string]any {
 
 // jwtIssuerClaim reads the iss payload claim of an SD-JWT or JWT VC.
 func jwtIssuerClaim(raw string) string {
-	token, err := sdjwt.Parse(raw)
+	token, err := sdjwt.ParseLenient(raw)
 	if err != nil || token == nil {
 		return ""
 	}
@@ -99,7 +99,7 @@ func credentialSignatureState(c StoredCredential) map[string]any {
 // never reaches for issuer metadata, so a summary is built without a network
 // call.
 func jwtSignatureState(raw string) map[string]any {
-	token, err := sdjwt.Parse(raw)
+	token, err := sdjwt.ParseLenient(raw)
 	if err != nil || token == nil {
 		return nil
 	}

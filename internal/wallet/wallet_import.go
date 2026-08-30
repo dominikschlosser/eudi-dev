@@ -197,8 +197,38 @@ func (w *Wallet) appendCredential(cred StoredCredential) *StoredCredential {
 	return &cred
 }
 
+// parseCredentialSDJWT decodes an issued or imported SD-JWT to suit the wallet
+// mode. Strict refuses a credential that breaks RFC 9901, debug keeps it and
+// records each break as a warning.
+func (w *Wallet) parseCredentialSDJWT(raw string) (*sdjwt.Token, error) {
+	if w.Mode() == ValidationModeStrict {
+		return sdjwt.Parse(raw)
+	}
+	token, err := sdjwt.ParseLenient(raw)
+	if err != nil {
+		return nil, err
+	}
+	w.recordCredentialDeviations("RFC 9901", token.Deviations)
+	return token, nil
+}
+
+// recordCredentialDeviations logs a credential's spec deviations as one activity
+// log entry, naming the count with the full list in the entry details.
+func (w *Wallet) recordCredentialDeviations(spec string, deviations []string) {
+	if len(deviations) == 0 {
+		return
+	}
+	finding := "findings"
+	if len(deviations) == 1 {
+		finding = "finding"
+	}
+	detail := fmt.Sprintf("The credential deviates from %s (%d %s, see details)", spec, len(deviations), finding)
+	w.addProtocolWarning("wallet", "credential_structure_deviation", detail,
+		map[string]any{"deviations": deviations})
+}
+
 func (w *Wallet) importSDJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
-	token, err := sdjwt.Parse(raw)
+	token, err := w.parseCredentialSDJWT(raw)
 	if err != nil {
 		return nil, fmt.Errorf("parsing SD-JWT: %w", err)
 	}
@@ -280,6 +310,13 @@ func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential
 	if err != nil {
 		return nil, fmt.Errorf("parsing mDoc: %w", err)
 	}
+	// Strict refuses a credential the parser had to drop parts of, debug keeps it.
+	if len(doc.Deviations) > 0 {
+		if w.Mode() == ValidationModeStrict {
+			return nil, fmt.Errorf("%s", strings.Join(doc.Deviations, "; "))
+		}
+		w.recordCredentialDeviations("ISO/IEC 18013-5", doc.Deviations)
+	}
 
 	claims := make(map[string]any)
 	for ns, items := range doc.NameSpaces {
@@ -322,7 +359,7 @@ func (c *StoredCredential) Rehydrate() error {
 
 	switch c.Format {
 	case "dc+sd-jwt":
-		token, err := sdjwt.Parse(c.Raw)
+		token, err := sdjwt.ParseLenient(c.Raw)
 		if err != nil {
 			return fmt.Errorf("parsing SD-JWT: %w", err)
 		}

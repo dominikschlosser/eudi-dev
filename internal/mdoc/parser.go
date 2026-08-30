@@ -136,26 +136,32 @@ func parseIssuerSigned(data []byte) (*Document, error) {
 		NameSpaces: make(map[string][]IssuerSignedItem),
 	}
 
-	// Parse nameSpaces
+	// Parse nameSpaces (the ISO/IEC 18013-5 IssuerNameSpaces CBOR map). A
+	// malformed part is dropped and noted, not fatal, so docType, validity and
+	// signature still read.
 	if ns, ok := issuerSigned["nameSpaces"]; ok {
-		nsMap, ok := ns.(map[any]any)
-		if !ok {
-			return nil, fmt.Errorf("nameSpaces is not a map")
+		nsMap, isMap := ns.(map[any]any)
+		if !isMap {
+			doc.Deviations = append(doc.Deviations, "the nameSpaces value is not a CBOR map (ISO/IEC 18013-5), so no claims are read")
 		}
+		// A nil nsMap (the not-a-map case above) ranges zero times.
 		for nsKey, nsVal := range nsMap {
 			namespace := fmt.Sprintf("%v", nsKey)
 			items, ok := nsVal.([]any)
 			if !ok {
+				doc.Deviations = append(doc.Deviations, fmt.Sprintf("namespace %q is not an array of items, so it is dropped", namespace))
 				continue
 			}
 			seen := make(map[string]bool)
 			for _, item := range items {
 				isi, err := parseIssuerSignedItem(item)
 				if err != nil {
-					continue // skip unparseable items
+					doc.Deviations = append(doc.Deviations, fmt.Sprintf("an item in namespace %q could not be read, so it is dropped", namespace))
+					continue
 				}
 				if seen[isi.ElementIdentifier] {
-					continue // skip duplicate claims
+					doc.Deviations = append(doc.Deviations, fmt.Sprintf("namespace %q repeats element %q, so the repeat is dropped", namespace, isi.ElementIdentifier))
+					continue
 				}
 				seen[isi.ElementIdentifier] = true
 				doc.NameSpaces[namespace] = append(doc.NameSpaces[namespace], *isi)
@@ -171,6 +177,8 @@ func parseIssuerSigned(data []byte) (*Document, error) {
 			if ia.MSO != nil {
 				doc.DocType = ia.MSO.DocType
 			}
+		} else {
+			doc.Deviations = append(doc.Deviations, fmt.Sprintf("the issuerAuth structure could not be read (%s), so the signature and MSO are unavailable", err))
 		}
 	}
 

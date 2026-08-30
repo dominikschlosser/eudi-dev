@@ -21,6 +21,26 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
 
+// NonStatusListFormat describes a status claim that does not use the IETF Token
+// Status List (status.status_list), so a caller can tell it apart from a
+// credential that carries no status at all. It returns "" when the status claim
+// is absent or is a status_list, and catches a W3C StatusList2021Entry. HAIP 1.0
+// §6.1 requires the status_list form, so a caller under that profile treats a
+// non-empty result as a finding.
+func NonStatusListFormat(claims map[string]any) string {
+	status, ok := claims["status"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if _, ietf := status["status_list"].(map[string]any); ietf {
+		return ""
+	}
+	if typ, _ := status["type"].(string); typ != "" {
+		return fmt.Sprintf("the status claim uses %q, not a Token Status List (status.status_list)", typ)
+	}
+	return "the status claim is not a Token Status List (status.status_list)"
+}
+
 // HAIPCredentialFindings holds a credential's issuer key to §6.1.1: the
 // certificate chain that signed it, and whether it is named by a DID, which
 // this profile has no way to resolve. Both are read from the credential
@@ -33,6 +53,14 @@ func HAIPCredentialFindings(header, payload map[string]any) []string {
 		findings = append(findings, fmt.Sprintf(
 			"HAIP: the credential names its issuer key by the DID %s, and §6.1.1 has the issuer's signing certificate and its trust chain travel in the x5c header instead", did))
 	}
+	// HAIP 1.0 §6.1: "The status claim, if present, MUST contain status_list as
+	// defined in [I-D.ietf-oauth-status-list]." A W3C StatusList2021Entry does
+	// not, so it is a finding under the profile (a plain claim, so it sits in
+	// the payload rather than behind a disclosure).
+	if nonStandard := NonStatusListFormat(payload); nonStandard != "" {
+		findings = append(findings, fmt.Sprintf("HAIP: %s, which §6.1 requires", nonStandard))
+	}
+
 	chain, _ := X5CCertificates(header)
 	return append(findings, HAIPCredentialChain(chain)...)
 }

@@ -52,7 +52,10 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 
 	switch detected {
 	case format.FormatSDJWT:
-		token, err := sdjwt.Parse(input)
+		// Inspect, not Parse: the decoder shows a credential a strict parser
+		// would reject, with each rule break recorded on the token as a
+		// deviation rather than turned into a blank page.
+		token, err := sdjwt.Inspect(input)
 		if err != nil {
 			return nil, fmt.Errorf("parsing SD-JWT: %w", err)
 		}
@@ -71,7 +74,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		checks = append(checks, checkSDJWTSignature(token, opts))
 
 		// Status check
-		checks = append(checks, checkSDJWTStatus(token, opts))
+		checks = append(checks, checkSDJWTStatus(token, opts)...)
 
 		result["validation"] = map[string]any{
 			"checks": checks,
@@ -79,7 +82,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		return result, nil
 
 	case format.FormatJWT:
-		token, err := sdjwt.Parse(input)
+		token, err := sdjwt.Inspect(input)
 		if err != nil {
 			return nil, fmt.Errorf("parsing JWT: %w", err)
 		}
@@ -127,7 +130,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		checks = append(checks, checkMDOCSignature(doc, opts))
 
 		// Status check
-		checks = append(checks, checkMDOCStatus(doc, opts))
+		checks = append(checks, checkMDOCStatus(doc, opts)...)
 
 		result["validation"] = map[string]any{
 			"checks": checks,
@@ -473,46 +476,41 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 	}
 }
 
-func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) CheckResult {
+func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) []CheckResult {
+	if nonStandard := validate.NonStatusListFormat(token.ResolvedClaims); nonStandard != "" {
+		return []CheckResult{{
+			Name:   "status",
+			Status: "warning",
+			Detail: nonStandard + ". HAIP 1.0 §6.1 asks for status_list, so this status is not checked.",
+		}}
+	}
 	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
 	if skip, ok := statusCheckNotRun(ref, opts); ok {
-		return skip
+		return []CheckResult{skip}
 	}
 
 	_, tlCerts, err := resolveKeys(opts)
 	if err != nil {
-		return CheckResult{
-			Name:   "status",
-			Status: "fail",
-			Detail: err.Error(),
-		}
+		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
 	}
 	return checkStatusRef(ref, tlCerts)
 }
 
-func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) CheckResult {
+func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) []CheckResult {
 	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil || doc.IssuerAuth.MSO.Status == nil {
-		return CheckResult{
-			Name:   "status",
-			Status: "skipped",
-			Detail: "No status reference in credential",
-		}
+		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status reference in credential"}}
 	}
 
 	// ExtractStatusRef expects {"status": {"status_list": ...}} but MSO.Status
 	// is already the inner status object. Wrap it so the lookup works.
 	ref := statuslist.ExtractStatusRef(map[string]any{"status": doc.IssuerAuth.MSO.Status})
 	if skip, ok := statusCheckNotRun(ref, opts); ok {
-		return skip
+		return []CheckResult{skip}
 	}
 
 	_, tlCerts, err := resolveKeys(opts)
 	if err != nil {
-		return CheckResult{
-			Name:   "status",
-			Status: "fail",
-			Detail: err.Error(),
-		}
+		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
 	}
 	return checkStatusRef(ref, tlCerts)
 }
@@ -547,20 +545,15 @@ func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResul
 	return CheckResult{}, false
 }
 
-func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) CheckResult {
+// checkStatusRef reports the revocation status and, separately, whether the
+// status list's own signature could be trust-anchored. A credential can be
+// validly not-revoked while who vouches for that answer stays unconfirmed.
+func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []CheckResult {
 	if ref == nil {
-		return CheckResult{
-			Name:   "status",
-			Status: "skipped",
-			Detail: "No status list reference in credential",
-		}
+		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status list reference in credential"}}
 	}
 	if ref.Invalid != "" {
-		return CheckResult{
-			Name:   "status",
-			Status: "fail",
-			Detail: fmt.Sprintf("Malformed status list reference: %s", ref.Invalid),
-		}
+		return []CheckResult{{Name: "status", Status: "fail", Detail: fmt.Sprintf("Malformed status list reference: %s", ref.Invalid)}}
 	}
 
 	checkOpts := statuslist.CheckOptions{}
@@ -570,38 +563,30 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) Che
 		}
 	}
 
-	// A failed check is an error, not a result with a flag on it. Nothing
-	// here can report a status that was fetched but not verified: the
-	// specification says an unverifiable status list supports no statement
-	// about the credential at all (section 8.3).
 	result, err := statuslist.CheckWithOptions(ref, checkOpts)
 	if err != nil {
-		return CheckResult{
-			Name:   "status",
-			Status: "fail",
-			Detail: fmt.Sprintf("Status check error: %v", err),
-		}
+		return []CheckResult{{Name: "status", Status: "fail", Detail: fmt.Sprintf("Status check error: %v", err)}}
 	}
 
-	detail := fmt.Sprintf("index %d, status=%d %s, %s, signature: %s",
-		result.Index, result.Status, result.StatusName, strings.ToUpper(result.Format), result.SignatureInfo)
-	for _, warning := range result.Warnings {
-		detail += ", warning: " + warning
+	statusDetail := fmt.Sprintf("index %d, status=%d %s, %s",
+		result.Index, result.Status, result.StatusName, strings.ToUpper(result.Format))
+	if !result.IsValid {
+		return []CheckResult{{Name: "status", Status: "fail", Detail: fmt.Sprintf("%s (%s)", result.StatusName, statusDetail)}}
 	}
 
-	if result.IsValid {
-		return CheckResult{
-			Name:   "status",
-			Status: "pass",
-			Detail: fmt.Sprintf("Valid (%s)", detail),
-		}
-	}
+	status := CheckResult{Name: "status", Status: "pass", Detail: fmt.Sprintf("Valid (%s)", statusDetail)}
 
-	return CheckResult{
-		Name:   "status",
-		Status: "fail",
-		Detail: fmt.Sprintf("%s (%s)", result.StatusName, detail),
+	// The status list's own signature is a separate check: a pass when its key
+	// chains to a trust anchor, otherwise something that could not be checked.
+	sigDetail := result.SignatureInfo
+	if len(result.Warnings) > 0 {
+		sigDetail = strings.Join(result.Warnings, "; ")
 	}
+	signature := CheckResult{Name: "status list signature", Status: "warning", Detail: sigDetail}
+	if result.TrustAnchored {
+		signature.Status = "pass"
+	}
+	return []CheckResult{status, signature}
 }
 
 func resolveKeys(opts ValidateOpts) ([]crypto.PublicKey, []trustlist.CertInfo, error) {

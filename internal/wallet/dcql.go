@@ -1327,7 +1327,7 @@ func checkAuthorityKeyIdentifiers(cred StoredCredential, values []string) bool {
 func extractCredentialCertificates(cred StoredCredential) ([]*x509.Certificate, error) {
 	switch cred.Format {
 	case "dc+sd-jwt":
-		token, err := sdjwt.Parse(cred.Raw)
+		token, err := sdjwt.ParseLenient(cred.Raw)
 		if err != nil {
 			return nil, err
 		}
@@ -1438,7 +1438,7 @@ func checkETSITrustList(cred StoredCredential, trustListURL string) bool {
 
 	switch cred.Format {
 	case "dc+sd-jwt":
-		token, err := sdjwt.Parse(cred.Raw)
+		token, err := sdjwt.ParseLenient(cred.Raw)
 		if err != nil {
 			log.Printf("[DCQL]   trusted_authorities: failed to parse SD-JWT: %v", err)
 			return false

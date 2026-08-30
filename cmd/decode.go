@@ -149,14 +149,11 @@ func runDecode(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 		// Inspect rather than Parse: decoding is how somebody finds out why a
-		// credential is rejected, so a credential that breaks a rule has to be
-		// shown along with the rule it breaks.
+		// credential is rejected, so a credential that breaks a rule is shown
+		// with the rule it breaks (in the token's deviations).
 		token, err := sdjwt.Inspect(raw)
 		if err != nil {
 			return fmt.Errorf("parsing SD-JWT: %w", err)
-		}
-		if token.Violation != "" {
-			output.PrintError(fmt.Sprintf("this credential is not valid: %s", token.Violation))
 		}
 		output.PrintSDJWT(token, opts)
 		printAutoVerifyResult(token, opts)
@@ -173,9 +170,6 @@ func runDecode(cmd *cobra.Command, args []string) error {
 		token, err := sdjwt.Inspect(raw)
 		if err != nil {
 			return fmt.Errorf("parsing JWT: %w", err)
-		}
-		if token.Violation != "" {
-			output.PrintError(fmt.Sprintf("this credential is not valid: %s", token.Violation))
 		}
 		output.PrintJWT(token, opts)
 		printAutoVerifyResult(token, opts)

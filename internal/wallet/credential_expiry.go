@@ -43,7 +43,7 @@ func CredentialExpiry(cred StoredCredential) time.Time {
 		}
 		return *validity.ValidUntil
 	default:
-		token, err := sdjwt.Parse(cred.Raw)
+		token, err := sdjwt.ParseLenient(cred.Raw)
 		if err != nil || token == nil {
 			return time.Time{}
 		}
@@ -82,7 +82,7 @@ func CredentialIssuedAt(cred StoredCredential) time.Time {
 		}
 		return *validity.Signed
 	default:
-		token, err := sdjwt.Parse(cred.Raw)
+		token, err := sdjwt.ParseLenient(cred.Raw)
 		if err != nil || token == nil {
 			return time.Time{}
 		}
