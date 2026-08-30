@@ -294,49 +294,41 @@ test.describe("Colorized input view", () => {
   });
 });
 
-test.describe("Validation banner and popover", () => {
-  test("hover shows checklist popover with all 4 checks", async ({
-    page,
-  }) => {
+test.describe("Verification panel", () => {
+  test("panel shows all checks", async ({ page }) => {
     await page.goto("/");
     await page.locator("#input").fill(TEST_JWT);
     await expect(page.locator(".validity-banner")).toBeVisible({
       timeout: 3000,
     });
 
-    // Hover over the banner
-    await page.locator(".validity-banner").hover();
-
-    // Popover should appear with check items
-    const checks = page.locator(".validity-check-item");
+    // Checks are always visible, grouped into valid / cannot-be-checked / violations.
+    const checks = page.locator(".vg-item");
     await expect(checks).toHaveCount(4);
 
-    // Check names should include expiry, integrity, signature, status
-    const checkNames = page.locator(".check-name");
-    const names = await checkNames.allTextContents();
+    const names = await page.locator(".vg-name").allTextContents();
     expect(names).toContain("expiry");
     expect(names).toContain("integrity");
     expect(names).toContain("signature");
     expect(names).toContain("status");
   });
 
-  test("popover contains verify form with key input and button", async ({
-    page,
-  }) => {
+  test("verify form opens with key input and button", async ({ page }) => {
     await page.goto("/");
     await page.locator("#input").fill(TEST_JWT);
     await expect(page.locator(".validity-banner")).toBeVisible({
       timeout: 3000,
     });
 
-    await page.locator(".validity-banner").hover();
+    // Collapsed until the summary is clicked.
+    await expect(page.locator(".verify-inline-key")).toBeHidden();
+    await page.locator(".verify-details summary").click();
 
-    // Verify form elements
     await expect(page.locator(".verify-inline-key")).toBeVisible();
     await expect(page.locator(".verify-inline-tl")).toBeVisible();
     await expect(page.locator(".verify-inline-btn")).toBeVisible();
     await expect(page.locator(".verify-inline-btn")).toContainText(
-      "Verify Signature"
+      "Verify signature"
     );
   });
 
@@ -349,18 +341,12 @@ test.describe("Validation banner and popover", () => {
       timeout: 3000,
     });
 
-    await page.locator(".validity-banner").hover();
-
-    // Find the integrity and status check details
-    const checks = page.locator(".validity-check-item");
-    const count = await checks.count();
+    const items = page.locator(".vg-item");
+    const count = await items.count();
     const details = {};
     for (let i = 0; i < count; i++) {
-      const name = await checks.nth(i).locator(".check-name").textContent();
-      const detail = await checks
-        .nth(i)
-        .locator(".check-detail")
-        .textContent();
+      const name = await items.nth(i).locator(".vg-name").textContent();
+      const detail = await items.nth(i).locator(".vg-detail").textContent();
       details[name] = detail;
     }
 
@@ -369,43 +355,14 @@ test.describe("Validation banner and popover", () => {
     expect(details["signature"]).toBe("No key provided");
   });
 
-  test("SD-JWT shows integrity pass", async ({ page }) => {
+  test("SD-JWT shows integrity under Valid", async ({ page }) => {
     await page.goto("/");
     await page.locator("#input").fill(TEST_SDJWT);
     await expect(page.locator(".validity-banner")).toBeVisible({
       timeout: 3000,
     });
 
-    await page.locator(".validity-banner").hover();
-
-    // Find integrity check
-    const checks = page.locator(".validity-check-item");
-    const count = await checks.count();
-    for (let i = 0; i < count; i++) {
-      const name = await checks.nth(i).locator(".check-name").textContent();
-      if (name === "integrity") {
-        await expect(checks.nth(i)).toHaveClass(/check-pass/);
-        break;
-      }
-    }
-  });
-
-  test("clicking banner pins popover", async ({ page }) => {
-    await page.goto("/");
-    await page.locator("#input").fill(TEST_JWT);
-    await expect(page.locator(".validity-banner")).toBeVisible({
-      timeout: 3000,
-    });
-
-    // Click to pin
-    await page.locator(".validity-banner").click();
-    await expect(page.locator(".validity-banner")).toHaveClass(/popover-pinned/);
-
-    // Click again to unpin
-    await page.locator(".validity-banner").click();
-    await expect(page.locator(".validity-banner")).not.toHaveClass(
-      /popover-pinned/
-    );
+    await expect(page.locator(".vg-valid")).toContainText("integrity");
   });
 });
 
