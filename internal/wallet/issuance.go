@@ -1443,7 +1443,7 @@ func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer st
 		return "", nil
 	}
 	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define, so this issuer is pre-1.0", issuer)
-	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0. Strict mode refuses it", issuer), nil)
+	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0", issuer), nil)
 	return cNonce, nil
 }
 

@@ -1542,7 +1542,7 @@ func (w *Wallet) fetchNonce(metadata map[string]any, nonce *string) string {
 	reason := nonceFailureReason(status, err)
 	if cNonce == "" && status == http.StatusMethodNotAllowed && w.Mode() == ValidationModeDebug {
 		if getNonce, getStatus, getErr := nonceRequest("GET", ep, nonce); getNonce != "" {
-			w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s answered the HTTP POST that OpenID4VCI 1.0 §7.1 requires with 405 and serves a c_nonce only over GET. Debug mode uses GET as a workaround, strict mode refuses it.", ep), nil)
+			w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s answered the HTTP POST that OpenID4VCI 1.0 §7.1 requires with 405 and serves a c_nonce only over GET. Debug mode uses GET as a workaround.", ep), nil)
 			cNonce, reason = getNonce, ""
 		} else {
 			reason = nonceFailureReason(getStatus, getErr)
