@@ -133,19 +133,34 @@ async function openAsSchemeHandler(page) {
  * page it opened. Pass no owner to submit the way a handler installed before
  * the wallet asked for one does.
  */
+// Holds why the most recent fire-and-forget submission was refused, so
+// waitForPending can report the server's reason instead of a bare timeout.
+let lastSubmitError = null;
+
 function submitAsSchemeHandler(pathname, uri, owner) {
   const headers = { "Content-Type": "application/json" };
   if (owner) {
     headers["X-Eudi-Client"] = "eudi-url-handler/test";
     headers["X-Eudi-Owner"] = owner;
   }
+  lastSubmitError = null;
   // Deliberately not awaited: an interactive submission blocks until the
-  // consent is resolved, which is what these tests are about.
+  // consent is resolved, which is what these tests are about. A refusal comes
+  // back immediately (it does not block), so record it; on success drain the
+  // body once it arrives so the connection is released rather than leaked
+  // across the shared-wallet run.
   fetch(BASE + pathname, {
     method: "POST",
     headers,
     body: JSON.stringify({ uri, interactive: true }),
-  }).catch(() => {});
+  })
+    .then(async (r) => {
+      if (!r.ok) lastSubmitError = `${r.status} ${(await r.text()).slice(0, 300)}`;
+      else if (r.body) await r.body.cancel();
+    })
+    .catch((e) => {
+      lastSubmitError = String((e && e.message) || e);
+    });
 }
 
 /**
@@ -168,7 +183,8 @@ async function waitForPending(expected, owner) {
     if ((await pendingCount(owner)) === expected) return;
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`expected ${expected} pending request(s)`);
+  const reason = lastSubmitError ? ` (last submission: ${lastSubmitError})` : "";
+  throw new Error(`expected ${expected} pending request(s)${reason}`);
 }
 
 async function clearPending(owner) {

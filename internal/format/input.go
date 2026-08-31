@@ -65,6 +65,16 @@ var httpClient = &http.Client{
 	Transport: newPolicyTransport(),
 }
 
+// localHTTPClient fetches developer endpoints on localhost or
+// host.docker.internal: it bypasses proxies and accepts self-signed HTTPS
+// certs. Like httpClient it is shared, so connections are pooled and reused
+// instead of a fresh socket per fetch (which exhausts ephemeral ports under a
+// load of many rapid local fetches).
+var localHTTPClient = &http.Client{
+	Timeout:   remoteTimeout,
+	Transport: newLocalPolicyTransport(),
+}
+
 // newPolicyTransport clones the default transport with a dialer that routes
 // every connection through the fetch policy (see policy.go).
 func newPolicyTransport() *http.Transport {
@@ -77,43 +87,45 @@ func newPolicyTransport() *http.Transport {
 	return transport
 }
 
-// HTTPClientForURL returns a fetch client configured for the target URL.
+// newLocalPolicyTransport is newPolicyTransport tuned for local developer
+// endpoints: no proxy, self-signed HTTPS accepted, and a host.docker.internal
+// dial that falls back to localhost.
+func newLocalPolicyTransport() *http.Transport {
+	transport := newPolicyTransport()
+	transport.Proxy = nil
+	//nolint:gosec // Local dev endpoints use self-signed certificates on localhost/host.docker.internal.
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	// host.docker.internal is the container-side name for this machine. On the
+	// host itself it usually does not resolve, so URLs baked into credentials by
+	// Docker setups (status lists, issuer metadata) would fail locally. Fall
+	// back to localhost, which is the same endpoint.
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		conn, err := dialer.DialContext(ctx, network, addr)
+		if err != nil {
+			if port, ok := strings.CutPrefix(addr, "host.docker.internal:"); ok {
+				if conn2, err2 := dialer.DialContext(ctx, network, "localhost:"+port); err2 == nil {
+					return conn2, nil
+				}
+			}
+		}
+		return conn, err
+	}
+	return transport
+}
+
+// HTTPClientForURL returns a shared fetch client configured for the target URL.
 // Local developer endpoints bypass proxies and accept self-signed HTTPS certs.
+// The clients are reused so connections pool instead of a new socket per fetch.
 func HTTPClientForURL(rawURL string) *http.Client {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return httpClient
 	}
-
-	transport := newPolicyTransport()
 	if isLocalFetchHost(u.Hostname()) {
-		transport.Proxy = nil
-		if strings.EqualFold(u.Scheme, "https") {
-			//nolint:gosec // Local dev endpoints use self-signed certificates on localhost/host.docker.internal.
-			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-		}
-		// host.docker.internal is the container-side name for this machine.
-		// On the host itself it usually does not resolve, so URLs baked into
-		// credentials by Docker setups (status lists, issuer metadata) would
-		// fail locally. Fall back to localhost, which is the same endpoint.
-		dialer := &net.Dialer{Timeout: 10 * time.Second, Control: dialControl}
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.DialContext(ctx, network, addr)
-			if err != nil {
-				if port, ok := strings.CutPrefix(addr, "host.docker.internal:"); ok {
-					if conn2, err2 := dialer.DialContext(ctx, network, "localhost:"+port); err2 == nil {
-						return conn2, nil
-					}
-				}
-			}
-			return conn, err
-		}
+		return localHTTPClient
 	}
-
-	return &http.Client{
-		Timeout:   remoteTimeout,
-		Transport: transport,
-	}
+	return httpClient
 }
 
 func isLocalFetchHost(host string) bool {

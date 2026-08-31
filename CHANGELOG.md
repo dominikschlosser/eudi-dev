@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A credential on the transitional `vc+sd-jwt` typ follows the wallet mode.** draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the `vc+sd-jwt` media type with `dc+sd-jwt` for the SD-JWT VC issuer-signed JWT. On import, debug mode keeps a credential still on `vc+sd-jwt` and records the deviation as a warning, strict mode refuses it, and the decoder flags the typ as a violation rather than passing it as valid with a superseded note. This is the same split the wallet already uses for credentials that break RFC 9901.
 
+### Fixed
+
+- **Fetch clients are reused so connections pool instead of opening a new socket per fetch.** The wallet built a fresh HTTP client (and its own connection pool) for every request object, status list, and presentation response it fetched, so no connection was ever reused and a burst of many rapid local fetches could exhaust ephemeral ports. The clients are shared now, which pools and reuses connections.
+
 ## [2.1.1] - 2026-08-30
 
 ### Fixed
