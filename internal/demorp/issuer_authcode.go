@@ -224,8 +224,12 @@ func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePushedAuthorizationRequest implements RFC 9126. The wallet
-// authenticates here with attestation-based client authentication and a DPoP
-// proof, both of which are verified before the request is stored.
+// authenticates here with attestation-based client authentication, verified
+// before the request is stored. A DPoP proof on the pushed request is the
+// client's choice: RFC 9449 §10 makes binding the authorization code to a
+// DPoP key OPTIONAL, and §10.1 offers the DPoP header at the PAR endpoint as
+// one way a client MAY do it. One that is sent must verify, and it can carry
+// the attestation's proof of possession (dpop_combined).
 func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := r.ParseForm(); err != nil {
@@ -234,17 +238,20 @@ func (d *DemoRP) handlePushedAuthorizationRequest(w http.ResponseWriter, r *http
 	}
 	clientID := r.PostFormValue("client_id")
 	// RFC 6749 §4.1.1 has client_id REQUIRED in an authorization request, and
-	// a client that authenticates with nothing is identified by it alone. The
-	// attestation used to be what enforced this, by matching its sub against
-	// it, so with an unauthenticated client accepted the check has to be here.
+	// a client that authenticates with nothing is identified by it alone, so
+	// the attestation's sub match cannot carry this check.
 	if clientID == "" {
 		writeJSON(w, http.StatusBadRequest, oauthError("invalid_request", "client_id is required"))
 		return
 	}
-	jkt, err := d.verifyDPoPProof(r, d.issuerID()+"/par", "")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
-		return
+	var jkt string
+	if strings.TrimSpace(r.Header.Get("DPoP")) != "" {
+		var err error
+		jkt, err = d.verifyDPoPProof(r, d.issuerID()+"/par", "")
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, oauthError("invalid_dpop_proof", err.Error()))
+			return
+		}
 	}
 	if _, authErr := d.authenticateClient(r, clientID, jkt); authErr != nil {
 		writeJSON(w, http.StatusUnauthorized, oauthError(authErr.code, authErr.description))
@@ -364,6 +371,14 @@ func (d *DemoRP) handleAuthorizationCodeToken(w http.ResponseWriter, r *http.Req
 	clientAuth, ok := d.authenticateTokenClient(w, r, clientID, jkt)
 	if !ok {
 		return
+	}
+	// RFC 6749 §4.1.3 has client_id "REQUIRED, if the client is not
+	// authenticating with the authorization server", so an authenticated
+	// client may omit it and is identified by its attestation's sub. The code
+	// check below then ensures "that the authorization code was issued to the
+	// authenticated confidential client".
+	if clientID == "" {
+		clientID = clientAuth.clientID
 	}
 
 	code := r.PostFormValue("code")
@@ -560,6 +575,10 @@ type clientAuthentication struct {
 	// method is the token endpoint authentication method that was used, one of
 	// attest_jwt_client_auth, attest_jwt_client_auth_dpop and none.
 	method string
+	// clientID is the client the attestation names in its sub claim, which is
+	// the authenticated identity a request may rely on instead of a client_id
+	// parameter (RFC 6749 §3.2.1). Empty for an unauthenticated client.
+	clientID string
 	// attester names the signer of the wallet attestation, taken from its iss
 	// claim or, since draft -08 made iss optional, from the subject of the
 	// certificate that signed it. Empty without an attestation.
@@ -585,7 +604,13 @@ type clientAuthError struct {
 func (d *DemoRP) authenticateTokenClient(w http.ResponseWriter, r *http.Request, clientID, jkt string) (clientAuthentication, bool) {
 	clientAuth, authErr := d.authenticateClient(r, clientID, jkt)
 	if authErr != nil {
-		writeJSON(w, http.StatusUnauthorized, oauthError(authErr.code, authErr.description))
+		// RFC 6749 §5.2 answers a token endpoint refusal "with an HTTP 400
+		// (Bad Request) status code (unless specified otherwise)" and
+		// reserves 401 for a client that "attempted to authenticate via the
+		// Authorization request header field", which the attestation headers
+		// are not. The pushed authorization request endpoint answers 401,
+		// which RFC 9126 §2.3 names for a failed client authentication there.
+		writeJSON(w, http.StatusBadRequest, oauthError(authErr.code, authErr.description))
 		return clientAuthentication{}, false
 	}
 	if clientAuth.method != unauthenticatedClientAuth && !clientAuth.trusted {
@@ -699,6 +724,7 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 
 	authenticated := clientAuthentication{
 		method:   attestationClientAuth,
+		clientID: sub,
 		attester: attester.name(attestation.payload),
 		trusted:  attester.trusted,
 	}

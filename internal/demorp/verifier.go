@@ -1192,19 +1192,13 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		log.warn(label+"issuer certificate chain follows HAIP", nil)
 	}
 
-	// Issuer signature. The CA this demo trusts is the one the built-in
-	// issuer signs under, which is the root of the wallet's signing chain.
-	// The check is named from the verifier's point of view: what it verifies
-	// is that the issuer certificate chains to a CA it trusts.
-	caCert := d.wallet.TrustAnchorCertificate()
-	if caCert == nil {
+	// Issuer signature. The check is named from the verifier's point of view:
+	// what it verifies is that the issuer certificate chains to a CA it
+	// trusts.
+	tlCerts := d.trustedIssuerCerts()
+	if len(tlCerts) == 0 {
 		return nil, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
 	}
-	tlCerts := []trustlist.CertInfo{{
-		Subject:   caCert.Subject.String(),
-		PublicKey: caCert.PublicKey,
-		Raw:       caCert.Raw,
-	}}
 	issuerKey, err := validate.ExtractAndValidateX5C(token.Header, tlCerts)
 	if err == nil && issuerKey == nil {
 		err = fmt.Errorf("the credential carries no x5c certificate chain")
@@ -1247,6 +1241,21 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 		return nil, err
 	}
 	if err = check("key binding signature verifies with cnf key", errIf(!verifyES256(holderKey, kbJWT.signingInput, kbJWT.signature), "key binding signature is invalid")); err != nil {
+		return nil, err
+	}
+
+	// RFC 9901 §7.3: "check that the creation time of the Key Binding JWT, as
+	// determined by the iat claim, is within an acceptable window". The claim
+	// is REQUIRED (§4.3), and the window is the one this demo applies to every
+	// per-request proof.
+	kbIat, hasIat := kbJWT.payload["iat"].(float64)
+	iatErr := errIf(!hasIat, "the key binding JWT has no numeric iat")
+	if iatErr == nil {
+		if age := time.Since(time.Unix(int64(kbIat), 0)); age > proofClockSkew || age < -proofClockSkew {
+			iatErr = fmt.Errorf("the key binding JWT iat is %s away from now, outside the %s window this verifier accepts", age.Round(time.Second), proofClockSkew)
+		}
+	}
+	if err = check("key binding was created within an acceptable window", iatErr); err != nil {
 		return nil, err
 	}
 
@@ -1321,14 +1330,18 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		return check("revocation status (credential references no status list)", nil)
 	}
 
-	// Anchor the status list JWT in the same CA as the credential, so a
+	// Anchor the status list JWT in the same CAs as the credential, so a
 	// forged list cannot un-revoke a credential.
-	caCert := d.wallet.TrustAnchorCertificate()
-	if caCert == nil {
+	anchors := d.trustedIssuerCerts()
+	if len(anchors) == 0 {
 		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))
 	}
+	trustCerts := make([]statuslist.TrustCert, 0, len(anchors))
+	for _, anchor := range anchors {
+		trustCerts = append(trustCerts, statuslist.TrustCert{Raw: anchor.Raw})
+	}
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
-		TrustListCerts: []statuslist.TrustCert{{Raw: caCert.Raw}},
+		TrustListCerts: trustCerts,
 	})
 	if err != nil {
 		return check("credential is not revoked", fmt.Errorf("checking the status list: %w", err))
@@ -1337,6 +1350,26 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		return check("credential is not revoked", fmt.Errorf("the status list signature did not verify: %s", result.SignatureInfo))
 	}
 	return check("credential is not revoked", errIf(result.Status != 0, "the issuer's status list marks this credential as revoked"))
+}
+
+// trustedIssuerCerts is the anchor set every presented credential's issuer
+// chain is validated against: the wallet CA the built-in issuer signs under,
+// plus the anchors SetVerifierTrustAnchors added.
+func (d *DemoRP) trustedIssuerCerts() []trustlist.CertInfo {
+	var anchors []*x509.Certificate
+	if caCert := d.wallet.TrustAnchorCertificate(); caCert != nil {
+		anchors = append(anchors, caCert)
+	}
+	anchors = append(anchors, d.verifierTrustAnchors...)
+	certs := make([]trustlist.CertInfo, 0, len(anchors))
+	for _, anchor := range anchors {
+		certs = append(certs, trustlist.CertInfo{
+			Subject:   anchor.Subject.String(),
+			PublicKey: anchor.PublicKey,
+			Raw:       anchor.Raw,
+		})
+	}
+	return certs
 }
 
 func errIf(cond bool, format string, args ...any) error {
@@ -1381,15 +1414,10 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 		return nil, log.entries, err
 	}
 
-	caCert := d.wallet.TrustAnchorCertificate()
-	if caCert == nil {
+	tlCerts := d.trustedIssuerCerts()
+	if len(tlCerts) == 0 {
 		return nil, log.entries, check("issuer certificate chains to a trusted CA", fmt.Errorf("this verifier has no CA certificate"))
 	}
-	tlCerts := []trustlist.CertInfo{{
-		Subject:   caCert.Subject.String(),
-		PublicKey: caCert.PublicKey,
-		Raw:       caCert.Raw,
-	}}
 	issuerKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)
 	if err == nil && issuerKey == nil {
 		err = fmt.Errorf("the credential carries no x5c certificate chain")

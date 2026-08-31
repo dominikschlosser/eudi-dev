@@ -1,6 +1,6 @@
 # Running OIDF Wallet Conformance
 
-This runbook runs the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. Status and result matrix: [Current conformance results](./conformance-results.md).
+This runbook runs the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. Status and result matrix: [Current conformance results](./conformance-results.md). The reverse direction (the suite playing the wallet against the demo issuer and verifier) has [its own runbook](./conformance-run-demorp.md).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ You need:
 - Maven
 - a local OpenID Foundation conformance-suite checkout
 
-The documented suite baseline is `release-v5.2.2`. Use a newer release only when intentionally updating the baseline and [results](./conformance-results.md).
+The documented suite baseline is `release-v5.2.4`. Use a newer release only when intentionally updating the baseline and [results](./conformance-results.md).
 
 ## Start the Local Suite
 
@@ -22,7 +22,7 @@ Build the suite from the baseline checkout:
 ```bash
 cd ../conformance-suite
 git fetch --tags
-git checkout release-v5.2.2
+git checkout release-v5.2.4
 mvn clean package
 ```
 
@@ -57,7 +57,7 @@ curl -k https://localhost:8443/api/server
 For the current baseline, the server returns:
 
 ```json
-{"tag":"release-v5.2.2","version":"5.2.2","revision":"321bc5b"}
+{"tag":"release-v5.2.4","version":"5.2.4","revision":"ab35a8d"}
 ```
 
 ## Run the Wallet Matrix
@@ -79,12 +79,12 @@ To force the wrapper to use the same checkout as the running local server:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.2 \
+OIDF_SUITE_TAG=release-v5.2.4 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-At the current baseline the full matrix passes and the command exits zero. If a run reports failures, first compare against the matrix and suite-side exclusions in [Current conformance results](./conformance-results.md) before treating the wallet as regressed.
+At the current baseline the full matrix runs with zero condition failures. The expected warnings and skips, and the exit status they produce, are recorded in [Current conformance results](./conformance-results.md). If a run reports failures, first compare against that matrix and its suite-side exclusions before treating the wallet as regressed.
 
 ## Rerun Selected Plans or Modules
 
@@ -92,7 +92,7 @@ Pass the official `run-test-plan.py` selector through the wrapper:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.2 \
+OIDF_SUITE_TAG=release-v5.2.4 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-rerun \
   scripts/oidf-wallet-conformance.sh --rerun '1:6,2:6'
 ```
@@ -145,6 +145,7 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `OIDF_VCI_ALIAS`: convenience alias used by the default `OIDF_VCI_REDIRECT_URI`
 - `OIDF_SUITE_URL`: override the suite tarball URL. Defaults to the latest upstream release archive
 - `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the wrapper terminates a stuck module. Defaults to `180`, set `0` to disable
+- `OIDF_REQUEST_TIMEOUT`: seconds the monitor waits for a suite API response. Defaults to `20`, set `60` on a loaded machine
 - `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite shares the machine with the wallet and can take tens of seconds to answer under load. The wallet's own default is `15s`, kept short for interactive use. An unparseable value is ignored and the default applies
 - `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite database after a run. Otherwise the wrapper drops it, because a database carrying days of runs makes the server pause long enough to stall a run
 

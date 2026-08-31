@@ -27,6 +27,11 @@ test.beforeAll(async () => {
   execSync("go build -o /tmp/eudi-demo-e2e ..", { cwd: __dirname });
 
   const walletDir = fs.mkdtempSync(path.join(os.tmpdir(), "eudi-demo-e2e-"));
+  // The wallet's own log lands in test-results/, which CI uploads on
+  // failure, so a CI-only failure still shows what the server was doing.
+  const resultsDir = path.join(__dirname, "test-results");
+  fs.mkdirSync(resultsDir, { recursive: true });
+  const walletLogFd = fs.openSync(path.join(resultsDir, "demo-wallet.log"), "w");
   walletProcess = spawn(
     "/tmp/eudi-demo-e2e",
     [
@@ -43,7 +48,7 @@ test.beforeAll(async () => {
       "--base-url",
       BASE,
     ],
-    { stdio: "pipe" }
+    { stdio: ["ignore", walletLogFd, walletLogFd] }
   );
   await waitForServer(`${BASE}/api/version`, 30_000);
 });

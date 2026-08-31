@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"encoding/pem"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -141,6 +143,60 @@ func TestIssuerServedByBaseURL(t *testing.T) {
 	}
 	if issuerServedByBaseURL("", "") {
 		t.Fatal("empty URLs must not count as served by base URL")
+	}
+}
+
+// --serve-tls binds the base URL's port itself, so the URL has to be https
+// and name that port. Everything else belongs behind a TLS terminator, which
+// is the mode the flag exists to avoid.
+func TestValidateServeTLSBaseURL(t *testing.T) {
+	if err := validateServeTLSBaseURL("https://localhost:8443"); err != nil {
+		t.Fatalf("https base URL with a port: %v", err)
+	}
+	for name, baseURL := range map[string]string{
+		"empty":        "",
+		"http scheme":  "http://localhost:8443",
+		"no port":      "https://eudi-test.dev",
+		"not a URL":    "://",
+		"host missing": "https://",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateServeTLSBaseURL(baseURL); err == nil {
+				t.Fatalf("expected %q to be refused", baseURL)
+			}
+		})
+	}
+}
+
+func TestLoadVerifierTrustAnchors(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatalf("generating CA certificate: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "anchor.pem")
+	block := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caCert.Raw})
+	if err := os.WriteFile(path, append(block, block...), 0o600); err != nil {
+		t.Fatalf("writing anchor file: %v", err)
+	}
+
+	anchors, err := loadVerifierTrustAnchors([]string{path})
+	if err != nil {
+		t.Fatalf("loadVerifierTrustAnchors: %v", err)
+	}
+	if len(anchors) != 2 {
+		t.Fatalf("anchors = %d, want both certificates of the file", len(anchors))
+	}
+
+	empty := filepath.Join(t.TempDir(), "empty.pem")
+	if err := os.WriteFile(empty, []byte("not pem"), 0o600); err != nil {
+		t.Fatalf("writing empty file: %v", err)
+	}
+	if _, err := loadVerifierTrustAnchors([]string{empty}); err == nil {
+		t.Fatal("expected a file without certificates to be refused")
 	}
 }
 

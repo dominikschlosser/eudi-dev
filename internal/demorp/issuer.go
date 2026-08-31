@@ -821,10 +821,16 @@ func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (st
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain: %w", err)
 	}
+	// The issuance instant is rounded to the hour, so the copies of a batch
+	// do not share the precise issuance second in iat and the exp derived
+	// from it, which would let colluding verifiers correlate them (RFC 9901
+	// §10.1).
+	issuedAt := time.Now().Truncate(time.Hour)
 	config := mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
 		VCT:       TicketVCT,
 		ExpiresIn: 24 * time.Hour,
+		IssuedAt:  &issuedAt,
 		Claims:    ticketClaims(granted.subject, granted.holderClaims, granted.clientAuth),
 		Key:       signingKey,
 		HolderKey: holderKey,

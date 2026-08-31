@@ -31,7 +31,6 @@ class ScenarioPlanArgTests(unittest.TestCase):
         self.assertNotIn("oid4vp-1final-wallet-multisigned-one-invalid-signature", plan_arg)
         # unencrypted response mode: no encryption key to test against
         self.assertNotIn("oid4vp-1final-wallet-ignores-unusable-encryption-key", plan_arg)
-        # back since release-v5.2.2 fixed the module (placeholder before WAITING)
         self.assertIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
 
     def test_haip_dc_api_omits_invalid_client_id_prefix(self):

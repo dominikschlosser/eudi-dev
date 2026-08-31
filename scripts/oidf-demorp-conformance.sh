@@ -12,16 +12,16 @@ fi
 . "$ROOT_DIR/scripts/oidf-conformance-lib.sh"
 
 PORT=${PORT:-$(pick_port_pair)}
-RUN_DIR=${OIDF_RUN_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/oidf-wallet-conformance.XXXXXX")}
+RUN_DIR=${OIDF_RUN_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/oidf-demorp-conformance.XXXXXX")}
 WALLET_DIR=${OIDF_WALLET_DIR:-"$RUN_DIR/wallet"}
 WALLET_URL=${OIDF_WALLET_URL:-"http://127.0.0.1:${PORT}"}
-WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"https://localhost:$((PORT + 1))"}
+# The demo issuer and verifier live on the wallet's https base URL: the suite
+# requires https for the verifier's request_uri and response_uri, and the HAIP
+# issuer metadata checks require an https credential issuer. --serve-tls has
+# the wallet bind this origin itself with its own certificate.
+DEMO_BASE_URL=${OIDF_DEMO_BASE_URL:-"https://localhost:$((PORT + 1))"}
 WALLET_CA_CERT=${OIDF_WALLET_CA_CERT:-"$RUN_DIR/wallet-ca-cert.pem"}
 CONFORMANCE_MODE=${CONFORMANCE_MODE:-local}
-OIDF_WALLET_MODE=${OIDF_WALLET_MODE:-strict}
-export OIDF_WALLET_MODE
-OIDF_VCI_CLIENT_ID=${OIDF_VCI_CLIENT_ID:-52480754053}
-OIDF_VCI_ALIAS=${OIDF_VCI_ALIAS:-"oid4vc-dev-vci-${PORT}"}
 
 case "$CONFORMANCE_MODE" in
   local)
@@ -54,8 +54,6 @@ if [ -n "${CONFORMANCE_TOKEN:-}" ]; then
   export CONFORMANCE_TOKEN
 fi
 
-OIDF_VCI_REDIRECT_URI=${OIDF_VCI_REDIRECT_URI:-"${CONFORMANCE_SERVER_LOCAL%/}/test/a/${OIDF_VCI_ALIAS}/callback"}
-
 VENV_DIR="$RUN_DIR/venv"
 RESULTS_DIR="$RUN_DIR/results"
 RUNNER_LOG="$RUN_DIR/runner.log"
@@ -68,6 +66,33 @@ fetch_suite_source
 if [ "$CONFORMANCE_MODE" = "local" ]; then
   check_local_conformance_server
   export CONFORMANCE_DEV_MODE DISABLE_SSL_VERIFY
+fi
+
+# The suite signs the credentials it presents to the demo verifier with its
+# own CAs: the vp-signing CA from certs-keys for SD-JWT VCs, and a built-in
+# mdoc IACA root for mdocs. The demo verifier is given both as extra trust
+# anchors. The IACA root is published at /mdoc-iaca-root.pem, with the source
+# constant as the fallback for a server build where that endpoint errors.
+SUITE_VP_SIGNING_CA="$RUN_DIR/suite-vp-signing-ca.pem"
+SUITE_MDOC_IACA_ROOT="$RUN_DIR/suite-mdoc-iaca-root.pem"
+cp "$SUITE_DIR/scripts/certs-keys/vp-signing-ca.crt" "$SUITE_VP_SIGNING_CA"
+if ! curl -kfsS "${CONFORMANCE_SERVER%/}/mdoc-iaca-root.pem" -o "$SUITE_MDOC_IACA_ROOT" 2>/dev/null \
+  || ! grep -q "BEGIN CERTIFICATE" "$SUITE_MDOC_IACA_ROOT"; then
+  python3 - "$SUITE_DIR/src/main/kotlin/net/openid/conformance/util/TestKeysAndCerts.kt" "$SUITE_MDOC_IACA_ROOT" <<'PY'
+import re
+import sys
+
+source = open(sys.argv[1]).read()
+match = re.search(
+    r"IACA_ROOT_CERT_PEM[^\"]*\"\"\"(-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----)",
+    source,
+    re.DOTALL,
+)
+if not match:
+    raise SystemExit("could not extract IACA_ROOT_CERT_PEM from the suite source")
+open(sys.argv[2], "w").write(match.group(1) + "\n")
+PY
+  echo "Extracted the suite's mdoc IACA root from its source (the /mdoc-iaca-root.pem endpoint was unavailable)"
 fi
 
 cleanup() {
@@ -84,31 +109,22 @@ echo "Installing runner dependencies..."
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet -r "$SUITE_DIR/scripts/requirements.txt"
 
-# The suite runs on this same machine and competes with the wallet for it, so
-# a request it would normally answer at once can take tens of seconds under
-# load. The wallet's default wait is short on purpose (a developer pointed at
-# a dead endpoint wants to hear about it), but here giving up costs the module
-# and the flow cannot be resumed, so the run ends up measuring the machine.
-EUDI_REMOTE_TIMEOUT=${EUDI_REMOTE_TIMEOUT:-120s}
-export EUDI_REMOTE_TIMEOUT
-
-echo "Starting wallet on $WALLET_URL (remote timeout $EUDI_REMOTE_TIMEOUT)"
+echo "Starting wallet with the demo issuer and verifier on $DEMO_BASE_URL"
 (
   cd "$ROOT_DIR"
   exec "$LOCAL_OID4VC_DEV" wallet serve \
-    --mode "$OIDF_WALLET_MODE" \
-    --auto-accept \
-    --pid \
-    --preferred-format dc+sd-jwt \
     --wallet-dir "$WALLET_DIR" \
     --port "$PORT" \
-    --vci-client-id "$OIDF_VCI_CLIENT_ID" \
-    --vci-redirect-uri "$OIDF_VCI_REDIRECT_URI"
+    --base-url "$DEMO_BASE_URL" \
+    --serve-tls \
+    --demo-verifier-trust-anchor "$SUITE_VP_SIGNING_CA" \
+    --demo-verifier-trust-anchor "$SUITE_MDOC_IACA_ROOT"
 ) >"$WALLET_LOG" 2>&1 &
 WALLET_PID=$!
 
 attempt=0
-until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; do
+until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1 \
+  && curl -kfsS "$DEMO_BASE_URL/.well-known/openid-credential-issuer/issuer" >/dev/null 2>&1; do
   attempt=$((attempt + 1))
   if ! kill -0 "$WALLET_PID" 2>/dev/null; then
     echo "error: wallet exited before becoming ready" >&2
@@ -122,15 +138,13 @@ until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; do
   sleep 1
 done
 
-echo "Running OIDF Final + HAIP wallet plans against $CONFORMANCE_SERVER ($CONFORMANCE_MODE mode)"
+echo "Running OIDF issuer + verifier plans against $CONFORMANCE_SERVER ($CONFORMANCE_MODE mode)"
 RUN_STATUS=0
-"$VENV_DIR/bin/python" "$ROOT_DIR/scripts/oidf_wallet_conformance.py" \
+"$VENV_DIR/bin/python" "$ROOT_DIR/scripts/oidf_demorp_conformance.py" \
   --suite-dir "$SUITE_DIR" \
   --wallet-url "$WALLET_URL" \
-  --wallet-issuer-url "$WALLET_ISSUER_URL" \
+  --demo-base-url "$DEMO_BASE_URL" \
   --wallet-ca-cert "$WALLET_CA_CERT" \
-  --vci-client-id "$OIDF_VCI_CLIENT_ID" \
-  --vci-redirect-uri "$OIDF_VCI_REDIRECT_URI" \
   --results-dir "$RESULTS_DIR" \
   --runner-log "$RUNNER_LOG" \
   "$@" || RUN_STATUS=$?

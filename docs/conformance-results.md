@@ -2,6 +2,16 @@
 
 These are the current local wallet conformance results for `eudi-dev`. Use [Running OIDF Wallet Conformance](./conformance-run.md) to reproduce or update them.
 
+## Demo Issuer and Verifier (2026-08-31)
+
+The demo issuer and demo verifier are tested with the suite playing the wallet. Use [the demo runbook](./conformance-run-demorp.md) to reproduce. Suite `release-v5.2.4` (revision `ab35a8d`), 9 plans (4 issuer, 5 verifier), 101 modules: **61 `PASSED`, 36 `REVIEW`, 4 `WARNING`, 0 `FAILED`, 0 `SKIPPED`**, 7645 condition successes against 0 condition failures.
+
+The 36 `REVIEW` are every verifier module. The suite cannot observe whether the verifier under test verified, so its verifier modules end in `REVIEW` behind an uploaded screenshot. The harness reads the demo verifier's own verdict per module instead: 36 of 36 as expected, every tampered presentation refused, every clean one verified.
+
+The 4 `WARNING` are one condition, four times: `CheckForUnexpectedParametersInServerMetadata` flags `client_attestation_pop_methods_supported` in the demo issuer's authorization server metadata as unknown. The parameter comes from the proof of possession methods registry of draft-ietf-oauth-attestation-based-client-auth-10, which the suite's RFC 8414 schema does not know (it knows the two signing algorithm parameters from the same document).
+
+Suite defect in `release-v5.2.4`: under the pre-authorized code grant the client attestation negative modules keep running after their expected token refusal and interrupt themselves ("This is a bug in the test module"). Those six modules are excluded there and covered by the authorization code scenarios.
+
 ## Baseline
 
 - date: 2026-08-09 (previous: 2026-08-08 and 2026-08-07 on suite release-v5.2.1, 2026-08-05 and 2026-08-04 across 12 plans. And 2026-07-30, which did not exercise credential status. See below)

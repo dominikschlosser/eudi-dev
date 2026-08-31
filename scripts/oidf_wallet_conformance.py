@@ -609,10 +609,8 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
     config = load_config_template(suite_dir / scenario.template_relpath)
     # The alias carries the wallet's port, so no two runs ever ask the suite for
     # the same one. An alias belongs to whichever test claimed it last, and a
-    # new test naming one an earlier test still holds takes it over. Reusing a
-    # fixed alias run after run makes every run contend with the leftovers of
-    # the one before it, which the VCI configurations already avoid by deriving
-    # their alias from the per-run redirect URI.
+    # new test naming one an earlier test still holds takes it over, so a fixed
+    # alias would make every run contend with the leftovers of the one before.
     config["alias"] = f"oid4vc-dev-{scenario.slug}-{wallet_run_suffix(args)}"
     config["description"] = f"oid4vc-dev wallet ({scenario.slug})"
     config.setdefault("client", {})
@@ -753,11 +751,9 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     request_method = variant.get("request_method", "")
     client_id_prefix = variant.get("client_id_prefix", "")
 
-    # Broken in release-v5.2.1 (createPlaceholder after WAITING), fixed in
-    # release-v5.2.2. The module stays out only where its own
-    # @VariantNotApplicableWhen puts it: an unsigned DC API request carries no
-    # client_id to corrupt (OID4VP 1.0 Appendix A.2), and the DC API plans in
-    # this matrix send unsigned requests.
+    # The module's own @VariantNotApplicableWhen: an unsigned DC API request
+    # carries no client_id to corrupt (OID4VP 1.0 Appendix A.2), and the DC
+    # API plans in this matrix send unsigned requests.
     if response_mode in {"dc_api", "dc_api.jwt"} and request_method != "request_uri_signed":
         modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
 
@@ -770,9 +766,9 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
         # encryption key, so there is no unusable-key scenario to test.
         modules.remove(VP_FINAL_MODULE_IGNORES_UNUSABLE_ENCRYPTION_KEY)
     if response_mode == "direct_post":
-        # The release-v5.1.44 alternate direct_post module unconditionally
-        # replaces encrypted-response setup that is absent for plain direct_post.
-        # Still present in release-v5.2.1.
+        # The alternate module unconditionally replaces the encrypted-response
+        # setup, which is absent for plain direct_post. Still present in
+        # release-v5.2.4.
         modules.remove(VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW)
     if client_id_prefix != "redirect_uri":
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
@@ -950,11 +946,10 @@ def is_rejection_fapi2_client_test(test_name: str) -> bool:
 
 
 def set_wallet_conformance(wallet_url: str, mode: str, requires_haip: bool) -> None:
-    # Conformance is the wallet's own setting now. Set it on the local wallet
-    # under test before each submission so the HAIP modules run enforced and the
-    # rest run without HAIP, whatever the wallet started with. This works only
-    # against a locally-hosted wallet, which is the whole point of a conformance
-    # run.
+    # Set the wallet's own conformance setting before each submission, so the
+    # HAIP modules run enforced and the rest run without HAIP, whatever the
+    # wallet started with. This works only against a locally-hosted wallet,
+    # which is the whole point of a conformance run.
     try:
         wallet_request(wallet_url, "PUT", "/api/config/conformance", {"mode": mode, "haip": bool(requires_haip)})
     except urllib.error.HTTPError as exc:

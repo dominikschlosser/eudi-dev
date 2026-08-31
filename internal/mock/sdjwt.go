@@ -32,9 +32,14 @@ import (
 
 // SDJWTConfig holds options for generating a mock SD-JWT credential.
 type SDJWTConfig struct {
-	Issuer        string
-	VCT           string
-	ExpiresIn     time.Duration
+	Issuer    string
+	VCT       string
+	ExpiresIn time.Duration
+	// IssuedAt overrides the issuance instant iat carries and exp counts
+	// from. An issuer that hands out several copies of one credential rounds
+	// it, so the copies do not share the precise issuance second (RFC 9901
+	// §10.1). Nil issues at now.
+	IssuedAt      *time.Time
 	NotBefore     *time.Time // optional: sets nbf claim
 	Claims        map[string]any
 	Key           *ecdsa.PrivateKey
@@ -59,6 +64,9 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 	}
 
 	now := time.Now()
+	if cfg.IssuedAt != nil {
+		now = *cfg.IssuedAt
+	}
 
 	always := make(map[string]bool, len(cfg.AlwaysDisclosed))
 	for _, path := range cfg.AlwaysDisclosed {

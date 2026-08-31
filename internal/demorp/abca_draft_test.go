@@ -87,8 +87,10 @@ func TestPreAuthTokenRequiresClientAuth(t *testing.T) {
 	t.Run("without attestation refused in required mode", func(t *testing.T) {
 		d, _, _ := newDemoRP(t)
 		rec := postForm(t, d.IssuerHandler(), "/token", preAuthTokenForm(t, d))
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401 (%s)", rec.Code, rec.Body.String())
+		// RFC 6749 §5.2: a token endpoint refusal is a 400 unless the client
+		// authenticated via the Authorization header, which these do not.
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
 		}
 		if !strings.Contains(rec.Body.String(), "invalid_client") {
 			t.Errorf("body = %s, want invalid_client", rec.Body.String())
@@ -157,8 +159,8 @@ func TestPreAuthTokenRequiresClientAuth(t *testing.T) {
 		req.Header.Set("OAuth-Client-Attestation-PoP", attestationPoP(t, otherKey, demoIssuerID))
 		rec := httptest.NewRecorder()
 		d.IssuerHandler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401 for a PoP signed by an unattested key (%s)", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for a PoP signed by an unattested key (%s)", rec.Code, rec.Body.String())
 		}
 	})
 
@@ -188,8 +190,8 @@ func TestPreAuthTokenRequiresClientAuth(t *testing.T) {
 		req.Header.Set("OAuth-Client-Attestation-PoP", attestationPoP(t, clientKey, demoIssuerID))
 		rec := httptest.NewRecorder()
 		d.IssuerHandler().ServeHTTP(rec, req)
-		if rec.Code != http.StatusUnauthorized {
-			t.Fatalf("status = %d, want 401 for an attestation without sub (%s)", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400 for an attestation without sub (%s)", rec.Code, rec.Body.String())
 		}
 		if !strings.Contains(rec.Body.String(), "sub") {
 			t.Errorf("body = %s, want the missing sub named", rec.Body.String())

@@ -130,6 +130,15 @@ func (s *Server) startIssuerTLSServer() error {
 				return s.currentIssuerTLSCertificate(), nil
 			},
 			MinVersion: tls.VersionTLS12,
+			// For TLS 1.2, only the AEAD ECDHE suites RFC 9325 (BCP 195)
+			// recommends. The certificate is ECDSA, so its suites are what a
+			// handshake can pick. TLS 1.3 suites are not configurable and are
+			// all recommended.
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+				tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+			},
 		})
 		_ = s.issuerSrv.Serve(tlsListener)
 	}()

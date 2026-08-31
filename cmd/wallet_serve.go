@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"net/url"
@@ -62,6 +64,8 @@ type walletServeOptions struct {
 	DemoReset               string
 	ImprintFile             string
 	Detached                bool
+	ServeTLS                bool
+	DemoVerifierTrust       []string
 }
 
 func walletServeCmd() *cobra.Command {
@@ -119,8 +123,62 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
+	cmd.Flags().BoolVar(&opts.ServeTLS, "serve-tls", false, "Serve an https --base-url locally with the wallet's own TLS certificate instead of expecting an external TLS terminator in front (the HTTP port stays bound as well)")
+	cmd.Flags().StringArrayVar(&opts.DemoVerifierTrust, "demo-verifier-trust-anchor", nil, "CA certificate PEM file the demo verifier accepts issuer chains under, next to the wallet's own CA (repeatable). For presentations issued outside this wallet, such as an OIDF conformance suite run")
 	cmd.Flags().BoolVarP(&opts.Detached, "detached", "d", false, "Run the server as a background process and return once it responds; output goes to <wallet-dir>/serve.log")
 	return cmd, &opts
+}
+
+// validateServeTLSBaseURL holds --serve-tls to a base URL it can actually
+// serve: https, and with an explicit port for the listener to bind. A
+// port-less https URL belongs behind a TLS terminator, which is the mode
+// --serve-tls exists to avoid.
+func validateServeTLSBaseURL(baseURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("requires an https --base-url with an explicit port, got %q", baseURL)
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return fmt.Errorf("requires an https --base-url, got %q", baseURL)
+	}
+	if parsed.Port() == "" {
+		return fmt.Errorf("requires an explicit port in --base-url so the TLS listener knows where to bind, got %q", baseURL)
+	}
+	return nil
+}
+
+// loadVerifierTrustAnchors reads the CA certificates the demo verifier should
+// accept issuer chains under, one or more PEM certificates per file.
+func loadVerifierTrustAnchors(paths []string) ([]*x509.Certificate, error) {
+	var anchors []*x509.Certificate
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		found := 0
+		rest := data
+		for {
+			var block *pem.Block
+			block, rest = pem.Decode(rest)
+			if block == nil {
+				break
+			}
+			if block.Type != "CERTIFICATE" {
+				continue
+			}
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			anchors = append(anchors, cert)
+			found++
+		}
+		if found == 0 {
+			return nil, fmt.Errorf("%s holds no PEM certificate", path)
+		}
+	}
+	return anchors, nil
 }
 
 // applyDemoProfileDefaults applies what --demo implies, each setting only
@@ -321,6 +379,15 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	clientAuthMode, err := demorp.ParseClientAuthMode(opts.DemoIssuerClientAuth)
 	if err != nil {
 		return fmt.Errorf("--demo-issuer-client-auth: %w", err)
+	}
+	if opts.ServeTLS {
+		if err := validateServeTLSBaseURL(opts.BaseURL); err != nil {
+			return fmt.Errorf("--serve-tls: %w", err)
+		}
+	}
+	verifierTrustAnchors, err := loadVerifierTrustAnchors(opts.DemoVerifierTrust)
+	if err != nil {
+		return fmt.Errorf("--demo-verifier-trust-anchor: %w", err)
 	}
 	store := loadStore()
 	w, err := store.LoadOrCreate()
@@ -632,6 +699,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		return fmt.Sprintf("http://localhost:%d", opts.Port)
 	})
 	demoRP.SetClientAuthMode(clientAuthMode)
+	demoRP.SetVerifierTrustAnchors(verifierTrustAnchors)
 	// Issuing with a status list reserves an index on the wallet's own
 	// list, and every wallet API request reloads the store, so the
 	// reservation has to reach disk before the next one.
@@ -652,10 +720,13 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
 		return err
 	}
-	if issuerViaBaseURL {
+	if issuerViaBaseURL && !opts.ServeTLS {
 		// The TLS terminator in front of the base URL serves the
 		// issuer origin. Without this the derived port (443 for a
-		// port-less https URL) would be bound locally.
+		// port-less https URL) would be bound locally. With
+		// --serve-tls there is no terminator: the listener stays on
+		// the base URL's own port and serves it with the wallet's
+		// certificate.
 		srv.SetIssuerListenPort(-1)
 	}
 

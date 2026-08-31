@@ -27,6 +27,7 @@ package demorp
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -63,6 +64,12 @@ type DemoRP struct {
 	// The zero value is ClientAuthRequired, so a caller that never sets it gets
 	// the profile the demo is meant to show.
 	clientAuth ClientAuthMode
+	// verifierTrustAnchors are CAs the demo verifier accepts issuer
+	// certificate chains under, next to the wallet's own CA. They admit
+	// presentations issued outside this wallet, such as the ones the OIDF
+	// conformance suite signs when it plays the wallet against the demo
+	// verifier.
+	verifierTrustAnchors []*x509.Certificate
 
 	mu       sync.Mutex
 	offers   map[string]*offerState
@@ -113,6 +120,12 @@ func (d *DemoRP) SetOnWalletChange(fn func()) {
 // serving: the mode is published in the authorization server metadata.
 func (d *DemoRP) SetClientAuthMode(mode ClientAuthMode) {
 	d.clientAuth = mode
+}
+
+// SetVerifierTrustAnchors sets the CAs the demo verifier accepts issuer
+// certificate chains under, next to the wallet's own CA. Call before serving.
+func (d *DemoRP) SetVerifierTrustAnchors(anchors []*x509.Certificate) {
+	d.verifierTrustAnchors = anchors
 }
 
 func (d *DemoRP) saveWallet() {

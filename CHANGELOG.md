@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-31
+
+### Added
+
+- **The demo issuer and demo verifier are conformance tested.** `scripts/oidf-demorp-conformance.sh` runs the official OIDF issuer plans (`oid4vci-1_0-issuer-test-plan`, `oid4vci-1_0-issuer-haip-test-plan`) and verifier plans (`oid4vp-1final-verifier-test-plan`, `oid4vp-1final-verifier-haip-test-plan`) against the demo pair, with the suite playing the wallet. The harness delivers credential offers to the suite, signs in at the demo issuer's authorization page, hands each verifier module a fresh demo request, fills the screenshot placeholders those plans end on, and additionally checks the demo verifier's own verdict per module (a tampered presentation has to fail, everything else has to verify), which the suite itself cannot observe. See [the runbook](docs/conformance-run-demorp.md).
+- **`wallet serve --serve-tls` serves an https base URL locally.** With an https `--base-url` naming an explicit port, the wallet binds that origin itself with its own TLS certificate instead of expecting an external TLS terminator. The conformance run needs it because the OIDF suite requires https endpoints from the party under test.
+- **`wallet serve --demo-verifier-trust-anchor` adds CAs the demo verifier trusts.** The demo verifier accepts issuer chains under the wallet's own CA. The repeatable flag adds anchors for presentations issued elsewhere, such as the ones the OIDF suite signs under its own CAs.
+
+### Fixed
+
+- **The demo issuer accepts a pushed authorization request without a DPoP proof.** RFC 9449 §10 makes binding the authorization code to a DPoP key the client's choice (`dpop_jkt` is OPTIONAL, and §10.1 offers the DPoP header at the PAR endpoint as one way a client MAY do it), but the demo issuer required the header and refused a conformant wallet that omitted it. A proof that is sent is still verified, and the token endpoint still requires one for the authorization code exchange.
+- **The demo issuer's token endpoint accepts an authenticated client that omits `client_id`.** RFC 6749 §4.1.3 has the parameter "REQUIRED, if the client is not authenticating with the authorization server", but the demo compared the absent parameter against the authorization request and refused the exchange with `invalid_grant`. The client the attestation names in its `sub` now stands in, and the code check runs against it, which is the "issued to the authenticated confidential client" rule of the same section. The OIDF suite's wallet authenticates exactly this way.
+- **The demo verifier checks the Key Binding JWT's creation time.** RFC 9901 §7.3 has the verifier "check that the creation time of the Key Binding JWT, as determined by the iat claim, is within an acceptable window", and the demo accepted a binding created a year away from now. The window is the same one the demo issuer applies to key proofs. The OIDF verifier plans present exactly such presentations and expect the refusal.
+- **The wallet's local TLS listener only offers the TLS 1.2 ciphers RFC 9325 (BCP 195) recommends.** The Go defaults also accept non-recommended suites, which the OIDF suite's TLS checks flag on the credential endpoint.
+- **The demo ticket's issuance instant is rounded to the hour.** RFC 9901 §10.1 asks issuers to keep credentials unlinkable, and a ticket carrying the precise issuance second in `iat` (and the `exp` derived from it) lets colluding verifiers correlate the copies of a batch, and two sequentially issued tickets through their inter-issuance gap. The OIDF suite's batch issuance module fails an issuer over the former and warns over the latter.
+- **The demo e2e wallet's log survives a CI failure.** The spawned demo wallet's output went to a discarded pipe, so a CI-only failure left nothing saying what the server was doing. It now lands in `e2e/test-results/`, which CI already uploads on failure.
+
 ## [2.1.2] - 2026-08-31
 
 ### Changed

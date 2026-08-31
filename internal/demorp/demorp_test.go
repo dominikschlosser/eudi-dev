@@ -348,8 +348,41 @@ func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientI
 	return presentCredential(t, holderKey, credential, clientID, nonce)
 }
 
+// The ticket's time claims sit on an hour boundary: RFC 9901 §10.1 asks
+// issuers to keep credentials unlinkable, and a batch of copies sharing the
+// precise issuance second would let colluding verifiers correlate them
+// (iat and the exp derived from it are the values the OIDF batch issuance
+// module classifies).
+func TestTicketTimeClaimsAreRounded(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+
+	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+	if err != nil {
+		t.Fatalf("signing ticket: %v", err)
+	}
+	token, err := sdjwt.Parse(credential)
+	if err != nil {
+		t.Fatalf("parsing ticket: %v", err)
+	}
+	iat, _ := token.Payload["iat"].(float64)
+	exp, _ := token.Payload["exp"].(float64)
+	if int64(iat)%3600 != 0 {
+		t.Errorf("iat = %d, want a value on an hour boundary", int64(iat))
+	}
+	if int64(exp)%3600 != 0 {
+		t.Errorf("exp = %d, want a value on an hour boundary", int64(exp))
+	}
+}
+
 // presentCredential builds an SD-JWT+KB presentation of the given credential.
 func presentCredential(t *testing.T, holderKey *ecdsa.PrivateKey, credential, clientID, nonce string) string {
+	t.Helper()
+	return presentCredentialAt(t, holderKey, credential, clientID, nonce, time.Now())
+}
+
+// presentCredentialAt is presentCredential with the key binding JWT created at
+// the given time, so a stale or predated binding can be presented.
+func presentCredentialAt(t *testing.T, holderKey *ecdsa.PrivateKey, credential, clientID, nonce string, iat time.Time) string {
 	t.Helper()
 	// Present with all disclosures: credential already ends with ~.
 	prefix := credential
@@ -360,13 +393,41 @@ func presentCredential(t *testing.T, holderKey *ecdsa.PrivateKey, credential, cl
 	kb := signES256(t, holderKey,
 		map[string]any{"alg": "ES256", "typ": "kb+jwt"},
 		map[string]any{
-			"iat":     time.Now().Unix(),
+			"iat":     iat.Unix(),
 			"aud":     clientID,
 			"nonce":   nonce,
 			"sd_hash": base64.RawURLEncoding.EncodeToString(digest[:]),
 		},
 	)
 	return prefix + kb
+}
+
+// RFC 9901 §7.3 has the verifier "check that the creation time of the Key
+// Binding JWT, as determined by the iat claim, is within an acceptable
+// window". A binding created far from now proves an old session, not this one.
+func TestVerifierRejectsKeyBindingOutsideTheAcceptableWindow(t *testing.T) {
+	for name, iat := range map[string]time.Time{
+		"a year in the past":   time.Now().AddDate(-1, 0, 0),
+		"a year in the future": time.Now().AddDate(1, 0, 0),
+	} {
+		t.Run(name, func(t *testing.T) {
+			d, _, holderKey := newDemoRP(t)
+			h := d.VerifierHandler()
+			id, params := startVerification(t, h, "ticket")
+
+			credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+			if err != nil {
+				t.Fatalf("signing ticket: %v", err)
+			}
+			presentation := presentCredentialAt(t, holderKey, credential, params.Get("client_id"), params.Get("nonce"), iat)
+			postPresentation(t, h, id, "ticket", presentation)
+
+			_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+			if status["status"] != "failed" {
+				t.Fatalf("status = %v, want failed for a key binding created %s", status["status"], name)
+			}
+		})
+	}
 }
 
 func TestVerifierFlow(t *testing.T) {
@@ -396,6 +457,67 @@ func TestVerifierFlow(t *testing.T) {
 	if claims["event"] != "EUDI Interop Fest" {
 		t.Errorf("verified claims = %v, want the ticket event", claims)
 	}
+}
+
+// The demo verifier accepts issuer chains under the wallet CA plus whatever
+// extra anchors the deployment added, which is how a presentation issued by an
+// external issuer (the OIDF conformance suite playing the wallet, for one)
+// verifies. The anchor decides the outcome: the same presentation fails
+// without it and verifies with it.
+func TestVerifierTrustAnchors(t *testing.T) {
+	foreignCAKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating foreign CA key: %v", err)
+	}
+	foreignCA, err := mock.GenerateCACert(foreignCAKey)
+	if err != nil {
+		t.Fatalf("generating foreign CA certificate: %v", err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating foreign issuer key: %v", err)
+	}
+	leaf, err := mock.GenerateLeafCert(foreignCAKey, foreignCA, &issuerKey.PublicKey)
+	if err != nil {
+		t.Fatalf("generating foreign issuer leaf: %v", err)
+	}
+
+	present := func(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey) string {
+		h := d.VerifierHandler()
+		id, params := startVerificationWith(t, h, `{"type":"pid","format":"sd-jwt"}`)
+		credential, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+			Issuer:    "https://foreign-issuer.example",
+			VCT:       PIDVCT,
+			ExpiresIn: time.Hour,
+			Claims:    map[string]any{"given_name": "Erika", "family_name": "Mustermann"},
+			Key:       issuerKey,
+			HolderKey: &holderKey.PublicKey,
+			CertChain: []*x509.Certificate{leaf},
+		})
+		if err != nil {
+			t.Fatalf("signing foreign credential: %v", err)
+		}
+		presentation := presentCredential(t, holderKey, credential, params.Get("client_id"), params.Get("nonce"))
+		postPresentation(t, h, id, "pid", presentation)
+		_, status := doJSON(t, h, "GET", "/api/requests/"+id, "", nil)
+		outcome, _ := status["status"].(string)
+		return outcome
+	}
+
+	t.Run("without the foreign anchor", func(t *testing.T) {
+		d, _, holderKey := newDemoRP(t)
+		if got := present(t, d, holderKey); got != "failed" {
+			t.Fatalf("status = %q, want failed for a chain under an unknown CA", got)
+		}
+	})
+
+	t.Run("with the foreign anchor", func(t *testing.T) {
+		d, _, holderKey := newDemoRP(t)
+		d.SetVerifierTrustAnchors([]*x509.Certificate{foreignCA})
+		if got := present(t, d, holderKey); got != "verified" {
+			t.Fatalf("status = %q, want verified with the CA added as a trust anchor", got)
+		}
+	})
 }
 
 func TestVerifierRejectsWrongNonce(t *testing.T) {

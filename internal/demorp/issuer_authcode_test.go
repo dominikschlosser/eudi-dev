@@ -60,7 +60,10 @@ func TestPushedAuthorizationRequestRejections(t *testing.T) {
 		wantError  string
 	}{
 		{
-			name: "no DPoP proof",
+			// Without a DPoP proof the request is judged on client
+			// authentication alone, and a client that presents none is refused
+			// for that.
+			name: "no client authentication",
 			form: url.Values{
 				"client_id":             {"wallet"},
 				"response_type":         {"code"},
@@ -68,8 +71,8 @@ func TestPushedAuthorizationRequestRejections(t *testing.T) {
 				"code_challenge":        {"abc"},
 				"redirect_uri":          {"http://wallet.example/cb"},
 			},
-			wantStatus: http.StatusBadRequest,
-			wantError:  "invalid_dpop_proof",
+			wantStatus: http.StatusUnauthorized,
+			wantError:  "invalid_client",
 		},
 	}
 
@@ -227,7 +230,8 @@ func dpopProofForToken(t *testing.T, key *ecdsa.PrivateKey, method, htu, accessT
 }
 
 // pushAuthorizationRequest pushes a minimal but complete authorization request
-// with whatever client authentication the headers carry.
+// with whatever client authentication the headers carry. A nil dpopKey pushes
+// without a DPoP proof, which RFC 9449 §10.1 leaves to the client.
 func pushAuthorizationRequest(t *testing.T, h http.Handler, clientID string, dpopKey *ecdsa.PrivateKey, challenge string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{
@@ -239,13 +243,38 @@ func pushAuthorizationRequest(t *testing.T, h http.Handler, clientID string, dpo
 	}
 	req := httptest.NewRequest(http.MethodPost, "/par", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("DPoP", dpopProof(t, dpopKey, "POST", demoIssuerID+"/par"))
+	if dpopKey != nil {
+		req.Header.Set("DPoP", dpopProof(t, dpopKey, "POST", demoIssuerID+"/par"))
+	}
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+// Binding the authorization code to a DPoP key is the client's choice: RFC
+// 9449 §10 makes dpop_jkt OPTIONAL, and §10.1 offers the DPoP header at the
+// PAR endpoint as an alternative the client MAY use. A wallet that
+// authenticates with an attestation and a PoP JWT and binds no code is
+// complete, so the pushed request is accepted without a DPoP proof.
+func TestPushedAuthorizationRequestWithoutDPoP(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+
+	rec := pushAuthorizationRequest(t, d.IssuerHandler(), "http://wallet.example", nil, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", map[string]string{
+		"OAuth-Client-Attestation":     provider.attest(t, "http://wallet.example", clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	})
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (%s)", rec.Code, rec.Body.String())
+	}
 }
 
 // An attestation signed by a wallet provider this issuer was never given is
@@ -404,6 +433,96 @@ func TestPushedAuthorizationRequestWithoutClientAuthentication(t *testing.T) {
 			t.Fatalf("status = %d, want 400 (%s)", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+// A token endpoint refusal is a 400: RFC 6749 §5.2 responds "with an HTTP 400
+// (Bad Request) status code (unless specified otherwise)", and reserves 401
+// for a client that "attempted to authenticate via the Authorization request
+// header field", which the attestation headers are not. Attestation-based
+// client authentication delegates its error responses to that section
+// (draft-ietf-oauth-attestation-based-client-auth-10 §7.4).
+func TestTokenEndpointRefusesABrokenAttestationWith400(t *testing.T) {
+	d, _, _ := newDemoRP(t)
+
+	code, doc := doJSON(t, d.IssuerHandler(), "POST", "/token",
+		url.Values{"grant_type": {preAuthGrant}, "pre-authorized_code": {"whatever"}}.Encode(),
+		map[string]string{
+			"Content-Type":             "application/x-www-form-urlencoded",
+			"OAuth-Client-Attestation": "not-a-jwt",
+		})
+
+	if code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (%v)", code, doc)
+	}
+	if doc["error"] != "invalid_client_attestation" {
+		t.Fatalf("error = %v, want invalid_client_attestation", doc["error"])
+	}
+}
+
+// A client that authenticates at the token endpoint may omit client_id there:
+// RFC 6749 §4.1.3 has it "REQUIRED, if the client is not authenticating with
+// the authorization server", and the server ensures "that the authorization
+// code was issued to the authenticated confidential client". The attestation's
+// sub names the client, so the code check runs against it.
+func TestAuthorizationCodeTokenExchangeWithoutClientIDParameter(t *testing.T) {
+	d, _, holderKey := newDemoRP(t)
+	h := d.IssuerHandler()
+	provider := foreignWalletProvider(t)
+	clientKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatalf("generating client key: %v", err)
+	}
+	clientID := "http://wallet.example"
+
+	verifier := "aVeryLongCodeVerifierThatIsAtLeastFortyThreeCharacters"
+	sum := sha256.Sum256([]byte(verifier))
+	challenge := format.EncodeBase64URL(sum[:])
+
+	pushed := pushAuthorizationRequest(t, h, clientID, holderKey, challenge, map[string]string{
+		"OAuth-Client-Attestation":     provider.attest(t, clientID, clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	})
+	if pushed.Code != http.StatusCreated {
+		t.Fatalf("pushing the authorization request: %d %s", pushed.Code, pushed.Body.String())
+	}
+	var pushedDoc map[string]any
+	if err := json.Unmarshal(pushed.Body.Bytes(), &pushedDoc); err != nil {
+		t.Fatalf("decoding the pushed authorization response: %v", err)
+	}
+	requestURI, _ := pushedDoc["request_uri"].(string)
+
+	login := postForm(t, h, "/authorize", url.Values{
+		"request_uri": {requestURI},
+		"username":    {demoAccountUsername},
+		"password":    {demoAccountPassword},
+	})
+	if login.Code != http.StatusFound {
+		t.Fatalf("signing in: %d %s", login.Code, login.Body.String())
+	}
+	redirect, err := url.Parse(login.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parsing the callback: %v", err)
+	}
+	authCode := redirect.Query().Get("code")
+
+	tokenForm := url.Values{
+		"grant_type":    {authCodeGrant},
+		"code":          {authCode},
+		"redirect_uri":  {"http://wallet.example/cb"},
+		"code_verifier": {verifier},
+	}
+	code, tokenDoc := doJSON(t, h, "POST", "/token", tokenForm.Encode(), map[string]string{
+		"Content-Type":                 "application/x-www-form-urlencoded",
+		"DPoP":                         dpopProof(t, holderKey, "POST", demoIssuerID+"/token"),
+		"OAuth-Client-Attestation":     provider.attest(t, clientID, clientKey),
+		"OAuth-Client-Attestation-PoP": attestationPoP(t, clientKey, demoIssuerID),
+	})
+	if code != http.StatusOK {
+		t.Fatalf("token request without client_id: %d %v", code, tokenDoc)
+	}
+	if accessToken, _ := tokenDoc["access_token"].(string); accessToken == "" {
+		t.Fatalf("no access token in %v", tokenDoc)
+	}
 }
 
 // The whole authorization code flow driven by a wallet that authenticates with
