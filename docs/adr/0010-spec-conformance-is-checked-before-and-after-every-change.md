@@ -22,6 +22,22 @@ Confirm every citation the change touches is verbatim and correctly attributed, 
 
 [ADR-0001](0001-debug-by-default-validation-with-opt-in-strict-mode.md) covers what happens to a finding once it is raised. This decision is about the ground it stands on.
 
+## The executable check is the OIDF conformance suite
+
+Citation checking grounds each claim. The OpenID Foundation conformance suite verifies the running binary against the same specifications, in both directions: the wallet plans test this wallet ([runbook](../conformance-run.md)), the issuer and verifier plans test the demo issuer and verifier ([runbook](../conformance-run-demorp.md)), and the recorded matrix lives in [conformance results](../conformance-results.md). It is the only mature executable suite for the protocols the EUDI stack builds on (OpenID4VP 1.0, OpenID4VCI 1.0, HAIP 1.0), so a conformance statement about this project points at those runs.
+
+EUDI stays the primary target, and [ADR-0013](0013-only-the-eudi-stack-is-supported.md) bounds the specification set to what the ARF references. The ARF rules the OIDF suite does not cover (registration certificates, over-asking) are checked by this toolkit's own validations.
+
+## Watched sources
+
+No other executable conformance suite exists for EUDI or the ARF as of 2026-08. These are the sources to re-check before extending conformance coverage, in rough order of expected relevance:
+
+- The [Functional Conformance Assessment Framework](https://conformance.eudi.dev) (FCAF), the official EUDI conformance framework aimed at certification. Textual test books per system under test (relying party, attestation provider, PID provider), still skeletal at v0.0.10. When the attestation provider and relying party test books land, map the demo issuer and verifier onto them.
+- [ISO/IEC TS 18013-6:2025](https://www.iso.org/standard/91153.html), mDL test methods against ISO/IEC 18013-5. The source for closing the mdoc certificate profile findings the OIDF suite reports as warnings.
+- The EC Interoperability Test Bed with the EWC conformance testbed ([RFC100](https://github.com/EWC-consortium/eudi-wallet-rfcs/blob/main/ewc-rfc100-interoperability-profile-towards-itb.md), [backend](https://github.com/EWC-consortium/ewc-wallet-conformance-backend)). Executable, but it certifies conformance to the EWC RFC profiles of the Large Scale Pilots rather than to the ARF or HAIP.
+- [eudi-doc-testing-application](https://github.com/eu-digital-identity-wallet/eudi-doc-testing-application), the QA suite for the EC reference wallet apps. Not a harness for this project, but its Gherkin scenarios catalogue EUDI behaviours worth mirroring in tests here.
+- CIR (EU) 2024/2981 and the ETSI TS 119 4xx set, the certification layer. Documents without tooling.
+
 ## Consequences
 
 A check whose grounding cannot be produced is removed rather than kept on the chance it is useful, because an ungrounded check refuses conformant input, which is the failure this tool exists to prevent in others. Version 1.25.2 removed one: an `iss`-to-certificate binding attributed to HAIP 1.0 §6.1.1, which HAIP never stated. It came from SD-JWT VC draft-08 and was dropped by the draft-13 that HAIP 1.0 references, and in strict mode it had been refusing conformant credentials.
