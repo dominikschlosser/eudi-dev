@@ -1,0 +1,76 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package wallet
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/dominikschlosser/eudi-dev/internal/mock"
+)
+
+// legacyTypeCredential issues a mock SD-JWT VC and re-heads it with the
+// transitional vc+sd-jwt typ. Re-encoding the header invalidates the
+// signature, which import parsing does not check.
+func legacyTypeCredential(t *testing.T, w *Wallet) string {
+	t.Helper()
+	raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+		Issuer: "https://issuer.example", VCT: mock.DefaultPIDVCT,
+		Claims: mock.SDJWTPIDClaims, Key: w.IssuerKey,
+	})
+	if err != nil {
+		t.Fatalf("GenerateSDJWT: %v", err)
+	}
+	jwt, rest, _ := strings.Cut(raw, "~")
+	seg := strings.Split(jwt, ".")
+	hdr, err := base64.RawURLEncoding.DecodeString(seg[0])
+	if err != nil {
+		t.Fatalf("decoding header: %v", err)
+	}
+	var h map[string]any
+	if err := json.Unmarshal(hdr, &h); err != nil {
+		t.Fatalf("parsing header: %v", err)
+	}
+	h["typ"] = "vc+sd-jwt"
+	nh, err := json.Marshal(h)
+	if err != nil {
+		t.Fatalf("encoding header: %v", err)
+	}
+	seg[0] = base64.RawURLEncoding.EncodeToString(nh)
+	return strings.Join(seg, ".") + "~" + rest
+}
+
+// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the vc+sd-jwt media type with
+// dc+sd-jwt. Debug mode keeps a credential on the transitional typ and records
+// the deviation, strict mode refuses it.
+func TestImportSDJWT_LegacyType(t *testing.T) {
+	t.Run("debug keeps it", func(t *testing.T) {
+		w := generateTestWallet(t)
+		w.ValidationMode = ValidationModeDebug
+		if _, err := w.importSDJWT(legacyTypeCredential(t, w), "", ""); err != nil {
+			t.Fatalf("debug import refused the credential: %v", err)
+		}
+	})
+
+	t.Run("strict refuses it", func(t *testing.T) {
+		w := generateTestWallet(t)
+		w.ValidationMode = ValidationModeStrict
+		if _, err := w.importSDJWT(legacyTypeCredential(t, w), "", ""); err == nil {
+			t.Fatal("strict import accepted a credential on the transitional typ")
+		}
+	})
+}

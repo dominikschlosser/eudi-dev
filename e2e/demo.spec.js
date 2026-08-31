@@ -1395,10 +1395,12 @@ test.describe("Custom verifier request builder", () => {
   async function present(page, schemeURI) {
     const owner = await openAsSchemeHandler(page);
     submitAsSchemeHandler("/api/presentations", schemeURI, owner);
-    // The interactive submit is fire-and-forget (it blocks on consent). The
-    // overlay turns active once the request is registered and its dialog is
-    // rendered, so wait for that generously: on a loaded CI runner the whole
-    // chain is slow, and giving up early is what made this flaky.
+    // The interactive submit is fire-and-forget (it blocks on consent). Confirm
+    // the wallet registered it before waiting on the UI, so a submission that
+    // never lands fails here plainly instead of timing out on a blank overlay.
+    await waitForPending(1, owner);
+    // The overlay turns active once the dialog is rendered. On a loaded CI
+    // runner the whole chain is slow, so wait for that generously.
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/, { timeout: 45_000 });
   }
 

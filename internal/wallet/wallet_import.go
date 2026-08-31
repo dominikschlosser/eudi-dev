@@ -201,14 +201,24 @@ func (w *Wallet) appendCredential(cred StoredCredential) *StoredCredential {
 // mode. Strict refuses a credential that breaks RFC 9901, debug keeps it and
 // records each break as a warning.
 func (w *Wallet) parseCredentialSDJWT(raw string) (*sdjwt.Token, error) {
-	if w.Mode() == ValidationModeStrict {
-		return sdjwt.Parse(raw)
-	}
 	token, err := sdjwt.ParseLenient(raw)
 	if err != nil {
 		return nil, err
 	}
+	// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the vc+sd-jwt media type
+	// with dc+sd-jwt. The transitional value still decodes but is a deviation.
+	var vcType []string
+	if typ, _ := token.Header["typ"].(string); typ == sdjwt.TypeSDJWTVCLegacy {
+		vcType = append(vcType, fmt.Sprintf("the typ header is %s, the transitional media type draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced with %s", sdjwt.TypeSDJWTVCLegacy, sdjwt.TypeSDJWTVC))
+	}
+	if w.Mode() == ValidationModeStrict {
+		if all := append(append([]string{}, token.Deviations...), vcType...); len(all) > 0 {
+			return nil, fmt.Errorf("%s", strings.Join(all, "; "))
+		}
+		return token, nil
+	}
 	w.recordCredentialDeviations("RFC 9901", token.Deviations)
+	w.recordCredentialDeviations("draft-ietf-oauth-sd-jwt-vc-18", vcType)
 	return token, nil
 }
 

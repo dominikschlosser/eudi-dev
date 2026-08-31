@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-08-31
+
+### Changed
+
+- **A credential on the transitional `vc+sd-jwt` typ follows the wallet mode.** draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the `vc+sd-jwt` media type with `dc+sd-jwt` for the SD-JWT VC issuer-signed JWT. On import, debug mode keeps a credential still on `vc+sd-jwt` and records the deviation as a warning, strict mode refuses it, and the decoder flags the typ as a violation rather than passing it as valid with a superseded note. This is the same split the wallet already uses for credentials that break RFC 9901.
+
+## [2.1.1] - 2026-08-30
+
+### Fixed
+
+- **Wallet warnings that can stand alone read as sentences.** Several presentation request findings (a missing or unreadable relying party registration certificate, the ARF content, validity and over-asking checks, and the vp_token query requirement) started with a lowercase letter, which looked wrong when the finding was shown on its own rather than grouped into one activity log entry. They now start with a capital letter.
+
 ## [2.1.0] - 2026-08-30
 
 ### Added

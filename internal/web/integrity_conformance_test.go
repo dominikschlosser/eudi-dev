@@ -21,8 +21,9 @@ import (
 )
 
 // draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
-// header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt", with
-// vc+sd-jwt accepted for the transitional period the same section names.
+// header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt". The
+// transitional vc+sd-jwt still decodes but deviates from that MUST, so the
+// decoder flags it.
 func TestCheckSDJWTType(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -30,7 +31,7 @@ func TestCheckSDJWTType(t *testing.T) {
 		want   string
 	}{
 		{name: "dc+sd-jwt", header: map[string]any{"typ": "dc+sd-jwt"}, want: "pass"},
-		{name: "vc+sd-jwt", header: map[string]any{"typ": "vc+sd-jwt"}, want: "pass"},
+		{name: "vc+sd-jwt", header: map[string]any{"typ": "vc+sd-jwt"}, want: "fail"},
 		{name: "plain JWT", header: map[string]any{"typ": "JWT"}, want: "fail"},
 		{name: "mixed case", header: map[string]any{"typ": "DC+SD-JWT"}, want: "fail"},
 		{name: "missing", header: map[string]any{"alg": "ES256"}, want: "fail"},
