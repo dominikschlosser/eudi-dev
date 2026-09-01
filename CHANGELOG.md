@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`wallet serve --serve-tls` serves an https base URL locally.** With an https `--base-url` naming an explicit port, the wallet binds that origin itself with its own TLS certificate instead of expecting an external TLS terminator. The conformance run needs it because the OIDF suite requires https endpoints from the party under test.
 - **`wallet serve --demo-verifier-trust-anchor` adds CAs the demo verifier trusts.** The demo verifier accepts issuer chains under the wallet's own CA. The repeatable flag adds anchors for presentations issued elsewhere, such as the ones the OIDF suite signs under its own CAs.
 
+- **Warnings for undefined parameters.** The wallet now warns about request parameters that OID4VP 1.0 does not define (for example the dropped `presentation_definition`) and about fields other than `redirect_uri` in the verifier's response to a posted presentation (§8.2). These stay warnings in every mode because RFC 6749 §3.1 requires ignoring unrecognized parameters.
+
 ### Changed
 
+- **Specification findings name their source in one uniform prefix.** Every warning that reports a broken rule starts with the specification and rule it cites, for example "OID4VP 1.0 §5.2: nonce is required" or "ARF RPRC_19: ...". Grouped summaries name the cited specifications instead of "the profile", rules that HAIP only incorporates are cited from the specification that defines them, and under `--haip` the incorporated checks are reported once instead of twice.
 - **`wallet instances` is split into `wallet ps`, `wallet use`, and `wallet kill`.** `wallet ps` lists running instances, `wallet use <url|local>` switches which wallet the CLI manages, and `wallet kill <pid|port|url>` stops one. The old `wallet instances list|use|kill` spellings keep working as hidden deprecated aliases.
 
 ### Fixed

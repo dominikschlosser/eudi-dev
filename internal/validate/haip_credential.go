@@ -51,14 +51,14 @@ func HAIPCredentialFindings(header, payload map[string]any) []string {
 	iss, _ := payload["iss"].(string)
 	if did := keys.DIDReference(kid, iss); did != "" {
 		findings = append(findings, fmt.Sprintf(
-			"HAIP: the credential names its issuer key by the DID %s, and §6.1.1 has the issuer's signing certificate and its trust chain travel in the x5c header instead", did))
+			"HAIP 1.0 §6.1.1: the credential names its issuer key by the DID %s, where the issuer's signing certificate and its trust chain travel in the x5c header instead", did))
 	}
 	// HAIP 1.0 §6.1: "The status claim, if present, MUST contain status_list as
 	// defined in [I-D.ietf-oauth-status-list]." A W3C StatusList2021Entry does
 	// not, so it is a finding under the profile (a plain claim, so it sits in
 	// the payload rather than behind a disclosure).
 	if nonStandard := NonStatusListFormat(payload); nonStandard != "" {
-		findings = append(findings, fmt.Sprintf("HAIP: %s, which §6.1 requires", nonStandard))
+		findings = append(findings, fmt.Sprintf("HAIP 1.0 §6.1: %s", nonStandard))
 	}
 
 	chain, _ := X5CCertificates(header)
@@ -78,12 +78,12 @@ func HAIPCredentialFindings(header, payload map[string]any) []string {
 // its issuer certificate elsewhere.
 func HAIPCredentialChain(chain []*x509.Certificate) []string {
 	if len(chain) == 0 {
-		return []string{"HAIP: the credential carries no x5c header, and §6.1.1 requires the issuer's signing certificate and its trust chain there"}
+		return []string{"HAIP 1.0 §6.1.1: the credential carries no x5c header, which must hold the issuer's signing certificate and its trust chain"}
 	}
 
 	var violations []string
 	if SelfSignedCertificate(chain[0]) {
-		violations = append(violations, "HAIP: the certificate signing the credential MUST NOT be self-signed")
+		violations = append(violations, "HAIP 1.0 §6.1.1: the certificate signing the credential MUST NOT be self-signed")
 	}
 	// Which certificate is the anchor depends on what the checking party was
 	// configured to trust, and this wallet holds no such list. So the finding
@@ -92,7 +92,7 @@ func HAIPCredentialChain(chain []*x509.Certificate) []string {
 	for i, cert := range chain[1:] {
 		if SelfSignedCertificate(cert) {
 			violations = append(violations, fmt.Sprintf(
-				"HAIP: the credential's x5c header carries a self-signed certificate at position %d (subject %q), and §6.1.1 says the certificate of the trust anchor MUST NOT be included there",
+				"HAIP 1.0 §6.1.1: the credential's x5c header carries a self-signed certificate at position %d (subject %q), where the certificate of the trust anchor MUST NOT be included",
 				i+2, cert.Subject.String()))
 			break
 		}

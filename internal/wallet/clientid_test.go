@@ -235,7 +235,7 @@ func TestValidateRequestObject(t *testing.T) {
 			name:     "missing typ",
 			clientID: "x509_san_dns:example.com",
 			reqObj:   &oid4vc.RequestObjectJWT{Header: map[string]any{"alg": "ES256"}},
-			wantMsg:  "missing 'typ'",
+			wantMsg:  "missing the required typ header",
 		},
 		{
 			name:      "missing typ allowed for alg none",
@@ -353,7 +353,7 @@ func TestVerifyClientID_VerifierAttestation(t *testing.T) {
 			name:     "missing jwt header",
 			clientID: "verifier_attestation:my-verifier",
 			reqObj:   &oid4vc.RequestObjectJWT{Header: map[string]any{"alg": "ES256"}},
-			wantMsg:  "must contain 'jwt' header",
+			wantMsg:  "must carry a 'jwt' header",
 		},
 		{
 			name:     "invalid jwt value",
@@ -424,7 +424,7 @@ func TestVerifyClientID_DecentralizedIdentifier(t *testing.T) {
 			name:     "kid does not reference DID",
 			clientID: "decentralized_identifier:did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK",
 			reqObj:   &oid4vc.RequestObjectJWT{Header: map[string]any{"kid": "did:web:other.example#key-1"}},
-			wantMsg:  "does not reference DID",
+			wantMsg:  "does not reference the DID",
 		},
 		{
 			name:      "valid DID without kid (no check)",
@@ -531,7 +531,7 @@ func TestVerifyRequestObjectSignature_X5CScopedToX509Prefixes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			warning := VerifyRequestObjectSignature(tt.clientID, reqObj)
-			gotX5CReq := warning == "Request Object signature verification requires an x5c header"
+			gotX5CReq := warning == "OID4VP 1.0 §5.9.3: Request Object signature verification requires an x5c header"
 			if gotX5CReq != tt.wantx5cReq {
 				t.Errorf("x5c-required finding = %v (warning %q), want %v", gotX5CReq, warning, tt.wantx5cReq)
 			}

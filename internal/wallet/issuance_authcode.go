@@ -457,7 +457,7 @@ const unauthenticatedClientMethod = "none"
 const unregisteredPublicClientMethod = "public"
 
 // noteDeclinedInteractiveAuthorization records an offer of Interactive
-// Authorization (OpenID4VCI 1.1 §6) the wallet is not taking up, and names the
+// Authorization (OID4VCI 1.1 §6) the wallet is not taking up, and names the
 // flag that would.
 func (w *Wallet) noteDeclinedInteractiveAuthorization(oauthMeta map[string]any, endpoint string) {
 	if endpoint == "" {
@@ -468,9 +468,9 @@ func (w *Wallet) noteDeclinedInteractiveAuthorization(oauthMeta map[string]any, 
 	if required {
 		details["require_interactive_authorization"] = true
 	}
-	detail := fmt.Sprintf("authorization server offers interactive authorization (OpenID4VCI 1.1 §6) at %s, and this wallet is set to OpenID4VCI 1.0, so the redirect flow is used; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+	detail := fmt.Sprintf("authorization server offers interactive authorization (OID4VCI 1.1 §6) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is used; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
 	if required {
-		detail = fmt.Sprintf("authorization server requires interactive authorization (OpenID4VCI 1.1 §6, require_interactive_authorization) at %s, and this wallet is set to OpenID4VCI 1.0, so the redirect flow is attempted and is likely to be refused; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+		detail = fmt.Sprintf("authorization server requires interactive authorization (OID4VCI 1.1 §6, require_interactive_authorization) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is attempted and is likely to be refused; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
 	}
 	w.addProtocolLog("issuance", "interactive_authorization_offered", detail, true, details)
 	log.Printf("[VCI] %s", detail)
@@ -1542,7 +1542,7 @@ func (w *Wallet) fetchNonce(metadata map[string]any, nonce *string) string {
 	reason := nonceFailureReason(status, err)
 	if cNonce == "" && status == http.StatusMethodNotAllowed && w.Mode() == ValidationModeDebug {
 		if getNonce, getStatus, getErr := nonceRequest("GET", ep, nonce); getNonce != "" {
-			w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s answered the HTTP POST that OpenID4VCI 1.0 §7.1 requires with 405 and serves a c_nonce only over GET. Debug mode uses GET as a workaround.", ep), nil)
+			w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s answered the HTTP POST that OID4VCI 1.0 §7.1 requires with 405 and serves a c_nonce only over GET. Debug mode uses GET as a workaround.", ep), nil)
 			cNonce, reason = getNonce, ""
 		} else {
 			reason = nonceFailureReason(getStatus, getErr)

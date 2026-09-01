@@ -32,16 +32,8 @@ import (
 func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
 	var violations []string
 	if params == nil {
-		return []string{"HAIP: authorization request is missing"}
+		return []string{"HAIP 1.0: authorization request is missing"}
 	}
-	var payload map[string]any
-	if reqObj != nil {
-		payload = reqObj.Payload
-	}
-	if payload == nil {
-		payload = params.RequestPayload
-	}
-
 	// §5.2: "The Wallet MUST support unsigned, signed, and multi-signed
 	// requests as defined in Appendices A.3.1 and A.3.2 of [OIDF.OID4VP]." An
 	// unsigned request carries no client_id, so the platform-reported origin
@@ -61,7 +53,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 	// §5: "The Response type MUST be vp_token."
 	if params.ResponseType != "vp_token" {
 		violations = append(violations, fmt.Sprintf(
-			"HAIP: response_type MUST be 'vp_token', got %q", params.ResponseType))
+			"HAIP 1.0 §5: response_type MUST be 'vp_token', got %q", params.ResponseType))
 	}
 
 	// §5.1: "Response encryption MUST be used by utilizing response mode
@@ -69,7 +61,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 	// dc_api.jwt." Those are the only two the profile permits.
 	if !interactive && params.ResponseMode != "direct_post.jwt" && params.ResponseMode != "dc_api.jwt" {
 		violations = append(violations, fmt.Sprintf(
-			"HAIP: response_mode MUST be 'direct_post.jwt' or 'dc_api.jwt', got %q", params.ResponseMode))
+			"HAIP 1.0 §5.1/§5.2: response_mode MUST be 'direct_post.jwt' or 'dc_api.jwt', got %q", params.ResponseMode))
 	}
 
 	if !unsigned && !interactive {
@@ -79,10 +71,10 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 		// does not allow.
 		if !strings.HasPrefix(params.ClientID, "x509_hash:") {
 			violations = append(violations, fmt.Sprintf(
-				"HAIP: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
+				"HAIP 1.0 §5: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
 		}
 		if reqObj == nil || reqObj.Header == nil {
-			violations = append(violations, "HAIP: signed Request Object (JAR) MUST be used")
+			violations = append(violations, "HAIP 1.0 §5.1: signed Request Object (JAR) MUST be used")
 		}
 		// §5.1 asks for more than a signature: "Signed Authorization Requests
 		// MUST be used by utilizing JWT-Secured Authorization Request (JAR)
@@ -90,28 +82,17 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 		// over inline meets the first half only. The Digital Credentials API
 		// has no request_uri and is left out.
 		if reqObj != nil && !isDCAPIResponseMode(params.ResponseMode) && params.RequestURI == "" {
-			violations = append(violations, "HAIP: the signed Request Object MUST be delivered through the request_uri parameter")
+			violations = append(violations, "HAIP 1.0 §5.1: the signed Request Object MUST be delivered through the request_uri parameter")
 		}
-		violations = append(violations, haipSignedRequestViolations(params, reqObj)...)
+		violations = append(violations, haipSignedRequestViolations(reqObj)...)
 	}
 
 	// §5: "The DCQL query and response MUST be used as defined in Section 6
 	// of [OIDF.OID4VP]."
 	if params.DCQLQuery == nil {
-		violations = append(violations, "HAIP: DCQL query MUST be used (not presentation_definition)")
+		violations = append(violations, "HAIP 1.0 §5: DCQL query MUST be used (not presentation_definition)")
 	}
 	violations = append(violations, haipCredentialFormatViolations(params.DCQLQuery)...)
-
-	// OID4VP 1.0 Appendix A.2, which §5.2 incorporates: expected_origins is
-	// "REQUIRED when signed requests defined in Appendix A.3.2 are used with
-	// the Digital Credentials API", and for unsigned ones "a Wallet MUST
-	// ignore this parameter if it is present".
-	if !unsigned && isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
-		if !originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
-			violations = append(violations, fmt.Sprintf(
-				"HAIP: expected_origins MUST include caller origin %q", params.RequestOrigin))
-		}
-	}
 
 	if !interactive {
 		violations = append(violations, haipClientMetadataViolations(params.ClientMetadata)...)
@@ -132,10 +113,10 @@ func haipEncryptionKeyViolations(reqObj *oid4vc.RequestObjectJWT, clientMetadata
 		return nil
 	}
 	if kty, _ := jwk["kty"].(string); kty != "" && kty != "EC" {
-		return []string{fmt.Sprintf("HAIP: response encryption key MUST be an EC key on P-256 (ECDH-ES), got kty %q", kty)}
+		return []string{fmt.Sprintf("HAIP 1.0 §5: response encryption key MUST be an EC key on P-256 (ECDH-ES), got kty %q", kty)}
 	}
 	if crv, ok := jwk["crv"].(string); ok && crv != "P-256" {
-		return []string{fmt.Sprintf("HAIP: response encryption key MUST be on the P-256 curve, got %q", crv)}
+		return []string{fmt.Sprintf("HAIP 1.0 §5: response encryption key MUST be on the P-256 curve, got %q", crv)}
 	}
 	return nil
 }
@@ -146,24 +127,13 @@ func isDCAPIResponseMode(mode string) bool {
 	return mode == "dc_api" || mode == "dc_api.jwt"
 }
 
-// haipSignedRequestViolations checks what the profile requires of the request
-// signature. The x509_hash prefix value hashes the signing certificate, and
-// OID4VP §5.9.3 obliges the wallet to "validate the signature and the trust
-// chain of the X.509 leaf certificate".
-func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
+// haipSignedRequestViolations checks the certificates a signed request
+// carries.
+func haipSignedRequestViolations(reqObj *oid4vc.RequestObjectJWT) []string {
 	if reqObj == nil || reqObj.Header == nil {
 		return nil
 	}
 	var violations []string
-
-	if finding := VerifyRequestObjectSignature(params.ClientID, reqObj); finding != "" {
-		violations = append(violations, "HAIP: "+finding)
-	}
-	if strings.HasPrefix(params.ClientID, "x509_hash:") {
-		if finding := verifyX509Hash(params.ClientID, reqObj); finding != "" {
-			violations = append(violations, "HAIP: "+finding)
-		}
-	}
 
 	// §5: "The X.509 certificate of the trust anchor MUST NOT be included in
 	// the x5c JOSE header of the signed request. The X.509 certificate
@@ -177,12 +147,12 @@ func haipSignedRequestViolations(params *AuthorizationRequestParams, reqObj *oid
 	if len(certs) > 0 {
 		leaf := certs[0]
 		if validate.SelfSignedCertificate(leaf) {
-			violations = append(violations, "HAIP: the certificate signing the request MUST NOT be self-signed")
+			violations = append(violations, "HAIP 1.0 §5: the certificate signing the request MUST NOT be self-signed")
 		}
 		for i, cert := range certs[1:] {
 			if validate.SelfSignedCertificate(cert) {
 				violations = append(violations, fmt.Sprintf(
-					"HAIP: the x5c header of the signed request carries a self-signed certificate at position %d (subject %q), and §5 says the certificate of the trust anchor MUST NOT be included there",
+					"HAIP 1.0 §5: the x5c header of the signed request carries a self-signed certificate at position %d (subject %q), where the certificate of the trust anchor MUST NOT be included",
 					i+2, cert.Subject.String()))
 				break
 			}
@@ -207,7 +177,7 @@ func haipCredentialFormatViolations(query map[string]any) []string {
 		format := jsonutil.GetString(credential, "format")
 		if format != "mso_mdoc" && format != "dc+sd-jwt" {
 			violations = append(violations, fmt.Sprintf(
-				"HAIP: credential format MUST be 'mso_mdoc' or 'dc+sd-jwt', got %q", format))
+				"HAIP 1.0 §5.3.1/§5.3.2: credential format MUST be 'mso_mdoc' or 'dc+sd-jwt', got %q", format))
 		}
 	}
 	return violations
@@ -232,7 +202,7 @@ func haipClientMetadataViolations(metadata map[string]any) []string {
 	}
 	if !listed["A128GCM"] || !listed["A256GCM"] {
 		violations = append(violations,
-			"HAIP: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported")
+			"HAIP 1.0 §5: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported")
 	}
 
 	return violations
@@ -269,11 +239,13 @@ func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool 
 func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map[string]any) []string {
 	var violations []string
 	if offer == nil {
-		return []string{"HAIP: credential offer is missing"}
+		return []string{"HAIP 1.0: credential offer is missing"}
 	}
 
+	// OID4VCI 1.0 §12.2.1: "The Credential Issuer Identifier MUST be a case
+	// sensitive URL using the https scheme".
 	if issuer := strings.TrimSpace(offer.CredentialIssuer); issuer != "" && !secureIssuerOrigin(issuer) {
-		violations = append(violations, fmt.Sprintf("HAIP: the credential issuer must be an https URL, got %q", issuer))
+		violations = append(violations, fmt.Sprintf("OID4VCI 1.0 §12.2.1: the credential issuer must be an https URL, got %q", issuer))
 	}
 
 	if !usesAuthorizationEndpoint(offer) {
@@ -281,10 +253,10 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	}
 
 	if oauthMeta == nil {
-		return append(violations, "HAIP: the authorization server metadata could not be read")
+		return append(violations, "HAIP 1.0 §4: the authorization server metadata could not be read")
 	}
 	if !supportsAuthorizationCodeFlow(oauthMeta) {
-		violations = append(violations, "HAIP: the authorization server must support the authorization code flow")
+		violations = append(violations, "HAIP 1.0 §4: the authorization server must support the authorization code flow")
 	}
 	// Pushed authorization requests belong to the authorization endpoint, which
 	// an Interactive Authorization exchange never reaches: the request goes to
@@ -298,14 +270,14 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	// from conformant servers such as the EUDI reference issuer.
 	_, hasPAR := oauthMeta["pushed_authorization_request_endpoint"].(string)
 	if !hasPAR && interactiveAuthorizationEndpoint(oauthMeta) == "" {
-		violations = append(violations, "HAIP: the authorization server must support pushed authorization requests")
+		violations = append(violations, "HAIP 1.0 §4: the authorization server must support pushed authorization requests")
 	}
 	// PKCE and DPoP are behavioural requirements that no profile obliges a
 	// server to advertise (both metadata fields are optional), so absence is
 	// no evidence. A list that is present and lacks them is a violation.
 	if _, declared := oauthMeta["code_challenge_methods_supported"]; declared &&
 		!metadataListContains(oauthMeta, "code_challenge_methods_supported", "S256") {
-		violations = append(violations, "HAIP: the authorization server advertises PKCE without S256")
+		violations = append(violations, "HAIP 1.0 §4: the authorization server advertises PKCE without S256")
 	}
 	// ES256 specifically: this wallet signs DPoP proofs with its holder key,
 	// and §7 requires every party to support that algorithm at a minimum, so
@@ -313,7 +285,7 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	// and could not accept a proof from any conformant wallet either.
 	if _, declared := oauthMeta["dpop_signing_alg_values_supported"]; declared &&
 		!metadataListContains(oauthMeta, "dpop_signing_alg_values_supported", "ES256") {
-		violations = append(violations, "HAIP: the authorization server advertises DPoP without ES256")
+		violations = append(violations, "HAIP 1.0 §7: the authorization server advertises DPoP without ES256")
 	}
 	// Client authentication is deliberately not checked: §4.4.1 requires the
 	// issuer to require it, but advertising it is only a SHOULD (§10.1 of the

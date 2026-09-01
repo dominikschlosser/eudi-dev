@@ -172,6 +172,9 @@ type AuthorizationRequestParams struct {
 	DCQLQuery      map[string]any
 	RequestObject  *oid4vc.RequestObjectJWT
 	RequestPayload map[string]any
+	// FullParams are the raw request parameters as received, for the
+	// undefined-parameter check.
+	FullParams map[string]string
 	// VerifierInfo carries the raw verifier_info parameter of a request sent
 	// as plain parameters (a JSON-encoded array). A request delivered as a
 	// Request Object keeps its attestations in RequestPayload, and its outer
@@ -240,7 +243,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
 	}
-	s.wallet.warnFindings("presentation", "The request does not follow the profile", findings)
+	s.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
+	s.wallet.warnUndefinedRequestParameters("presentation", authReq)
 
 	// Log DCQL query
 	if authReq.DCQLQuery != nil {
@@ -695,6 +699,11 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		return ""
 	}
 
+	fullParams := make(map[string]string, len(values))
+	for key := range values {
+		fullParams[key] = get(key)
+	}
+
 	params := &AuthorizationRequestParams{
 		ClientID:         get("client_id"),
 		ResponseType:     get("response_type"),
@@ -705,6 +714,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		ResponseURI:      get("response_uri"),
 		RequestURIMethod: get("request_uri_method"),
 		VerifierInfo:     get("verifier_info"),
+		FullParams:       fullParams,
 	}
 
 	if cm := get("client_metadata"); cm != "" {

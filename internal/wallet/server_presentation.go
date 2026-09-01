@@ -171,6 +171,7 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		DCQLQuery:        parsed.DCQLQuery,
 		RequestObject:    parsed.RequestObject,
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
+		FullParams:       parsed.FullParams,
 		VerifierInfo:     parsed.FullParams["verifier_info"],
 		Source:           "api",
 		Session:          requestOwner(r),

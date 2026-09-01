@@ -104,17 +104,17 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 
 	var findings []string
 	if !hasKnownClientIDPrefix(params.ClientID) {
-		findings = append(findings, fmt.Sprintf("client_id uses an unsupported prefix: %q", params.ClientID))
+		findings = append(findings, fmt.Sprintf("OID4VP 1.0 §5.9.3: client_id uses an unsupported prefix: %q", params.ClientID))
 	}
 	// §5.2 marks nonce REQUIRED. It is what binds the presentation to this
 	// request, so a missing one is not a formality.
 	if requestRequiresNonce(params.ResponseType) && params.Nonce == "" {
-		findings = append(findings, "nonce is required")
+		findings = append(findings, "OID4VP 1.0 §5.2: nonce is required")
 	}
 	// §8.2: "When the response_uri parameter is present, the redirect_uri
 	// Authorization Request parameter MUST NOT be present."
 	if responseModeUsesDirectPost(params.ResponseMode) && params.RedirectURI != "" {
-		findings = append(findings, fmt.Sprintf("redirect_uri must not be used with response_mode %q", params.ResponseMode))
+		findings = append(findings, fmt.Sprintf("OID4VP 1.0 §8.2: redirect_uri must not be used with response_mode %q", params.ResponseMode))
 	}
 	// §5.1: "Either a dcql_query or a scope parameter representing a DCQL
 	// Query MUST be present in the Authorization Request, but not both."
@@ -123,19 +123,19 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 		hasScope := strings.TrimSpace(params.Scope) != ""
 		switch {
 		case hasDCQL && hasScope:
-			findings = append(findings, "dcql_query and scope must not both be present")
+			findings = append(findings, "OID4VP 1.0 §5.1: dcql_query and scope must not both be present")
 		case !hasDCQL && !hasScope:
-			findings = append(findings, "A vp_token request must carry either dcql_query or scope")
+			findings = append(findings, "OID4VP 1.0 §5.1: a vp_token request must carry either dcql_query or scope")
 		}
 	}
 	// §6.1 makes format, meta and the syntax of a credential query id
 	// normative, and a query that breaks them is a request the Verifier got
 	// wrong rather than a credential the wallet lacks.
 	findings = append(findings, DCQLQueryFindings(params.DCQLQuery)...)
-	// §5: "Wallets that do not support this parameter MUST reject requests
+	// §5.1: "Wallets that do not support this parameter MUST reject requests
 	// that contain it."
 	if payloadHasKey(payload, "transaction_data") {
-		findings = append(findings, "transaction_data is not supported by this wallet")
+		findings = append(findings, "OID4VP 1.0 §5.1: transaction_data is not supported by this wallet")
 	}
 	// Appendix A.2: for a signed Digital Credentials API request
 	// expected_origins is REQUIRED, and "If the Origin does not match any of
@@ -143,10 +143,28 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 	if !params.UnsignedDCAPI && isDCAPIResponseMode(params.ResponseMode) && params.RequestOrigin != "" {
 		if !originAllowedByExpectedOrigins(payload, params.RequestOrigin) {
 			findings = append(findings, fmt.Sprintf(
-				"expected_origins must include the caller origin %q", params.RequestOrigin))
+				"OID4VP 1.0 Appendix A.2: expected_origins must include the caller origin %q", params.RequestOrigin))
 		}
 	}
 	return findings
+}
+
+// specCitedSummary names each specification the findings cite, read off
+// their citation prefixes.
+func specCitedSummary(subject string, findings []string) string {
+	var specs []string
+	for _, spec := range []string{"OID4VP 1.0", "OID4VCI 1.0", "HAIP 1.0"} {
+		for _, finding := range findings {
+			if strings.HasPrefix(finding, spec) {
+				specs = append(specs, spec)
+				break
+			}
+		}
+	}
+	if len(specs) == 0 {
+		return subject + " does not follow the specification"
+	}
+	return fmt.Sprintf("%s does not follow %s", subject, strings.Join(specs, " and "))
 }
 
 func requestRequiresNonce(responseType string) bool {

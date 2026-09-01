@@ -411,3 +411,19 @@ func TestFragmentErrorResponsesMergeIntoAnExistingFragment(t *testing.T) {
 		t.Errorf("expected state in fragment, got: %s", fragment)
 	}
 }
+
+func TestSubmitDirectPost_ReportsUndefinedResponseMembers(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"redirect_uri": "https://example.com/done", "status": "OK"})
+	}))
+	defer ts.Close()
+
+	result, err := SubmitDirectPost(ts.URL, "state123", map[string][]string{"pid": {"token1"}}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.UndefinedMembers) != 1 || result.UndefinedMembers[0] != "status" {
+		t.Errorf("undefined members = %v, want [status]", result.UndefinedMembers)
+	}
+}

@@ -100,8 +100,9 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 	for _, finding := range findings {
 		reqServer.log("  WARNING: %s", finding)
-		reqServer.wallet.AddLog("presentation", fmt.Sprintf("request validation warning: %s", finding), false)
 	}
+	reqServer.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
+	reqServer.wallet.warnUndefinedRequestParameters("presentation", authReq)
 
 	if authReq.DCQLQuery != nil {
 		if dcqlJSON, err := json.Marshal(authReq.DCQLQuery); err == nil {

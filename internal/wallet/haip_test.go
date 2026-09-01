@@ -172,16 +172,6 @@ func TestValidateHAIPCompliance(t *testing.T) {
 			wantViolations: 0,
 		},
 		{
-			// For a signed Digital Credentials API request the same parameter
-			// is REQUIRED and must name the caller.
-			name: "signed request whose expected_origins excludes the caller",
-			modifyParams: func(p *AuthorizationRequestParams) {
-				p.RequestOrigin = "https://wallet.example"
-			},
-			wantViolations: 1,
-			wantContain:    "expected_origins",
-		},
-		{
 			name: "multiple violations",
 			modifyParams: func(p *AuthorizationRequestParams) {
 				p.ClientID = "redirect_uri:https://example.com"
@@ -466,11 +456,11 @@ func TestHAIPIssuanceAcceptsPARWithoutTheRequireFlag(t *testing.T) {
 	}
 }
 
-// --haip asserts that a counterparty follows the profile, so every finding is
-// an error regardless of the validation mode. Requiring the x509_hash prefix
-// and then not checking the signature it names would make the flag prove
-// nothing: the prefix value is a hash of the certificate that signed the
-// request.
+// A --haip request under the x509_hash prefix stands on the signature the
+// prefix value names: the prefix value is a hash of the certificate that
+// signed the request. The signature and hash checks run for every request
+// through ValidateAuthorizationRequest, so that entry point is what proves
+// the flag catches a broken one.
 func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
 	t.Run("a signature that does not verify", func(t *testing.T) {
 		params, reqObj := haipCompliantParams(t)
@@ -479,20 +469,42 @@ func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
 		parts := strings.Split(reqObj.Raw, ".")
 		parts[1] = base64.RawURLEncoding.EncodeToString([]byte(`{"client_id":"x509_hash:tampered"}`))
 		reqObj.Raw = strings.Join(parts, ".")
+		params.RequestObject = reqObj
 
-		violations := ValidateHAIPCompliance(params, reqObj)
-		if !containsSubstring(violations, "signature") {
-			t.Errorf("violations = %v, want the signature refused", violations)
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !containsSubstring(findings, "signature") {
+			t.Errorf("findings = %v, want the signature refused", findings)
 		}
 	})
 
 	t.Run("a client_id naming another certificate", func(t *testing.T) {
 		params, reqObj := haipCompliantParams(t)
 		params.ClientID = "x509_hash:" + format.EncodeBase64URL([]byte("not the certificate"))
+		params.RequestObject = reqObj
 
-		violations := ValidateHAIPCompliance(params, reqObj)
-		if !containsSubstring(violations, "x509_hash") {
-			t.Errorf("violations = %v, want the hash mismatch refused", violations)
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !containsSubstring(findings, "x509_hash") {
+			t.Errorf("findings = %v, want the hash mismatch refused", findings)
+		}
+	})
+
+	t.Run("a signed DC API request whose expected_origins excludes the caller", func(t *testing.T) {
+		params, reqObj := haipCompliantParams(t)
+		params.RequestOrigin = "https://wallet.example"
+		params.RequestObject = reqObj
+
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !containsSubstring(findings, "expected_origins") {
+			t.Errorf("findings = %v, want the origin mismatch reported", findings)
 		}
 	})
 }

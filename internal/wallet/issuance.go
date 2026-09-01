@@ -121,7 +121,7 @@ type IssuanceResult struct {
 type OfferOptions struct {
 	// PresentationConsented says the caller has already consented on the
 	// user's behalf, so a presentation the issuer asks for mid-flow
-	// (OpenID4VCI 1.1 §6) is not put to the user again. A programmatic
+	// (OID4VCI 1.1 §6) is not put to the user again. A programmatic
 	// submission is the caller's consent, which is the rule the presentation
 	// endpoint applies to its own API callers.
 	PresentationConsented bool
@@ -1128,7 +1128,7 @@ func (w *Wallet) resolveCredentialEndpoint(metadata map[string]any, issuer strin
 		return ep, nil
 	}
 	fallback := strings.TrimRight(issuer, "/") + "/credential"
-	if err := w.reportServerDeviation(fmt.Sprintf("the credential issuer metadata has no credential_endpoint, which OpenID4VCI 1.0 requires; assuming %s", fallback)); err != nil {
+	if err := w.reportServerDeviation(fmt.Sprintf("the credential issuer metadata has no credential_endpoint, which OID4VCI 1.0 requires; assuming %s", fallback)); err != nil {
 		return "", err
 	}
 	return fallback, nil
@@ -1397,19 +1397,21 @@ func credentialRequestEncryptionRequired(raw map[string]any) bool {
 	return required
 }
 
-// reportHAIPViolations records HAIP findings as one activity log entry whose
-// message is a count, with the findings in its details rather than joined into
-// the message. subject names what was checked. It returns the error strict mode
-// fails the flow with, and nil in debug mode where the flow carries on.
+// reportHAIPViolations records the findings as one activity log entry: a
+// single finding stands alone, several are grouped under a spec-citing
+// summary. Strict mode gets the error back, debug nil.
 func (w *Wallet) reportHAIPViolations(subject, issuer string, violations []string) error {
-	detail := fmt.Sprintf("%s does not follow HAIP 1.0 (%d findings, see details)", subject, len(violations))
-	details := map[string]any{"issuer": issuer, "violations": violations}
+	detail := fmt.Sprintf("%s (%d findings, see details)", specCitedSummary(subject, violations), len(violations))
+	if len(violations) == 1 {
+		detail = violations[0]
+	}
+	details := map[string]any{"issuer": issuer, "findings": violations}
 	for _, v := range violations {
 		log.Printf("[VCI] WARNING: HAIP violation: %s", v)
 	}
 	if w.Mode() == ValidationModeStrict {
 		w.addProtocolLog("issuance", "haip_violation", detail, false, details)
-		return fmt.Errorf("%s does not follow HAIP 1.0: %s", strings.ToLower(subject), strings.Join(violations, ", "))
+		return fmt.Errorf("%s: %s", specCitedSummary(strings.ToLower(subject), violations), strings.Join(violations, ", "))
 	}
 	w.addProtocolWarning("issuance", "haip_violation", detail, details)
 	return nil
@@ -1428,9 +1430,9 @@ func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer st
 	// c_nonce so the issuer's rejection is the finding.
 	if ep, _ := metadata["nonce_endpoint"].(string); ep != "" {
 		if w.Mode() == ValidationModeStrict {
-			return "", fmt.Errorf("the nonce endpoint %s that %s advertises returned no c_nonce (OpenID4VCI 1.0 §7.1)", ep, issuer)
+			return "", fmt.Errorf("the nonce endpoint %s that %s advertises returned no c_nonce (OID4VCI 1.0 §7.1)", ep, issuer)
 		}
-		w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s that %s advertises returned no c_nonce (OpenID4VCI 1.0 §7.1). The key proof goes out without a c_nonce and the credential endpoint rejects it.", ep, issuer), nil)
+		w.AddWarning("issuance", fmt.Sprintf("The nonce endpoint %s that %s advertises returned no c_nonce (OID4VCI 1.0 §7.1). The key proof goes out without a c_nonce and the credential endpoint rejects it.", ep, issuer), nil)
 		return "", nil
 	}
 	cNonce, _ := tokenResp["c_nonce"].(string)
@@ -1438,12 +1440,12 @@ func (w *Wallet) issuanceChallenge(metadata, tokenResp map[string]any, issuer st
 		return "", nil
 	}
 	if w.Mode() == ValidationModeStrict {
-		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OpenID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
-		w.AddWarning("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OpenID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), nil)
+		log.Printf("[VCI] WARNING: ignoring the c_nonce in the token response of %s: OID4VCI 1.0 defines the Nonce Endpoint as its only source", issuer)
+		w.AddWarning("issuance", fmt.Sprintf("Ignored the c_nonce %s returned in its token response: OID4VCI 1.0 has no such parameter and defines the Nonce Endpoint as the only source of a challenge", issuer), nil)
 		return "", nil
 	}
-	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OpenID4VCI 1.0 does not define, so this issuer is pre-1.0", issuer)
-	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OpenID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0", issuer), nil)
+	log.Printf("[VCI] WARNING: %s returned a c_nonce in its token response, which OID4VCI 1.0 does not define, so this issuer is pre-1.0", issuer)
+	w.AddWarning("issuance", fmt.Sprintf("Using the c_nonce %s returned in its token response: OID4VCI 1.0 defines no such parameter, so this issuer is pre-1.0", issuer), nil)
 	return cNonce, nil
 }
 

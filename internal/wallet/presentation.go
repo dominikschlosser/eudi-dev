@@ -499,16 +499,27 @@ func (w *Wallet) SubmitPresentation(vpResult *VPTokenMapResult, idToken, state, 
 	if err != nil {
 		return nil, err
 	}
+	submit := func(fn func() (*DirectPostResult, error)) (*DirectPostResult, error) {
+		result, err := fn()
+		if err == nil {
+			w.warnUndefinedResponseMembers(result)
+		}
+		return result, err
+	}
 	switch response.ResponseMode {
 	case "direct_post.jwt":
-		return SubmitDirectPostJWT(responseURI, response.ResponseJWT, response.CEK)
+		return submit(func() (*DirectPostResult, error) {
+			return SubmitDirectPostJWT(responseURI, response.ResponseJWT, response.CEK)
+		})
 	case "fragment":
 		return &DirectPostResult{
 			StatusCode:  302,
 			RedirectURI: response.RedirectURI,
 		}, nil
 	case "direct_post":
-		return SubmitDirectPostObject(responseURI, response.Plain)
+		return submit(func() (*DirectPostResult, error) {
+			return SubmitDirectPostObject(responseURI, response.Plain)
+		})
 	case "dc_api", "dc_api.jwt":
 		return nil, fmt.Errorf("response_mode %q must be returned via Browser API, not direct submission", response.ResponseMode)
 	case "ia_post", "ia_post.jwt":

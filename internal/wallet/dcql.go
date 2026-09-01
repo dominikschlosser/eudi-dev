@@ -313,7 +313,7 @@ func DCQLQueryFindings(query map[string]any) []string {
 	// defined in Section 6.1 that specify the requested Credentials."
 	credQueries, ok := query["credentials"].([]any)
 	if !ok || len(credQueries) == 0 {
-		return []string{"dcql_query: credentials is required and must be a non-empty array"}
+		return []string{"OID4VP 1.0 §6: dcql_query.credentials is required and must be a non-empty array"}
 	}
 
 	var findings []string
@@ -321,7 +321,7 @@ func DCQLQueryFindings(query map[string]any) []string {
 	for i, cq := range credQueries {
 		cqMap, ok := cq.(map[string]any)
 		if !ok {
-			findings = append(findings, fmt.Sprintf("dcql_query: credentials[%d] must be an object", i))
+			findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6: dcql_query.credentials[%d] must be an object", i))
 			continue
 		}
 
@@ -333,9 +333,9 @@ func DCQLQueryFindings(query map[string]any) []string {
 		switch {
 		case !isDCQLIdentifier(id):
 			findings = append(findings, fmt.Sprintf(
-				"dcql_query: credentials[%d].id must be a non-empty string of alphanumeric, underscore or hyphen characters, got %q", i, id))
+				"OID4VP 1.0 §6.1: dcql_query.credentials[%d].id must be a non-empty string of alphanumeric, underscore or hyphen characters, got %q", i, id))
 		case seen[id]:
-			findings = append(findings, fmt.Sprintf("dcql_query: credential query id %q is present more than once", id))
+			findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6.1: the credential query id %q is present more than once", id))
 		default:
 			seen[id] = true
 		}
@@ -348,16 +348,16 @@ func DCQLQueryFindings(query map[string]any) []string {
 		// §6.1: "format: REQUIRED. A string that specifies the format of the
 		// requested Credential."
 		if f, _ := cqMap["format"].(string); f == "" {
-			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q is missing the required format", label))
+			findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6.1: the credential query %q is missing the required format", label))
 		}
 
 		// §6.1 makes meta REQUIRED, with an empty object as the way to place
 		// no constraints. Leaving the member out is not.
 		meta, present := cqMap["meta"]
 		if !present {
-			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q is missing the required meta (use an empty object to place no constraints)", label))
+			findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6.1: the credential query %q is missing the required meta (use an empty object to place no constraints)", label))
 		} else if _, ok := meta.(map[string]any); !ok {
-			findings = append(findings, fmt.Sprintf("dcql_query: credential query %q has a meta that is not an object", label))
+			findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6.1: the credential query %q has a meta that is not an object", label))
 		}
 	}
 	return findings

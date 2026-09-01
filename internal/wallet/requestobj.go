@@ -173,8 +173,8 @@ func fetchRequestURIGET(w *Wallet, requestURI string) (string, error) {
 }
 
 // judgeRequestURIMediaType holds the media type of a request_uri response to
-// the active validation mode: strict refuses a wrong one, debug records a
-// profile warning and reads the request object anyway.
+// the active validation mode: strict refuses a wrong one, debug records the
+// finding as a warning and reads the request object anyway.
 func (w *Wallet) judgeRequestURIMediaType(contentType string) error {
 	err := validateRequestURIResponse(contentType)
 	if err == nil {
@@ -184,7 +184,7 @@ func (w *Wallet) judgeRequestURIMediaType(contentType string) error {
 		return err
 	}
 	if w != nil {
-		w.AddWarning("presentation", "Request does not follow the profile: "+err.Error(), nil)
+		w.AddWarning("presentation", err.Error(), nil)
 	}
 	return nil
 }
@@ -346,16 +346,18 @@ func responseLogResult(statusCode int, details map[string]any) map[string]any {
 	return details
 }
 
+// validateRequestURIResponse checks the media type of a request_uri response
+// against OID4VP 1.0 §5.10.1.
 func validateRequestURIResponse(contentType string) error {
 	if contentType == "" {
-		return fmt.Errorf("request_uri response missing Content-Type application/oauth-authz-req+jwt")
+		return fmt.Errorf("OID4VP 1.0 §5.10.1: the request_uri response is missing the Content-Type application/oauth-authz-req+jwt")
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return fmt.Errorf("invalid request_uri response Content-Type: %w", err)
+		return fmt.Errorf("OID4VP 1.0 §5.10.1: the request_uri response Content-Type does not parse: %w", err)
 	}
 	if mediaType != "application/oauth-authz-req+jwt" {
-		return fmt.Errorf("request_uri response Content-Type must be application/oauth-authz-req+jwt, got %q", contentType)
+		return fmt.Errorf("OID4VP 1.0 §5.10.1: the request_uri response Content-Type must be application/oauth-authz-req+jwt, got %q", contentType)
 	}
 	return nil
 }

@@ -4,7 +4,7 @@ Status of implemented features against the relevant specifications. These are th
 
 Two independent settings decide what a finding does to a flow:
 
-- `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each finding and continues so the rest of the exchange stays observable.
+- `--mode strict` and `--mode debug` decide what happens to a general specification finding. Findings are collected in both modes. Strict stops the flow, debug reports each finding and continues so the rest of the exchange stays observable. Every finding names the specification and rule it cites in a uniform prefix (for example `OID4VP 1.0 §5.2: nonce is required`, `HAIP 1.0 §5.1: ...`, `ARF RPRC_19: ...`, `ETSI TS 119 475 GEN-5.2.4-08: ...`).
 - `--haip` decides whether the counterparty is held to HAIP 1.0. Every check in the HAIP section below is a MUST in that profile, and `--haip` is what makes those checks run. The validation mode then decides what a violation does, as for every other finding: strict stops the flow, debug reports it and continues.
 
 A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follows as a client. `--vci-version 1.0` (the default) uses the published version alone. `--vci-version 1.1` adds the 1.1 draft features listed in the OID4VCI 1.1 section below, each only where the issuer's metadata offers it (see [OpenID4VCI feature level](wallet/issuing.md#openid4vci-feature-level)).
@@ -16,6 +16,7 @@ A third setting, `--vci-version`, picks the OpenID4VCI document the wallet follo
 | Authorization request parsing | Implemented | `openid4vp://`, `haip-vp://`, `eudi-openid4vp://` schemes |
 | Request Object parameter extraction | Enforced | The Request Object replaces the parameter set (§5.10.1: "The Wallet MUST only use the parameters in this Request Object, even if the same parameter was provided in an Authorization Request query parameter"). A parameter the Request Object omits is absent rather than inherited from the query string, and a Request Object whose `client_id` differs from the outer one stops the flow |
 | Validation findings | Implemented | Collected in every mode. Strict makes each finding an error, debug reports it as a warning and continues |
+| Undefined parameters | Warned | Request parameters OID4VP 1.0 does not define are warned about, and so are response fields other than `redirect_uri` (§8.2). Always a warning in every mode (RFC 6749 §3.1 requires ignoring unrecognized parameters) |
 | Required request parameters | Enforced | `nonce` (§5.2), exactly one of `dcql_query` and `scope` on a `vp_token` request (§5.1), and no `redirect_uri` alongside `response_uri` (§8.2) |
 | `request_uri` (GET) | Implemented | Fetches and parses signed request objects |
 | `request_uri_method=post` | Implemented | Sends `wallet_metadata` and `wallet_nonce`. A `wallet_nonce` echoed in the request object must match the one sent, and a request object without one is accepted (the parameter is optional in the response) |

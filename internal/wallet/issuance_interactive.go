@@ -535,9 +535,8 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 	if err != nil {
 		return nil, fmt.Errorf("openid4vp_request: %w", err)
 	}
-	for _, finding := range findings {
-		w.AddWarning("issuance", fmt.Sprintf("openid4vp_request validation warning: %s", finding), nil)
-	}
+	w.warnFindings("issuance", specCitedSummary("The issuer's openid4vp_request", findings), findings)
+	w.warnUndefinedRequestParameters("issuance", params)
 
 	return params, nil
 }

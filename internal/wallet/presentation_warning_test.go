@@ -44,9 +44,9 @@ func TestImportCredentialLogsActivity(t *testing.T) {
 
 // A presentation submitted through /api/presentations used to be validated
 // twice (once in handlePresentationAPI, once in handleAuthFlow), so every
-// profile-violation warning was logged twice for a single flow. It must appear
+// validation warning was logged twice for a single flow. It must appear
 // once now.
-func TestPresentationAPILogsEachProfileWarningOnce(t *testing.T) {
+func TestPresentationAPILogsEachValidationWarningOnce(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.RequireHAIP = true
 	srv.wallet.ValidationMode = ValidationModeDebug
@@ -64,16 +64,42 @@ func TestPresentationAPILogsEachProfileWarningOnce(t *testing.T) {
 
 	counts := map[string]int{}
 	for _, e := range srv.wallet.GetLog() {
-		if e.Severity == severityWarning && strings.Contains(e.Detail, "does not follow the profile") {
+		if e.Severity == severityWarning && strings.Contains(e.Detail, "does not follow") {
 			counts[e.Detail]++
 		}
 	}
 	if len(counts) == 0 {
-		t.Fatal("expected at least one profile-violation warning")
+		t.Fatal("expected at least one validation warning")
 	}
 	for detail, n := range counts {
 		if n != 1 {
-			t.Errorf("profile warning logged %d times, want 1: %s", n, detail)
+			t.Errorf("validation warning logged %d times, want 1: %s", n, detail)
 		}
 	}
+}
+
+// A tester's request carrying parameters no specification defines leaves a
+// warning naming them, in every mode.
+func TestUndefinedRequestParametersAreWarned(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.ValidationMode = ValidationModeDebug
+
+	uri := "openid4vp://authorize?" + url.Values{
+		"client_id":     {"redirect_uri:http://localhost/nowhere"},
+		"response_type": {"vp_token"},
+		"response_mode": {"direct_post"},
+		"response_uri":  {"http://localhost/nowhere"},
+		"nonce":         {"n-0S6_WzA2Mj"},
+		"dcql_query":    {`{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["urn:eudi:pid:1"]}}]}`},
+		"my_test_field": {"whatever"},
+	}.Encode()
+	body, _ := json.Marshal(map[string]any{"uri": uri, "interactive": false})
+	serverRequest(t, srv, "POST", "/api/presentations", string(body))
+
+	for _, e := range srv.wallet.GetLog() {
+		if e.Severity == severityWarning && strings.Contains(e.Detail, `"my_test_field"`) {
+			return
+		}
+	}
+	t.Error("expected a warning naming the undefined parameter my_test_field")
 }
