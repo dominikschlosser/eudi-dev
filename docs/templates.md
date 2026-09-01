@@ -152,7 +152,7 @@ eudi templates show employee-card > share-me.json
 eudi templates delete employee-card
 ```
 
-All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. With `--remote <url>` (or after `wallet instances use <url>`) list, show, save, import, and delete operate on a remote instance's template store through its REST API. See [remote control](wallet/http-api.md#remote-control).
+All `templates` subcommands accept `--wallet-dir` to target a non default wallet store. With `--remote <url>` (or after `wallet use <url>`) list, show, save, import, and delete operate on a remote instance's template store through its REST API. See [remote control](wallet/http-api.md#remote-control).
 
 ### `templates save`
 

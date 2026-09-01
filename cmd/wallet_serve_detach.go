@@ -27,7 +27,7 @@ import (
 // spawnDetachedServe re-executes `wallet serve` without --detached as a
 // child in its own session, waits until its HTTP endpoint responds, and
 // returns while the child keeps serving. The child appears in
-// `wallet instances list` through the normal instance registration.
+// `wallet ps` through the normal instance registration.
 func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -98,7 +98,7 @@ func spawnDetachedServe(cmd *cobra.Command, port int, register, noRegister bool)
 			}
 			fmt.Printf("Wallet server running detached at %s (pid %d)\n", url, child.Process.Pid)
 			fmt.Printf("  Log:  %s\n", logPath)
-			fmt.Printf("  Stop: %s wallet instances kill %d\n", filepath.Base(exe), child.Process.Pid)
+			fmt.Printf("  Stop: %s wallet kill %d\n", filepath.Base(exe), child.Process.Pid)
 			return nil
 		}
 	}

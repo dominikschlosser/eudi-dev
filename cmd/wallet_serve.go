@@ -766,7 +766,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		fmt.Println()
 	}
 
-	// Record this instance so `wallet instances` can discover it and
+	// Record this instance so `wallet ps` can discover it and
 	// `wallet kill` and POST /api/shutdown can stop it.
 	processID := os.Getpid()
 	if err := remote.RegisterInstance(remote.Instance{

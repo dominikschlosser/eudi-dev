@@ -29,7 +29,9 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | `trust-list`   | Print the trust list JWT (`--list` for the profiles, `--url` for the URL) |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
-| `instances`    | Manage running wallet instances: `list`, `use <url|local>`, `kill <pid|port|url>` |
+| `ps`           | List running wallet instances                                   |
+| `use`          | Switch management to a remote instance (`use <url>`) or back to local (`use local`) |
+| `kill`         | Stop a running wallet instance (`kill <pid|port|url>`, `kill --all`) |
 | `info`         | Show the configuration of the managed wallet (local or remote)  |
 | `register`     | Register OS URL scheme handlers on macOS. No-op elsewhere       |
 | `unregister`   | Remove OS URL scheme handlers on macOS. No-op elsewhere         |
@@ -91,7 +93,7 @@ eudi wallet register
 
 On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `eudi wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
 
-The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet instances use <url>`, clicked links are submitted to that instance instead of the local listener (useful when the wallet runs in a Docker container). The handler also opens the remote consent UI after submitting the link, since a remote instance cannot open a browser on this desktop. It never restarts or replaces a remote instance. `wallet instances use local` switches link handling back to the local wallet server.
+The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet use <url>`, clicked links are submitted to that instance instead of the local listener (useful when the wallet runs in a Docker container). The handler also opens the remote consent UI after submitting the link, since a remote instance cannot open a browser on this desktop. It never restarts or replaces a remote instance. `wallet use local` switches link handling back to the local wallet server.
 
 ## Credential type inheritance
 
@@ -118,7 +120,7 @@ All wallet state is stored in `~/.eudi-dev/wallet/` by default:
 ~/.eudi-dev/
 ├── wallet-ca-cert.pem  # Shared CA certificate used across wallet instances
 ├── wallet-ca-key.pem   # Shared CA private key
-├── remote.json         # Active remote wallet target set by wallet instances use
+├── remote.json         # Active remote wallet target set by wallet use
 ├── instances/          # Registry of running wallet servers (one file per pid)
 └── wallet/
     ├── wallet.json       # Credentials + metadata

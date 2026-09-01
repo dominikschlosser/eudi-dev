@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`wallet serve --serve-tls` serves an https base URL locally.** With an https `--base-url` naming an explicit port, the wallet binds that origin itself with its own TLS certificate instead of expecting an external TLS terminator. The conformance run needs it because the OIDF suite requires https endpoints from the party under test.
 - **`wallet serve --demo-verifier-trust-anchor` adds CAs the demo verifier trusts.** The demo verifier accepts issuer chains under the wallet's own CA. The repeatable flag adds anchors for presentations issued elsewhere, such as the ones the OIDF suite signs under its own CAs.
 
+### Changed
+
+- **`wallet instances` is split into `wallet ps`, `wallet use`, and `wallet kill`.** `wallet ps` lists running instances, `wallet use <url|local>` switches which wallet the CLI manages, and `wallet kill <pid|port|url>` stops one. The old `wallet instances list|use|kill` spellings keep working as hidden deprecated aliases.
+
 ### Fixed
 
 - **The demo issuer accepts a pushed authorization request without a DPoP proof.** RFC 9449 §10 makes binding the authorization code to a DPoP key the client's choice (`dpop_jkt` is OPTIONAL, and §10.1 offers the DPoP header at the PAR endpoint as one way a client MAY do it), but the demo issuer required the header and refused a conformant wallet that omitted it. A proof that is sent is still verified, and the token endpoint still requires one for the authorization code exchange.

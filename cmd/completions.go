@@ -132,7 +132,7 @@ func completeDeferredIDs(cmd *cobra.Command, args []string, toComplete string) (
 }
 
 // completeInstanceTargets completes running wallet instances for
-// `wallet instances kill` (URLs, ports, and pids).
+// `wallet kill` (URLs, ports, and pids).
 func completeInstanceTargets(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -149,7 +149,7 @@ func completeInstanceTargets(cmd *cobra.Command, args []string, toComplete strin
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeUseTargets completes `wallet instances use`: running instances
+// completeUseTargets completes `wallet use`: running instances
 // plus the literal "local".
 func completeUseTargets(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {

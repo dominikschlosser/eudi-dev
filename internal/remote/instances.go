@@ -52,7 +52,7 @@ type DiscoveredInstance struct {
 	Version string `json:"version,omitempty"`
 	// Source is "registry" (instance file), "process" (found via process
 	// scan without an instance file), or "active" (the remote target set by
-	// "wallet instances use", reachable but not locally discoverable).
+	// "wallet use", reachable but not locally discoverable).
 	Source string `json:"source"`
 }
 
@@ -131,7 +131,7 @@ func fetchInstanceConfig(url string, timeout time.Duration) map[string]any {
 // Discover finds running wallet instances on the local system: everything in
 // the instance registry (pruning entries whose server is gone) plus wallet
 // serve processes found by scanning the process list. The active remote
-// target set by "wallet instances use" is included as well when it responds,
+// target set by "wallet use" is included as well when it responds,
 // even when it is not locally discoverable.
 func Discover(timeout time.Duration) []DiscoveredInstance {
 	if timeout <= 0 {

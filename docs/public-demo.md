@@ -191,7 +191,7 @@ Nothing here grows without bound:
 ## Pointing the CLI at the demo
 
 ```bash
-eudi wallet instances use https://eudi-test.dev
+eudi wallet use https://eudi-test.dev
 ```
 
 Management commands (list, issue, delete) then run against the hosted instance. `serve`, `scan` and `register` stay local.

@@ -73,9 +73,9 @@ OWNER_HEADER="{{OWNER_HEADER}}:"
 LOG_FILE="/tmp/eudi-dev-wallet.log"
 SERVER_LOG="/tmp/eudi-dev-wallet-server.log"
 
-# The active remote set by "wallet instances use <url>" wins over the baked-in
+# The active remote set by "wallet use <url>" wins over the baked-in
 # local listener. remote.json lives next to this script and is removed by
-# "wallet instances use local".
+# "wallet use local".
 REMOTE_URL=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$(dirname "$0")/remote.json" 2>/dev/null)
 if [[ -n "$REMOTE_URL" ]]; then
   LISTENER="${REMOTE_URL%/}"

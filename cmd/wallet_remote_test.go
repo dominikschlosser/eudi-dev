@@ -73,7 +73,7 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 	url, _ := startRemoteTestWallet(t)
 
 	// wallet use verifies reachability and persists the target
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
+	rootCmd.SetArgs([]string{"wallet", "use", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet use: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestRemoteWalletLifecycleViaCLI(t *testing.T) {
 	}
 
 	// switch back to local
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", "local"})
+	rootCmd.SetArgs([]string{"wallet", "use", "local"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet use local: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestRemoteTemplatesViaCLI(t *testing.T) {
 
 func TestWalletUseRejectsUnreachable(t *testing.T) {
 	resetRemoteTestState(t)
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", "http://localhost:1"})
+	rootCmd.SetArgs([]string{"wallet", "use", "http://localhost:1"})
 	if err := rootCmd.Execute(); err == nil {
 		t.Fatal("expected error for unreachable wallet")
 	}
@@ -247,7 +247,7 @@ func TestWalletUseChecksVersionCompatibility(t *testing.T) {
 	srv.SetVersion("2.4.0")
 	withCLIVersion(t, "1.19.0")
 
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
+	rootCmd.SetArgs([]string{"wallet", "use", url})
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("expected an instance a major release apart to be refused")
@@ -260,15 +260,15 @@ func TestWalletUseChecksVersionCompatibility(t *testing.T) {
 	}
 
 	// --force is the escape hatch for a user who knows better.
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", url, "--force"})
+	rootCmd.SetArgs([]string{"wallet", "use", url, "--force"})
 	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("wallet instances use --force: %v", err)
+		t.Fatalf("wallet use --force: %v", err)
 	}
 	if remote.Active() != url {
 		t.Errorf("--force must select the instance, got %q", remote.Active())
 	}
 	t.Cleanup(func() {
-		rootCmd.SetArgs([]string{"wallet", "instances", "use", url, "--force=false"})
+		rootCmd.SetArgs([]string{"wallet", "use", url, "--force=false"})
 		_ = rootCmd.Execute()
 	})
 
@@ -277,7 +277,7 @@ func TestWalletUseChecksVersionCompatibility(t *testing.T) {
 	if err := remote.ClearActive(); err != nil {
 		t.Fatal(err)
 	}
-	rootCmd.SetArgs([]string{"wallet", "instances", "use", url})
+	rootCmd.SetArgs([]string{"wallet", "use", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("an older minor release must still be selectable: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestWalletUseChecksVersionCompatibility(t *testing.T) {
 	}
 }
 
-func TestInstancesListShowsInstanceVersion(t *testing.T) {
+func TestWalletPsShowsInstanceVersion(t *testing.T) {
 	resetRemoteTestState(t)
 	url, srv := startRemoteTestWallet(t)
 	srv.SetVersion("1.42.0")
@@ -299,13 +299,24 @@ func TestInstancesListShowsInstanceVersion(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
+		rootCmd.SetArgs([]string{"wallet", "ps"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("wallet ps: %v", err)
+		}
+	})
+	if !strings.Contains(out, "VERSION") || !strings.Contains(out, "1.42.0") {
+		t.Errorf("the listing must report the instance version, got:\n%s", out)
+	}
+
+	// The old `wallet instances` spelling keeps working for existing scripts.
+	out = captureStdout(t, func() {
 		rootCmd.SetArgs([]string{"wallet", "instances", "list"})
 		if err := rootCmd.Execute(); err != nil {
 			t.Fatalf("wallet instances list: %v", err)
 		}
 	})
-	if !strings.Contains(out, "VERSION") || !strings.Contains(out, "1.42.0") {
-		t.Errorf("the listing must report the instance version, got:\n%s", out)
+	if !strings.Contains(out, "1.42.0") {
+		t.Errorf("the deprecated listing must report the instance version, got:\n%s", out)
 	}
 }
 
@@ -354,7 +365,7 @@ func TestWalletKillViaShutdownEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rootCmd.SetArgs([]string{"wallet", "instances", "kill", url})
+	rootCmd.SetArgs([]string{"wallet", "kill", url})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("wallet kill: %v", err)
 	}

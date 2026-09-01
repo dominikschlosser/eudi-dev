@@ -48,7 +48,7 @@ func activeRemoteURL() (string, error) {
 // remoteClientIfConfigured returns a client for the wallet the CLI should
 // manage over HTTP, or nil when it manages the local store directly. The
 // target is resolved in order: --remote, the target persisted by `wallet
-// instances use`, then a running instance serving the same wallet directory.
+// use`, then a running instance serving the same wallet directory.
 // The last rule keeps one writer per directory, since a running server holds
 // its state in memory. `--remote local` or --templates-dir forces local access.
 func remoteClientIfConfigured() (*remote.Client, error) {
@@ -85,7 +85,7 @@ func remoteFlowClient(url string) *remote.Client {
 	return remote.NewClient(url)
 }
 
-func instancesUseCmd() *cobra.Command {
+func walletUseCmd() *cobra.Command {
 	var force bool
 
 	cmd := &cobra.Command{
@@ -207,32 +207,41 @@ func incompatibilityNotice(url, instanceVersion string) string {
 		url, instanceVersion, Version)
 }
 
+// walletInstancesCmd is the deprecated spelling of `wallet ps`, `wallet use`,
+// and `wallet kill`, kept hidden so existing scripts keep working.
 func walletInstancesCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "instances",
-		Short: "Manage running eudi-dev wallet instances on this system",
-		Long: "Finds, stops, and selects running wallet servers. Without a subcommand it lists them " +
-			"(same as `wallet instances list`).",
-		Args: cobra.NoArgs,
+		Use:        "instances",
+		Short:      "Deprecated: use 'wallet ps', 'wallet use', and 'wallet kill' instead",
+		Hidden:     true,
+		Deprecated: "use 'wallet ps', 'wallet use', and 'wallet kill' instead",
+		Args:       cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInstancesList()
 		},
 	}
-	cmd.AddCommand(instancesListCmd())
-	cmd.AddCommand(instancesUseCmd())
-	cmd.AddCommand(instancesKillCmd())
+	list := walletPsCmd()
+	list.Use = "list"
+	list.Deprecated = "use 'wallet ps' instead"
+	use := walletUseCmd()
+	use.Deprecated = "use 'wallet use' instead"
+	kill := walletKillCmd()
+	kill.Deprecated = "use 'wallet kill' instead"
+	cmd.AddCommand(list)
+	cmd.AddCommand(use)
+	cmd.AddCommand(kill)
 	return cmd
 }
 
-func instancesListCmd() *cobra.Command {
+func walletPsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   "ps",
 		Short: "List running wallet instances",
 		Long: "Scans the instance registry and the local process list for running wallet servers and checks " +
-			"that they respond. The active remote target set by `wallet instances use <url>` is listed too " +
+			"that they respond. The active remote target set by `wallet use <url>` is listed too " +
 			"when it responds, even when it runs elsewhere (for example in a Docker container). " +
-			"Use `wallet instances use <url>` to manage one of them and " +
-			"`wallet instances kill <target>` to stop one.",
+			"Use `wallet use <url>` to manage one of them and " +
+			"`wallet kill <target>` to stop one.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runInstancesList()
@@ -338,14 +347,14 @@ func managedInstanceURL(instances []remote.DiscoveredInstance) string {
 	return ""
 }
 
-func instancesKillCmd() *cobra.Command {
+func walletKillCmd() *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
 		Use:               "kill [pid|port|url]",
 		ValidArgsFunction: completeInstanceTargets,
 		Short:             "Stop a running eudi-dev wallet instance",
-		Long: "Stops a running wallet server found by `wallet instances list`. The target is a pid, a port, or a URL. " +
+		Long: "Stops a running wallet server found by `wallet ps`. The target is a pid, a port, or a URL. " +
 			"The instance is asked to exit via its shutdown endpoint. When it does not respond, a local process " +
 			"gets a SIGTERM instead.",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -393,7 +402,7 @@ func instancesKillCmd() *cobra.Command {
 				}
 				fmt.Printf("Stopped %s (pid %d)\n", inst.URL, inst.PID)
 				if active != "" && active == strings.TrimRight(inst.URL, "/") {
-					fmt.Fprintln(os.Stderr, "Note: this was the active remote wallet. Run `wallet instances use local` or pick another instance.")
+					fmt.Fprintln(os.Stderr, "Note: this was the active remote wallet. Run `wallet use local` or pick another instance.")
 				}
 			}
 			return nil
@@ -407,14 +416,14 @@ func instancesKillCmd() *cobra.Command {
 // discovered instances.
 func matchInstance(instances []remote.DiscoveredInstance, target string) (remote.DiscoveredInstance, error) {
 	target = strings.TrimSpace(target)
-	noMatch := fmt.Errorf("no running wallet instance matches %q (run `wallet instances list`)", target)
+	noMatch := fmt.Errorf("no running wallet instance matches %q (run `wallet ps`)", target)
 
 	// A bare integer is a pid or a port; anything else is treated as a
 	// URL or host[:port], including host:port forms with no dot (which the
 	// old dotted-host heuristic missed).
 	if number, err := strconv.Atoi(target); err == nil {
 		// Prefer a port match: a port is the identity a user reads off a URL
-		// or `instances list`, so `kill 8085` should stop the server on port
+		// or `wallet ps`, so `kill 8085` should stop the server on port
 		// 8085 rather than a process that merely happens to have pid 8085.
 		var byPort, byPID []remote.DiscoveredInstance
 		for _, inst := range instances {

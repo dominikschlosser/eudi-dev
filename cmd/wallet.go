@@ -75,9 +75,12 @@ func init() {
 	walletCmd.AddCommand(walletCACertCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
 	walletCmd.AddCommand(walletInfoCmd())
-	walletCmd.AddCommand(walletInstancesCmd())
+	walletCmd.AddCommand(walletPsCmd())
+	walletCmd.AddCommand(walletUseCmd())
+	walletCmd.AddCommand(walletKillCmd())
 
 	// Deprecated aliases (hidden from help)
+	walletCmd.AddCommand(walletInstancesCmd())
 	presentAlias := &cobra.Command{
 		Use:        "present <uri>",
 		Short:      "Deprecated: use 'wallet accept' instead",

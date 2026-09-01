@@ -23,7 +23,7 @@ import (
 // TestMain isolates these tests from the developer's own configuration.
 //
 // Commands resolve the active wallet through remote.json in the config
-// directory, so on a machine where "wallet instances use <url>" points at a
+// directory, so on a machine where "wallet use <url>" points at a
 // hosted wallet, running this package issued and deleted credentials on that
 // live instance. It has happened, twice, including against the public demo.
 // A throwaway config directory makes it impossible rather than a thing to

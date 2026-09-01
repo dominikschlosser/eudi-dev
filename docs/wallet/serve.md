@@ -144,7 +144,7 @@ eudi wallet serve --port 9000 --auto-accept
 eudi wallet serve --pid --credential extra.txt
 eudi wallet serve --register           # also register URL scheme handlers using the current interactive/auto-accept mode
 eudi wallet serve --register --port 9000
-eudi wallet serve -d                   # run in the background (stop with `eudi wallet instances kill`)
+eudi wallet serve -d                   # run in the background (stop with `eudi wallet kill`)
 ```
 
 | Flag                    | Default  | Description                                      |
@@ -176,7 +176,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--serve-tls`           | `false`  | Serve an https `--base-url` locally with the wallet's own TLS certificate instead of expecting an external TLS terminator. Requires an https base URL with an explicit port. The HTTP port stays bound as well |
 | `--demo-reset`          | `1h`     | When to restore the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | —        | HTML snippet with the operator's legal notice, served at `/imprint` |
-| `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet instances kill` |
+| `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet kill` |
 
 ## `wallet trust-list`
 

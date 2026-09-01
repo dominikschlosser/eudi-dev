@@ -385,10 +385,10 @@ The CLI can manage a remote eudi wallet instead of the local store. In remote mo
 
 ```bash
 # Switch management to a running instance (persisted until switched back)
-eudi wallet instances use http://localhost:8085
+eudi wallet use http://localhost:8085
 eudi wallet list                     # lists the remote wallet's credentials
 eudi issue sdjwt --wallet --template german-pid-sdjwt   # issues on the remote wallet
-eudi wallet instances use local      # back to the local store
+eudi wallet use local                # back to the local store
 
 # One-off remote target without switching
 eudi wallet list --remote http://localhost:8085
@@ -397,17 +397,17 @@ eudi wallet list --remote http://localhost:8085
 eudi wallet info
 ```
 
-Remote commands produce the same output as local ones, so scripts do not need to care which wallet is managed. Use `eudi wallet instances use` (without arguments) or `eudi wallet info` to check which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet instances use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$EUDI_DEV_HOME/remote.json` when the env variable is set).
+Remote commands produce the same output as local ones, so scripts do not need to care which wallet is managed. Use `eudi wallet use` (without arguments) or `eudi wallet info` to check which wallet is affected. In remote mode templates resolve against the remote instance's template directory. `wallet use <url>` verifies the target is reachable before persisting it (in `~/.eudi-dev/remote.json`, or `$EUDI_DEV_HOME/remote.json` when the env variable is set).
 
 #### Version compatibility
 
-Every instance reports its release on `GET /api/version` (the `version` field, alongside `build_id`). Any instance can be managed from any machine, so the CLI and the instance are not necessarily the same release. `wallet instances use <url>` compares the two the way semantic versioning defines compatibility:
+Every instance reports its release on `GET /api/version` (the `version` field, alongside `build_id`). Any instance can be managed from any machine, so the CLI and the instance are not necessarily the same release. `wallet use <url>` compares the two the way semantic versioning defines compatibility:
 
 - A differing major release is refused, because that is where breaking changes live. `--force` selects it anyway.
 - Minor and patch differences are compatible in both directions, so they pass without comment.
 - A development build on either side reports nothing comparable, so no check runs. The same applies to an instance too old to report a version at all.
 
-The instance version is shown when a target is selected, in the `VERSION` column of `wallet instances list` (and the `version` field of its `--json` output), and in the automatic routing notice below. `wallet instances list` marks an incompatible instance with `(!)` and explains it on stderr.
+The instance version is shown when a target is selected, in the `VERSION` column of `wallet ps` (and the `version` field of its `--json` output), and in the automatic routing notice below. `wallet ps` marks an incompatible instance with `(!)` and explains it on stderr.
 
 ### Automatic routing (single writer)
 
@@ -422,17 +422,17 @@ Two flags opt out and force direct file access: `--remote local` and an explicit
 The CLI can scan the local system for running wallet instances, stop them, and switch management to them:
 
 ```bash
-eudi wallet instances list           # list running instances (URL, version, pid, wallet dir)
-eudi wallet instances use http://localhost:18924
-eudi wallet instances kill 18924     # stop by port, pid, or URL
-eudi wallet instances kill --all     # stop every running instance
+eudi wallet ps                       # list running instances (URL, version, pid, wallet dir)
+eudi wallet use http://localhost:18924
+eudi wallet kill 18924               # stop by port, pid, or URL
+eudi wallet kill --all               # stop every running instance
 ```
 
-`wallet instances` without a subcommand is a shortcut for `wallet instances list`.
+The former spellings `wallet instances list`, `wallet instances use`, and `wallet instances kill` keep working as hidden deprecated aliases.
 
-Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. The health check also supplies each instance's release and build id, so the `VERSION` column reflects the running process rather than what was recorded at startup. `wallet instances kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. The health check also supplies each instance's release and build id, so the `VERSION` column reflects the running process rather than what was recorded at startup. `wallet kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
 
-Discovery only sees instances running directly on this system. A wallet server inside a Docker container (or on another machine) is neither in the local registry nor in the local process list. The active remote target is the exception. After `wallet instances use <url>` (for example `wallet instances use http://localhost:9085` for a wallet published by a container) the target is health checked and listed with source `active` as long as it responds. The `ACTIVE` column marks the instance the CLI currently manages with `*`. This includes the auto-routed case (a running instance that serves the local wallet directory while no remote target is set). In `--json` output the same information is the `active` field. When the active remote stops responding, `wallet instances list` prints a warning instead of listing it.
+Discovery only sees instances running directly on this system. A wallet server inside a Docker container (or on another machine) is neither in the local registry nor in the local process list. The active remote target is the exception. After `wallet use <url>` (for example `wallet use http://localhost:9085` for a wallet published by a container) the target is health checked and listed with source `active` as long as it responds. The `ACTIVE` column marks the instance the CLI currently manages with `*`. This includes the auto-routed case (a running instance that serves the local wallet directory while no remote target is set). In `--json` output the same information is the `active` field. When the active remote stops responding, `wallet ps` prints a warning instead of listing it.
 
 ### Introspection
 

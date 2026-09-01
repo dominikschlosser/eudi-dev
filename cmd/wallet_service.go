@@ -32,7 +32,7 @@ import (
 // A wallet IS its store (the wallet directory); an instance is that store plus
 // the URL it is exposed at, and the same store can be reached both ways. The
 // store has one writer at a time, so managedWallet prefers the URL whenever a
-// live server owns it: an explicit target (--remote, `wallet instances use`)
+// live server owns it: an explicit target (--remote, `wallet use`)
 // first, then a discovered instance serving the local directory.
 type walletService interface {
 	// URL is the managed instance's base URL, empty for the local store.
