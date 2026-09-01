@@ -32,7 +32,7 @@ import (
 // document. The first certificate is treated as the key holder. Its public key
 // becomes the JWK and the full chain is embedded as x5c.
 func CertificatePEMToJWKS(pemData []byte) ([]byte, error) {
-	certs, err := parseCertificatesPEM(pemData)
+	certs, err := ParseCertificatesPEM(pemData)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,8 @@ func bigEndianInt(n int) []byte {
 	return out
 }
 
-func parseCertificatesPEM(data []byte) ([]*x509.Certificate, error) {
+// ParseCertificatesPEM reads every CERTIFICATE block from PEM data.
+func ParseCertificatesPEM(data []byte) ([]*x509.Certificate, error) {
 	var certs []*x509.Certificate
 	rest := data
 	for {

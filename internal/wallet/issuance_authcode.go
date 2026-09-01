@@ -720,7 +720,7 @@ type clientAttestor struct {
 	challenge string
 }
 
-// headers mints the attestation headers for one request. In combined mode
+// headers creates the attestation headers for one request. In combined mode
 // the challenge travels in the DPoP proof (dpopChallenge).
 func (a *clientAttestor) headers() (map[string]string, error) {
 	challenge := ""
@@ -778,7 +778,7 @@ func (a *clientAttestor) observe(headers http.Header) {
 // fresh attestation material: use_attestation_challenge arrives together with
 // the challenge the retry has to carry (§6.2 requires the header alongside
 // it), and use_fresh_attestation asks for a newer attestation, which this
-// wallet mints per request anyway.
+// wallet creates per request anyway.
 func (a *clientAttestor) retryAfterRefusal(body []byte) bool {
 	var parsed struct {
 		Error string `json:"error"`
@@ -810,7 +810,7 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 	return nil
 }
 
-// createClientAttestationHeaders mints the attestation and, outside combined
+// createClientAttestationHeaders creates the attestation and, outside combined
 // mode, the PoP that proves possession of the attested key. Both carry the
 // union of the claims the supported drafts define, which is the draft-07
 // shape: the later drafts only stopped requiring claims, and every one of

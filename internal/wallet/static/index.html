@@ -363,6 +363,14 @@
             <input type="file" id="issue-bg-image-file" accept="image/*" class="form-file" aria-label="Upload a background image">
           </div>
 
+          <div class="form-section-label issue-signing-field">Signing (optional)</div>
+
+          <label class="form-label form-label-top issue-signing-field" for="issue-signing-key">Signing key</label>
+          <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field" placeholder="PEM or JWK private key. Default: the wallet issuer key"></textarea>
+
+          <label class="form-label form-label-top issue-signing-field" for="issue-signing-cert">Certificate chain</label>
+          <textarea id="issue-signing-cert" class="form-input form-textarea issue-signing-field" placeholder="PEM certificates, leaf first. Embedded as the credential's x5c"></textarea>
+
           <label class="form-label" for="issue-save-template">Save as template</label>
           <input type="text" id="issue-save-template" class="form-input" placeholder="Template name (optional)">
         </div>

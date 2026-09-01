@@ -18,11 +18,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
@@ -91,7 +93,7 @@ type IssueOptions struct {
 	// https URI, which is fetched through the policed client and cached. Nil
 	// leaves the credential without display metadata.
 	Display *IssueDisplay
-	// BatchSize mints this many distinct-key copies of the credential, tied
+	// BatchSize issues this many distinct-key copies of the credential, tied
 	// into one batch so the wallet presents an unused copy each time (EUDI ARF
 	// method C). 0 or 1 issues a single credential. Needs holder binding, so it
 	// is rejected for jwt_vc_json.
@@ -102,6 +104,12 @@ type IssueOptions struct {
 	// The named template's display is the base; an explicit Display is laid over
 	// it. Empty falls back to the Template (if any) for the display.
 	DisplayTemplate string
+	// SigningKey and SigningCertChain replace the wallet's issuer key and
+	// certificate chain for this issuance. Set together; the leaf must
+	// certify the key. Trust and registration metadata are not applied, the
+	// type registers like an imported foreign credential.
+	SigningKey       *ecdsa.PrivateKey
+	SigningCertChain []*x509.Certificate
 	// Unbound issues the credential without a holder key. An SD-JWT VC then
 	// names no cnf, a spec-valid bearer credential anyone holding it can present
 	// (cnf is optional, SD-JWT VC §3.2.2.2). An mdoc names no MSO deviceKey,
@@ -110,6 +118,55 @@ type IssueOptions struct {
 	// a presentable bearer credential. The default binds the credential to the
 	// wallet holder key.
 	Unbound bool
+}
+
+// ParseSigningOverride reads a signing override: a PEM or JWK private key and
+// a PEM certificate chain, leaf first. Both must be given and the leaf must
+// certify the key.
+func ParseSigningOverride(keyData, certData string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	keyData, certData = strings.TrimSpace(keyData), strings.TrimSpace(certData)
+	if keyData == "" && certData == "" {
+		return nil, nil, nil
+	}
+	if keyData == "" || certData == "" {
+		return nil, nil, fmt.Errorf("signing key and signing certificate must be given together")
+	}
+	parsed, err := keys.ParsePrivateKey([]byte(keyData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing signing key: %w", err)
+	}
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, nil, fmt.Errorf("the signing key must be an EC private key")
+	}
+	chain, err := keys.ParseCertificatesPEM([]byte(certData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("parsing signing certificate: %w", err)
+	}
+	leafPub, ok := chain[0].PublicKey.(*ecdsa.PublicKey)
+	if !ok || !leafPub.Equal(&key.PublicKey) {
+		return nil, nil, fmt.Errorf("the leaf certificate does not certify the signing key")
+	}
+	return key, chain, nil
+}
+
+// judgeSigningChainAnchor holds a signing-override chain that carries its
+// self-signed root to the validation mode: strict refuses the issuance, debug
+// warns and embeds the chain as given (for testing verifier rejection). A JWT
+// VC is exempt: RFC 7515 lets x5c carry the full chain including the root.
+func (w *Wallet) judgeSigningChainAnchor(format string, chain []*x509.Certificate) error {
+	if format == "jwt" || len(mock.WithoutSelfSignedTrustAnchor(chain)) == len(chain) {
+		return nil
+	}
+	finding := "HAIP 1.0 §6.1.1: the signing certificate chain includes its self-signed root, which MUST NOT be included in the credential's x5c"
+	if format == "mdoc" {
+		finding = "ISO 18013-5: the signing certificate chain includes its self-signed root, which does not belong in the x5chain header"
+	}
+	if w.Mode() == ValidationModeStrict {
+		return fmt.Errorf("%s", finding)
+	}
+	w.AddWarning("management", finding+". It is embedded as given.", nil)
+	return nil
 }
 
 // IssueDisplay is the appearance an operator sets for a self-issued credential.
@@ -239,9 +296,19 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	certChain, err := w.SigningCertChainForIssuedAttestation(spec)
-	if err != nil {
-		return nil, err
+	signingKey := w.IssuerKey
+	var certChain []*x509.Certificate
+	if opts.SigningKey != nil {
+		signingKey = opts.SigningKey
+		certChain = opts.SigningCertChain
+		if err := w.judgeSigningChainAnchor(format, certChain); err != nil {
+			return nil, err
+		}
+	} else {
+		certChain, err = w.SigningCertChainForIssuedAttestation(spec)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	issuer := strings.TrimRight(strings.TrimSpace(w.IssuerURL), "/")
@@ -266,28 +333,32 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	// signCopy mints one credential, holder-bound to holderPub and carrying the
+	// signCopy issues one credential, holder-bound to holderPub and carrying the
 	// given status index.
 	signCopy := func(holderPub *ecdsa.PublicKey, statusIdx int) (string, error) {
+		// An override chain is embedded as given, so a chain carrying its
+		// root can be issued to test verifier rejection.
+		keepAnchor := opts.SigningKey != nil
 		switch format {
 		case "sdjwt":
 			return mock.GenerateSDJWT(mock.SDJWTConfig{
 				Issuer: issuer, VCT: vct, ExpiresIn: expiresIn, NotBefore: opts.NotBefore,
-				Claims: claims, Key: w.IssuerKey, HolderKey: holderPub,
+				Claims: claims, Key: signingKey, HolderKey: holderPub,
 				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
-				AlwaysDisclosed: alwaysDisclosed,
+				AlwaysDisclosed: alwaysDisclosed, KeepTrustAnchor: keepAnchor,
 			})
 		case "jwt":
 			return mock.GenerateJWT(mock.JWTConfig{
 				Issuer: issuer, VCT: vct, ExpiresIn: expiresIn, NotBefore: opts.NotBefore,
-				Claims: claims, Key: w.IssuerKey,
+				Claims: claims, Key: signingKey,
 				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
 			})
 		case "mdoc":
 			return mock.GenerateMDOC(mock.MDOCConfig{
 				DocType: docType, NamespaceClaims: splitClaimsByNamespace(claims, namespace),
-				Key: w.IssuerKey, HolderKey: holderPub, ExpiresIn: expiresIn, ValidFrom: opts.NotBefore,
+				Key: signingKey, HolderKey: holderPub, ExpiresIn: expiresIn, ValidFrom: opts.NotBefore,
 				StatusListURI: statusURI, StatusListIdx: statusIdx, CertChain: certChain,
+				KeepTrustAnchor: keepAnchor,
 			})
 		}
 		return "", fmt.Errorf("unsupported format %q", format)
@@ -341,7 +412,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		w.RegisterStatusEntry(imported.ID, statusIdx)
 	}
 
-	// A batch mints the extra copies, each on its own key and (when the wallet
+	// A batch issues the extra copies, each on its own key and (when the wallet
 	// governs the status) its own status index, tied to the primary so the
 	// wallet presents an unused copy each time.
 	if opts.BatchSize >= 2 {
@@ -376,8 +447,12 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	if err := w.RegisterIssuedAttestation(spec); err != nil {
-		return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)
+	// The request's trust metadata describes the wallet CA, not a foreign
+	// chain, so an override keeps the plain registration the import made.
+	if opts.SigningKey == nil {
+		if err := w.RegisterIssuedAttestation(spec); err != nil {
+			return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)
+		}
 	}
 
 	result := &IssueResult{

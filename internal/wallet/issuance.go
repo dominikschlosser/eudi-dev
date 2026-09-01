@@ -202,7 +202,7 @@ func (w *Wallet) keepApprovedOffer(offerURI string, approved *oid4vc.CredentialO
 
 // sameCredentialOffer reports whether two reads of one URI offer the same
 // thing: the credentials of that issuer are what the user was asked about.
-// The grants are deliberately not compared, since an issuer may mint a fresh
+// The grants are deliberately not compared, since an issuer may hand out a fresh
 // pre-authorized code for every read of the same offer.
 func sameCredentialOffer(approved, offered *oid4vc.CredentialOffer) bool {
 	if approved.CredentialIssuer != offered.CredentialIssuer {
@@ -1411,7 +1411,7 @@ func (w *Wallet) reportHAIPViolations(subject, issuer string, violations []strin
 	}
 	if w.Mode() == ValidationModeStrict {
 		w.addProtocolLog("issuance", "haip_violation", detail, false, details)
-		return fmt.Errorf("%s: %s", specCitedSummary(strings.ToLower(subject), violations), strings.Join(violations, ", "))
+		return fmt.Errorf("%s: %s", strings.ToLower(subject), strings.Join(violations, ", "))
 	}
 	w.addProtocolWarning("issuance", "haip_violation", detail, details)
 	return nil

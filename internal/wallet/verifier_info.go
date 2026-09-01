@@ -106,8 +106,8 @@ func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestPara
 		return nil
 	}
 	payload := authReq.RequestPayload
-	if payload == nil && authReq.RequestObject == nil && strings.TrimSpace(authReq.VerifierInfo) != "" {
-		payload = map[string]any{"verifier_info": authReq.VerifierInfo}
+	if payload == nil && authReq.RequestObject == nil && strings.TrimSpace(authReq.FullParams["verifier_info"]) != "" {
+		payload = map[string]any{"verifier_info": authReq.FullParams["verifier_info"]}
 	}
 
 	certs, findings := verifiedRegistrationCertificates(payload)

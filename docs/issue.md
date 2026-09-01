@@ -51,6 +51,7 @@ eudi issue mdoc  | eudi decode
 |------------|---------------------------|------------------------------------------------|
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
 | `--key`    | —                         | Private key file (PEM or JWK). Ephemeral if omitted |
+| `--cert`   | —                         | Certificate chain file (PEM, leaf first) embedded as x5c. Requires `--key` |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
 | `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
@@ -72,6 +73,7 @@ eudi issue mdoc  | eudi decode
 |------------|---------------------------|------------------------------------------------|
 | `--claims` | —                         | Claims as JSON string or `@filepath`           |
 | `--key`    | —                         | Private key file (PEM or JWK). Ephemeral if omitted |
+| `--cert`   | —                         | Certificate chain file (PEM, leaf first) embedded as x5c. Requires `--key` |
 | `--iss`    | `https://issuer.example`  | Issuer URL                                     |
 | `--vct`    | `urn:eudi:pid:1`       | Verifiable Credential Type                     |
 | `--exp`    | `720h` (30 days)          | Expiration duration                            |
@@ -92,6 +94,7 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 |---------------|--------------------------------|------------------------------------------------|
 | `--claims`    | —                              | Claims as JSON string or `@filepath`           |
 | `--key`       | —                              | Private key file (PEM or JWK). Ephemeral if omitted |
+| `--cert`      | —                              | Certificate chain file (PEM, leaf first) embedded as x5c. Requires `--key` |
 | `--doc-type`  | `eu.europa.ec.eudi.pid.1`      | Document type                                  |
 | `--namespace` | `eu.europa.ec.eudi.pid.1`      | Namespace                                      |
 | `--exp`       | `720h` (30 days)               | Expiration duration                            |
@@ -118,7 +121,7 @@ Every SD-JWT claim is selectively disclosable by default, apart from the registe
 
 ## Wallet Registration Metadata
 
-With `--wallet`, the credential is issued with the wallet's issuer key and a trust-profile-specific leaf certificate chain under the shared wallet CA. It is stored in the wallet together with an issued-attestation entry for that credential type. That entry later drives:
+With `--wallet`, the credential is issued with the wallet's issuer key and a trust-profile-specific leaf certificate chain under the shared wallet CA. `--key` alone swaps the issuer key and re-leafs the wallet chain for it. `--key` together with `--cert` signs with exactly that key and chain instead (the trust profile and registration metadata of the request are not applied, the type registers like an imported credential). The chain is embedded as given. One carrying its self-signed root warns in debug mode and is refused in strict mode. The credential is stored in the wallet together with an issued-attestation entry for that credential type. That entry later drives:
 - `/.well-known/openid-credential-issuer`
 - `/api/registrar/wrp`
 - `/api/trustlist`

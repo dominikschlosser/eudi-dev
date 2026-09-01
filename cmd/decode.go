@@ -42,7 +42,7 @@ var decodeCmd = &cobra.Command{
 	Short: "Auto-detect and decode credentials and OpenID4VCI/VP requests",
 	Long: `Decode and inspect verifiable credentials (JWT, SD-JWT, mDOC), OpenID4VCI/VP requests, and ETSI trust lists.
 
-This is a read-only inspection tool — it parses and displays the content, and
+This is a read-only inspection tool. It parses and displays the content, and
 automatically verifies JWT/SD-JWT signatures when issuer metadata can be resolved
 from iss+kid. Use 'validate' for explicit keys, trust lists, and revocation checks.
 
@@ -62,9 +62,9 @@ Auto-detects the format. Use --format to override detection.`,
 }
 
 func init() {
-	decodeCmd.Flags().StringVar(&decodeQRSource, "qr", "", "scan QR code from image file")
-	decodeCmd.Flags().BoolVar(&decodeQRScreen, "screen", false, "scan QR code from screen capture")
-	decodeCmd.Flags().StringVarP(&decodeFormat, "format", "f", "", "pin format: sdjwt, jwt, mdoc, vci, vp, trustlist")
+	decodeCmd.Flags().StringVar(&decodeQRSource, "qr", "", "Scan a QR code from an image file")
+	decodeCmd.Flags().BoolVar(&decodeQRScreen, "screen", false, "Scan a QR code from a screen capture")
+	decodeCmd.Flags().StringVarP(&decodeFormat, "format", "f", "", "Pin the format instead of auto-detecting: sdjwt, jwt, mdoc, vci, vp, trustlist")
 	rootCmd.AddCommand(decodeCmd)
 }
 

@@ -47,8 +47,10 @@ var noOpen bool
 
 var walletCmd = &cobra.Command{
 	Use:   "wallet",
-	Short: "Manage a local testing wallet for OID4VP/OID4VCI flows",
-	Long:  "Stateful wallet with file persistence. Supports credential management, OID4VP presentations, OID4VCI issuance, QR scanning, and URL scheme registration.",
+	Short: "Manage a testing wallet for OID4VP/OID4VCI flows",
+	Long: "Stateful wallet with file persistence. Supports credential management, OID4VP presentations, OID4VCI issuance, " +
+		"QR scanning, and URL scheme registration. The management commands operate on the local store, on the remote " +
+		"instance selected by `wallet use` or --remote, or through a running server for the same wallet directory.",
 }
 
 func init() {
@@ -268,7 +270,8 @@ func walletShowCmd() *cobra.Command {
 func walletImportCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import [file-or-raw]",
-		Short: "Import credential to store",
+		Short: "Import a credential into the wallet",
+		Long:  "Imports an SD-JWT, JWT VC, or mdoc credential from a file, a raw string, or stdin (-, the default).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := "-" // stdin by default
@@ -343,7 +346,7 @@ func walletRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "register [wallet-serve-flags...]",
 		Short:              "Register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)",
-		Long:               "Stores the provided arguments and replays them as 'wallet serve ...' when the OS URL handler needs to auto-start the wallet listener.",
+		Long:               "Registers this wallet as the OS handler for the OID4VP/OID4VCI URL schemes (macOS, a no-op elsewhere). The provided arguments are stored and replayed as 'wallet serve ...' when a clicked link needs to auto-start the wallet listener.",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, arg := range args {
@@ -406,7 +409,7 @@ func walletRegisterOptions(args []string) (wallet.RegisterOptions, error) {
 func walletUnregisterCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "unregister",
-		Short: "Remove OS URL scheme handlers",
+		Short: "Remove the OS URL scheme handlers (macOS, a no-op elsewhere)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return wallet.UnregisterURLSchemes()
 		},
@@ -605,7 +608,7 @@ func walletTLSCertCmd() *cobra.Command {
 		Short: "Print or export the wallet TLS leaf certificate used by HTTPS wallet endpoints",
 		Long: `Loads or creates the HTTPS leaf certificate used by the wallet's HTTPS endpoints.
 Use this to inspect or export the exact server certificate presented by the wallet.
-Use 'wallet ca-cert' when you want one trust root for all spawned wallets.
+Use 'wallet ca-cert' for the one trust root shared by every wallet under the same base directory.
 
 Use --jwks to export the certificate as a JWKS document (public key with x5c
 chain).`,

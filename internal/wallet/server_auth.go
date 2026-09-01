@@ -175,12 +175,7 @@ type AuthorizationRequestParams struct {
 	// FullParams are the raw request parameters as received, for the
 	// undefined-parameter check.
 	FullParams map[string]string
-	// VerifierInfo carries the raw verifier_info parameter of a request sent
-	// as plain parameters (a JSON-encoded array). A request delivered as a
-	// Request Object keeps its attestations in RequestPayload, and its outer
-	// parameters stay ignored (OID4VP 1.0 section 5.10.1).
-	VerifierInfo string
-	Source       string
+	Source     string
 	// UnsignedDCAPI marks a request that arrived unsigned over the Digital
 	// Credentials API (OpenID4VP 1.0 Appendix A.3.1). Such a request carries
 	// no client_id (Appendix A.2), and the platform-reported origin identifies
@@ -713,7 +708,6 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		RedirectURI:      get("redirect_uri"),
 		ResponseURI:      get("response_uri"),
 		RequestURIMethod: get("request_uri_method"),
-		VerifierInfo:     get("verifier_info"),
 		FullParams:       fullParams,
 	}
 

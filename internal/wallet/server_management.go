@@ -163,6 +163,11 @@ type IssueAPIRequest struct {
 	// Unbound issues the credential without a holder key (a bearer credential).
 	// The default is bound to the wallet.
 	Unbound bool `json:"unbound"`
+	// SigningKey and SigningCert replace the wallet's issuer key and
+	// certificate chain: a PEM or JWK private key, and a PEM certificate
+	// chain with the leaf first.
+	SigningKey  string `json:"signing_key"`
+	SigningCert string `json:"signing_cert"`
 }
 
 // Options converts the API request into IssueOptions.
@@ -201,6 +206,12 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		}
 		opts.NotBefore = nbf
 	}
+	signingKey, signingCerts, err := ParseSigningOverride(req.SigningKey, req.SigningCert)
+	if err != nil {
+		return IssueOptions{}, err
+	}
+	opts.SigningKey = signingKey
+	opts.SigningCertChain = signingCerts
 	return opts, nil
 }
 
@@ -217,6 +228,12 @@ func (w *Wallet) IssueSummary(opts IssueOptions) (map[string]any, error) {
 	}
 	if result.TemplatePath != "" {
 		summary["template_path"] = result.TemplatePath
+	}
+	// The echo lets a caller notice a server that dropped the override as an
+	// unknown field (an older release decodes leniently and would sign with
+	// its own key).
+	if opts.SigningKey != nil {
+		summary["signing_override"] = true
 	}
 	return summary, nil
 }
@@ -241,6 +258,12 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		// The name reaches a template load, so it stays a plain name resolved
 		// against the template directory, never a path.
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid display template name %q", name)})
+		return
+	}
+
+	if s.demo != nil && (strings.TrimSpace(req.SigningKey) != "" || strings.TrimSpace(req.SigningCert) != "") {
+		// A shared demo signs with its own key only.
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "overriding the signing key is disabled in public demo mode"})
 		return
 	}
 

@@ -63,7 +63,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	authReq.BrowserRedirect = isBrowserNavigation(r)
 	// A browser reaching this endpoint may be the wallet's first contact with
-	// it, so the session is minted on the response that redirects it to the UI
+	// it, so the session is created on the response that redirects it to the UI
 	// and the request it creates belongs to that new session.
 	authReq.Session = requestOwner(r)
 	if authReq.BrowserRedirect && authReq.Session == "" {
@@ -172,7 +172,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		RequestObject:    parsed.RequestObject,
 		RequestPayload:   requestPayload(parsed.RequestObject, parsed.FullJSON),
 		FullParams:       parsed.FullParams,
-		VerifierInfo:     parsed.FullParams["verifier_info"],
 		Source:           "api",
 		Session:          requestOwner(r),
 	}

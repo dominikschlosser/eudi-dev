@@ -423,7 +423,7 @@ func TestSubmitDirectPost_ReportsUndefinedResponseMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.UndefinedMembers) != 1 || result.UndefinedMembers[0] != "status" {
-		t.Errorf("undefined members = %v, want [status]", result.UndefinedMembers)
+	if got := undefinedResponseMembers(result); len(got) != 1 || got[0] != "status" {
+		t.Errorf("undefined members = %v, want [status]", got)
 	}
 }

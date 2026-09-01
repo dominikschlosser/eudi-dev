@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.0] - Unreleased 
+## [2.2.0] - 2026-09-01 
 
 ### Added
 
@@ -13,10 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`wallet serve --serve-tls` serves an https base URL locally.** With an https `--base-url` naming an explicit port, the wallet binds that origin itself with its own TLS certificate instead of expecting an external TLS terminator. The conformance run needs it because the OIDF suite requires https endpoints from the party under test.
 - **`wallet serve --demo-verifier-trust-anchor` adds CAs the demo verifier trusts.** The demo verifier accepts issuer chains under the wallet's own CA. The repeatable flag adds anchors for presentations issued elsewhere, such as the ones the OIDF suite signs under its own CAs.
 
+- **The issuance signing key and certificate can be overridden.** `issue ... --key <key> --cert <chain>` signs with exactly that key and PEM chain instead of the wallet issuer key, both standalone and with `--wallet` (locally and against a remote instance). The chain is embedded as given. A chain carrying its self-signed root gets a warning in debug mode (so verifier rejection can be tested) and is refused in strict mode. The wallet UI's issue form gained matching signing fields, and `POST /api/issue` takes them as `signing_key` and `signing_cert`. The public demo refuses the override.
 - **Warnings for undefined parameters.** The wallet now warns about request parameters that OID4VP 1.0 does not define (for example the dropped `presentation_definition`) and about fields other than `redirect_uri` in the verifier's response to a posted presentation (§8.2). These stay warnings in every mode because RFC 6749 §3.1 requires ignoring unrecognized parameters.
 
 ### Changed
 
+- **Help texts are clearer.** `issue --help` explains its two modes (a bare stdout credential by default, `--wallet` issues into the managed wallet), flags that only apply with `--wallet` say so, and terse or broken texts are fixed (the `--template` flag no longer renders its placeholder as `templates list`).
 - **Specification findings name their source in one uniform prefix.** Every warning that reports a broken rule starts with the specification and rule it cites, for example "OID4VP 1.0 §5.2: nonce is required" or "ARF RPRC_19: ...". Grouped summaries name the cited specifications instead of "the profile", rules that HAIP only incorporates are cited from the specification that defines them, and under `--haip` the incorporated checks are reported once instead of twice.
 - **`wallet instances` is split into `wallet ps`, `wallet use`, and `wallet kill`.** `wallet ps` lists running instances, `wallet use <url|local>` switches which wallet the CLI manages, and `wallet kill <pid|port|url>` stops one. The old `wallet instances list|use|kill` spellings keep working as hidden deprecated aliases.
 

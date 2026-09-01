@@ -47,6 +47,9 @@ type SDJWTConfig struct {
 	StatusListURI string              // optional: status list URI for revocation
 	StatusListIdx int                 // optional: index in the status list
 	CertChain     []*x509.Certificate // optional: x5c certificate chain [leaf, CA]
+	// KeepTrustAnchor embeds the chain as given, keeping a terminal
+	// self-signed root that is otherwise stripped from x5c.
+	KeepTrustAnchor bool
 	// AlwaysDisclosed lists claims embedded plainly instead of becoming
 	// selective disclosures, as top-level names ("family_name") or dotted
 	// paths ("address.country"). Entries matching no claim are ignored.
@@ -153,8 +156,12 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 	}
 
 	if len(cfg.CertChain) > 0 {
+		chain := cfg.CertChain
+		if !cfg.KeepTrustAnchor {
+			chain = WithoutSelfSignedTrustAnchor(chain)
+		}
 		var x5c []string
-		for _, cert := range WithoutSelfSignedTrustAnchor(cfg.CertChain) {
+		for _, cert := range chain {
 			x5c = append(x5c, base64.StdEncoding.EncodeToString(cert.Raw))
 		}
 		if len(x5c) > 0 {

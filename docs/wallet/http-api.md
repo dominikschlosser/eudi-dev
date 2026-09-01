@@ -67,6 +67,8 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `display`         | object  | The appearance the card shows: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
 | `batch`           | int     | Issue this many distinct-key copies, so the wallet presents an unused one each time (like `--batch`) |
 | `unbound`         | bool    | Issue without a holder key (a bearer credential), the default binds it to the wallet (like `--unbound`) |
+| `signing_key`     | string  | PEM or JWK private key that signs the credential instead of the wallet issuer key. Requires `signing_cert` (like `--key` with `--cert`). Refused in public demo mode |
+| `signing_cert`    | string  | PEM certificate chain, leaf first, embedded as the credential's x5c. The leaf must certify `signing_key` and the chain is embedded as given (a chain carrying its self-signed root warns in debug mode and is refused in strict mode). The trust profile and registration metadata of the request are then not applied |
 
 The response is `201` with the stored credential (`id`, `format`, `claims`, `raw`, `status_list_idx` when the credential was registered on the wallet's status list, and `template_path` when `save_as_template` was used).
 

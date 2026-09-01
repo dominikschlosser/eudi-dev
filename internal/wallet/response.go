@@ -21,7 +21,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
@@ -82,9 +81,6 @@ type DirectPostResult struct {
 	StatusCode  int    `json:"status_code"`
 	Body        string `json:"body"`
 	RedirectURI string `json:"redirect_uri,omitempty"`
-	// UndefinedMembers are response body members OID4VP 1.0 §8.2 does not
-	// define.
-	UndefinedMembers []string `json:"-"`
 }
 
 // SubmitDirectPostJWT submits an encrypted JARM response via direct_post.jwt.
@@ -200,12 +196,6 @@ func applyVerifierResponse(result *DirectPostResult, headers http.Header, body [
 				}
 				result.RedirectURI = redirectURI
 			}
-			for member := range respJSON {
-				if member != "redirect_uri" {
-					result.UndefinedMembers = append(result.UndefinedMembers, member)
-				}
-			}
-			sort.Strings(result.UndefinedMembers)
 		}
 	}
 

@@ -37,7 +37,7 @@ const OwnerHeader = config.OwnerHeader
 // the event stream.
 const ownerParam = "owner"
 
-// newBrowserSession mints a session and sets it on the response. Only the
+// newBrowserSession creates a session and sets it on the response. Only the
 // handlers that serve a browser call it: a caller that drops the cookie would
 // own requests it can never ask for again.
 func newBrowserSession(w http.ResponseWriter, r *http.Request, secure bool) string {

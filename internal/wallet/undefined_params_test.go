@@ -15,7 +15,6 @@
 package wallet
 
 import (
-	"net/http"
 	"strings"
 	"testing"
 
@@ -57,6 +56,23 @@ func TestUndefinedRequestParameterFindings(t *testing.T) {
 		}
 	})
 
+	t.Run("signed request with undefined outer query parameters", func(t *testing.T) {
+		params := &AuthorizationRequestParams{
+			RequestObject: &oid4vc.RequestObjectJWT{Payload: map[string]any{
+				"client_id": "x509_hash:abc", "response_type": "vp_token",
+			}},
+			FullParams: map[string]string{
+				"client_id":               "x509_hash:abc",
+				"request_uri":             "https://verifier.example/ro",
+				"presentation_definition": `{}`,
+			},
+		}
+		findings := undefinedRequestParameterFindings(params)
+		if len(findings) != 1 || !strings.Contains(findings[0], `"presentation_definition"`) {
+			t.Errorf("findings = %v, want the outer presentation_definition flagged", findings)
+		}
+	})
+
 	t.Run("defined parameters only", func(t *testing.T) {
 		params := &AuthorizationRequestParams{FullParams: map[string]string{
 			"client_id": "x", "response_type": "vp_token", "nonce": "n",
@@ -70,23 +86,22 @@ func TestUndefinedRequestParameterFindings(t *testing.T) {
 }
 
 func TestVerifierResponseUndefinedMembers(t *testing.T) {
-	apply := func(body string) *DirectPostResult {
-		t.Helper()
-		result := &DirectPostResult{}
-		if err := applyVerifierResponse(result, http.Header{}, []byte(body)); err != nil {
-			t.Fatal(err)
-		}
-		return result
+	members := func(status int, body string) []string {
+		return undefinedResponseMembers(&DirectPostResult{StatusCode: status, Body: body})
 	}
 
-	if got := apply(`{}`).UndefinedMembers; len(got) != 0 {
+	if got := members(200, `{}`); len(got) != 0 {
 		t.Errorf("empty object: undefined members = %v, want none", got)
 	}
-	if got := apply(`{"redirect_uri":"https://v.example/done"}`).UndefinedMembers; len(got) != 0 {
+	if got := members(200, `{"redirect_uri":"https://v.example/done"}`); len(got) != 0 {
 		t.Errorf("redirect_uri only: undefined members = %v, want none", got)
 	}
-	got := apply(`{"status":"OK","session_id":"1","redirect_uri":"https://v.example/done"}`).UndefinedMembers
+	got := members(200, `{"status":"OK","session_id":"1","redirect_uri":"https://v.example/done"}`)
 	if len(got) != 2 || got[0] != "session_id" || got[1] != "status" {
 		t.Errorf("undefined members = %v, want [session_id status]", got)
+	}
+	// An OAuth error response has its own members and is not a §8.2 body.
+	if got := members(400, `{"error":"invalid_request","error_description":"nope"}`); len(got) != 0 {
+		t.Errorf("error response: undefined members = %v, want none", got)
 	}
 }

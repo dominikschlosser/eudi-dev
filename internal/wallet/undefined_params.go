@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -68,30 +69,38 @@ func undefinedRequestParameterFindings(params *AuthorizationRequestParams) []str
 	if params == nil {
 		return nil
 	}
-	var names []string
-	allowed := definedRequestParameters
-	switch {
-	case params.RequestObject != nil && params.RequestObject.Payload != nil:
-		allowed = definedRequestObjectMembers
+	undefined := map[string]bool{}
+	if params.RequestObject != nil && params.RequestObject.Payload != nil {
+		// The outer query parameters are still checked below: they are the
+		// place testers put stray fields, even though a signed request only
+		// uses its object's members (OID4VP 1.0 §5.10.1).
 		for name := range params.RequestObject.Payload {
-			names = append(names, name)
+			if !definedRequestObjectMembers[name] {
+				undefined[name] = true
+			}
 		}
-	case len(params.FullParams) > 0:
-		for name := range params.FullParams {
-			names = append(names, name)
-		}
-	case params.RequestPayload != nil:
+	} else if params.RequestPayload != nil {
 		for name := range params.RequestPayload {
-			names = append(names, name)
+			if !definedRequestParameters[name] {
+				undefined[name] = true
+			}
 		}
+	}
+	for name := range params.FullParams {
+		if !definedRequestParameters[name] {
+			undefined[name] = true
+		}
+	}
+
+	names := make([]string, 0, len(undefined))
+	for name := range undefined {
+		names = append(names, name)
 	}
 	sort.Strings(names)
 
-	var findings []string
+	findings := make([]string, 0, len(names))
 	for _, name := range names {
-		if !allowed[name] {
-			findings = append(findings, fmt.Sprintf("The request parameter %q is not defined in OID4VP 1.0 and is ignored", name))
-		}
+		findings = append(findings, fmt.Sprintf("The request parameter %q is not defined in OID4VP 1.0 and is ignored", name))
 	}
 	return findings
 }
@@ -102,13 +111,33 @@ func (w *Wallet) warnUndefinedRequestParameters(scope string, params *Authorizat
 	w.warnFindings(scope, "The request contains parameters OID4VP 1.0 does not define", undefinedRequestParameterFindings(params))
 }
 
-// warnUndefinedResponseMembers reports response fields OID4VP 1.0 §8.2 does
-// not define (redirect_uri is its only one).
+// undefinedResponseMembers lists fields of an accepted response that OID4VP
+// 1.0 §8.2 does not define (redirect_uri is its only one). A non-2xx answer
+// is an OAuth error response with its own members, not a §8.2 body.
+func undefinedResponseMembers(result *DirectPostResult) []string {
+	if result == nil || result.StatusCode < 200 || result.StatusCode >= 300 {
+		return nil
+	}
+	var respJSON map[string]any
+	if json.Unmarshal([]byte(result.Body), &respJSON) != nil {
+		return nil
+	}
+	var members []string
+	for member := range respJSON {
+		if member != "redirect_uri" {
+			members = append(members, member)
+		}
+	}
+	sort.Strings(members)
+	return members
+}
+
 func (w *Wallet) warnUndefinedResponseMembers(result *DirectPostResult) {
-	if result == nil || len(result.UndefinedMembers) == 0 {
+	members := undefinedResponseMembers(result)
+	if len(members) == 0 {
 		return
 	}
 	w.AddWarning("presentation", fmt.Sprintf(
 		"The verifier's response contains fields OID4VP 1.0 §8.2 does not define: %s. They are ignored.",
-		strings.Join(result.UndefinedMembers, ", ")), nil)
+		strings.Join(members, ", ")), nil)
 }

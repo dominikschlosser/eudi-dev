@@ -104,6 +104,9 @@ type MDOCConfig struct {
 	StatusListURI   string              // optional: status list URI for revocation
 	StatusListIdx   int                 // optional: index in the status list
 	CertChain       []*x509.Certificate // optional: x5chain certificate chain [leaf, CA]
+	// KeepTrustAnchor embeds the chain as given, keeping a terminal
+	// self-signed root that is otherwise stripped from x5chain.
+	KeepTrustAnchor bool
 	// OmitValidityInfo drops the MSO validityInfo, which ISO 18013-5 requires,
 	// for testing how a verifier handles an mdoc that states no validity period.
 	OmitValidityInfo bool
@@ -251,8 +254,12 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 	// x5chain (label 33) carries the leaf and any intermediates, never the
 	// root. A reader gets the trust anchor from its trust list, and a chain
 	// that carries its own root proves nothing to anyone who does not already
-	// have it. Every other credential this toolkit signs does the same.
-	if chain := WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
+	// have it. KeepTrustAnchor embeds a provided chain as given anyway.
+	chain := cfg.CertChain
+	if !cfg.KeepTrustAnchor {
+		chain = WithoutSelfSignedTrustAnchor(chain)
+	}
+	if len(chain) > 0 {
 		if len(chain) == 1 {
 			msg.Headers.Unprotected[int64(33)] = chain[0].Raw
 		} else {

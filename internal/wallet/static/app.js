@@ -1202,6 +1202,10 @@
     }
     const saveTemplate = document.getElementById('issue-save-template').value.trim();
     if (saveTemplate) body.save_as_template = saveTemplate;
+    const signingKey = document.getElementById('issue-signing-key').value.trim();
+    if (signingKey) body.signing_key = signingKey;
+    const signingCert = document.getElementById('issue-signing-cert').value.trim();
+    if (signingCert) body.signing_cert = signingCert;
 
     const display = {};
     const dName = document.getElementById('issue-display-name').value.trim();
@@ -2494,6 +2498,8 @@
         // background image fields are gone. A template's own art still applies,
         // and normal issuance carries the appearance the issuer declares.
         document.querySelectorAll('.issue-image-field').forEach((el) => { el.hidden = true; });
+        // The demo signs with its own key only, so the signing override is gone.
+        document.querySelectorAll('.issue-signing-field').forEach((el) => { el.hidden = true; });
         // The activity log is shared history on a demo, and the server
         // refuses to clear it. Leaving the button would offer an action that
         // can only fail.

@@ -398,7 +398,7 @@ func SetVersion(v string) {
 	}
 }
 
-// NewOwnerToken mints the value that ties a page this CLI opens to the request
+// NewOwnerToken creates the value that ties a page this CLI opens to the request
 // it submits for that page.
 func NewOwnerToken() string {
 	raw := make([]byte, 16)
