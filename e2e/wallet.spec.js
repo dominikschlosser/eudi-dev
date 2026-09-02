@@ -364,26 +364,25 @@ test.describe("Credential Issuing via UI", () => {
     await expect(page.locator("#issue-exp")).toHaveValue("720h");
     // One row per top-level claim of the German PID, aka_vcts included: it
     // is what says the credential is also a urn:eudi:pid:1.
-    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(15);
+    await expect(page.locator("#issue-claim-rows .claim-row")).toHaveCount(14);
     const keys = await page
       .locator("#issue-claim-rows .claim-row input[id^=issue-claim-key]")
       .evaluateAll((inputs) => inputs.map((i) => i.value));
     expect(keys.sort()).toEqual([
+      "academic_title",
       "address",
       "age_equal_or_over",
       "aka_vcts",
-      "also_known_as",
       "birth_name",
       "birthdate",
-      "date_of_expiry",
       "family_name",
       "given_name",
       "issuing_authority",
       "issuing_country",
       "nationalities",
       "place_of_birth",
+      "raw_eid_birth_date",
       "source_document_type",
-      "title",
     ]);
 
     await page.locator("#issue-cancel").click();
