@@ -285,6 +285,8 @@ curl -H 'Accept: application/statuslist+cwt' http://localhost:8085/api/statuslis
 
 Reading a list works for both forms too. When the wallet or `eudi validate` resolves a credential's status reference, it asks for both media types and parses whichever comes back, so an mdoc ecosystem serving CWT lists is resolvable.
 
+`GET /api/crl` serves the certificate revocation list of the wallet CA as a DER CRL (`application/pkix-crl`). The CRL distribution points of generated document signer certificates name this URL (ISO/IEC 18013-5 Table B.3). The list is empty (credential revocation runs over the status list, not certificate revocation) and carries a fresh signature with a week of validity.
+
 ### Deferred issuance
 
 An issuer that cannot hand over a credential immediately answers the credential request with a transaction id, and the wallet keeps collecting it in the background. These endpoints are what `wallet deferred` drives:

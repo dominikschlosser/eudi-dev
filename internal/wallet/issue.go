@@ -305,7 +305,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 			return nil, err
 		}
 	} else {
-		certChain, err = w.SigningCertChainForIssuedAttestation(spec)
+		certChain, err = w.SigningCertChainForIssuedCredential(spec, claims)
 		if err != nil {
 			return nil, err
 		}

@@ -185,6 +185,7 @@ func (s *Server) setupRoutes() {
 
 	// API: status list
 	s.mux.HandleFunc("GET /api/statuslist", s.withFreshStore(s.handleStatusList))
+	s.mux.HandleFunc("GET /api/crl", s.withFreshStore(s.handleCRL))
 	s.mux.HandleFunc("GET /api/credentials/{id}/status", s.withFreshStore(s.handleGetCredentialStatus))
 	s.mux.HandleFunc("POST /api/credentials/{id}/status", s.withFreshStore(s.handleSetCredentialStatus))
 

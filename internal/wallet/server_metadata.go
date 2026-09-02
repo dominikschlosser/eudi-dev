@@ -18,10 +18,13 @@
 package wallet
 
 import (
+	"crypto/rand"
 	"crypto/x509"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
 )
@@ -248,6 +251,35 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", statuslist.MediaTypeJWT)
 	w.Write([]byte(jwt))
+}
+
+// handleCRL serves the certificate revocation list of the wallet CA, the URL
+// the CRL distribution points of generated signing certificates name
+// (ISO/IEC 18013-5 Table B.3). Certificate-level revocation never happens
+// here (credential revocation runs over the status list), so the list is
+// empty and states that with a fresh signature.
+func (s *Server) handleCRL(w http.ResponseWriter, r *http.Request) {
+	s.wallet.mu.RLock()
+	caKey := s.wallet.CAKey
+	chain := append([]*x509.Certificate(nil), s.wallet.CertChain...)
+	s.wallet.mu.RUnlock()
+	if caKey == nil || len(chain) == 0 {
+		http.Error(w, "wallet has no CA certificate", http.StatusInternalServerError)
+		return
+	}
+	caCert := chain[len(chain)-1]
+	now := time.Now()
+	der, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{
+		Number:     big.NewInt(now.Unix()),
+		ThisUpdate: now,
+		NextUpdate: now.Add(7 * 24 * time.Hour),
+	}, caCert, caKey)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("generating certificate revocation list: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/pkix-crl")
+	w.Write(der)
 }
 
 func matchesRegistrarQuery(record RegistrarDataset, r *http.Request) bool {

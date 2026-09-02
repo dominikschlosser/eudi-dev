@@ -35,11 +35,20 @@ func (w *Wallet) SigningCertChainForIssuedAttestation(spec IssuedAttestationSpec
 	return w.SigningCertChainForProfile(trustListProfileFromSpec(spec))
 }
 
+// SigningCertChainForIssuedCredential returns the signing certificate chain
+// for one credential being issued. The leaf's subject countryName follows the
+// credential's issuing_country claim, which ISO/IEC 18013-5 Table B.3 requires
+// them to share.
+func (w *Wallet) SigningCertChainForIssuedCredential(spec IssuedAttestationSpec, claims map[string]any) ([]*x509.Certificate, error) {
+	_, chain, err := w.signingMaterialForProfile(trustListProfileFromSpec(spec), IssuingCountryFromClaims(claims))
+	return chain, err
+}
+
 // SigningMaterialForIssuedAttestation returns the signing key together with
 // the chain for one issued-attestation profile, read as one for the same
 // reason DefaultSigningMaterial does.
 func (w *Wallet) SigningMaterialForIssuedAttestation(spec IssuedAttestationSpec) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.signingMaterialForProfile(trustListProfileFromSpec(spec))
+	return w.signingMaterialForProfile(trustListProfileFromSpec(spec), "")
 }
 
 // SigningCertChainForGroup returns the signing certificate chain for one trust-list group.
@@ -49,8 +58,18 @@ func (w *Wallet) SigningCertChainForGroup(group TrustListGroup) ([]*x509.Certifi
 
 // SigningCertChainForProfile returns a signing certificate chain for the given trust-list profile.
 func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.Certificate, error) {
-	_, chain, err := w.signingMaterialForProfile(profile)
+	_, chain, err := w.signingMaterialForProfile(profile, "")
 	return chain, err
+}
+
+// IssuingCountryFromClaims returns the credential's issuing_country claim when
+// it carries a usable ISO 3166-1 alpha-2 value.
+func IssuingCountryFromClaims(claims map[string]any) string {
+	country, _ := claims["issuing_country"].(string)
+	if len(country) == 2 && country == strings.ToUpper(country) {
+		return country
+	}
+	return ""
 }
 
 // signingMaterialForProfile returns the signing key together with a chain
@@ -58,7 +77,7 @@ func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.C
 // lock: the demo reset replaces the CA key and the chain while requests are
 // in flight, and a leaf signed with one against a CA from the other chains to
 // nothing.
-func (w *Wallet) signingMaterialForProfile(profile trustListProfile) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	if w == nil {
 		return nil, nil, fmt.Errorf("wallet has no issuer certificate chain")
 	}
@@ -72,8 +91,10 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile) (*ecdsa.Pri
 	}
 	caCert := chain[len(chain)-1]
 	opts := mock.LeafCertOptions{
-		CommonName:   signingLeafCommonName(profile),
-		SerialNumber: signingLeafSerial(profile),
+		CommonName:            signingLeafCommonName(profile),
+		SerialNumber:          signingLeafSerial(profile),
+		Country:               country,
+		CRLDistributionPoints: crlDistributionPoints(w.IssuerURL),
 	}
 	opts.DNSNames, opts.IPAddresses, opts.URIs = issuerSubjectAltNames(w.IssuerURL)
 	leafCert, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, opts)
@@ -81,6 +102,17 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile) (*ecdsa.Pri
 		return nil, nil, fmt.Errorf("generating signing leaf certificate: %w", err)
 	}
 	return issuerKey, []*x509.Certificate{leafCert, caCert}, nil
+}
+
+// crlDistributionPoints names the wallet's CRL endpoint for a signing leaf.
+// ISO/IEC 18013-5 Table B.3 requires a distribution point URI on document
+// signer certificates.
+func crlDistributionPoints(issuerURL string) []string {
+	issuer := strings.TrimRight(strings.TrimSpace(issuerURL), "/")
+	if issuer == "" {
+		return nil
+	}
+	return []string{issuer + "/api/crl"}
 }
 
 // TrustAnchorCertificate returns the wallet CA certificate, read under the
@@ -124,7 +156,7 @@ func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificat
 		}
 		return issuerKey, chain, nil
 	}
-	return w.signingMaterialForProfile(group.Profile)
+	return w.signingMaterialForProfile(group.Profile, "")
 }
 
 // issuerSubjectAltNames are the subject alternative names a signing leaf
