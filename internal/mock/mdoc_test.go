@@ -49,18 +49,15 @@ func TestGenerateMDOC_DefaultClaims(t *testing.T) {
 		t.Fatal("empty output")
 	}
 
-	// Parse with existing parser
 	doc, err := mdoc.Parse(result)
 	if err != nil {
 		t.Fatalf("mdoc.Parse: %v", err)
 	}
 
-	// Check DocType
 	if doc.DocType != "eu.europa.ec.eudi.pid.1" {
 		t.Errorf("expected docType eu.europa.ec.eudi.pid.1, got %s", doc.DocType)
 	}
 
-	// Check namespace claims
 	ns, ok := doc.NameSpaces["eu.europa.ec.eudi.pid.1"]
 	if !ok {
 		t.Fatal("missing namespace eu.europa.ec.eudi.pid.1")
@@ -70,7 +67,6 @@ func TestGenerateMDOC_DefaultClaims(t *testing.T) {
 		t.Errorf("expected %d claims, got %d", len(DefaultClaims), len(ns))
 	}
 
-	// Check claim names are present
 	claimNames := make(map[string]bool)
 	for _, item := range ns {
 		claimNames[item.ElementIdentifier] = true
@@ -81,7 +77,6 @@ func TestGenerateMDOC_DefaultClaims(t *testing.T) {
 		}
 	}
 
-	// Check MSO
 	if doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		t.Fatal("missing IssuerAuth/MSO")
 	}
@@ -92,7 +87,6 @@ func TestGenerateMDOC_DefaultClaims(t *testing.T) {
 		t.Errorf("expected digest alg SHA-256, got %s", doc.IssuerAuth.MSO.DigestAlgorithm)
 	}
 
-	// Verify COSE signature
 	verifyResult := mdoc.Verify(doc, &key.PublicKey)
 	if !verifyResult.SignatureValid {
 		t.Errorf("COSE signature verification failed: %v", verifyResult.Errors)
@@ -267,7 +261,6 @@ func TestGenerateMDOC_ValidityInfo(t *testing.T) {
 	}
 	if vi.ValidFrom != nil && vi.ValidUntil != nil {
 		diff := vi.ValidUntil.Sub(*vi.ValidFrom)
-		// Should be ~30 days (default)
 		if diff.Hours() < 29*24 || diff.Hours() > 31*24 {
 			t.Errorf("expected ~30 days validity, got %v", diff)
 		}
@@ -472,9 +465,8 @@ func TestGenerateMDOC_WithValidFrom(t *testing.T) {
 }
 
 // ISO 18013-5 encodes dates as tagged CBOR: full-date (1004) for a calendar
-// day, tdate (0) for a timestamp. Real PIDs do it, so the credentials this
-// wallet issues have to as well, or a verifier that type-checks the element
-// sees a plain text string where it expects a date.
+// day, tdate (0) for a timestamp. A verifier that type-checks the element
+// sees a plain text string otherwise.
 func TestGenerateMDOC_DatesAreTagged(t *testing.T) {
 	key, _ := GenerateKey()
 
@@ -539,7 +531,6 @@ func TestGenerateMDOC_DatesAreTagged(t *testing.T) {
 	if got := tags["expiry_date"]; got != 0 {
 		t.Errorf("expiry_date should be tagged tdate (0), got tag %d", got)
 	}
-	// Everything that is not a date stays exactly as it was.
 	for _, name := range []string{"family_name", "document_ref", "not_a_date_at", "age_over_18", "nationality"} {
 		if tag, ok := tags[name]; ok {
 			t.Errorf("%s must not be tagged as a date, got tag %d", name, tag)
@@ -570,7 +561,7 @@ func TestGenerateMDOC_DatesAreTagged(t *testing.T) {
 // TestGenerateMDOC_X5ChainOmitsTheRoot covers what the issuer signature
 // carries. A reader takes the trust anchor from its trust list, so a chain
 // that carries its own root proves nothing and only makes the credential
-// larger. Every other credential this toolkit signs already omits it.
+// larger.
 func TestGenerateMDOC_X5ChainOmitsTheRoot(t *testing.T) {
 	caKey, err := GenerateKey()
 	if err != nil {

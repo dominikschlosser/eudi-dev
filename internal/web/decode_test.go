@@ -205,7 +205,6 @@ func TestDecode_JWTResultHasNoDisclosures(t *testing.T) {
 		t.Fatalf("Decode() error: %v", err)
 	}
 
-	// JWT results should not have disclosures or resolvedClaims keys
 	if _, ok := result["disclosures"]; ok {
 		t.Error("JWT result should not have disclosures")
 	}

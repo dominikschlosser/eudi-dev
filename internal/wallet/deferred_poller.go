@@ -26,20 +26,18 @@ import (
 // backgroundTask is one job the wallet does on its own, without a caller
 // waiting for it: collecting a deferred credential, renewing a certificate.
 type backgroundTask struct {
-	// name appears in the log when the task fails, so a wallet that stops
-	// doing something says which something.
+	// name appears in the log when the task fails.
 	name string
 	// every is how often the task is worth considering. The task itself
 	// decides whether there is anything to do.
 	every time.Duration
 	// run reports whether the task got its work done. A task that fails is
-	// tried again on the next tick rather than waiting out its interval,
-	// because the usual cause is something transient.
+	// tried again on the next tick rather than after its interval.
 	run func(now time.Time) error
 }
 
-// backgroundTick is how often the loop wakes. It is the resolution of every
-// task's schedule, not a rate: a task due hourly is considered once an hour.
+// backgroundTick is how often the loop wakes, the resolution of every task's
+// schedule.
 const backgroundTick = time.Second
 
 func (s *Server) backgroundTasks() []backgroundTask {
@@ -51,9 +49,7 @@ func (s *Server) backgroundTasks() []backgroundTask {
 }
 
 // StartBackgroundTasks runs the wallet's own work on one loop and returns a
-// function that stops it. One loop rather than a goroutine per job: they all
-// reduce to "is anything due" and touch the same wallet. Each task carries its
-// own interval rather than throttling itself inside its body.
+// function that stops it. Each task carries its own interval.
 func (s *Server) StartBackgroundTasks() func() {
 	done := make(chan struct{})
 	tasks := s.backgroundTasks()
@@ -84,7 +80,7 @@ func (s *Server) StartBackgroundTasks() func() {
 							tasks[i].name, state[i].failures, maxTaskFailures, err)
 						if state[i].failures >= maxTaskFailures {
 							state[i].abandoned = true
-							s.log("  ERROR: giving up on the %s task after %d failures; restart the wallet to run it again",
+							s.log("  ERROR: giving up on the %s task after %d failures (restart the wallet to run it again)",
 								tasks[i].name, state[i].failures)
 						}
 						continue
@@ -102,19 +98,15 @@ type taskState struct {
 	lastRun  time.Time
 	failures int
 	// abandoned marks a task that failed too often to keep trying. The others
-	// carry on: one broken job must not take the rest of the wallet's own work
-	// with it.
+	// carry on.
 	abandoned bool
 }
 
-// maxTaskFailures bounds retrying. A task that has failed this many times in a
-// row is not going to start working on the next tick, and repeating it forever
-// buries the reason in a log nobody reads to the end.
+// maxTaskFailures bounds retrying a task that fails on every tick.
 const maxTaskFailures = 5
 
-// runBackgroundTask isolates one run. A panic in one task must not take the
-// loop down with it: the wallet would go on serving requests while quietly
-// doing none of its own work, which is the failure that is hardest to notice.
+// runBackgroundTask isolates one run so a panic in one task does not take the
+// loop down.
 func (s *Server) runBackgroundTask(task backgroundTask, now time.Time) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -125,13 +117,10 @@ func (s *Server) runBackgroundTask(task backgroundTask, now time.Time) (err erro
 }
 
 // certificateCheckInterval is how often the signing certificate is checked
-// against its expiry. Leaves last a year, so this only has to be often enough
-// that a wallet left running notices before the day arrives.
+// against its expiry. Leaves last a year.
 const certificateCheckInterval = time.Hour
 
-// renewSigningCertificate re-issues the signing leaf as it approaches
-// expiry. A hosted wallet runs for months and nobody watches its certificate:
-// an expired leaf keeps issuing credentials that quietly stop verifying.
+// renewSigningCertificate re-issues the signing leaf as it approaches expiry.
 func (s *Server) renewSigningCertificate(now time.Time) error {
 	s.renewIssuerTLSCertificateIfNeeded(now)
 	renewed, err := s.wallet.RefreshSigningCertificateIfExpiring(now)
@@ -146,7 +135,7 @@ func (s *Server) renewSigningCertificate(now time.Time) error {
 	return nil
 }
 
-// collectDueDeferredCredentials makes one attempt for every pending issuance
+// collectDueDeferredCredentials makes one attempt for every deferred issuance
 // whose next attempt is due.
 func (s *Server) collectDueDeferredCredentials(now time.Time) error {
 	for _, pending := range s.wallet.DeferredIssuanceList() {
@@ -159,8 +148,8 @@ func (s *Server) collectDueDeferredCredentials(now time.Time) error {
 		}
 		s.attemptDeferredCollection(pending)
 	}
-	// Each record carries its own schedule and its own give-up rule, so a
-	// credential the issuer will not hand over is not a failure of the sweep.
+	// Each record carries its own schedule and give-up rule, so one issuer's
+	// refusal does not fail the sweep.
 	return nil
 }
 
@@ -185,9 +174,8 @@ type DeferredAttempt struct {
 // something that will not improve by asking again.
 func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAttempt {
 	if !s.beginDeferredCollection(pending.ID) {
-		// Another collection for this record is already running. Letting a
-		// second one through would ask the issuer twice and import the
-		// credential twice, since ImportCredential dedupes by fresh UUID.
+		// Another collection for this record is already running. A second one
+		// would ask the issuer twice and import the credential twice.
 		return DeferredAttempt{Pending: true, Reason: "a collection for this credential is already in progress"}
 	}
 	defer s.endDeferredCollection(pending.ID)
@@ -201,9 +189,8 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		dpopKey = s.wallet.HolderKeyPair()
 	}
 
-	// The access token was issued for the credential request and outlives it
-	// by minutes, while the issuer may ask the wallet back in an hour. Ask for
-	// a new one before spending the attempt on a request the issuer refuses.
+	// The access token outlives the credential request by minutes, while the
+	// issuer may ask the wallet back in an hour.
 	if pending.AccessTokenExpired(time.Now()) && pending.CanRefresh() {
 		refreshed, err := s.refreshDeferredAccessToken(pending, dpopKey)
 		if err != nil {
@@ -213,12 +200,11 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	}
 
 	// §9.1 holds a Deferred Credential Request to the same encryption as the
-	// request that started the issuance, so the metadata is read again here:
-	// the flow that knew it is gone by the time the poller runs. Metadata that
-	// cannot be reached leaves the request unencrypted rather than costing the
-	// credential, since the next poll is minutes away.
-	// Snapshot the validation mode once: this runs on the poller goroutine,
-	// which can race a local PUT /api/config/conformance.
+	// request that started the issuance, so the metadata is read again here
+	// (the flow that knew it is gone by the time the poller runs). Metadata
+	// that cannot be reached leaves the request unencrypted.
+	// The validation mode is read once: this runs on the poller goroutine,
+	// which can race a PUT /api/config/conformance.
 	mode := s.wallet.Mode()
 	metadata, metadataErr := fetchIssuerMetadata(pending.Issuer)
 	if metadataErr != nil {
@@ -230,16 +216,15 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	}
 
 	// One request per turn: the schedule lives here, so the request must not
-	// wait on its own or two things would be pacing the same issuer.
+	// wait on its own.
 	nonce := ""
 	credResp, err := deferredCredentialAttempt(
 		mode, metadata,
 		pending.DeferredEndpoint, pending.AccessToken, pending.AuthScheme,
 		pending.TransactionID, responseEncryption, dpopKey, s.wallet.HolderKeyPair(), &nonce)
 
-	// An issuer that refuses the authorization may simply have expired the
-	// token earlier than it said. One renewal and one retry is worth it before
-	// giving up on a credential the wallet is owed.
+	// An issuer that refuses the authorization may have expired the token
+	// earlier than it said, so one renewal and one retry precede giving up.
 	if err != nil && isAuthorizationRejected(err) && pending.CanRefresh() {
 		refreshed, refreshErr := s.refreshDeferredAccessToken(pending, dpopKey)
 		if refreshErr == nil {
@@ -264,10 +249,9 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))
 	}
-	// The display was resolved at offer time and carried on the record. If it
-	// came back empty then, resolve it again from the metadata fetched for this
-	// collection, so a credential whose display failed to resolve earlier is not
-	// left blank for good.
+	// The display was resolved at offer time and carried on the record. When
+	// it came back empty then, it is resolved again from the metadata fetched
+	// for this collection.
 	display := pending.Display
 	if display == nil && metadata != nil {
 		display = s.wallet.resolveCredentialDisplay(metadata, pending.ConfigurationID)
@@ -294,8 +278,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 }
 
 // handleDeferredAttemptError decides what a failed attempt means. Being told
-// to wait longer reschedules. Anything else ends it, because a rejected token
-// or an unknown transaction will not recover on a timer.
+// to wait longer or a transient error reschedules. Anything else ends it.
 func (s *Server) handleDeferredAttemptError(pending DeferredIssuance, err error) DeferredAttempt {
 	var stillPending stillPendingError
 	if errors.As(err, &stillPending) {
@@ -318,8 +301,7 @@ func isAuthorizationRejected(err error) bool {
 
 // isRetryableDeferredError reports whether an error is worth another attempt: a
 // network hiccup or server fault is, a refused token or unknown transaction is
-// not. A long deferral runs into the second case, since the access token
-// expires in minutes while the issuer may ask the wallet back in an hour.
+// not.
 func isRetryableDeferredError(err error) bool {
 	message := err.Error()
 	for _, fatal := range []string{
@@ -430,7 +412,7 @@ func (s *Server) AbandonDeferredNow(id string) (DeferredIssuance, bool) {
 	return DeferredIssuance{}, false
 }
 
-// persistWallet saves the wallet, so a pending issuance and its schedule
+// persistWallet saves the wallet, so a deferred issuance and its schedule
 // survive a restart.
 func (s *Server) persistWallet() {
 	if s.onSave != nil {
@@ -439,8 +421,7 @@ func (s *Server) persistWallet() {
 }
 
 // refreshDeferredAccessToken exchanges the stored refresh token for a new
-// access token and records it, so the next collection uses an authorization
-// the issuer still accepts.
+// access token and records it on the deferred issuance.
 func (s *Server) refreshDeferredAccessToken(pending DeferredIssuance, dpopKey *ecdsa.PrivateKey) (DeferredIssuance, error) {
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")

@@ -200,12 +200,12 @@ func TestForceClientAttestation_ReachesSilentIssuer(t *testing.T) {
 	}
 }
 
-// TestHAIPDebugAttestsSilentIssuer is the Animo playground case: a HAIP wallet
-// in debug mode (the public demo) against an issuer that requires client
-// attestation without advertising the method (§10.1 makes advertising a
-// SHOULD). The wallet attests anyway, so the credential is issued, and warns
-// about the missing advertisement. This is the same "silent" issuer that a
-// non-HAIP wallet needs --client-attestation to reach.
+// TestHAIPDebugAttestsSilentIssuer covers a HAIP wallet in debug mode (the
+// public demo) against an issuer that requires client attestation without
+// advertising the method (§10.1 makes advertising a SHOULD). The wallet
+// attests anyway, so the credential is issued, and warns about the missing
+// advertisement. A non-HAIP wallet needs --client-attestation to reach the
+// same issuer.
 func TestHAIPDebugAttestsSilentIssuer(t *testing.T) {
 	w := generateTestWallet(t)
 	w.RequireHAIP = true
@@ -249,7 +249,7 @@ func TestForceClientAttestation_DoesNotDisplacePrivateKeyJWT(t *testing.T) {
 		t.Fatalf("detected %q, want private_key_jwt", method)
 	}
 	// attestsClient is true under the override, so the authorization code path
-	// guards on the detected method as well. This documents that pairing.
+	// guards on the detected method as well.
 	if !w.attestsClient(meta) {
 		t.Error("override should make attestsClient true even for private_key_jwt metadata")
 	}

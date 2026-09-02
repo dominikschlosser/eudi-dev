@@ -30,14 +30,13 @@ import (
 
 // createMDocPresentation creates an mDoc DeviceResponse with selected data
 // elements. mdocNonce is the generated nonce of the response this document
-// belongs to; empty means this document is the response and generates its
+// belongs to. Empty means this document is the response and generates its
 // own.
 func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string, signingKey *ecdsa.PrivateKey) (VPTokenResult, error) {
-	// ISO 18013-5 §9.1.2.4 makes the MSO deviceKey mandatory, so an mdoc that
-	// names none cannot be presented: its DeviceSigned binds to a key the MSO
-	// never vouched for. The wallet builds the response anyway and lets the
-	// verifier's refusal be the finding ([ADR-0001]), but warns so the
-	// deviation is not silent.
+	// ISO 18013-5 §9.1.2.4 makes the MSO deviceKey mandatory. Without one the
+	// DeviceSigned binds to a key the MSO never vouched for. The wallet builds
+	// the response anyway and warns, letting the verifier's refusal be the
+	// finding ([ADR-0001]).
 	//
 	// [ADR-0001]: docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md
 	if !credentialHolderBinding(cred.Raw).Bound {
@@ -51,13 +50,11 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		log.Printf("[VP] WARNING: %s", detail)
 	}
 
-	// Build set of selected namespace:element pairs
 	selected := make(map[string]bool, len(selectedKeys))
 	for _, k := range selectedKeys {
 		selected[k] = true
 	}
 
-	// Parse the raw credential to get the IssuerSigned structure
 	rawBytes, err := format.DecodeHexOrBase64URL(cred.Raw)
 	if err != nil {
 		return VPTokenResult{}, fmt.Errorf("decoding mDoc: %w", err)
@@ -68,12 +65,10 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		return VPTokenResult{}, fmt.Errorf("parsing IssuerSigned CBOR: %w", err)
 	}
 
-	// Filter namespaces to only include selected data elements. Each item's
-	// RawCBOR is the exact Tag-24 the issuer signed and the MSO digest covers,
-	// so a selected element goes out byte for byte. Taking it from the parsed
-	// item, not from the raw array by position, keeps them aligned: the parser
+	// Each item's RawCBOR is the exact Tag-24 the issuer signed and the MSO
+	// digest covers, so a selected element goes out byte for byte. The parser
 	// skips unparseable items and drops repeated element identifiers, so the raw
-	// array can be shorter or reordered.
+	// array cannot be indexed by position.
 	filteredNS := make(map[string][]cbor.RawMessage)
 	for ns, items := range cred.NameSpaces {
 		var filtered []cbor.RawMessage
@@ -89,7 +84,6 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 
 	docType := cred.DocType
 
-	// Build session transcript based on mode
 	mode := w.SessionTranscript
 	if mode == "" {
 		mode = SessionTranscriptOID4VP
@@ -114,7 +108,6 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		return VPTokenResult{}, fmt.Errorf("building SessionTranscript: %w", err)
 	}
 
-	// Create DeviceAuth using COSE_Sign1
 	deviceAuthBytes, err := w.createDeviceAuth(sessionTranscriptBytes, docType, signingKey)
 	if err != nil {
 		return VPTokenResult{}, fmt.Errorf("creating DeviceAuth: %w", err)
@@ -125,7 +118,6 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 		return VPTokenResult{}, fmt.Errorf("encoding DeviceNameSpaces: %w", err)
 	}
 
-	// Build Document structure
 	document := map[string]any{
 		"docType": docType,
 		"issuerSigned": map[string]any{
@@ -186,7 +178,7 @@ func (w *Wallet) buildSessionTranscript(params PresentationParams, mdocNonce str
 
 	mode := w.SessionTranscript
 	if mode == "" {
-		mode = SessionTranscriptOID4VP // default
+		mode = SessionTranscriptOID4VP
 	}
 
 	switch mode {
@@ -331,7 +323,6 @@ func (w *Wallet) createDeviceAuth(sessionTranscriptBytes []byte, docType string,
 		return nil, fmt.Errorf("creating COSE signer: %w", err)
 	}
 
-	// Decode sessionTranscriptBytes back to structured CBOR value
 	var sessionTranscript cbor.RawMessage = sessionTranscriptBytes
 
 	deviceNamespacesBytes, err := emptyDeviceNamespacesBytes()
@@ -352,7 +343,6 @@ func (w *Wallet) createDeviceAuth(sessionTranscriptBytes []byte, docType string,
 		return nil, fmt.Errorf("encoding DeviceAuthentication: %w", err)
 	}
 
-	// Wrap in Tag 24
 	tag24Payload, err := cbor.Marshal(cbor.Tag{Number: 24, Content: deviceAuthBytes})
 	if err != nil {
 		return nil, fmt.Errorf("encoding Tag24(DeviceAuthentication): %w", err)

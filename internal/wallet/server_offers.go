@@ -101,8 +101,8 @@ func (s *Server) lookupPendingOffer(id string) *pendingOffer {
 // are, the issuer redirects to /callback, and it resumes there. Nothing here
 // opens a browser, which on a hosted wallet would reach nobody.
 func (s *Server) runOffer(uri string, logDetails map[string]any, opts OfferOptions) (*IssuanceResult, *pendingOffer, error) {
-	// Subscribing on the caller's behalf is what makes the wallet hand over
-	// the URL instead of failing for want of anyone to show it to.
+	// A subscriber is what makes the wallet hand over the sign-in URL rather
+	// than fail the flow.
 	authCh, unsubscribe := s.wallet.SubscribeAuthorization()
 	p := &pendingOffer{ID: newConsentID(), CreatedAt: time.Now()}
 	done := make(chan struct{})
@@ -149,9 +149,8 @@ func (s *Server) applyOfferOutcome(uri, owner string, result *IssuanceResult, er
 
 	if result.Pending {
 		s.log("  Deferred:      %s will be collected every %s", result.Issuer, result.RetryInterval)
-		// The poller reads the same wallet the offer recorded the deferral on, so
-		// persisting it is all that stands between here and the poller collecting
-		// the credential.
+		// The poller reads the wallet the deferral was recorded on, so it is
+		// persisted here.
 		s.persistWallet()
 		return
 	}
@@ -251,10 +250,8 @@ func (s *Server) handleOfferAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A new request makes any earlier failure stale. The stored error outlives
-	// the flow it came from (the endpoint that reads it only peeks), so without
-	// this the wallet page shows the previous failure while this request is
-	// still being registered, and swaps it for the consent dialog a moment
-	// later.
+	// its flow (the endpoint that reads it only peeks), so the wallet page
+	// would show the previous failure until the consent dialog replaces it.
 	s.wallet.ClearLastError(callerOwners(r))
 
 	if body.Interactive {
@@ -291,7 +288,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session str
 			return
 		}
 
-		s.log("  Mode:          interactive — waiting for consent...")
+		s.log("  Mode:          interactive (waiting for consent)")
 		s.wallet.CreateConsentRequest(consentReq)
 		s.triggerUIRequest(consentReq.ID)
 		if s.onConsentRequest != nil {
@@ -378,9 +375,8 @@ func (s *Server) awaitOfferConsent(w http.ResponseWriter, consentReq *ConsentReq
 	case consent := <-consentReq.ResultCh:
 		handle(consent)
 	case <-time.After(config.ConsentTimeout):
-		// The timer races an arriving decision, and the request's status is
-		// the referee: a decision that already resolved the request is
-		// honored, only a request still pending times out.
+		// The timer races an arriving decision. A decision that already
+		// resolved the request wins, only a request still pending times out.
 		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return
@@ -438,7 +434,7 @@ func (w *Wallet) prepareIssuanceConsentRequest(raw, owner string) (*ConsentReque
 
 	// The offer is resolved now, by reference as well as by value, so the
 	// dialog can say what is being offered. It is fetched again after
-	// approval, which the specification allows and real wallets do.
+	// approval, which the specification allows.
 	reqType, parsed, err := oid4vc.Parse(trimmed)
 	if err != nil {
 		// An offer that cannot be resolved is still worth asking about: name

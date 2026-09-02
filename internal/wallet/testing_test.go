@@ -31,7 +31,6 @@ import (
 func TestNextErrorOverride_ConsumedAfterUse(t *testing.T) {
 	srv := newTestServer(t, true) // auto-accept
 
-	// Set the override
 	rec := serverRequest(t, srv, "POST", "/api/next-error",
 		`{"error":"access_denied","error_description":"testing"}`)
 	if rec.Code != http.StatusOK {
@@ -92,14 +91,12 @@ func TestNextErrorOverride_ConsumedAfterUse(t *testing.T) {
 func TestNextErrorOverride_ClearWithoutConsuming(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Set the override
 	rec := serverRequest(t, srv, "POST", "/api/next-error",
 		`{"error":"access_denied","error_description":"testing"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	// Clear it via DELETE
 	delRec := serverRequest(t, srv, "DELETE", "/api/next-error", "")
 	if delRec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", delRec.Code)
@@ -229,7 +226,6 @@ func TestPreferredFormat_MDocPreferred(t *testing.T) {
 	if len(vpTokenKeys) != 1 {
 		t.Fatalf("expected 1 vp_token_key, got %d", len(vpTokenKeys))
 	}
-	// Should have selected the mDoc query ID
 	if vpTokenKeys[0] != "pid_mdoc" {
 		t.Errorf("expected vp_token_key 'pid_mdoc', got %v", vpTokenKeys[0])
 	}
@@ -269,15 +265,13 @@ func TestPreferredFormat_NoPreference(t *testing.T) {
 		t.Fatalf("expected status 'submitted', got %v", result["status"])
 	}
 
-	// With no preference and credential_sets selecting first match,
-	// both credentials may match. Behavior depends on iteration order
-	// Just verify it works without error
+	// With no preference, credential_sets takes the first match in iteration
+	// order, so either credential may be presented.
 }
 
 func TestPreferredFormat_API(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Set preferred format via API
 	rec := serverRequest(t, srv, "PUT", "/api/config/preferred-format",
 		`{"format":"dc+sd-jwt"}`)
 	if rec.Code != http.StatusOK {
@@ -293,7 +287,6 @@ func TestPreferredFormat_API(t *testing.T) {
 		t.Errorf("expected wallet PreferredFormat 'dc+sd-jwt', got %s", srv.wallet.PreferredFormat)
 	}
 
-	// Clear it
 	rec2 := serverRequest(t, srv, "PUT", "/api/config/preferred-format",
 		`{"format":""}`)
 	if rec2.Code != http.StatusOK {

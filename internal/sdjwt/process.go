@@ -37,7 +37,7 @@ type processor struct {
 // processPayload applies RFC 9901 §7.1 steps 3 to 5 and returns the Processed
 // SD-JWT Payload with the deviations it found. A condition the specification
 // marks MUST-reject is recorded as a deviation and the payload resolved around
-// it, so lenient parsing stays usable; Parse turns any deviation into the
+// it, so lenient parsing stays usable. Parse turns any deviation into the
 // rejection §7.1 requires.
 func processPayload(payload map[string]any, disclosures []Disclosure) (map[string]any, []string, error) {
 	p := &processor{
@@ -61,8 +61,8 @@ func processPayload(payload map[string]any, disclosures []Disclosure) (map[strin
 
 	// Step 5: "If any Disclosure was not referenced by digest value in the
 	// Issuer-signed JWT (directly or recursively via other Disclosures), the
-	// SD-JWT MUST be rejected." An unreferenced disclosure is simply never
-	// inserted, so it is ignored.
+	// SD-JWT MUST be rejected." An unreferenced disclosure is never inserted,
+	// so lenient parsing ignores it.
 	for i := range disclosures {
 		d := &disclosures[i]
 		if !p.used[d.Digest] {

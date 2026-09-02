@@ -490,7 +490,7 @@ func decodeJARMResponse(raw string, cekB64 string, jwkJSON string, decoded map[s
 			}
 		}
 
-		decoded["response_type"] = "JWE (encrypted — payload not readable without verifier's ephemeral private key)"
+		decoded["response_type"] = "JWE (encrypted, payload not readable without the verifier's ephemeral private key)"
 		return
 	}
 
@@ -704,8 +704,8 @@ func parseFormOrJSON(body string) map[string]string {
 	return result
 }
 
-// ExtractCorrelationKey returns the first correlation key for backward compatibility.
-// Prefer ExtractCorrelationKeys for flow grouping.
+// ExtractCorrelationKey returns the first of ExtractCorrelationKeys, which
+// is what flow grouping uses.
 func ExtractCorrelationKey(entry *TrafficEntry) string {
 	u, _ := url.Parse(entry.URL)
 

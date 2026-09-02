@@ -188,7 +188,7 @@ example_resolve_free_port() {
 
   for candidate in $(seq $((preferred_port + 1)) $((preferred_port + 50))); do
     if ! example_port_is_listening "${candidate}"; then
-      echo "${label} port ${preferred_port} is already in use; using ${candidate} instead." >&2
+      echo "${label} port ${preferred_port} is already in use, using ${candidate} instead." >&2
       printf '%s\n' "${candidate}"
       return 0
     fi

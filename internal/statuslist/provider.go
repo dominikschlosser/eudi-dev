@@ -28,8 +28,7 @@ import (
 
 // tokenLifetime is how long a generated Status List Token stays valid. The
 // checker rejects an expired token, so a Status Provider that regenerates on
-// every request (which this one does) still has to say when the copy a client
-// cached stops answering.
+// every request still has to say when a cached copy stops answering.
 const tokenLifetime = 24 * time.Hour
 
 // defaultTTL is the RECOMMENDED caching hint from Section 5.1, in seconds.
@@ -124,16 +123,13 @@ func GenerateStatusListJWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg S
 	// The public half of the signing key, so a relying party that resolves
 	// keys from the token itself can verify without a certificate path.
 	// Token Status List leaves key resolution to the deployment (§11.3) and
-	// requires only `typ` in the header (§5.1), and `jwk` is a registered
-	// JOSE header (RFC 7515 §4.1.3), so this is additive. It is derived from
-	// the signing key rather than passed in, which is what keeps it from
-	// ever disagreeing with the x5c leaf below.
+	// requires only `typ` in the header (§5.1). Deriving the key from the
+	// signing key keeps it consistent with the x5c leaf below.
 	header["jwk"] = mock.PublicKeyJWKMap(&signingKey.PublicKey)
 
 	// The trust anchor must not travel in x5c: a relying party has it out of
 	// band, and a chain that carries its own root proves nothing. HAIP 6.1
-	// rejects a status list token whose chain includes it, and the rest of
-	// this wallet already strips it from every other JWS it signs.
+	// rejects a status list token whose chain includes it.
 	if chain := mock.WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
 		x5c := make([]string, 0, len(chain))
 		for _, cert := range chain {

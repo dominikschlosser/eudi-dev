@@ -10,8 +10,7 @@ import (
 
 // A signing leaf names the issuer identifier in its subject alternative
 // names, so a verifier that asks for them accepts it. A verifier built
-// against SD-JWT VC draft-08 refuses a leaf without them, which is what the
-// Animo playground did.
+// against SD-JWT VC draft-08 refuses a leaf without them.
 func TestIssuedCredentialLeafNamesTheIssuer(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://eudi-test.dev"

@@ -52,16 +52,15 @@ services:
       - serve
       - --demo
       - --demo-reset
-      # Wall-clock schedule: the reset lands at the same local time every day
-      # instead of drifting with each container restart.
+      # Wall-clock schedule: the reset lands at the same local time every day.
       - 00:00 Europe/Berlin
       - --port
       - "8085"
       - --base-url
       - https://eudi-test.dev
       # Client identity for OID4VCI authorization-code offers. Both default
-      # to the wallet origin and its /callback; set explicitly so issuers
-      # that registered the demo see the same values every deployment.
+      # to the wallet origin and its /callback. They are set explicitly so
+      # issuers that registered the demo see the same values every deployment.
       - --vci-client-id
       - https://eudi-test.dev
       - --vci-redirect-uri
@@ -70,8 +69,8 @@ services:
       - --imprint-file
       - /config/imprint.html
     volumes:
-      # The parent directory, not just wallet/: the shared CA lives one
-      # level above the wallet directory and must survive restarts.
+      # The shared CA lives one level above the wallet directory and must
+      # survive restarts, so the parent directory is mounted.
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 

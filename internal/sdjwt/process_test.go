@@ -366,7 +366,7 @@ func TestParse_AcceptsCredentialWithoutDisclosures(t *testing.T) {
 }
 
 // RFC 9901 §7.1 step 3.c.i: "If no such Disclosure can be found, the digest
-// MUST be ignored", which is what makes decoy digests (§4.2.5) work.
+// MUST be ignored". That rule is what lets decoy digests (§4.2.5) work.
 func TestParse_IgnoresUnmatchedDigest(t *testing.T) {
 	_, decoy := disclosureOf(t, "salt", "role", "admin")
 	disc, digest := disclosureOf(t, "salt2", "given_name", "Erika")

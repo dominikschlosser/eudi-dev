@@ -38,8 +38,8 @@ type ValidateOpts struct {
 	CheckStatus  bool
 	// Offline runs only the checks that need no lookup at a counterparty.
 	// The status list fetch and the issuer metadata fetch are reported as
-	// skipped and marked NeedsNetwork instead, which is what lets the decoder
-	// show a credential before those answers are in.
+	// skipped and marked NeedsNetwork, so the decoder can show a credential
+	// before those answers are in.
 	Offline bool
 }
 
@@ -52,28 +52,18 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 
 	switch detected {
 	case format.FormatSDJWT:
-		// Inspect, not Parse: the decoder shows a credential a strict parser
-		// would reject, with each rule break recorded on the token as a
-		// deviation rather than turned into a blank page.
+		// Inspect records rule breaks on the token as deviations, so the
+		// decoder still shows a credential a strict parser would reject.
 		token, err := sdjwt.Inspect(input)
 		if err != nil {
 			return nil, fmt.Errorf("parsing SD-JWT: %w", err)
 		}
 		result := output.BuildSDJWTJSON(token)
 
-		// Type check
 		checks = append(checks, CheckSDJWTType(token))
-
-		// Expiry check
 		checks = append(checks, checkSDJWTExpiry(token))
-
-		// Integrity check
 		checks = append(checks, CheckSDJWTIntegrity(token))
-
-		// Signature check
 		checks = append(checks, checkSDJWTSignature(token, opts))
-
-		// Status check
 		checks = append(checks, checkSDJWTStatus(token, opts)...)
 
 		result["validation"] = map[string]any{
@@ -88,20 +78,13 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		}
 		result := output.BuildJWTJSON(token)
 
-		// Expiry check
 		checks = append(checks, checkSDJWTExpiry(token))
-
-		// Integrity. Not applicable for plain JWT
 		checks = append(checks, CheckResult{
 			Name:   "integrity",
 			Status: "skipped",
 			Detail: "Not applicable for plain JWT",
 		})
-
-		// Signature check
 		checks = append(checks, checkSDJWTSignature(token, opts))
-
-		// Status check. Not applicable for plain JWT
 		checks = append(checks, CheckResult{
 			Name:   "status",
 			Status: "skipped",
@@ -120,16 +103,9 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		}
 		result := output.BuildMDOCJSON(doc)
 
-		// Expiry check
 		checks = append(checks, checkMDOCExpiry(doc))
-
-		// Integrity check
 		checks = append(checks, CheckMDOCIntegrity(doc))
-
-		// Signature check
 		checks = append(checks, checkMDOCSignature(doc, opts))
-
-		// Status check
 		checks = append(checks, checkMDOCStatus(doc, opts)...)
 
 		result["validation"] = map[string]any{
@@ -416,7 +392,6 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 				}
 			}
 		}
-		// Offline check against the embedded x5chain leaf certificate.
 		if leafKey, err := validate.ExtractMDOCX5ChainLeafKey(doc); err == nil && leafKey != nil {
 			result := mdoc.Verify(doc, leafKey)
 			if result.SignatureValid {
@@ -439,7 +414,6 @@ func checkMDOCSignature(doc *mdoc.Document, opts ValidateOpts) CheckResult {
 		}
 	}
 
-	// Try x5chain validation first
 	if len(tlCerts) > 0 {
 		if x5cKey, err := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts); err == nil && x5cKey != nil {
 			result := mdoc.Verify(doc, x5cKey)
@@ -546,8 +520,7 @@ func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResul
 }
 
 // checkStatusRef reports the revocation status and, separately, whether the
-// status list's own signature could be trust-anchored. A credential can be
-// validly not-revoked while who vouches for that answer stays unconfirmed.
+// status list's own signature chains to a trust anchor.
 func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []CheckResult {
 	if ref == nil {
 		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status list reference in credential"}}
@@ -576,8 +549,6 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []C
 
 	status := CheckResult{Name: "status", Status: "pass", Detail: fmt.Sprintf("Valid (%s)", statusDetail)}
 
-	// The status list's own signature is a separate check: a pass when its key
-	// chains to a trust anchor, otherwise something that could not be checked.
 	sigDetail := result.SignatureInfo
 	if len(result.Warnings) > 0 {
 		sigDetail = strings.Join(result.Warnings, "; ")

@@ -35,7 +35,6 @@ func Parse(raw string) (RequestType, any, error) {
 func ParseWithOptions(raw string, opts ParseOptions) (RequestType, any, error) {
 	raw = strings.TrimSpace(raw)
 
-	// 1. URI scheme detection
 	if strings.HasPrefix(raw, "openid-credential-offer://") || strings.HasPrefix(raw, "haip-vci://") {
 		return parseVCIURI(raw)
 	}
@@ -43,17 +42,14 @@ func ParseWithOptions(raw string, opts ParseOptions) (RequestType, any, error) {
 		return parseVPURI(raw, opts)
 	}
 
-	// 2. HTTPS/HTTP URL
 	if strings.HasPrefix(raw, "https://") || strings.HasPrefix(raw, "http://") {
 		return parseHTTPURL(raw, opts)
 	}
 
-	// 3. JWT (3 dot-separated base64url parts)
 	if isJWT(raw) {
 		return parseJWTInput(raw)
 	}
 
-	// 4. JSON object
 	if strings.HasPrefix(raw, "{") {
 		return parseJSONInput(raw)
 	}
@@ -234,7 +230,6 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 		}
 	}
 
-	// Resolve request_uri (fetch and parse JWT)
 	if requestURI := q.Get("request_uri"); requestURI != "" {
 		req.RequestURI = requestURI
 		method := req.RequestURIMethod
@@ -322,7 +317,6 @@ func parseJWTInput(raw string) (RequestType, any, error) {
 		return 0, nil, fmt.Errorf("parsing JWT: %w", err)
 	}
 
-	// VCI: has credential_issuer
 	if _, ok := payload["credential_issuer"]; ok {
 		data, err := json.Marshal(payload)
 		if err != nil {
@@ -332,7 +326,6 @@ func parseJWTInput(raw string) (RequestType, any, error) {
 		return TypeVCI, offer, err
 	}
 
-	// VP: has client_id or response_type
 	if _, ok := payload["client_id"]; ok {
 		rt, req := buildVPFromJWT(raw, header, payload)
 		return rt, req, nil
@@ -356,7 +349,6 @@ func buildVPFromJWT(raw string, header, payload map[string]any) (RequestType, *A
 
 // parseJSONInput parses a raw JSON object and auto-detects VCI vs VP.
 func parseJSONInput(raw string) (RequestType, any, error) {
-	// VCI: has credential_issuer
 	var m map[string]any
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
 		return 0, nil, fmt.Errorf("parsing JSON: %w", err)

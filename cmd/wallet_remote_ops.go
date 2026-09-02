@@ -41,11 +41,9 @@ func docString(m map[string]any, key string) string {
 	return s
 }
 
-// docNumber reads a number out of a wallet document. The same document is
-// built by both backends, but one travels through JSON (where every number is
-// a float64) and the other is handed over in this process with its Go type
-// intact. Reading only float64 makes a listing disagree with itself depending
-// on which backend answered.
+// docNumber reads a number out of a wallet document. A document from a remote
+// instance travels through JSON (every number a float64), one from the local
+// store keeps its Go type.
 func docNumber(m map[string]any, key string) (float64, bool) {
 	switch v := m[key].(type) {
 	case float64:
@@ -209,8 +207,8 @@ func credDisplayDescription(cred map[string]any) string {
 }
 
 // credClaimCount is the subject-attribute count the server reports (the
-// protocol members left out), falling back to the full claim count for a
-// record from before the field existed.
+// protocol members left out), falling back to the full claim count when the
+// field is absent.
 func credClaimCount(cred map[string]any) int {
 	if n, ok := docNumber(cred, "claim_count"); ok {
 		return int(n)

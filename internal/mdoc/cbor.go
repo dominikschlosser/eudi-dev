@@ -24,14 +24,13 @@ import (
 var cborDecMode cbor.DecMode
 
 func init() {
-	// DecMode construction only fails for invalid option combinations.
-	// Our options are static and valid, so the error is unreachable.
+	// Decoding unsigned integers as signed keeps a CBOR integer key from
+	// arriving as uint64 in one document and int64 in the next.
 	var err error
 	cborDecMode, err = cbor.DecOptions{
 		IntDec: cbor.IntDecConvertSigned,
 	}.DecMode()
 	if err != nil {
-		// Use stderr + os.Exit instead of panic to avoid an unrecoverable stack trace.
 		fmt.Fprintf(os.Stderr, "cbor: failed to initialize decode mode: %v\n", err)
 		os.Exit(1)
 	}
@@ -41,7 +40,6 @@ func init() {
 func unmarshalTag24(data []byte) ([]byte, error) {
 	var raw cbor.RawTag
 	if err := cborDecMode.Unmarshal(data, &raw); err != nil {
-		// Maybe it's not tagged, try raw
 		return data, nil
 	}
 	if raw.Number != 24 {

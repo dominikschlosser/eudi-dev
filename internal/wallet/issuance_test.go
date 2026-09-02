@@ -744,9 +744,8 @@ func TestResolveTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T
 }
 
 // TestCreateProofJWT_OmitsEmptyNonce covers an issuer that provides no
-// c_nonce. The proof must leave the claim out: the OIDF suite's client
-// attestation challenge module rejects an empty one as a nonce that does not
-// match ("expected_nonce = null, actual_nonce = ”").
+// c_nonce. The proof must leave the claim out: an issuer that expects no nonce
+// rejects an empty string as a nonce that does not match.
 func TestCreateProofJWT_OmitsEmptyNonce(t *testing.T) {
 	key := testKey(t)
 

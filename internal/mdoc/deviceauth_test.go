@@ -194,8 +194,7 @@ func TestVerifyDeviceAuth(t *testing.T) {
 	}
 }
 
-// The whole point of signing over the session transcript: a response captured
-// from one request must not verify against another.
+// A response captured from one request must not verify against another.
 func TestVerifyDeviceAuthRejectsAReplayedResponse(t *testing.T) {
 	key := testKey(t)
 	doc := signedDoc(t, key, transcriptFor(t, "the original request"))

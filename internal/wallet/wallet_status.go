@@ -96,7 +96,7 @@ func (w *Wallet) BuildStatusList() (int, []byte) {
 	if err != nil {
 		// SetCredentialStatus refuses anything outside 0..255, so a stored
 		// value that does not fit came from a hand-edited wallet file. The
-		// widest list the specification allows is the honest answer.
+		// list falls back to the widest width the specification allows.
 		bits = 8
 	}
 

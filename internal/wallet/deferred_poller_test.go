@@ -484,8 +484,7 @@ func TestAbandonDeferredNow(t *testing.T) {
 
 // The poller only collects if something starts its goroutine. Every other test
 // here calls the sweep directly, which passes whether or not the server ever
-// runs it, and a conformance run found exactly that gap: a deferred credential
-// was recorded and then never fetched.
+// runs it, so this one checks that the server does.
 func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 	w := generateTestWallet(t)
 	credRaw := generateTestCredential(t, w)
@@ -518,9 +517,8 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 }
 
 // A credential offer names configurations, not credential types, so a deferred
-// row used to be labelled with an issuer's internal id ("eudi-pid-sd-jwt-bdr-
-// key-attestations") while the same credential became "urn:eudi:pid:1" the
-// moment it arrived. The type is in the issuer's metadata all along.
+// row takes its credential type from the issuer's metadata rather than
+// carrying the configuration id until the credential arrives.
 func TestDeferredIssuanceRecordsTheCredentialType(t *testing.T) {
 	metadata := map[string]any{
 		"credential_configurations_supported": map[string]any{
@@ -702,7 +700,7 @@ func TestBackgroundTasksRunOffTheRequestPath(t *testing.T) {
 
 // A failing task is retried on the next tick rather than waiting out its
 // interval, and dropped once it has clearly stopped working. Retrying forever
-// buries the reason; giving up silently loses the work.
+// buries the reason, and giving up silently loses the work.
 func TestFailingBackgroundTaskIsRetriedThenAbandoned(t *testing.T) {
 	w := generateTestWallet(t)
 	server := NewServer(w, 0, nil)

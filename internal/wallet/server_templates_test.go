@@ -191,12 +191,10 @@ func TestIssuePIDUsesTemplateOverride(t *testing.T) {
 	}
 }
 
-// credtemplate.Load takes a name or a path on purpose, because the CLI
-// documents `templates show ./some-template.json`. Passing a URL segment
-// straight into it turned that into a file read over HTTP: any JSON the
-// process could open came back as a template, and the status code said
-// whether a path existed. The demo profile blocks writes to templates but not
-// reads, so this was reachable unauthenticated on a public instance.
+// credtemplate.Load takes a name or a path, because the CLI documents
+// `templates show ./some-template.json`. The endpoint accepts a bare name
+// only, so a path in the URL segment cannot turn it into a file read over
+// HTTP (template reads are open on the demo profile).
 func TestGetTemplate_RefusesAPathInsteadOfAName(t *testing.T) {
 	srv := newTestServer(t, false)
 	dir := t.TempDir()
@@ -225,7 +223,7 @@ func TestGetTemplate_RefusesAPathInsteadOfAName(t *testing.T) {
 	}
 }
 
-// The endpoint still has to serve an ordinary template.
+// The endpoint serves an ordinary template by name.
 func TestGetTemplate_StillServesABareName(t *testing.T) {
 	srv := newTestServer(t, false)
 	srv.wallet.TemplatesDir = t.TempDir()

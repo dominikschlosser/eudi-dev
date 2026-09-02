@@ -1,8 +1,8 @@
 # All services share Keycloak's network namespace, so `localhost:<port>` means
-# the same thing in the host browser and inside every container. That keeps
-# every URL — Keycloak pages, wallet links, request_uri, redirects — on plain
+# the same thing in the host browser and inside every container. Every URL
+# (Keycloak pages, wallet links, request_uri, redirects) stays on plain
 # localhost with no hostname mapping. The services' listen ports therefore
-# match the published ports; start.sh picks free KEYCLOAK_PORT / WALLET_PORT /
+# match the published ports. start.sh picks free KEYCLOAK_PORT / WALLET_PORT /
 # APP_PORT values when the defaults are taken (override them to pin ports).
 services:
   keycloak:
@@ -10,8 +10,7 @@ services:
     command:
       - start-dev
       - --import-realm
-      # Keycloak 26.7 split the create-credential-offer REST endpoint into its
-      # own feature flag (oid4vc-vci-rest-credential-offer).
+      # The create-credential-offer REST endpoint needs its own feature flag.
       - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer:v1
       - --http-port=${KEYCLOAK_PORT:-9080}
       - --proxy-headers=xforwarded

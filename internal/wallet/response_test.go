@@ -289,9 +289,8 @@ func TestSubmitDirectPost_RejectsRelativeRedirectURI(t *testing.T) {
 	}
 }
 
-// The wallet UI navigates to the redirect_uri a verifier returns. url.Parse
-// calls javascript: and data: absolute, so "absolute" was not enough: a
-// verifier could have answered a presentation with a URI that executes script
+// The wallet UI navigates to the redirect_uri a verifier returns, so a
+// javascript: or data: URI (which url.Parse calls absolute) would run script
 // on the wallet's own origin.
 func TestSubmitDirectPost_RejectsScriptRedirectURI(t *testing.T) {
 	for _, redirect := range []string{

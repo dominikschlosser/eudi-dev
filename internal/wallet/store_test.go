@@ -50,7 +50,6 @@ func TestWalletStore_LoadOrCreate_NewWallet(t *testing.T) {
 		t.Errorf("expected 0 credentials, got %d", len(w.Credentials))
 	}
 
-	// Keys should be persisted
 	if _, err := os.Stat(filepath.Join(dir, "holder.pem")); err != nil {
 		t.Errorf("expected holder.pem to exist: %v", err)
 	}
@@ -68,7 +67,6 @@ func TestWalletStore_SaveAndLoad(t *testing.T) {
 		t.Fatalf("LoadOrCreate: %v", err)
 	}
 
-	// Add a credential
 	key, _ := mock.GenerateKey()
 	sdjwt, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    "https://test.example",
@@ -90,12 +88,10 @@ func TestWalletStore_SaveAndLoad(t *testing.T) {
 		t.Fatalf("expected issued-attestation VCT TestCred, got %s", w.IssuedAttestations[0].VCT)
 	}
 
-	// Save
 	if err := store.Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// Load again
 	w2, err := store.LoadOrCreate()
 	if err != nil {
 		t.Fatalf("LoadOrCreate after save: %v", err)
@@ -359,13 +355,13 @@ func TestDefaultWalletDir(t *testing.T) {
 	t.Setenv("EUDI_DEV_HOME", "")
 	t.Setenv("OID4VC_DEV_HOME", "")
 
-	// Fresh system: the new state directory is used.
+	// Fresh system: the .eudi-dev state directory is used.
 	dir := DefaultWalletDir()
 	if !strings.Contains(dir, ".eudi-dev") || !strings.HasSuffix(dir, "wallet") {
 		t.Errorf("expected .eudi-dev wallet dir, got %s", dir)
 	}
 
-	// A legacy state directory keeps being used after the rename.
+	// An existing .oid4vc-dev state directory keeps being used.
 	if err := os.MkdirAll(filepath.Join(home, ".oid4vc-dev"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -503,9 +499,8 @@ func TestWalletStore_LoadOrCreate_UsesSharedCA(t *testing.T) {
 	}
 }
 
-// A wallet written before the rename holds its deferred credentials under
-// "pending_issuances". Dropping them on load would abandon collections
-// already in flight, silently, on upgrade.
+// A wallet file may hold its deferred credentials under "pending_issuances".
+// They are read on load, so collections already in flight survive an upgrade.
 func TestLoadReadsTheLegacyPendingIssuancesField(t *testing.T) {
 	dir := t.TempDir()
 	legacy := `{
@@ -548,9 +543,8 @@ func TestLoadReadsTheLegacyPendingIssuancesField(t *testing.T) {
 }
 
 // Two saves must land in snapshot order. The log sink saves without the
-// server lock, so a save that snapshotted before an import could rename
-// after the import's save, and the next store reload made the loss
-// permanent: the credential was imported, logged as received, and gone.
+// server lock, so a save that snapshotted before an import must not rename
+// over the import's save.
 func TestStoreSavesDoNotLoseConcurrentWrites(t *testing.T) {
 	store := NewWalletStore(t.TempDir())
 	w := generateTestWallet(t)

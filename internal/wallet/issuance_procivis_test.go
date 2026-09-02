@@ -24,12 +24,11 @@ import (
 	"testing"
 )
 
-// setupNoneAuthIssuer mimics a real-world issuer (the Procivis One trial) that
-// advertises token_endpoint_auth_methods_supported = ["none"]: it authenticates
-// no client at the token endpoint. It also advertises a DPoP algorithm and hands
-// out Bearer tokens, and it resolves its token endpoint through separate
-// Authorization Server metadata rather than a token_endpoint in the issuer
-// metadata, all as that issuer does.
+// setupNoneAuthIssuer serves an issuer that advertises
+// token_endpoint_auth_methods_supported = ["none"]: it authenticates no client
+// at the token endpoint. It also advertises a DPoP algorithm, hands out Bearer
+// tokens, and resolves its token endpoint through separate Authorization
+// Server metadata rather than a token_endpoint in the issuer metadata.
 //
 // Its token endpoint answers invalid_request whenever a request carries client
 // authentication it did not ask for (an OAuth-Client-Attestation header), the
@@ -128,16 +127,15 @@ func setupNoneAuthIssuer(t *testing.T, w *Wallet, gotAttestation *bool) (*httpte
 	return srv, offerURI
 }
 
-// TestProcessCredentialOffer_HAIPAgainstNoneAuthIssuer is the regression for
-// the manual testing against the Procivis One and Animo trial issuers, whose
-// token endpoints advertise only the "none" auth method. HAIP 1.0 §4.4.1 wants
-// client authentication there, which those issuers do not offer.
+// TestProcessCredentialOffer_HAIPAgainstNoneAuthIssuer covers an issuer whose
+// token endpoint advertises only the "none" auth method, where HAIP 1.0 §4.4.1
+// wants client authentication.
 //
 //   - HAIP + debug (the public demo): the wallet notes the profile violation as
 //     a warning and proceeds without client authentication, so issuance
-//     completes. This is what the demo needs to work gracefully.
+//     completes.
 //   - HAIP + strict: the wallet still authenticates and the exchange fails at
-//     the token endpoint, the honest result for a wallet asserting HAIP.
+//     the token endpoint.
 //   - no HAIP: a plain request completes.
 func TestProcessCredentialOffer_HAIPAgainstNoneAuthIssuer(t *testing.T) {
 	run := func(t *testing.T, mode ValidationMode, haip bool) (*IssuanceResult, *bool, *Wallet, error) {

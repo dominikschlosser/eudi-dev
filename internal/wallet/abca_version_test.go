@@ -31,7 +31,7 @@ import (
 // endpoint opens with a challenge demand.
 type abcaIssuerConfig struct {
 	authMethods []string
-	// popMethods is client_attestation_pop_methods_supported; nil omits the
+	// popMethods is client_attestation_pop_methods_supported. Nil omits the
 	// parameter, which is what a draft-07 or draft-08 server publishes.
 	popMethods []string
 	dpop       bool
@@ -193,11 +193,9 @@ func runABCAOffer(t *testing.T, w *Wallet, cfg abcaIssuerConfig) (*abcaCapture, 
 // TestAttestationShapeIsDraftUnion pins the emitted shape: whatever
 // OpenID4VCI version is configured, the attestation and its PoP carry the
 // union of the claims the supported drafts define, which is the draft-07
-// shape. Draft-07 §5.1/§5.2 require iss in both JWTs and define nbf, draft-08
-// stopped defining either, and every draft lets a JWT carry claims it does
-// not define itself (§5.1 and §5.2 rule 1), so one shape verifies under all
-// of them. Emitting it is what keeps this wallet working against servers that
-// implement the draft OpenID4VCI 1.0 pins.
+// shape. Draft-07 §5.1/§5.2 require iss in both JWTs and define nbf, and every
+// draft lets a JWT carry claims it does not define itself (§5.1 and §5.2 rule
+// 1), so one shape verifies under all of them.
 func TestAttestationShapeIsDraftUnion(t *testing.T) {
 	for _, version := range []VCIVersion{VCIVersion10, VCIVersion11} {
 		t.Run(string(version), func(t *testing.T) {
@@ -345,7 +343,7 @@ func sortedKeys(m map[string]any) []string {
 
 // TestUseFreshAttestationRetry covers the second §6.2 retry signal: a server
 // refusing the attestation as stale gets one retried request, carrying a
-// newly minted attestation.
+// freshly issued attestation.
 func TestUseFreshAttestationRetry(t *testing.T) {
 	w := generateTestWallet(t)
 	w.VCIVersion = VCIVersion11

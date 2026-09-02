@@ -392,7 +392,6 @@ func TestParseVPFullParams(t *testing.T) {
 	if ar.RedirectURI != "https://r.example" {
 		t.Errorf("redirect_uri = %s, want https://r.example", ar.RedirectURI)
 	}
-	// FullParams should contain all query params
 	if ar.FullParams["client_id"] != "v" {
 		t.Errorf("FullParams[client_id] = %s, want v", ar.FullParams["client_id"])
 	}
@@ -530,10 +529,8 @@ func makeTestJWT(header, payload map[string]any) string {
 // parameters in this Request Object, even if the same parameter was provided
 // in an Authorization Request query parameter."
 //
-// The query string is not signed, so a parameter taken from it decides what
-// the wallet discloses while the Verifier's signature still verifies over
-// something else. dcql_query is the one that matters most: it names the
-// credentials and the claims.
+// The query string is unsigned, so only the signed object may decide what the
+// wallet discloses.
 func TestParseVPQueryParametersNeverOutrankTheRequestObject(t *testing.T) {
 	signedQuery := map[string]any{
 		"credentials": []any{map[string]any{
@@ -589,8 +586,7 @@ func TestParseVPQueryParametersNeverOutrankTheRequestObject(t *testing.T) {
 	}
 }
 
-// A parameter the Request Object omits is absent, not inherited. Keeping the
-// outer value is the same defect as overriding, just quieter.
+// A parameter the Request Object omits stays absent.
 func TestParseVPDropsQueryParametersTheRequestObjectOmits(t *testing.T) {
 	payload := map[string]any{
 		"client_id":     "https://verifier.example",

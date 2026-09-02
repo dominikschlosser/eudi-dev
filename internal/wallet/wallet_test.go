@@ -77,7 +77,6 @@ func TestGenerateDefaultCredentials(t *testing.T) {
 		t.Fatalf("expected 2 credentials, got %d", len(creds))
 	}
 
-	// First should be SD-JWT
 	if creds[0].Format != "dc+sd-jwt" {
 		t.Errorf("expected first credential to be dc+sd-jwt, got %s", creds[0].Format)
 	}
@@ -91,7 +90,6 @@ func TestGenerateDefaultCredentials(t *testing.T) {
 		t.Error("expected SD-JWT to have disclosures")
 	}
 
-	// Second should be mDoc
 	if creds[1].Format != "mso_mdoc" {
 		t.Errorf("expected second credential to be mso_mdoc, got %s", creds[1].Format)
 	}
@@ -138,7 +136,7 @@ func TestGenerateDefaultCredentials_SDJWTIssuerUsesWalletIssuerURL(t *testing.T)
 func TestGenerateDefaultCredentials_Overwrite(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Run again. Should replace, not duplicate
+	// A second run replaces the PIDs rather than duplicating them.
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID credentials second time: %v", err)
 	}
@@ -165,7 +163,6 @@ func TestGenerateDefaultCredentials_ClaimOverrides(t *testing.T) {
 		t.Fatalf("expected 2 credentials, got %d", len(creds))
 	}
 
-	// SD-JWT should have overridden claims
 	sdjwtCred := creds[0]
 	if sdjwtCred.Claims["given_name"] != "MAX" {
 		t.Errorf("expected given_name MAX, got %v", sdjwtCred.Claims["given_name"])
@@ -173,7 +170,7 @@ func TestGenerateDefaultCredentials_ClaimOverrides(t *testing.T) {
 	if sdjwtCred.Claims["family_name"] != "MUSTERMANN-OVERRIDE" {
 		t.Errorf("expected family_name MUSTERMANN-OVERRIDE, got %v", sdjwtCred.Claims["family_name"])
 	}
-	// Non-overridden claim should still be present
+	// A claim not overridden keeps its default.
 	if sdjwtCred.Claims["birthdate"] != "1978-02-12" {
 		t.Errorf("expected birthdate 1978-02-12, got %v", sdjwtCred.Claims["birthdate"])
 	}
@@ -182,7 +179,6 @@ func TestGenerateDefaultCredentials_ClaimOverrides(t *testing.T) {
 func TestGenerateDefaultCredentials_OverwritePreservesOtherCreds(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// Import a non-PID credential first
 	key, _ := mock.GenerateKey()
 	sdjwtRaw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    "https://test.example",
@@ -198,7 +194,6 @@ func TestGenerateDefaultCredentials_OverwritePreservesOtherCreds(t *testing.T) {
 		t.Fatalf("importing test credential: %v", err)
 	}
 
-	// Generate PID credentials
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID: %v", err)
 	}
@@ -208,7 +203,7 @@ func TestGenerateDefaultCredentials_OverwritePreservesOtherCreds(t *testing.T) {
 		t.Fatalf("expected 3 credentials, got %d", len(w.GetCredentials()))
 	}
 
-	// Generate again. Should replace only PIDs, keep test
+	// Generating again replaces only the PIDs.
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating PID second time: %v", err)
 	}
@@ -218,7 +213,6 @@ func TestGenerateDefaultCredentials_OverwritePreservesOtherCreds(t *testing.T) {
 		t.Fatalf("expected 3 credentials after overwrite, got %d", len(creds))
 	}
 
-	// Verify the non-PID credential is still there
 	found := false
 	for _, c := range creds {
 		if c.VCT == "TestCredential" {
@@ -630,7 +624,6 @@ func TestRehydrate_PreservesExistingClaims(t *testing.T) {
 		t.Fatalf("Rehydrate: %v", err)
 	}
 
-	// Should preserve existing claims
 	if cred.Claims["custom"] != "value" {
 		t.Error("expected existing claims to be preserved")
 	}
@@ -892,7 +885,8 @@ func TestHasEncryptionKey_TopLevelJWKSNotUsed(t *testing.T) {
 		t.Fatalf("parsing JWK: %v", err)
 	}
 
-	// JWK only at top-level jwks (not in client_metadata.jwks). Strict OID4VP 1.0
+	// OID4VP 1.0 reads the encryption key from client_metadata.jwks only, so a
+	// top-level jwks does not count.
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{
@@ -908,9 +902,8 @@ func TestHasEncryptionKey_TopLevelJWKSNotUsed(t *testing.T) {
 	}
 }
 
-// Regenerating the defaults must not be a back door around protection: a
-// leaked test run against a shared instance once replaced its protected
-// baseline PIDs with fresh unprotected ones this way.
+// Regenerating the defaults keeps protected baseline PIDs, so a request
+// against a shared instance cannot replace them with unprotected ones.
 func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.GenerateProtectedDefaults(); err != nil {
@@ -1113,9 +1106,8 @@ func TestGenerateDefaultCredentials_ReplacesUnprotected(t *testing.T) {
 }
 
 // The server's own baseline generation replaces what it created before,
-// protection included. Otherwise the shared demo keeps serving the PID claim
-// set of whichever release first created it, even after an update: exactly
-// what happened when the claim set was aligned with the German rulebook.
+// protection included, so a shared demo serves the current release's PID
+// claim set after an update.
 func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.GenerateProtectedDefaults(); err != nil {
@@ -1148,10 +1140,8 @@ func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
 	}
 }
 
-// Refreshing the baseline (on startup or the periodic reset) must keep a
-// visitor's own credential even when it shares the baseline's type. Regression:
-// the refresh used to drop every PID-typed credential, so restarting a demo
-// silently lost a visitor-issued PID with no deletion in the activity log.
+// Refreshing the baseline (on startup or the periodic reset) keeps a
+// visitor's own credential even when it shares the baseline's type.
 func TestGenerateProtectedDefaults_KeepsVisitorCredentialOfBaselineType(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.GenerateProtectedDefaults(); err != nil {
@@ -1201,8 +1191,8 @@ func TestGenerateProtectedDefaults_KeepsVisitorCredentialOfBaselineType(t *testi
 	}
 }
 
-// The request-driven path still must not touch a protected baseline: that is
-// the whole point of the flag.
+// The request-driven path leaves a protected baseline alone: that is the
+// whole point of the flag.
 func TestGenerateDefaultCredentials_APIPathCannotReplaceProtected(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.GenerateProtectedDefaults(); err != nil {

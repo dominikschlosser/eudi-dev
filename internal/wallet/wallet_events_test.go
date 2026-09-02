@@ -104,15 +104,12 @@ func TestWallet_LastError(t *testing.T) {
 func TestWallet_SetAndConsumeNextError(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// No error set
 	if e := w.ConsumeNextError(); e != nil {
 		t.Error("expected nil")
 	}
 
-	// Set error
 	w.SetNextError(&NextErrorOverride{Error: "test_error", ErrorDescription: "desc"})
 
-	// Consume once
 	e := w.ConsumeNextError()
 	if e == nil {
 		t.Fatal("expected error")
@@ -124,7 +121,6 @@ func TestWallet_SetAndConsumeNextError(t *testing.T) {
 		t.Errorf("wrong description: %s", e.ErrorDescription)
 	}
 
-	// Should be consumed
 	if e2 := w.ConsumeNextError(); e2 != nil {
 		t.Error("expected nil after consume")
 	}
@@ -152,7 +148,6 @@ func TestWallet_CreateAndGetRequest(t *testing.T) {
 		t.Errorf("wrong type: %s", got.Type)
 	}
 
-	// Non-existent request
 	_, ok = w.GetRequest("nonexistent")
 	if ok {
 		t.Error("expected not found for nonexistent request")
@@ -177,7 +172,6 @@ func TestWallet_ResolveRequest(t *testing.T) {
 
 	w.CreateConsentRequest(&ConsentRequest{ID: "r1", Status: "pending"})
 
-	// Resolve pending -> approved
 	req, ok := w.ResolveRequest("r1", "approved")
 	if !ok {
 		t.Fatal("expected successful resolve")
@@ -192,7 +186,6 @@ func TestWallet_ResolveRequest(t *testing.T) {
 		t.Error("expected failed resolve on non-pending request")
 	}
 
-	// Non-existent request
 	_, ok = w.ResolveRequest("nonexistent", "approved")
 	if ok {
 		t.Error("expected failed resolve for nonexistent request")

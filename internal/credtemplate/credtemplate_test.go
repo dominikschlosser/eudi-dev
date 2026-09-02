@@ -57,8 +57,7 @@ func TestPredefinedTemplates(t *testing.T) {
 	}
 }
 
-// The German PID is its own credential type, with its own claim set, and the
-// templates are how anything in this tool reaches either of them.
+// The German PID is its own credential type with its own claim set.
 func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	sdjwt, err := Load("german-pid-sdjwt", t.TempDir())
 	if err != nil {

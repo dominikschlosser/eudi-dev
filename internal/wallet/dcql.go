@@ -88,7 +88,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 			selection := w.selectClaims(cred, cqMap)
 			if len(selection.missingRequired) > 0 {
 				if w.ValidationMode == ValidationModeDebug && len(selection.selectedKeys) > 0 {
-					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) missing required claims %v in debug mode; continuing with selected claims %v",
+					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) missing required claims %v in debug mode, continuing with selected claims %v",
 						queryID, typeLabel, cred.Format, selection.missingRequired, selection.selectedKeys)
 				} else {
 					log.Printf("[DCQL]   query=%s: credential %s (%s) skipped: required claims not found: %v",
@@ -109,7 +109,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 						continue
 					}
 					// Debug mode offers the credential anyway, flagged for the
-					// consent dialog. Strict mode skips it above.
+					// consent dialog.
 					untrustedAuthority = true
 					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) is not trusted by any trusted_authority, offered in debug mode",
 						queryID, typeLabel, cred.Format)
@@ -402,9 +402,8 @@ func sortMatchesNewestFirst(matches []CredentialMatch, credentials []StoredCrede
 
 // sortMatchesTrustedFirst moves the credentials whose trusted_authorities
 // matched ahead of the ones offered only by debug leniency, within each query
-// id, so the wallet's own auto-pick is a conformant credential when it holds
-// one. Applied last, it is the primary key and leaves the newest-first and
-// preferred-format order intact within each group.
+// id. The newest-first and preferred-format order stays intact within each
+// group.
 func sortMatchesTrustedFirst(matches []CredentialMatch) {
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].QueryID != matches[j].QueryID {
@@ -450,9 +449,7 @@ func keepOnePresentationPerQuery(matches []CredentialMatch) []CredentialMatch {
 }
 
 // sortMatchesByPreferredFormat moves the preferred format to the front within
-// each query id, leaving everything else where it was. Both halves of the
-// comparison are needed: asking only whether i is preferred orders i before j
-// and j before i when both are, which is not an ordering sort can work with.
+// each query id, leaving everything else where it was.
 func sortMatchesByPreferredFormat(matches []CredentialMatch, preferred string) {
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].QueryID != matches[j].QueryID {
@@ -483,7 +480,7 @@ func matchesFormat(cred StoredCredential, queryFormat string) bool {
 }
 
 // matchesMeta checks format-specific metadata (vct_values, doctype_value). An
-// absent meta is reported by DCQLQueryFindings; treating it as unconstrained
+// absent meta is reported by DCQLQueryFindings. Treating it as unconstrained
 // is the debug-mode reading. A vct_values entry is answered by that type and
 // by types extending it (internal/credtype), while doctype_value takes no such
 // rule, since ISO/IEC 18013-5 has no inheritance.
@@ -493,7 +490,6 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 		return true
 	}
 
-	// SD-JWT: check vct_values
 	if vctValues, ok := meta["vct_values"].([]any); ok {
 		if cred.VCT == "" {
 			return false
@@ -524,7 +520,6 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 		}
 	}
 
-	// mDoc: check doctype_value
 	if docType, ok := meta["doctype_value"].(string); ok {
 		if cred.DocType != docType {
 			return false
@@ -541,7 +536,6 @@ func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claim
 		return claimSelection{match: true}
 	}
 
-	// Check claim_sets first (preference ordering)
 	if claimSets, ok := cqMap["claim_sets"].([]any); ok && len(claimSets) > 0 {
 		selected := selectFromClaimSets(cred, claimsQuery, claimSets)
 		return claimSelection{
@@ -550,14 +544,12 @@ func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claim
 		}
 	}
 
-	// No claim_sets: include all requested claims that exist
 	return selectAllRequestedClaims(cred, claimsQuery)
 }
 
 // selectFromClaimSets picks the first satisfiable claim_set (preference order).
 // claim_sets entries reference claims by their "id" property (string).
 func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []any) []string {
-	// Build index: claim id → Claims Query
 	claimByID := buildClaimByID(claimsQuery)
 
 	for _, cs := range claimSets {
@@ -757,7 +749,6 @@ func claimKeyFromPath(cred StoredCredential, path []any) string {
 		return mdocClaimKeyFromPath(cred, path)
 	}
 
-	// SD-JWT
 	key, ok := path[0].(string)
 	if !ok {
 		return ""
@@ -1166,13 +1157,11 @@ func claimValueAtPath(value any, path []any) (any, bool) {
 // inside the Credential Set Query", and a wallet that "cannot deliver all
 // non-optional Credentials [...] MUST NOT return any Credential(s)".
 func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFormat string) []CredentialMatch {
-	// Group matches by query ID
 	byQuery := make(map[string][]CredentialMatch)
 	for _, m := range matches {
 		byQuery[m.QueryID] = append(byQuery[m.QueryID], m)
 	}
 
-	// Track which query IDs are needed
 	needed := make(map[string]bool)
 
 	for _, cs := range credSets {
@@ -1207,7 +1196,7 @@ func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFor
 		}
 
 		if required && !satisfied {
-			return nil // required credential_set not satisfiable
+			return nil
 		}
 	}
 
@@ -1217,7 +1206,6 @@ func applyCredentialSets(matches []CredentialMatch, credSets []any, preferredFor
 		return nil
 	}
 
-	// Filter to only needed matches (first match per query ID)
 	var result []CredentialMatch
 	used := make(map[string]bool)
 	for _, m := range matches {
@@ -1412,8 +1400,8 @@ func extractMDOCX5Chain(doc *mdoc.Document) ([]*x509.Certificate, error) {
 // issuer certificate chain against it.
 func checkETSITrustList(cred StoredCredential, trustListURL string) bool {
 	tlRaw, err := format.FetchURL(trustListURL)
-	// If fetch fails and URL contains host.docker.internal, retry with localhost
-	// (verifier runs in Docker but wallet runs on the host).
+	// A verifier in Docker names the host as host.docker.internal, which the
+	// wallet on the host reaches as localhost.
 	if err != nil && strings.Contains(trustListURL, "host.docker.internal") {
 		fallbackURL := strings.Replace(trustListURL, "host.docker.internal", "localhost", 1)
 		log.Printf("[DCQL]   trusted_authorities: retrying with %s", fallbackURL)

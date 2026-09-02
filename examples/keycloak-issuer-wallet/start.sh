@@ -33,8 +33,7 @@ ensure_oid4vc_dev() {
   fi
   export PATH="${gobin}:${PATH}"
 
-  # go install builds the binary as eudi-dev; these examples invoke `eudi`.
-  # Expose it under that name so the commands below resolve.
+  # go install builds the binary as eudi-dev, and the examples invoke `eudi`.
   if ! command -v eudi >/dev/null 2>&1; then
     ln -sf "$(command -v eudi-dev)" "${gobin}/eudi"
   fi

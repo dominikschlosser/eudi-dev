@@ -161,7 +161,7 @@ type instanceIdentity struct {
 
 // String renders the identity for a status line: "1.19.0 (pid 4711)", with
 // each part left out when the instance does not report it (a demo instance
-// hides its pid, an instance older than version reporting has no release).
+// hides its pid).
 func (i instanceIdentity) String() string {
 	parts := []string{}
 	if i.Version != "" {
@@ -207,8 +207,8 @@ func incompatibilityNotice(url, instanceVersion string) string {
 		url, instanceVersion, Version)
 }
 
-// walletInstancesCmd is the deprecated spelling of `wallet ps`, `wallet use`,
-// and `wallet kill`, kept hidden so existing scripts keep working.
+// walletInstancesCmd is the deprecated, hidden spelling of `wallet ps`,
+// `wallet use`, and `wallet kill`.
 func walletInstancesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "instances",
@@ -371,10 +371,8 @@ func walletKillCmd() *cobra.Command {
 
 			var targets []remote.DiscoveredInstance
 			if all {
-				// --all stops the local instances this machine is running, not
-				// a configured active remote, whose pid belongs to another host
-				// and which a blanket "stop everything" should not reach out and
-				// shut down. Name it explicitly to stop it.
+				// --all stops the local instances only. An active remote's pid
+				// belongs to another host, so it has to be named explicitly.
 				for _, inst := range instances {
 					if inst.Source == "active" {
 						fmt.Fprintf(os.Stderr, "Skipping active remote %s; stop it by name if you mean to.\n", inst.URL)
@@ -418,13 +416,12 @@ func matchInstance(instances []remote.DiscoveredInstance, target string) (remote
 	target = strings.TrimSpace(target)
 	noMatch := fmt.Errorf("no running wallet instance matches %q (run `wallet ps`)", target)
 
-	// A bare integer is a pid or a port; anything else is treated as a
-	// URL or host[:port], including host:port forms with no dot (which the
-	// old dotted-host heuristic missed).
+	// A bare integer is a pid or a port. Anything else is a URL or
+	// host[:port].
 	if number, err := strconv.Atoi(target); err == nil {
-		// Prefer a port match: a port is the identity a user reads off a URL
-		// or `wallet ps`, so `kill 8085` should stop the server on port
-		// 8085 rather than a process that merely happens to have pid 8085.
+		// A port match wins: a port is what a user reads off a URL or
+		// `wallet ps`, so `kill 8085` stops the server on port 8085 rather
+		// than a process that happens to have pid 8085.
 		var byPort, byPID []remote.DiscoveredInstance
 		for _, inst := range instances {
 			switch {

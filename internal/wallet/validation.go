@@ -95,7 +95,7 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 }
 
 // authorizationFindings collects what an authorization request gets wrong
-// against OpenID4VP 1.0. Findings are gathered in every mode; only what
+// against OpenID4VP 1.0. Findings are gathered in every mode. Only what
 // happens to them differs.
 func authorizationFindings(params *AuthorizationRequestParams, payload map[string]any) []string {
 	if params == nil {
@@ -106,8 +106,7 @@ func authorizationFindings(params *AuthorizationRequestParams, payload map[strin
 	if !hasKnownClientIDPrefix(params.ClientID) {
 		findings = append(findings, fmt.Sprintf("OID4VP 1.0 §5.9.3: client_id uses an unsupported prefix: %q", params.ClientID))
 	}
-	// §5.2 marks nonce REQUIRED. It is what binds the presentation to this
-	// request, so a missing one is not a formality.
+	// §5.2 marks nonce REQUIRED. It binds the presentation to this request.
 	if requestRequiresNonce(params.ResponseType) && params.Nonce == "" {
 		findings = append(findings, "OID4VP 1.0 §5.2: nonce is required")
 	}

@@ -58,7 +58,7 @@ jobs:
 
       # The wallet serves requests while background work (the demo reset, the
       # deferred poller) mutates the same state, and a race there corrupts a
-      # signature rather than crashing. Nothing catches that by reading it.
+      # signature rather than crashing.
       - name: Test with the race detector
         if: matrix.go-version == '1.26'
         run: go test -race ./...

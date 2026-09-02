@@ -46,7 +46,6 @@ func GenerateJWT(cfg JWTConfig) (string, error) {
 
 	now := time.Now()
 
-	// Build payload with claims directly embedded
 	payload := map[string]any{
 		"iss": cfg.Issuer,
 		"iat": now.Unix(),
@@ -62,7 +61,6 @@ func GenerateJWT(cfg JWTConfig) (string, error) {
 		payload[name] = value
 	}
 
-	// Add status list reference
 	if cfg.StatusListURI != "" {
 		payload["status"] = map[string]any{
 			"status_list": map[string]any{
@@ -72,7 +70,6 @@ func GenerateJWT(cfg JWTConfig) (string, error) {
 		}
 	}
 
-	// Build header
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "vc+jwt",
@@ -86,6 +83,5 @@ func GenerateJWT(cfg JWTConfig) (string, error) {
 		header["x5c"] = x5c
 	}
 
-	// Encode header and payload
 	return jws.Sign(header, payload, cfg.Key)
 }

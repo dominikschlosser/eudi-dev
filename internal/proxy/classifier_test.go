@@ -344,8 +344,7 @@ func TestParseFormOrJSONForm(t *testing.T) {
 
 func TestParseFormOrJSONAmbiguousInput(t *testing.T) {
 	// url.ParseQuery succeeds on most strings, so form parsing takes priority.
-	// For JSON input, form parsing will produce a single key with the entire JSON as key.
-	// This tests the actual behavior of the function.
+	// For JSON input, form parsing produces a single key holding the entire JSON.
 	result := parseFormOrJSON(`{"format":"jwt"}`)
 	// url.ParseQuery will parse this as a form with key `{"format":"jwt"}` and empty value
 	if len(result) == 0 {

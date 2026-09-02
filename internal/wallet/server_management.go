@@ -89,9 +89,8 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 	// is reported, so a self-asserted list is distinguishable.
 	result, err := statuslist.Check(ref)
 	if err != nil {
-		// The caller sees "Check failed" on a badge and a tooltip, which is
-		// gone the moment the page reloads. The activity log is what keeps
-		// the reason, next to the credential it belongs to.
+		// The UI shows the failure only as a transient badge, so the activity
+		// log keeps the reason.
 		s.wallet.addProtocolWarning("wallet", "status_list_check_failed",
 			fmt.Sprintf("Status list of credential %s could not be checked: %s", credentialLabel(cred), err),
 			map[string]any{

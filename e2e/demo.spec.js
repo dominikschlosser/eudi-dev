@@ -1,7 +1,7 @@
 // @ts-check
 // Demo-mode consent visibility.
 //
-// Two rules pull in opposite directions and have broken each other twice:
+// Two rules pull in opposite directions:
 //   1. A shared instance must not pop a consent dialog into every open tab.
 //   2. A request that arrives without a browser redirect (a scheme dispatch,
 //      which the OS handler submits through the API) must still be reachable,
@@ -151,7 +151,7 @@ function submitAsSchemeHandler(pathname, uri, owner) {
   lastSubmitError = null;
   // Deliberately not awaited: an interactive submission blocks until the
   // consent is resolved, which is what these tests are about. A refusal comes
-  // back immediately (it does not block), so record it; on success drain the
+  // back immediately (it does not block), so record it. On success drain the
   // body once it arrives so the connection is released rather than leaked
   // across the shared-wallet run.
   fetch(BASE + pathname, {
@@ -212,7 +212,7 @@ test.describe("Demo mode conformance panel", () => {
     expect(before.require_haip).toBe(true);
 
     await page.click("#conformance-link");
-    // The controls reflect the setting but are disabled; there is no reset.
+    // The controls reflect the setting but are disabled, and there is no reset.
     await expect(page.locator("#conf-mode-select")).toHaveValue("debug");
     await expect(page.locator("#conf-mode-select")).toBeDisabled();
     await expect(page.locator("#conf-haip-input")).toBeDisabled();
@@ -529,9 +529,8 @@ test.describe("Demo mode consent visibility", () => {
     await waitForPending(0, owner);
   });
 
-  // A URL handler installed before the wallet asked for a name submits without
-  // one. What it creates belongs to nobody in particular, so it stays reachable
-  // from any tab, which is how that handler kept working.
+  // A URL handler that names no page submits an unowned request. It belongs
+  // to nobody in particular, so it stays reachable from any tab.
   test("a client that names no page leaves its request reachable", async ({
     browser,
   }) => {
@@ -637,8 +636,7 @@ test.describe("Demo mode consent visibility", () => {
 // The demo issuer offers a choice the protocol makes real: an authorization
 // code offer is authorized either by a presentation at the challenge endpoint
 // (OpenID4VCI 1.1 §6) or by the browser sign-in. Both have to stay reachable
-// from the page, which is what broke when interactive authorization arrived and
-// silently took over every authorization code offer.
+// from the page.
 test.describe("Demo issuer authorization choice", () => {
   test("the choice is offered for the grant that asks the user, and no other", async ({ page }) => {
     await page.goto(`${BASE}/issuer/`);
@@ -932,9 +930,6 @@ test.describe("Credential paging", () => {
   });
 });
 
-// The verifier page polls its request while it is pending. Two abandoned
-// tabs once produced 38% of all traffic on the public demo, because the
-// status endpoint never stopped saying "pending". Polling must end.
 // The consent dialog keeps the wallet's auto-selection on its main screen
 // and opens the alternatives behind an Edit button: the credential-set
 // option to answer with, and the credential per query id. The demo verifier
@@ -1241,6 +1236,9 @@ test.describe("Multi-tab dialogs", () => {
   });
 });
 
+// The verifier page polls its request while it is pending. Polling must end
+// when the request is gone and back off otherwise, or abandoned tabs dominate
+// the demo's traffic.
 test.describe("Verifier polling", () => {
   /** Counts status polls the page makes from now on. */
   function countPolls(page) {
@@ -1283,8 +1281,8 @@ test.describe("Verifier polling", () => {
     await createVerifierRequest(page, "pid");
     await expect(page.locator("#status")).toHaveText(/Waiting/);
 
-    // Ten seconds of the old fixed 1.5s interval was 6 polls and stayed
-    // there forever. With backoff it settles well below that.
+    // With backoff, ten seconds hold fewer polls than a fixed 1.5s interval
+    // would make (6).
     await page.waitForTimeout(10_000);
     expect(polls.n, `polls in 10s: ${polls.n}`).toBeLessThanOrEqual(5);
     expect(polls.n, "but it must still be polling").toBeGreaterThan(0);
@@ -1300,7 +1298,7 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conformance-overlay")).toHaveClass(/active/);
 
     // A demo instance runs HAIP in debug mode with encrypted requests not
-    // required; the read-only controls reflect that.
+    // required. The read-only controls reflect that.
     await expect(page.locator("#conf-mode-select")).toHaveValue("debug");
     await expect(page.locator("#conf-haip-input")).toBeChecked();
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
@@ -1311,10 +1309,9 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);
   });
 
-  // Debug mode does not refuse a non-HAIP request; it records the violation as
-  // a warning and carries on. That behavior is covered deterministically by the
-  // Go tests (issuance_procivis_test.go, the presentation-findings warnings),
-  // where it can be asserted without driving a full presentation side effect.
+  // Debug mode does not refuse a non-HAIP request. It records the violation as
+  // a warning and carries on. The Go tests cover that deterministically,
+  // without driving a full presentation.
 });
 
 test.describe("Demo mode hardening", () => {
@@ -1327,7 +1324,7 @@ test.describe("Demo mode hardening", () => {
       ["PUT", "/api/config/preferred-format", { preferred_format: "dc+sd-jwt" }],
       ["PUT", "/api/config/conformance", { mode: "debug" }],
       ["DELETE", "/api/config/conformance", null],
-      // A visitor-supplied display image is refused; a template's own art still applies.
+      // A visitor-supplied display image is refused. A template's own art still applies.
       ["POST", "/api/issue", { format: "sdjwt", vct: "urn:eudi:pid:1", status_list_uri: "", display: { background_image: "data:image/png;base64,iVBORw0KGgo=" } }],
       ["POST", "/api/issue", { format: "sdjwt", vct: "urn:eudi:pid:1", status_list_uri: "", display: { logo: "data:image/png;base64,iVBORw0KGgo=" } }],
     ];
@@ -1357,7 +1354,7 @@ test.describe("Demo mode hardening", () => {
     // setting cannot be changed, so no auto-accept control.
     await expect(page.locator("#auto-accept-toggle")).toBeHidden();
     // The issue form takes no visitor-supplied image, so the logo and
-    // background image fields are gone, while the rest of the form stays.
+    // background image fields are hidden, while the rest of the form stays.
     await page.locator("#issue-btn").click();
     await expect(page.locator("#issue-display-name")).toBeVisible();
     await expect(page.locator("#issue-logo")).toBeHidden();

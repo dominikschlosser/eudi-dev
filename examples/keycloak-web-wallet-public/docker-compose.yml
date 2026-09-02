@@ -15,8 +15,7 @@ services:
     command:
       - start-dev
       - --import-realm
-      # Keycloak 26.7 split the create-credential-offer REST endpoint into its
-      # own feature flag (oid4vc-vci-rest-credential-offer).
+      # The create-credential-offer REST endpoint needs its own feature flag.
       - --features=oid4vc-vci:v1,oid4vc-vci-preauth-code:v1,oid4vc-vci-rest-credential-offer:v1
       - --http-port=${KEYCLOAK_PORT:-9080}
       # ngrok terminates TLS and forwards X-Forwarded-* headers. With proxy

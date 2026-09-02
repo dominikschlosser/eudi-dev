@@ -17,13 +17,12 @@ package cmd
 // Every management command runs against either the local store or a remote
 // instance, and prints from the same document. The two backends build those
 // documents in different places: the local one from the wallet in memory, the
-// remote one from whatever the HTTP handler chose to put in its response. A
-// field that only one of them fills is invisible until a column shows an id
-// where a type belongs, which is how the deferred credential type shipped
-// broken in 1.19.8: the record carried it, GET /api/deferred did not return it.
+// remote one from whatever the HTTP handler puts in its response. A field that
+// only one of them fills is invisible until a column shows an id where a type
+// belongs.
 //
 // These tests pin the shape rather than the values. Ids and timestamps differ
-// between two wallets; the set of keys a command can read must not.
+// between two wallets. The set of keys a command can read must not.
 
 import (
 	"reflect"
@@ -45,7 +44,7 @@ func parityWallets(t *testing.T, seed func(*wallet.Wallet)) (local walletService
 	// one the credentials are bound to. A wallet built from ad-hoc keys and
 	// only saved as wallet.json would be reloaded by withFreshStore with a
 	// freshly generated holder key, and every seeded credential would come
-	// back bound to a key the reloaded wallet no longer holds.
+	// back bound to a key the reloaded wallet does not hold.
 	newWallet := func(store *wallet.WalletStore) *wallet.Wallet {
 		w, err := store.LoadOrCreate()
 		if err != nil {
@@ -100,9 +99,8 @@ func keysOf(doc map[string]any) []string {
 	return out
 }
 
-// The table compares document shapes. This pins the one value that shipped
-// wrong: a deferred credential has to name what is being issued, not the
-// issuer's internal configuration id.
+// The table compares document shapes. This pins one value: a deferred
+// credential names the credential type being issued, on both backends.
 func TestDeferredDocumentsCarryTheCredentialType(t *testing.T) {
 	resetRemoteTestState(t)
 	localSvc, remoteSvc := parityWallets(t, func(w *wallet.Wallet) {
@@ -154,7 +152,7 @@ func TestConfigDocumentsMatchAcrossBackends(t *testing.T) {
 
 // parityCase observes one walletService method through a backend and reduces
 // the result to something comparable: document keys, a count, a normalized
-// value. Two backends return different ids, paths and timestamps; what a
+// value. Two backends return different ids, paths and timestamps. What a
 // caller can read from them must not differ.
 //
 // Cases seed through the service rather than the filesystem. The two backends

@@ -99,24 +99,21 @@ type IssueOptions struct {
 	// is rejected for jwt_vc_json.
 	BatchSize int
 	// DisplayTemplate names the template whose display the credential wears,
-	// used when a form flattened a template's claims into explicit values but
-	// its embedded logo and background image could not travel in a form field.
-	// The named template's display is the base; an explicit Display is laid over
-	// it. Empty falls back to the Template (if any) for the display.
+	// for a form that flattened a template's claims into explicit values. Its
+	// display is the base and an explicit Display is laid over it. Empty falls
+	// back to Template.
 	DisplayTemplate string
 	// SigningKey and SigningCertChain replace the wallet's issuer key and
-	// certificate chain for this issuance. Set together; the leaf must
+	// certificate chain for this issuance. Set together, and the leaf must
 	// certify the key. Trust and registration metadata are not applied, the
 	// type registers like an imported foreign credential.
 	SigningKey       *ecdsa.PrivateKey
 	SigningCertChain []*x509.Certificate
 	// Unbound issues the credential without a holder key. An SD-JWT VC then
-	// names no cnf, a spec-valid bearer credential anyone holding it can present
-	// (cnf is optional, SD-JWT VC §3.2.2.2). An mdoc names no MSO deviceKey,
-	// which ISO 18013-5 §9.1.2.4 makes mandatory, so an unbound mdoc is a
-	// deliberately malformed document for testing verifier rejection rather than
-	// a presentable bearer credential. The default binds the credential to the
-	// wallet holder key.
+	// names no cnf, a bearer credential (cnf is optional, SD-JWT VC §3.2.2.2).
+	// An mdoc names no MSO deviceKey, which ISO 18013-5 §9.1.2.4 makes
+	// mandatory, so an unbound mdoc is a malformed document for testing
+	// verifier rejection.
 	Unbound bool
 }
 
@@ -215,10 +212,9 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A template the caller named has to match the format they asked for. One
-	// PID picked for them is a claim set rather than a choice of format: the
-	// SD-JWT PID template is what a jwt request with PID is asking for too,
-	// since a JWT VC carries the same claims plainly.
+	// A template the caller named has to match the format they asked for. A
+	// PID template picked from opts.PID is a claim set, so a jwt request uses
+	// the SD-JWT PID template's claims.
 	if tpl != nil && tpl.Format != "" && !pidTemplate {
 		tplFormat, err := credtemplate.NormalizeFormat(tpl.Format)
 		if err != nil {
@@ -364,10 +360,9 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		return "", fmt.Errorf("unsupported format %q", format)
 	}
 
-	// The credential's appearance is a template's, with any explicit fields laid
-	// over it, so choosing a template keeps its art (name, logo, background
-	// image) even when the operator also sets a name or a color, and even when a
-	// form flattened the template's claims and named it only for the display.
+	// The credential's appearance is a template's, with any explicit fields
+	// laid over it, so choosing a template keeps its art even when the
+	// operator also sets a name or a color.
 	displaySource := tpl
 	if opts.DisplayTemplate != "" {
 		dt, err := credtemplate.Load(opts.DisplayTemplate, w.TemplatesDir)
@@ -391,10 +386,8 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 
 	// A fixed index cannot be shared across a batch (a shared index would link
 	// two presentations), so a batch draws even its first copy from the
-	// counter, the way the extra copies do. Only the fully automatic case (no
-	// status URI and no index) already drew a unique counter index, so it is
-	// left as is. Naming the wallet's own status URL without an index otherwise
-	// pins the primary to index 0.
+	// counter. The fully automatic case (no status URI and no index) already
+	// drew a unique counter index.
 	if opts.BatchSize >= 2 && registerStatus && (opts.StatusListIdx != nil || opts.StatusListURI != nil) {
 		statusIdx = w.nextStatusIndex()
 	}

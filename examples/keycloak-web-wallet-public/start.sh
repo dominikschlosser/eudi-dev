@@ -45,7 +45,7 @@ resolve_port() { # resolve_port VAR DEFAULT
       port=$((port + 1))
     done
     if [[ "${port}" -ne "${def}" ]]; then
-      echo "Port ${def} is already in use — using ${port} for ${var} instead."
+      echo "Port ${def} is already in use. Using ${port} for ${var}."
     fi
   fi
   CLAIMED_PORTS+="${port} "

@@ -122,10 +122,8 @@ func NormalizeFormat(format string) (string, error) {
 // recomputed per call so a long-running server does not keep issuing PIDs
 // dated the day it started.
 func PredefinedTemplates() []Template {
-	// The eudi-dev look the demo baseline shows, resolved by the wallet from its
-	// embedded assets. The German PID adds the public Personalausweis specimen
-	// as its card art, which is what tells it apart from the country-independent
-	// one.
+	// Card art the wallet resolves from its embedded assets. The German PID adds
+	// the public Personalausweis specimen as its background.
 	pidDisplay := func(name, description string) *TemplateDisplay {
 		return &TemplateDisplay{
 			Name:            name,

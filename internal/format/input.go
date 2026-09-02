@@ -36,9 +36,9 @@ import (
 const DefaultRemoteTimeout = 15 * time.Second
 
 // remoteTimeoutEnv names the environment variable that overrides it, as a Go
-// duration ("45s", "2m"). A counterparty sharing the machine, which is what a
-// conformance harness does, can take tens of seconds to answer, and giving up
-// there costs the whole exchange.
+// duration ("45s", "2m"). A counterparty sharing the machine (a conformance
+// harness, say) can take tens of seconds to answer, and giving up there costs
+// the whole exchange.
 const remoteTimeoutEnv = "EUDI_REMOTE_TIMEOUT"
 
 // remoteTimeout resolves the timeout once, at startup.
@@ -170,7 +170,6 @@ func ReadInput(input string) (string, error) {
 		return readStdin()
 	}
 
-	// Try as URL
 	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
 		return FetchURL(input)
 	}
@@ -184,7 +183,6 @@ func ReadInput(input string) (string, error) {
 		}
 	}
 
-	// Treat as raw credential string
 	return input, nil
 }
 

@@ -262,7 +262,6 @@ func fetchRequestURIPOST(w *Wallet, requestURI, clientID string, logFn func(stri
 		return "", fmt.Errorf("request_uri response must be a compact JWE when encrypted request objects are required")
 	}
 
-	// If response is JWE (5 parts), try to decrypt to get the JWT
 	if isJWE(result) {
 		if w.RequestEncryptionKey == nil {
 			return "", fmt.Errorf("received encrypted request object (JWE) but wallet has no decryption key")
@@ -281,9 +280,8 @@ func fetchRequestURIPOST(w *Wallet, requestURI, clientID string, logFn func(stri
 	}
 
 	// wallet_nonce is optional in the returned request object. If the verifier
-	// echoes it back, it must match the value sent in the POST body.
-	// The returned request object itself may be either signed or unsecured,
-	// depending on the request_uri variant under test.
+	// echoes it back, it must match the value sent in the POST body. The
+	// returned request object may be signed or unsecured.
 	if header, payload, _, err := format.ParseJWTParts(result); err == nil {
 		if returnedNonce, ok := payload["wallet_nonce"].(string); ok {
 			if returnedNonce != walletNonce {

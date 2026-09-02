@@ -75,8 +75,7 @@ const (
 	// ClientAuthRequired is the default, and what HAIP 1.0 §4.4.1 asks for:
 	// "Wallets MUST use, and Issuers MUST require, an OAuth2 Client
 	// authentication mechanism at OAuth2 Endpoints that support client
-	// authentication (such as the PAR and Token Endpoints)." Demonstrating that
-	// requirement is most of why this authorization server exists.
+	// authentication (such as the PAR and Token Endpoints)."
 	ClientAuthRequired ClientAuthMode = "required"
 	// ClientAuthOptional also serves a wallet that authenticates with nothing,
 	// which OpenID4VCI 1.0 §6.1 leaves open and HAIP forbids. It exists so a
@@ -168,11 +167,10 @@ func (d *DemoRP) authorizationServerMetadata() map[string]any {
 		// the client MAY omit the attestation.
 		"client_attestation_pop_methods_supported": popMethods,
 	}
-	// Published only at the feature level that has it, so a wallet set to
-	// OpenID4VCI 1.0 sees exactly the document it saw before. The endpoint's
-	// presence is the whole of this server's half of the negotiation (§13.3),
-	// and require_interactive_authorization stays out: the redirect flow still
-	// works here, so this server does not "only accept" the interactive one.
+	// Published only at the feature level that has it. The endpoint's presence
+	// is this server's half of the negotiation (§13.3).
+	// require_interactive_authorization stays out: the redirect flow works here
+	// too, so this server does not "only accept" the interactive one.
 	if d.wallet != nil && d.wallet.VCIFeatureVersion() == wallet.VCIVersion11 {
 		metadata["authorization_challenge_endpoint"] = d.challengeEndpoint()
 	}
@@ -191,10 +189,9 @@ func (d *DemoRP) AuthorizationServerMetadataHandler() http.HandlerFunc {
 }
 
 // handleAuthorize resolves a pushed authorization request and asks the user to
-// authenticate. This is where the login belongs: the offer is handed to the
-// wallet unauthenticated, and the user proves who they are during redemption,
-// between the pushed authorization request and the token exchange, exactly as
-// the authorization code flow prescribes.
+// authenticate. The offer is handed to the wallet unauthenticated, and the user
+// proves who they are during redemption, between the pushed authorization
+// request and the token exchange.
 func (d *DemoRP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	request, err := d.lookupAuthRequest(r.URL.Query().Get("request_uri"))
 	if err != nil {
@@ -533,7 +530,7 @@ func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken strin
 	}
 	// RFC 9449 §4.3: the jwk header holds the public key, never a private one.
 	if _, holdsPrivate := jwk["d"]; holdsPrivate {
-		return "", fmt.Errorf("DPoP proof jwk carries private key material; it must hold a public key")
+		return "", fmt.Errorf("DPoP proof jwk carries private key material, it must hold a public key")
 	}
 	key, err := holderKeyFromJWK(jwk)
 	if err != nil {
@@ -549,8 +546,7 @@ func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken strin
 		return "", fmt.Errorf("DPoP htu %q does not match %q", htu, expectedURL)
 	}
 	// A DPoP proof carries no expiry, so freshness comes from iat. Without
-	// this check a proof captured once stays usable forever, which is the
-	// whole thing DPoP is meant to prevent.
+	// this check a captured proof stays usable forever.
 	iat, ok := proof.payload["iat"].(float64)
 	if !ok {
 		return "", fmt.Errorf("DPoP proof has no iat claim")
@@ -580,8 +576,8 @@ type clientAuthentication struct {
 	// parameter (RFC 6749 §3.2.1). Empty for an unauthenticated client.
 	clientID string
 	// attester names the signer of the wallet attestation, taken from its iss
-	// claim or, since draft -08 made iss optional, from the subject of the
-	// certificate that signed it. Empty without an attestation.
+	// claim or, where the draft (-08 and later) leaves iss out, from the
+	// subject of the certificate that signed it. Empty without an attestation.
 	attester string
 	// trusted reports whether that certificate chained to the wallet provider
 	// CA this issuer knows.
@@ -596,11 +592,10 @@ type clientAuthError struct {
 }
 
 // authenticateTokenClient authenticates one token request and writes the
-// refusal where that fails; the bool says whether to go on. The untrusted
+// refusal where that fails. The bool says whether to go on. The untrusted
 // attester is logged here, once per token exchange rather than at every
 // authenticated endpoint, because it is the exchange that produces a
-// credential. Somebody driving their own wallet through this flow reads it
-// here and in the ticket.
+// credential.
 func (d *DemoRP) authenticateTokenClient(w http.ResponseWriter, r *http.Request, clientID, jkt string) (clientAuthentication, bool) {
 	clientAuth, authErr := d.authenticateClient(r, clientID, jkt)
 	if authErr != nil {
@@ -686,8 +681,8 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 		return clientAuthentication{}, attestationFailed("client attestation signature does not verify with its certificate")
 	}
 	// §7.1: "If a client_id was provided, verify that it matches the sub claim
-	// of the Client Attestation." The sub claim is REQUIRED, iss is not (it was
-	// removed in draft -08), so the client is identified by sub alone. The
+	// of the Client Attestation." The sub claim is REQUIRED, iss is not (absent
+	// from draft -08 on), so the client is identified by sub alone. The
 	// pre-authorized code grant carries no client_id, and then the sub stands
 	// on its own.
 	sub, _ := attestation.payload["sub"].(string)
@@ -719,7 +714,7 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	// draft defines is taken with a note in the log.
 	draft := d.abcaDraft()
 	if _, hasISS := attestation.payload["iss"]; draft <= 7 && !hasISS {
-		log.Printf("[Demo issuer] client attestation omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires; accepted, since draft-08 and draft-10 define the shape without it")
+		log.Printf("[Demo issuer] client attestation omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires. Accepted, since draft-08 and draft-10 define the shape without it")
 	}
 
 	authenticated := clientAuthentication{
@@ -741,7 +736,7 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 			return clientAuthentication{}, attestationFailed("the DPoP proof is signed by a different key than the one the client attestation attests")
 		}
 		if draft < 10 {
-			log.Printf("[Demo issuer] the DPoP proof serves as the attestation's possession proof (dpop_combined), a draft-10 mechanism, while the configured OpenID4VCI version pins draft-0%d; accepted, since draft-10 is always supported alongside the pinned drafts", draft)
+			log.Printf("[Demo issuer] the DPoP proof serves as the attestation's possession proof (dpop_combined), a draft-10 mechanism, while the configured OpenID4VCI version pins draft-0%d. Accepted, since draft-10 is always supported alongside the pinned drafts", draft)
 		}
 		return authenticated, nil
 	}
@@ -762,8 +757,8 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	if aud, _ := pop.payload["aud"].(string); aud != d.issuerID() {
 		return clientAuthentication{}, attestationFailed("client attestation PoP aud %q is not this authorization server", aud)
 	}
-	// jti and iat are REQUIRED of the PoP (§5.1), exp is not, and iss left its
-	// claims with draft-08. A PoP that carries iss is still held to naming the
+	// jti and iat are REQUIRED of the PoP (§5.1), exp is not, and iss is absent
+	// from draft -08 on. A PoP that carries iss is still held to naming the
 	// client, because a value that disagrees with the client_id says the proof
 	// was made for somebody else.
 	if jti, _ := pop.payload["jti"].(string); jti == "" {
@@ -774,7 +769,7 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 		return clientAuthentication{}, attestationFailed("client attestation PoP iss %q does not match client_id %q", iss, clientID)
 	}
 	if draft <= 7 && !hasPoPISS {
-		log.Printf("[Demo issuer] client attestation PoP omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires; accepted, since draft-08 and draft-10 define the shape without it")
+		log.Printf("[Demo issuer] client attestation PoP omits iss, which draft-07 (the configured OpenID4VCI 1.0 pin) requires. Accepted, since draft-08 and draft-10 define the shape without it")
 	}
 	if err := checkPoPFreshness(pop.payload); err != nil {
 		return clientAuthentication{}, attestationFailed("client attestation PoP: %v", err)
@@ -801,8 +796,8 @@ type attestationSigner struct {
 }
 
 // name identifies the attester for the record kept with the issued credential.
-// The iss claim is optional since draft -08, so the certificate subject is what
-// remains when it is absent.
+// The iss claim is optional from draft -08 on, so the certificate subject is
+// what remains when it is absent.
 func (s attestationSigner) name(payload map[string]any) string {
 	if iss, _ := payload["iss"].(string); iss != "" {
 		return iss
@@ -815,7 +810,7 @@ func (s attestationSigner) name(payload map[string]any) string {
 
 // attestationSigner reads the signing key of a wallet attestation out of its
 // x5c header and reports whether it chains to the wallet provider CA. The
-// draft leaves key resolution to the deployment; this one takes the leaf the
+// draft leaves key resolution to the deployment. This one takes the leaf the
 // attestation carries and treats the chain as the trust question.
 func (d *DemoRP) attestationSigner(header map[string]any) (attestationSigner, error) {
 	rawChain, _ := header["x5c"].([]any)
@@ -887,10 +882,8 @@ func checkPoPFreshness(payload map[string]any) error {
 	return nil
 }
 
-// ticketClaim describes this authentication in the issued ticket. A credential
-// collected without a trusted wallet attestation should say so rather than
-// look like one that came with it, which is the whole reason this issuer can
-// afford to accept an attester it was never given.
+// ticketClaim describes this authentication in the issued ticket, so a
+// credential collected without a trusted wallet attestation says so.
 func (c *clientAuthentication) ticketClaim() string {
 	switch {
 	case c == nil || c.method == "" || c.method == unauthenticatedClientAuth:
@@ -902,12 +895,10 @@ func (c *clientAuthentication) ticketClaim() string {
 	}
 }
 
-// checkJWTValidity applies the exp and nbf claims when present.
+// checkJWTValidity requires exp and applies nbf when present.
 func checkJWTValidity(payload map[string]any) error {
 	now := time.Now()
-	// exp is required, not optional: without it a leaked attestation would be
-	// usable forever, and an "if present" check would silently accept exactly
-	// the token that omits it.
+	// exp is required: without it a leaked attestation would be usable forever.
 	exp, ok := payload["exp"].(float64)
 	if !ok {
 		return fmt.Errorf("has no exp claim")

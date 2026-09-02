@@ -29,7 +29,7 @@ import (
 // command formats its output once and the local store and a running instance
 // behave identically.
 //
-// A wallet IS its store (the wallet directory); an instance is that store plus
+// A wallet IS its store (the wallet directory). An instance is that store plus
 // the URL it is exposed at, and the same store can be reached both ways. The
 // store has one writer at a time, so managedWallet prefers the URL whenever a
 // live server owns it: an explicit target (--remote, `wallet use`)

@@ -89,9 +89,8 @@ func NewServer(cfg Config, writer EntryWriter) *Server {
 			if forwardedPort == "" {
 				forwardedPort = forwardedPortForProto(forwardedProto)
 			}
-			// SetXForwarded adds X-Forwarded-For the way the default proxy did,
-			// then the values a caller ahead of this proxy already declared take
-			// the host, proto and port.
+			// SetXForwarded adds X-Forwarded-For, then the values a caller ahead
+			// of this proxy already declared take the host, proto and port.
 			pr.SetXForwarded()
 			out.URL.Scheme = cfg.TargetURL.Scheme
 			out.URL.Host = cfg.TargetURL.Host

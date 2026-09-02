@@ -22,8 +22,8 @@ import (
 )
 
 // ClientHeader names the client and its release. A submission that carries it
-// comes from a client this project ships, which is what tells a current URL
-// handler apart from one installed before the wallet asked to be named.
+// comes from a client this project ships, which tells a current URL handler
+// apart from one an earlier release installed.
 const ClientHeader = config.ClientHeader
 
 // staleClientNotice names what a submission that identifies no page costs, and
@@ -42,10 +42,9 @@ func clientName(r *http.Request) string {
 	return strings.TrimSpace(name)
 }
 
-// noteStaleClient reports a submission that names neither itself nor a page,
-// which is what a URL handler installed before the wallet asked for either
-// looks like. The activity log is where it goes: such a client dispatches
-// headlessly, so its own output reaches nobody, and the log is read in the UI.
+// noteStaleClient reports a submission that names neither itself nor a page
+// (a URL handler an earlier release installed). It goes to the activity log:
+// such a client dispatches headlessly, so its own output reaches nobody.
 func (s *Server) noteStaleClient(r *http.Request) {
 	if clientName(r) != "" || requestOwner(r) != "" {
 		return

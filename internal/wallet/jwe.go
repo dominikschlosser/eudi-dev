@@ -52,20 +52,17 @@ func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 		return "", nil, err
 	}
 
-	// Generate ephemeral EC P-256 key pair
 	ephemeralPriv, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		return "", nil, fmt.Errorf("generating ephemeral key: %w", err)
 	}
 	ephemeralPub := ephemeralPriv.PublicKey()
 
-	// Convert recipient ECDSA public key to ECDH
 	recipientECDH, err := recipientKey.ECDH()
 	if err != nil {
 		return "", nil, fmt.Errorf("converting recipient key to ECDH: %w", err)
 	}
 
-	// ECDH key agreement
 	z, err := ephemeralPriv.ECDH(recipientECDH)
 	if err != nil {
 		return "", nil, fmt.Errorf("ECDH key agreement: %w", err)
@@ -74,7 +71,6 @@ func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 	// Derive key via Concat KDF (NIST SP 800-56A, RFC 7518 §4.6)
 	derivedKey := jwe.ConcatKDF(z, enc, apu, apv, keyBitLen)
 
-	// Build protected header
 	epkX, epkY := unmarshalECDHPublicKey(ephemeralPub)
 	header := map[string]any{
 		"alg": alg,
@@ -130,8 +126,8 @@ func encryptJWE(payload []byte, recipientKey *ecdsa.PublicKey, kid string, alg s
 // with AES-GCM or AES-CBC-HS content encryption, to the verifier's RSA public
 // key. A random content encryption key is wrapped with RSA-OAEP (RFC 7518 §4.2,
 // SHA-1) or RSA-OAEP-256 (§4.3, SHA-256). It returns the compact serialization
-// and the content encryption key. RSA-OAEP is an OID4VP option; HAIP requires
-// ECDH-ES instead (see the HAIP checks).
+// and the content encryption key. RSA-OAEP is an OID4VP option. HAIP requires
+// ECDH-ES (see the HAIP checks).
 func EncryptJWERSA(payload []byte, recipientKey *rsa.PublicKey, kid, alg, enc string) (string, []byte, error) {
 	keyBitLen, err := jwe.EncKeyBitLen(enc)
 	if err != nil {
@@ -244,16 +240,13 @@ func encryptAESCBCHS256(derivedKey, plaintext, aad []byte) (iv, ciphertext, tag 
 	macKey := derivedKey[:16]
 	encKey := derivedKey[16:]
 
-	// Generate 128-bit IV
 	iv = make([]byte, aes.BlockSize) // 16 bytes
 	if _, err := rand.Read(iv); err != nil {
 		return nil, nil, nil, fmt.Errorf("generating IV: %w", err)
 	}
 
-	// PKCS#7 padding
 	padded := pkcs7Pad(plaintext, aes.BlockSize)
 
-	// AES-CBC encrypt
 	block, err := aes.NewCipher(encKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating AES cipher: %w", err)
@@ -331,7 +324,7 @@ func ecdsaPublicKeyFromJWK(mode ValidationMode, xB64, yB64 string) (*ecdsa.Publi
 	}
 	finding := ""
 	if repaired {
-		finding = "encryption JWK has an EC coordinate narrower than P-256 requires (RFC 7518 6.2.1.2); it was left padded to read the key"
+		finding = "encryption JWK has an EC coordinate narrower than P-256 requires (RFC 7518 6.2.1.2). It was left padded to read the key"
 	}
 	return key, finding, nil
 }

@@ -127,13 +127,11 @@ EOF
   exit 1
 }
 
-# Drop the local suite's database once the run is over. The suite records every
-# test and every log line it ever ran, and a database carrying days of them has
-# the server pausing long enough that a request to it times out, which fails
-# the module it was serving and takes the run with it. Nothing here reads the
-# suite's own history: the results are exported per run.
-#
-# Local mode only. A hosted server belongs to somebody else.
+# Drop the local suite's database once the run is over. The suite keeps every
+# test and log line it ever ran, and a database carrying days of them pauses
+# the server long enough for a request to time out, which fails the module it
+# was serving. The results are exported per run, so nothing here reads the
+# suite's own history. Local mode only: a hosted server belongs to somebody else.
 wipe_local_suite_database() {
   [ "$CONFORMANCE_MODE" = "local" ] || return 0
   [ "${OIDF_KEEP_SUITE_DB:-0}" = "1" ] && return 0

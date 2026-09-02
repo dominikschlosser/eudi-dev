@@ -35,8 +35,8 @@ type trustListOptions struct {
 	Profile       trustListProfile
 }
 
-// TrustListGroup is one coherent trust-list profile covering one or more
-// attestation types registered in the wallet.
+// TrustListGroup is one trust-list profile and the issued attestations
+// registered under it.
 type TrustListGroup struct {
 	ID      string
 	Profile trustListProfile
@@ -168,11 +168,9 @@ func walletProviderTrustListProfile() trustListProfile {
 }
 
 // withWalletProviderGroup adds the wallet-provider list to a set of
-// credential lists. It does not depend on the issued-attestation registry:
-// the wallet attestation exists whether or not the wallet has issued
-// anything, and an issuer should not have to work out that a list named
-// "pid" happens to carry the anchor it needs. The certificate inside is the
-// same shared CA, only the list that presents it differs.
+// credential lists. The wallet attestation exists whether or not the wallet
+// has issued anything, and an issuer looking for its anchor should not have to
+// read a list named "pid". The certificate inside is the same shared CA.
 func withWalletProviderGroup(groups []TrustListGroup) []TrustListGroup {
 	profile := walletProviderTrustListProfile()
 	id := trustListGroupID(profile)
@@ -424,7 +422,6 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		},
 	}
 
-	// Build JWT header
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "JWT",

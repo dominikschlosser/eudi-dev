@@ -109,9 +109,8 @@ func parseBrowserAuthorizationRequest(protocol string, data any, opts oid4vc.Par
 		return parseMultiSignedBrowserAuthorizationRequest(requestObject, opts, requestOrigin)
 	case BrowserAPIProtocolOpenID4VPUnsigned:
 		payload := data
-		// OpenID4VP 1.0 Appendix A.2 has the wallet ignore both client_id and
-		// expected_origins in an unsigned request. They are dropped here so
-		// nothing downstream can be steered by a value a page did not sign.
+		// OpenID4VP 1.0 Appendix A.2: the wallet ignores client_id and
+		// expected_origins in an unsigned request.
 		if requestMap, ok := data.(map[string]any); ok {
 			cloned := make(map[string]any, len(requestMap))
 			for key, value := range requestMap {
@@ -239,11 +238,9 @@ func BuildBrowserAPIResult(protocol string, response *AuthorizationResponseEnvel
 
 	switch response.ResponseMode {
 	case "dc_api.jwt":
-		// An error is carried plainly even under the encrypted response mode.
-		// Appendix A.4 defines the error as "an object within the data
-		// property" with "a single property with the name error", and a
-		// Verifier reading a JWE where that object belongs sees a response
-		// rather than a refusal.
+		// An error is carried plainly even under the encrypted response mode:
+		// Appendix A.4 defines it as "an object within the data property"
+		// with "a single property with the name error".
 		if response.ResponseJWT == "" && response.Plain != nil {
 			return &BrowserAPIResult{
 				Protocol: protocol,

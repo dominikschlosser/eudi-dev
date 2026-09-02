@@ -187,8 +187,7 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 
 // TestProcessCredentialOffer_PreAuthHonorsIssuerProtections covers the
 // pre-authorized code flow against an issuer that requires DPoP, wallet
-// attestation, and key attestation. The flow used to send none of them, so
-// only an issuer with all three turned off could issue to this wallet.
+// attestation, and key attestation: the flow sends all three.
 func TestProcessCredentialOffer_PreAuthHonorsIssuerProtections(t *testing.T) {
 	for _, tc := range []struct {
 		name                                               string

@@ -1,7 +1,6 @@
-// Polling is bounded on purpose: an abandoned tab used to poll a dead
-// request every 1.5s forever, which dwarfed the real traffic in the
-// access log. It backs off, pauses while the tab is hidden, and stops
-// as soon as the request is no longer pending.
+// Polling is bounded: it backs off, pauses while the tab is hidden, and
+// stops once the request stops being pending, so an abandoned tab does not
+// poll a dead request forever.
 const POLL_MIN = 1500;
 const POLL_MAX = 8000;
 let pollTimer = null;

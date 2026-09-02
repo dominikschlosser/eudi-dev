@@ -30,7 +30,7 @@ import (
 func TestRemoteAcceptLeavesTheOfferForTheWallet(t *testing.T) {
 	var offerReads atomic.Int32
 	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// One read only, as the issuer this was found against behaves.
+		// The offer is served once.
 		if offerReads.Add(1) > 1 {
 			http.Error(w, `{"message":"Credential offer not found"}`, http.StatusNotFound)
 			return

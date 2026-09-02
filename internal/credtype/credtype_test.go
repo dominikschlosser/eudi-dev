@@ -29,8 +29,8 @@ func TestAnswers(t *testing.T) {
 	}{
 		{"same type", PIDVCT, nil, PIDVCT, true},
 		{
-			// The point of the whole exercise: a verifier asking for the
-			// country-independent PID is answered by the German one.
+			// A verifier asking for the country-independent PID is answered by
+			// the German one.
 			"extending type answers for the type it extends",
 			GermanPIDVCT, nil, PIDVCT, true,
 		},
@@ -103,8 +103,7 @@ func TestAkaVCTs(t *testing.T) {
 			map[string]any{AkaVCTsClaim: []any{PIDVCT, "urn:example:other:1"}},
 			[]string{PIDVCT, "urn:example:other:1"},
 		},
-		// A credential is free to be malformed, and a type it cannot state is
-		// a type it does not have.
+		// A malformed aka_vcts claim is ignored.
 		{"not a list", map[string]any{AkaVCTsClaim: PIDVCT}, nil},
 		{"non-string entries", map[string]any{AkaVCTsClaim: []any{42, PIDVCT, ""}}, []string{PIDVCT}},
 	}
@@ -131,8 +130,7 @@ func TestExtends(t *testing.T) {
 		parent string
 	}{
 		{GermanPIDVCT, PIDVCT},
-		// A country this tool was never told about, which is the point of
-		// reading the requirement instead of listing the types.
+		// A country this tool has no entry for.
 		{"urn:eudi:pid:fr:1", PIDVCT},
 		{"urn:eudi:pid:es:2", PIDVCT},
 		// A region code, which PID_06 allows for the mdoc namespace and
@@ -162,8 +160,8 @@ func TestExtends(t *testing.T) {
 	}
 }
 
-// A national PID from any country answers a request for the type it extends,
-// which is the behaviour PID_14 describes and the reason this is a rule.
+// A national PID from any country answers a request for the type it extends
+// (PID_14).
 func TestAnswers_AnyDomesticPIDType(t *testing.T) {
 	for _, vct := range []string{GermanPIDVCT, "urn:eudi:pid:fr:1", "urn:eudi:pid:nl:1"} {
 		if !Answers(vct, nil, PIDVCT) {

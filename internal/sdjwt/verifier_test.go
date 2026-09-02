@@ -133,7 +133,6 @@ func TestVerify(t *testing.T) {
 				t.Error("expected errors, got none")
 			}
 
-			// Check time fields for valid tokens with time claims
 			if tt.name == "time claims present" {
 				if result.IssuedAt == nil {
 					t.Error("expected IssuedAt to be set")

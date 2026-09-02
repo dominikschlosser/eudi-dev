@@ -43,10 +43,9 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetTemplate returns a single template by name, which must be a bare
-// name as the write and delete handlers already required. credtemplate.Load
-// takes a name or a path on purpose (the CLI documents `templates show
-// ./some-template.json`), so handing it a URL segment would make this an
-// arbitrary file read over HTTP.
+// name. credtemplate.Load takes a name or a path (the CLI documents
+// `templates show ./some-template.json`), so a URL segment handed to it would
+// be an arbitrary file read over HTTP.
 func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if name != filepath.Base(name) || strings.HasPrefix(name, ".") {

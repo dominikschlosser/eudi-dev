@@ -21,23 +21,18 @@ import (
 )
 
 // TestMain isolates these tests from the developer's own configuration.
-//
 // Commands resolve the active wallet through remote.json in the config
-// directory, so on a machine where "wallet use <url>" points at a
-// hosted wallet, running this package issued and deleted credentials on that
-// live instance. It has happened, twice, including against the public demo.
-// A throwaway config directory makes it impossible rather than a thing to
-// remember.
+// directory, so without a throwaway directory a test run would drive
+// whatever wallet `wallet use <url>` points at.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "eudi-cmd-tests-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "creating temporary config directory: %v\n", err)
 		os.Exit(1)
 	}
-	// HOME rather than EUDI_DEV_HOME, so the tests that point HOME somewhere
-	// themselves keep resolving the config directory the same way. The
-	// explicit overrides are cleared so a developer's environment cannot put
-	// the real directory back.
+	// HOME rather than EUDI_DEV_HOME, so the tests that set HOME themselves
+	// resolve the config directory the same way. The explicit overrides are
+	// cleared so a developer's environment cannot put the real directory back.
 	os.Setenv("HOME", dir)
 	os.Setenv("USERPROFILE", dir)
 	os.Unsetenv("EUDI_DEV_HOME")

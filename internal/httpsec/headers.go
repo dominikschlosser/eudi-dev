@@ -14,9 +14,8 @@
 
 // Package httpsec holds the browser security headers every UI in this toolkit
 // serves. All of them render content someone else supplied: credentials,
-// issuer metadata, verifier requests, proxied traffic. Escaping is what keeps
-// that inert, and these headers are what keeps a hole in the escaping from
-// becoming code execution.
+// issuer metadata, verifier requests, proxied traffic. These headers keep a
+// hole in the escaping from becoming code execution.
 package httpsec
 
 import "net/http"

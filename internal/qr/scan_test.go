@@ -34,7 +34,6 @@ func TestScanFile_ValidQR(t *testing.T) {
 }
 
 func TestScanFile_NoQR(t *testing.T) {
-	// Create a blank image file to test with
 	_, err := ScanFile("testdata/no_qr.png")
 	if err == nil {
 		t.Fatal("expected error for image without QR code")
@@ -65,9 +64,8 @@ func TestScanFile_InvalidImage(t *testing.T) {
 }
 
 func TestScanScreen_NonDarwin(t *testing.T) {
-	// ScanScreen is only supported on macOS. On other platforms it returns
-	// an error immediately. We can't test the interactive screencapture in
-	// an automated test, so we only verify the platform guard here.
+	// ScanScreen is macOS only. Off macOS it refuses immediately, which is
+	// all an automated test can check.
 	if runtime.GOOS == "darwin" {
 		t.Skip("skipping: ScanScreen launches interactive screencapture on macOS")
 	}

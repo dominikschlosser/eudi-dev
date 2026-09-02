@@ -42,10 +42,8 @@ func TestImportCredentialLogsActivity(t *testing.T) {
 	t.Error("expected an activity-log entry for the manual credential import")
 }
 
-// A presentation submitted through /api/presentations used to be validated
-// twice (once in handlePresentationAPI, once in handleAuthFlow), so every
-// validation warning was logged twice for a single flow. It must appear
-// once now.
+// A presentation submitted through /api/presentations is validated once, so
+// each validation warning appears once in the activity log for a flow.
 func TestPresentationAPILogsEachValidationWarningOnce(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.RequireHAIP = true

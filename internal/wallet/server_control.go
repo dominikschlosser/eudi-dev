@@ -82,12 +82,12 @@ func (s *Server) SetVersion(version string) {
 	s.version = version
 }
 
-// handleLog returns the activity log.
 // demoLogLimit caps what demo mode serves, since a shared wallet accumulates
 // entries from every visitor and the UI only needs the recent tail. It bounds
 // the response, not the log: maxLogEntries bounds what is kept.
 const demoLogLimit = 50
 
+// handleLog returns the activity log.
 func (s *Server) handleLog(w http.ResponseWriter, r *http.Request) {
 	log := s.wallet.GetLog()
 	if s.demo != nil && len(log) > demoLogLimit {
@@ -133,8 +133,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	if templatesDir == "" && walletDir != "" {
 		templatesDir = filepath.Join(walletDir, "templates")
 	}
-	// Snapshot the runtime-mutable conformance fields together under the lock;
-	// a local PUT /api/config/conformance can be changing them concurrently.
+	// Snapshot the runtime-mutable conformance fields together under the lock.
+	// A local PUT /api/config/conformance can be changing them concurrently.
 	mode, requireHAIP, requireEncrypted := s.wallet.ConformanceSettings()
 	config := map[string]any{
 		"port":               s.port,
@@ -242,13 +242,13 @@ func (s *Server) handleSetAutoAccept(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSetConformance changes the wallet's runtime conformance settings
-// (validation mode, HAIP, encrypted requests). On a local wallet every flow —
-// the UI, the macOS URL-scheme handler and the CLI — hits this same wallet, so
+// (validation mode, HAIP, encrypted requests). On a local wallet every flow
+// (the UI, the macOS URL-scheme handler and the CLI) hits this same wallet, so
 // the change reaches all of them. Refused in demo mode, where the settings are
-// shared and fixed (HAIP in debug mode); run the wallet locally to change them.
+// shared and fixed (HAIP in debug mode).
 func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 	if s.demo != nil {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode; run the wallet locally to change them"})
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "conformance settings are fixed in public demo mode (run the wallet locally to change them)"})
 		return
 	}
 	var body struct {

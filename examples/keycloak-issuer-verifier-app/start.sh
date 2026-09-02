@@ -101,7 +101,7 @@ case "${mode}" in
     echo
     echo "Open the demo app: http://127.0.0.1:${APP_PORT}"
     echo "Sign in with the wallet. The first login asks for the alice / alice password"
-    echo "and issues the membership credential; the next login is passwordless."
+    echo "and issues the membership credential. The next login is passwordless."
     wait "${APP_PID}"
     ;;
   setup-only)
@@ -109,6 +109,6 @@ case "${mode}" in
     echo
     echo "Keycloak and the wallet are running."
     echo "  Drive a login: ./scripts/smoke.py"
-    echo "  Stop:          docker compose down -v && eudi wallet stop"
+    echo "  Stop:          docker compose down -v && eudi wallet kill ${WALLET_PORT}"
     ;;
 esac

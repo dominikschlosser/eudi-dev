@@ -376,7 +376,6 @@ func TestIssueSDJWT_EndToEnd(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 
-	// Reset flags to defaults
 	issueClaims = ""
 	issueKeyPath = ""
 	issueOmit = nil
@@ -405,10 +404,8 @@ func TestIssueSDJWT_WithPID(t *testing.T) {
 	}
 }
 
-// A JWT VC carries the PID claim set plainly, so --pid has to work there too.
-// It used to fail with "template \"pid-sdjwt\" is for format sdjwt, not jwt",
-// because the template --pid picks for the caller was held to the same format
-// rule as one they named themselves.
+// A JWT VC carries the PID claim set plainly, so --pid applies to `issue jwt`
+// too.
 func TestIssueJWT_WithPID(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
@@ -628,7 +625,6 @@ func TestIssueSDJWT_WithCustomIssuerVCTExp(t *testing.T) {
 }
 
 func TestIssueSDJWT_WithKeyFile(t *testing.T) {
-	// Generate a key and write it as JWK to a temp file
 	key, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatalf("GenerateKey: %v", err)
@@ -774,13 +770,10 @@ func TestDefaultClaims_HasExpectedFields(t *testing.T) {
 	}
 }
 
-// The PID claim sets mirror what the rulebooks describe: the
-// country-independent ones the EUDI PID Rulebook (ARF Annex 3.01), the German
-// ones the credentials the German PID provider issues (see
-// internal/mock/claims.go). These pin the exact sets: a claim silently added
-// or dropped changes what every default PID, template and demo credential
-// contains, and drifting from the real thing is the whole failure mode worth
-// catching.
+// The PID claim sets mirror the rulebooks: the country-independent ones the
+// EUDI PID Rulebook (ARF Annex 3.01), the German ones the German PID Rulebook
+// (see internal/mock/claims.go). These pin the exact sets, since every
+// default PID, template and demo credential is built from them.
 func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
 	want := map[string]bool{
 		"family_name": true, "given_name": true, "birthdate": true,
@@ -792,10 +785,8 @@ func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
 	}
 	assertClaimSet(t, "SDJWTPIDClaims", mock.SDJWTPIDClaims, want)
 
-	// National additions belong to the German PID, and a credential of the
-	// country-independent type carrying them would misrepresent its rulebook.
-	// The age thresholds are among them: the EUDI PID Rulebook removed the age
-	// verification attributes in version 1.1, following CIR 2024/2977.
+	// National additions belong to the German PID only. The age attributes
+	// are among them: EUDI PID Rulebook 1.1 has none (CIR 2024/2977).
 	for _, name := range []string{
 		"birth_name", "title", "also_known_as", "source_document_type",
 		"age_equal_or_over", "age_in_years", "age_birth_year",
@@ -1008,9 +999,7 @@ func TestPIDClaims_TypesAreCorrect(t *testing.T) {
 		}
 	}
 
-	// Two different people, one per rulebook: the country-independent PID is the
-	// rulebook's Dutch Jan Wijnand, the German PID is the Erika Mustermann
-	// specimen. The shared claim names must therefore differ between them.
+	// One person per rulebook, so the shared claim names differ between them.
 	if mock.SDJWTPIDClaims["family_name"] == mock.SDJWTGermanPIDClaims["family_name"] &&
 		mock.SDJWTPIDClaims["given_name"] == mock.SDJWTGermanPIDClaims["given_name"] {
 		t.Error("the country-independent and the German PID should describe different people")

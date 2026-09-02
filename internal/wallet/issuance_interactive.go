@@ -29,8 +29,7 @@ import (
 
 // Interactive Authorization (OpenID4VCI 1.1 §6) replaces the browser redirect
 // of the authorization code grant with a conversation at the Authorization
-// Challenge Endpoint. The interaction implemented here is the draft's primary
-// use case: an issuer that asks for a Credential before it issues one.
+// Challenge Endpoint.
 const (
 	// interactionTypePresentation is the OpenID4VP presentation interaction of
 	// §6.2.1.1.
@@ -102,7 +101,7 @@ func (w *Wallet) noteRedirectToWeb(endpoint, redirectURI, authorizationEndpoint 
 const maxInteractiveAuthorizationRounds = 8
 
 // interactiveAuthorizationConsentTimeout matches the OpenID4VP endpoint's
-// consent timeout: the same question deserves the same time to answer.
+// consent timeout.
 const interactiveAuthorizationConsentTimeout = 5 * time.Minute
 
 // interactiveAuthorizationEndpoint reads the Authorization Challenge Endpoint
@@ -114,10 +113,9 @@ func interactiveAuthorizationEndpoint(oauthMeta map[string]any) string {
 
 // interactionTypesSupported is what the wallet advertises in the initial
 // request (§6.1.1). Only what it can carry out is listed: §6.2.1 makes a
-// wallet abort on a type it does not support, so advertising more would only
-// invite the server to pick one. The browser interaction needs a redirect URI
-// the server can send the user back to and an authorization endpoint to take
-// the request_uri to, so it is offered only where both exist.
+// wallet abort on a type it does not support. The browser interaction needs a
+// redirect URI and an authorization endpoint, so it is offered only where both
+// exist.
 func (w *Wallet) interactionTypesSupported(setup authorizationCodeSetup) []string {
 	types := []string{interactionTypePresentation}
 	if setup.redirectURI != "" && setup.authorizationEndpoint != "" {
@@ -166,7 +164,7 @@ func (w *Wallet) obtainInteractiveAuthorizationCode(endpoint string, setup autho
 		if errorCode != errorInsufficientAuthorization {
 			return "", false, authorizationChallengeError(response)
 		}
-		// §6.2.1 makes auth_session REQUIRED here; without it the next
+		// §6.2.1 makes auth_session REQUIRED here. Without it the next
 		// request would start a new conversation.
 		if authSession == "" {
 			return "", false, fmt.Errorf("authorization server asked for an interaction without an auth_session (OpenID4VCI 1.1 §6.2.1)")
@@ -220,14 +218,14 @@ func (w *Wallet) initialAuthorizationChallengeForm(setup authorizationCodeSetup,
 	form.Set("client_id", setup.clientID)
 	form.Set("scope", setup.scope)
 	// Carried so a server that answers redirect_to_web can put it in the
-	// authorization request it hands back, which is what the callback of the
-	// redirect flow is then matched by.
+	// authorization request it hands back. The redirect flow's callback is
+	// matched by it.
 	form.Set("state", setup.state)
 	form.Set("code_challenge", setup.codeChallenge)
 	form.Set("code_challenge_method", "S256")
 	form.Set("interaction_types_supported", strings.Join(w.interactionTypesSupported(setup), ","))
-	// Nothing is redirected anywhere here, so a redirect URI is sent only
-	// where one was configured. It is what auth_via_web would come back to.
+	// A redirect URI is sent only where one was configured. It is what
+	// auth_via_web comes back to.
 	if setup.redirectURI != "" {
 		form.Set("redirect_uri", setup.redirectURI)
 	}
@@ -269,9 +267,8 @@ func (w *Wallet) postAuthorizationChallenge(endpoint string, form url.Values, se
 
 	details := responseMapLogDetails(endpoint, "authorization_challenge", response, nil)
 	details["status_code"] = status
-	// An Interaction Required Response carries an error member and a 403, and
-	// is the server asking for the next step rather than refusing the flow. It
-	// is recorded as the step it is.
+	// An Interaction Required Response carries an error member and a 403. It
+	// is recorded as a successful step.
 	errorCode := jsonutil.GetString(response, "error")
 	w.addProtocolLog("issuance", "authorization_challenge_response",
 		fmt.Sprintf("Authorization challenge response from %s", endpoint),
@@ -288,7 +285,7 @@ func (w *Wallet) authorizationChallengeCode(response map[string]any) (string, er
 	// A server answering with the redirect flow's parameter name has finished
 	// the authorization and named it wrongly.
 	if code := jsonutil.GetString(response, "code"); code != "" {
-		if err := w.reportServerDeviation("authorization challenge response carried the authorization code in \"code\"; Section 5.2.1 of the OAuth 2.0 for First-Party Applications specification names it \"authorization_code\""); err != nil {
+		if err := w.reportServerDeviation("authorization challenge response carried the authorization code in \"code\". Section 5.2.1 of the OAuth 2.0 for First-Party Applications specification names it \"authorization_code\""); err != nil {
 			return "", err
 		}
 		return code, nil
@@ -321,8 +318,7 @@ func (w *Wallet) runAuthorizationInteraction(endpoint string, response map[strin
 		return &interactionOutcome{form: form}, nil
 	case interactionTypeAuthViaWeb:
 		if setup.redirectURI == "" || setup.authorizationEndpoint == "" {
-			// The wallet did not advertise this type, so a server asking for
-			// it anyway ignored §6.2.1. The message says what is missing.
+			// The wallet did not advertise this type (§6.2.1).
 			return nil, fmt.Errorf("authorization server asked for the %s interaction, which this wallet did not advertise (it needs a redirect URI and an authorization endpoint)", interactionTypeAuthViaWeb)
 		}
 		return w.runAuthViaWebInteraction(response, setup)
@@ -547,8 +543,7 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 // authorization server (§6.2.1.5).
 //
 // Unlike the Digital Credentials API, it is checked on unsigned requests too:
-// there is no platform reporting a true origin here, so a value disagreeing
-// with the endpoint the wallet itself called is evidence.
+// no platform reports a true origin here.
 func checkInteractiveAuthorizationOrigins(payload map[string]any, endpoint string) error {
 	if payload == nil {
 		return nil
@@ -590,8 +585,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 	}
 
 	// An unsigned request carries no client_id (Appendix A.2), so the party to
-	// name is the endpoint this presentation is bound to and goes back to. A
-	// consent dialog that names nobody is one the user cannot answer.
+	// name is the endpoint this presentation is bound to.
 	asking := authReq.ClientID
 	if asking == "" {
 		asking = derivedOrigin(endpoint)
@@ -599,8 +593,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 	consentReq := &ConsentRequest{
 		ID: newConsentID(),
 		// Its own type: this presentation belongs to an issuance one visitor
-		// started, so a shared wallet must not put it in front of everybody
-		// else. It is rendered as the presentation request it is.
+		// started, so a shared wallet must not show it to everybody.
 		Type:         ConsentTypeIssuancePresentation,
 		Owner:        owner,
 		MatchedCreds: matches,
@@ -652,7 +645,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 }
 
 // addPresentationRequestLogEntry records the request under the issuance it
-// belongs to rather than as a presentation arriving out of nowhere.
+// belongs to.
 func (w *Wallet) addPresentationRequestLogEntry(authReq *AuthorizationRequestParams) {
 	details := presentationRequestLogDetails(authReq)
 	details["direction"] = "inbound"

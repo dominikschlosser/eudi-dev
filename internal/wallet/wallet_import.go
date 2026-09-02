@@ -93,11 +93,9 @@ func credentialIssuerDID(raw string) string {
 
 // noteDIDIssuerKey reports a credential whose issuer key is named by a DID.
 // This toolkit resolves an issuer key through the x5c chain HAIP 1.0 §6.1.1
-// requires or through the issuer metadata SD-JWT VC defines, and the EUDI
-// ecosystem uses no DIDs, so such a credential is stored without its signature
-// ever being checked. The same identifier is what leaves its status list
-// unverifiable, and both are easier to place when the wallet says so at the
-// moment the credential arrives.
+// requires or through the issuer metadata SD-JWT VC defines, so such a
+// credential is stored with its signature unchecked and its status list
+// unverifiable.
 func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
 	if w == nil || cred == nil {
 		return
@@ -409,7 +407,7 @@ func (c *StoredCredential) Rehydrate() error {
 
 // rememberRenewal records what re-requesting a credential from its issuer
 // needs. Only an issuer that handed over a refresh token can be asked again,
-// so without one nothing is stored and the credential simply expires.
+// so without one nothing is stored and the credential expires.
 func (w *Wallet) rememberRenewal(credentialID, refreshToken string, renewal CredentialRenewal) {
 	if w == nil || refreshToken == "" || renewal.CredentialEndpoint == "" || renewal.TokenEndpoint == "" {
 		return

@@ -318,10 +318,10 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 }
 
 // An mdoc whose issuer certificate chains up to a CA named in an ETSI trust
-// list is accepted; one from an unrelated authority is refused. The end-to-end
-// TestEvaluateDCQL_TrustedAuthorities_* tests cover this for SD-JWT; mdoc runs
-// a separate chain-validation path (ExtractAndValidateMDOCX5Chain), so it needs
-// its own coverage.
+// list is accepted, and one from an unrelated authority is refused. The
+// end-to-end TestEvaluateDCQL_TrustedAuthorities_* tests cover this for SD-JWT.
+// mdoc runs a separate chain-validation path (ExtractAndValidateMDOCX5Chain),
+// so it needs its own coverage.
 func TestCheckETSITrustListMDOC(t *testing.T) {
 	caCert, leafCert, _, _ := authorityChain(t)
 	tlJWT, err := GenerateTrustListJWT(mustGenerateKey(t), caCert)

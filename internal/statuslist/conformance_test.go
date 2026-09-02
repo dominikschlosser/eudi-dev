@@ -77,8 +77,7 @@ func serveToken(t *testing.T, status int, contentType, body string) *httptest.Se
 // Section 8.3: "The subject claim (sub or 2) of the Status List Token MUST be
 // equal to the uri claim in the status_list object of the Referenced Token".
 // Without the comparison, any status list token a relying party trusts
-// answers for any credential: one list whose index N is zero un-revokes every
-// credential that happens to sit at index N of a different list.
+// answers for any credential.
 func TestCheck_RejectsSubjectThatIsNotTheReferencedURI(t *testing.T) {
 	key := mustGenerateKey(t)
 	// The substituted list says everyone is valid, and it says so about a
@@ -117,9 +116,7 @@ func TestCheck_RejectsTokenWithoutSubject(t *testing.T) {
 
 // Section 5.1: "The JWT MUST be secured using a cryptographic signature or MAC
 // algorithm. Relying Parties MUST reject JWTs with an invalid signature."
-// There is no exception for a relying party that has no trust list, so a
-// caller that supplies no options must still not receive a status that
-// nothing vouches for.
+// There is no exception for a relying party without a trust list.
 func TestCheck_RejectsBadSignatureWithoutATrustList(t *testing.T) {
 	key := mustGenerateKey(t)
 	other := mustGenerateKey(t)
@@ -169,10 +166,9 @@ func TestCheck_RejectsTokenWithNoResolvableKey(t *testing.T) {
 	}
 }
 
-// A Status Provider naming its key by a DID is named as doing so. Section
-// 11.3 leaves key resolution to the ecosystem, and this one resolves a Status
-// Issuer through x5c, so the reason nothing verifies is the identifier rather
-// than a key that went missing.
+// A Status Provider naming its key by a DID gets an error naming the DID.
+// Section 11.3 leaves key resolution to the ecosystem, and this one resolves
+// a Status Issuer through x5c.
 func TestCheck_NamesADIDItCannotResolve(t *testing.T) {
 	key := mustGenerateKey(t)
 	const did = "did:key:z6MkuR4XP7DmHiEzKK46ypK2RyZ3XgqQCz1DHw7XtMg3CEuf"
@@ -218,8 +214,7 @@ func TestCheck_ReportsAnUnanchoredKeyAsAWarning(t *testing.T) {
 
 // Section 8.3: "If the expiration time is defined (exp or 4), it MUST be
 // checked if the Status List Token is expired". An unchecked exp lets a copy
-// of the list captured before a credential was revoked keep answering for it,
-// which un-revokes the credential for as long as the copy is replayed.
+// of the list captured before a credential was revoked keep answering for it.
 func TestCheck_RejectsExpiredToken(t *testing.T) {
 	key := mustGenerateKey(t)
 	var srv *httptest.Server
@@ -329,9 +324,8 @@ func TestCheck_AcceptsTypWithTheApplicationPrefix(t *testing.T) {
 	}
 }
 
-// Section 4.2: "bits: REQUIRED". Defaulting a missing or unreadable bits to 1
-// reads a wider list at the wrong offsets, so every entry past the first byte
-// comes back as some other credential's status.
+// Section 4.2: "bits: REQUIRED". A missing or unreadable bits is refused, not
+// defaulted to 1, because the wrong width reads other credentials' entries.
 func TestCheck_RejectsMissingOrUnreadableBits(t *testing.T) {
 	key := mustGenerateKey(t)
 	for _, tc := range []struct {
@@ -371,9 +365,8 @@ func TestCheck_RejectsMissingOrUnreadableBits(t *testing.T) {
 	}
 }
 
-// Section 6.2 makes idx REQUIRED. Treating a missing one as index 0 reports
-// whatever the first entry of the list happens to say about an unrelated
-// credential.
+// Section 6.2 makes idx REQUIRED. A missing idx is refused, not read as
+// index 0.
 func TestExtractStatusRef_RequiresIdx(t *testing.T) {
 	ref := ExtractStatusRef(map[string]any{
 		"status": map[string]any{
@@ -404,10 +397,8 @@ func TestExtractStatusRef_RejectsNonIntegerAndNegativeIdx(t *testing.T) {
 	}
 }
 
-// idx*bits overflows for an index a credential is free to choose. A wrapped
-// negative product passes a bounds check written on the byte offset and then
-// indexes the slice with a negative number, which panics in whoever is
-// checking whether the credential is revoked.
+// idx*bits overflows for an index a credential is free to choose, so the
+// bounds check has to run on idx itself.
 func TestExtractStatus_DoesNotOverflowOnAHugeIndex(t *testing.T) {
 	bitstring := make([]byte, 16)
 	for _, tc := range []struct {
@@ -450,8 +441,8 @@ func TestCheck_DoesNotPanicOnAHugeCredentialIndex(t *testing.T) {
 }
 
 // Section 8.2: "A successful response that contains a Status List Token MUST
-// use an HTTP status code in the 2xx range." Insisting on exactly 200 refused
-// a Status Provider behind a cache or proxy that answered 203.
+// use an HTTP status code in the 2xx range." A Status Provider behind a cache
+// or proxy answers 203.
 func TestCheck_AcceptsAny2xx(t *testing.T) {
 	key := mustGenerateKey(t)
 	for _, code := range []int{200, 202, 203, 206} {
@@ -474,8 +465,7 @@ func TestCheck_AcceptsAny2xx(t *testing.T) {
 }
 
 // Section 8.2 makes the response content type mandatory. A response that
-// declares something else is still read, because refusing it would only hide
-// the deployments that produce one, but the caller is told.
+// declares something else is still read, and the caller is warned.
 func TestCheck_WarnsAboutTheContentType(t *testing.T) {
 	key := mustGenerateKey(t)
 	for _, tc := range []struct {
@@ -528,9 +518,7 @@ func TestCheck_DoesNotWarnAboutTheCorrectContentType(t *testing.T) {
 }
 
 // Section 4.1 requires the ZLIB data format around the DEFLATE stream. A bare
-// DEFLATE stream is still read, since that is what several deployments emit,
-// but the caller is told, because silent acceptance hides the deployments
-// that are not conforming.
+// DEFLATE stream is still read, and the caller is warned.
 func TestCheck_ReportsRawDeflateAsAWarning(t *testing.T) {
 	key := mustGenerateKey(t)
 	var buf bytes.Buffer
@@ -573,10 +561,9 @@ func TestCheck_ReportsRawDeflateAsAWarning(t *testing.T) {
 	}
 }
 
-// Section 7.1 gives every status value a name. Reporting everything non-zero
-// as "revoked" makes a suspended credential (0x02, "usually temporary")
-// indistinguishable from a permanently invalid one, and an unregistered value
-// indistinguishable from either.
+// Section 7.1 gives every status value a name. A suspended credential (0x02,
+// "usually temporary") is reported apart from a permanently invalid one, and
+// an unregistered value apart from both.
 func TestStatusName(t *testing.T) {
 	for _, tc := range []struct {
 		value int
@@ -598,8 +585,8 @@ func TestStatusName(t *testing.T) {
 	}
 }
 
-// A two-bit list must report SUSPENDED as SUSPENDED all the way out of the
-// checker, not as "not valid".
+// A two-bit list must report SUSPENDED by name all the way out of the
+// checker.
 func TestCheck_ReportsSuspendedByName(t *testing.T) {
 	key := mustGenerateKey(t)
 	bitstring := make([]byte, 16)

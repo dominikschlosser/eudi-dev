@@ -41,10 +41,10 @@ const registrationCertificateTyp = "rc-wrp+jwt"
 // the data request is what the consent dialog needs.
 //
 // A certificate is recognized by its rc-wrp+jwt typ. Its sub is the
-// registered legal entity, not the request's client_id, so the only check is
-// the signature against the embedded x5c leaf. A signature that fails or
-// cannot be checked (no readable x5c) leaves a finding and the purpose is
-// not shown. The chain is not anchored to a trust list, like every other x5c
+// registered legal entity rather than the request's client_id, so the only
+// check is the signature against the embedded x5c leaf. A signature that fails
+// or cannot be checked (no readable x5c) leaves a finding and hides the
+// purpose. The chain is not anchored to a trust list, like every other x5c
 // this wallet checks (see SECURITY.md). Other formats and JWT types are
 // skipped.
 func verifierInfoPurposes(payload map[string]any) (purposes []string, findings []string) {

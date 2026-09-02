@@ -84,7 +84,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		Verbose: verbose,
 	}
 
-	// Load public key(s)
 	var pubKeys []crypto.PublicKey
 
 	if keyFile != "" {
@@ -141,7 +140,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			if !opts.JSON {
 				printSkippedSignatureNote(token)
 			}
-			// Still check expiry from parsed claims
 			if exp, ok := token.ResolvedClaims["exp"]; ok {
 				if expFloat, ok := exp.(float64); ok {
 					if time.Unix(int64(expFloat), 0).Before(time.Now()) {
@@ -156,7 +154,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Status list check
 		if statusListFlag {
 			if err := checkStatus(token.ResolvedClaims, tlCerts, opts); err != nil {
 				return err
@@ -253,7 +250,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			if !opts.JSON {
 				fmt.Println("\n  Signature verification skipped (no --key or --trust-list provided)")
 			}
-			// Check expiry from MSO
 			if doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.ValidityInfo != nil {
 				if doc.IssuerAuth.MSO.ValidityInfo.ValidUntil != nil && doc.IssuerAuth.MSO.ValidityInfo.ValidUntil.Before(time.Now()) {
 					if !opts.JSON {
@@ -266,8 +262,8 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Status list check for mDOC. Wrap in "status" key since ExtractStatusRef
-		// expects {"status": {"status_list": ...}} but MSO.Status is the inner map.
+		// ExtractStatusRef expects {"status": {"status_list": ...}} and
+		// MSO.Status is the inner map.
 		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
 			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, tlCerts, opts); err != nil {
 				return err
@@ -289,10 +285,9 @@ func printLeafSourceNote(source string, opts output.Options) {
 	}
 }
 
-// verifyWithBestKey verifies with x5cKey when the credential carries one: an
-// embedded certificate is what the issuer bound the token to, so it takes
-// precedence and the explicit pubKeys are not consulted. Only when there is no
-// x5cKey does it iterate pubKeys and return the best result found.
+// verifyWithBestKey verifies with x5cKey when the credential carries one,
+// since the embedded certificate is what the issuer bound the token to.
+// Otherwise it tries pubKeys and returns the first valid result, or the last.
 func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKey, verify func(crypto.PublicKey) (T, bool)) T {
 	if x5cKey != nil {
 		result, _ := verify(x5cKey)
@@ -318,7 +313,6 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 		return fmt.Errorf("status check: %s", ref.Invalid)
 	}
 
-	// Build check options with trust list certs for signature validation
 	checkOpts := statuslist.CheckOptions{}
 	for _, ci := range tlCerts {
 		if len(ci.Raw) > 0 {
@@ -351,18 +345,17 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 	return nil
 }
 
-// haipCredentialFindings collects what HAIP 1.0 asks of a credential beyond
-// what the credential format itself requires. Today that is section 6.1.1:
-// the issuer's signing certificate and its trust chain travel in the x5c
-// header, without the trust anchor, and the leaf is not self-signed.
+// haipCredentialFindings collects what HAIP 1.0 §6.1.1 asks of a credential
+// beyond the format itself: the issuer's signing certificate and its trust
+// chain travel in the x5c header, without the trust anchor, and the leaf is
+// not self-signed.
 func haipCredentialFindings(token *sdjwt.Token) []string {
 	return validate.HAIPCredentialFindings(token.Header, token.Payload)
 }
 
-// printSkippedSignatureNote says why no signature was checked. A credential
-// naming its issuer key by a DID is a case no flag fixes: this tool resolves
-// an issuer key through x5c or issuer metadata, so naming the DID beats
-// suggesting a --key the caller has no way to obtain.
+// printSkippedSignatureNote says why no signature was checked. This tool
+// resolves issuer keys through x5c or issuer metadata, so a DID-named key is
+// reported as such rather than with a --key hint.
 func printSkippedSignatureNote(token *sdjwt.Token) {
 	kid, _ := token.Header["kid"].(string)
 	iss, _ := token.Payload["iss"].(string)
@@ -373,10 +366,9 @@ func printSkippedSignatureNote(token *sdjwt.Token) {
 	fmt.Println("\n  Signature verification skipped (no --key/--trust-list and issuer metadata resolution unavailable)")
 }
 
-// printHAIPFindings reports profile findings without failing the command.
-// Asking for the profile is asking what a credential breaks, and the answer is
-// worth reading whether or not the credential is otherwise valid. Holding the
-// exit code to it belongs with a strict mode, which this command has not got.
+// printHAIPFindings reports profile findings without failing the command:
+// --haip asks what a credential breaks, and the exit code stays with the
+// validity checks.
 func printHAIPFindings(findings []string, opts output.Options) {
 	if opts.JSON {
 		return

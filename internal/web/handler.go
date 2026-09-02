@@ -34,9 +34,8 @@ type MuxOptions struct {
 	Demo        bool   // public demo deployment, the UI shows a data disclaimer
 	// CredentialByID resolves a credential held by the wallet this decoder is
 	// mounted on. It backs the ?id= link form, which keeps a decoder link
-	// short enough to paste and to read: a credential is kilobytes of
-	// base64url, and every one of them ends up in the URL otherwise. A
-	// decoder without a wallet behind it leaves this nil and answers 404.
+	// short (a credential is kilobytes of base64url). Nil on a decoder
+	// without a wallet, which then answers 404.
 	CredentialByID func(id string) (string, bool)
 }
 
@@ -53,7 +52,7 @@ func ListenAndServe(port int, opts MuxOptions) error {
 }
 
 // NewMux creates the HTTP handler with API and static file routes.
-// If credential is non-empty, it is served via GET /api/prefill.
+// The credential is served via GET /api/prefill.
 func NewMux(credential string) http.Handler {
 	return NewMuxWithOptions(MuxOptions{Credential: credential})
 }
@@ -62,7 +61,6 @@ func NewMux(credential string) http.Handler {
 func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
-	// API endpoints
 	mux.HandleFunc("POST /api/decode", handleDecode)
 	mux.HandleFunc("POST /api/validate", handleValidate)
 	mux.HandleFunc("GET /api/prefill", handlePrefill(opts.Credential))
@@ -73,9 +71,7 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 			"version": opts.Version,
 			"imprint": len(opts.ImprintHTML) > 0,
 			"demo":    opts.Demo,
-			// Whether this decoder is mounted on a wallet, which is what
-			// makes a link back to it worth showing. A standalone decoder
-			// has nothing to link to.
+			// Whether this decoder is mounted on a wallet the UI can link back to.
 			"wallet": opts.CredentialByID != nil,
 		})
 	})

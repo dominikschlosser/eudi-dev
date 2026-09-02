@@ -55,7 +55,7 @@ func ScanScreen() (string, error) {
 		return "", fmt.Errorf("screencapture failed: %s", errMsg)
 	}
 
-	// User may press Escape to cancel. File won't exist
+	// Escape cancels the selection and leaves no file.
 	if _, err := os.Stat(tmpFile); err != nil {
 		return "", fmt.Errorf("screen capture cancelled")
 	}

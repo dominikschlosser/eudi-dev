@@ -94,8 +94,8 @@ func seal(t *testing.T, enc string, plaintext []byte, apu, apv []byte) sealed {
 	if _, err := rand.Read(iv); err != nil {
 		t.Fatal(err)
 	}
-	// The AAD is the ASCII of the encoded header, which is what makes a
-	// rewritten header fail to open.
+	// The AAD is the ASCII of the encoded header, so a rewritten header fails
+	// to open.
 	out := aead.Seal(nil, iv, plaintext, []byte(protected))
 	ciphertext, tag := out[:len(out)-16], out[len(out)-16:]
 
@@ -386,8 +386,7 @@ func TestOpenAESGCMDoesNotCorruptTheCallersBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Room to spare, which is what made appending the tag overwrite the
-	// caller's backing array instead of allocating.
+	// Room to spare, so an append would write into the caller's backing array.
 	roomy := make([]byte, len(ct), len(ct)+len(tag)+16)
 	copy(roomy, ct)
 	before := string(roomy)

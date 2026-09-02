@@ -165,9 +165,9 @@ func Discover(timeout time.Duration) []DiscoveredInstance {
 			livePID = int(pid)
 		}
 		if livePID != inst.PID {
-			// A different process answers on this port now: this file
-			// belongs to a dead instance and only looked alive because a
-			// new server took over the port.
+			// A different process answers on this port: the file belongs to
+			// a dead instance that only looked alive because a new server
+			// took over the port.
 			_ = os.Remove(filepath.Join(instancesDir(), entry.Name()))
 		}
 		if seenPorts[inst.Port] {

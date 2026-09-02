@@ -74,7 +74,7 @@ func TestReadInputRaw_FileRead(t *testing.T) {
 }
 
 func TestReadInputRaw_JSONNotTreatedAsFile(t *testing.T) {
-	// JSON strings starting with { should not be treated as file paths
+	// A JSON string starting with { is never a file path.
 	raw, err := ReadInputRaw(`{"credential_issuer":"https://example.com"}`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -177,8 +177,8 @@ func TestFetchURLRetriesWhenTheServerDoesNotAnswer(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
-			// Close the connection without answering, which is what a
-			// request that times out looks like to the client.
+			// Close the connection without answering. To the client this
+			// looks like a request that timed out.
 			hj, ok := w.(http.Hijacker)
 			if !ok {
 				t.Error("test server does not support hijacking")

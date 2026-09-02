@@ -99,7 +99,6 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 		configFormat = "dc+sd-jwt"
 	}
 
-	// Use a closure-based handler to capture serverURL dynamically.
 	var serverURL string
 	var offerFetches int
 	var credentialRequests int
@@ -265,7 +264,6 @@ func setupMockIssuer(t *testing.T, w *Wallet, opts mockIssuerOpts) (*httptest.Se
 
 	serverURL = srv.URL
 
-	// Build the credential offer URI
 	offer := map[string]any{
 		"credential_issuer":            serverURL,
 		"credential_configuration_ids": []string{"test-config"},
@@ -1336,7 +1334,6 @@ func TestProcessCredentialOffer_TxCodeSentInTokenRequest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Patch metadata responses to use actual server URL
 	srvURL := srv.URL
 	origHandler := srv.Config.Handler
 	srv.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
@@ -1390,13 +1387,11 @@ func TestProcessCredentialOffer_NoTxCodeWhenNotSet(t *testing.T) {
 	})
 	defer srv.Close()
 
-	// Wrap the server to capture the token request form body
 	origHandler := srv.Config.Handler
 	srv.Config.Handler = http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/token") {
 			body, _ := io.ReadAll(r.Body)
 			receivedForm = string(body)
-			// Reconstruct body for the original handler
 			r.Body = io.NopCloser(strings.NewReader(receivedForm))
 		}
 		origHandler.ServeHTTP(rw, r)
@@ -1406,7 +1401,6 @@ func TestProcessCredentialOffer_NoTxCodeWhenNotSet(t *testing.T) {
 	httpClient = srv.Client()
 	defer func() { httpClient = oldClient }()
 
-	// Don't set TxCode
 	_, err := w.ProcessCredentialOffer(offerURI)
 	if err != nil {
 		t.Fatalf("ProcessCredentialOffer: %v", err)
@@ -1812,11 +1806,11 @@ func TestProcessCredentialOffer_MetadataAcceptHeader(t *testing.T) {
 
 // §8.2 leaves one source for the challenge: "The c_nonce value is retrieved
 // from the Nonce Endpoint as defined in Section 7." An issuer that puts one in
-// the token response instead is pre-1.0, and strict mode is where the wallet
-// refuses to paper over that. Debug mode completes the flow and says so.
-// RFC 6749 §5.1 makes token_type REQUIRED. A response omitting it is refused in
-// strict and worked around in debug (assuming Bearer here, no DPoP was sent),
-// which the wallet records as a server deviation either way.
+// the token response instead is pre-1.0: strict mode refuses, debug mode
+// completes the flow and says so. RFC 6749 §5.1 makes token_type REQUIRED. A
+// response omitting it is refused in strict and worked around in debug (Bearer
+// is assumed, as no DPoP was sent), and the wallet records the deviation either
+// way.
 func TestProcessCredentialOffer_MissingTokenTypeByValidationMode(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

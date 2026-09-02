@@ -47,7 +47,6 @@ func buildTestSDJWT(t *testing.T, payload map[string]any, disclosures [][]any) s
 
 	jwt := headerB64 + "." + payloadB64 + ".fakesig"
 
-	// Append disclosures
 	result := jwt
 	for _, d := range disclosures {
 		dJSON, _ := json.Marshal(d)
@@ -97,7 +96,6 @@ func TestParse_BasicSDJWT(t *testing.T) {
 		t.Errorf("disclosure[1].Name = %q, want %q", token.Disclosures[1].Name, "family_name")
 	}
 
-	// Check resolved claims
 	if token.ResolvedClaims["given_name"] != "Erika" {
 		t.Errorf("resolved given_name = %v, want Erika", token.ResolvedClaims["given_name"])
 	}
@@ -107,8 +105,8 @@ func TestParse_BasicSDJWT(t *testing.T) {
 }
 
 // RFC 9901 §4 requires the tilde after the last disclosure. An SD-JWT that
-// drops it is still parsed (the last component is read as a disclosure), but
-// Parse records a warning so the deviation is not accepted silently.
+// drops it is still parsed (the last component is read as a disclosure), and
+// Parse records a warning.
 func TestParse_MissingTrailingTilde(t *testing.T) {
 	payload := map[string]any{
 		"iss":     "https://issuer.example",
@@ -355,7 +353,7 @@ func TestCheckFullyUndisclosedChildren(t *testing.T) {
 		t.Errorf("expected no warnings for map with visible claims, got %v", warnings)
 	}
 
-	// Array entries should be skipped
+	// Array entries are skipped
 	warnings = checkFullyUndisclosedChildren([]Disclosure{
 		{IsArrayEntry: true, Value: []any{map[string]any{"...": "x"}}, Digest: "d1"},
 	})

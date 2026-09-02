@@ -41,7 +41,6 @@ func TestGenerateTrustListJWT_ValidSignature(t *testing.T) {
 		t.Fatalf("GenerateTrustListJWT: %v", err)
 	}
 
-	// Parse the JWT and verify signature
 	token, err := sdjwt.Parse(jwt)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -62,7 +61,6 @@ func TestGenerateTrustListJWT_Header(t *testing.T) {
 		t.Fatalf("GenerateTrustListJWT: %v", err)
 	}
 
-	// Decode header
 	parts := strings.SplitN(jwt, ".", 3)
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
@@ -136,7 +134,6 @@ func TestGenerateTrustListJWT_PayloadStructure(t *testing.T) {
 		t.Errorf("expected NextUpdate string, got %T", schemeInfo["NextUpdate"])
 	}
 
-	// Verify the trusted entities list has entries with certificate data
 	entities, ok := lote["TrustedEntitiesList"].([]any)
 	if !ok || len(entities) == 0 {
 		t.Fatal("expected non-empty TrustedEntitiesList")

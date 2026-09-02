@@ -130,8 +130,8 @@ func (w *Wallet) TrustAnchorCertificate() *x509.Certificate {
 	return w.CertChain[len(w.CertChain)-1]
 }
 
-// DefaultSigningCertChain returns the signing certificate chain used for wallet-wide
-// endpoints that do not yet select a profile explicitly.
+// DefaultSigningCertChain returns the signing certificate chain used for
+// wallet-wide endpoints that select no trust profile.
 func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 	_, chain, err := w.DefaultSigningMaterial()
 	return chain, err
@@ -162,13 +162,10 @@ func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificat
 // issuerSubjectAltNames are the subject alternative names a signing leaf
 // carries, so a verifier can see that this certificate speaks for this issuer
 // identifier. Both the dNSName and the uniformResourceIdentifier form are
-// written, since a verifier may check either.
-//
-// They are written for the verifiers that ask for them: SD-JWT VC required
-// iss to be named by a SAN of the leaf up to draft-08, and one built against
-// that rule refuses a leaf without them.
-//
-// A host that is an IP address goes into an iPAddress SAN instead.
+// written, since a verifier may check either. SD-JWT VC draft-08 and earlier
+// require iss to be named by a SAN of the leaf, and a verifier built against
+// that rule refuses a leaf without them. A host that is an IP address goes
+// into an iPAddress SAN instead.
 func issuerSubjectAltNames(issuerURL string) (dnsNames []string, ips []net.IP, uris []*url.URL) {
 	raw := strings.TrimRight(strings.TrimSpace(issuerURL), "/")
 	if raw == "" {

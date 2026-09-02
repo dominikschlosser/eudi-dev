@@ -823,9 +823,6 @@ func TestRelativeTime(t *testing.T) {
 }
 
 // TestBuildMDOCJSON_DeviceBinding covers the holder binding the decoder shows.
-// It used to be reachable only as a raw COSE_Key behind -v, and not at all in
-// the decoder UI, which made a bound credential indistinguishable from an
-// unbound one.
 func TestBuildMDOCJSON_DeviceBinding(t *testing.T) {
 	t.Run("no device key", func(t *testing.T) {
 		doc := &mdoc.Document{IssuerAuth: &mdoc.IssuerAuth{MSO: &mdoc.MSO{}}}

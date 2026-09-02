@@ -7,7 +7,7 @@ module.exports = defineConfig({
   timeout: 30_000,
   // The suite runs against a single shared wallet server, so a slow CI runner
   // can occasionally lose a timing race between tests. Retry in CI so a
-  // transient flake does not fail the run; keep local runs strict.
+  // transient flake does not fail the run. Local runs stay strict.
   retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: "http://localhost:18923",

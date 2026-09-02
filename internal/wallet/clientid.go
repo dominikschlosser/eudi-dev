@@ -35,9 +35,8 @@ import (
 // in the x5c header, so the signature is checked against the leaf and the
 // chain for internal consistency. verifier_attestation: and
 // decentralized_identifier: take the key from the attestation or the resolved
-// DID, so they legitimately carry no x5c and requiring one would be a false
-// finding. What they get instead is a finding that names the signature as
-// unverified, because neither key is one this wallet resolves.
+// DID, which this wallet does not resolve, so they get a finding naming the
+// signature as unverified.
 func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	if reqObj == nil {
 		return ""
@@ -85,11 +84,9 @@ func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJ
 // clientAuthState reports how a verifier's presentation request authenticated
 // itself, for the consent dialog's "who is asking" block. signed is true only
 // when a request object was present and its signature verified against the key
-// material the request itself carries (self-consistent, with no trust anchor).
-// It never means the verifier was checked against a trust list. detail says
-// why the signature could not be verified (or notes that the request was
-// unsigned) and is empty when signed is true. It reuses
-// VerifyRequestObjectSignature, so it makes no network call.
+// material the request itself carries (no trust anchor, no trust list). detail
+// says why the signature could not be verified (or that the request was
+// unsigned) and is empty when signed is true.
 func clientAuthState(params *AuthorizationRequestParams) (signed bool, detail string) {
 	if params == nil || params.RequestObject == nil {
 		return false, "The request was not a signed request object."
@@ -104,10 +101,8 @@ func clientAuthState(params *AuthorizationRequestParams) (signed bool, detail st
 }
 
 // clientMetadataName returns the self-asserted verifier name from a request's
-// client_metadata (client_metadata.client_name), empty when there is none. It
-// resolves the request-object metadata first and the outer request metadata
-// second, the same order the rest of the wallet reads it. The value is
-// unverified.
+// client_metadata.client_name, empty when there is none. Request-object
+// metadata wins over the outer request metadata. The value is unverified.
 func clientMetadataName(params *AuthorizationRequestParams) string {
 	if params == nil {
 		return ""
@@ -133,9 +128,7 @@ func (r *ConsentRequest) applyClientAuth(params *AuthorizationRequestParams) {
 
 // unverifiedSignatureFinding says why a signed Request Object went unverified.
 // Every prefix here resolves its key somewhere this wallet does not go, so the
-// signature establishes nothing, and saying nothing would let a request no one
-// authenticated read like one that passed. Naming the mechanism rather than
-// implementing it is the rule of [ADR-0013].
+// finding names the mechanism ([ADR-0013]).
 //
 // [ADR-0013]: docs/adr/0013-only-the-eudi-stack-is-supported.md
 func unverifiedSignatureFinding(clientID string) string {
@@ -148,13 +141,11 @@ func unverifiedSignatureFinding(clientID string) string {
 	case strings.HasPrefix(clientID, "openid_federation:"):
 		return "Request Object signature was not verified: openid_federation: resolves its key through an OpenID Federation trust chain, which this wallet does not resolve"
 	case strings.HasPrefix(clientID, "redirect_uri:"):
-		// A signed Request Object under this prefix is the violation
-		// VerifyClientID already reports, and reporting it twice says nothing
-		// the reader does not have.
+		// VerifyClientID already reports a signed Request Object under this
+		// prefix.
 		return ""
 	case clientID == "":
-		// A request naming no client at all is reported as that, by the
-		// checks that own the parameter.
+		// A missing client_id is reported by the checks that own the parameter.
 		return ""
 	default:
 		return fmt.Sprintf("Request Object signature was not verified: client_id %q carries no Client Identifier Prefix, so its key would have been pre-registered with this wallet, and nothing is", clientID)
@@ -163,7 +154,7 @@ func unverifiedSignatureFinding(clientID string) string {
 
 // clientIDVerifiesViaX5C reports whether the client_id prefix carries the
 // Request Object signing certificate in the JWS x5c header. Only the x509
-// prefixes do; the others resolve the key elsewhere (or leave the request
+// prefixes do. The others resolve the key elsewhere (or leave the request
 // unsigned).
 func clientIDVerifiesViaX5C(clientID string) bool {
 	return strings.HasPrefix(clientID, "x509_san_dns:") || strings.HasPrefix(clientID, "x509_hash:")
@@ -185,10 +176,8 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 		// the platform reports.
 		return "OID4VP 1.0 §5.9.3: origin: is a reserved Client Identifier Prefix and MUST NOT be accepted in a request"
 	case strings.HasPrefix(clientID, "openid_federation:"):
-		// §5.9.3 defers to OpenID Federation for this prefix, and its
-		// processing rules are not implemented here. Accepting it without
-		// resolving the trust chain would assert a verification that never
-		// happened.
+		// §5.9.3 defers to OpenID Federation for this prefix, whose trust
+		// chain this wallet does not resolve.
 		return "openid_federation: client_id is not supported by this wallet"
 	case strings.HasPrefix(clientID, "redirect_uri:"):
 		return verifyRedirectURI(clientID, reqObj, responseURI)
@@ -227,8 +216,7 @@ func verifyX509SAN(clientID, prefix, scheme string, reqObj *oid4vc.RequestObject
 
 	// §5.9.3: outside the DC API (which is origin-bound) and with no trusted
 	// client list to waive it, the FQDN of the response destination MUST match
-	// the client_id. Without this a signed request from a valid certificate
-	// could send the response, and the disclosed claims, to another host.
+	// the client_id.
 	if requestOrigin == "" && responseURI != "" {
 		if parsed, err := url.Parse(responseURI); err != nil || !strings.EqualFold(parsed.Hostname(), expected) {
 			return fmt.Sprintf("OID4VP 1.0 §5.9.3: the response goes to %q, whose host does not match the x509_san_dns client_id %q", responseURI, expected)
@@ -276,10 +264,10 @@ func verifyRedirectURI(clientID string, reqObj *oid4vc.RequestObjectJWT, respons
 	return ""
 }
 
-// verifyVerifierAttestation validates the verifier_attestation: prefix per OID4VP 1.0.
-// The request object MUST contain a "jwt" header with a Verifier Attestation JWT.
-// The Verifier Attestation JWT must be a valid JWT (3 dot-separated parts) and
-// its payload must contain a "sub" claim matching the client_id value after the prefix.
+// verifyVerifierAttestation validates the verifier_attestation: prefix per
+// OID4VP 1.0 §5.9.3: the Request Object carries the Verifier Attestation JWT
+// in its "jwt" header, and that JWT's sub matches the client_id value after
+// the prefix.
 func verifyVerifierAttestation(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	if reqObj == nil || reqObj.Header == nil {
 		return "OID4VP 1.0 §5.9.3: verifier_attestation: requires a signed Request Object"
@@ -290,13 +278,11 @@ func verifyVerifierAttestation(clientID string, reqObj *oid4vc.RequestObjectJWT)
 		return "OID4VP 1.0 §5.9.3: verifier_attestation: the Request Object must carry a 'jwt' header with the Verifier Attestation JWT"
 	}
 
-	// Basic JWT structure check (3 dot-separated parts)
 	parts := strings.SplitN(jwtStr, ".", 4)
 	if len(parts) != 3 || len(parts[0]) == 0 || len(parts[1]) == 0 {
 		return "OID4VP 1.0 §5.9.3: verifier_attestation: the 'jwt' header value is not a valid JWT (expected 3 dot-separated parts)"
 	}
 
-	// Parse the attestation JWT payload to check the sub claim
 	_, payload, _, err := format.ParseJWTParts(jwtStr)
 	if err != nil {
 		return fmt.Sprintf("OID4VP 1.0 §5.9.3: verifier_attestation: the Verifier Attestation JWT does not parse: %v", err)
@@ -311,13 +297,12 @@ func verifyVerifierAttestation(clientID string, reqObj *oid4vc.RequestObjectJWT)
 	return ""
 }
 
-// verifyDecentralizedIdentifier validates the decentralized_identifier: prefix per OID4VP 1.0.
-// The value must be a valid DID (did:method:identifier format) and a signed Request Object must be present.
-// Note: Full DID resolution is not implemented. Only format validation is performed.
+// verifyDecentralizedIdentifier validates the decentralized_identifier: prefix
+// per OID4VP 1.0 §5.9.3: the value is a DID (did:method:identifier) and a
+// signed Request Object is present. The DID is not resolved.
 func verifyDecentralizedIdentifier(clientID string, reqObj *oid4vc.RequestObjectJWT) string {
 	did := strings.TrimPrefix(clientID, "decentralized_identifier:")
 
-	// Validate DID format: must have at least 3 colon-separated parts (did:method:id)
 	didParts := strings.SplitN(did, ":", 3)
 	if len(didParts) < 3 || didParts[0] != "did" || didParts[1] == "" || didParts[2] == "" {
 		return fmt.Sprintf("OID4VP 1.0 §5.9.3: decentralized_identifier: value %q is not a valid DID (expected did:method:identifier)", did)
@@ -327,7 +312,6 @@ func verifyDecentralizedIdentifier(clientID string, reqObj *oid4vc.RequestObject
 		return "OID4VP 1.0 §5.9.3: decentralized_identifier: requires a signed Request Object"
 	}
 
-	// Check that the request object's kid header references the DID
 	kid := jsonutil.GetString(reqObj.Header, "kid")
 	if kid != "" && !strings.HasPrefix(kid, did) {
 		return fmt.Sprintf("OID4VP 1.0 §5.9.3: decentralized_identifier: the Request Object kid %q does not reference the DID %q", kid, did)
@@ -427,9 +411,8 @@ func ValidateRequestObject(clientID string, reqObj *oid4vc.RequestObjectJWT) str
 	typ := jsonutil.GetString(reqObj.Header, "typ")
 
 	// An unsigned ("alg": "none") Request Object satisfies none of the prefixes
-	// OID4VP 1.0 requires to be signed. It is caught here, where the client_id
-	// is in scope: VerifyRequestObjectSignature has nothing to verify for
-	// alg=none. redirect_uri:, which may be unsigned, is not in the set.
+	// OID4VP 1.0 requires to be signed. VerifyRequestObjectSignature has
+	// nothing to verify for alg=none, so it is caught here.
 	if alg == "none" && prefixRequiresSigning(clientID) {
 		return "OID4VP 1.0 §5.9.3: the client_id prefix requires a signed Request Object but the Request Object is unsigned (alg \"none\")"
 	}
@@ -444,7 +427,6 @@ func ValidateRequestObject(clientID string, reqObj *oid4vc.RequestObjectJWT) str
 		return fmt.Sprintf("OID4VP 1.0 §5: the Request Object has typ %q, required is 'oauth-authz-req+jwt'", typ)
 	}
 
-	// Verify that the alg header matches the key type in the x5c certificate.
 	if warning := verifyAlgMatchesCert(reqObj); warning != "" {
 		return warning
 	}
@@ -461,7 +443,6 @@ func verifyAlgMatchesCert(reqObj *oid4vc.RequestObjectJWT) string {
 		return ""
 	}
 
-	// Only check when x5c is present.
 	cert, warning := extractLeafCert(reqObj)
 	if warning != "" {
 		// No x5c. Nothing to cross-check.

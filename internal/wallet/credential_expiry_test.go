@@ -77,9 +77,9 @@ func TestCredentialWithoutAStatedLifetimeNeverExpires(t *testing.T) {
 	}
 }
 
-// The stored order is arrival order, which put a freshly issued credential
-// at the bottom of a list that pages ten at a time. Newest first, and stable
-// so the same list does not reorder itself between two reads.
+// The list is newest first, so a freshly issued credential tops a list that
+// pages ten at a time, and stable, so the same list does not reorder itself
+// between two reads.
 func TestSortCredentialsNewestFirst(t *testing.T) {
 	// Signed directly rather than through mock.GenerateSDJWT, which always
 	// stamps iat with the current time and offers no way to choose it.

@@ -114,7 +114,6 @@ func runDecode(cmd *cobra.Command, args []string) error {
 		Verbose: verbose,
 	}
 
-	// Determine format: pinned or auto-detected
 	var detected format.CredentialFormat
 	if decodeFormat != "" {
 		f, ok := formatAliases[strings.ToLower(decodeFormat)]
@@ -126,8 +125,8 @@ func runDecode(cmd *cobra.Command, args []string) error {
 		detected = format.Detect(raw)
 	}
 
-	// For non-OID4 formats where input is an HTTP URL, fetch first then re-detect.
-	// This covers credentials and trust lists hosted at plain URLs.
+	// A credential or trust list hosted at a plain URL is fetched first and
+	// then detected again.
 	if detected != format.FormatOID4VCI && detected != format.FormatOID4VP && isHTTPURL(raw) {
 		raw, err = format.FetchURL(raw)
 		if err != nil {
@@ -148,9 +147,8 @@ func runDecode(cmd *cobra.Command, args []string) error {
 			output.PrintJSON(result)
 			return nil
 		}
-		// Inspect rather than Parse: decoding is how somebody finds out why a
-		// credential is rejected, so a credential that breaks a rule is shown
-		// with the rule it breaks (in the token's deviations).
+		// Inspect rather than Parse, so a credential that breaks a rule is still
+		// shown, with the rule it breaks in the token's deviations.
 		token, err := sdjwt.Inspect(raw)
 		if err != nil {
 			return fmt.Errorf("parsing SD-JWT: %w", err)

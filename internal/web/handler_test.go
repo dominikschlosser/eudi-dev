@@ -266,7 +266,6 @@ func TestHandleDecode_WrongMethod(t *testing.T) {
 
 	NewMux("").ServeHTTP(w, req)
 
-	// Go 1.22+ method-based routing returns 405 for wrong method
 	if w.Code == http.StatusOK {
 		t.Fatal("expected non-200 for GET /api/decode")
 	}
@@ -541,7 +540,7 @@ func TestHandleDecode_JWTWithTimestamps(t *testing.T) {
 	result := decodeResponse(t, w)
 	p := result["payload"].(map[string]any)
 
-	// Timestamps should be preserved as numbers for frontend hover rendering
+	// Timestamps stay numbers, the UI renders hover times from them.
 	if _, ok := p["iat"]; !ok {
 		t.Error("payload should contain iat")
 	}
@@ -574,7 +573,6 @@ func TestHandleDecode_SDJWTResolvedClaims(t *testing.T) {
 
 	result := decodeResponse(t, w)
 
-	// resolvedClaims should contain disclosed values
 	resolved, ok := result["resolvedClaims"].(map[string]any)
 	if !ok {
 		t.Fatalf("resolvedClaims should be a map, got %T", result["resolvedClaims"])
@@ -586,7 +584,7 @@ func TestHandleDecode_SDJWTResolvedClaims(t *testing.T) {
 		t.Errorf("resolvedClaims.family_name = %v, want Mustermann", resolved["family_name"])
 	}
 
-	// Disclosures should have digest field (used for truncation in UI)
+	// The UI keys disclosure truncation on the digest field.
 	discs := result["disclosures"].([]any)
 	for i, d := range discs {
 		disc := d.(map[string]any)
@@ -600,7 +598,7 @@ func TestHandleDecode_SDJWTResolvedClaims(t *testing.T) {
 }
 
 func TestHandleDecode_JWTIssuerSubjectInPayload(t *testing.T) {
-	// Frontend uses payload.iss and payload.sub for summary line
+	// The UI's summary line reads payload.iss and payload.sub.
 	jwt := makeJWT(
 		map[string]any{"alg": "RS256"},
 		map[string]any{
@@ -679,8 +677,7 @@ func TestHandleMetaAndImprint(t *testing.T) {
 }
 
 // A decoder link can name a credential the wallet holds instead of carrying
-// it, which is the difference between a link that fits in a message and one
-// that does not.
+// it, so the link stays short enough to paste.
 func TestCredentialByID(t *testing.T) {
 	mux := NewMuxWithOptions(MuxOptions{
 		CredentialByID: func(id string) (string, bool) {
@@ -709,8 +706,8 @@ func TestCredentialByID(t *testing.T) {
 	}
 }
 
-// A decoder that is not mounted on a wallet has nothing to resolve ids
-// against, and has to say so rather than pretending the id is unknown data.
+// A decoder that is not mounted on a wallet answers an id lookup with an
+// error that names the missing wallet.
 func TestCredentialByIDWithoutAWallet(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/credentials/cred-1", nil)
 	w := httptest.NewRecorder()

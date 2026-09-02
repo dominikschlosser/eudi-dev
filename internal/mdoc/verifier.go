@@ -34,15 +34,12 @@ type VerifyResult struct {
 	Signed         *time.Time
 	Errors         []string
 	// Warnings records a signature that verifies but rests on a spec deviation
-	// worked around here, so a caller can pass it on rather than accept it silently.
+	// worked around here.
 	Warnings []string
 }
 
 // Verify verifies the mDOC issuerAuth COSE_Sign1 signature.
 func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
-	// Every other entry point in this package refuses a nil document rather
-	// than dereferencing it, and callers reach them from the same parse
-	// results. Reporting it is what the rest of them do.
 	if doc == nil {
 		return &VerifyResult{Errors: []string{"no document to verify"}}
 	}
@@ -59,10 +56,9 @@ func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
 	mso := doc.IssuerAuth.MSO
 	if mso != nil {
 		if mso.DigestAlgorithm == "" {
-			// ISO 18013-5 requires digestAlgorithm. Verifying the value digests
-			// falls back to SHA-256, so the signature still checks out, but the
-			// caller should know the issuer left the algorithm unstated.
-			result.Warnings = append(result.Warnings, "the MSO carries no digestAlgorithm, which ISO 18013-5 requires; assuming SHA-256")
+			// ISO 18013-5 requires digestAlgorithm. Digest verification falls
+			// back to SHA-256.
+			result.Warnings = append(result.Warnings, "the MSO carries no digestAlgorithm, which ISO 18013-5 requires (assuming SHA-256)")
 		}
 		if mso.ValidityInfo != nil {
 			result.ValidFrom = mso.ValidityInfo.ValidFrom
@@ -79,7 +75,6 @@ func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
 		}
 	}
 
-	// Determine algorithm from protected header
 	if doc.IssuerAuth.ProtectedHeader != nil {
 		// COSE algorithm label is 1
 		if alg, ok := doc.IssuerAuth.ProtectedHeader[int64(1)]; ok {
@@ -103,7 +98,6 @@ func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {
 		return result
 	}
 
-	// Verify using go-cose
 	var msg cose.Sign1Message
 	if err := msg.UnmarshalCBOR(doc.IssuerAuth.RawCOSE); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("parsing COSE_Sign1: %v", err))

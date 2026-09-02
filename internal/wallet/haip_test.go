@@ -225,8 +225,6 @@ func TestValidateHAIPCompliance(t *testing.T) {
 	}
 }
 
-// contains and containsSubstring are defined in requestobj_test.go
-
 func haipCompliantIssuance() (*oid4vc.CredentialOffer, map[string]any) {
 	offer := &oid4vc.CredentialOffer{
 		CredentialIssuer: "https://issuer.example",
@@ -419,21 +417,19 @@ func TestValidateHAIPIssuanceCompliance_SilentClientAuthIsNotAViolation(t *testi
 	}
 }
 
-// The EUDI reference issuer supports PAR and does not advertise
-// require_pushed_authorization_requests, which is exactly what RFC 9126
-// permits: the parameter is optional and defaults to false. Requiring it
-// reported a HAIP violation against a conformant server. HAIP 1.0 §4 scopes
-// PAR to "when using the Authorization Endpoint" and otherwise defers to
-// FAPI 2.0, which obliges the server to reject non-PAR authorization
-// requests rather than to declare anything in metadata.
+// An issuer that supports PAR and does not advertise
+// require_pushed_authorization_requests is conformant: RFC 9126 makes the
+// parameter optional and defaults it to false. HAIP 1.0 §4 scopes PAR to
+// "when using the Authorization Endpoint" and otherwise defers to FAPI 2.0,
+// which obliges the server to reject non-PAR authorization requests rather
+// than to declare anything in metadata.
 func TestHAIPIssuanceAcceptsPARWithoutTheRequireFlag(t *testing.T) {
 	offer := &oid4vc.CredentialOffer{
 		CredentialIssuer: "https://issuer.eudiw.dev",
 		Grants:           oid4vc.OfferGrants{IssuerState: "abc"},
 	}
-	// The live metadata at
-	// https://issuer.eudiw.dev/.well-known/oauth-authorization-server, copied
-	// rather than summarised: this is the document the enforcement refused.
+	// The authorization server metadata of an ecosystem reference issuer,
+	// copied rather than summarised.
 	meta := map[string]any{
 		"issuer":                                "https://issuer.eudiw.dev",
 		"authorization_endpoint":                "https://issuer.eudiw.dev/authorize",
@@ -668,8 +664,7 @@ func selfSignedCert(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 // The two switches are independent. --haip decides how many checks run, and
 // the validation mode decides what a finding does. A HAIP run in debug mode
 // therefore names every profile violation it sees and still lets the flow
-// continue, which is what makes it useful for watching a counterparty that
-// does not follow the profile.
+// continue.
 func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 	violating := func(t *testing.T) *AuthorizationRequestParams {
 		t.Helper()

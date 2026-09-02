@@ -78,7 +78,6 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 	}
 
-	// Generate disclosures and compute digests
 	var disclosures []string
 	var digests []string
 	plain := make(map[string]any)
@@ -98,7 +97,6 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 		disclosures = append(disclosures, claimDisclosures...)
 
-		// The top-level disclosure for this claim
 		topDisc, topDigest, err := createDisclosure(name, claimValue)
 		if err != nil {
 			return "", err
@@ -107,7 +105,6 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		digests = append(digests, topDigest)
 	}
 
-	// Build payload
 	payload := map[string]any{
 		"iss":     cfg.Issuer,
 		"iat":     now.Unix(),
@@ -130,14 +127,12 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		payload["nbf"] = cfg.NotBefore.Unix()
 	}
 
-	// Add holder binding (cnf claim with JWK)
 	if cfg.HolderKey != nil {
 		payload["cnf"] = map[string]any{
 			"jwk": PublicKeyJWKMap(cfg.HolderKey),
 		}
 	}
 
-	// Add status list reference (non-disclosed)
 	if cfg.StatusListURI != "" {
 		payload["status"] = map[string]any{
 			"status_list": map[string]any{
@@ -147,8 +142,8 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 	}
 
-	// Build header. SD-JWT VC §2.2.1: "The Issuer MUST include the typ header
-	// parameter in the SD-JWT. The typ value MUST use dc+sd-jwt."
+	// SD-JWT VC §2.2.1: "The Issuer MUST include the typ header parameter in
+	// the SD-JWT. The typ value MUST use dc+sd-jwt."
 	header := map[string]any{
 		"alg": "ES256",
 		"typ": "dc+sd-jwt",
@@ -169,7 +164,6 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 	}
 
-	// Encode header and payload
 	jwt, err := jws.Sign(header, payload, cfg.Key)
 	if err != nil {
 		return "", err
@@ -234,7 +228,6 @@ func hideDigestOrder(digests []string) []string {
 func makeDisclosure(name string, value any, path string, always map[string]bool) (subDisclosures []string, transformedValue any, err error) {
 	switch v := value.(type) {
 	case map[string]any:
-		// Nested object: create disclosures for each subclaim
 		var subDigests []string
 		obj := make(map[string]any)
 		for subName, subValue := range v {
@@ -264,7 +257,6 @@ func makeDisclosure(name string, value any, path string, always map[string]bool)
 		return subDisclosures, obj, nil
 
 	case []any:
-		// Array: create element disclosures for each item
 		var elements []any
 		for _, item := range v {
 			disc, digest, err := createArrayElementDisclosure(item)
@@ -278,7 +270,6 @@ func makeDisclosure(name string, value any, path string, always map[string]bool)
 		return subDisclosures, transformedValue, nil
 
 	default:
-		// Plain value: no sub-disclosures needed
 		return nil, value, nil
 	}
 }

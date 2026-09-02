@@ -22,8 +22,8 @@ const (
 	// header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt."
 	TypeSDJWTVC = "dc+sd-jwt"
 
-	// TypeSDJWTVCLegacy is the value the same draft used from July 2023 until
-	// November 2024. §2.2.1 keeps it alive: "In order to facilitate a
+	// TypeSDJWTVCLegacy is the earlier typ value. §2.2.1 keeps it alive: "In
+	// order to facilitate a
 	// minimally disruptive transition, both vc+sd-jwt and dc+sd-jwt should be
 	// accepted as the value of the typ header for a reasonable transitional
 	// period."
@@ -31,8 +31,7 @@ const (
 )
 
 // AcceptedVCTypes lists the typ header parameter values an SD-JWT VC may
-// carry. The list is exactly two values, and anything else is not an SD-JWT
-// VC, whatever else it may be.
+// carry.
 func AcceptedVCTypes() []string {
 	return []string{TypeSDJWTVC, TypeSDJWTVCLegacy}
 }

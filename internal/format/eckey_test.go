@@ -24,9 +24,9 @@ import (
 
 // The signing, JWK and thumbprint code reads EC key coordinates through these
 // helpers. These tests pin that the helper output is byte-for-byte the SEC1
-// point and the fixed-width JWK coordinates, across P-256, P-384 and P-521, so
-// every signature, JWK and thumbprint built on them is exact. The big.Int
-// coordinate fields are read here only as the independent reference.
+// point and the fixed-width JWK coordinates, across P-256, P-384 and P-521.
+// The big.Int coordinate fields are read here only as the independent
+// reference.
 
 // referenceCoords is the fixed-width big-endian X and Y a JWK carries: the
 // coordinate big.Int left-padded to the curve width.

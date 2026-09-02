@@ -29,10 +29,10 @@ import (
 
 const appBundleName = "EUDI-Dev-Wallet.app"
 
-// legacyAppBundleName is the pre-rename bundle. It has to be removed and
-// deregistered explicitly: leaving it behind means Launch Services keeps a
-// second handler for the same schemes, so macOS either shows the old name in
-// the open dialog or asks which app to use.
+// legacyAppBundleName is the bundle earlier releases installed. It is removed
+// and deregistered explicitly: left behind, Launch Services keeps a second
+// handler for the same schemes and macOS shows it in the open dialog or asks
+// which app to use.
 const legacyAppBundleName = "OID4VC-Dev-Wallet.app"
 
 func supportsURLSchemeRegistration() bool {
@@ -78,7 +78,6 @@ func RegisterURLSchemes(opts RegisterOptions) error {
 	// leave the handler pointing at a deleted binary.
 	binaryPath = stableBinaryPath(binaryPath)
 
-	// Write the bash handler script
 	handlerPath := handlerScriptPath()
 	if err := os.MkdirAll(filepath.Dir(handlerPath), 0755); err != nil {
 		return fmt.Errorf("creating handler directory: %w", err)
@@ -91,7 +90,7 @@ func RegisterURLSchemes(opts RegisterOptions) error {
 	}
 
 	// Remove existing bundles so osacompile can create a fresh one, including
-	// the pre-rename one that would otherwise keep claiming the schemes.
+	// an earlier release's bundle that would otherwise keep claiming the schemes.
 	bundlePath := appBundlePath()
 	os.RemoveAll(bundlePath)
 	if err := removeBundle(legacyAppBundlePath()); err != nil {
@@ -123,7 +122,6 @@ end open location
 	}
 	tmpScript.Close()
 
-	// Compile AppleScript into .app bundle
 	cmd := exec.Command("osacompile", "-o", bundlePath, tmpScript.Name())
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("osacompile failed: %s: %w", string(out), err)
@@ -196,12 +194,11 @@ func UnregisterURLSchemes() error {
 	if err := removeBundle(bundlePath); err != nil {
 		return fmt.Errorf("removing app bundle: %w", err)
 	}
-	// Also clean up the pre-rename bundle if this machine still has one.
+	// Remove an earlier release's bundle too.
 	if err := removeBundle(legacyAppBundlePath()); err != nil {
 		return fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
 	}
 
-	// Remove handler script
 	os.Remove(handlerScriptPath()) // ignore errors if not present
 
 	fmt.Printf("Unregistered URL scheme handlers and removed %s\n", bundlePath)

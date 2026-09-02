@@ -15,7 +15,6 @@ echo "Building eudi ${VERSION}..."
 go build -ldflags "$LDFLAGS" -o eudi .
 echo "Done: ./eudi"
 
-# Detect current shell and install completions
 CURRENT_SHELL="$(basename "$SHELL")"
 BINARY="${PROJECT_DIR}/eudi"
 

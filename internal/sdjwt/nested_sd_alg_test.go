@@ -32,12 +32,10 @@ func TestParse_NestedSDAlgIsTolerated(t *testing.T) {
 
 	input := strings.TrimSpace(string(raw))
 
-	// Strict Parse rejects it, naming the rule break.
 	if _, err := Parse(input); err == nil {
 		t.Fatal("Parse accepted a credential with a nested _sd_alg, want rejection")
 	}
 
-	// Lenient parsing tolerates it and resolves the claims.
 	token, err := ParseLenient(input)
 	if err != nil {
 		t.Fatalf("ParseLenient rejected a credential with a nested _sd_alg: %v", err)
@@ -53,7 +51,6 @@ func TestParse_NestedSDAlgIsTolerated(t *testing.T) {
 		t.Fatalf("missing duplicate-digest deviation, got %v", token.Deviations)
 	}
 
-	// The disclosed claims resolve despite the nested _sd_alg.
 	if got, _ := token.ResolvedClaims["family_name"].(string); got != "Mustermann" {
 		t.Fatalf("family_name did not resolve, got %q", got)
 	}

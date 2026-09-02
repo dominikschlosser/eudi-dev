@@ -151,8 +151,8 @@ func TestAuthorizeSubmitRejectsAMissingRequestURI(t *testing.T) {
 	}
 }
 
-// walletProvider is an attester with a certificate authority of its own, which
-// is what every wallet this issuer was not built alongside carries.
+// walletProvider is an attester with a certificate authority of its own, the
+// way an external wallet's is.
 type walletProvider struct {
 	key  *ecdsa.PrivateKey
 	leaf *x509.Certificate
@@ -181,7 +181,7 @@ func foreignWalletProvider(t *testing.T) walletProvider {
 
 // attest issues a Client Attestation JWT for a client and the key it holds.
 // The claims are those draft-ietf-oauth-attestation-based-client-auth-10 §4
-// requires, which since draft -08 no longer include iss.
+// requires, which from draft -08 on do not include iss.
 func (p walletProvider) attest(t *testing.T, clientID string, clientKey *ecdsa.PrivateKey) string {
 	t.Helper()
 	return signES256(t, p.key,
@@ -200,7 +200,7 @@ func (p walletProvider) attest(t *testing.T, clientID string, clientKey *ecdsa.P
 }
 
 // attestationPoP proves possession of the attested key for one request, with
-// the claims §5.1 requires and none of the ones it dropped.
+// the claims §5.1 requires and no others.
 func attestationPoP(t *testing.T, clientKey *ecdsa.PrivateKey, audience string) string {
 	t.Helper()
 	return signES256(t, clientKey,

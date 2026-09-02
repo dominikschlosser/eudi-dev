@@ -261,7 +261,6 @@ func TestAuthorize_RejectsUnsupportedRequestURIMethod(t *testing.T) {
 func TestImportCredentialAPI(t *testing.T) {
 	srv := newTestServer(t, false)
 
-	// Import an SD-JWT credential via API
 	sdjwt := generateSDJWTForTest(t, srv)
 
 	req := httptest.NewRequest("POST", "/api/credentials", strings.NewReader(sdjwt))
@@ -334,7 +333,6 @@ func TestImportCredentialAPI_Empty(t *testing.T) {
 	srv := newTestServer(t, false)
 	w := serverRequest(t, srv, "POST", "/api/credentials", "")
 
-	// Request with empty body
 	req := httptest.NewRequest("POST", "/api/credentials", strings.NewReader(""))
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, req)
@@ -360,12 +358,10 @@ func TestImportCredentialAPI_Invalid(t *testing.T) {
 func TestDeleteCredentialAPI(t *testing.T) {
 	srv := newTestServer(t, false)
 
-	// Get credentials first
 	w := serverRequest(t, srv, "GET", "/api/credentials", "")
 	creds := decodeJSONArray(t, w)
 	id := creds[0].(map[string]any)["id"].(string)
 
-	// Delete it
 	req := httptest.NewRequest("DELETE", "/api/credentials/"+id, nil)
 	rec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(rec, req)
@@ -374,7 +370,6 @@ func TestDeleteCredentialAPI(t *testing.T) {
 		t.Fatalf("expected 204, got %d", rec.Code)
 	}
 
-	// Verify it's gone
 	w2 := serverRequest(t, srv, "GET", "/api/credentials", "")
 	creds2 := decodeJSONArray(t, w2)
 	if len(creds2) != 1 {
@@ -853,8 +848,8 @@ func TestBrowserPresentationAPI_UnsignedRequestIgnoresExpectedOrigins(t *testing
 		t.Fatalf("marshaling payload: %v", err)
 	}
 
-	// Conformance is the wallet's own setting now, so hold this request to
-	// strict + HAIP by configuring the wallet rather than a per-request header.
+	// Conformance is a wallet setting, so hold this request to strict + HAIP
+	// by configuring the wallet.
 	srv.wallet.ValidationMode = ValidationModeStrict
 	srv.wallet.RequireHAIP = true
 
@@ -968,7 +963,6 @@ func TestBrowserPresentationAPI_DCAPIMultiSignedPrefersValidSignature(t *testing
 func TestPresentationFlow_AutoAccept(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Create a mock verifier that receives the VP token
 	var receivedBody string
 	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -979,7 +973,6 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 	}))
 	defer verifier.Close()
 
-	// Build a DCQL authorization request
 	dcqlQuery := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -997,7 +990,6 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 	}
 	dcqlJSON, _ := json.Marshal(dcqlQuery)
 
-	// Send request to /authorize
 	params := url.Values{
 		"client_id":     {"https://verifier.example"},
 		"response_type": {"vp_token"},
@@ -1021,7 +1013,6 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 		t.Errorf("expected status 'submitted', got %v", result["status"])
 	}
 
-	// Verify the verifier received the VP token
 	if receivedBody == "" {
 		t.Fatal("verifier did not receive VP token")
 	}
@@ -1053,7 +1044,6 @@ func TestPresentationFlow_AutoAccept(t *testing.T) {
 		t.Errorf("expected state 'test-state', got %s", state)
 	}
 
-	// Response should contain redirect_uri from verifier
 	response, ok := result["response"].(map[string]any)
 	if !ok {
 		t.Fatal("expected response object in result")
@@ -1139,7 +1129,6 @@ func TestPresentationFlow_AutoAccept_NoMatch(t *testing.T) {
 func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Create verifier that captures the request body
 	var receivedBody string
 	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -1150,7 +1139,6 @@ func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 	}))
 	defer verifier.Close()
 
-	// Request both SD-JWT and mDoc credentials
 	dcqlQuery := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -1199,7 +1187,6 @@ func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 		t.Errorf("expected status 'submitted', got %v", result["status"])
 	}
 
-	// Should have submitted tokens for both credentials
 	vpTokenKeys, ok := result["vp_token_keys"].([]any)
 	if !ok {
 		t.Fatal("expected vp_token_keys in result")
@@ -1208,7 +1195,6 @@ func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 		t.Errorf("expected 2 vp_token_keys, got %d", len(vpTokenKeys))
 	}
 
-	// Validate the actual vp_token structure sent to the verifier
 	parsedForm, err := url.ParseQuery(receivedBody)
 	if err != nil {
 		t.Fatalf("parsing verifier body: %v", err)
@@ -1219,7 +1205,6 @@ func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 		t.Fatalf("vp_token should be a JSON object with array values: %v", err)
 	}
 
-	// Must have both credential query IDs
 	if _, ok := vpToken["pid_sdjwt"]; !ok {
 		t.Error("expected 'pid_sdjwt' key in vp_token")
 	}
@@ -1234,7 +1219,6 @@ func TestPresentationFlow_AutoAccept_MultipleCredentials(t *testing.T) {
 		}
 	}
 
-	// Must not have extra keys
 	if len(vpToken) != 2 {
 		t.Errorf("expected exactly 2 keys in vp_token, got %d", len(vpToken))
 	}
@@ -1346,7 +1330,6 @@ func TestConsentFlow_ApproveAndDeny(t *testing.T) {
 		resultCh <- w
 	}()
 
-	// Wait for the consent request to appear
 	var reqID string
 	for i := 0; i < 100; i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -1361,7 +1344,6 @@ func TestConsentFlow_ApproveAndDeny(t *testing.T) {
 		t.Fatal("no pending consent request found")
 	}
 
-	// Approve via API
 	approveReq := httptest.NewRequest("POST", "/api/requests/"+reqID+"/approve",
 		strings.NewReader(`{"selected_claims":{}}`))
 	approveReq.Header.Set("Content-Type", "application/json")
@@ -1372,7 +1354,6 @@ func TestConsentFlow_ApproveAndDeny(t *testing.T) {
 		t.Fatalf("approve failed: %d %s", approveRec.Code, approveRec.Body.String())
 	}
 
-	// The authorize should now complete
 	w := <-resultCh
 	if w.Code != http.StatusOK {
 		t.Fatalf("authorize expected 200, got %d: %s", w.Code, w.Body.String())
@@ -1429,7 +1410,6 @@ func TestConsentFlow_Deny(t *testing.T) {
 		resultCh <- w
 	}()
 
-	// Wait for consent request
 	var reqID string
 	for i := 0; i < 100; i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -1444,7 +1424,6 @@ func TestConsentFlow_Deny(t *testing.T) {
 		t.Fatal("no pending consent request found")
 	}
 
-	// Deny
 	denyReq := httptest.NewRequest("POST", "/api/requests/"+reqID+"/deny", nil)
 	denyRec := httptest.NewRecorder()
 	srv.mux.ServeHTTP(denyRec, denyReq)
@@ -1689,14 +1668,12 @@ func TestTrustListAPI(t *testing.T) {
 		t.Errorf("expected Content-Type application/jwt, got %s", ct)
 	}
 
-	// Should be a valid 3-part JWT
 	jwt := w.Body.String()
 	parts := strings.SplitN(jwt, ".", 3)
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
 	}
 
-	// Payload should be parseable and contain trust list fields
 	payloadBytes, err := format.DecodeBase64URL(parts[1])
 	if err != nil {
 		t.Fatalf("decoding payload: %v", err)
@@ -1758,7 +1735,6 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 		t.Fatalf("expected 2 services (issuance + revocation), got %d", len(tl.Entities[0].Services))
 	}
 
-	// Verify issuance service
 	issuanceSvc := tl.Entities[0].Services[0]
 	if issuanceSvc.ServiceType != "http://uri.etsi.org/19602/SvcType/PID/Issuance" {
 		t.Errorf("unexpected issuance service type: %s", issuanceSvc.ServiceType)
@@ -1774,7 +1750,6 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 		t.Error("issuance certificate public key does not match wallet CA key")
 	}
 
-	// Verify revocation service
 	revocationSvc := tl.Entities[0].Services[1]
 	if revocationSvc.ServiceType != "http://uri.etsi.org/19602/SvcType/PID/Revocation" {
 		t.Errorf("unexpected revocation service type: %s", revocationSvc.ServiceType)
@@ -2437,7 +2412,6 @@ func TestOnConsentRequest_CalledOnInteractiveFlow(t *testing.T) {
 		resultCh <- w
 	}()
 
-	// Wait for consent request to appear
 	var reqID string
 	for i := 0; i < 100; i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -2694,7 +2668,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	// Create a mock verifier that receives the VP token
 	var receivedVPToken string
 	verifier := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -2705,7 +2678,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 	}))
 	defer verifier.Close()
 
-	// Create a mock request_uri endpoint that expects POST with wallet_metadata/wallet_nonce
 	var receivedMethod string
 	var receivedWalletMeta string
 	var receivedWalletNonce string
@@ -2742,7 +2714,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 	}))
 	defer requestURIServer.Close()
 
-	// Send request with request_uri and request_uri_method=post
 	params := url.Values{
 		"client_id":          {"https://verifier.example"},
 		"response_type":      {"vp_token"},
@@ -2758,7 +2729,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Verify request_uri endpoint was called with POST
 	if receivedMethod != "POST" {
 		t.Errorf("expected POST to request_uri, got %s", receivedMethod)
 	}
@@ -2769,7 +2739,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 		t.Error("expected wallet_nonce in POST body")
 	}
 
-	// Verify wallet_metadata is valid JSON with expected fields
 	var meta map[string]any
 	if err := json.Unmarshal([]byte(receivedWalletMeta), &meta); err != nil {
 		t.Fatalf("wallet_metadata not valid JSON: %v", err)
@@ -2778,7 +2747,6 @@ func TestPresentationFlow_RequestURIMethodPost(t *testing.T) {
 		t.Error("expected vp_formats_supported in wallet_metadata")
 	}
 
-	// Verify the verifier received the VP token
 	if receivedVPToken == "" {
 		t.Fatal("verifier did not receive VP token")
 	}
@@ -2839,7 +2807,6 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	// Create a mock verifier that receives the VP token
 	var receivedVPToken string
 	verifier := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -2857,7 +2824,6 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 		walletMetaStr := r.Form.Get("wallet_metadata")
 		walletNonce := r.Form.Get("wallet_nonce")
 
-		// Parse wallet_metadata to get encryption key
 		var meta map[string]any
 		json.Unmarshal([]byte(walletMetaStr), &meta)
 		jwks := meta["jwks"].(map[string]any)
@@ -2891,7 +2857,6 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 			"wallet_nonce":  walletNonce,
 		})
 
-		// Encrypt the JWT with the wallet's public key
 		jweStr, _, err := EncryptJWE([]byte(jwt), pubKey, "kid", "ECDH-ES", "A128GCM", nil, nil)
 		if err != nil {
 			t.Fatalf("encrypting request object: %v", err)
@@ -2921,7 +2886,6 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 		t.Errorf("expected status 'submitted', got %v", result["status"])
 	}
 
-	// Verify the verifier received the VP token (wallet successfully decrypted the JWE)
 	if receivedVPToken == "" {
 		t.Fatal("verifier did not receive VP token — wallet failed to decrypt JWE request object")
 	}
@@ -2966,9 +2930,8 @@ func TestSetIssuerListenPortDisablesTLSListener(t *testing.T) {
 	}
 }
 
-// TestStaticAssetsServed guards the embed pattern: an explicit file list in
-// embed.go once dropped the logo and favicon from the binary, so every asset
-// the UI references must be reachable.
+// TestStaticAssetsServed pins the embed pattern: every asset the UI references
+// must be reachable from the binary.
 func TestStaticAssetsServed(t *testing.T) {
 	srv := newTestServer(t, true)
 	for _, path := range []string{"/", "/app.js", "/style.css", "/favicon.svg", "/logo.svg"} {
@@ -3154,12 +3117,9 @@ func TestSameOriginAndOriginlessAPICallsAreAllowed(t *testing.T) {
 }
 
 // The Digital Credentials API is invoked by a verifier's web page from that
-// page's own origin. That is the mechanism, not an attack, so the
-// cross-origin guard must not cover it: guarding it refuses the only kind of
-// caller it has, which is how the OIDF conformance suite's dc_api plans
-// started failing. What protects it instead is the origin the platform
-// reports, which an unsigned Digital Credentials API request is authenticated
-// by, and the consent dialog.
+// page's own origin, so the cross-origin guard must not cover it. What
+// protects it is the origin the platform reports, which an unsigned Digital
+// Credentials API request is authenticated by, and the consent dialog.
 func TestBrowserAPIAcceptsACrossOriginCaller(t *testing.T) {
 	srv := newTestServer(t, false)
 

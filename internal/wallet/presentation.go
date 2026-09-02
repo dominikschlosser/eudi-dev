@@ -65,9 +65,9 @@ func (w *Wallet) CreateVPToken(match CredentialMatch, params PresentationParams)
 }
 
 // createVPToken builds one presentation. mdocNonce is the mdoc generated
-// nonce the whole response shares (ISO 18013-7); an empty one lets an mdoc
-// presentation generate its own, which is what a response holding a single
-// presentation needs.
+// nonce the whole response shares (ISO 18013-7). An empty one lets an mdoc
+// presentation generate its own, as a response holding a single presentation
+// needs.
 func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams, mdocNonce string) (VPTokenResult, error) {
 	cred, ok := w.GetCredential(match.CredentialID)
 	if !ok {
@@ -144,12 +144,10 @@ func (w *Wallet) createVPToken(match CredentialMatch, params PresentationParams,
 // checkPresentableKeyBinding reports a credential whose key binding this
 // wallet cannot sign. RFC 9901 §4.3 has the KB-JWT signed by the key the
 // credential's cnf names and ISO 18013-5 §9.1.3 the DeviceSigned by the MSO's
-// deviceKey, and this wallet signs both with the one holder key it has, so a
-// credential bound to another key produces a signature every verifier
-// refuses. Strict mode stops before the nonce is spent, debug mode sends it
-// and lets the refusal be the finding, as it does with every other deviation
-// ([ADR-0001]). A plain JWT VC signs no key binding at all and is not in
-// scope.
+// deviceKey, so a credential bound to a key the wallet does not hold produces
+// a signature every verifier refuses. Strict mode stops before the nonce is
+// spent, debug mode sends it and lets the refusal be the finding ([ADR-0001]).
+// A plain JWT VC signs no key binding.
 //
 // [ADR-0001]: docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md
 func (w *Wallet) checkPresentableKeyBinding(cred StoredCredential) error {
@@ -203,7 +201,6 @@ func interactiveAuthorizationAudience(endpoint string) string {
 // createSDJWTPresentation creates an SD-JWT presentation with selective
 // disclosure and KB-JWT, signing the key binding with signingKey.
 func (w *Wallet) createSDJWTPresentation(cred StoredCredential, selectedKeys []string, nonce, clientID string, signingKey *ecdsa.PrivateKey) (string, error) {
-	// Parse the raw SD-JWT to get the issuer JWT part
 	parts := strings.Split(cred.Raw, "~")
 	if len(parts) < 1 {
 		return "", fmt.Errorf("invalid SD-JWT format")
@@ -406,7 +403,7 @@ func (w *Wallet) BuildAuthorizationResponse(vpResult *VPTokenMapResult, idToken,
 	switch responseMode {
 	case "direct_post.jwt", "dc_api.jwt", "ia_post.jwt":
 		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
-			return nil, fmt.Errorf("response_mode is %s but no encryption key found in client_metadata.jwks — verifier must provide JWK per OID4VP 1.0", responseMode)
+			return nil, fmt.Errorf("response_mode is %s but client_metadata.jwks carries no encryption key (OID4VP 1.0 requires one)", responseMode)
 		}
 		jwe, cek, err := w.EncryptResponse(vpToken, idToken, state, mdocNonce, params)
 		if err != nil {
@@ -462,7 +459,7 @@ func (w *Wallet) BuildAuthorizationErrorResponse(errorCode, errorDescription, st
 	switch responseMode {
 	case "direct_post.jwt", "ia_post.jwt":
 		if !HasEncryptionKeyForParams(params.RequestObject, params.ClientMetadata) {
-			return nil, fmt.Errorf("response_mode is %s but no encryption key found in client_metadata.jwks — verifier must provide JWK per OID4VP 1.0", responseMode)
+			return nil, fmt.Errorf("response_mode is %s but client_metadata.jwks carries no encryption key (OID4VP 1.0 requires one)", responseMode)
 		}
 		jwe, cek, err := w.EncryptErrorResponse(errorCode, errorDescription, state, params)
 		if err != nil {

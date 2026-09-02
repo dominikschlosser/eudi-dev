@@ -200,7 +200,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// The nested booleans are the age thresholds, which only the
-			// German PID carries: its rulebook still defines them.
+			// German PID carries: its rulebook defines them.
 			vct := mock.DefaultPIDVCT
 			if tt.german {
 				vct = mock.GermanPIDVCT
@@ -225,7 +225,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 }
 
 // The same restriction applies to mdoc data elements. The age thresholds live
-// in the German PID, whose rulebook still defines them.
+// in the German PID, whose rulebook defines them.
 func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
 	w := generateTestWallet(t)
 	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {

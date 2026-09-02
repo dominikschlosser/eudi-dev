@@ -30,9 +30,9 @@ var (
 	verbose    bool
 )
 
-// binaryName resolves the command name from the invoked binary so the
-// legacy oid4vc-dev name keeps working everywhere (help texts, completion
-// registration) while eudi is the primary name.
+// binaryName resolves the command name from the invoked binary, so help
+// texts and completion registration use whichever name (eudi or the
+// oid4vc-dev alias) was invoked.
 func binaryName() string {
 	base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
 	if strings.HasPrefix(base, "oid4vc-dev") {

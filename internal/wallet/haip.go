@@ -28,7 +28,7 @@ import (
 
 // ValidateHAIPCompliance checks an authorization request against HAIP 1.0 and
 // returns the violations, empty when the request conforms. Every finding is a
-// MUST in the profile; what a violation does is the validation mode's call.
+// MUST in the profile. The validation mode decides what a violation does.
 func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.RequestObjectJWT) []string {
 	var violations []string
 	if params == nil {
@@ -40,14 +40,11 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 	// identifies the caller instead.
 	unsigned := params.UnsignedDCAPI || (reqObj == nil && isDCAPIResponseMode(params.ResponseMode))
 
-	// HAIP 1.0 profiles the two channels a Verifier sends an Authorization
-	// Request over, and a presentation made during Interactive Authorization
-	// (OpenID4VCI 1.1 §6.2.1.1) is neither: it is a step inside an issuance
-	// flow, whose response mode, delivery and binding the newer specification
-	// fixes itself. Holding it to the profile's channel rules reports
-	// violations no specification supports, and in strict mode would stop the
-	// wallet using the feature at all. What the profile asks of the query
-	// still applies.
+	// A presentation made during Interactive Authorization (OpenID4VCI 1.1
+	// §6.2.1.1) is a step inside an issuance flow, whose response mode,
+	// delivery and binding that specification fixes itself. HAIP 1.0 profiles
+	// the two channels a Verifier sends an Authorization Request over, so its
+	// channel rules do not apply here. What it asks of the query still does.
 	interactive := isInteractiveAuthorizationResponseMode(params.ResponseMode)
 
 	// §5: "The Response type MUST be vp_token."
@@ -66,9 +63,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 
 	if !unsigned && !interactive {
 		// §5: "For signed requests, the Verifier MUST use, and the Wallet
-		// MUST accept the Client Identifier Prefix x509_hash." It is the only
-		// prefix the profile names, so anything else is a request the profile
-		// does not allow.
+		// MUST accept the Client Identifier Prefix x509_hash."
 		if !strings.HasPrefix(params.ClientID, "x509_hash:") {
 			violations = append(violations, fmt.Sprintf(
 				"HAIP 1.0 §5: a signed request MUST use the 'x509_hash:' Client Identifier Prefix, got %q", params.ClientID))
@@ -80,7 +75,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 		// MUST be used by utilizing JWT-Secured Authorization Request (JAR)
 		// [RFC9101] with the request_uri parameter." A request object handed
 		// over inline meets the first half only. The Digital Credentials API
-		// has no request_uri and is left out.
+		// has no request_uri.
 		if reqObj != nil && !isDCAPIResponseMode(params.ResponseMode) && params.RequestURI == "" {
 			violations = append(violations, "HAIP 1.0 §5.1: the signed Request Object MUST be delivered through the request_uri parameter")
 		}
@@ -103,10 +98,9 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 }
 
 // haipEncryptionKeyViolations checks §5's requirement that the response is
-// encrypted with ECDH-ES to the Verifier's key on the P-256 curve. RSA-OAEP is
-// an OID4VP option but not a HAIP one. findEncryptionJWK returns the key the
-// response path will actually use (EC is preferred over RSA), so a non-EC result
-// is exactly the case where the wallet would fall off the profile to answer.
+// encrypted with ECDH-ES to the Verifier's key on the P-256 curve.
+// findEncryptionJWK returns the key the response path uses (EC is preferred
+// over RSA).
 func haipEncryptionKeyViolations(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) []string {
 	jwk := findEncryptionJWK(reqObj, clientMetadata)
 	if jwk == nil {
@@ -139,10 +133,9 @@ func haipSignedRequestViolations(reqObj *oid4vc.RequestObjectJWT) []string {
 	// the x5c JOSE header of the signed request. The X.509 certificate
 	// signing the request MUST NOT be self-signed."
 	//
-	// Which certificate is the anchor depends on what the checking party was
-	// configured to trust, and this wallet holds no such list. So the finding
-	// reports what is visible, a self-signed certificate, rather than claiming
-	// the anchor was included.
+	// Which certificate is the anchor depends on what the checking party
+	// trusts, and this wallet holds no such list, so the finding reports the
+	// visible fact: a self-signed certificate.
 	certs, _ := extractCertChain(reqObj)
 	if len(certs) > 0 {
 		leaf := certs[0]
@@ -258,16 +251,13 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 	if !supportsAuthorizationCodeFlow(oauthMeta) {
 		violations = append(violations, "HAIP 1.0 §4: the authorization server must support the authorization code flow")
 	}
-	// Pushed authorization requests belong to the authorization endpoint, which
-	// an Interactive Authorization exchange never reaches: the request goes to
-	// the Authorization Challenge Endpoint instead, and §4 scopes PAR to "when
-	// using the Authorization Endpoint". The grant is still authorization_code,
-	// so the check above still applies.
+	// Pushed authorization requests belong to the authorization endpoint,
+	// which an Interactive Authorization exchange never reaches (the request
+	// goes to the Authorization Challenge Endpoint, and §4 scopes PAR to "when
+	// using the Authorization Endpoint").
 	//
-	// Only the endpoint's presence is checkable. Neither profile asks a server
-	// to advertise require_pushed_authorization_requests: FAPI 2.0 puts the
-	// obligation on behaviour, and the flag is optional in RFC 9126 and absent
-	// from conformant servers such as the EUDI reference issuer.
+	// Only the endpoint's presence is checkable: require_pushed_authorization_requests
+	// is optional in RFC 9126, and FAPI 2.0 puts the obligation on behaviour.
 	_, hasPAR := oauthMeta["pushed_authorization_request_endpoint"].(string)
 	if !hasPAR && interactiveAuthorizationEndpoint(oauthMeta) == "" {
 		violations = append(violations, "HAIP 1.0 §4: the authorization server must support pushed authorization requests")
@@ -279,15 +269,13 @@ func ValidateHAIPIssuanceCompliance(offer *oid4vc.CredentialOffer, oauthMeta map
 		!metadataListContains(oauthMeta, "code_challenge_methods_supported", "S256") {
 		violations = append(violations, "HAIP 1.0 §4: the authorization server advertises PKCE without S256")
 	}
-	// ES256 specifically: this wallet signs DPoP proofs with its holder key,
-	// and §7 requires every party to support that algorithm at a minimum, so
-	// a server that lists DPoP algorithms without it contradicts the profile
-	// and could not accept a proof from any conformant wallet either.
+	// ES256 specifically: §7 requires every party to support it at a minimum,
+	// and this wallet signs DPoP proofs with it.
 	if _, declared := oauthMeta["dpop_signing_alg_values_supported"]; declared &&
 		!metadataListContains(oauthMeta, "dpop_signing_alg_values_supported", "ES256") {
 		violations = append(violations, "HAIP 1.0 §7: the authorization server advertises DPoP without ES256")
 	}
-	// Client authentication is deliberately not checked: §4.4.1 requires the
+	// Client authentication is not checked: §4.4.1 requires the
 	// issuer to require it, but advertising it is only a SHOULD (§10.1 of the
 	// attestation draft). The wallet finds out by authenticating.
 
@@ -325,8 +313,7 @@ func supportsAuthorizationCodeFlow(oauthMeta map[string]any) bool {
 
 // secureIssuerOrigin reports whether an issuer URL is acceptable transport.
 // https always is. Plain http is allowed only on loopback, the way OAuth
-// treats a local development host, so a demo instance on localhost is not
-// rejected for being local.
+// treats a local development host.
 func secureIssuerOrigin(issuer string) bool {
 	parsed, err := url.Parse(issuer)
 	if err != nil {

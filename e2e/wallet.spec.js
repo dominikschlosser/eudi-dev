@@ -24,7 +24,8 @@ test.beforeAll(async () => {
     cwd: __dirname,
   });
 
-  // Start wallet with --pid and --auto-accept for some tests, interactive for others.
+  // Start an interactive wallet with --pid. Tests that need auto-accept flip
+  // the setting and restore it.
   // A fresh --wallet-dir keeps the test isolated from any local wallet state
   // (a persisted issuer URL would make the server bind that issuer port too).
   const { spawn } = require("child_process");
@@ -164,11 +165,9 @@ test.describe("Wallet Dashboard", () => {
       timeout: 5000,
     });
 
-    // Check for SD-JWT credential
     const sdjwtCard = page.locator(".credential-card[data-format='sdjwt']").first();
     await expect(sdjwtCard).toBeVisible();
 
-    // Check for mDoc credential
     const mdocCard = page.locator(".credential-card[data-format='mdoc']").first();
     await expect(mdocCard).toBeVisible();
   });
@@ -191,14 +190,12 @@ test.describe("Wallet Dashboard", () => {
     const themeBtn = page.locator("#theme-toggle");
     await expect(themeBtn).toBeVisible();
 
-    // Click to toggle theme
     await themeBtn.click();
     const theme = await page
       .locator("html")
       .getAttribute("data-theme");
     expect(theme).toBe("light");
 
-    // Click again to toggle back
     await themeBtn.click();
   });
 
@@ -223,11 +220,9 @@ test.describe("Credential Import via UI", () => {
   test("import modal opens and closes", async ({ page }) => {
     await page.goto(WALLET_URL);
 
-    // Open import modal
     await page.locator("#import-btn").click();
     await expect(page.locator("#import-overlay")).toHaveClass(/active/);
 
-    // Cancel closes it
     await page.locator("#import-cancel").click();
     await expect(page.locator("#import-overlay")).not.toHaveClass(/active/);
   });
@@ -442,7 +437,7 @@ test.describe("Credential Issuing via UI", () => {
       (c) => c.doctype === "org.example.e2e.doctype"
     );
     expect(summary).toBeDefined();
-    // The overview listing omits claims; the per-credential endpoint carries them.
+    // The overview listing omits claims. The per-credential endpoint carries them.
     const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
       .body;
     expect(issued.claims["org.example.e2e.doctype:given_name"]).toBe("Erika");
@@ -489,7 +484,7 @@ test.describe("Credential Issuing via UI", () => {
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
     const summary = res.body.find((c) => c.vct === "urn:example:e2e-test");
     expect(summary).toBeDefined();
-    // The overview listing omits claims; the per-credential endpoint carries them.
+    // The overview listing omits claims. The per-credential endpoint carries them.
     const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
       .body;
     expect(issued.claims.e2e_marker).toBe("yes");
@@ -656,7 +651,7 @@ test.describe("Credential Issuing via UI", () => {
     const res = await jsonGet(`${WALLET_URL}/api/credentials`);
     const summary = res.body.find((c) => c.vct === "urn:example:e2e-employee");
     expect(summary).toBeDefined();
-    // The overview listing omits claims and the raw credential; the
+    // The overview listing omits claims and the raw credential. The
     // per-credential endpoint carries both.
     const issued = (await jsonGet(`${WALLET_URL}/api/credentials/${summary.id}`))
       .body;
@@ -722,7 +717,7 @@ test.describe("Credential Issuing via UI", () => {
     await page.locator("#issue-btn").click();
     await page.locator("#issue-vct").fill("urn:example:e2e-display");
     await page.locator("#issue-display-name").fill("E2E Badge");
-    // Typing a hex color keeps the picker in step; the text field is what is sent.
+    // Typing a hex color keeps the picker in step. The text field is what is sent.
     await page.locator("#issue-bg-color").fill("#0f766e");
     await page.locator("#issue-text-color").fill("#ffffff");
     await expect(page.locator("#issue-bg-color-picker")).toHaveValue("#0f766e");
@@ -859,8 +854,8 @@ test.describe("Credential Issuing via UI", () => {
   }) => {
     await page.goto(WALLET_URL);
 
-    // They used to sit under the action bar; now they are one click away so
-    // the main view stays focused on running flows.
+    // The trust links sit behind a dialog, one click away, so the main view
+    // stays focused on running flows.
     await expect(page.locator("#ca-cert-pem-link")).toBeHidden();
     await page.locator("#trust-link").click();
     await expect(page.locator("#trust-overlay")).toHaveClass(/active/);
@@ -915,9 +910,8 @@ test.describe("Credential Issuing via UI", () => {
 
 test.describe("Stored XSS", () => {
   // A wallet is shared state: one visitor imports a credential, every other
-  // visitor's browser renders it. The escaping helper used to round-trip
-  // through textContent, which leaves " and ' alone, so a status list URI
-  // could close the title="" attribute and add an event handler that ran in
+  // visitor's browser renders it. A status list URI carrying " or ' must not
+  // close the title="" attribute and add an event handler that runs in
   // everyone else's browser.
   test("a credential cannot inject an attribute into another visitor's page", async ({
     page,
@@ -979,9 +973,8 @@ test.describe("Stored XSS", () => {
 
 test.describe("Mobile layout", () => {
   test("footer stays reachable on a small viewport", async ({ page }) => {
-    // Regression: the wallet had no responsive rules, so body height 100vh
-    // with overflow hidden put the footer (imprint link) below the visible
-    // area on phones, where the URL bar counts into 100vh.
+    // On phones the URL bar counts into 100vh, so the footer (imprint link)
+    // has to stay inside the scrollable area.
     await page.setViewportSize({ width: 390, height: 480 });
     await page.goto(WALLET_URL);
     await page.waitForSelector(".credential-card");

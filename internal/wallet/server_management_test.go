@@ -200,9 +200,8 @@ func TestIssueCredentialAPIDropsInvalidColor(t *testing.T) {
 }
 
 // A JWT VC carries the PID claim set plainly, so a PID request in that format
-// has to work. It used to fail with a template-format error, because the
-// template the PID flag picks for the caller was held to the same format rule
-// as one they named themselves.
+// issues one. The template the PID flag picks is a claim set, not a choice of
+// format.
 func TestIssueCredentialAPIPIDAsJWT(t *testing.T) {
 	srv := newTestServer(t, true)
 	resp := serverRequest(t, srv, http.MethodPost, "/api/issue", `{"format": "jwt", "pid": true}`)

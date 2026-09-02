@@ -58,7 +58,6 @@ func TestGenerateStatusListJWT_ValidStructure(t *testing.T) {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
 	}
 
-	// Check header
 	headerBytes, err := format.DecodeBase64URL(parts[0])
 	if err != nil {
 		t.Fatalf("decoding header: %v", err)
@@ -74,7 +73,6 @@ func TestGenerateStatusListJWT_ValidStructure(t *testing.T) {
 		t.Errorf("expected typ statuslist+jwt, got %v", header["typ"])
 	}
 
-	// Check payload
 	payloadBytes, err := format.DecodeBase64URL(parts[1])
 	if err != nil {
 		t.Fatalf("decoding payload: %v", err)
@@ -109,7 +107,6 @@ func TestGenerateStatusListJWT_ValidStructure(t *testing.T) {
 func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 	key := generateTestKey(t)
 	bitstring := make([]byte, 16)
-	// Set index 3 to revoked
 	bitstring[0] = 1 << 3
 
 	jwt, err := GenerateStatusListJWT(bitstring, key, StatusListConfig{URI: "https://example.com/statuslists/1"})
@@ -117,7 +114,6 @@ func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 		t.Fatalf("GenerateStatusListJWT: %v", err)
 	}
 
-	// Parse the JWT payload
 	parts := strings.SplitN(jwt, ".", 3)
 	payloadBytes, _ := format.DecodeBase64URL(parts[1])
 	var payload map[string]any
@@ -126,7 +122,6 @@ func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 	sl := payload["status_list"].(map[string]any)
 	lst := sl["lst"].(string)
 
-	// Decode and decompress
 	compressed, err := format.DecodeBase64URL(lst)
 	if err != nil {
 		t.Fatalf("decoding lst: %v", err)
@@ -142,7 +137,6 @@ func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 		t.Fatalf("decompressing: %v", err)
 	}
 
-	// Verify bitstring matches
 	if len(decompressed) != len(bitstring) {
 		t.Fatalf("decompressed length %d != original %d", len(decompressed), len(bitstring))
 	}
@@ -150,7 +144,6 @@ func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 		t.Error("decompressed bitstring does not match original")
 	}
 
-	// Check index 3 is revoked
 	status, err := extractStatus(decompressed, 3, 1)
 	if err != nil {
 		t.Fatalf("extractStatus: %v", err)
@@ -159,7 +152,6 @@ func TestGenerateStatusListJWT_RoundTrip(t *testing.T) {
 		t.Errorf("expected index 3 to be revoked (1), got %d", status)
 	}
 
-	// Check index 0 is valid
 	status, err = extractStatus(decompressed, 0, 1)
 	if err != nil {
 		t.Fatalf("extractStatus: %v", err)
@@ -186,7 +178,6 @@ func TestGenerateStatusListJWT_AllZeros(t *testing.T) {
 func TestGenerateStatusListJWT_WithCertChain(t *testing.T) {
 	key := generateTestKey(t)
 
-	// Generate a CA cert and leaf cert like the wallet does
 	caKey, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +200,6 @@ func TestGenerateStatusListJWT_WithCertChain(t *testing.T) {
 		t.Fatalf("GenerateStatusListJWT with cert chain: %v", err)
 	}
 
-	// Parse header and verify x5c is present
 	parts := strings.SplitN(jwt, ".", 3)
 	headerBytes, _ := format.DecodeBase64URL(parts[0])
 	var header map[string]any
@@ -320,8 +310,7 @@ func decodeJWTHeader(t *testing.T, jwt string) map[string]any {
 }
 
 // The embedded jwk must be the same key the x5c leaf certifies, or the token
-// tells two different stories about who signed it. It is derived from the
-// signing key for exactly that reason. This pins it.
+// tells two different stories about who signed it.
 func TestGenerateStatusListJWTEmbedsSigningKeyMatchingX5C(t *testing.T) {
 	caKey, err := mock.GenerateKey()
 	if err != nil {
@@ -365,7 +354,6 @@ func TestGenerateStatusListJWTEmbedsSigningKeyMatchingX5C(t *testing.T) {
 		t.Error("the embedded jwk must be a public key")
 	}
 
-	// And it must agree with the certificate that x5c presents.
 	leafJWK := mock.PublicKeyJWKMap(leafCert.PublicKey.(*ecdsa.PublicKey))
 	if jwk["x"] != leafJWK["x"] || jwk["y"] != leafJWK["y"] {
 		t.Error("the embedded jwk does not match the public key in the x5c leaf certificate")

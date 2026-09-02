@@ -23,19 +23,15 @@ func TestGetCredential_ResolvesByPrefix(t *testing.T) {
 	w.RestoreCredential(StoredCredential{ID: "abcd1234ef567890", VCT: "urn:example:one"})
 	w.RestoreCredential(StoredCredential{ID: "ffee0011deadbeef", VCT: "urn:example:two"})
 
-	// The full id resolves.
 	if c, ok := w.GetCredential("abcd1234ef567890"); !ok || c.VCT != "urn:example:one" {
 		t.Fatalf("full id did not resolve: %v %+v", ok, c)
 	}
-	// An unambiguous prefix (the short id the UI shows) resolves.
 	if c, ok := w.GetCredential("abcd1234"); !ok || c.VCT != "urn:example:one" {
 		t.Fatalf("unambiguous prefix did not resolve: %v %+v", ok, c)
 	}
-	// The other credential resolves from its own prefix.
 	if c, ok := w.GetCredential("ffee"); !ok || c.VCT != "urn:example:two" {
 		t.Fatalf("second prefix did not resolve: %v %+v", ok, c)
 	}
-	// An unknown prefix resolves to nothing.
 	if _, ok := w.GetCredential("nope"); ok {
 		t.Error("an unknown prefix resolved a credential")
 	}
@@ -46,11 +42,9 @@ func TestGetCredential_AmbiguousPrefixResolvesNothing(t *testing.T) {
 	w.RestoreCredential(StoredCredential{ID: "aaaa1111", VCT: "urn:example:one"})
 	w.RestoreCredential(StoredCredential{ID: "aaaa2222", VCT: "urn:example:two"})
 
-	// "aaaa" matches both, so it names neither.
 	if _, ok := w.GetCredential("aaaa"); ok {
 		t.Error("an ambiguous prefix resolved a credential")
 	}
-	// A full id still resolves, even when it is also a prefix of no other.
 	if _, ok := w.GetCredential("aaaa1111"); !ok {
 		t.Error("a full id did not resolve past the ambiguous shared prefix")
 	}

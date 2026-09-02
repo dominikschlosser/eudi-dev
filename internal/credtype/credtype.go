@@ -18,18 +18,14 @@
 // A national PID extends the country-independent one by requirement: ARF
 // v3.0.0 Annex 2, PID_14 says the vct "SHALL be urn:eudi:pid:1 for the type
 // defined in this document or a domestic type that extends it". So a verifier
-// asking for the general type is answered by the national credential, which is
-// what Answers decides.
+// asking for the general type is answered by the national credential, which
+// Answers decides.
 //
-// The ARF does not say how that relationship is discovered. Its
-// machine-readable form, Type Metadata with extends
-// (draft-ietf-oauth-sd-jwt-vc-18 §4.4), is only something ARB_31 "SHOULD
+// The ARF does not say how that relationship is discovered. Type Metadata with
+// extends (draft-ietf-oauth-sd-jwt-vc-18 §4.4) is only something ARB_31 "SHOULD
 // consider defining" and needs a retrievable document, which a URN vct is not.
-// Extends therefore applies PID_14 directly.
-//
-// The aka_vcts claim (§2.2.2.2, new in draft-18) puts the statement in the
-// credential itself. No EUDI rulebook requires it yet, so reading it is what
-// makes this wallet work with issuers that adopt it.
+// Extends therefore applies PID_14 directly. The aka_vcts claim (§2.2.2.2)
+// puts the statement in the credential itself, and Chain reads it.
 //
 // Inheritance says what a credential is, never who may issue it (§6.6:
 // "Verifiers and Holders MUST NOT assume that any issuer who issues a
@@ -134,8 +130,7 @@ func Answers(vct string, akaVCTs []string, requested string) bool {
 }
 
 // AkaVCTs reads the aka_vcts claim of a decoded credential. Anything that is
-// not a list of strings is ignored: a credential is free to be malformed, and
-// a type it cannot state is simply a type it does not have.
+// not a list of strings is ignored.
 func AkaVCTs(claims map[string]any) []string {
 	raw, ok := claims[AkaVCTsClaim].([]any)
 	if !ok {

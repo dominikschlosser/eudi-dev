@@ -41,12 +41,10 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		t.Fatalf("GenerateJWT: %v", err)
 	}
 
-	// Must NOT contain ~ (not an SD-JWT)
 	if strings.Contains(result, "~") {
 		t.Error("JWT should not contain ~")
 	}
 
-	// Must have exactly 3 parts
 	parts := strings.Split(result, ".")
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
@@ -58,7 +56,6 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	// Check header
 	if alg, _ := token.Header["alg"].(string); alg != "ES256" {
 		t.Errorf("expected alg ES256, got %s", alg)
 	}
@@ -66,7 +63,6 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		t.Errorf("expected typ vc+jwt, got %s", typ)
 	}
 
-	// Check payload fields
 	if iss, _ := token.Payload["iss"].(string); iss != "https://issuer.example" {
 		t.Errorf("expected iss https://issuer.example, got %s", iss)
 	}
@@ -74,12 +70,10 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		t.Errorf("expected vct urn:eudi:pid:1, got %s", vct)
 	}
 
-	// No disclosures
 	if len(token.Disclosures) != 0 {
 		t.Errorf("expected 0 disclosures, got %d", len(token.Disclosures))
 	}
 
-	// No _sd or _sd_alg in payload
 	if _, ok := token.Payload["_sd"]; ok {
 		t.Error("JWT payload should not contain _sd")
 	}
@@ -87,7 +81,6 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		t.Error("JWT payload should not contain _sd_alg")
 	}
 
-	// Claims should be directly in payload
 	for name, expected := range DefaultClaims {
 		val, ok := token.Payload[name]
 		if !ok {
@@ -99,7 +92,6 @@ func TestGenerateJWT_DefaultClaims(t *testing.T) {
 		}
 	}
 
-	// Verify signature
 	verifyResult := sdjwt.Verify(token, &key.PublicKey)
 	if !verifyResult.SignatureValid {
 		t.Errorf("signature verification failed: %v", verifyResult.Errors)

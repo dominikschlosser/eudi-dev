@@ -48,9 +48,9 @@ func cwtServer(t *testing.T, key *ecdsa.PrivateKey, bits int, bitstring []byte, 
 	})
 }
 
-// Section 5.2 defines the CWT representation of a Status List Token. An mdoc
-// ecosystem that serves one has to be resolvable, which means asking for it,
-// parsing the COSE_Sign1 and reading the integer-keyed claims.
+// Section 5.2 defines the CWT representation of a Status List Token.
+// Resolving one means asking for it, parsing the COSE_Sign1 and reading the
+// integer-keyed claims.
 func TestCheck_ResolvesACWTStatusListToken(t *testing.T) {
 	key := mustGenerateKey(t)
 	bitstring := make([]byte, 16)

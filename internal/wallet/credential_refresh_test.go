@@ -436,7 +436,7 @@ func TestResolveClientAuthentication(t *testing.T) {
 	}
 
 	// An issuer that asks for nothing, with a wallet that is not enforcing
-	// the profile, gets the same plain request as before.
+	// the profile, gets a plain request.
 	plain := clientAuthContext{clientID: ctx.clientID, tokenEndpoint: ctx.tokenEndpoint, oauthMeta: map[string]any{}}
 	if auth := w.resolveClientAuthentication("", plain); auth != nil {
 		t.Errorf("an issuer that asked for nothing resolved to %+v", auth)
@@ -453,7 +453,7 @@ func TestResolveClientAuthentication(t *testing.T) {
 
 	// In debug mode the wallet attests a silent issuer (it may require an
 	// attestation without advertising it, §10.1) and warns about the missing
-	// advertisement, so an issuer like the Animo playground still works.
+	// advertisement.
 	w.ValidationMode = ValidationModeDebug
 	if auth := w.resolveClientAuthentication("", plain); auth == nil || auth.Method != ClientAuthAttestation {
 		t.Errorf("HAIP debug should attest a silent issuer, got %+v", auth)
@@ -475,9 +475,9 @@ func TestResolveClientAuthentication(t *testing.T) {
 	}
 }
 
-// A refused token request has to read as what the server said. The raw body
-// plus a repeat of the status code is what the wallet used to hand back, and
-// it buries the one line that explains the refusal.
+// A refused token request reads as what the server said: the line that
+// explains the refusal, rather than a repeat of the status code over the raw
+// body.
 func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
 	w := generateTestWallet(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {

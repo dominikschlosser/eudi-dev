@@ -150,9 +150,7 @@ func walletGeneratePIDCmd() *cobra.Command {
 
 // printGeneratePIDDeprecation warns that generate-pid is deprecated and
 // prints the equivalent template-based issue commands, carrying over the
-// claim and VCT flags the user passed. The templates named are the ones the
-// requested PID type is generated from, so the printed commands produce the
-// same credentials the deprecated one would.
+// claim and VCT flags the user passed.
 func printGeneratePIDDeprecation(cmd *cobra.Command, claimsFlag, vctFlag string) {
 	sdTemplate, mdocTemplate, known := credtemplate.PIDTemplateNames(vctFlag)
 	sdEquiv := binaryName() + " issue sdjwt --wallet --template " + sdTemplate

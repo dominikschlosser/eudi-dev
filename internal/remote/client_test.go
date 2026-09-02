@@ -23,9 +23,8 @@ import (
 	"testing"
 )
 
-// recorder answers every request with body and remembers what was asked, so a
-// wrapper can be pinned to the endpoint it calls. These methods are nothing
-// but a method and a path, and a wrong one fails against a real wallet only.
+// recorder answers every request with body and records the request, so each
+// wrapper can be checked against the endpoint it calls.
 type recorder struct {
 	method      string
 	path        string
@@ -304,8 +303,8 @@ func TestClientSendsARawStringBodyUnchanged(t *testing.T) {
 	}
 }
 
-// The server's own error message is what tells a user what went wrong, so it
-// has to survive rather than be replaced by the status code alone.
+// The server's own error message survives in the returned error next to the
+// status code.
 func TestClientReportsTheServerError(t *testing.T) {
 	rec := &recorder{status: http.StatusBadRequest, reply: `{"error":"credential is protected"}`}
 	client, closeFn := rec.server(t)
@@ -432,8 +431,8 @@ func TestClientTrustListSelectors(t *testing.T) {
 	}
 }
 
-// Decoding into a []byte hands back the bytes rather than parsing them, which
-// is what the endpoints returning PEM and JWTs rely on.
+// Decoding into a []byte hands back the raw bytes, which the PEM and JWT
+// endpoints need.
 func TestClientReturnsRawBytesUnparsed(t *testing.T) {
 	rec := &recorder{reply: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"}
 	client, closeFn := rec.server(t)

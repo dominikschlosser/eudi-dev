@@ -412,12 +412,11 @@ func postFormWithHeaders(t *testing.T, h http.Handler, target string, form url.V
 	return rec
 }
 
-// TestCrossDraftShapeWarnsButAccepts pins the tolerant acceptance the ADR
-// decided: material that violates the ABCA draft the configured OpenID4VCI
-// version pins, while being correct under another supported draft, is
-// accepted with a logged warning. At OpenID4VCI 1.0 the pinned draft is -07,
-// which requires iss in both JWTs; the test helpers build the draft-08/-10
-// shape without it.
+// TestCrossDraftShapeWarnsButAccepts pins the tolerant acceptance: material
+// that violates the ABCA draft the configured OpenID4VCI version pins, while
+// being correct under another supported draft, is accepted with a logged
+// warning. At OpenID4VCI 1.0 the pinned draft is -07, which requires iss in
+// both JWTs. The test helpers build the draft-08/-10 shape without it.
 func TestCrossDraftShapeWarnsButAccepts(t *testing.T) {
 	t.Run("draft-08 shape at a draft-07 configuration", func(t *testing.T) {
 		d, w, _ := newDemoRP(t)

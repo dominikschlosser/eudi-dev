@@ -66,8 +66,7 @@ func TestLoadRejectsNonHTMLAndEmpty(t *testing.T) {
 
 // The wallet and decoder both serve this page under a Content-Security-Policy
 // with script-src 'self' and no 'unsafe-inline', which blocks a javascript:
-// URL. A back link written that way renders fine and does nothing when
-// clicked, so nothing about the page reveals that it is broken.
+// URL, so the back link is a plain href.
 func TestLoadPageRunsNoScript(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "imprint.html")
 	if err := os.WriteFile(path, []byte("<h1>Imprint</h1>"), 0o644); err != nil {

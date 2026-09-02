@@ -83,7 +83,6 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// BuildSDJWTJSON returns the JSON-serializable map for an SD-JWT token.
 // addTokenNotes copies a decoded token's structural findings onto out.
 func addTokenNotes(out map[string]any, token *sdjwt.Token) {
 	if len(token.Warnings) > 0 {
@@ -111,6 +110,7 @@ func printTokenNotes(token *sdjwt.Token) {
 	}
 }
 
+// BuildSDJWTJSON returns the JSON-serializable map for an SD-JWT token.
 func BuildSDJWTJSON(token *sdjwt.Token) map[string]any {
 	out := map[string]any{
 		"format":         "dc+sd-jwt",
@@ -139,15 +139,12 @@ func PrintSDJWT(token *sdjwt.Token, opts Options) {
 	headerColor.Println("SD-JWT Credential")
 	headerColor.Println(strings.Repeat("─", 50))
 
-	// Header
 	printSection("Header")
 	printMapFiltered(token.Header, 1, opts.Verbose, "x5c")
 
-	// Payload (without resolving disclosures)
 	printSection("Payload (signed claims)")
 	printMap(token.Payload, 1)
 
-	// Disclosed claims (resolved disclosures)
 	if len(token.Disclosures) > 0 {
 		printSection(fmt.Sprintf("Disclosed Claims (%d)", len(token.Disclosures)))
 		for i, d := range token.Disclosures {
@@ -168,13 +165,11 @@ func PrintSDJWT(token *sdjwt.Token, opts Options) {
 
 	printTokenNotes(token)
 
-	// Key Binding JWT
 	if token.KeyBindingJWT != nil {
 		printSection("Key Binding JWT")
 		printMap(token.KeyBindingJWT.Payload, 1)
 	}
 
-	// Holder key (cnf)
 	if cnf, ok := token.Payload["cnf"].(map[string]any); ok {
 		printSection("Holder Key (cnf)")
 		printMap(cnf, 1)
@@ -204,11 +199,9 @@ func PrintJWT(token *sdjwt.Token, opts Options) {
 	headerColor.Println("JWT")
 	headerColor.Println(strings.Repeat("─", 50))
 
-	// Header
 	printSection("Header")
 	printMapFiltered(token.Header, 1, opts.Verbose, "x5c")
 
-	// Payload
 	printSection("Payload")
 	printMap(token.Payload, 1)
 
@@ -288,7 +281,6 @@ func BuildMDOCJSON(doc *mdoc.Document) map[string]any {
 	return out
 }
 
-// PrintMDOC prints a decoded mDOC to the terminal.
 // buildIssuerAuthJSON describes the COSE_Sign1 the issuer signed the MSO
 // with. It is the mdoc counterpart of a JWT's header and signature, so it is
 // broken into the same parts rather than left as one blob.
@@ -325,9 +317,8 @@ func cborKeyedMap(m map[any]any) map[string]any {
 }
 
 // buildIssuerSignedItemsJSON describes each disclosed element the way mdoc
-// actually carries it: a salt, a digest id, and a value whose digest the
-// issuer signed. Recomputing that digest is what proves the value was not
-// changed, so the result of the comparison travels with it.
+// carries it: a salt, a digest id, and a value whose digest the issuer
+// signed. The result of recomputing that digest travels with it.
 func buildIssuerSignedItemsJSON(doc *mdoc.Document) map[string]any {
 	if len(doc.NameSpaces) == 0 {
 		return nil
@@ -409,8 +400,8 @@ func deviceAuthType(doc *mdoc.Document) string {
 }
 
 // printDeviceKey reports the key the credential is bound to. An mdoc without
-// one cannot be presented with device authentication, which is worth saying
-// rather than leaving the section out.
+// one cannot be presented with device authentication, so the absence is
+// reported too.
 func printDeviceKey(doc *mdoc.Document, mso *mdoc.MSO, opts Options) {
 	if mso.DeviceKeyInfo == nil {
 		printSection("Device Key")
@@ -456,6 +447,7 @@ func printDeviceAuth(doc *mdoc.Document, opts Options) {
 	}
 }
 
+// PrintMDOC prints a decoded mDOC to the terminal.
 func PrintMDOC(doc *mdoc.Document, opts Options) {
 	if opts.JSON {
 		PrintJSON(BuildMDOCJSON(doc))
@@ -497,21 +489,17 @@ func PrintMDOC(doc *mdoc.Document, opts Options) {
 			}
 		}
 
-		// Status
 		if mso.Status != nil {
 			printSection("Status")
 			printMap(mso.Status, 1)
 		}
 
-		// Device key: the holder binding. It is the same fact cnf carries in
-		// an SD-JWT, and whether a credential is bound to a key at all is not
-		// a detail worth hiding behind a flag.
+		// The holder binding, the same fact cnf carries in an SD-JWT.
 		printDeviceKey(doc, mso, opts)
 	}
 
 	printDeviceAuth(doc, opts)
 
-	// Claims by namespace
 	namespaces := sortedKeys(doc.NameSpaces)
 	for _, ns := range namespaces {
 		items := doc.NameSpaces[ns]
@@ -530,7 +518,6 @@ func PrintMDOC(doc *mdoc.Document, opts Options) {
 		}
 	}
 
-	// Device Auth
 	if doc.DeviceSigned != nil && doc.DeviceSigned.DeviceAuth != nil {
 		printSection("Device Auth")
 		printMap(doc.DeviceSigned.DeviceAuth, 1)

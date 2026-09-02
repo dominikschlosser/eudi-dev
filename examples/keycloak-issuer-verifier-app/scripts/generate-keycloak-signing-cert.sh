@@ -32,9 +32,8 @@ work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
 # A CA-issued leaf, because Keycloak refuses to issue an SD-JWT credential
-# signed with a self-signed certificate. The realm signing key is the leaf; the
-# credential references it by key id and the keycloak-realm-issuer trust
-# provider verifies it against the realm's own published keys.
+# signed with a self-signed certificate. The keycloak-realm-issuer trust
+# provider verifies the credential against the realm's own published keys.
 openssl req -x509 -newkey rsa:2048 -keyout "${CA_KEY_PATH}" -out "${CA_CERT_PATH}" \
   -sha256 -days 3650 -nodes -subj "${CA_SUBJECT}" >/dev/null 2>&1
 

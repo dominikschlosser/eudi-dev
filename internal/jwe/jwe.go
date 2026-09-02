@@ -14,9 +14,8 @@
 
 // Package jwe decrypts compact JSON Web Encryption using ECDH-ES, for the
 // wallet (request objects encrypted to it) and the proxy (traffic it holds a
-// key for). Both agree a shared secret, run it through the Concat KDF and open
-// an AEAD, which is kept in one place because a drifting copy of the key
-// derivation fails as a bad ciphertext rather than as a bug.
+// key for). The key derivation lives here once: a drifting copy fails as a bad
+// ciphertext rather than as a bug.
 package jwe
 
 import (

@@ -38,7 +38,6 @@ func fromJWTToken(token *sdjwt.Token, credFormat string) *Query {
 		vct = v
 	}
 
-	// Generate an ID from the VCT
 	id := sanitizeID(vct)
 	if id == "" {
 		id = "credential_0"
@@ -69,9 +68,8 @@ func FromMDOC(doc *mdoc.Document) *Query {
 	var claims []ClaimQuery
 	namespaces := sortedKeys(doc.NameSpaces)
 	for _, ns := range namespaces {
-		// Copy before sorting: doc.NameSpaces[ns] is the caller's slice, and
-		// sorting it in place would silently reorder the document we were
-		// handed to read.
+		// Copy before sorting: sorting doc.NameSpaces[ns] in place would reorder
+		// the caller's document.
 		items := append([]mdoc.IssuerSignedItem(nil), doc.NameSpaces[ns]...)
 		sort.Slice(items, func(i, j int) bool {
 			return items[i].ElementIdentifier < items[j].ElementIdentifier

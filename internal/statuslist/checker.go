@@ -40,7 +40,7 @@ import (
 const clockSkew = time.Minute
 
 // ExtractStatusRef extracts the status list reference from SD-JWT claims or
-// mDOC MSO status. No status claim returns nil; a status_list object missing
+// mDOC MSO status. No status claim returns nil. A status_list object missing
 // the idx or uri Section 6.2 requires returns a reference with Invalid set, so
 // a broken reference is not reported as a missing one.
 func ExtractStatusRef(claims map[string]any) *StatusRef {
@@ -111,8 +111,7 @@ func Check(ref *StatusRef) (*StatusResult, error) {
 // and reports the status at the credential's index.
 //
 // Every step Section 8.3 requires runs here, and a failure of any of them is
-// returned as an error rather than as a result a caller has to remember to
-// inspect: "If any of these checks fails, no statement about the status of
+// an error: "If any of these checks fails, no statement about the status of
 // the Referenced Token can be made and the Referenced Token SHOULD be
 // rejected."
 func CheckWithOptions(ref *StatusRef, opts CheckOptions) (*StatusResult, error) {
@@ -160,9 +159,8 @@ func CheckWithOptions(ref *StatusRef, opts CheckOptions) (*StatusResult, error) 
 	}
 	if rawDeflate {
 		// Section 4.1 requires the ZLIB data format around the DEFLATE
-		// stream. A bare DEFLATE stream is still read, because refusing it
-		// would only hide the deployments that produce one, but it is a
-		// conformance problem the caller gets told about.
+		// stream. A bare DEFLATE stream is still read and reported as a
+		// warning.
 		tok.warnings = append(tok.warnings, "the status list is raw DEFLATE without the ZLIB header required by section 4.1")
 	}
 
@@ -208,7 +206,7 @@ func fetchStatusListToken(uri string) ([]byte, string, error) {
 
 	// Section 8.2: "A successful response that contains a Status List Token
 	// MUST use an HTTP status code in the 2xx range." A Status Provider
-	// behind a cache or a proxy answers 203 or 206 and is just as successful.
+	// behind a cache or a proxy answers 203 or 206.
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, "", fmt.Errorf("status list returned HTTP %d", resp.StatusCode)
 	}
@@ -222,7 +220,7 @@ func fetchStatusListToken(uri string) ([]byte, string, error) {
 
 // detectFormat picks the representation from the response content type,
 // falling back to the shape of the body. Section 8.2 makes the content type
-// mandatory, so anything else is worth naming even when the body reads.
+// mandatory, so any other one is a warning even when the body parses.
 func detectFormat(contentType string, body []byte) (string, string) {
 	mediaType := ""
 	if contentType != "" {
@@ -282,8 +280,7 @@ func (t *statusListToken) validate(ref *StatusRef, opts CheckOptions) error {
 	// Section 8.3: "The subject claim (sub or 2) of the Status List Token
 	// MUST be equal to the uri claim in the status_list object of the
 	// Referenced Token". Without this any Status List Token from a trusted
-	// Status Issuer answers for any credential, so one list whose index N is
-	// zero un-revokes every credential that happens to sit at index N.
+	// Status Issuer answers for any credential.
 	if t.subject == "" {
 		return fmt.Errorf("the status list token has no subject claim, which section 5.1 and 5.2 require")
 	}
@@ -314,9 +311,8 @@ func (t *statusListToken) validate(ref *StatusRef, opts CheckOptions) error {
 	}
 
 	// Section 4.2 and 4.3: "bits: REQUIRED ... The allowed values for bits are
-	// 1, 2, 4, and 8." Defaulting a missing or unreadable bits to 1 reads a
-	// wider list at the wrong offsets, so every entry past the first byte
-	// comes back as some other credential's status.
+	// 1, 2, 4, and 8." A missing bits value cannot be defaulted: the wrong
+	// width reads other credentials' entries.
 	switch t.bits {
 	case 1, 2, 4, 8:
 	case 0:
@@ -385,9 +381,8 @@ func resolveKeys(certs []*x509.Certificate, embedded []crypto.PublicKey, named s
 	}
 
 	// Section 11.3 leaves key resolution to the ecosystem, and this one
-	// resolves a Status Issuer through x5c. Reporting a DID as a key that
-	// happens to be missing reads as a fetch that went wrong, when it is the
-	// Status Provider naming itself in a way nothing here can follow.
+	// resolves a Status Issuer through x5c. A DID kid gets its own error so
+	// the failure is not mistaken for a missing key.
 	if did := keys.DIDReference(named); did != "" {
 		return nil, fmt.Errorf("the status list token names its key by the DID %s, which nothing here resolves: section 11.3 leaves key resolution to the ecosystem, and this one identifies a Status Issuer by the certificate chain in the token's x5c header", did)
 	}
@@ -470,8 +465,7 @@ func parseJWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 	}
 
 	// The accepted algorithms stay narrower than the toolkit's shared set on
-	// purpose: a status list token is spec-constrained, and widening it here
-	// would quietly start accepting lists this check refuses.
+	// purpose.
 	alg, _ := header["alg"].(string)
 	switch alg {
 	case "ES256", "ES384":
@@ -597,9 +591,8 @@ const maxBitstringBytes = 16 << 20
 // return value reports whether the ZLIB header Section 4.1 requires was
 // missing and a raw DEFLATE stream was read instead.
 //
-// The cap matters because the compressed bytes come from a URL in the
-// credential's own status claim: without one, a credential decides how much
-// memory the party checking it allocates.
+// The compressed bytes come from a URL in the credential's own status claim,
+// so without a cap a credential decides how much memory the checker allocates.
 func zlibDecompress(data []byte) ([]byte, bool, error) {
 	r, err := zlib.NewReader(bytes.NewReader(data))
 	if err == nil {
@@ -633,8 +626,7 @@ func readBounded(r io.Reader) ([]byte, error) {
 // idx and bits both come from documents somebody else wrote, so both are
 // checked: a negative idx would panic on the shift below, and a bits value
 // outside the four allowed would read the whole byte as a status. The range
-// check runs against idx itself rather than idx*bits, whose product overflows
-// for an idx a credential is free to choose.
+// check runs against idx itself because idx*bits overflows for a large idx.
 func extractStatus(bitstring []byte, idx, bits int) (int, error) {
 	if idx < 0 {
 		return 0, fmt.Errorf("status list index %d is negative", idx)

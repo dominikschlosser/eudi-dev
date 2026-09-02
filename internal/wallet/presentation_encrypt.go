@@ -36,9 +36,8 @@ func extractJWKThumbprint(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[st
 	return computeJWKThumbprint(jwk)
 }
 
-// findEncryptionJWK locates the first encryption JWK from client_metadata.jwks
-// per OID4VP 1.0. No fallback to other locations. The wallet enforces strict
-// spec compliance so verifiers can detect misconfigurations.
+// findEncryptionJWK locates the first encryption JWK in client_metadata.jwks
+// (OID4VP 1.0).
 func findEncryptionJWK(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) map[string]any {
 	return firstJWK(encryptionJWKS(reqObj, clientMetadata))
 }
@@ -83,9 +82,7 @@ func firstSigningOnlyEncryptionJWK(jwksVal any) map[string]any {
 
 // firstJWK extracts the first usable encryption key from a JWKS value
 // ({"keys": [...]}). Keys the wallet cannot use (unsupported kty, unsupported
-// curve, or a signing-only use) are ignored per RFC 7517 §5, so verifiers can
-// advertise e.g. post-quantum keys ahead of wallet support without breaking
-// encryption to the usable key.
+// curve, or a signing-only use) are skipped per RFC 7517 §5.
 func firstJWK(jwksVal any) map[string]any {
 	jwks, ok := jwksVal.(map[string]any)
 	if !ok {
@@ -96,8 +93,7 @@ func firstJWK(jwksVal any) map[string]any {
 		return nil
 	}
 	// Prefer an EC key: ECDH-ES on P-256 is the OID4VP baseline and the only
-	// option HAIP allows, so it is chosen over an RSA key when the verifier
-	// offers both. A usable RSA-OAEP key is the fallback when it is all there is.
+	// option HAIP allows. A usable RSA-OAEP key is the fallback.
 	var fallback map[string]any
 	for _, entry := range keysSlice {
 		jwk, ok := entry.(map[string]any)
@@ -186,7 +182,7 @@ type encryptionKeyInfo struct {
 	Key    *ecdsa.PublicKey
 	RSAKey *rsa.PublicKey
 	Kid    string
-	Alg    string // JWE algorithm (e.g. "ECDH-ES" or "RSA-OAEP") — MUST be present per OID4VP 1.0
+	Alg    string // JWE algorithm (e.g. "ECDH-ES" or "RSA-OAEP"), required by OID4VP 1.0
 	// Finding records a specification violation the debug path read past.
 	// Strict mode never produces one: it refuses the document instead.
 	Finding string
@@ -194,18 +190,16 @@ type encryptionKeyInfo struct {
 
 // extractEncryptionKey reads the verifier's public key, kid, and alg from
 // client_metadata.jwks per OID4VP 1.0. An EC key is used with ECDH-ES, an RSA
-// key with RSA-OAEP. ECDH-ES on P-256 is the OID4VP baseline (and the only key
-// HAIP allows), so findEncryptionJWK prefers it when the verifier offers both.
+// key with RSA-OAEP.
 func extractEncryptionKey(mode ValidationMode, reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) (*encryptionKeyInfo, error) {
 	jwk := findEncryptionJWK(reqObj, clientMetadata)
 	selectionFinding := ""
 	if jwk == nil && mode == ValidationModeDebug {
-		// The verifier published no encryption-marked key. Debug answers where it
-		// can, so a signing-marked key of a usable type is encrypted to anyway,
-		// with a finding: a direct_post.jwt response needs an encryption key here.
+		// The verifier published no encryption-marked key. Debug mode encrypts
+		// to a signing-marked key of a usable type and records a finding.
 		if cand := firstSigningOnlyEncryptionJWK(encryptionJWKS(reqObj, clientMetadata)); cand != nil {
 			jwk = cand
-			selectionFinding = `verifier's key in client_metadata.jwks is marked "use":"sig" (signing only); OID4VP 1.0 needs an encryption key for a direct_post.jwt response, so it was used for encryption`
+			selectionFinding = `verifier's key in client_metadata.jwks is marked "use":"sig" (signing only). OID4VP 1.0 needs an encryption key for a direct_post.jwt response, so it was used for encryption`
 		}
 	}
 	if jwk == nil {
@@ -282,16 +276,10 @@ func (w *Wallet) encryptDirectPostJWTPayload(payload map[string]any, mdocNonce s
 	if err != nil {
 		return "", nil, fmt.Errorf("extracting encryption key: %w", err)
 	}
-	// Debug mode read past a specification violation to get here. Recording it
-	// is the whole reason the repair is allowed: an unreported repair leaves
-	// strict mode rejecting what debug mode accepts with nothing said either
-	// way.
 	if keyInfo.Finding != "" {
 		w.AddLog("presentation", keyInfo.Finding, false)
 	}
 
-	// Determine enc algorithm from client_metadata
-	// OID4VP 1.0: encrypted_response_enc_values_supported (array)
 	enc := detectEncAlgorithm(params.RequestObject, params.ClientMetadata, "A128GCM")
 
 	// An RSA verifier key is wrapped with RSA-OAEP, which has no key agreement
@@ -351,9 +339,8 @@ func (w *Wallet) EncryptErrorResponse(errorCode, errorDescription, state string,
 	return w.encryptDirectPostJWTPayload(payload, "", params)
 }
 
-// detectEncAlgorithm finds the content encryption algorithm from
+// detectEncAlgorithm reads the content encryption algorithm from
 // client_metadata.encrypted_response_enc_values_supported per OID4VP 1.0.
-// No fallback to legacy field names. Strict spec compliance.
 func detectEncAlgorithm(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any, fallback string) string {
 	clientMeta := clientMetadata
 	if reqObj != nil && reqObj.Payload != nil {

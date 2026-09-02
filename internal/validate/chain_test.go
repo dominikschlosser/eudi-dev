@@ -178,7 +178,7 @@ func TestValidateCertChain_InvalidTrustListCert(t *testing.T) {
 	_, _, leafDER := generateLeafCert(t, caCert, caKey)
 	leafCert, _ := x509.ParseCertificate(leafDER)
 
-	// Trust list has garbage DER data. Should be skipped without panic
+	// Garbage DER in the trust list is skipped.
 	tlCerts := []trustlist.CertInfo{
 		{PublicKey: nil, Raw: []byte("not a certificate")},
 	}

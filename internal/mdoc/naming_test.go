@@ -48,8 +48,7 @@ func TestNameCOSEHeaderIsEmptyForAnEmptyHeader(t *testing.T) {
 	}
 }
 
-// An unregistered algorithm identifier has to survive as the number it is
-// rather than be dropped or renamed to something it is not.
+// An unregistered algorithm identifier survives as its number.
 func TestNameCOSEHeaderKeepsAnUnknownAlgorithm(t *testing.T) {
 	named := NameCOSEHeader(map[string]any{"1": int64(-999)})
 

@@ -89,15 +89,14 @@ func VerifyDeviceAuth(doc *Document, sessionTranscript []byte) error {
 
 	// DeviceAuthentication = ["DeviceAuthentication", SessionTranscript,
 	// DocType, DeviceNameSpacesBytes], and the payload is Tag24 of its CBOR.
-	// The wallet sends empty DeviceNameSpaces, which is what this rebuilds.
+	// The wallet sends empty DeviceNameSpaces, rebuilt here.
 	emptyNamespaces, err := tag24(map[string]any{})
 	if err != nil {
 		return err
 	}
-	// The holder signed over the session transcript bytes verbatim (the signer
-	// embeds them as-is), so they go back in unchanged. Decoding and re-encoding
-	// would only reproduce them for a transcript that round-trips canonically and
-	// would fail an mdoc handover carrying a map or a tag.
+	// The holder signed over the session transcript bytes verbatim, so they go
+	// back in unchanged. Decoding and re-encoding would fail an mdoc handover
+	// carrying a map or a tag.
 	if err := cbor.Wellformed(sessionTranscript); err != nil {
 		return fmt.Errorf("the session transcript is not valid CBOR: %w", err)
 	}
@@ -121,10 +120,9 @@ func VerifyDeviceAuth(doc *Document, sessionTranscript []byte) error {
 	if err != nil {
 		return fmt.Errorf("creating the device signature verifier: %w", err)
 	}
-	// The payload is detached: the holder signed the DeviceAuthentication the
-	// verifier just rebuilt, and the response carries only the signature. It
-	// has to be put back before verifying, which is also what makes this check
-	// mean anything: a mismatch means the holder signed a different request.
+	// The payload is detached: the holder signed the DeviceAuthentication
+	// rebuilt above, and the response carries only the signature. A mismatch
+	// means the holder signed a different request.
 	msg.Payload = payload
 	if err := msg.Verify(nil, verifier); err != nil {
 		return fmt.Errorf("the device signature does not verify against this request: %w", err)
@@ -148,10 +146,6 @@ func DeviceKey(doc *Document) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("deviceKey is not a COSE_Key map")
 	}
 
-	// go-cose reads the COSE_Key. Reading the labels by hand (1=kty, -1=crv,
-	// -2=x, -3=y) meant carrying an opinion on which curves count and
-	// rebuilding the point from the coordinates, neither of which belongs
-	// here now that a COSE library is already a dependency.
 	var key cose.Key
 	if err := key.UnmarshalCBOR(doc.IssuerAuth.MSO.DeviceKeyCBOR); err != nil {
 		return nil, fmt.Errorf("device key is not a valid COSE_Key: %w", err)
@@ -230,9 +224,7 @@ func DeviceKeyThumbprint(key *ecdsa.PublicKey) string {
 }
 
 // ItemDigest returns the digest of a disclosed item and the digest the issuer
-// signed for it. They are what makes mdoc selective disclosure work: the
-// issuer signs a digest per element, the holder sends the element with its
-// salt, and anyone can recompute the digest and compare.
+// signed for it.
 func ItemDigest(doc *Document, namespace string, item IssuerSignedItem) (got, want []byte, err error) {
 	if doc == nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		return nil, nil, fmt.Errorf("document carries no MSO")

@@ -79,8 +79,7 @@ type requestState struct {
 	// requestObject is the signed JAR served from /verifier/request/{id}, and
 	// encKey decrypts the direct_post.jwt response. Both are per request and
 	// expire with it. HAIP requires the request to be signed and the response
-	// encrypted, so a demo that is meant to model a real EUDI verifier needs
-	// them even though a plain direct_post would be simpler.
+	// encrypted.
 	requestObject string
 	encKey        *ecdsa.PrivateKey
 
@@ -294,7 +293,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		// inheritance between document types, so every PID carries the same
 		// doctype and the national elements sit in a second namespace: a
 		// doctype request for a national PID would be answered by any PID at
-		// all, which would teach the opposite of the truth.
+		// all.
 		domestic := requested != PIDVCT
 		if domestic && wantMDOC && !wantSDJWT {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
@@ -796,8 +795,7 @@ func (d *DemoRP) registrationCertificateClaims(sub, name, purpose string, dcqlCr
 // Both `ia:` forms are accepted there. OpenID4VCI 1.1 Appendix A.3.5 asks for
 // "the derived Origin ... of the Authorization Challenge Endpoint" while its
 // own example, its sibling appendices and §6.2.1.5 all name the endpoint, so a
-// wallet reading either sentence is answered rather than refused. What this
-// does not accept is an audience naming somebody else.
+// wallet reading either sentence is answered rather than refused.
 func checkPresentationAudience(req *requestState, aud string) error {
 	if req.interactiveEndpoint == "" {
 		return errIf(aud != req.clientID, "aud is %q, want %q", aud, req.clientID)
@@ -872,8 +870,7 @@ func (d *DemoRP) handleRequestStatus(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		status := req.status
 		// A request nobody answered stops being pending once it expires.
-		// Without this the page polls a dead request forever, which is most
-		// of the traffic an abandoned tab produces.
+		// Without this the page polls a dead request forever.
 		if status == "pending" && time.Now().After(req.expires) {
 			status = "expired"
 		}
@@ -1182,9 +1179,8 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 
 	// HAIP 1.0 section 6.1.1 asks a credential to carry its issuer's signing
 	// certificate and trust chain in x5c, with the trust anchor left out and
-	// the leaf not self-signed. The demo says so and carries on: the rule
-	// comes from the profile, and a wallet still being brought into line is
-	// exactly who this demo is for.
+	// the leaf not self-signed. The demo says so and carries on, since the
+	// rule comes from the profile.
 	certs, _ := validate.X5CCertificates(token.Header)
 	if violations := validate.HAIPCredentialChain(certs); len(violations) > 0 {
 		log.warn(label+"issuer certificate chain follows HAIP", fmt.Errorf("%s", strings.Join(violations, "; ")))
@@ -1321,9 +1317,7 @@ func checkDisclosuresReferenced(token *sdjwt.Token) error {
 }
 
 // checkRevocation resolves the credential's status list reference, if it has
-// one. A verifier that only validates signatures would happily accept a
-// revoked credential, which is exactly what the demo wallet's Revoke button
-// produces.
+// one.
 func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) error) error {
 	ref := statuslist.ExtractStatusRef(token.ResolvedClaims)
 	if ref == nil {

@@ -130,10 +130,10 @@ func callerOwners(r *http.Request) []string {
 }
 
 // ownsRequest reports whether a caller may see and answer a consent request.
-// An unowned one stays visible to everybody, which is what keeps a single-user
-// wallet and every client written before this working. Naming the id counts
-// too: the wallet handed it to this browser in the redirect, and one that keeps
-// no cookie has nothing else to show for it.
+// An unowned one stays visible to everybody, so a single-user wallet and a
+// client that names no owner keep working. Naming the id counts too: the
+// wallet handed it to this browser in the redirect, and one that keeps no
+// cookie has nothing else to show for it.
 func ownsRequest(owners []string, req *ConsentRequest, named string) bool {
 	if req == nil {
 		return false

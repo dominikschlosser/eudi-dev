@@ -54,8 +54,7 @@ func issuerSignedMap(t *testing.T) map[any]any {
 }
 
 // deviceResponse wraps an issuerSigned the way a wallet answers a request, so
-// that the DeviceResponse branch of the parser is exercised against the shape
-// it actually meets rather than a hand-written stub.
+// the DeviceResponse branch of the parser sees the shape a wallet produces.
 func deviceResponse(t *testing.T, resp map[any]any) string {
 	t.Helper()
 	encoded, err := cbor.Marshal(resp)

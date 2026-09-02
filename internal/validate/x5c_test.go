@@ -187,8 +187,8 @@ func TestFindIssuerMetadataJWK(t *testing.T) {
 		}
 	})
 
-	// An empty kid falls back to the first key, which is what a metadata
-	// document with a single key relies on.
+	// An empty kid falls back to the first key. A metadata document with a
+	// single key relies on that.
 	t.Run("an empty kid takes the first key", func(t *testing.T) {
 		got, err := findIssuerMetadataJWK(doc(map[string]any{"kid": "one"}), "")
 		if err != nil {

@@ -28,10 +28,8 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
-// These pin what JWK parsing accepts and rejects, so the implementation
-// underneath can be replaced without anyone having to take on trust that it
-// still reads the same documents. Written against the hand-rolled parsers
-// and kept unchanged across the move to a library.
+// These pin what JWK parsing accepts and rejects, independent of the library
+// underneath.
 
 // jwkFor renders a public key as a JWK document the way a peer would send it.
 func ecJWK(t *testing.T, key *ecdsa.PublicKey, crv string) []byte {
@@ -227,9 +225,8 @@ func TestParseJWKPrivate_ECRoundTrip(t *testing.T) {
 }
 
 // A coordinate shorter than the curve width violates RFC 7518 section
-// 6.2.1.2. The strict reading refuses it and the lenient one repairs it and
-// says so, which is what lets strict mode reject a sloppy document while the
-// debug path still decodes it.
+// 6.2.1.2. The strict reading refuses it. The lenient reading repairs it and
+// reports the repair.
 func TestParseJWK_ShortCoordinateStrictVersusLenient(t *testing.T) {
 	for attempt := 0; attempt < 20000; attempt++ {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -272,8 +269,7 @@ func TestParseJWK_ShortCoordinateStrictVersusLenient(t *testing.T) {
 	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
 }
 
-// A conformant document must not be reported as repaired, or every debug-mode
-// presentation grows a finding that says nothing.
+// A conformant document parses without a repair finding.
 func TestParseJWKLenient_ReportsNoRepairForAConformantKey(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -305,10 +301,8 @@ func TestParseJWKLenient_StillRefusesRealErrors(t *testing.T) {
 	}
 }
 
-// A private scalar whose leading byte is zero encodes one byte short, which
-// happens to about one key in 256. That is the operator's own key file rather
-// than a peer's document, so refusing to load it answers no conformance
-// question and just loses them their key.
+// A private scalar whose leading byte is zero encodes one byte short (about
+// one key in 256). The operator's own key file loads regardless.
 func TestParseJWKPrivate_ShortScalarStillLoads(t *testing.T) {
 	for attempt := 0; attempt < 20000; attempt++ {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

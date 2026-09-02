@@ -33,13 +33,11 @@ func Parse(raw string) (*Document, error) {
 		return nil, fmt.Errorf("decoding input: %w", err)
 	}
 
-	// Try parsing as DeviceResponse first
 	doc, err := parseDeviceResponse(data)
 	if err == nil {
 		return doc, nil
 	}
 
-	// Try as IssuerSigned directly
 	return parseIssuerSigned(data)
 }
 
@@ -59,7 +57,7 @@ func parseDeviceResponse(data []byte) (*Document, error) {
 		return nil, fmt.Errorf("empty documents array")
 	}
 
-	// Parse first document
+	// Only the first document is read.
 	docMap, ok := docArr[0].(map[any]any)
 	if !ok {
 		return nil, fmt.Errorf("invalid document entry")
@@ -70,7 +68,6 @@ func parseDeviceResponse(data []byte) (*Document, error) {
 		return nil, fmt.Errorf("no issuerSigned in document")
 	}
 
-	// Re-encode issuerSigned to CBOR for parsing
 	issuerBytes, err := cbor.Marshal(issuerSigned)
 	if err != nil {
 		return nil, err
@@ -85,7 +82,6 @@ func parseDeviceResponse(data []byte) (*Document, error) {
 		doc.DocType = dt
 	}
 
-	// Parse deviceSigned
 	if ds, ok := docMap["deviceSigned"].(map[any]any); ok {
 		doc.DeviceSigned = parseDeviceSigned(ds)
 	}
@@ -169,7 +165,6 @@ func parseIssuerSigned(data []byte) (*Document, error) {
 		}
 	}
 
-	// Parse issuerAuth (COSE_Sign1)
 	if auth, ok := issuerSigned["issuerAuth"]; ok {
 		ia, err := parseIssuerAuth(auth)
 		if err == nil {
@@ -186,10 +181,8 @@ func parseIssuerSigned(data []byte) (*Document, error) {
 }
 
 func parseIssuerSignedItem(raw any) (*IssuerSignedItem, error) {
-	// Items are Tag-24 wrapped CBOR bstr.
-	// itemBytes: inner CBOR for decoding fields.
-	// rawTag24: full Tag-24 encoded bytes for digest verification (MSO ValueDigests
-	// hash the complete #6.24(bstr) encoding, not just the inner bytes).
+	// Items are Tag-24 wrapped CBOR bstr. rawTag24 keeps the full Tag-24
+	// encoding because MSO ValueDigests hash the complete #6.24(bstr) encoding.
 	var itemBytes []byte
 	var rawTag24 []byte
 
@@ -200,7 +193,6 @@ func parseIssuerSignedItem(raw any) (*IssuerSignedItem, error) {
 		if v.Number == 24 {
 			if b, ok := v.Content.([]byte); ok {
 				itemBytes = b
-				// Re-encode the full Tag-24 for digest verification
 				if encoded, err := cbor.Marshal(v); err == nil {
 					rawTag24 = encoded
 				}
@@ -211,12 +203,11 @@ func parseIssuerSignedItem(raw any) (*IssuerSignedItem, error) {
 			return nil, fmt.Errorf("unexpected tag: %d", v.Number)
 		}
 	default:
-		// Try to marshal and re-parse
 		b, err := cbor.Marshal(raw)
 		if err != nil {
 			return nil, fmt.Errorf("cannot handle item type %T", raw)
 		}
-		rawTag24 = b // full encoding including tag
+		rawTag24 = b
 		inner, err := unmarshalTag24(b)
 		if err != nil {
 			return nil, err
@@ -229,7 +220,6 @@ func parseIssuerSignedItem(raw any) (*IssuerSignedItem, error) {
 		return nil, fmt.Errorf("decoding IssuerSignedItem: %w", err)
 	}
 
-	// Use Tag-24 encoded bytes for RawCBOR (digest verification), fall back to inner bytes
 	rawForDigest := rawTag24
 	if rawForDigest == nil {
 		rawForDigest = itemBytes
@@ -280,7 +270,6 @@ func parseIssuerAuth(raw any) (*IssuerAuth, error) {
 			return nil, err
 		}
 	case cbor.Tag:
-		// Preserve the full tagged encoding for go-cose
 		tagged, err := cbor.Marshal(v)
 		if err != nil {
 			return nil, err
@@ -341,7 +330,6 @@ func parseIssuerAuth(raw any) (*IssuerAuth, error) {
 	if err := cborDecMode.Unmarshal(coseArr[2], &payload); err == nil {
 		ia.Payload = payload
 	} else {
-		// Try tag 24
 		inner, err := unmarshalTag24(coseArr[2])
 		if err == nil {
 			ia.Payload = inner
@@ -354,9 +342,7 @@ func parseIssuerAuth(raw any) (*IssuerAuth, error) {
 		ia.Signature = sig
 	}
 
-	// Parse MSO from payload
 	if ia.Payload != nil {
-		// MSO may be Tag-24 wrapped
 		msoBytes := ia.Payload
 		if inner, err := unmarshalTag24(msoBytes); err == nil {
 			msoBytes = inner
@@ -388,7 +374,6 @@ func parseMSO(data []byte) (*MSO, error) {
 		mso.DocType = v
 	}
 
-	// Parse valueDigests
 	if vd, ok := msoMap["valueDigests"].(map[any]any); ok {
 		mso.ValueDigests = make(map[string]map[uint64][]byte)
 		for nsKey, nsVal := range vd {
@@ -411,12 +396,10 @@ func parseMSO(data []byte) (*MSO, error) {
 		}
 	}
 
-	// Parse validityInfo
 	if vi, ok := msoMap["validityInfo"].(map[any]any); ok {
 		mso.ValidityInfo = parseValidityInfo(vi)
 	}
 
-	// Parse deviceKeyInfo
 	if dk, ok := msoMap["deviceKeyInfo"].(map[any]any); ok {
 		mso.DeviceKeyInfo = convertCBORMapToStringKeys(dk)
 		// Re-encoded here, where the labels are still integers, rather than
@@ -426,7 +409,6 @@ func parseMSO(data []byte) (*MSO, error) {
 		}
 	}
 
-	// Parse status
 	if st, ok := msoMap["status"].(map[any]any); ok {
 		mso.Status = convertCBORMapToStringKeys(st)
 	}
@@ -488,7 +470,6 @@ func convertCBORValue(v any) any {
 		return result
 	case cbor.Tag:
 		if val.Number == 0 {
-			// Date-time string
 			if s, ok := val.Content.(string); ok {
 				return s
 			}

@@ -193,8 +193,7 @@ func redirectFlowOfferURI(issuerURL string) string {
 // The feature level decides what the wallet uses, not what it tolerates: an
 // authorization server that offers Interactive Authorization to a wallet set
 // to 1.0 still gets the redirect flow it also published, and the credential
-// still arrives. Everything about the flow below is what the wallet did
-// before interactive authorization existed.
+// still arrives.
 func TestAuthorizationCodeOfferAtVCI10IgnoresAnInteractiveAuthorizationOffer(t *testing.T) {
 	w := generateTestWallet(t)
 	w.VCIClientID = "wallet-client"

@@ -99,17 +99,14 @@ test.describe("JWT decoding", () => {
     });
     await expect(page.locator("#format-badge")).toHaveClass(/jwt/);
 
-    // Validity banner should show Unverified (no key provided)
     const banner = page.locator(".validity-banner");
     await expect(banner).toBeVisible();
     await expect(banner).toContainText("Unverified");
     await expect(banner).toHaveClass(/unverified/);
 
-    // Header and Payload sections should be visible in output pane
     await expect(page.locator('#output .section[data-section="header"]')).toBeVisible();
     await expect(page.locator('#output .section[data-section="payload"]')).toBeVisible();
 
-    // Issuer summary should be present
     await expect(page.locator(".issuer-summary")).toContainText(
       "https://example.com"
     );
@@ -159,11 +156,9 @@ test.describe("SD-JWT decoding", () => {
       timeout: 3000,
     });
 
-    // Disclosures section
     const discSection = page.locator(".disclosure-item");
     await expect(discSection).toHaveCount(2);
 
-    // Resolved claims
     await expect(page.locator(".resolved-claims-list")).toBeVisible();
     await expect(page.locator(".claim-disclosed")).toHaveCount(2);
   });
@@ -179,13 +174,10 @@ test.describe("Colorized input view", () => {
       timeout: 3000,
     });
 
-    // Raw view should be visible (colorized overlay)
     await expect(page.locator("#raw-view")).toBeVisible();
 
-    // Textarea should have colorized class
     await expect(page.locator("#input")).toHaveClass(/colorized/);
 
-    // Raw view should contain colored spans
     await expect(page.locator("#raw-view .jwt-header")).toBeVisible();
     await expect(page.locator("#raw-view .jwt-payload")).toBeVisible();
     await expect(page.locator("#raw-view .jwt-signature")).toBeVisible();
@@ -199,12 +191,10 @@ test.describe("Colorized input view", () => {
       timeout: 3000,
     });
 
-    // Type additional text — should still work
     await textarea.focus();
     await textarea.press("End");
     await textarea.type("extra", { delay: 50 });
 
-    // Value should be updated
     const value = await textarea.inputValue();
     expect(value).toContain("extra");
   });
@@ -216,34 +206,28 @@ test.describe("Colorized input view", () => {
     const textarea = page.locator("#input");
     const rawView = page.locator("#raw-view");
 
-    // Fill a simple JWT and wait for colorization
     await textarea.fill(TEST_JWT);
     await expect(rawView).toBeVisible({ timeout: 3000 });
     await expect(textarea).toHaveClass(/colorized/);
 
     const originalValue = await textarea.inputValue();
 
-    // Place cursor at a known position using setSelectionRange
     await textarea.focus();
     await textarea.evaluate((el) => {
       el.setSelectionRange(5, 5);
     });
 
-    // Insert text at cursor position (should go at index 5)
     await page.keyboard.type("XYZ", { delay: 30 });
 
     const newValue = await textarea.inputValue();
 
-    // Text should be inserted at position 5
     expect(newValue.substring(0, 5)).toBe(originalValue.substring(0, 5));
     expect(newValue.substring(5, 8)).toBe("XYZ");
     expect(newValue.substring(8)).toBe(originalValue.substring(5));
 
-    // Colorization should still be active
     await expect(textarea).toHaveClass(/colorized/);
     await expect(rawView).toBeVisible();
 
-    // Raw view content should reflect the updated text
     const rawText = await rawView.textContent();
     expect(rawText).toContain("XYZ");
   });
@@ -258,7 +242,6 @@ test.describe("Colorized input view", () => {
     await textarea.fill(TEST_JWT);
     await expect(rawView).toBeVisible({ timeout: 3000 });
 
-    // Delete some characters from the end using Backspace
     await textarea.focus();
     await textarea.press("End");
     await textarea.press("Backspace");
@@ -268,11 +251,9 @@ test.describe("Colorized input view", () => {
     const afterDelete = await textarea.inputValue();
     expect(afterDelete.length).toBe(TEST_JWT.length - 3);
 
-    // Colorized class should still be active (rawView updates on input)
     await expect(textarea).toHaveClass(/colorized/);
     await expect(rawView).toBeVisible();
 
-    // Raw view text should match textarea value
     const rawText = await rawView.textContent();
     expect(rawText).toBe(afterDelete.trim());
   });
@@ -282,14 +263,11 @@ test.describe("Colorized input view", () => {
     await page.locator("#input").fill(TEST_JWT);
     await expect(page.locator("#raw-view")).toBeVisible({ timeout: 3000 });
 
-    // Click Clear button
     await page.locator("#clear-btn").click();
 
-    // Raw view should be hidden
     await expect(page.locator("#raw-view")).toBeHidden();
     await expect(page.locator("#input")).not.toHaveClass(/colorized/);
 
-    // Placeholder should be back
     await expect(page.locator(".placeholder")).toBeVisible();
   });
 });
@@ -374,10 +352,8 @@ test.describe("Cross-highlighting (right → left)", () => {
       timeout: 3000,
     });
 
-    // Hover over the Header section in the output pane
     await page.locator('#output .section[data-section="header"]').hover();
 
-    // The corresponding span in the raw view should get the highlight class
     await expect(
       page.locator('#raw-view [data-section="header"]')
     ).toHaveClass(/highlight/);
@@ -390,13 +366,11 @@ test.describe("Cross-highlighting (right → left)", () => {
       timeout: 3000,
     });
 
-    // Hover, then move away
     await page.locator('#output .section[data-section="header"]').hover();
     await expect(
       page.locator('#raw-view [data-section="header"]')
     ).toHaveClass(/highlight/);
 
-    // Move to a different area
     await page.locator("h1").hover();
     await expect(
       page.locator('#raw-view [data-section="header"]')
@@ -416,14 +390,11 @@ test.describe("Section collapsing", () => {
     const body = headerSection.locator(".section-body");
     const sectionHeader = headerSection.locator(".section-header");
 
-    // Body should initially be visible (not collapsed)
     await expect(body).not.toHaveClass(/collapsed/);
 
-    // Click to collapse
     await sectionHeader.click();
     await expect(body).toHaveClass(/collapsed/);
 
-    // Click again to expand
     await sectionHeader.click();
     await expect(body).not.toHaveClass(/collapsed/);
   });
@@ -438,11 +409,9 @@ test.describe("Theme toggle", () => {
     // Default is dark: no data-theme attribute set
     await expect(html).not.toHaveAttribute("data-theme", "light");
 
-    // Click toggle -> light theme
     await btn.click();
     await expect(html).toHaveAttribute("data-theme", "light");
 
-    // Click again -> back to dark (attribute cleared)
     await btn.click();
     await expect(html).not.toHaveAttribute("data-theme", "light");
   });
@@ -478,19 +447,15 @@ test.describe("Mobile / responsive layout", () => {
       timeout: 3000,
     });
 
-    // Input pane should be above output pane (stacked vertically)
     const inputBox = await page.locator(".input-pane").boundingBox();
     const outputBox = await page.locator(".output-pane").boundingBox();
     expect(inputBox.y).toBeLessThan(outputBox.y);
 
-    // Input pane should have visible height for the textarea content
     expect(inputBox.height).toBeGreaterThan(100);
 
-    // Textarea should be visible and editable inside the input pane
     await expect(page.locator("#input")).toBeVisible();
     await expect(page.locator("#raw-view")).toBeVisible();
 
-    // Output pane should show decoded content
     await expect(page.locator(".validity-banner")).toBeVisible();
     await expect(page.locator('#output .section[data-section="header"]')).toBeVisible();
   });
@@ -503,7 +468,7 @@ test.describe("Mobile / responsive layout", () => {
       timeout: 3000,
     });
 
-    // Payload section may be below the fold — scroll to it
+    // The payload section may be below the fold, so scroll to it.
     const payload = page.locator('#output .section[data-section="payload"]');
     await payload.scrollIntoViewIfNeeded();
     await expect(payload).toBeVisible();
@@ -520,7 +485,6 @@ test.describe("Timestamp hover", () => {
       timeout: 3000,
     });
 
-    // The exp value should have a timestamp-hover class with a title
     const tsHover = page.locator('#output .timestamp-hover').first();
     await expect(tsHover).toBeAttached({ timeout: 3000 });
     const title = await tsHover.getAttribute("title");
@@ -540,9 +504,8 @@ test.describe("Timestamp hover", () => {
       timeout: 3000,
     });
 
-    // Regression: claim and disclosure lists rendered through a helper that
-    // never received the claim name, so only the raw payload block had
-    // tooltips while the lists users actually read had none.
+    // Claim and disclosure lists carry the timestamp tooltip, as the raw
+    // payload block does.
     const claimTs = page.locator("#output .claim-value.timestamp-hover").first();
     await expect(claimTs).toBeAttached({ timeout: 3000 });
     expect(await claimTs.getAttribute("title")).toContain("2099");
@@ -683,8 +646,8 @@ test.describe("Decoding does not wait on the issuer", () => {
     await page.keyboard.press("ControlOrMeta+V");
 
     await expect(page.locator("#format-badge")).toHaveText("SD-JWT", { timeout: 3000 });
-    // A paste raises a paste event and an input event. Both used to schedule
-    // their own decode, so every paste asked the issuer twice.
+    // A paste raises a paste event and an input event. One paste is one
+    // decode, so the issuer is asked once.
     await page.waitForTimeout(1500);
     expect(onlinePasses).toBe(1);
   });

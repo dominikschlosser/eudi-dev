@@ -263,10 +263,10 @@ func TestProcessCredentialOffer_DeferredIsRecordedNotWaitedOut(t *testing.T) {
 	}
 }
 
-// TestProcessCredentialOffer_DeferredWithBatchAdvertised reproduces the Animo
-// playground: the issuer advertises batch_credential_issuance (so the wallet
-// sends several proofs) and then defers, answering the credential endpoint with
-// a transaction_id and no credentials. The deferral must still be recorded.
+// TestProcessCredentialOffer_DeferredWithBatchAdvertised covers an issuer that
+// advertises batch_credential_issuance (so the wallet sends several proofs)
+// and then defers, answering the credential endpoint with a transaction_id and
+// no credentials. The deferral must still be recorded.
 func TestProcessCredentialOffer_DeferredWithBatchAdvertised(t *testing.T) {
 	w := generateTestWallet(t)
 	var serverURL string
@@ -280,13 +280,13 @@ func TestProcessCredentialOffer_DeferredWithBatchAdvertised(t *testing.T) {
 				"credential_endpoint":          serverURL + "/credential",
 				"deferred_credential_endpoint": serverURL + "/deferred",
 				"token_endpoint":               serverURL + "/token",
-				// Animo advertises this, which makes the wallet request a batch.
+				// Advertised, so the wallet requests a batch.
 				"batch_credential_issuance": map[string]any{"batch_size": 10},
 				"credential_configurations_supported": map[string]any{
 					"test-config": map[string]any{
 						"format": "dc+sd-jwt", "vct": "urn:test:credential",
-						// The Animo config requires key attestations, which routes
-						// proof building through the attestation path.
+						// Required key attestations route proof building through
+						// the attestation path.
 						"proof_types_supported": map[string]any{
 							"jwt": map[string]any{
 								"proof_signing_alg_values_supported": []any{"ES256"},
@@ -350,8 +350,7 @@ func TestProcessCredentialOffer_DeferredWithBatchAdvertised(t *testing.T) {
 }
 
 // TestProcessCredentialOffer_FailureIsLogged covers the activity log naming why
-// issuance did not finish, rather than the flow stopping silently after the last
-// step that happened to succeed (the credential response).
+// an issuance did not finish after the credential response.
 func TestProcessCredentialOffer_FailureIsLogged(t *testing.T) {
 	w := generateTestWallet(t)
 	var serverURL string
@@ -541,11 +540,10 @@ func TestDeferredCredentialRequestIsEncryptedWhenTheIssuerRequiresIt(t *testing.
 	}
 }
 
-// A deferral recorded during an offer must survive the per-request store
-// reload that demo mode runs on every HTTP request. The poller reads the
-// server's own wallet, so if a reload overwrote its deferred issuances from a
-// disk copy written before the deferral was recorded, a busy demo would wipe
-// the record moments after it was made and never collect the credential.
+// A deferral recorded during an offer survives the per-request store reload
+// that demo mode runs on every HTTP request: the poller reads the server's own
+// wallet, so a reload must not overwrite its deferred issuances from a disk
+// copy written before the deferral was recorded.
 func TestReloadKeepsUnpersistedDeferral(t *testing.T) {
 	srv := newTestServer(t, true)
 	store := NewWalletStore(t.TempDir())

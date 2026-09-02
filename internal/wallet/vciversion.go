@@ -17,7 +17,7 @@ package wallet
 import "fmt"
 
 // VCIVersion selects which OpenID4VCI feature level the wallet uses as a
-// client. The wallet speaks 1.0 either way; 1.1 adds the draft features listed
+// client. The wallet speaks 1.0 either way. 1.1 adds the draft features listed
 // in docs/spec-compliance.md, each of which is negotiated in metadata, so
 // selecting it changes nothing against an issuer that offers none of them.
 type VCIVersion string
@@ -44,7 +44,7 @@ func ParseVCIVersion(raw string) (VCIVersion, error) {
 
 // UsesInteractiveAuthorization reports whether the wallet may use Interactive
 // Authorization (OpenID4VCI 1.1 §6). §13.3 makes the endpoint's presence the
-// server's half of that negotiation; this is the wallet's half.
+// server's half of that negotiation. This is the wallet's half.
 func (v VCIVersion) UsesInteractiveAuthorization() bool {
 	return v == VCIVersion11
 }

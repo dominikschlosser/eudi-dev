@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package jsonutil provides type-safe accessor helpers for map[string]any values,
-// reducing repetitive type assertions when working with parsed JSON data.
+// Package jsonutil provides typed accessors for map[string]any values parsed
+// from JSON.
 package jsonutil
 
 // GetString returns the string value for key, or "" if missing or not a string.

@@ -41,8 +41,8 @@ var walletDir string
 var templatesDir string
 var walletValidationMode string
 
-// noOpen suppresses the browser this CLI opens on the user's behalf, for
-// anyone on a desktop who would rather follow the printed URL themselves.
+// noOpen suppresses the browser this CLI opens on the user's behalf. The URL
+// is printed instead.
 var noOpen bool
 
 var walletCmd = &cobra.Command{
@@ -54,7 +54,7 @@ var walletCmd = &cobra.Command{
 }
 
 func init() {
-	walletCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.eudi-dev/wallet/, legacy ~/.oid4vc-dev/wallet/ keeps working)")
+	walletCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory (default ~/.eudi-dev/wallet/, or an existing ~/.oid4vc-dev/wallet/)")
 	walletCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "Manage a remote wallet server at this URL for this invocation (\"local\" forces the local store)")
 	walletCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	walletCmd.PersistentFlags().StringVar(&walletValidationMode, "mode", string(wallet.ValidationModeDebug), "Wallet validation mode: 'debug' (default) or 'strict'")
@@ -90,8 +90,7 @@ func init() {
 		Deprecated: "use 'wallet accept' instead",
 		Args:       cobra.ExactArgs(1),
 		// Share accept's flag set and RunE so cobra parses --auto-accept,
-		// --tx-code and the rest for the present invocation too, rather than
-		// running accept with its flags left at their defaults.
+		// --tx-code and the rest for the present invocation too.
 		RunE: acceptCmd.RunE,
 	}
 	presentAlias.Flags().AddFlagSet(acceptCmd.Flags())
@@ -218,9 +217,8 @@ func walletListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// A deferred credential is not in the store yet but is on its way.
-			// Leaving it out makes a running issuance look like one that
-			// never happened.
+			// A deferred credential is not in the store yet but is on its way,
+			// so it is listed too.
 			deferred, err := svc.DeferredIssuances()
 			if err != nil {
 				return err
@@ -274,7 +272,7 @@ func walletImportCmd() *cobra.Command {
 		Long:  "Imports an SD-JWT, JWT VC, or mdoc credential from a file, a raw string, or stdin (-, the default).",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			input := "-" // stdin by default
+			input := "-"
 			if len(args) > 0 {
 				input = args[0]
 			}
@@ -345,7 +343,7 @@ func walletRemoveCmd() *cobra.Command {
 func walletRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                "register [wallet-serve-flags...]",
-		Short:              "Register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)",
+		Short:              "Register OS URL scheme handlers (openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)",
 		Long:               "Registers this wallet as the OS handler for the OID4VP/OID4VCI URL schemes (macOS, a no-op elsewhere). The provided arguments are stored and replayed as 'wallet serve ...' when a clicked link needs to auto-start the wallet listener.",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -679,13 +677,10 @@ func applySessionTranscriptMode(w *wallet.Wallet, mode string) error {
 	return nil
 }
 
-// openBrowser hands a URL to the user's browser.
-//
-// The scheme is checked here rather than at the call sites. Some of these URLs
-// come from a remote wallet's response, and `open` launches file:// paths and
-// any registered application scheme, not just web pages. The wallet validates
-// these URLs before it answers, but that is a peer on the network and this is
-// the process that acts on the answer.
+// openBrowser hands a URL to the user's browser. The scheme is checked here
+// rather than at the call sites: some of these URLs come from a remote
+// wallet's response, and `open` launches file:// paths and any registered
+// application scheme.
 func openBrowser(rawURL string) bool {
 	if !isWebURL(rawURL) {
 		fmt.Fprintf(os.Stderr, "refusing to open %q: only http and https URLs\n", rawURL)
@@ -706,8 +701,7 @@ func openBrowser(rawURL string) bool {
 }
 
 // hasDesktopSession reports whether there is a desktop to open a browser on.
-// A wallet server on a headless host has none, and spawning a browser there
-// reaches nobody: printing the URL is all that helps.
+// A wallet server on a headless host has none.
 func hasDesktopSession() bool {
 	switch runtime.GOOS {
 	case "darwin":
@@ -753,9 +747,7 @@ func loadWalletECKey(path, label string) (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
-// printTrustListIndex lists the profiles a wallet serves. Without it the ids
-// are only discoverable by reading /api/trustlists, so a caller has to guess
-// which one covers what it is verifying.
+// printTrustListIndex lists the trust list profiles a wallet serves.
 func printTrustListIndex(client *remote.Client) error {
 	var entries []map[string]any
 	if client != nil {
@@ -821,7 +813,7 @@ func walletRefreshCmd() *cobra.Command {
 		Long: `Renews a credential using the refresh token its issuer handed over at issuance.
 
 The credential keeps its id, so anything referring to it still does. A wallet
-server renews on its own shortly before expiry; this asks now.`,
+server renews on its own shortly before expiry. This asks now.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeCredentialIDs,
 		RunE: func(cmd *cobra.Command, args []string) error {

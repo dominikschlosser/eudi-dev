@@ -459,8 +459,8 @@ func TestProcessCredentialOffer_CredentialDisplay(t *testing.T) {
 }
 
 // TestGenerateDefaultCredentials_Display gives the wallet's own generated
-// PID credentials the eudi-dev appearance, so the demo baseline looks like
-// what an issuer-styled credential looks like.
+// PID credentials the eudi-dev appearance, so the demo baseline looks like an
+// issuer-styled credential.
 func TestGenerateDefaultCredentials_Display(t *testing.T) {
 	w := generateTestWallet(t)
 	// Both baseline PID types, so the German one can be told from the
@@ -529,9 +529,8 @@ func TestCacheDisplayImage_BlocksInternalAddress(t *testing.T) {
 	defer format.SetFetchPolicy(nil)
 
 	// A loopback address stands in for any internal target (cloud metadata,
-	// a service on the demo host). The port is closed, so a fetch that was
-	// not blocked would fail with a connection error rather than silently
-	// pass, but the policy refuses it at dial time first.
+	// a service on the demo host). The port is closed, so an unblocked fetch
+	// fails with a connection error, and the policy refuses at dial time first.
 	got := w.cacheDisplayImage("http://127.0.0.1:9/internal.png", "logo")
 	if got != "" {
 		t.Errorf("a display image at an internal address was fetched: %.40q", got)

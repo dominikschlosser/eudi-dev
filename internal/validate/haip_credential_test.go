@@ -28,9 +28,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
 )
 
-// A self-signed leaf is what HAIP §6.1.1 forbids for the credential's signer,
-// and it is the case an earlier check missed: CheckSignatureFrom rejects a
-// non-CA certificate on CA constraints before it verifies the signature.
+// A self-signed leaf is what HAIP §6.1.1 forbids for the credential's signer.
+// CheckSignatureFrom rejects a non-CA certificate on CA constraints before it
+// verifies the signature, so the check cannot rely on it.
 func TestSelfSignedCertificate(t *testing.T) {
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

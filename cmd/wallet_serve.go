@@ -74,8 +74,8 @@ func walletServeCmd() *cobra.Command {
 }
 
 // walletServeCmdWithOptions builds the command and hands back the options its
-// flags write into, so a test can drive the same flag parsing and the same
-// profile resolution the command does instead of restating them.
+// flags write into, so a test can drive the same flag parsing and profile
+// resolution the command does.
 func walletServeCmdWithOptions() (*cobra.Command, *walletServeOptions) {
 	var opts walletServeOptions
 
@@ -92,7 +92,7 @@ Capabilities:
   - Request logging with timestamps
   - Browser-based consent UI for incoming requests
 
-Use --register to also register OS URL scheme handlers (openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)
+Use --register to also register OS URL scheme handlers (openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://)
 so the wallet automatically receives incoming protocol requests.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runWalletServe(cmd, &opts)
@@ -116,7 +116,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored but the issuer sees each render, while a data URI, template art, and http URLs are still embedded)")
-	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it). Also selects the attestation-based client authentication draft outgoing wallet attestations follow: 1.0 emits the draft-07 shape OpenID4VCI 1.0 pins, 1.1 the draft-08 shape")
+	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it)")
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
@@ -129,10 +129,8 @@ so the wallet automatically receives incoming protocol requests.`,
 	return cmd, &opts
 }
 
-// validateServeTLSBaseURL holds --serve-tls to a base URL it can actually
-// serve: https, and with an explicit port for the listener to bind. A
-// port-less https URL belongs behind a TLS terminator, which is the mode
-// --serve-tls exists to avoid.
+// validateServeTLSBaseURL requires --serve-tls to name an https base URL
+// with an explicit port for the listener to bind.
 func validateServeTLSBaseURL(baseURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Host == "" {
@@ -181,14 +179,9 @@ func loadVerifierTrustAnchors(paths []string) ([]*x509.Certificate, error) {
 	return anchors, nil
 }
 
-// applyDemoProfileDefaults applies what --demo implies, each setting only
-// where the operator gave none explicitly:
-//
-//   - --pid, so the periodic reset has a known baseline to restore
-//   - HAIP in debug mode, the EUDI profile held to a warning, so the demo
-//     stays usable against counterparties still being brought into line
-//   - OpenID4VCI 1.1, since showing what the drafts do next is what a demo is
-//     for and every 1.1 feature is negotiated in metadata anyway
+// applyDemoProfileDefaults applies what --demo implies (--pid as the reset
+// baseline, --mode debug, --haip, --vci-version 1.1), each only where the
+// operator set nothing explicitly.
 func applyDemoProfileDefaults(cmd *cobra.Command, opts *walletServeOptions, w *wallet.Wallet) {
 	if !cmd.Flags().Changed("pid") {
 		opts.PID = true
@@ -368,14 +361,13 @@ func demoResetDescription(opts wallet.DemoOptions) string {
 	}
 }
 
-// runWalletServe starts the wallet server. It is the whole of what the
-// serve command does, kept out of the flag builder so the two read apart.
+// runWalletServe starts the wallet server.
 func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if opts.Detached {
 		return spawnDetachedServe(cmd, opts.Port, opts.Register, opts.NoRegister)
 	}
-	// Read before anything is loaded or written: a mode nobody can spell should
-	// fail on its own, not halfway through starting a server.
+	// Parsed before anything is loaded or written, so a bad value fails
+	// before the server starts.
 	clientAuthMode, err := demorp.ParseClientAuthMode(opts.DemoIssuerClientAuth)
 	if err != nil {
 		return fmt.Errorf("--demo-issuer-client-auth: %w", err)
@@ -401,7 +393,6 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		return err
 	}
 
-	// Override keys if explicitly provided
 	if opts.KeyPath != "" {
 		holderKey, err := loadWalletECKey(opts.KeyPath, "holder")
 		if err != nil {
@@ -555,7 +546,6 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		}
 	}
 
-	// Print startup banner
 	cyan := color.New(color.FgCyan, color.Bold)
 	dim := color.New(color.Faint)
 	yellow := color.New(color.FgYellow)
@@ -604,8 +594,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		fmt.Printf("  Mode:        interactive (consent UI)\n")
 	}
 	fmt.Printf("  Transcript:  %s\n", w.SessionTranscript)
-	// Only worth a line when it is not the published version: the banner
-	// should say what is unusual about this wallet, not restate the default.
+	// Only worth a line when it is not the published version.
 	if w.VCIFeatureVersion() == wallet.VCIVersion11 {
 		fmt.Printf("  OID4VCI:     1.1 draft features used where an issuer offers them\n")
 	}
@@ -627,7 +616,6 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		yellow.Printf("  Warning:     %s\n", warning)
 	}
 
-	// Register URL scheme handlers if requested
 	if opts.Register && !opts.NoRegister {
 		serveArgs, err := serializeWalletServeArgs(cmd)
 		if err != nil {
@@ -721,16 +709,13 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		return err
 	}
 	if issuerViaBaseURL && !opts.ServeTLS {
-		// The TLS terminator in front of the base URL serves the
-		// issuer origin. Without this the derived port (443 for a
-		// port-less https URL) would be bound locally. With
-		// --serve-tls there is no terminator: the listener stays on
-		// the base URL's own port and serves it with the wallet's
-		// certificate.
+		// The TLS terminator in front of the base URL serves the issuer
+		// origin, so the derived port (443 for a port-less https URL) is
+		// not bound locally. With --serve-tls the listener stays on the
+		// base URL's own port with the wallet's certificate.
 		srv.SetIssuerListenPort(-1)
 	}
 
-	// Always enable request logging
 	srv.SetLogger(func(format string, args ...any) {
 		timestamp := time.Now().Format("15:04:05")
 		dim.Printf("[%s] ", timestamp)
@@ -748,10 +733,8 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 				// that one instead of whatever else happens to be pending.
 				target += "&request=" + url.QueryEscape(requestID)
 			}
-			// A tab already watching is told over its event stream, so opening
-			// a second one would only take the user away from the one they are
-			// in. Either way the address is printed, so a run that opens
-			// nothing still says where the request is waiting.
+			// A tab already watching is told over its event stream, so no
+			// second tab is opened. The address is printed either way.
 			watched := w.AttachedUIs() > 0
 			if !watched && !noOpen && hasDesktopSession() && openBrowser(target) {
 				fmt.Printf("  Opening wallet UI: %s\n", target)

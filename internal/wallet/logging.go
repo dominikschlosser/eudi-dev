@@ -38,9 +38,8 @@ func (w *Wallet) addProtocolLog(action, event, detail string, success bool, deta
 	w.AddLogDetails(action, detail, success, protocolLogDetails(event, details))
 }
 
-// addProtocolWarning records a protocol-step spec violation the wallet noted
-// without failing the flow, so the UI marks it as a warning rather than a
-// failure. The event still lands in the expandable details.
+// addProtocolWarning records a spec violation the wallet noted without failing
+// the flow.
 func (w *Wallet) addProtocolWarning(action, event, detail string, details map[string]any) {
 	w.AddWarning(action, detail, protocolLogDetails(event, details))
 }

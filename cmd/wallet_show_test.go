@@ -40,7 +40,6 @@ func setupWalletWithCredential(t *testing.T) (string, string) {
 		t.Fatalf("load wallet: %v", err)
 	}
 
-	// Issue an SD-JWT credential
 	key, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatalf("generate key: %v", err)

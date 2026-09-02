@@ -60,7 +60,6 @@ var fullDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 // for them: full-date (tag 1004) for YYYY-MM-DD and tdate (tag 0) for a
 // timestamp. Real PIDs encode birth_date and expiry_date this way, and a
 // verifier that type-checks the element sees a plain text string otherwise.
-// Values that are not dates, and every other type, pass through untouched.
 func cborDateValue(v any) any {
 	switch val := v.(type) {
 	case string:
@@ -149,7 +148,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 				return "", fmt.Errorf("generating random: %w", err)
 			}
 
-			// Build IssuerSignedItem as CBOR map
 			item := map[string]any{
 				"digestID":          digestID,
 				"random":            random,
@@ -174,7 +172,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 
 			tag24Items = append(tag24Items, tag24Bytes)
 
-			// Compute digest of Tag-24 wrapped item
 			digest := sha256.Sum256(tag24Bytes)
 			valueDigests[digestID] = digest[:]
 			digestID++
@@ -200,7 +197,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		}
 	}
 
-	// Add status list reference
 	if cfg.StatusListURI != "" {
 		mso["status"] = map[string]any{
 			"status_list": map[string]any{
@@ -210,7 +206,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		}
 	}
 
-	// Add deviceKeyInfo with holder's COSE_Key
 	if cfg.HolderKey != nil {
 		xBytes, yBytes, err := format.ECPublicCoords(cfg.HolderKey)
 		if err != nil {
@@ -241,7 +236,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		return "", fmt.Errorf("encoding Tag-24 MSO: %w", err)
 	}
 
-	// Sign MSO with COSE_Sign1
 	signer, err := cose.NewSigner(cose.AlgorithmES256, cfg.Key)
 	if err != nil {
 		return "", fmt.Errorf("creating COSE signer: %w", err)
@@ -284,7 +278,6 @@ func GenerateMDOC(cfg MDOCConfig) (string, error) {
 		return "", fmt.Errorf("normalizing COSE_Sign1 tag: %w", err)
 	}
 
-	// Build IssuerSigned structure
 	issuerSigned := map[string]any{
 		"nameSpaces": tag24ItemsByNS,
 		"issuerAuth": cbor.RawMessage(issuerAuthBytes),

@@ -23,8 +23,7 @@ import (
 )
 
 // renewalMargin is how long before expiry a credential is worth renewing. It
-// only has to cover the round trip to the issuer, and renewing earlier means
-// holding a credential that a verifier would have accepted anyway.
+// only has to cover the round trip to the issuer.
 const renewalMargin = time.Minute
 
 // CredentialExpiry reports when a credential stops being valid, or the zero
@@ -57,7 +56,7 @@ func CredentialExpiry(cred StoredCredential) time.Time {
 
 // CredentialNeedsRenewal reports whether a credential is close enough to
 // expiry to be worth renewing now. A credential without a stated lifetime
-// never is: nothing says it has stopped being good.
+// never is.
 func CredentialNeedsRenewal(cred StoredCredential, now time.Time) bool {
 	expiry := CredentialExpiry(cred)
 	if expiry.IsZero() {
@@ -95,10 +94,8 @@ func CredentialIssuedAt(cred StoredCredential) time.Time {
 }
 
 // SortCredentialsNewestFirst orders credentials by issuance time, newest
-// first, so a freshly issued one is not at the bottom of a paged list.
-// Credentials stating no issuance time sort last, and ties keep the order they
-// arrived in: the sort is stable, and ids are random, so comparing them would
-// order the same credentials differently in two wallets.
+// first. Credentials stating no issuance time sort last. Ties keep arrival
+// order (ids are random, so they are no tiebreaker).
 func SortCredentialsNewestFirst(creds []StoredCredential) {
 	issued := make(map[string]time.Time, len(creds))
 	for _, c := range creds {

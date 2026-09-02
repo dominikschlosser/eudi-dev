@@ -51,12 +51,10 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A stream outlives the server's write timeout by definition, and that
-	// deadline covers the whole response: left in place it ends the stream
-	// mid-session, and a consent request arriving before the UI reconnects
-	// is one no tab is told about. It is pushed forward before every write
+	// The server's write timeout covers the whole response and would end the
+	// stream mid-session. The deadline is pushed forward before every write
 	// rather than removed, so a client that stops reading still releases the
-	// handler and its subscriptions instead of holding them indefinitely.
+	// handler and its subscriptions.
 	rc := http.NewResponseController(w)
 	extendDeadline := func() {
 		if err := rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
@@ -68,11 +66,10 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	// No Access-Control-Allow-Origin: this stream carries consent requests
-	// with the claims a verifier asked for, and the only browser client is
-	// the wallet's own UI, which is same-origin. A wildcard let any page the
-	// user happened to visit subscribe to it. Non-browser clients (the CLI,
-	// the conformance runner) do not enforce CORS and are unaffected.
+	// No Access-Control-Allow-Origin: this stream carries the claims a
+	// verifier asked for, and the only browser client is the wallet's own
+	// same-origin UI. A wildcard would let any page the user visits subscribe.
+	// Non-browser clients do not enforce CORS.
 	flusher.Flush()
 
 	owners := callerOwners(r)
@@ -86,9 +83,8 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	authCh, authUnsub := s.wallet.SubscribeAuthorization()
 	defer authUnsub()
 
-	// An idle stream sends nothing for minutes at a time, and proxies drop
-	// idle connections. The client reconnects, so nothing breaks, but each
-	// reconnect is another request. A comment line keeps the connection up.
+	// Proxies drop idle connections and each reconnect is another request, so
+	// a comment line keeps the connection up.
 	keepalive := time.NewTicker(sseKeepaliveInterval)
 	defer keepalive.Stop()
 
@@ -165,13 +161,10 @@ func (s *Server) handleRequestStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleApproveRequest approves a consent request and waits for the submission result.
-// allowSlowResponse pushes this response's write deadline past a wait the
-// server's own timeout is shorter than. A handler that blocks on consent
-// outlives config.SlowRequestTimeout, and without this its answer is written
-// to a connection Go already closed: the caller sees a dropped connection
-// rather than the result, and a URL handler takes that for a failure and
-// dispatches the same offer again.
+// allowSlowResponse pushes this response's write deadline past a wait longer
+// than config.SlowRequestTimeout. Without it the answer is written to a
+// connection Go already closed, and a URL handler takes the dropped connection
+// for a failure and dispatches the same offer again.
 func (s *Server) allowSlowResponse(w http.ResponseWriter, wait time.Duration) {
 	err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(wait + config.SlowRequestTimeout))
 	// A browser redirected on its way in leaves the flow running against a
@@ -191,6 +184,7 @@ func refusalReason(status string) string {
 	return "This request was already answered"
 }
 
+// handleApproveRequest approves a consent request and waits for the submission result.
 func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -238,7 +232,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		SetChoices:     body.SetChoices,
 	}
 
-	// Wait for the VP submission to complete so we can return the result to the UI
+	// Wait for the submission so the UI gets its result.
 	s.allowSlowResponse(w, config.SlowRequestTimeout)
 	select {
 	case submission := <-req.SubmissionCh:

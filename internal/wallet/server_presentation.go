@@ -91,7 +91,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	s.wallet.ClearLastError(callerOwners(r))
 
 	s.log("Received authorization request")
-	// Truncate URI for display
 	uriDisplay := format.Truncate(body.URI, 120)
 	s.log("  URI: %s", uriDisplay)
 
@@ -179,9 +178,8 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate here only to answer the API caller with a 400 on a hard failure.
-	// The profile-violation warnings are not logged here: handleAuthFlow runs
-	// the same validation and logs them, so doing it here too would double every
-	// warning for one request.
+	// handleAuthFlow runs the same validation and logs the warnings, so logging
+	// them here too would double every warning for one request.
 	vpMode, vpHAIP, _ := reqServer.wallet.ConformanceSettings()
 	if _, err := ValidateAuthorizationRequest(vpMode, vpHAIP, authReq); err != nil {
 		reqServer.log("  ERROR: %v", err)

@@ -308,7 +308,7 @@ func TestWalletPsShowsInstanceVersion(t *testing.T) {
 		t.Errorf("the listing must report the instance version, got:\n%s", out)
 	}
 
-	// The old `wallet instances` spelling keeps working for existing scripts.
+	// The deprecated `wallet instances` spelling lists the same.
 	out = captureStdout(t, func() {
 		rootCmd.SetArgs([]string{"wallet", "instances", "list"})
 		if err := rootCmd.Execute(); err != nil {
@@ -577,7 +577,7 @@ func TestTrustListFollowsTheRemoteWallet(t *testing.T) {
 	resetRemoteTestState(t)
 	url, _ := startRemoteTestWallet(t)
 
-	// A local wallet with its own CA, which is what the command used to print.
+	// A local wallet with its own CA.
 	localHolder, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -659,8 +659,7 @@ func trustListAnchors(t *testing.T, jwt string) map[string]bool {
 	return found
 }
 
-// Without a listing the profile ids are only discoverable by reading the HTTP
-// index, so a caller has to guess which one covers what it verifies.
+// --list names every trust list profile the wallet serves.
 func TestTrustListListsProfiles(t *testing.T) {
 	resetRemoteTestState(t)
 	url, _ := startRemoteTestWallet(t)
@@ -687,9 +686,8 @@ func TestTrustListListsProfiles(t *testing.T) {
 
 // The same document reaches these renderers from two directions: through JSON
 // from a remote instance (every number a float64) and straight out of the
-// wallet in this process (numbers keep their Go type). Reading only float64
-// made `wallet list --remote local` report a revoked credential as governed
-// by someone else's status list.
+// wallet in this process (numbers keep their Go type). Both read as the same
+// status.
 func TestCredentialLabelsReadBothNumberShapes(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

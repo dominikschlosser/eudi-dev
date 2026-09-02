@@ -103,12 +103,10 @@ func (d *Dashboard) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A stream outlives the server's write timeout by definition, and that
-	// deadline covers the whole response: left in place it cuts the stream
-	// off mid-session, and every entry until the client notices and
-	// reconnects is one nobody sees. It is pushed forward before every write
-	// rather than removed, so a client that stops reading still releases the
-	// handler and its subscription instead of holding both indefinitely.
+	// The server's write timeout covers the whole response, which would cut
+	// the stream off mid-session. The deadline is pushed forward before every
+	// write rather than removed, so a client that stops reading still releases
+	// the handler and its subscription.
 	rc := http.NewResponseController(w)
 	extendDeadline := func() {
 		if err := rc.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
@@ -146,8 +144,7 @@ func (d *Dashboard) handleStream(w http.ResponseWriter, r *http.Request) {
 			extendDeadline()
 			// A comment line, which every SSE reader ignores. It keeps an
 			// idle stream from being dropped by whatever sits between the
-			// proxy and the client, which on a containerized proxy is
-			// usually something.
+			// proxy and the client.
 			fmt.Fprint(w, ": keepalive\n\n") //nolint:errcheck // a dead connection ends the stream on the next write anyway
 			flusher.Flush()
 		case <-r.Context().Done():

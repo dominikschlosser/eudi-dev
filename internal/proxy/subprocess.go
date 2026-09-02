@@ -30,7 +30,7 @@ import (
 type Subprocess struct {
 	cmd     *exec.Cmd
 	scanner *OutputScanner
-	// done is closed once the process has exited; err holds the exit status
+	// done is closed once the process has exited. err holds the exit status
 	// and is written before the close, so any reader that waits on done
 	// observes it. A closed channel unblocks every waiter, so Wait and Done can
 	// be consumed by more than one goroutine without one stealing the result.

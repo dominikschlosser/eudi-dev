@@ -100,12 +100,9 @@ func createProofJWTs(keys []*ecdsa.PrivateKey, audience, clientID, cNonce string
 // key is identified from each credential itself.
 //
 // An issuer may "issue fewer Credentials" than the proofs sent and binds each
-// key to at most one Credential, so it may return one credential, or several
-// fewer than advertised, and need not bind any of them to the wallet's holder
-// key. A single credential is taken whichever proof key it names (its card then
-// reads as bound to another key). Several credentials are each matched to a
-// distinct proof key, and the holder-key copy is preferred as the primary,
-// falling back to the first credential when the issuer bound none to it.
+// key to at most one Credential. A single credential is taken whichever proof
+// key it names. Among several, each is matched to a distinct proof key and the
+// holder-key copy is preferred as the primary, falling back to the first.
 func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) (string, error) {
 	creds := credentialStringsFromResponse(credResp)
 	if len(creds) == 0 {
@@ -132,7 +129,7 @@ func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) 
 			return "", fmt.Errorf("credential response contains %d credentials bound to the same proof key (index %d)", count, i)
 		}
 	}
-	log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys; importing one as the primary copy", len(creds))
+	log.Printf("[VCI] Matched %d batch credential(s) to distinct proof keys, importing one as the primary copy", len(creds))
 	if holderCredential != "" {
 		return holderCredential, nil
 	}
@@ -163,18 +160,16 @@ func primaryBindingKeyPEM(raw string, keys []*ecdsa.PrivateKey) string {
 }
 
 // storeBatchSiblings stores the other copies of a batch alongside the copy
-// importPrimaryCredential already imported as primary. A batch credential
-// response holds one credential per proof key (§8.3); this stores the rest, each
-// bound to the key it was issued against, under a batch group shared with the
-// primary. The wallet then presents an unused copy each time so a Relying Party
-// cannot link two presentations of the same credential (EUDI ARF Annex 2 Topic
-// 10 method C, ISSU_51-54).
+// importPrimaryCredential imported as primary. A batch credential response
+// holds one credential per proof key (§8.3). Each copy is stored bound to the
+// key it was issued against, under a batch group shared with the primary, so
+// the wallet presents an unused copy each time and a verifier cannot link two
+// presentations (EUDI ARF Annex 2 Topic 10 method C, ISSU_51-54).
 //
-// The primary is already bound to its own key, so a single-credential response
-// leaves it as it is. A batch collected on a presentation clone keeps its
-// primary copy alone: its credentialSink forwarded that copy (with its key) to
-// the real wallet at import time, but the siblings would land there under a
-// group the primary copy does not carry back, so they are left off.
+// A batch collected on a presentation clone keeps its primary copy alone: the
+// credentialSink forwarded that copy (with its key) to the real wallet at
+// import time, and the siblings would land there under a group the primary
+// copy does not carry back.
 func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[string]any, keys []*ecdsa.PrivateKey, display *CredentialDisplay) {
 	creds := credentialStringsFromResponse(credResp)
 	if primary == nil || len(creds) <= 1 || len(keys) <= 1 {
@@ -192,8 +187,8 @@ func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[stri
 	stored := 1
 	for _, raw := range creds {
 		idx := proofKeyIndex(raw, keys)
-		// Skip the copy already imported as primary; a negative index was
-		// reported by selectPrimaryCredential.
+		// The primary copy is already imported. A negative index was reported
+		// by selectPrimaryCredential.
 		if idx < 0 || idx == primaryIdx {
 			continue
 		}
@@ -216,10 +211,9 @@ func (w *Wallet) storeBatchSiblings(primary *StoredCredential, credResp map[stri
 }
 
 // collapseBatchMatches reduces the copies of one batch that match a query to
-// the single copy that will be presented, so the wallet presents one unused
-// copy per batch and the consent dialog does not list identical copies as
-// alternatives. The copy is chosen by chooseBatchCopy; matches outside a batch
-// pass through untouched, in order.
+// the one copy chooseBatchCopy picks, so the consent dialog does not list
+// identical copies as alternatives. Matches outside a batch pass through in
+// order.
 func (w *Wallet) collapseBatchMatches(matches []CredentialMatch, credentials []StoredCredential) []CredentialMatch {
 	byID := make(map[string]StoredCredential, len(credentials))
 	for _, c := range credentials {
@@ -273,9 +267,8 @@ func chooseBatchCopy(idxs []int, matches []CredentialMatch, byID map[string]Stor
 	return least[secureIntn(len(least))]
 }
 
-// secureIntn returns a uniform random int in [0, n) using crypto/rand, so which
-// batch copy is presented cannot be predicted or biased. It returns 0 on the
-// degenerate n <= 1 and on the practically impossible read error.
+// secureIntn returns a uniform random int in [0, n) from crypto/rand, or 0
+// when n <= 1 or the read fails.
 func secureIntn(n int) int {
 	if n <= 1 {
 		return 0

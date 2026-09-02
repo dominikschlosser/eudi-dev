@@ -50,7 +50,7 @@ func Parse(raw string) (*Token, error) {
 // mirrors its claims into another object). Each is recorded on token.Deviations
 // rather than returned as an error. A break that makes the claims unresolvable
 // is still an error. Use ParseLenient to inspect a credential or to handle one
-// in a non-strict mode; use Parse where the credential must be spec-valid.
+// in a non-strict mode. Use Parse where the credential must be spec-valid.
 func ParseLenient(raw string) (*Token, error) {
 	token, err := parseStructure(raw)
 	if err != nil {
@@ -82,8 +82,8 @@ func ParseLenient(raw string) (*Token, error) {
 // omitted."
 //
 // A single non-empty trailing component that is not a KB-JWT is read as a
-// Disclosure whose trailing tilde was dropped, for issuers that emit that. That
-// workaround returns a warning naming the deviation so a caller can pass it on.
+// Disclosure whose trailing tilde was dropped, and a warning names the
+// deviation.
 func splitComponents(components []string) ([]string, *JWT, string, error) {
 	if len(components) == 0 {
 		return nil, nil, "", nil
@@ -115,7 +115,7 @@ func splitComponents(components []string) ([]string, *JWT, string, error) {
 
 // parseKeyBindingJWT decodes a trailing component as a Key Binding JWT.
 // RFC 9901 §4.3 requires the typ header parameter of a KB-JWT to be kb+jwt,
-// which is what tells a KB-JWT apart from a Disclosure here.
+// and that tells a KB-JWT apart from a Disclosure.
 func parseKeyBindingJWT(component string) *JWT {
 	if strings.Count(component, ".") != 2 {
 		return nil
@@ -165,7 +165,6 @@ func checkFullyUndisclosedChildren(disclosures []Disclosure) []string {
 			if !ok || len(sdArr) == 0 {
 				continue
 			}
-			// Check if there are any non-_sd keys (i.e., visible sub-claims)
 			hasVisibleClaims := false
 			for k := range val {
 				if k != "_sd" && k != "_sd_alg" {
@@ -173,7 +172,6 @@ func checkFullyUndisclosedChildren(disclosures []Disclosure) []string {
 					break
 				}
 			}
-			// Also check if any _sd digests are resolved
 			if !hasVisibleClaims {
 				hasResolved := false
 				for _, item := range sdArr {
@@ -220,7 +218,6 @@ func parseDisclosure(raw string, sdAlg string) (*Disclosure, error) {
 		Decoded: string(decoded),
 	}
 
-	// Compute digest
 	digest, err := computeDigest(raw, sdAlg)
 	if err != nil {
 		return nil, err
@@ -246,7 +243,7 @@ func parseDisclosure(raw string, sdAlg string) (*Disclosure, error) {
 		disc.Name = name
 		disc.Value = arr[2]
 	case 2:
-		// [salt, value]. Array element disclosure
+		// [salt, value], an array element disclosure
 		salt, ok := arr[0].(string)
 		if !ok {
 			return nil, fmt.Errorf("salt is not a string")
@@ -423,7 +420,7 @@ func parseStructure(raw string) (*Token, error) {
 		disc, err := parseDisclosure(d, sdAlg)
 		if err != nil {
 			// A disclosure that will not parse is dropped so the rest of the
-			// credential still reads; its digest then resolves to nothing.
+			// credential still reads. Its digest then resolves to nothing.
 			token.Deviations = append(token.Deviations, fmt.Sprintf("disclosure %d could not be parsed (%s), so it is dropped", i+1, err))
 			continue
 		}

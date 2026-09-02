@@ -41,13 +41,14 @@ import (
 type SessionTranscriptMode string
 
 const (
-	// SessionTranscriptISO uses ISO 18013-7 Annex B.4.4 format (EUDI wallet default).
-	// Hash inputs are CBOR-encoded [value, mdocGeneratedNonce] arrays, and the
-	// handover is wrapped in CBOR Tag 24.
+	// SessionTranscriptISO uses the ISO 18013-7 Annex B.4.4 handover: the
+	// SHA-256 of CBOR([client_id, mdocGeneratedNonce]), the SHA-256 of
+	// CBOR([response_uri, mdocGeneratedNonce]), and the nonce.
 	SessionTranscriptISO SessionTranscriptMode = "iso"
 
-	// SessionTranscriptOID4VP uses the OID4VP Appendix B.2.6 format.
-	// Hash inputs are plain string bytes, and the handover is a plain array.
+	// SessionTranscriptOID4VP uses the OID4VP 1.0 Appendix B.2.6 handover: the
+	// SHA-256 of CBOR([client_id, nonce, jwkThumbprint, response_uri]). The
+	// default.
 	SessionTranscriptOID4VP SessionTranscriptMode = "oid4vp"
 )
 
@@ -85,12 +86,10 @@ type Wallet struct {
 	// (advertising it is only a SHOULD). Off by default: an attestation reused
 	// across issuers is a correlation handle.
 	ForceClientAttestation bool
-	// AdhocDisplayImages keeps a display logo or background named by an http(s)
-	// URL in an issuer's metadata as that URL, instead of fetching it once and
-	// storing the image. The card then fetches it on demand, so nothing is
-	// stored. Off by default (the image is fetched through the policed client
-	// and stored as an asset). A data URI and a template's own art are embedded
-	// either way.
+	// AdhocDisplayImages keeps an http(s) display logo or background URL from
+	// an issuer's metadata as that URL, so the card fetches it on demand. Off
+	// by default: the image is fetched through the policed client and stored
+	// as an asset. A data URI and a template's own art are embedded either way.
 	AdhocDisplayImages bool           `json:"-"`
 	ValidationMode     ValidationMode `json:"-"`
 	Credentials        []StoredCredential
@@ -237,23 +236,22 @@ type StoredCredential struct {
 	Protected bool `json:"protected,omitempty"`
 	// Renewal is what re-requesting this credential from its issuer needs,
 	// kept only when the issuer handed over a refresh token. Everything here
-	// is stored in the clear like the rest of the wallet, which is a
-	// development and test store by design (see docs/wallet.md).
+	// is stored in the clear like the rest of the wallet (ADR-0003).
 	Renewal *CredentialRenewal `json:"renewal,omitempty"`
 	// Display is the appearance the issuer declared for this credential
 	// (§12.2.4), or the wallet's own appearance on a generated one.
 	Display *CredentialDisplay `json:"display,omitempty"`
 	// BatchGroup ties together the copies issued in one batch. The wallet keeps
 	// several copies of one credential, each bound to a different key, and
-	// presents an unused copy each time so a Relying Party cannot link two
+	// presents an unused copy each time so a verifier cannot link two
 	// presentations of the same credential (EUDI ARF Annex 2 Topic 10 method C,
 	// ISSU_51-54). Empty on a credential issued singly.
 	BatchGroup string `json:"batch_group,omitempty"`
 	// BindingKeyPEM is the holder key this copy is bound to when it is not the
 	// wallet holder key. A batch binds each copy to a distinct key, so every
 	// copy but the one bound to the wallet holder key carries its own key here.
-	// Empty means the copy presents with the wallet holder key (every credential
-	// from before batch storage, and the holder-key copy of a batch).
+	// Empty means the copy presents with the wallet holder key (a credential
+	// issued singly, and the holder-key copy of a batch).
 	BindingKeyPEM string `json:"binding_key,omitempty"`
 	// Uses counts how many times this copy has been presented. The batch presents
 	// a random copy among those used the fewest times, which shows each copy once
@@ -268,8 +266,7 @@ type StoredCredential struct {
 
 // batchSigningKey returns the private key this copy presents with: its own
 // per-copy key when the batch bound it to one, or the wallet holder key when it
-// carries none. Every credential issued before batch storage, and the
-// holder-key copy of a batch, present with the holder key unchanged.
+// carries none.
 func (w *Wallet) batchSigningKey(cred StoredCredential) (*ecdsa.PrivateKey, error) {
 	if cred.BindingKeyPEM == "" {
 		return w.HolderKeyPair(), nil
@@ -322,8 +319,8 @@ type ClientAuthentication struct {
 	// ABCADraft is the attestation-based client authentication draft whose
 	// shape the attestation and PoP carry, resolved from the wallet's
 	// OpenID4VCI version when this authentication was first decided so a
-	// later refresh emits what the issuance did. 0 on records from before
-	// this field, which follow the wallet's current version instead.
+	// later refresh emits what the issuance did. 0 on a record without it,
+	// which follows the wallet's current version.
 	ABCADraft int `json:"abca_draft,omitempty"`
 	// CombinedPoP says the server takes the DPoP proof as the possession
 	// proof for the attestation (draft-10 §5.2, dpop_combined), so requests
@@ -337,7 +334,6 @@ func (c StoredCredential) CanRenew() bool {
 		c.Renewal.TokenEndpoint != "" && c.Renewal.CredentialEndpoint != ""
 }
 
-// ConsentRequest represents a pending presentation or issuance consent.
 // Consent request types. ConsentTypeIssuancePresentation is a presentation an
 // issuer asked for during an issuance (OpenID4VCI 1.1 §6): it is answered like
 // a presentation, but it belongs to the flow that triggered it rather than to
@@ -348,6 +344,7 @@ const (
 	ConsentTypeIssuancePresentation = "issuance_presentation"
 )
 
+// ConsentRequest represents a pending presentation or issuance consent.
 type ConsentRequest struct {
 	ID           string                       `json:"id"`
 	Type         string                       `json:"type"` // presentation, issuance, or issuance_presentation
@@ -479,8 +476,8 @@ type SubmissionResult struct {
 	Error       string `json:"error,omitempty"`
 	StatusCode  int    `json:"status_code,omitempty"`
 	// Pending marks an issuance the issuer deferred. The dialog has to tell
-	// that apart from a failure: nothing went wrong, the credential simply is
-	// not ready, and the wallet keeps collecting it in the background.
+	// that apart from a failure: the credential is not ready yet, and the
+	// wallet keeps collecting it in the background.
 	Pending       bool   `json:"pending,omitempty"`
 	TransactionID string `json:"transaction_id,omitempty"`
 	RetryInterval string `json:"retry_interval,omitempty"`
@@ -494,7 +491,7 @@ type LogEntry struct {
 	// Success is the pass/fail of the action. Severity carries a third state a
 	// bool cannot: a spec violation the wallet noted but did not treat as a
 	// failure. An empty Severity means the entry is a plain success or failure
-	// read from Success; "warning" marks a violation that only warned.
+	// read from Success. "warning" marks a violation that only warned.
 	Success  bool           `json:"success"`
 	Severity string         `json:"severity,omitempty"`
 	Details  map[string]any `json:"details,omitempty"`
@@ -516,7 +513,6 @@ func New(holderKey, issuerKey *ecdsa.PrivateKey, autoAccept bool) *Wallet {
 		runtime:        newWalletRuntime(),
 	}
 
-	// Generate CA key and certificate chain
 	caKey, err := mock.GenerateKey()
 	if err != nil {
 		log.Printf("[Wallet] Warning: failed to generate CA key: %v", err)
@@ -664,7 +660,6 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		}
 	}
 
-	// Generate SD-JWT PID
 	var holderPubKey *ecdsa.PublicKey
 	if w.HolderKey != nil {
 		holderPubKey = &w.HolderKey.PublicKey
@@ -707,7 +702,6 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		}
 		w.rememberDisplay(sdCred, w.templateDisplay(sdTpl.Display))
 
-		// Register status entry for SD-JWT credential
 		if statusListURL != "" {
 			w.registerStatusEntry(sdCred.ID, sdStatusIdx)
 		}
@@ -731,7 +725,6 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		mdocConfig.StatusListIdx = mdocStatusIdx
 	}
 
-	// Generate mDoc PID
 	if !keptMDoc {
 		mdocResult, err := mock.GenerateMDOC(mdocConfig)
 		if err != nil {
@@ -743,7 +736,6 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		}
 		w.rememberDisplay(mdocCred, w.templateDisplay(mdocTpl.Display))
 
-		// Register status entry for mDoc credential
 		if statusListURL != "" {
 			w.registerStatusEntry(mdocCred.ID, mdocStatusIdx)
 		}
@@ -815,8 +807,8 @@ func (w *Wallet) removeMDocsByNamespace(docType string, namespaces []string) int
 
 // credentialNamespaces returns the mdoc namespaces a credential holds elements
 // in. NameSpaces is rebuilt from the credential on every load, so it is
-// authoritative; the claim keys are a derived "namespace:element" view, and a
-// wallet file written before that prefix existed stores them bare.
+// authoritative. The claim keys are a derived "namespace:element" view, and a
+// wallet file without that prefix stores them bare.
 func credentialNamespaces(c StoredCredential) []string {
 	if len(c.NameSpaces) > 0 {
 		names := make([]string, 0, len(c.NameSpaces))
@@ -956,10 +948,10 @@ func (w *Wallet) GenerateProtectedDefaults() error {
 	for _, c := range w.GetCredentials() {
 		existing[c.ID] = true
 	}
-	// removeProtected above dropped the old baseline; regenerate a fresh one
-	// (marked protected below) so it never freezes on an old release's claim
-	// set. dropExisting is false: a visitor's own PID of the same type stays,
-	// and one baseline type must not drop the one generated before it.
+	// A fresh baseline (marked protected below) never freezes on an old
+	// release's claim set. dropExisting is false: a visitor's own PID of the
+	// same type stays, and one baseline type must not drop the one generated
+	// before it.
 	for _, vct := range BaselinePIDVCTs {
 		if err := w.generateDefaultCredentials(nil, vct, false); err != nil {
 			return err
@@ -1391,7 +1383,7 @@ func batchRepresentative(creds []StoredCredential, member StoredCredential) Stor
 // CredentialsJSONWindow serializes a slice of the stored credentials.
 // A limit of 0 means "to the end", and an offset past the end yields an
 // empty array rather than an error, so a paging client that lands on a
-// stale page simply sees nothing.
+// stale page sees an empty page.
 func (w *Wallet) CredentialsJSONWindow(offset, limit int) ([]byte, error) {
 	return json.Marshal(w.listedSummaries(offset, limit))
 }

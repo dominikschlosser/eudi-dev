@@ -44,12 +44,11 @@ func TestEncryptJWE_CompactFormat(t *testing.T) {
 		t.Fatalf("expected 5 parts, got %d", len(parts))
 	}
 
-	// Encrypted key must be empty for ECDH-ES
+	// RFC 7516 §5.1: with Direct Key Agreement the JWE Encrypted Key is empty.
 	if parts[1] != "" {
 		t.Errorf("expected empty encrypted key, got %q", parts[1])
 	}
 
-	// Decode and verify protected header
 	headerJSON, err := format.DecodeBase64URL(parts[0])
 	if err != nil {
 		t.Fatal(err)
@@ -182,17 +181,16 @@ func TestEncryptJWE_A128CBC_HS256(t *testing.T) {
 		t.Fatalf("expected 5 parts, got %d", len(parts))
 	}
 
-	// Encrypted key must be empty for ECDH-ES
+	// RFC 7516 §5.1: with Direct Key Agreement the JWE Encrypted Key is empty.
 	if parts[1] != "" {
 		t.Errorf("expected empty encrypted key, got %q", parts[1])
 	}
 
-	// CEK should be 32 bytes (256-bit for MAC+ENC)
+	// RFC 7518 §5.2.3: A128CBC-HS256 takes a 256 bit key (MAC and ENC halves).
 	if len(cek) != 32 {
 		t.Errorf("expected 32-byte CEK for A128CBC-HS256, got %d bytes", len(cek))
 	}
 
-	// Decode and verify protected header
 	headerJSON, err := format.DecodeBase64URL(parts[0])
 	if err != nil {
 		t.Fatal(err)
@@ -271,7 +269,6 @@ func TestEcdsaPublicKeyFromJWK_InvalidY(t *testing.T) {
 }
 
 func TestPkcs7Pad(t *testing.T) {
-	// 13 bytes with blockSize=16 -> 16 bytes, last 3 bytes = 0x03
 	data13 := make([]byte, 13)
 	for i := range data13 {
 		data13[i] = byte(i)
@@ -286,7 +283,7 @@ func TestPkcs7Pad(t *testing.T) {
 		}
 	}
 
-	// 16 bytes with blockSize=16 -> 32 bytes, last 16 bytes = 0x10
+	// Input already a block multiple gets a whole block of padding.
 	data16 := make([]byte, 16)
 	padded16 := pkcs7Pad(data16, 16)
 	if len(padded16) != 32 {
@@ -307,7 +304,6 @@ func TestEncryptJWE_ReturnsCEK(t *testing.T) {
 
 	payload := []byte(`{"test":"value"}`)
 
-	// A128GCM → 16-byte key
 	_, cek128, err := EncryptJWE(payload, &key.PublicKey, "kid", "ECDH-ES", "A128GCM", nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -316,7 +312,6 @@ func TestEncryptJWE_ReturnsCEK(t *testing.T) {
 		t.Errorf("expected 16-byte CEK for A128GCM, got %d bytes", len(cek128))
 	}
 
-	// A256GCM → 32-byte key
 	_, cek256, err := EncryptJWE(payload, &key.PublicKey, "kid", "ECDH-ES", "A256GCM", nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -327,10 +322,9 @@ func TestEncryptJWE_ReturnsCEK(t *testing.T) {
 }
 
 // A verifier's encryption key whose coordinate is narrower than P-256
-// requires breaks RFC 7518 section 6.2.1.2. Strict mode must refuse it rather
-// than quietly repair it, which is the whole point of strict mode. Debug mode
-// reads it and reports what was wrong, so the flow still reaches the step
-// worth watching.
+// requires breaks RFC 7518 section 6.2.1.2. Strict mode refuses it rather than
+// repair it. Debug mode reads it and reports what was wrong, so the flow still
+// reaches the step worth watching.
 func TestEncryptionJWKShortCoordinate_StrictRefusesDebugReports(t *testing.T) {
 	for attempt := 0; attempt < 20000; attempt++ {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -366,10 +360,8 @@ func TestEncryptionJWKShortCoordinate_StrictRefusesDebugReports(t *testing.T) {
 	t.Fatal("no key with a short X coordinate generated in 20000 attempts")
 }
 
-// Debug mode is allowed to read past a short coordinate only because it says
-// so afterwards. An unreported repair is the worst outcome available: strict
-// mode rejects the document, debug mode accepts it, and nothing tells anyone
-// the two disagreed or why.
+// Debug mode reads past a short coordinate and reports the repair in the
+// activity log, so the disagreement with strict mode is visible.
 func TestShortCoordinateIsReportedInTheActivityLog(t *testing.T) {
 	var shortX, fullY string
 	var holder *ecdsa.PublicKey

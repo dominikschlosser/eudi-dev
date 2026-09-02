@@ -403,8 +403,7 @@ func TestDCAPIMalformedRequestIsRefusedWithoutAProtocolResponse(t *testing.T) {
 // error and a value containing the error response code as defined in Section
 // 8.5." That holds for dc_api.jwt too. A Verifier that asked for an encrypted
 // response and receives a JWE where the error object belongs reads a response
-// rather than a refusal, which is how a wallet that correctly rejected a
-// request looks like one that answered it.
+// rather than a refusal.
 func TestDCAPIErrorIsNotEncryptedUnderTheEncryptedResponseMode(t *testing.T) {
 	w := generateTestWallet(t)
 	params := PresentationParams{

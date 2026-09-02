@@ -62,8 +62,8 @@ const (
 
 // BaseDir returns the tool's state directory. Resolution order: the
 // EUDI_DEV_HOME environment variable, the legacy OID4VC_DEV_HOME variable,
-// an existing legacy ~/.oid4vc-dev directory (so existing setups keep
-// working after the rename), and ~/.eudi-dev otherwise.
+// an existing ~/.eudi-dev directory, an existing legacy ~/.oid4vc-dev
+// directory, and ~/.eudi-dev otherwise.
 func BaseDir() string {
 	if custom := os.Getenv("EUDI_DEV_HOME"); custom != "" {
 		return custom

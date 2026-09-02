@@ -169,7 +169,6 @@ func TestGenerateWalletNonce(t *testing.T) {
 }
 
 func TestMakeFetchRequestURI_GET(t *testing.T) {
-	// Set up a test server that returns a JWT on GET
 	jwt := makeTestJWT(map[string]any{"alg": "none"}, map[string]any{
 		"client_id":     "test-client",
 		"response_type": "vp_token",
@@ -197,7 +196,6 @@ func TestMakeFetchRequestURI_GET(t *testing.T) {
 }
 
 func TestMakeFetchRequestURI_POST(t *testing.T) {
-	// Set up a test server that expects POST with wallet_metadata and wallet_nonce
 	var receivedContentType string
 	var receivedWalletMetadata string
 	var receivedWalletNonce string
@@ -244,7 +242,6 @@ func TestMakeFetchRequestURI_POST(t *testing.T) {
 		t.Error("expected wallet_nonce to be sent")
 	}
 
-	// Verify wallet_metadata is valid JSON
 	var meta map[string]any
 	if err := json.Unmarshal([]byte(receivedWalletMetadata), &meta); err != nil {
 		t.Errorf("wallet_metadata is not valid JSON: %v", err)
@@ -260,7 +257,6 @@ func TestMakeFetchRequestURI_POST(t *testing.T) {
 
 func TestMakeFetchRequestURI_POST_WalletNonceMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Return JWT with wrong wallet_nonce
 		jwt := makeTestJWT(map[string]any{"alg": "ES256"}, map[string]any{
 			"client_id":    "test-client",
 			"wallet_nonce": "wrong-nonce",
@@ -385,13 +381,11 @@ func TestValidateClientMetadata_AcceptsNumericMDocAlgValuesSupported(t *testing.
 }
 
 func TestDecryptRequestObjectJWE(t *testing.T) {
-	// Generate wallet encryption key
 	walletKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create a JWT payload
 	jwt := makeTestJWT(map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}, map[string]any{
 		"client_id":     "test-verifier",
 		"response_type": "vp_token",
@@ -404,7 +398,6 @@ func TestDecryptRequestObjectJWE(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Decrypt with wallet's private key
 	decrypted, err := DecryptRequestObjectJWE(jweStr, walletKey)
 	if err != nil {
 		t.Fatalf("DecryptRequestObjectJWE: %v", err)
@@ -431,14 +424,12 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 		walletNonce := r.Form.Get("wallet_nonce")
 		walletMetaStr := r.Form.Get("wallet_metadata")
 
-		// Parse wallet_metadata to get the encryption key
 		var meta map[string]any
 		json.Unmarshal([]byte(walletMetaStr), &meta)
 		jwks := meta["jwks"].(map[string]any)
 		keys := jwks["keys"].([]any)
 		jwk := keys[0].(map[string]any)
 
-		// Build the public key from the JWK
 		xB64 := jwk["x"].(string)
 		yB64 := jwk["y"].(string)
 		pubKey, _, err := ecdsaPublicKeyFromJWK(ValidationModeStrict, xB64, yB64)
@@ -446,14 +437,12 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 			t.Fatalf("parsing wallet encryption key: %v", err)
 		}
 
-		// Create a JWT with the wallet_nonce
 		jwt := makeTestJWT(map[string]any{"alg": "ES256"}, map[string]any{
 			"client_id":     "test-verifier",
 			"response_type": "vp_token",
 			"wallet_nonce":  walletNonce,
 		})
 
-		// Encrypt the JWT with the wallet's public key
 		jweStr, _, err := EncryptJWE([]byte(jwt), pubKey, "verifier-kid", "ECDH-ES", "A128GCM", nil, nil)
 		if err != nil {
 			t.Fatalf("encrypting request object: %v", err)
@@ -474,7 +463,6 @@ func TestMakeFetchRequestURI_POST_Encrypted(t *testing.T) {
 		t.Error("expected decrypted JWT result")
 	}
 
-	// Verify the JWT content
 	_, payload, _, err := format.ParseJWTParts(result)
 	if err != nil {
 		t.Fatal(err)
@@ -516,7 +504,6 @@ func TestMakeFetchRequestURI_POST_RequireEncryptedRequestRejectsPlainJWT(t *test
 }
 
 func TestParseWithOptionsRequestURIMethodPost(t *testing.T) {
-	// Set up a test server that returns a JWT on POST
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		walletNonce := r.Form.Get("wallet_nonce")

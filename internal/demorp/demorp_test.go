@@ -351,8 +351,7 @@ func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientI
 // The ticket's time claims sit on an hour boundary: RFC 9901 §10.1 asks
 // issuers to keep credentials unlinkable, and a batch of copies sharing the
 // precise issuance second would let colluding verifiers correlate them
-// (iat and the exp derived from it are the values the OIDF batch issuance
-// module classifies).
+// through iat and the exp derived from it.
 func TestTicketTimeClaimsAreRounded(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 
@@ -461,9 +460,8 @@ func TestVerifierFlow(t *testing.T) {
 
 // The demo verifier accepts issuer chains under the wallet CA plus whatever
 // extra anchors the deployment added, which is how a presentation issued by an
-// external issuer (the OIDF conformance suite playing the wallet, for one)
-// verifies. The anchor decides the outcome: the same presentation fails
-// without it and verifies with it.
+// external issuer verifies. The anchor decides the outcome: the same
+// presentation fails without it and verifies with it.
 func TestVerifierTrustAnchors(t *testing.T) {
 	foreignCAKey, err := mock.GenerateKey()
 	if err != nil {
@@ -586,9 +584,9 @@ func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, 
 	return raw
 }
 
-// TestVerifierRejectsRevokedCredential guards the gap that made the demo
-// verifier report all checks green for a credential the wallet had revoked:
-// it verified signatures but never resolved the status list.
+// TestVerifierRejectsRevokedCredential: the demo verifier resolves the status
+// list, so a credential the wallet revoked fails verification even though its
+// signatures verify.
 func TestVerifierRejectsRevokedCredential(t *testing.T) {
 	d, w, holderKey := newDemoRP(t)
 	statusSrv := serveStatusList(t, d, w)
@@ -618,7 +616,6 @@ func TestVerifierRejectsRevokedCredential(t *testing.T) {
 	}
 }
 
-// startVerification creates a request and returns its id and parameters.
 // startVerification creates a request and returns its id plus the parameters
 // of the signed request object. The demo verifier is HAIP-compliant, so the
 // authorization parameters live inside the JAR served from request_uri rather
@@ -961,9 +958,8 @@ func TestVerifierPIDRequestTakesAnyDomesticType(t *testing.T) {
 
 // HAIP 1.0 section 6.1.1 asks a credential to carry its issuer's signing
 // certificate and trust chain in x5c, with the trust anchor left out. The demo
-// says when it does not and accepts the presentation anyway: the rule comes
-// from the profile, and a wallet still being brought into line is who this
-// demo is for.
+// says when it does not and accepts the presentation anyway, since the rule
+// comes from the profile.
 func TestVerifierWarnsWhenTheCredentialChainCarriesTheTrustAnchor(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 	h := d.VerifierHandler()
@@ -1169,11 +1165,11 @@ func serveDemoStack(t *testing.T, w *wallet.Wallet) (*DemoRP, *httptest.Server) 
 	return d, ts
 }
 
-// The point of the exercise: the built-in demo verifier must satisfy HAIP, so
-// that enforcing it on the public demo does not break the demo itself. This
-// drives a real request through a wallet with RequireHAIP on. Signed request
-// object fetched over request_uri, x509_hash client id, encrypted response —
-// and expects a verified presentation at the end.
+// The built-in demo verifier must satisfy HAIP, so that enforcing it on the
+// public demo does not break the demo itself. This drives a real request
+// through a wallet with RequireHAIP on (signed request object fetched over
+// request_uri, x509_hash client id, encrypted response) and expects a verified
+// presentation at the end.
 func TestVerifierIsHAIPCompliantEndToEnd(t *testing.T) {
 	holderKey, err := mock.GenerateKey()
 	if err != nil {
@@ -1221,8 +1217,7 @@ func TestVerifierIsHAIPCompliantEndToEnd(t *testing.T) {
 	}
 }
 
-// The same wallet must still reject a verifier that ignores the profile,
-// which is what makes enforcement worth anything.
+// The same wallet must still reject a verifier that ignores the profile.
 func TestHAIPEnforcementRejectsPlainRequest(t *testing.T) {
 	holderKey, _ := mock.GenerateKey()
 	issuerKey, _ := mock.GenerateKey()
@@ -1236,8 +1231,7 @@ func TestHAIPEnforcementRejectsPlainRequest(t *testing.T) {
 	}
 	_, ts := serveDemoStack(t, w)
 
-	// A plain direct_post request with a redirect_uri client id: exactly what
-	// the demo verifier used to send.
+	// A plain direct_post request with a redirect_uri client id.
 	params := url.Values{
 		"client_id":     {"redirect_uri:" + ts.URL + "/nowhere"},
 		"response_type": {"vp_token"},
@@ -1422,9 +1416,8 @@ func TestIssuerAuthorizationCodeFlowEndToEnd(t *testing.T) {
 	}
 
 	// OpenID4VCI 1.0 §6.2 defines no c_nonce in a token response, and this
-	// issuer advertises a Nonce Endpoint (§7). The wallet ran in strict mode,
-	// so it would have ignored one anyway: what this checks is that the issuer
-	// stopped sending it.
+	// issuer advertises a Nonce Endpoint (§7), so the token response carries
+	// none.
 	sawTokenResponse := false
 	for _, entry := range w.GetLog() {
 		if entry.Details == nil || entry.Details["endpoint"] != "token" || entry.Details["direction"] != "inbound" {
@@ -1473,7 +1466,7 @@ func truncate(s string) string {
 
 // Without a wallet attestation the authorization server must refuse the
 // pushed authorization request: that is the client authentication HAIP
-// requires, and the demo issuer is the worked example of checking it.
+// requires.
 func TestPushedAuthorizationRequestRequiresWalletAttestation(t *testing.T) {
 	w := newIssuanceWallet(t)
 	_, ts := serveDemoStack(t, w)
@@ -1642,7 +1635,7 @@ func TestIssuerPlainOfferStaysSingle(t *testing.T) {
 }
 
 // A ticket offered without the status toggle carries no status reference at
-// all, which is what makes the toggle worth having.
+// all.
 func TestIssuerOffersTicketWithoutStatusByDefault(t *testing.T) {
 	w := newIssuanceWallet(t)
 	_, ts := serveDemoStack(t, w)
@@ -1656,8 +1649,8 @@ func TestIssuerOffersTicketWithoutStatusByDefault(t *testing.T) {
 	}
 }
 
-// TestIssuerOffersRevocableTicket is the whole point of the status toggle: a
-// ticket issued with a status reference lands in the wallet as a credential
+// TestIssuerOffersRevocableTicket: a ticket issued with a status reference
+// lands in the wallet as a credential
 // the wallet governs, verifies at the demo verifier, and stops verifying once
 // it is revoked there.
 func TestIssuerOffersRevocableTicket(t *testing.T) {
@@ -2087,7 +2080,7 @@ func TestVerifierReportsTheReceivedMDOCPresentation(t *testing.T) {
 // request. §8.3.1.2 codes describe the request and are answered with 400, and
 // credential_request_denied in particular says "The Wallet SHOULD treat this
 // error as unrecoverable, meaning if received from a Credential Issuer the
-// Credential cannot be issued" — which sends the wallet away for good over a
+// Credential cannot be issued", which sends the wallet away for good over a
 // fault the next attempt may not hit.
 func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 	d, w, holderKey := newDemoRP(t)

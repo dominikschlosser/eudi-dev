@@ -101,7 +101,7 @@ function bindToggle(id, key, hintID, hints, onChange) {
         other.setAttribute("aria-checked", String(selected));
       }
       document.getElementById(hintID).textContent = hints[option.dataset[key] || ""];
-      // The old offer belongs to the other setting, so it would be misleading.
+      // The offer shown belongs to the other setting, so it would be misleading.
       document.getElementById("result").style.display = "none";
     });
   }

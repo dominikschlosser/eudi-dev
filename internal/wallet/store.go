@@ -63,10 +63,9 @@ type walletJSON struct {
 	IssuerURL          string                  `json:"issuer_url,omitempty"`
 	Port               int                     `json:"port,omitempty"`
 
-	// LegacyPendingIssuances reads the field's former name. A wallet written
-	// before the rename still has deferred credentials under it, and dropping
-	// them would abandon collections already in flight. Write-only-the-new-name
-	// plus read-both means one save migrates the file.
+	// LegacyPendingIssuances reads the field's earlier name, so deferred
+	// credentials recorded under it are still collected. Only the current name
+	// is written, so one save migrates the file.
 	LegacyPendingIssuances []DeferredIssuance `json:"pending_issuances,omitempty"`
 }
 
@@ -131,9 +130,9 @@ func (s *WalletStore) assetsDir() string {
 // content-addressed file and returns a reference of the form
 // "asset:<sha256>.<ext>". A value that is not a data URI (an already-stored
 // reference, or an external URL) is returned unchanged with converted=false, so
-// this is safe to call on every save. Content addressing dedupes the baseline
-// art a demo re-issues and makes an asset immutable, which is what keeps a
-// reference valid across a shared, reloaded store.
+// it can run on every save. Content addressing dedupes the baseline art a demo
+// re-issues and makes an asset immutable, so a reference stays valid across a
+// shared, reloaded store.
 func (s *WalletStore) storeDisplayAsset(uri string) (ref string, converted bool) {
 	contentType, data, ok := dataURIImage(uri)
 	if !ok {
@@ -186,10 +185,9 @@ func (s *WalletStore) ReadDisplayAsset(ref string) (contentType string, data []b
 // PruneUnreferencedAssets deletes display asset files that no credential in
 // wallet.json references. It reads the current wallet.json under saveMu, so it
 // never races a save that is adding a reference (or an asset), and content
-// addressing means a re-issued image simply rewrites the same file. It is
-// best-effort: a leftover asset is harmless, so errors are ignored. The demo
-// reset calls it, since clearing the baseline orphans the assets of whatever
-// was issued since the last reset.
+// addressing means a re-issued image rewrites the same file. A leftover asset
+// is harmless, so errors are ignored. The demo reset calls it, since clearing
+// the baseline orphans the assets of whatever was issued since the last reset.
 func (s *WalletStore) PruneUnreferencedAssets() {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
@@ -377,9 +375,8 @@ func (s *WalletStore) Save(w *Wallet) error {
 
 	creds := w.GetCredentials()
 	// Move any embedded display image out of wallet.json into the assets
-	// directory, leaving a reference in its place. Done on the copy so the
-	// in-memory wallet is untouched (a later reload picks up the references),
-	// which is what keeps wallet.json small enough to reparse on every request.
+	// directory, leaving a reference in its place. Done on the copy, so the
+	// in-memory wallet is untouched until a reload picks up the references.
 	for i := range creds {
 		if creds[i].Display == nil {
 			continue
@@ -713,7 +710,6 @@ func (s *WalletStore) loadOrGenerateKey(path, label string) (*ecdsa.PrivateKey, 
 		return nil, fmt.Errorf("reading %s key: %w", label, err)
 	}
 
-	// Generate new key
 	key, err := mock.GenerateKey()
 	if err != nil {
 		return nil, fmt.Errorf("generating %s key: %w", label, err)

@@ -111,9 +111,8 @@ var SDJWTPIDClaims = map[string]any{
 	// user opts out: a data URL with a JPEG for SD-JWT (the OIDC picture
 	// claim) and raw JPEG bytes for the mdoc portrait element.
 	"picture": PortraitDataURL(),
-	// No age thresholds: the rulebook removed the age verification attributes
-	// in version 1.1, following CIR 2024/2977. Germany keeps its own, which
-	// is why they are in the German claim set and not here.
+	// No age thresholds: the rulebook defines none (CIR 2024/2977). Germany
+	// keeps its own in the German claim set.
 	"personal_administrative_number": "123456782",
 	"document_number":                "A01234567",
 	"date_of_issuance":               PIDIssuanceDate(),
@@ -125,9 +124,7 @@ var SDJWTPIDClaims = map[string]any{
 // SDJWTGermanPIDClaims holds the SD-JWT VC claims of the German PID (vct
 // urn:eudi:pid:de:1), following the German PID Rulebook 1.0.0 (the BMI
 // blueprint): every claim its SD-JWT payload carries, including
-// academic_title, which is present and empty when the eID carries none. The
-// claims the German PID does not include are absent, which is why this is
-// not a superset of the country-independent set.
+// academic_title, which is present and empty when the eID carries none.
 var SDJWTGermanPIDClaims = map[string]any{
 	// The country-independent type this credential is also of. A verifier
 	// asking for urn:eudi:pid:1 is answered by this credential
@@ -137,7 +134,7 @@ var SDJWTGermanPIDClaims = map[string]any{
 	"family_name": "MUSTERMANN",
 	"given_name":  "ERIKA",
 	// The German birth_name may carry both given and family name at birth,
-	// which is why it is not the rulebook's birth_family_name.
+	// so it is a different claim from the rulebook's birth_family_name.
 	"birth_name": "GABLER",
 	// Present and empty when the eID carries no title.
 	"academic_title": "",
@@ -145,8 +142,7 @@ var SDJWTGermanPIDClaims = map[string]any{
 	// The birth date exactly as the eID stores it, which may carry 00 parts
 	// for unknown day or month.
 	"raw_eid_birth_date": "1964-08-12",
-	// Derived from birthdate at issuance, which is why 65 is false while the
-	// lower thresholds are true.
+	// Derived from birthdate at issuance.
 	"age_equal_or_over": map[string]any{
 		"12": true,
 		"14": true,

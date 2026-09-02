@@ -42,18 +42,15 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 		t.Fatalf("GenerateSDJWT: %v", err)
 	}
 
-	// Must end with ~
 	if !strings.HasSuffix(result, "~") {
 		t.Error("SD-JWT should end with ~")
 	}
 
-	// Parse with existing parser
 	token, err := sdjwt.Parse(result)
 	if err != nil {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	// Check header
 	if alg, _ := token.Header["alg"].(string); alg != "ES256" {
 		t.Errorf("expected alg ES256, got %s", alg)
 	}
@@ -64,7 +61,6 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 		t.Errorf("expected kid %s, got %s", KeyIDForPublicKey(&key.PublicKey), kid)
 	}
 
-	// Check payload fields
 	if iss, _ := token.Payload["iss"].(string); iss != "https://issuer.example" {
 		t.Errorf("expected iss https://issuer.example, got %s", iss)
 	}
@@ -72,12 +68,10 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 		t.Errorf("expected vct urn:eudi:pid:1, got %s", vct)
 	}
 
-	// Check disclosures match claims
 	if len(token.Disclosures) != len(DefaultClaims) {
 		t.Errorf("expected %d disclosures, got %d", len(DefaultClaims), len(token.Disclosures))
 	}
 
-	// Check resolved claims contain all expected values
 	for name, expected := range DefaultClaims {
 		val, ok := token.ResolvedClaims[name]
 		if !ok {
@@ -89,7 +83,6 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 		}
 	}
 
-	// Verify signature using the key
 	verifyResult := sdjwt.Verify(token, &key.PublicKey)
 	if !verifyResult.SignatureValid {
 		t.Errorf("signature verification failed: %v", verifyResult.Errors)
@@ -100,7 +93,7 @@ func TestGenerateSDJWT_DefaultClaims(t *testing.T) {
 // aka_vcts, and that claim has to be readable without a Disclosure: a
 // verifier decides whether the credential answers its request before the
 // holder has agreed to disclose anything (SD-JWT VC §2.2.2.3 forbids
-// disclosing it, which is what forcePlainClaims implements).
+// disclosing it).
 func TestGenerateSDJWT_GermanPIDCarriesAkaVCTsPlainly(t *testing.T) {
 	key, err := GenerateKey()
 	if err != nil {
@@ -175,7 +168,6 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 		t.Errorf("expected %d disclosures, got %d", expectedTotal, len(token.Disclosures))
 	}
 
-	// Check that resolved claims contain address subclaims
 	addr, ok := token.ResolvedClaims["address"].(map[string]any)
 	if !ok {
 		t.Fatal("expected address to be a map in resolved claims")
@@ -227,7 +219,6 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 		t.Fatal("expected a locality disclosure for place_of_birth")
 	}
 
-	// Check that nationalities is resolved as array
 	nats, ok := token.ResolvedClaims["nationalities"].([]any)
 	if !ok {
 		t.Fatal("expected nationalities to be an array in resolved claims")
@@ -239,7 +230,6 @@ func TestGenerateSDJWT_PIDClaims(t *testing.T) {
 		t.Fatal("did not expect trust_anchor in resolved SD-JWT claims")
 	}
 
-	// Verify signature
 	verifyResult := sdjwt.Verify(token, &key.PublicKey)
 	if !verifyResult.SignatureValid {
 		t.Errorf("signature verification failed: %v", verifyResult.Errors)
@@ -347,7 +337,6 @@ func TestGenerateSDJWT_CustomIssuerAndVCT(t *testing.T) {
 		t.Errorf("expected vct urn:custom:type:2, got %s", vct)
 	}
 
-	// Check exp is ~48h from iat
 	iat, _ := token.Payload["iat"].(float64)
 	exp, _ := token.Payload["exp"].(float64)
 	diff := exp - iat
@@ -378,7 +367,6 @@ func TestGenerateSDJWT_WrongKeyFailsVerify(t *testing.T) {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	// Verify with different key should fail
 	verifyResult := sdjwt.Verify(token, &key2.PublicKey)
 	if verifyResult.SignatureValid {
 		t.Error("signature should not verify with a different key")
@@ -422,7 +410,6 @@ func TestGenerateSDJWT_NestedClaimValues(t *testing.T) {
 		t.Errorf("expected 6 disclosures, got %d", len(token.Disclosures))
 	}
 
-	// Check address resolved correctly
 	addr, ok := token.ResolvedClaims["address"].(map[string]any)
 	if !ok {
 		t.Fatal("expected address to be a map")
@@ -434,7 +421,6 @@ func TestGenerateSDJWT_NestedClaimValues(t *testing.T) {
 		t.Errorf("expected city=Berlin, got %v", addr["city"])
 	}
 
-	// Check tags resolved correctly
 	tags, ok := token.ResolvedClaims["tags"].([]any)
 	if !ok {
 		t.Fatal("expected tags to be an array")
@@ -463,7 +449,6 @@ func TestGenerateSDJWT_UniqueDisclosures(t *testing.T) {
 	result, _ := GenerateSDJWT(cfg)
 	token, _ := sdjwt.Parse(result)
 
-	// All disclosure digests should be unique
 	seen := make(map[string]bool)
 	for _, d := range token.Disclosures {
 		if seen[d.Digest] {
@@ -472,7 +457,6 @@ func TestGenerateSDJWT_UniqueDisclosures(t *testing.T) {
 		seen[d.Digest] = true
 	}
 
-	// All disclosure salts should be unique
 	seenSalts := make(map[string]bool)
 	for _, d := range token.Disclosures {
 		if seenSalts[d.Salt] {
@@ -605,23 +589,19 @@ func TestGenerateSDJWT_AlwaysDisclosedTopLevel(t *testing.T) {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	// family_name is plainly in the payload, not a disclosure
 	if got, _ := token.Payload["family_name"].(string); got != "MUSTERMANN" {
 		t.Errorf("expected plain family_name in payload, got %v", token.Payload["family_name"])
 	}
-	// nationalities is plainly in the payload with no array element disclosures
 	nats, ok := token.Payload["nationalities"].([]any)
 	if !ok || len(nats) != 1 || nats[0] != "DE" {
 		t.Errorf("expected plain nationalities [DE] in payload, got %v", token.Payload["nationalities"])
 	}
-	// given_name stays selectively disclosable
 	if _, ok := token.Payload["given_name"]; ok {
 		t.Error("given_name must not be plainly in the payload")
 	}
 	if len(token.Disclosures) != 1 {
 		t.Errorf("expected 1 disclosure (given_name), got %d", len(token.Disclosures))
 	}
-	// Resolved claims still contain everything
 	for _, name := range []string{"given_name", "family_name", "nationalities"} {
 		if _, ok := token.ResolvedClaims[name]; !ok {
 			t.Errorf("missing resolved claim %q", name)
@@ -663,7 +643,6 @@ func TestGenerateSDJWT_AlwaysDisclosedNestedPath(t *testing.T) {
 		t.Fatalf("sdjwt.Parse: %v", err)
 	}
 
-	// address itself stays a disclosure
 	if _, ok := token.Payload["address"]; ok {
 		t.Error("address must not be plainly in the payload")
 	}
@@ -689,7 +668,6 @@ func TestGenerateSDJWT_AlwaysDisclosedNestedPath(t *testing.T) {
 		t.Error("locality must not be plain inside the address disclosure")
 	}
 
-	// Resolution still yields the full address object
 	addr, ok := token.ResolvedClaims["address"].(map[string]any)
 	if !ok {
 		t.Fatalf("resolved address missing: %v", token.ResolvedClaims)

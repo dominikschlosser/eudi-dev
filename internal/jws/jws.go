@@ -63,9 +63,8 @@ func Sign(header map[string]any, payload any, key *ecdsa.PrivateKey) (string, er
 }
 
 // Signature signs a digest and returns r and s in the fixed width form JOSE
-// and COSE use. crypto/ecdsa hands back two integers whose byte lengths vary
-// with the value, so both are left padded to the curve size. A signature that
-// skips the padding is shorter than the spec allows and verifies nowhere.
+// and COSE use (RFC 7518 §3.4). crypto/ecdsa hands back two integers whose
+// byte lengths vary with the value, so both are left padded to the curve size.
 func Signature(key *ecdsa.PrivateKey, digest []byte) ([]byte, error) {
 	if key == nil {
 		return nil, fmt.Errorf("signing requires a private key")

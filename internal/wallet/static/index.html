@@ -176,7 +176,7 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">What another party needs in order to trust this wallet. Verifiers check the credentials it issues, issuers check the attestations it sends. Everything below chains to the same CA.</p>
+      <p class="dialog-hint">What another party needs in order to trust this wallet. Verifiers check the credentials it issues, issuers check the wallet and key attestations it sends. Everything below chains to the same CA.</p>
 
       <div class="trust-section">
         <div class="trust-section-title">Trust lists</div>
@@ -193,7 +193,7 @@
               <a id="ca-cert-pem-link" href="/api/certificates/ca">PEM</a>
               <a id="ca-cert-jwks-link" href="/api/certificates/ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Configure this one. Attestations carry only the leaf, and leaves change.</span>
+            <span class="trust-item-hint">Configure this one. Wallet and key attestations carry only the leaf, and leaves change.</span>
           </dd>
 
           <dt>Signing key</dt>

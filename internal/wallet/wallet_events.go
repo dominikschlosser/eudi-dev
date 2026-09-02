@@ -200,7 +200,7 @@ func (w *Wallet) SubscribeErrors() (<-chan WalletError, func()) {
 
 // SubscribeAuthorization returns a channel carrying authorization URLs the user
 // must visit to finish an issuance, plus an unsubscribe function. A local
-// wallet opens one; a hosted wallet hands the URL to the open UI tab. Either
+// wallet opens one, a hosted wallet hands the URL to the open UI tab. Either
 // way the login happens inside the flow, between the authorization request and
 // the token exchange.
 func (w *Wallet) SubscribeAuthorization() (<-chan AuthorizationPrompt, func()) {
@@ -302,12 +302,10 @@ func (w *Wallet) PeekLastError(owners []string) *WalletError {
 }
 
 // ClearLastError clears every slot the same caller may read, so an error a
-// caller was shown is one it can dismiss. It clears the unowned slot too, both
-// on a dismissal and when a caller starts something new: the alternative is a
-// report nobody named a browser for surfacing later against an unrelated flow,
-// in a tab whose visitor had nothing to do with it. A client with no browser
-// prints its own failure where it was run, so that slot is the wallet's second
-// channel for it, not its only one.
+// caller was shown is one it can dismiss. The unowned slot is cleared too, on
+// a dismissal and when a caller starts something new, so a report nobody named
+// a browser for does not surface later against an unrelated flow. A client
+// with no browser prints its own failure where it was run.
 func (w *Wallet) ClearLastError(owners []string) {
 	rt := w.runtimeState()
 	rt.mu.Lock()

@@ -60,8 +60,8 @@ func postValidate(t *testing.T, body map[string]any) *httptest.ResponseRecorder 
 	return apiPostTo(t, "/api/validate", string(raw))
 }
 
-// The decoder shows a credential before the status list answer is in, which
-// only works if the offline pass leaves the issuer alone.
+// The offline pass never fetches the status list, so the decoder can show a
+// credential before that answer is in.
 func TestHandleValidate_OfflineLeavesTheStatusListUnfetched(t *testing.T) {
 	key, err := mock.GenerateKey()
 	if err != nil {
@@ -155,8 +155,8 @@ func TestHandleValidate_OfflineAnswersStatusWithoutAReference(t *testing.T) {
 	}
 }
 
-// The issuer metadata lookup is the other round trip the offline pass owes an
-// answer for, and the online pass is what pays it.
+// The offline pass never fetches the issuer metadata either. The online pass
+// does.
 func TestHandleValidate_OfflineLeavesTheIssuerMetadataUnfetched(t *testing.T) {
 	key, err := mock.GenerateKey()
 	if err != nil {

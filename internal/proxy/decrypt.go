@@ -23,13 +23,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/keys"
 )
 
-// DecryptJWEWithCEK decrypts a JWE compact serialization using the provided
-// content encryption key (CEK). The CEK is the raw AES key bytes that were
-// derived during ECDH-ES key agreement.
-// This is intended for debugging: the wallet includes the CEK in a debug
-// header so the proxy can decrypt JARM responses.
 // DecryptJWEWithCEK decrypts a compact JWE whose content encryption key is
-// already known.
+// already known: the wallet sends the CEK in a debug header so the proxy can
+// decrypt JARM responses.
 func DecryptJWEWithCEK(compact string, cek []byte) ([]byte, error) {
 	return jwe.DecryptWithCEK(compact, cek)
 }
@@ -45,8 +41,6 @@ func DecryptJWEWithJWK(compact string, jwkJSON string) ([]byte, error) {
 }
 
 // parseECPrivateKeyJWK parses an EC private key from a JWK JSON string.
-// The decoding is shared with the rest of the toolkit, which is what keeps
-// this from being a fourth opinion on what a JWK looks like.
 func parseECPrivateKeyJWK(jwkJSON string) (*ecdh.PrivateKey, error) {
 	parsed, err := keys.ParseJWKPrivate([]byte(jwkJSON))
 	if err != nil {

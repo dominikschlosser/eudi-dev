@@ -36,11 +36,10 @@ wait_for_endpoint "${issuer_metadata_url}"
 
 jq -er '.credential_issuer' < <(curl -fsS "${issuer_metadata_url}") >/dev/null
 
-# Keycloak 26.7 issues an offer only for a credential the user actually holds
+# Keycloak 26.7 issues an offer only for a credential the user holds
 # (OID4VCUtil.hasVerifiableCredential checks a stored user record), so the user
-# is assigned the credential here. Earlier versions did not need this. The
-# assignment is an admin operation, and the master realm refuses admin auth over
-# plain HTTP, so it runs through kcadm inside the container over the loopback.
+# is assigned the credential here. The master realm refuses admin auth over
+# plain HTTP, so the assignment runs through kcadm inside the container.
 KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN:-admin}"
 KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 KEYCLOAK_SERVICE="${KEYCLOAK_SERVICE:-keycloak}"
@@ -52,7 +51,7 @@ kcadm config credentials --server http://localhost:8080 \
 user_id="$(kcadm get users -r "${KEYCLOAK_REALM}" -q "username=${OID4VCI_USER}" -q exact=true \
   --fields id --format csv --noquotes | tr -d '\r')"
 
-# A conflict means the user already holds it, which the re-runnable setup allows.
+# A conflict means the user already holds the credential.
 if ! kcadm create "users/${user_id}/vc/credentials" -r "${KEYCLOAK_REALM}" \
     -b "{\"credentialScopeName\":\"${OID4VCI_CREDENTIAL_SCOPE}\"}" >/dev/null 2>&1; then
   if ! kcadm get "users/${user_id}/vc/credentials" -r "${KEYCLOAK_REALM}" 2>/dev/null \

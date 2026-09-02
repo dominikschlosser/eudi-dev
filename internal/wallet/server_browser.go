@@ -138,7 +138,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	reqServer.log("  Mode:          interactive — waiting for consent...")
+	reqServer.log("  Mode:          interactive (waiting for consent)")
 	consentReq := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "presentation",
@@ -208,9 +208,8 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	case result := <-consentReq.ResultCh:
 		handle(result)
 	case <-time.After(config.ConsentTimeout):
-		// The timer races an arriving decision, and the request's status is
-		// the referee: a decision that already resolved the request is
-		// honored, only a request still pending times out.
+		// The timer races an arriving decision. A decision that already
+		// resolved the request wins, only a request still pending times out.
 		if _, ok := reqServer.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return

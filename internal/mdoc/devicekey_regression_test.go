@@ -26,14 +26,11 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 )
 
-// These pin what DeviceKey reads out of an MSO and what it refuses, so the
-// COSE_Key decoding underneath can change without anyone having to take on
-// trust that a holder-bound credential still resolves to the same key.
-// Written against the hand-rolled label decoding.
+// These pin what DeviceKey reads out of an MSO and what it refuses.
 
 // msoWithDeviceKey builds the smallest document DeviceKey looks at: the
 // display map records that a deviceKey is present, and the CBOR beside it is
-// what actually gets decoded.
+// what gets decoded.
 func msoWithDeviceKey(t *testing.T, coseKey map[any]any) *Document {
 	t.Helper()
 	raw, err := cbor.Marshal(coseKey)
@@ -84,10 +81,9 @@ func TestDeviceKey_ResolvesTheBoundKey(t *testing.T) {
 }
 
 // A coordinate shorter than the curve size is where padding mistakes turn
-// into a different point, and where a stricter decoder starts refusing keys
-// its predecessor read. Real issuers emit these, because anything encoding a
-// big.Int directly drops the leading zero byte. Searched rather than skipped:
-// a skip here would hide exactly the regression it exists to catch.
+// into a different point. Real issuers emit these, because anything encoding
+// a big.Int directly drops the leading zero byte. The test searches for such
+// a key rather than skipping when the first one is not short.
 func TestDeviceKey_ShortCoordinate(t *testing.T) {
 	for attempt := 0; attempt < 20000; attempt++ {
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

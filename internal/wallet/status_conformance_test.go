@@ -77,9 +77,9 @@ func readPublishedStatus(t *testing.T, token string, idx int) (int, int) {
 }
 
 // A one-bit list can only say VALID or INVALID, so a credential the wallet
-// marked SUSPENDED was published as INVALID and every external verifier read
-// a different status than this wallet's own API reported. Section 7 requires
-// the Status Issuer to pick a width that can carry the statuses it uses.
+// marks SUSPENDED needs a wider list for an external verifier to read the
+// status this wallet's own API reports. Section 7 requires the Status Issuer
+// to pick a width that can carry the statuses it uses.
 func TestBuildStatusList_WidensForTheStatusValuesInUse(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

@@ -19,10 +19,9 @@ import (
 	"testing"
 )
 
-// Every rule break the processor used to reject is now a deviation: lenient
-// parsing keeps the credential and records it, strict parsing refuses it. This
-// table asserts both halves for each break, so a strict caller is never left
-// accepting one of them.
+// Every recoverable rule break is a deviation: lenient parsing keeps the
+// credential and records it, strict parsing refuses it. This table asserts
+// both halves for each break.
 func TestParse_RecoverableBreaks(t *testing.T) {
 	claim, claimDigest := disclosureOf(t, "salt", "given_name", "Erika")
 	arrayEntry, arrayEntryDigest := disclosureOf(t, "salt", "DE")

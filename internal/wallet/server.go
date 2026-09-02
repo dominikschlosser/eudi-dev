@@ -320,8 +320,7 @@ func (s *Server) withFreshStore(handler http.HandlerFunc) http.HandlerFunc {
 
 // reloadMaxStale bounds how long the per-request reload may skip reparsing an
 // unchanged store, so a change a coarse-mtime filesystem reports with the same
-// mtime and size still surfaces. The reparse is cheap now that display images
-// live beside wallet.json rather than in it.
+// mtime and size still surfaces.
 const reloadMaxStale = 2 * time.Second
 
 func (s *Server) reloadFromStore() error {
@@ -333,12 +332,10 @@ func (s *Server) reloadFromStore() error {
 	}
 
 	// The store is reloaded per request so several visitors of a shared demo
-	// see each other's changes. Reparsing a wallet.json that carries embedded
-	// card art runs to megabytes, and doing it on every poll, serialized here,
-	// is what makes a busy demo queue up and feel like it hangs. Skip the parse
-	// when the file has not changed since the last load. A reparse still happens
-	// at least every reloadMaxStale, so a change a coarse-mtime filesystem hides
-	// (same mtime and size) surfaces within that bound rather than never.
+	// see each other's changes. The parse is skipped when the file has not
+	// changed since the last load, and repeated at least every reloadMaxStale
+	// so a change a coarse-mtime filesystem hides (same mtime and size) still
+	// surfaces.
 	mod, size, ok := s.store.WalletFileState()
 	if ok && size == s.lastWalletSize && mod.Equal(s.lastWalletMod) && time.Since(s.lastReloadAt) < reloadMaxStale {
 		return nil
@@ -373,9 +370,8 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
 	// Deferred issuances are not copied from the reloaded state: the poller and
 	// the offer that records one own them in memory and persist them on change.
-	// Overwriting them here would let a request that lands between recording a
-	// deferral and the poller's first attempt wipe it, which is what a busy
-	// demo (constant polling) does, so the credential never arrives.
+	// Overwriting them here would let a reload between recording a deferral
+	// and the poller's first attempt wipe it.
 	s.wallet.StatusEntries = cloneStatusEntries(reloaded.StatusEntries)
 	s.wallet.StatusListCounter = reloaded.StatusListCounter
 	s.wallet.Log = append([]LogEntry(nil), reloaded.Log...)
@@ -448,7 +444,7 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 		// The same reload also wipes the status entry the import adopted for a
 		// credential on this wallet's own status list, leaving it labelled as
 		// externally governed with nothing able to flip its bit. Adoption is
-		// idempotent, so it is simply done again here.
+		// idempotent, so it is done again here.
 		s.wallet.adoptOwnStatusEntry(result.Imported)
 		if s.onSave != nil {
 			s.onSave()

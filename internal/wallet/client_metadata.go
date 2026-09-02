@@ -27,8 +27,7 @@ func ResolveClientMetadata(reqPayload map[string]any, outer map[string]any) map[
 	return outer
 }
 
-// ValidateClientMetadata rejects malformed verifier client_metadata values that
-// would otherwise be silently accepted and lead to undefined format handling.
+// ValidateClientMetadata rejects malformed verifier client_metadata values.
 func ValidateClientMetadata(clientMeta map[string]any) error {
 	if len(clientMeta) == 0 {
 		return nil

@@ -22,10 +22,8 @@ import (
 
 // DecodeBase64URL decodes a base64url-encoded string (with or without padding).
 func DecodeBase64URL(s string) ([]byte, error) {
-	// Try without padding first (most common in JWTs)
 	b, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		// Try with padding
 		b, err = base64.URLEncoding.DecodeString(s)
 	}
 	return b, err

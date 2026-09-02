@@ -62,12 +62,10 @@ func Parse(raw string) (*TrustList, error) {
 		return nil, fmt.Errorf("parsing payload: missing top-level LoTE object")
 	}
 
-	// Parse ListAndSchemeInformation
 	if lsi, ok := lote["ListAndSchemeInformation"].(map[string]any); ok {
 		tl.SchemeInfo = parseSchemeInfo(lsi)
 	}
 
-	// Parse TrustedEntitiesList
 	if tel, ok := lote["TrustedEntitiesList"].([]any); ok {
 		for _, entry := range tel {
 			entryMap, ok := entry.(map[string]any)
@@ -100,8 +98,8 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 		}
 	}
 
-	// Accept either casing of the key; issuers in the wild use both
-	// "ListIssueDateTime" and "ListIssueDatetime".
+	// Trust lists in the wild spell the key both "ListIssueDateTime" and
+	// "ListIssueDatetime".
 	for _, key := range []string{"ListIssueDateTime", "ListIssueDatetime"} {
 		if lid, ok := lsi[key].(string); ok {
 			info.ListIssueDatetime = lid

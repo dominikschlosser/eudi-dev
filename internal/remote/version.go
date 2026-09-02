@@ -68,7 +68,7 @@ type Compatibility int
 const (
 	// CompatibilityUnknown means one of the two sides does not report a
 	// comparable version (a development build, or an instance predating
-	// version reporting). Nothing can be concluded, so nothing is claimed.
+	// version reporting).
 	CompatibilityUnknown Compatibility = iota
 	// Compatible means both sides run the same major release.
 	Compatible
@@ -77,9 +77,8 @@ const (
 )
 
 // CheckCompatibility compares the CLI's release with an instance's the way
-// semantic versioning defines it: the major release is what carries breaking
-// changes, so anything within one major release can manage anything else in
-// it. Minor and patch differences are compatible.
+// semantic versioning defines it: the same major release is compatible,
+// whatever the minor and patch numbers.
 func CheckCompatibility(cli, instance string) Compatibility {
 	cliVersion, cliOK := ParseVersion(cli)
 	instanceVersion, instanceOK := ParseVersion(instance)

@@ -33,7 +33,6 @@ import (
 )
 
 func TestCheckSDJWTIntegrity_AllMatch(t *testing.T) {
-	// Build a token with disclosures whose digests are in the _sd array
 	discRaw1 := base64.RawURLEncoding.EncodeToString([]byte(`["salt1","name","Alice"]`))
 	discRaw2 := base64.RawURLEncoding.EncodeToString([]byte(`["salt2","age",30]`))
 
@@ -91,7 +90,6 @@ func TestCheckSDJWTIntegrity_NestedSD(t *testing.T) {
 	discRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt","email","test@example.com"]`))
 	digest := sha256Sum(discRaw)
 
-	// Digest is in a nested object's _sd array
 	token := &sdjwt.Token{
 		Payload: map[string]any{
 			"address": map[string]any{
@@ -110,9 +108,8 @@ func TestCheckSDJWTIntegrity_NestedSD(t *testing.T) {
 }
 
 func TestCheckSDJWTIntegrity_NestedDisclosureValue(t *testing.T) {
-	// Simulate: payload._sd contains digest for "address" disclosure,
-	// and the address disclosure's value has its own _sd containing digest for "locality".
-	// This mirrors real-world SD-JWTs like German PID credentials.
+	// The address disclosure's value carries its own _sd array holding the
+	// locality digest, as a PID does.
 
 	addressDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-addr","address",{"_sd":["LOCALITY_DIGEST_PLACEHOLDER"]}]`))
 	addressDigest := sha256Sum(addressDiscRaw)
@@ -143,8 +140,8 @@ func TestCheckSDJWTIntegrity_NestedDisclosureValue(t *testing.T) {
 }
 
 func TestCheckSDJWTIntegrity_NestedArrayDisclosure(t *testing.T) {
-	// Simulate: payload._sd contains digest for "nationalities" disclosure,
-	// and its value is an array with {"...": digest} entries for sub-disclosures.
+	// The nationalities disclosure's value is an array of {"...": digest}
+	// placeholders.
 
 	subDiscRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt-de","DE"]`))
 	subDigest := sha256Sum(subDiscRaw)
@@ -173,7 +170,6 @@ func TestCheckSDJWTIntegrity_NestedArrayDisclosure(t *testing.T) {
 }
 
 func TestCheckMDOCIntegrity_AllMatch(t *testing.T) {
-	// Create a raw CBOR byte sequence and compute its SHA-256 digest
 	rawCBOR1 := []byte{0xa4, 0x01, 0x02, 0x03, 0x04} // arbitrary bytes
 	rawCBOR2 := []byte{0xb5, 0x06, 0x07, 0x08, 0x09}
 
@@ -255,7 +251,6 @@ func TestCheckSDJWTIntegrity_ArrayElementDisclosure(t *testing.T) {
 	discRaw := base64.RawURLEncoding.EncodeToString([]byte(`["salt","item1"]`))
 	digest := sha256Sum(discRaw)
 
-	// Array element disclosures use {"...": digest} in arrays
 	token := &sdjwt.Token{
 		Payload: map[string]any{
 			"items": []any{
@@ -274,11 +269,10 @@ func TestCheckSDJWTIntegrity_ArrayElementDisclosure(t *testing.T) {
 }
 
 func TestCheckMDOCIntegrity_Tag24EncodedRawCBOR(t *testing.T) {
-	// Simulate what the parser now produces: RawCBOR contains the full
-	// Tag-24 encoding (#6.24(bstr)), and MSO ValueDigests hash over that.
+	// RawCBOR holds the full Tag-24 encoding (#6.24(bstr)), and MSO
+	// ValueDigests hash over that.
 	innerCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
 
-	// Build Tag-24 encoded bytes: CBOR tag 24 + bstr wrapper
 	// Tag 24 with 5-byte content: 0xd8 0x18 0x45 <5 bytes>
 	tag24Bytes := append([]byte{0xd8, 0x18, 0x45}, innerCBOR...)
 
@@ -309,13 +303,11 @@ func TestCheckMDOCIntegrity_Tag24EncodedRawCBOR(t *testing.T) {
 }
 
 func TestCheckMDOCIntegrity_Tag24FailsWithInnerBytesDigest(t *testing.T) {
-	// If RawCBOR contains the full Tag-24 encoding but the digest was
-	// computed over just the inner bytes, it should fail. This verifies
-	// that our integrity check uses the correct (full) encoding.
+	// A digest computed over the inner bytes alone does not match Tag-24
+	// encoded RawCBOR.
 	innerCBOR := []byte{0xa4, 0x01, 0x02, 0x03, 0x04}
 	tag24Bytes := append([]byte{0xd8, 0x18, 0x45}, innerCBOR...)
 
-	// Hash of inner bytes only (wrong for Tag-24 encoded RawCBOR)
 	hashInner := sha256.Sum256(innerCBOR)
 
 	doc := &mdoc.Document{
@@ -342,7 +334,6 @@ func TestCheckMDOCIntegrity_Tag24FailsWithInnerBytesDigest(t *testing.T) {
 	}
 }
 
-// Test the /api/validate endpoint through the handler
 func TestHandleValidate_SDJWTBasic(t *testing.T) {
 	jwt := makeSDJWT(
 		map[string]any{
@@ -368,7 +359,6 @@ func TestHandleValidate_SDJWTBasic(t *testing.T) {
 
 	result := decodeResponse(t, w)
 
-	// Should have validation object
 	val, ok := result["validation"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected validation object, got %T", result["validation"])
@@ -383,7 +373,6 @@ func TestHandleValidate_SDJWTBasic(t *testing.T) {
 		t.Errorf("expected 5 checks, got %d", len(checks))
 	}
 
-	// Verify check names
 	names := make(map[string]string)
 	for _, c := range checks {
 		cm := c.(map[string]any)
@@ -474,7 +463,6 @@ func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
 		details[cm["name"].(string)] = cm["detail"].(string)
 	}
 
-	// Integrity should be skipped for plain JWT
 	if names["integrity"] != "skipped" {
 		t.Errorf("integrity check: got %s, want skipped", names["integrity"])
 	}
@@ -482,7 +470,6 @@ func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
 		t.Errorf("integrity detail: got %q, want %q", details["integrity"], "Not applicable for plain JWT")
 	}
 
-	// Status should be skipped for plain JWT
 	if names["status"] != "skipped" {
 		t.Errorf("status check: got %s, want skipped", names["status"])
 	}
@@ -490,19 +477,16 @@ func TestHandleValidate_JWTSkipsIntegrityAndStatus(t *testing.T) {
 		t.Errorf("status detail: got %q, want %q", details["status"], "Not applicable for plain JWT")
 	}
 
-	// Expiry should pass (far future)
 	if names["expiry"] != "pass" {
 		t.Errorf("expiry check: got %s, want pass", names["expiry"])
 	}
 
-	// Signature should be skipped (no key)
 	if names["signature"] != "skipped" {
 		t.Errorf("signature check: got %s, want skipped", names["signature"])
 	}
 }
 
 func TestHandleValidate_JWTStatusSkippedEvenWhenRequested(t *testing.T) {
-	// Even when checkStatus is true, plain JWT should skip status check
 	jwt := makeJWT(
 		map[string]any{"alg": "none", "typ": "JWT"},
 		map[string]any{
@@ -610,9 +594,8 @@ func TestHandleValidate_SDJWTStatusCheckedWhenPresent(t *testing.T) {
 }
 
 func TestValidate_MDOCStatusWrapping(t *testing.T) {
-	// Verify that checkMDOCStatus correctly wraps MSO.Status for ExtractStatusRef.
-	// MSO.Status contains {"status_list": {"idx": 42, "uri": "https://..."}}
-	// but ExtractStatusRef expects {"status": {"status_list": {...}}}.
+	// MSO.Status is the inner {"status_list": ...} object, which
+	// checkMDOCStatus wraps before ExtractStatusRef sees it.
 	doc := &mdoc.Document{
 		IssuerAuth: &mdoc.IssuerAuth{
 			MSO: &mdoc.MSO{
@@ -626,7 +609,6 @@ func TestValidate_MDOCStatusWrapping(t *testing.T) {
 		},
 	}
 
-	// Call checkMDOCStatus with CheckStatus=false. Should skip
 	result := checkMDOCStatus(doc, ValidateOpts{CheckStatus: false})[0]
 	if result.Status != "skipped" {
 		t.Errorf("expected skipped when CheckStatus=false, got %s", result.Status)
@@ -637,7 +619,6 @@ func TestValidate_MDOCStatusWrapping(t *testing.T) {
 }
 
 func TestValidate_MDOCStatusNoStatus(t *testing.T) {
-	// When MSO has no status, should skip
 	doc := &mdoc.Document{
 		IssuerAuth: &mdoc.IssuerAuth{
 			MSO: &mdoc.MSO{},
@@ -654,7 +635,6 @@ func TestValidate_MDOCStatusNoStatus(t *testing.T) {
 }
 
 func TestValidate_SDJWTExpiryNotYetValid(t *testing.T) {
-	// Token with nbf far in the future
 	token := &sdjwt.Token{
 		Payload: map[string]any{
 			"nbf": float64(4102444800), // 2100-01-01
@@ -775,12 +755,8 @@ func TestValidate_SignatureUsesLocalWalletFallback(t *testing.T) {
 }
 
 func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
-	// After a successful validation (even with signature pass/fail),
-	// the banner should always include the verify form for re-verification.
-	// We test via the Validate function directly to check the response
-	// always includes 5 checks regardless of signature state.
-
-	// SD-JWT without key → signature skipped, verify form label = "Verify Signature"
+	// The response carries all 5 checks whatever the signature outcome, so
+	// the UI can always show the verify form.
 	jwt := makeSDJWT(
 		map[string]any{
 			"iss":     "https://issuer.example",
@@ -807,7 +783,7 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 		t.Errorf("expected 5 checks without key, got %d", len(checks1))
 	}
 
-	// With an invalid key → signature should fail, but response still has 4 checks
+	// An invalid key fails the signature check without dropping a check.
 	body2, _ := json.Marshal(map[string]any{
 		"input": jwt,
 		"key":   "not-a-valid-key",
@@ -825,7 +801,6 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 		t.Errorf("expected 5 checks with invalid key, got %d", len(checks2))
 	}
 
-	// Signature check should be "fail" with invalid key
 	for _, c := range checks2 {
 		cm := c.(map[string]any)
 		if cm["name"] == "signature" && cm["status"] != "fail" {

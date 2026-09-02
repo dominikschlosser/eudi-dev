@@ -43,8 +43,7 @@ func NonStatusListFormat(claims map[string]any) string {
 
 // HAIPCredentialFindings holds a credential's issuer key to §6.1.1: the
 // certificate chain that signed it, and whether it is named by a DID, which
-// this profile has no way to resolve. Both are read from the credential
-// itself, so the caller does not have to know which header carries what.
+// this profile has no way to resolve.
 func HAIPCredentialFindings(header, payload map[string]any) []string {
 	var findings []string
 	kid, _ := header["kid"].(string)
@@ -73,7 +72,7 @@ func HAIPCredentialFindings(header, payload map[string]any) []string {
 // The X.509 certificate signing the request MUST NOT be self-signed."
 //
 // The issuer of a credential carrying x5c is the subject of the end-entity
-// certificate, which is why SD-JWT VC makes iss optional there. Only SD-JWT
+// certificate, so SD-JWT VC makes iss optional there. Only SD-JWT
 // VCs are in scope: §6.1.1 is the IETF SD-JWT VC profile, and an mdoc carries
 // its issuer certificate elsewhere.
 func HAIPCredentialChain(chain []*x509.Certificate) []string {
@@ -111,7 +110,7 @@ func SelfSignedCertificate(cert *x509.Certificate) bool {
 	}
 	// CheckSignature verifies the certificate against its own key. CheckSignatureFrom
 	// enforces CA constraints first and rejects a non-CA certificate before it ever
-	// checks the signature, so it misses a self-signed end-entity leaf, which is
-	// exactly what HAIP §6.1.1 targets.
+	// checks the signature, so it misses a self-signed end-entity leaf, the
+	// case HAIP §6.1.1 targets.
 	return cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
 }

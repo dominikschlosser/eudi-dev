@@ -39,10 +39,8 @@ const (
 var cwtDecMode cbor.DecMode
 
 func init() {
-	// DecMode construction only fails for invalid option combinations. These
-	// options are static and valid, so the error is unreachable. Decoding
-	// unsigned integers as signed keeps a CWT claim key from arriving as
-	// uint64 in one token and int64 in the next.
+	// Decoding unsigned integers as signed keeps a CWT claim key from
+	// arriving as uint64 in one token and int64 in the next.
 	var err error
 	cwtDecMode, err = cbor.DecOptions{IntDec: cbor.IntDecConvertSigned}.DecMode()
 	if err != nil {
@@ -78,9 +76,8 @@ func parseCWTStatusListToken(body []byte, opts CheckOptions) (*statusListToken, 
 
 	// Section 5.2: "16 (type): REQUIRED. The type of the CWT MUST be
 	// application/statuslist+cwt or the registered CoAP Content-Format ID".
-	// The same reasoning as for the JWT typ header applies: without it, any
-	// COSE_Sign1 a Relying Party already trusts can stand in for a status
-	// list.
+	// Without it any COSE_Sign1 a Relying Party already trusts can stand in
+	// for a status list.
 	typeWarning, err := cwtType(msg.Headers.Protected)
 	if err != nil {
 		return nil, err
@@ -267,8 +264,8 @@ func cwtClaim(claims map[any]any, key int64) any {
 }
 
 // GenerateStatusListCWT creates a signed Status List Token in CWT format
-// (Section 5.2) from a bitstring. The result is the raw binary COSE_Sign1,
-// which is what Section 8.2 says the response body carries.
+// (Section 5.2) from a bitstring. The result is the raw binary COSE_Sign1
+// that Section 8.2 has the response body carry.
 func GenerateStatusListCWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg StatusListConfig) ([]byte, error) {
 	if signingKey == nil {
 		return nil, fmt.Errorf("signing requires a private key")
@@ -310,8 +307,7 @@ func GenerateStatusListCWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg S
 	msg.Payload = payload
 
 	// The trust anchor must not travel in x5chain: a relying party has it out
-	// of band, and a chain that carries its own root proves nothing. Every
-	// other COSE message this toolkit signs strips it the same way.
+	// of band, and a chain that carries its own root proves nothing.
 	if chain := mock.WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
 		if len(chain) == 1 {
 			msg.Headers.Unprotected[int64(coseHeaderX5Chain)] = chain[0].Raw

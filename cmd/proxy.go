@@ -139,7 +139,6 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	dim.Println("───────────────────────────────────────")
 	fmt.Println()
 
-	// Set up signal-driven shutdown context.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -185,7 +184,6 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		}()
 	}
 
-	// Graceful shutdown goroutine.
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down...")
@@ -212,9 +210,8 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
-	// The proxy never came up (e.g. the port was busy). Don't leave the
-	// launched service orphaned: it runs in its own process group and would
-	// otherwise survive this command with no proxy in front of it.
+	// The proxy never came up (e.g. the port was busy). The launched service
+	// runs in its own process group and would otherwise outlive this command.
 	if sub != nil {
 		sub.Stop()
 		_ = sub.Wait()

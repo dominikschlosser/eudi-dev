@@ -48,9 +48,8 @@ func CheckSDJWTIntegrity(token *sdjwt.Token) CheckResult {
 		}
 	}
 
-	// Collect all _sd digests and "..." references from the payload
-	// AND from each disclosure's value (handles nested disclosures like
-	// address._sd containing locality/street_address digests).
+	// Digests also sit inside disclosure values: an address disclosure
+	// carries its own _sd array for locality and street_address.
 	allDigests := collectDigests(token.Payload)
 	for _, d := range token.Disclosures {
 		collectDigestsRecursive(d.Value, allDigests)
@@ -82,8 +81,7 @@ func CheckSDJWTIntegrity(token *sdjwt.Token) CheckResult {
 // CheckSDJWTType verifies the typ header parameter of the Issuer-signed JWT.
 // draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
 // header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt". The
-// transitional vc+sd-jwt still decodes, but it deviates from that MUST, so it
-// is flagged rather than passed.
+// transitional vc+sd-jwt decodes but fails this check.
 func CheckSDJWTType(token *sdjwt.Token) CheckResult {
 	if err := sdjwt.ValidateVCType(token.Header); err != nil {
 		return CheckResult{
@@ -118,7 +116,6 @@ func collectDigests(obj map[string]any) map[string]bool {
 func collectDigestsRecursive(val any, result map[string]bool) {
 	switch v := val.(type) {
 	case map[string]any:
-		// Collect _sd digests
 		if sdArr, ok := v["_sd"].([]any); ok {
 			for _, d := range sdArr {
 				if s, ok := d.(string); ok {
@@ -126,15 +123,12 @@ func collectDigestsRecursive(val any, result map[string]bool) {
 				}
 			}
 		}
-		// Collect "..." references. RFC 9901 §4.2.4.2 admits exactly one key
-		// in a digest placeholder: "The key MUST always be the string ...
-		// (three dots). The value MUST be the digest of the Disclosure ...
-		// There MUST NOT be any other keys in the object." An object holding
-		// anything else alongside it references no disclosure.
+		// RFC 9901 §4.2.4.2: "The key MUST always be the string ... (three
+		// dots). The value MUST be the digest of the Disclosure ... There MUST
+		// NOT be any other keys in the object."
 		if dots, ok := v["..."].(string); ok && len(v) == 1 {
 			result[dots] = true
 		}
-		// Recurse into all values
 		for _, child := range v {
 			collectDigestsRecursive(child, result)
 		}

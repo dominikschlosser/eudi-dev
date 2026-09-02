@@ -387,8 +387,7 @@ func TestZlibDecompress(t *testing.T) {
 
 // idx comes from the credential's own status claim and bits from the fetched
 // status list, so both are somebody else's numbers. Reading an entry must
-// refuse them rather than panic or invent a status: this runs on every
-// presentation the demo verifier checks for revocation.
+// refuse hostile values rather than panic or invent a status.
 func TestExtractStatus_RefusesHostileParameters(t *testing.T) {
 	bitstring := []byte{0xFF, 0x00, 0xAA}
 
@@ -442,10 +441,8 @@ func TestExtractStatus_ReadsEveryAllowedWidth(t *testing.T) {
 }
 
 // The status list is fetched from a URL in the credential's own status claim
-// and inflated before anything is read out of it. Deflate turns a few hundred
-// kilobytes into hundreds of megabytes, so an unbounded inflate let a
-// credential choose how much memory the party checking it allocated. The demo
-// verifier resolves this for every presentation it is shown.
+// and inflated before anything is read out of it. The inflate is capped so a
+// credential cannot choose how much memory the checker allocates.
 func TestZlibDecompress_RefusesABomb(t *testing.T) {
 	var buf bytes.Buffer
 	w := zlib.NewWriter(&buf)

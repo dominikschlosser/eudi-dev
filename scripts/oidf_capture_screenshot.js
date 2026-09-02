@@ -1,7 +1,7 @@
 // Captures the wallet UI as a PNG for the OIDF suite's screenshot uploads.
 // The negative wallet modules end in REVIEW and expect an image of the error
-// the wallet showed the user, so the harness photographs the real UI (which
-// renders the rejection it just produced) instead of a placeholder.
+// the wallet showed the user, so the harness photographs the real UI, which
+// renders the rejection it just produced.
 //
 // Usage: node oidf_capture_screenshot.js <wallet-ui-url> <output-png>
 const path = require("path");

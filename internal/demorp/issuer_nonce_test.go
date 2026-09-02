@@ -33,10 +33,9 @@ import (
 )
 
 // A wallet built to OpenID4VCI 1.0 never reads c_nonce from the token
-// response, because the final specification removed it. Without a Nonce
-// Endpoint such a wallet has nowhere to get the challenge it must sign, so
-// every credential request it makes is refused for a nonce mismatch it cannot
-// do anything about. That is what a real wallet hit against the demo issuer.
+// response. Without a Nonce Endpoint such a wallet has nowhere to get the
+// challenge it must sign, so every credential request it makes is refused for
+// a nonce mismatch it cannot do anything about.
 func TestIssuerMetadataAdvertisesTheNonceEndpoint(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 

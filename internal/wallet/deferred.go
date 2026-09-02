@@ -35,9 +35,8 @@ type DeferredIssuance struct {
 	ConfigurationID  string `json:"credential_configuration_id,omitempty"`
 	Format           string `json:"format,omitempty"`
 	// VCT and DocType name what is being issued, read from the issuer's
-	// metadata for this configuration. A credential offer carries only
-	// configuration ids, so without these a waiting credential is listed by an
-	// issuer's internal name while a delivered one is listed by its type.
+	// metadata for this configuration (an offer carries only configuration
+	// ids).
 	VCT     string `json:"vct,omitempty"`
 	DocType string `json:"doctype,omitempty"`
 	// Display travels with the record the way VCT does: the metadata that
@@ -46,9 +45,8 @@ type DeferredIssuance struct {
 	AccessToken string             `json:"access_token"`
 	AuthScheme  string             `json:"auth_scheme,omitempty"`
 	// RefreshToken and AccessTokenExpiresAt let a long deferral obtain a new
-	// access token. The one the credential request used is short lived, and an
-	// issuer may ask the wallet back in an hour, so without these the
-	// collection fails on an authorization the issuer already expired.
+	// access token. The one the credential request used is short lived, and
+	// an issuer may ask the wallet back in an hour.
 	RefreshToken         string    `json:"refresh_token,omitempty"`
 	AccessTokenExpiresAt time.Time `json:"access_token_expires_at,omitempty"`
 	// TokenEndpoint and ClientID are what a refresh needs, and the flow that
@@ -79,9 +77,7 @@ func (p *DeferredIssuance) Interval() time.Duration {
 	return time.Duration(p.IntervalSeconds) * time.Second
 }
 
-// Expired reports whether a pending issuance is past being worth keeping. An
-// issuer that has not produced the credential within a day is unlikely to, and
-// the access token to collect it has probably expired.
+// Expired reports whether a deferred issuance is past being worth keeping.
 func (p *DeferredIssuance) Expired(now time.Time) bool {
 	return p != nil && now.Sub(p.CreatedAt) > deferredIssuanceMaxAge
 }
@@ -271,9 +267,7 @@ func (p *DeferredIssuance) CanRefresh() bool {
 }
 
 // DeferredIssuanceSummary is the document a caller reads a deferred credential
-// from, wherever it asked. Built once here rather than in each backend: two
-// hand-written maps that have to agree is how the credential type reached the
-// API and not the local store.
+// from, wherever it asked.
 func DeferredIssuanceSummary(p DeferredIssuance) map[string]any {
 	return map[string]any{
 		"id":                          p.ID,

@@ -30,8 +30,7 @@ import (
 
 // resolveDisplayImage turns a stored display image value into bytes: an
 // "asset:" reference reads the file beside wallet.json, and an embedded data URI
-// (as older wallets and freshly issued, not-yet-saved credentials carry) is
-// decoded in place.
+// (as an unsaved, freshly issued credential carries) is decoded in place.
 func (s *Server) resolveDisplayImage(uri string) (contentType string, data []byte, ok bool) {
 	if strings.HasPrefix(uri, "asset:") {
 		if s.store == nil {
@@ -62,8 +61,6 @@ func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Req
 		http.NotFound(w, r)
 		return
 	}
-	// A new store references the image as an asset file; a wallet written before
-	// this change still embeds it as a data URI. Both are served here.
 	contentType, data, ok := s.resolveDisplayImage(uri)
 	if !ok {
 		http.NotFound(w, r)
@@ -83,9 +80,9 @@ func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Req
 }
 
 // handleListCredentials serves the stored credentials, optionally windowed
-// with ?limit= and ?offset=. The response stays a plain array so existing
-// clients keep working. The full count travels in X-Total-Count, which a
-// paging UI needs to know how many pages there are.
+// with ?limit= and ?offset=. The response is a plain array. The full count
+// travels in X-Total-Count, which a paging UI needs to know how many pages
+// there are.
 func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	// A batch counts once, so paging matches what the window returns.
 	total := len(s.wallet.ListedCredentials())

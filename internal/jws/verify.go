@@ -30,9 +30,8 @@ var SupportedAlgorithms = []josev4.SignatureAlgorithm{
 	josev4.PS256, josev4.PS384, josev4.PS512,
 }
 
-// Verify checks a compact JWS against key and returns its payload. It is the
-// one copy of this: the fixed-width r||s encoding and the algorithm-to-hash
-// mapping are easy to get subtly wrong per package.
+// Verify checks a compact JWS against key and returns its payload. Every
+// signature check in the toolkit goes through here.
 func Verify(compact string, key crypto.PublicKey) ([]byte, error) {
 	if key == nil {
 		return nil, fmt.Errorf("verification requires a public key")
@@ -48,8 +47,7 @@ func Verify(compact string, key crypto.PublicKey) ([]byte, error) {
 	return payload, nil
 }
 
-// Valid reports whether a compact JWS verifies against key. It is the form
-// the callers that only branch on the outcome want.
+// Valid reports whether a compact JWS verifies against key.
 func Valid(compact string, key crypto.PublicKey) bool {
 	_, err := Verify(compact, key)
 	return err == nil

@@ -18,11 +18,10 @@ done
 
 # The compose file publishes KEYCLOAK_PORT, WALLET_PORT and APP_PORT with
 # listen port == published port (see docker-compose.yml). The defaults live in
-# the 9xxx range so they don't collide with a locally running eudi-dev
-# wallet (8085) or Keycloak (8080); if one is taken anyway, pick the next free
-# port instead of failing in `docker compose up`. Explicit overrides are
-# validated but respected, and a port held by this project's own keycloak
-# container counts as free so re-running the script reuses the binding.
+# the 9xxx range to stay clear of a locally running eudi-dev wallet (8085) or
+# Keycloak (8080). If one is taken anyway, the next free port is picked.
+# Explicit overrides are validated but respected, and a port held by this
+# project's own keycloak container counts as free so a re-run reuses the binding.
 
 port_listening() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
@@ -61,7 +60,7 @@ resolve_port() { # resolve_port VAR DEFAULT [SPAN]
       port=$((port + 1))
     done
     if [[ "${port}" -ne "${def}" ]]; then
-      echo "Port ${def} is already in use — using ${port} for ${var} instead."
+      echo "Port ${def} is already in use. Using ${port} for ${var}."
     fi
   fi
   for ((offset = 0; offset < span; offset++)); do
@@ -101,8 +100,8 @@ docker compose build wallet-init
 current_ca="$(docker compose run --rm -T wallet-init wallet ca-cert)"
 compose_up_flags=""
 if [[ ! -f wallet-ca-cert.pem ]] || [[ "$(cat wallet-ca-cert.pem)" != "${current_ca}" ]]; then
-  # The CA changes when the wallet volume is recreated; Keycloak only reads
-  # the truststore at startup, so recreate the containers in that case.
+  # The CA changes when the wallet volume is recreated, and Keycloak only
+  # reads the truststore at startup, so recreate the containers in that case.
   printf '%s\n' "${current_ca}" > wallet-ca-cert.pem
   compose_up_flags="--force-recreate"
 fi

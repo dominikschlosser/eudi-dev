@@ -40,10 +40,10 @@ func GuardAPI(next http.Handler, ownOrigins ...string) http.Handler {
 }
 
 // GuardAPIExcept is GuardAPI with a list of paths that are cross-origin by
-// contract. One endpoint genuinely is: the Digital Credentials API, where a
-// verifier's page calls from its own origin and that origin is what
-// authenticates an unsigned request. Guarding it would refuse its only caller;
-// its protection is that origin check plus the consent dialog.
+// contract. One endpoint is: the Digital Credentials API, where a verifier's
+// page calls from its own origin and that origin authenticates an unsigned
+// request. Guarding it would refuse its only caller. Its protection is that
+// origin check plus the consent dialog.
 func GuardAPIExcept(next http.Handler, crossOriginByContract []string, ownOrigins ...string) http.Handler {
 	allowed := hostSet(ownOrigins)
 	exempt := make(map[string]bool, len(crossOriginByContract))

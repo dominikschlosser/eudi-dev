@@ -63,8 +63,7 @@ const (
 // StatusRef is a reference to a status list entry in a credential. Invalid is
 // set when the status_list object cannot be used: Section 6.2 makes idx and
 // uri REQUIRED, so a reference missing either is a broken credential rather
-// than one without status information, and reporting it as absent would be a
-// silent pass wherever a nil reference is the only branch.
+// than one without status information.
 type StatusRef struct {
 	URI     string `json:"uri"`
 	Idx     int    `json:"idx"`
@@ -83,9 +82,8 @@ type StatusResult struct {
 	Format string `json:"format"`
 	// Subject is the sub (or CWT claim 2) of the Status List Token.
 	Subject string `json:"subject,omitempty"`
-	// SignatureValid is always set on a returned result: a Status List Token
-	// whose signature does not verify is reported as an error instead, so a
-	// caller never sees a status that was not signed by a resolvable key.
+	// SignatureValid is always set on a returned result. A Status List Token
+	// whose signature does not verify is reported as an error.
 	SignatureValid *bool `json:"signatureValid,omitempty"`
 	SignatureInfo  string
 	// TrustAnchored reports whether the signing key was chained to a
@@ -126,9 +124,7 @@ type TrustCert struct {
 	Raw []byte
 }
 
-// StatusName names a Status Type value from Section 7.1. Reporting every
-// non-zero value as revoked is wrong for a list wider than one bit: 0x02 is
-// SUSPENDED, a different statement from 0x01 INVALID.
+// StatusName names a Status Type value from Section 7.1.
 func StatusName(value int) string {
 	switch {
 	case value == 0:

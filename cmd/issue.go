@@ -109,7 +109,7 @@ var issueMDOCCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(issueCmd)
-	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory for --wallet, also the template location (default ~/.eudi-dev/wallet/, legacy ~/.oid4vc-dev/wallet/ keeps working)")
+	issueCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory for --wallet, also the template location (default ~/.eudi-dev/wallet/, or an existing ~/.oid4vc-dev/wallet/)")
 	issueCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	issueCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "With --wallet: issue on a remote wallet server at this URL (\"local\" forces the local store)")
 	issueCmd.AddCommand(issueSDJWTCmd)
@@ -518,10 +518,9 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 // expiry to flags the user did not set explicitly.
 func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Template, error) {
 	var name string
-	// A template the user named has to match the format they asked for. One
-	// --pid picked for them is a claim set rather than a choice of format:
-	// the SD-JWT PID template is what `issue jwt --pid` is asking for too,
-	// since a JWT VC carries the same claims plainly.
+	// A template named by --template must match the format. The --pid
+	// template is a claim set, so `issue jwt --pid` uses the SD-JWT PID
+	// template and skips the format check.
 	pidTemplate := false
 	switch {
 	case issueTemplate != "":
@@ -603,8 +602,7 @@ func resolveIssueAlwaysDisclosed(format string, tpl *credtemplate.Template) ([]s
 }
 
 // saveIssueTemplate persists the resolved issuance parameters as a user
-// template, mirroring the wallet's save-as-template behavior for the
-// standalone issue commands.
+// template when --save-template is set.
 func saveIssueTemplate(format string, claims map[string]any, alwaysDisclosed []string) error {
 	if issueSaveTemplate == "" {
 		return nil
@@ -782,8 +780,8 @@ func resolveIssueClaimsForFormat(format string, tpl *credtemplate.Template) (map
 }
 
 // addIssueDisplayFlags registers the display flags shared by the issue
-// subcommands. They set the §12.2.4 appearance of the imported credential, so
-// they apply with --wallet.
+// subcommands. They set the OpenID4VCI §12.2.4 display of the imported
+// credential, so they apply with --wallet.
 func addIssueDisplayFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&issueDisplayName, "display-name", "", "With --wallet: the credential's display name")
 	cmd.Flags().StringVar(&issueDisplayDescription, "display-description", "", "With --wallet: the credential's display description")
@@ -863,12 +861,10 @@ func parseNBF(val string) (*time.Time, error) {
 	if val == "" {
 		return nil, nil
 	}
-	// Try as duration first (e.g. "-1h")
 	if d, err := time.ParseDuration(val); err == nil {
 		t := time.Now().Add(d)
 		return &t, nil
 	}
-	// Try as RFC3339
 	t, err := time.Parse(time.RFC3339, val)
 	if err != nil {
 		return nil, fmt.Errorf("invalid --nbf value %q: expected RFC3339 (e.g. 2025-01-15T00:00:00Z) or duration (e.g. -1h)", val)

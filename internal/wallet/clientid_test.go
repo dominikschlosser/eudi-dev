@@ -333,7 +333,6 @@ func TestVerifyAlgMatchesCert(t *testing.T) {
 }
 
 func TestVerifyClientID_VerifierAttestation(t *testing.T) {
-	// Create a minimal valid JWT (3 dot-separated parts) with a sub claim
 	attestationJWT := createTestJWT(t, map[string]any{"alg": "ES256", "typ": "JWT"}, map[string]any{"sub": "my-verifier"})
 
 	tests := []struct {
@@ -621,9 +620,8 @@ func TestBareClientIDIsPreRegisteredRatherThanUnknown(t *testing.T) {
 }
 
 // A signed Request Object whose key lives somewhere this wallet does not go
-// is reported as unverified. Saying nothing let a request nobody
-// authenticated read exactly like one whose signature checked out, which is
-// the silent acceptance ADR-0013 rules out.
+// is reported as unverified, so a request nobody authenticated does not read
+// like one whose signature checked out (ADR-0013).
 func TestVerifyRequestObjectSignature_NamesWhatItCouldNotVerify(t *testing.T) {
 	header := map[string]any{"alg": "ES256", "typ": "oauth-authz-req+jwt"}
 	payload := map[string]any{"response_type": "vp_token", "nonce": "n"}
@@ -655,8 +653,8 @@ func TestVerifyRequestObjectSignature_NamesWhatItCouldNotVerify(t *testing.T) {
 }
 
 // The prefixes that carry their own key still verify, and the one that must
-// not be signed is left to the check that owns it, so the new finding does not
-// double up on requests another check already reports.
+// not be signed is left to the check that owns it, so the unverified finding
+// does not double up on requests another check already reports.
 func TestVerifyRequestObjectSignature_QuietWhereAnotherCheckSpeaks(t *testing.T) {
 	header := map[string]any{"alg": "none", "typ": "oauth-authz-req+jwt"}
 	reqObj := &oid4vc.RequestObjectJWT{Raw: "e30.e30.", Header: header, Payload: map[string]any{}}

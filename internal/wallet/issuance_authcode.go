@@ -58,7 +58,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 
 	// Interactive Authorization replaces the redirect flow below where the
 	// server offers it and the feature level allows it. It needs no redirect
-	// URI, since nothing is redirected anywhere.
+	// URI.
 	challengeEndpoint := interactiveAuthorizationEndpoint(oauthMeta)
 	useInteractive := challengeEndpoint != "" && w.VCIFeatureVersion().UsesInteractiveAuthorization()
 	if !useInteractive {
@@ -83,7 +83,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 	case unregisteredPublicClientMethod:
 		// RFC 8414 takes these values from the IANA registry, where an
 		// unauthenticated client is "none". "public" is not registered.
-		if err := w.reportServerDeviation(fmt.Sprintf("authorization server advertises the unregistered token endpoint auth method %q; RFC 8414 takes these values from the OAuth Token Endpoint Authentication Methods registry, where an unauthenticated client is %q", unregisteredPublicClientMethod, unauthenticatedClientMethod)); err != nil {
+		if err := w.reportServerDeviation(fmt.Sprintf("authorization server advertises the unregistered token endpoint auth method %q. RFC 8414 takes these values from the OAuth Token Endpoint Authentication Methods registry, where an unauthenticated client is %q", unregisteredPublicClientMethod, unauthenticatedClientMethod)); err != nil {
 			return nil, err
 		}
 	default:
@@ -441,12 +441,6 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 	}, nil
 }
 
-// detectTokenEndpointAuthMethod picks the client authentication method from
-// the ones the authorization server offers. Attestation wins wherever it is
-// offered, since the wallet can sign one itself and the counterparty decides
-// what it is worth. The methods that ask nothing are read too, so a server
-// offering only those stays usable.
-
 // unauthenticatedClientMethod is the registered method of a client that does
 // not authenticate (RFC 8414, via the IANA registry).
 const unauthenticatedClientMethod = "none"
@@ -468,17 +462,16 @@ func (w *Wallet) noteDeclinedInteractiveAuthorization(oauthMeta map[string]any, 
 	if required {
 		details["require_interactive_authorization"] = true
 	}
-	detail := fmt.Sprintf("authorization server offers interactive authorization (OID4VCI 1.1 §6) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is used; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+	detail := fmt.Sprintf("authorization server offers interactive authorization (OID4VCI 1.1 §6) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is used (--vci-version 1.1 selects the challenge endpoint)", endpoint)
 	if required {
-		detail = fmt.Sprintf("authorization server requires interactive authorization (OID4VCI 1.1 §6, require_interactive_authorization) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is attempted and is likely to be refused; --vci-version 1.1 selects the challenge endpoint instead", endpoint)
+		detail = fmt.Sprintf("authorization server requires interactive authorization (OID4VCI 1.1 §6, require_interactive_authorization) at %s, and this wallet is set to OID4VCI 1.0, so the redirect flow is attempted and is likely to be refused (--vci-version 1.1 selects the challenge endpoint)", endpoint)
 	}
 	w.addProtocolLog("issuance", "interactive_authorization_offered", detail, true, details)
 	log.Printf("[VCI] %s", detail)
 }
 
 // reportServerDeviation records something the counterparty got wrong. Strict
-// refuses to go on, debug names it and continues, which is the difference
-// between the two modes everywhere else in the wallet.
+// refuses to go on, debug names it and continues.
 func (w *Wallet) reportServerDeviation(detail string) error {
 	details := map[string]any{"deviation": detail}
 	if w.Mode() == ValidationModeStrict {
@@ -490,6 +483,10 @@ func (w *Wallet) reportServerDeviation(detail string) error {
 	return nil
 }
 
+// detectTokenEndpointAuthMethod picks the client authentication method from
+// the ones the authorization server offers. Attestation wins wherever it is
+// offered. The methods that ask nothing are read too, so a server offering
+// only those stays usable.
 func detectTokenEndpointAuthMethod(oauthMeta map[string]any) string {
 	methods, ok := oauthMeta["token_endpoint_auth_methods_supported"].([]any)
 	if !ok || len(methods) == 0 {
@@ -602,7 +599,7 @@ type clientAuthContext struct {
 }
 
 // resolveClientAuthentication reads how this authorization server wants the
-// client authenticated; nil means it asked for nothing. The answer is kept
+// client authenticated (nil when it asked for nothing). The answer is kept
 // with the credential, since a refresh is another request to the same
 // endpoint.
 func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContext) *ClientAuthentication {
@@ -625,9 +622,9 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 		}
 		return w.attestationClientAuth(ctx)
 	}
-	// The wallet is not attesting. HAIP wanted client authentication but this
-	// issuer advertised only unauthenticated access, so debug proceeds without
-	// it: record the profile violation so it is visible without failing.
+	// HAIP wanted client authentication but this issuer advertised only
+	// unauthenticated access, so debug proceeds without it and records the
+	// profile violation.
 	if w != nil && w.RequireHAIP && !w.ForceClientAttestation {
 		w.addProtocolWarning("issuance", "haip_client_authentication_unavailable",
 			"HAIP 1.0 §4.4.1 requires client authentication at the token endpoint, but this issuer's authorization server offers only unauthenticated access. Proceeding without it.",
@@ -739,10 +736,8 @@ func (a *clientAttestor) headers() (map[string]string, error) {
 }
 
 // requestChallenge resolves the challenge one request carries: the one the
-// server handed out in a response header, consumed here because challenges
-// are single use, or a fresh one from the challenge endpoint the metadata
-// names. Resolved per request, since a server that requires a challenge
-// refuses a stale one.
+// server handed out in a response header (single use, so consumed here), or a
+// fresh one from the challenge endpoint the metadata names.
 func (a *clientAttestor) requestChallenge() (string, error) {
 	challenge := a.challenge
 	a.challenge = ""
@@ -812,10 +807,9 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 
 // createClientAttestationHeaders creates the attestation and, outside combined
 // mode, the PoP that proves possession of the attested key. Both carry the
-// union of the claims the supported drafts define, which is the draft-07
-// shape: the later drafts only stopped requiring claims, and every one of
-// them lets a JWT carry claims it does not define itself (§5.1 and §5.2 rule
-// 1), so this one shape verifies under all of them.
+// union of the claims the supported drafts define (the draft-07 shape): every
+// draft lets a JWT carry claims it does not define (§5.1 and §5.2 rule 1), so
+// this one shape verifies under all of them.
 func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
@@ -836,11 +830,8 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
 		"cnf": map[string]any{"jwk": holderJWK},
-		// Draft-07 §5.1 requires iss and defines nbf, and draft-08 dropped
-		// both from the claims it defines while keeping the rule that a JWT
-		// MAY carry further claims (§5.1 rule 1). Naming the attester and the
-		// validity window in every shape is what a draft-07 server needs and
-		// a later one ignores.
+		// Draft-07 §5.1 requires iss and defines nbf. Later drafts leave them
+		// undefined but let a JWT carry further claims (§5.1 rule 1).
 		"iss": w.IssuerURL,
 		"nbf": time.Now().Unix(),
 	}
@@ -863,11 +854,8 @@ func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, chall
 		"aud": auth.Audience,
 		"iat": time.Now().Unix(),
 		"jti": randomBase64URL(18),
-		// Draft-07 §5.2 requires iss and defines nbf, and draft-08 dropped
-		// both from the claims it defines while keeping the rule that a JWT
-		// MAY carry further claims (§5.2 rule 1). Naming the client and the
-		// validity window in every shape is what a draft-07 server needs and
-		// a later one ignores.
+		// Draft-07 §5.2 requires iss and defines nbf. Later drafts leave them
+		// undefined but let a JWT carry further claims (§5.2 rule 1).
 		"iss": auth.ClientID,
 		"nbf": time.Now().Unix(),
 		"exp": time.Now().Add(5 * time.Minute).Unix(),
@@ -947,8 +935,7 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 	// OID4VCI 1.0 Appendix D: the attestation states how well key storage and
 	// user authentication resist attack. An issuer naming values in
 	// key_attestations_required rejects an attestation claiming nothing, so
-	// mirror what it asks for. This is a test wallet with a software key, so
-	// it only ever repeats the issuer's own requirement.
+	// the attestation repeats what it asks for.
 	for _, claim := range []string{"key_storage", "user_authentication"} {
 		if values, ok := requirement[claim].([]any); ok && len(values) > 0 {
 			payload[claim] = values
@@ -1091,9 +1078,9 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 	}
 	if err != nil {
 		details["error"] = err.Error()
-		// What the server actually sent. The headline is the refusal's own
-		// code, which a server answering outside the OAuth 2.0 error format
-		// fills with its HTTP status text, and then the reason is only here.
+		// What the server sent. The headline is the refusal's own code, which a
+		// server answering outside the OAuth 2.0 error format fills with its
+		// HTTP status text.
 		var refusal *serverRefusal
 		if errors.As(err, &refusal) {
 			if refusal.StatusCode != 0 {
@@ -1112,15 +1099,15 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 
 // checkTokenType reports a token response whose token_type deviates from RFC
 // 6749 §5.1, which requires it. A missing type is worked around (DPoP when a
-// proof was sent, else Bearer), and an unrecognized one is treated as Bearer;
-// strict refuses either, debug warns and proceeds on the assumption.
+// proof was sent, else Bearer), and an unrecognized one is treated as Bearer.
+// Strict refuses either, debug warns and proceeds on the assumption.
 func (w *Wallet) checkTokenType(tokenResp map[string]any, sentDPoP bool) error {
 	tokenType, _ := tokenResp["token_type"].(string)
 	if tokenType == "" {
-		return w.reportServerDeviation(fmt.Sprintf("the token response omitted token_type, which RFC 6749 §5.1 requires; assuming %s", accessTokenScheme(tokenResp, sentDPoP)))
+		return w.reportServerDeviation(fmt.Sprintf("the token response omitted token_type, which RFC 6749 §5.1 requires (assuming %s)", accessTokenScheme(tokenResp, sentDPoP)))
 	}
 	if !strings.EqualFold(tokenType, "Bearer") && !strings.EqualFold(tokenType, "DPoP") {
-		return w.reportServerDeviation(fmt.Sprintf("the token response token_type %q is neither Bearer (RFC 6749) nor DPoP (RFC 9449); treating it as Bearer", tokenType))
+		return w.reportServerDeviation(fmt.Sprintf("the token response token_type %q is neither Bearer (RFC 6749) nor DPoP (RFC 9449), treating it as Bearer", tokenType))
 	}
 	return nil
 }
@@ -1141,10 +1128,9 @@ func accessTokenScheme(tokenResp map[string]any, sentDPoP bool) string {
 }
 
 // serverRefusal is an authorization server's refusal, kept whole. Message is
-// what the flow reports, so an entry stays on a line, and the status and body
-// travel with it for the log details: a server that does not answer in the
-// OAuth 2.0 error format states its reason where only the body shows it, and
-// then the code alone says nothing worth reading.
+// what the flow reports. The status and body travel with it for the log
+// details, since a server that does not answer in the OAuth 2.0 error format
+// states its reason only in the body.
 type serverRefusal struct {
 	StatusCode int
 	Body       string
@@ -1157,9 +1143,8 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 	body := []byte(form.Encode())
 	respBody, status, err := doDPoPRequest("POST", target, "application/x-www-form-urlencoded", "", body, "", accessToken, key, nonce, attestor)
 	if err != nil {
-		// A refusal states its reason in the response, in the two fields
-		// RFC 6749 §5.2 defines for it. Reporting those beats handing the
-		// caller the raw body and the status code a second time.
+		// A refusal states its reason in the two fields RFC 6749 §5.2 defines
+		// for it.
 		message := oauthErrorMessage(respBody)
 		if message == "" {
 			message = err.Error()
@@ -1181,14 +1166,10 @@ func postFormWithDPoP(target string, form url.Values, key *ecdsa.PrivateKey, acc
 // oauthErrorMessage renders an OAuth 2.0 error response as "code: what it
 // says", or empty when the body is not one.
 //
-// RFC 6749 §5.2 defines error and error_description, and a server that says
-// why in neither leaves its reason behind: a NestJS handler answers
-// {"error":"Bad Request","message":"Invalid grant_type, ..."}, whose error is
-// the HTTP status phrase, so reporting that alone turns a named refusal into
-// "Bad Request". A message next to the error is read for that reason. An
-// error is still what makes the body an error response, because this also
-// decides whether a 200 carries a refusal, and a success body carrying a
-// message is not one.
+// RFC 6749 §5.2 defines error and error_description. A server that fills
+// error with the HTTP status phrase and says why in a message member is read
+// for that message. An error member is still what makes the body an error
+// response, since this also decides whether a 200 carries a refusal.
 func oauthErrorMessage(body []byte) string {
 	var doc struct {
 		Error       string          `json:"error"`
@@ -1308,8 +1289,8 @@ type deferredContext struct {
 }
 
 // resolveDeferredCredential completes an issuance the issuer deferred. A
-// response with a transaction_id and no credential is not ready yet; one that
-// already carries the credential is returned untouched, so both flows can call
+// response with a transaction_id and no credential is not ready yet. One that
+// already carries the credential is returned untouched, so both flows call
 // this unconditionally.
 //
 // A short deferral is waited out here. A longer one returns a DeferredIssuance
@@ -1357,13 +1338,10 @@ func (e stillPendingError) Error() string {
 // interval, because whether to wait is the caller's decision.
 //
 // The request is held to the same encryption rules as the one that started the
-// issuance. §9.1: "The Client MAY encrypt the request when encryption_required
-// is false and MUST do so when encryption_required is true", and the wallet
-// "MAY request encrypted responses by providing its encryption parameters in
-// the Deferred Credential Request when encryption_required is false and MUST do
-// so when encryption_required is true. Note that this object will be used for
-// encrypting the response, regardless of what was sent in the initial
-// Credential Request. If it is not included encryption will not be performed."
+// issuance. §9.1: the client "MUST" encrypt the request when
+// encryption_required is true, and the encryption parameters in the Deferred
+// Credential Request decide the response encryption "regardless of what was
+// sent in the initial Credential Request".
 func deferredCredentialAttempt(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme, transactionID string, responseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
 	reqBody := map[string]any{"transaction_id": transactionID}
 	if responseEncryption != nil {
@@ -1414,8 +1392,7 @@ func deferredIssuancePending(out map[string]any) (bool, time.Duration) {
 // Issuer cannot assume that a notification will be sent for every issued
 // Credential since the use of this Endpoint is not mandatory for the Wallet."
 // The credential is stored by the time it is sent, so a notification the
-// issuer does not answer is reported and left at that. Failing the issuance
-// over it would throw away a credential the user already holds.
+// issuer does not answer is reported and left at that.
 func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, accessToken, authScheme string, dpopKey *ecdsa.PrivateKey, nonce *string) {
 	notificationID, _ := credResp["notification_id"].(string)
 	notificationEndpoint, _ := metadata["notification_endpoint"].(string)
@@ -1464,10 +1441,8 @@ func (w *Wallet) notifyCredentialAccepted(metadata, credResp map[string]any, acc
 // is against §11.3, which defines two: an Authorization Error Response
 // (RFC 6750 §3) when the Access Token is missing or invalid, and 400 with a
 // JSON error whose value SHOULD be invalid_notification_id or
-// invalid_notification_request.
-// An issuer answering outside those is worth naming, because a developer
-// reading a bare status has no way to tell a refusal from a wiring mistake.
-// It returns the reading and the error code the issuer sent, if any.
+// invalid_notification_request. It returns the reading and the error code the
+// issuer sent, if any.
 func readNotificationRefusal(status int, body []byte) (string, string) {
 	var parsed struct {
 		Error string `json:"error"`
@@ -1518,14 +1493,11 @@ func sendNotificationWithDPoP(endpoint, accessToken, authScheme, notificationID 
 }
 
 // fetchNonce asks the Nonce Endpoint for a challenge and records the exchange
-// in the activity log, so a nonce request that fails is visible rather than
-// surfacing later only as a rejected proof. §7.1 makes the request an HTTP POST
-// to an endpoint that is not protected. When that POST is met with 405, debug
-// mode retries with GET, a workaround for an issuer whose nonce endpoint only
-// serves the c_nonce over GET (a §7.1 deviation), and warns. Strict mode does
-// not. Whether an empty result stops the flow is the caller's decision. The
-// DPoP nonce state is carried in, since §7.2 lets the issuer hand out a DPoP
-// nonce here.
+// in the activity log. §7.1 makes the request an HTTP POST to an unprotected
+// endpoint. When that POST is met with 405, debug mode retries with GET (a
+// §7.1 deviation) and warns. Whether an empty result stops the flow is the
+// caller's decision. The DPoP nonce state is carried in, since §7.2 lets the
+// issuer hand out a DPoP nonce here.
 func (w *Wallet) fetchNonce(metadata map[string]any, nonce *string) string {
 	ep, _ := metadata["nonce_endpoint"].(string)
 	if ep == "" {
@@ -1592,9 +1564,9 @@ func nonceFailureReason(status int, err error) string {
 }
 
 // credentialAccept returns the Accept header for a credential request.
-// Advertise application/jwt only for encrypted responses: Keycloak 26.6's
-// credential endpoint returns signed issuer *metadata* (a JWT string) when it
-// sees application/jwt in Accept and then fails on it internally.
+// application/jwt is advertised only for encrypted responses: an issuer that
+// sees it on a plain request may answer with a signed metadata JWT instead of
+// a credential.
 func credentialAccept(credentialResponseEncryption map[string]any) string {
 	if credentialResponseEncryption != nil {
 		return "application/json, application/jwt"
@@ -1729,9 +1701,9 @@ func runAuthorizationCodeRequest(w *Wallet, endpoint, clientID, requestURI strin
 		callbackCh, unregister := w.RegisterAuthorizationCodeCallback(expectedState)
 		defer unregister()
 
-		// The wallet never opens a browser itself: a hosted wallet opening one
-		// on its own server reaches nobody. It hands the URL to whoever holds
-		// the user's attention and waits.
+		// The wallet never opens a browser itself (a hosted wallet would open
+		// one on its own server). It hands the URL to whoever holds the user's
+		// attention and waits.
 		if !w.NotifyAuthorization(AuthorizationPrompt{URL: authURL, Owner: owner}) {
 			return nil, fmt.Errorf("this offer needs an interactive sign-in at %s, and nothing is attached to this wallet that can open it", authURL)
 		}
@@ -1928,8 +1900,7 @@ func truncateBody(body string) string {
 }
 
 // tokenGrantRenewal reads what a token response offers for renewing the
-// access token later. Both issuance flows need it, and a deferred credential
-// collected an hour from now depends on it being read the same way in each.
+// access token later.
 func tokenGrantRenewal(tokenResp map[string]any) (refreshToken string, expiresIn int) {
 	refreshToken, _ = tokenResp["refresh_token"].(string)
 	if seconds, ok := tokenResp["expires_in"].(float64); ok && seconds > 0 {

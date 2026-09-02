@@ -14,11 +14,9 @@
 
 package cmd
 
-// Dynamic shell completion. The standard cobra `completion` command (bash,
-// zsh, fish, powershell) exists on the root command. The functions here add
-// value completion for everything the CLI can know: template names,
-// credential IDs, and running wallet instances. Remote mode is honored, so
-// completions come from the active remote wallet when one is configured.
+// Dynamic shell completion for the values the CLI can know: template names,
+// credential IDs, and running wallet instances. Completions come from the
+// active remote wallet when one is configured.
 
 import (
 	"fmt"
@@ -105,9 +103,8 @@ func completeCredentialIDs(cmd *cobra.Command, args []string, toComplete string)
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeDeferredIDs completes the ids of credentials the wallet is still
-// collecting, for `wallet deferred check` and `wallet deferred abandon`. A
-// deferred id is not a credential id, so it comes from its own listing.
+// completeDeferredIDs completes deferred issuance ids for `wallet deferred
+// check` and `wallet deferred abandon`.
 func completeDeferredIDs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp

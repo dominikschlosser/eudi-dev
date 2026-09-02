@@ -32,11 +32,10 @@ type OfferedCredential struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Claims      []string `json:"claims,omitempty"`
-	// Display is the appearance the issuer declares for this configuration, so
-	// the consent dialog shows the card the user is about to accept. Its images
-	// are fetched now through the policed client, the same defensive path the
-	// issuance itself uses (unless --adhoc-display-images keeps the https URL for
-	// the card to fetch on demand).
+	// Display is the appearance the issuer declares for this configuration,
+	// previewed by the consent dialog. Its images are fetched through the
+	// policed client (unless --adhoc-display-images keeps the https URL for the
+	// card to fetch on demand).
 	Display *CredentialDisplay `json:"display,omitempty"`
 }
 
@@ -67,9 +66,7 @@ type IssuanceOfferDetails struct {
 
 // describeCredentialOffer summarizes an offer for the consent dialog. It
 // fetches the issuer metadata to resolve display names and claims. A failure
-// there is recorded and the offer is still described from what it carries,
-// because a user should not be blocked from deciding by an issuer that
-// publishes no metadata.
+// there is recorded and the offer is still described from what it carries.
 func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *IssuanceOfferDetails {
 	if offer == nil {
 		return nil
@@ -93,9 +90,8 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 		details.MetadataError = err.Error()
 	} else {
 		details.IssuerName, details.IssuerLogo = issuerDisplay(metadata)
-		// Fetch and embed the issuer logo through the same policed path as the
-		// card art, so the consent dialog shows it under the wallet's own image
-		// policy rather than pointing the page at the issuer's host.
+		// The issuer logo is fetched and embedded through the same policed path
+		// as the card art.
 		details.IssuerLogo = w.embedDisplayImage(details.IssuerLogo, "issuer_logo")
 	}
 
@@ -159,8 +155,8 @@ func issuerDisplay(metadata map[string]any) (name, logo string) {
 }
 
 // describeConfiguration resolves one configuration id against the metadata.
-// An id the issuer does not publish still yields an entry, so the dialog can
-// show what was offered rather than silently dropping it.
+// An id the issuer does not publish still yields an entry, so the dialog shows
+// what was offered.
 func (w *Wallet) describeConfiguration(metadata map[string]any, id string) OfferedCredential {
 	out := OfferedCredential{ID: id}
 	configs, _ := metadata["credential_configurations_supported"].(map[string]any)
@@ -171,28 +167,22 @@ func (w *Wallet) describeConfiguration(metadata map[string]any, id string) Offer
 	out.Format, _ = config["format"].(string)
 	out.VCT, _ = config["vct"].(string)
 	out.DocType, _ = config["doctype"].(string)
-	// What the credential is called and which claims it carries sit one level
-	// down. OID4VCI 1.0 §12.2.4 puts them under credential_metadata: "Object
-	// containing information relevant to the usage and display of issued
-	// Credentials", holding the display array and the claims array. Reading them
-	// off the configuration itself finds nothing at a conformant issuer, and the
-	// consent dialog then names no credential and lists no claims.
+	// OID4VCI 1.0 §12.2.4 puts the display array and the claims array under
+	// credential_metadata, one level below the configuration.
 	credentialMetadata, _ := config["credential_metadata"].(map[string]any)
 	if entry, ok := firstDisplayEntry(credentialMetadata["display"]); ok {
 		out.Name, _ = entry["name"].(string)
 		out.Description, _ = entry["description"].(string)
 	}
 	out.Claims = configurationClaimNames(credentialMetadata["claims"])
-	// The full appearance (colors, logo, card art), resolved the same way the
-	// issued credential's is, so the consent dialog previews the card. Its
-	// images go through the policed, capped, dimension-guarded fetch.
+	// The full appearance, resolved the same way the issued credential's is,
+	// so the consent dialog previews the card.
 	out.Display = w.resolveCredentialDisplay(metadata, id)
 	return out
 }
 
 // firstDisplayEntry returns the first entry of an OID4VCI display array.
-// Locale negotiation is deliberately skipped: this is a developer tool, and
-// showing the issuer's first declared name beats showing none.
+// Locale negotiation is skipped: the issuer's first declared entry is shown.
 func firstDisplayEntry(raw any) (map[string]any, bool) {
 	entries, ok := raw.([]any)
 	if !ok || len(entries) == 0 {

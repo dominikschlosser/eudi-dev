@@ -158,7 +158,7 @@ func TestVerify_NoValidityInfo(t *testing.T) {
 
 // An mdoc whose MSO omits digestAlgorithm still verifies, since the value
 // digests fall back to SHA-256, but ISO 18013-5 requires the member: Verify
-// reports the omission as a warning so a caller need not accept it silently.
+// reports the omission as a warning.
 func TestVerify_NoDigestAlgorithm(t *testing.T) {
 	key, _ := mock.GenerateKey()
 	doc := generateTestMDoc(t, mock.MDOCConfig{
@@ -245,7 +245,6 @@ func TestConvertCBORMapToStringKeys(t *testing.T) {
 }
 
 func TestConvertCBORValue(t *testing.T) {
-	// Scalar passthrough
 	if got := convertCBORValue("hello"); got != "hello" {
 		t.Errorf("expected string passthrough, got %v", got)
 	}
@@ -256,13 +255,11 @@ func TestConvertCBORValue(t *testing.T) {
 		t.Errorf("expected nil passthrough, got %v", got)
 	}
 
-	// Array conversion
 	arr := convertCBORValue([]any{"a", "b"})
 	if result, ok := arr.([]any); !ok || len(result) != 2 {
 		t.Errorf("expected 2-element array, got %v", arr)
 	}
 
-	// Nested map conversion
 	nested := convertCBORValue(map[any]any{1: "one"})
 	if m, ok := nested.(map[string]any); !ok || m["1"] != "one" {
 		t.Errorf("expected map with string keys, got %v", nested)
@@ -279,7 +276,6 @@ func TestDecodeCBOR(t *testing.T) {
 		t.Errorf("expected 42, got %v (%T)", got, got)
 	}
 
-	// Invalid CBOR
 	_, err = decodeCBOR([]byte{0xff, 0xff})
 	if err == nil {
 		t.Error("expected error for invalid CBOR")
@@ -287,7 +283,6 @@ func TestDecodeCBOR(t *testing.T) {
 }
 
 func TestParseDeviceSigned(t *testing.T) {
-	// With deviceAuth
 	ds := map[any]any{
 		"deviceAuth": map[any]any{
 			"key": "value",
@@ -301,7 +296,6 @@ func TestParseDeviceSigned(t *testing.T) {
 		t.Errorf("expected key=value, got %v", result.DeviceAuth["key"])
 	}
 
-	// Without deviceAuth
 	result2 := parseDeviceSigned(map[any]any{})
 	if result2.DeviceAuth != nil {
 		t.Errorf("expected nil DeviceAuth, got %v", result2.DeviceAuth)
@@ -324,8 +318,8 @@ func TestVerify_NilIssuerAuth(t *testing.T) {
 	}
 }
 
-// A parse that produced nothing hands its caller a nil document, and every
-// other entry point in this package reports that rather than panicking.
+// A parse that produced nothing hands its caller a nil document, which every
+// entry point reports rather than dereferences.
 func TestVerify_NilDocument(t *testing.T) {
 	result := Verify(nil, nil)
 

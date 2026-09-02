@@ -14,9 +14,9 @@
 
 package cmd
 
-// Shell completion command. Replaces cobra's generated completion command
-// with the same shell generators plus `completion install`, which wires the
-// completion into the user's shell init (bash, zsh, fish).
+// Shell completion command. It takes the place of cobra's generated one and
+// adds `completion install`, which wires the completion into the user's
+// shell init (bash, zsh, fish).
 
 import (
 	"fmt"

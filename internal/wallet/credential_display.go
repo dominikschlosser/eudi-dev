@@ -37,10 +37,9 @@ import (
 // CredentialDisplay is the appearance a §12.2.4 display entry declares for a
 // credential, kept with the credential so the card renders it without asking
 // the issuer again. The image fields hold a data URI or an "asset:" reference:
-// a remote image is fetched once at issuance and stored, so rendering a card
-// never calls the issuer (an issuer serving its logo per view would otherwise
-// see every time the wallet opens). Under --adhoc-display-images the field
-// instead holds the issuer's https URL, fetched by the card on demand.
+// a remote image is fetched once at issuance and stored. Under
+// --adhoc-display-images the field holds the issuer's https URL, fetched by
+// the card on demand.
 type CredentialDisplay struct {
 	Name            string `json:"name,omitempty"`
 	Description     string `json:"description,omitempty"`
@@ -52,12 +51,8 @@ type CredentialDisplay struct {
 	BackgroundURI   string `json:"background_uri,omitempty"`
 }
 
-// The text a credential's display carries is cosmetic, so it is capped rather
-// than trusted: an issuer's metadata, an operator form, and a template all feed
-// it, and any of them can be long or hostile. The cap bounds what the wallet
-// stores and renders. Images are already byte-capped in cacheDisplayImage. A
-// description has room for a few sentences and a link to the credential's
-// specification.
+// Caps on the display text a credential carries, fed by issuer metadata,
+// operator forms and templates. Images are byte-capped in cacheDisplayImage.
 const (
 	maxDisplayNameRunes        = 80
 	maxDisplayDescriptionRunes = 500
@@ -65,9 +60,7 @@ const (
 	maxDisplayAltTextRunes     = 120
 )
 
-// boundDisplayText trims a display string and caps it at max runes, so an
-// over-long value is kept to a safe length rather than refused (the text is
-// cosmetic, so bounding it never fails an issuance).
+// boundDisplayText trims a display string and caps it at max runes.
 func boundDisplayText(s string, maxRunes int) string {
 	s = strings.TrimSpace(s)
 	r := []rune(s)
@@ -129,11 +122,10 @@ const maxDisplayImageFetchBytes = 4 << 20
 // card never renders wider, so more pixels only bloat the store.
 const displayImageMaxSide = 1024
 
-// maxDisplayImagePixels bounds what is decoded into memory. A few-megabyte
-// image can carry enormous dimensions (a decompression bomb), and decoding
-// allocates four bytes per pixel, so the dimensions are checked before the
-// decode. 32 megapixels is far past any card art and caps the decode at
-// ~128MB, which matters on a shared demo fetching attacker-named URIs.
+// maxDisplayImagePixels bounds what is decoded into memory. A small file can
+// carry enormous dimensions (a decompression bomb), and decoding allocates
+// four bytes per pixel, so the dimensions are checked before the decode. 32
+// megapixels caps the decode at about 128MB.
 const maxDisplayImagePixels = 32 << 20
 
 // cssColorValue matches what §12.2.4 allows for the two color fields:
@@ -143,10 +135,8 @@ const maxDisplayImagePixels = 32 << 20
 var cssColorValue = regexp.MustCompile(`^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|[a-zA-Z]{3,30}|(?:rgb|rgba|hsl|hsla)\([0-9,.%\s]{1,40}\))$`)
 
 // displayForListing returns a credential's display for an API response with its
-// image fields as reference URLs (/api/credentials/{id}/display/{logo|background})
-// instead of inline data URIs, so a listing does not ship every card's art as
-// base64. A card renders from a small JSON, and the browser fetches and caches
-// each image on its own.
+// image fields as reference URLs (/api/credentials/{id}/display/{logo|background}),
+// so a listing does not ship every card's art as base64.
 func displayForListing(c StoredCredential) map[string]any {
 	d := c.Display
 	if d == nil {
@@ -206,9 +196,8 @@ func dataURIImage(uri string) (contentType string, data []byte, ok bool) {
 }
 
 // resolveCredentialDisplay reads the display §12.2.4 declares for the issued
-// configuration, with the images cached. The first entry is the one used,
-// the same rule the consent dialog follows. Everything here is cosmetic, so
-// a finding is a warning in every mode and never fails the issuance.
+// configuration, with the images cached. The first entry is used. A finding
+// here is a warning in every mode.
 func (w *Wallet) resolveCredentialDisplay(metadata map[string]any, configID string) *CredentialDisplay {
 	configs, _ := metadata["credential_configurations_supported"].(map[string]any)
 	config, _ := configs[configID].(map[string]any)
@@ -245,11 +234,8 @@ func (w *Wallet) resolveCredentialDisplay(metadata map[string]any, configID stri
 	return d
 }
 
-// checkDisplayContrast rates the declared color pair. The card face paints the
-// declared background and text colors, so a low-contrast pair renders a name
-// that is hard to read, and the finding warns about it. A color the parser
-// cannot rate (a named color, an hsl() function) is left to the issuer's
-// judgement.
+// checkDisplayContrast warns about a declared color pair below 3:1. A color
+// the parser cannot rate (a named color, an hsl() function) is not rated.
 func (w *Wallet) checkDisplayContrast(d *CredentialDisplay) {
 	if d.BackgroundColor == "" || d.TextColor == "" {
 		return
@@ -408,9 +394,8 @@ func embeddedImageMIME(name string) string {
 
 // issuedDisplay builds the display for a self-issued credential from operator
 // input. Colors run through the same §12.2.4 validation as an offer's display
-// (a bad one is dropped with a warning) and images through the same policed,
-// size-capped cache, so a self-issued card is held to the rules an issuer's is.
-// It returns nil when the input carries no display.
+// and images through the same policed cache. It returns nil when the input
+// carries no display.
 func (w *Wallet) issuedDisplay(in IssueDisplay) *CredentialDisplay {
 	d := &CredentialDisplay{
 		Name:            boundDisplayText(in.Name, maxDisplayNameRunes),
@@ -447,10 +432,9 @@ func (w *Wallet) displayColor(entry map[string]any, field string) string {
 // cacheDisplayImage turns a display image URI into the data URI the card
 // renders. §12.2.4 names both schemes: a data: URI is read in place, an
 // https: URI is fetched once through the policed client. An image over the
-// cache cap is downscaled to card size before it is stored, so real card art
-// (a multi-megabyte PNG) still ends up on the card. Under
-// --adhoc-display-images an https: URI is kept as the URL instead, for the card
-// to fetch on demand.
+// cache cap is downscaled to card size before it is stored. Under
+// --adhoc-display-images an https: URI is kept as the URL, for the card to
+// fetch on demand.
 func (w *Wallet) cacheDisplayImage(uri, field string) string {
 	if uri == "" {
 		return ""
@@ -464,14 +448,11 @@ func (w *Wallet) cacheDisplayImage(uri, field string) string {
 		return w.encodeDisplayImage(body, mediaType, field, uri)
 	}
 	if w.AdhocDisplayImages && strings.HasPrefix(uri, "https://") {
-		// Keep the https URL instead of fetching and storing the image, so the
-		// card fetches it on demand (the issuer's own declared image URL, passed
-		// to the browser as-is by displayImageRef). Only https: is kept: an http
-		// image is mixed content a browser blocks on an https wallet page, so it
-		// falls through and is fetched and stored as usual, and any other scheme
-		// falls through and is rejected below. The card art then loads from the
-		// issuer on every render, which the issuer can see, so this is off by
-		// default.
+		// The https URL is kept for the card to fetch on demand (displayImageRef
+		// passes it to the browser as-is). Only https: is kept: an http image is
+		// mixed content a browser blocks on an https wallet page, so it is
+		// fetched and stored as usual. The issuer sees every render, so this is
+		// off by default.
 		return uri
 	}
 	return w.fetchAndEmbedDisplayImage(uri, field)
@@ -479,9 +460,7 @@ func (w *Wallet) cacheDisplayImage(uri, field string) string {
 
 // embedDisplayImage resolves an image to an embedded data URI, ignoring
 // --adhoc-display-images. It is for an image shown once at consent time and
-// never stored (the issuer logo): there is nothing to keep out of the store,
-// and the consent dialog needs it inline to render it under the wallet's own
-// image policy rather than pointing the page at the issuer's host.
+// never stored (the issuer logo).
 func (w *Wallet) embedDisplayImage(uri, field string) string {
 	if uri == "" {
 		return ""
@@ -498,10 +477,9 @@ func (w *Wallet) embedDisplayImage(uri, field string) string {
 }
 
 // fetchAndEmbedDisplayImage GETs a non-data image URI and returns it as a
-// cached data URI. The fetch goes through the policed client, like every other
-// issuance fetch: the URI comes from the offer's issuer metadata, which on a
-// shared demo is attacker-controlled, so it must not reach an internal address
-// (ADR-0004).
+// cached data URI. The fetch goes through the policed client: the URI comes
+// from issuer metadata, which on a shared demo is attacker-controlled, so it
+// must not reach an internal address (ADR-0004).
 func (w *Wallet) fetchAndEmbedDisplayImage(uri, field string) string {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
@@ -535,8 +513,7 @@ func (w *Wallet) fetchAndEmbedDisplayImage(uri, field string) string {
 // encodeDisplayImage produces the cached data URI: the bytes as served when
 // they fit the cap, a card-size re-encoding when they are larger. Every image
 // is dimension-checked first, since a small file can carry enormous
-// dimensions (a decompression bomb) that would bloat the store and every
-// viewer's browser even when the bytes fit the cap.
+// dimensions.
 func (w *Wallet) encodeDisplayImage(body []byte, mediaType, field, uri string) string {
 	if mediaType == "image/svg+xml" {
 		return w.keepVectorImage(body, field, uri)
@@ -565,23 +542,16 @@ func (w *Wallet) encodeDisplayImage(body []byte, mediaType, field, uri string) s
 	return "data:" + shrunkType + ";base64," + base64.StdEncoding.EncodeToString(shrunk)
 }
 
-// keepVectorImage stores an SVG logo as it was served. SVG is vector, so it
-// carries no pixel dimensions to cap, and a browser renders it inertly in an
-// <img> or a CSS background (no scripts run, no external references load). The
-// byte cap still bounds what the shared store holds, and an embedded script tag
-// is refused as defense in depth.
+// keepVectorImage stores an SVG as it was served. SVG carries no pixel
+// dimensions to cap. The byte cap bounds what the store holds.
 func (w *Wallet) keepVectorImage(body []byte, field, uri string) string {
 	if len(body) > maxDisplayImageBytes {
 		w.rejectDisplayImage(field, uri, fmt.Sprintf("larger than the %dKB cap", maxDisplayImageBytes>>10))
 		return ""
 	}
-	// The SVG is not scanned for active content. It is only ever rendered
-	// through an <img> tag, where an SVG runs in a secure static mode (no
-	// scripts, no event handlers, no external loads), and the endpoint that
-	// serves it carries the wallet's script-src 'self' CSP even when opened on
-	// its own. A blocklist here would catch <script> and miss onload, a
-	// javascript: href and the rest, so it is left out rather than reading as a
-	// safety it does not provide.
+	// The SVG is only ever rendered through an <img> tag (no scripts, no event
+	// handlers, no external loads), and the endpoint that serves it carries the
+	// wallet's script-src 'self' CSP.
 	return "data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString(body)
 }
 

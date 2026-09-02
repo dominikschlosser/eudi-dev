@@ -127,8 +127,7 @@ type offerState struct {
 	// for a bearer token.
 	jkt string
 	// withStatus issues the ticket with a reference to the wallet's own status
-	// list, which is what makes the credential revocable and gives the
-	// verifier's revocation check something to resolve.
+	// list, so it can be revoked.
 	withStatus bool
 	// deferred defers issuance: the credential endpoint returns a
 	// transaction_id, and the credential is handed over at the deferred
@@ -282,7 +281,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCreateOffer creates a credential offer. ?grant=authorization_code
-// makes one redeemed through the authorization code flow; anything else makes a
+// makes one redeemed through the authorization code flow. Anything else makes a
 // pre-authorized code offer. ?status=true issues the ticket with a status list
 // reference so it can be revoked.
 //
@@ -649,8 +648,8 @@ func invalidProof(format string, args ...any) *proofError {
 
 // proofClockSkew is the window a key proof's iat may fall in. Appendix F.4
 // requires "the creation time of the JWT [...] is within an acceptable window
-// (see Section 13.8)" without naming one, so this is the round trip plus the
-// clock difference between two machines that are trying.
+// (see Section 13.8)" without naming one, so this is the round trip plus a
+// clock difference between two machines.
 const proofClockSkew = 5 * time.Minute
 
 // verifyProofJWT validates a jwt key proof against Appendix F.4: the required

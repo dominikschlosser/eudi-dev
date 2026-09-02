@@ -21,10 +21,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
-// Demo mode is the EUDI profile, but only demo mode: a plain `wallet serve`
-// must keep its permissive defaults, which is what every existing user and
-// the OIDF conformance wrapper rely on. The flags stay overridable so a
-// self-hosted demo can opt out.
+// The demo profile implies the EUDI profile. A plain `wallet serve` keeps its
+// permissive defaults, and the flags stay overridable so a self-hosted demo
+// can opt out.
 func TestDemoModeImpliesEUDIProfile(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -114,9 +113,7 @@ func TestServeRejectsAnUnknownVCIVersion(t *testing.T) {
 }
 
 // resolveServeProfile applies the serve flags the way RunE does, through the
-// same helpers, without starting a server. Restating that resolution here
-// instead would test the copy: an earlier version of this test did, and went
-// on asserting a demo default the command had stopped applying.
+// same helpers, without starting a server.
 func resolveServeProfile(t *testing.T, args []string) *wallet.Wallet {
 	w, _ := resolveServeProfileWithOptions(t, args)
 	return w

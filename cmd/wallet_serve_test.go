@@ -147,8 +147,7 @@ func TestIssuerServedByBaseURL(t *testing.T) {
 }
 
 // --serve-tls binds the base URL's port itself, so the URL has to be https
-// and name that port. Everything else belongs behind a TLS terminator, which
-// is the mode the flag exists to avoid.
+// and name that port.
 func TestValidateServeTLSBaseURL(t *testing.T) {
 	if err := validateServeTLSBaseURL("https://localhost:8443"); err != nil {
 		t.Fatalf("https base URL with a port: %v", err)

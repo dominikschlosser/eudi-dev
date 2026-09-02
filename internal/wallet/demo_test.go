@@ -420,9 +420,9 @@ func TestRefreshSigningCertificate(t *testing.T) {
 }
 
 // TestSigningKeyExpiry_FollowsTheCertificate covers what the wallet publishes
-// as its signing key expiry. It used to be computed once when the server was
-// built, so a wallet running for more than a day advertised a key that had
-// already expired in its JWKS and signed issuer metadata.
+// as its signing key expiry: it follows the current leaf, so a wallet running
+// for more than a day does not advertise an expired key in its JWKS and signed
+// issuer metadata.
 func TestSigningKeyExpiry_FollowsTheCertificate(t *testing.T) {
 	w := generateTestWallet(t)
 	s := NewServer(w, 0, nil)
@@ -521,9 +521,8 @@ func TestRenewIssuerTLSCertificateIfNeeded(t *testing.T) {
 	}
 }
 
-// The cap used to apply in demo mode alone, so a plain wallet server read
-// whatever it was sent into memory. It is a testing wallet either way, but
-// the size of a request it will read should not be the caller's choice.
+// The request body cap applies to a plain wallet server as much as to a demo
+// one: the size of a request it reads into memory is not the caller's choice.
 func TestRequestBodyIsCapped(t *testing.T) {
 	for _, demo := range []bool{false, true} {
 		name := "plain"

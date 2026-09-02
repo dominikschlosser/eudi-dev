@@ -42,11 +42,10 @@ const (
 	pidIssuanceServiceType     = "http://uri.etsi.org/19602/SvcType/PID/Issuance"
 	pidRevocationServiceType   = "http://uri.etsi.org/19602/SvcType/PID/Revocation"
 
-	// Wallet Provider list. The wallet signs its wallet attestation and its
-	// key attestations with the same CA it signs credentials with, but an
-	// issuer checking those looks for a Wallet Provider list, not a credential
-	// one, so the wallet publishes that list separately. The URIs are the ones
-	// ETSI TS 119 602 assigns and the EUDI reference implementation uses.
+	// Wallet Provider list. An issuer checking a wallet attestation or a key
+	// attestation looks for a Wallet Provider list, so the wallet publishes
+	// one alongside its credential lists. The URIs are the ones ETSI TS 119
+	// 602 assigns.
 	walletProviderTrustListType         = "http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList"
 	walletProviderStatusDetermination   = "http://uri.etsi.org/19602/WalletProvidersList/StatusDetn/EU"
 	walletProviderSchemeCommunityRules  = "http://uri.etsi.org/19602/WalletProvidersList/schemerules/EU"
@@ -607,10 +606,8 @@ func signCredentialIssuerMetadataJWT(w *Wallet, issuer string, exp time.Time) (s
 }
 
 // SignRequestObjectJWT signs an OpenID4VP authorization request object (JAR)
-// with the signer's certificate chain in x5c. HAIP requires a signed request
-// object, so any relying party that wants to be exercised against a
-// HAIP-enforcing wallet needs one of these. The built-in demo verifier is the
-// first caller. The typ is what ValidateRequestObject expects.
+// with the signer's certificate chain in x5c. The typ is what
+// ValidateRequestObject expects.
 func SignRequestObjectJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
 	if signingKey == nil {
 		return "", fmt.Errorf("signing key is required")

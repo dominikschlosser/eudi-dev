@@ -40,11 +40,9 @@ func Decode(input string) (map[string]any, error) {
 	}
 }
 
-// detectCredentialFormat runs format.Detect and coerces OID4 results back to
-// credential formats when the input is structurally a JWT or SD-JWT. This
-// handles the case where a credential JWT contains OID4-like fields
-// (e.g. client_id, credential_issuer) but should still be decoded as a
-// credential.
+// detectCredentialFormat coerces an OID4 result from format.Detect back to a
+// credential format when the input is structurally a JWT or SD-JWT: a
+// credential JWT may carry OID4-like fields such as client_id.
 func detectCredentialFormat(input string) format.CredentialFormat {
 	detected := format.Detect(input)
 

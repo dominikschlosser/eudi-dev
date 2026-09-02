@@ -13,7 +13,7 @@
 
   // Header menu toggle (narrow screens). The links are a horizontal row on
   // wide screens and a drop-down list behind this button when they no longer
-  // fit; CSS decides which via the media query, this only flips the state.
+  // fit. CSS decides which via the media query, this only flips the state.
   const menuToggle = document.getElementById('header-menu-toggle');
   const headerLinks = document.getElementById('header-links');
   if (menuToggle && headerLinks) {
@@ -105,9 +105,8 @@
   const consentOverlay = document.getElementById('consent-overlay');
   const consentDialog = document.getElementById('consent-dialog');
 
-  // Load credentials
   // Credentials an issuer deferred. The wallet collects them on the issuer's
-  // own interval; the buttons are for going faster than that, or giving up.
+  // own interval. The buttons are for going faster than that, or giving up.
   async function loadDeferred() {
     try {
       const resp = await fetch('/api/deferred');
@@ -232,11 +231,10 @@
   }
 
   // Whole credentials the consent dialog's Edit view needs for its candidate
-  // cards, by credential id. Neither of the things already loaded can stand in
-  // for them: a consent request carries only the claims the verifier asked
-  // for, and the credential list holds one page. A credential that could not
-  // be read is remembered as null, so its card falls back instead of the
-  // dialog asking for it again on every render.
+  // cards, by credential id. A consent request carries only the claims the
+  // verifier asked for, and the credential list holds one page. A credential
+  // that could not be read is remembered as null, so the dialog does not ask
+  // for it again on every render.
   const candidateDetails = new Map();
 
   async function loadCandidateDetails(ids) {
@@ -281,9 +279,8 @@
     loadCredentials();
   });
 
-  // relativeTime turns a timestamp into "3 min ago", the form the card leads
-  // with, because how long ago answers the question an absolute date only
-  // implies. Returns "" for a missing or unparseable value.
+  // relativeTime turns a timestamp into "3 min ago". Returns "" for a missing
+  // or unparseable value.
   function relativeTime(value) {
     if (!value) return '';
     const then = new Date(value);
@@ -472,11 +469,9 @@
   }
 
   // applyCredentialDisplay paints the issuer-declared appearance (§12.2.4)
-  // onto the card face, which has one background slot the way a real wallet
-  // card does: the background image over the background color as its base, or
-  // a solid color when there is no image, or a plain tile with a monogram or a
-  // generic glyph when the issuer declared neither. The color lives only in
-  // the face, never as a row tint. Values were validated at issuance and are
+  // onto the card face: the background image over the background color, or a
+  // solid color, or a plain tile with a monogram or a generic glyph when the
+  // issuer declared neither. Values were validated at issuance and are
   // assigned as style properties, never interpolated into a style sheet.
   function applyCredentialDisplay(card, display) {
     const face = card.querySelector('.card-face');
@@ -531,7 +526,6 @@
       return;
     }
     credEmpty.style.display = 'none';
-    // Clear existing cards
     credContainer.querySelectorAll('.credential-card').forEach(el => el.remove());
 
     credentials.forEach(cred => {
@@ -646,8 +640,7 @@
   }
 
   // expiryInfo turns an RFC 3339 expiry into what the badge shows: how long
-  // is left, because "in 3 days" answers the question the absolute date only
-  // implies. The exact time stays on the tooltip. Returns null for a
+  // is left. The exact time stays on the tooltip. Returns null for a
   // credential that states no lifetime, which then gets no badge at all.
   function expiryInfo(value) {
     if (!value) return null;
@@ -751,7 +744,6 @@
     processBtn.textContent = 'Processing...';
 
     try {
-      // Detect type
       const isVCI = uri.includes('credential_offer') ||
         uri.startsWith('openid-credential-offer://') ||
         uri.startsWith('haip-vci://');
@@ -853,7 +845,7 @@
 
   // The "Always visible" input is the source of truth for always-disclosed
   // claims. The per-row SD checkboxes are a convenience view over its
-  // top-level entries; dotted paths (nested claims) only live in the input.
+  // top-level entries. Dotted paths (nested claims) only live in the input.
   function syncAlwaysDisclosedFromRows() {
     const nested = alwaysDisclosedList().filter(p => p.indexOf('.') !== -1);
     const plain = [];
@@ -959,19 +951,19 @@
     issueTemplateSelect.value = current || '';
   }
 
-  // Applies a template to the issue form: format, type identifiers, expiry,
-  // claims, and always-disclosed claims. Everything stays editable; the form
-  // contents are submitted as explicit values, so edits (including removed
-  // claims) win over the template. Every template-controlled field is set
-  // unconditionally (cleared when the template omits it), because otherwise
-  // switching templates before issuing would submit a merge of all
-  // previously selected templates.
   // The template whose logo or background image the issued credential should
   // wear. The form flattens a template into explicit values and cannot carry
   // an embedded image, so its name travels instead and the server applies its
   // display. Empty when the selected template declares no art.
   let issueDisplayTemplate = '';
 
+  // Applies a template to the issue form: format, type identifiers, expiry,
+  // claims, and always-disclosed claims. Everything stays editable. The form
+  // contents are submitted as explicit values, so edits (including removed
+  // claims) win over the template. Every template-controlled field is set
+  // unconditionally (cleared when the template omits it), otherwise switching
+  // templates before issuing would submit a merge of every template selected
+  // so far.
   function applyIssueTemplate(name) {
     const tpl = (templatesCache || []).find(t => t.name === name);
     if (!tpl) return;
@@ -1181,11 +1173,11 @@
     if (exp) body.exp = exp;
     const nbf = document.getElementById('issue-nbf').value.trim();
     if (nbf) body.nbf = nbf;
-    // A batch of N mints N distinct-key copies, so the wallet presents an
+    // A batch of N issues N distinct-key copies, so the wallet presents an
     // unused one each time (holder-bound formats only).
     const batch = parseInt(document.getElementById('issue-batch').value, 10);
     if (batch >= 2) body.batch = batch;
-    // Unbound issues a bearer credential with no holder key; the default binds
+    // Unbound issues a bearer credential with no holder key. The default binds
     // it to the wallet.
     if (document.getElementById('issue-binding').value === 'unbound') body.unbound = true;
     const statusListMode = document.getElementById('issue-status-list').value;
@@ -1359,7 +1351,7 @@
       templateError.textContent = 'Template must be valid JSON: ' + e.message;
       return;
     }
-    // A pasted template may carry its own name; the name input wins.
+    // A pasted template may carry its own name. The name input wins.
     const name = templateName.value.trim() || (typeof doc.name === 'string' ? doc.name.trim() : '');
     if (!name) {
       templateError.textContent = 'Template name is required';
@@ -1619,7 +1611,7 @@
       }, 300);
     });
     // An issuance in progress needs the user to sign in at the issuer. The
-    // wallet cannot do that for them, so this tab goes there; the issuer
+    // wallet cannot do that for them, so this tab goes there. The issuer
     // redirects back to /callback, which resumes the flow and returns here.
     es.addEventListener('authorize', (event) => {
       try {
@@ -1724,8 +1716,7 @@
   // Whether a URL handed to us by an issuer or verifier may be navigated to.
   // javascript: and data: URLs would execute in the wallet's own origin, so a
   // verifier answering a presentation with {"redirect_uri":"javascript:..."}
-  // must not be followed. The server refuses them too; this is the second
-  // lock on the same door.
+  // must not be followed. The server refuses them too.
   function navigable(url) {
     try {
       const scheme = new URL(url, window.location.href).protocol;
@@ -1736,7 +1727,6 @@
   }
 
   function showSubmissionResult(result) {
-    // Only redirect on success, never on error
     if (result.redirect_uri && !result.error) {
       if (navigable(result.redirect_uri)) {
         window.location.href = result.redirect_uri;
@@ -1754,7 +1744,6 @@
     var html = '<div class="dialog-title" style="color:' + titleColor + '">' + titleText + ' (HTTP ' + (result.status_code || '?') + ')</div>';
 
     if (result.error) {
-      // Try to parse as JSON for pretty display
       var errorBody = result.error;
       try {
         var parsed = JSON.parse(errorBody);
@@ -1886,8 +1875,7 @@
 
     // The alternatives the request offers: per set its satisfiable options,
     // per query id its matching credentials. The selection starts on the
-    // wallet's own choice (option 0, first candidate, every claim), so an
-    // untouched Approve behaves exactly like before.
+    // wallet's own choice (option 0, first candidate, every claim).
     const options = !isIssuance && req.credential_options &&
       (req.credential_options.queries || []).length > 0 ? req.credential_options : null;
     const selection = { editing: false, setChoices: [], picks: {}, claims: {} };
@@ -1897,8 +1885,8 @@
       options.queries.forEach(q => {
         selection.picks[q.id] = q.candidates[0].credential_id;
         q.candidates.forEach(c => {
-          // Merged, not replaced: a credential answering two queries keeps
-          // one disclosure state, which is also how the approval applies it.
+          // A credential answering two queries keeps one merged disclosure
+          // state, which is how the approval applies it.
           const kept = selection.claims[c.credential_id] || [];
           Object.keys(c.claims || {}).forEach(key => {
             if (!kept.includes(key)) kept.push(key);
@@ -2004,9 +1992,9 @@
     }
 
     function headerHtml() {
-      // Title text stays "Presentation Request" / "Credential Offer" (the
-      // dialog is scanned for it), rendered as a small kicker above the who
-      // block so the party asking leads.
+      // The title text ("Presentation Request" / "Credential Offer") is what
+      // the e2e tests scan the dialog for. It renders as a small kicker above
+      // the who block so the party asking leads.
       let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
         whoBlock();
 
@@ -2275,8 +2263,8 @@
     }
 
     if (!isIssuance && options) {
-      // One quiet row announces the alternatives; the cards below stay
-      // exactly the ones the current selection presents.
+      // One quiet row announces the alternatives. The cards below stay the
+      // ones the current selection presents.
       if (hasAlternatives()) {
         const n = alternativeCount();
         html += '<div class="consent-selection-row" id="consent-selection-row">' +
@@ -2443,9 +2431,9 @@
     });
   }
 
-  // Footer: version, imprint link, demo note; demo mode also hides the
+  // Footer: version, imprint link, demo note. Demo mode also hides the
   // Templates button and template-write controls (the server rejects
-  // writes with 403 anyway).
+  // writes with 403).
   let demoMode = false;
   // Until /api/config resolves we do not know whether this is a demo, so the
   // dialog-vs-banner decision waits for it: a request arriving in that window
@@ -2506,14 +2494,14 @@
         document.getElementById('template-form').hidden = true;
         document.getElementById('templates-btn').hidden = true;
         // A shared demo takes no visitor-supplied image, so the logo and
-        // background image fields are gone. A template's own art still applies,
-        // and normal issuance carries the appearance the issuer declares.
+        // background image fields are hidden. A template's own art still
+        // applies, and normal issuance carries the appearance the issuer
+        // declares.
         document.querySelectorAll('.issue-image-field').forEach((el) => { el.hidden = true; });
-        // The demo signs with its own key only, so the signing override is gone.
+        // The demo signs with its own key only, so the signing override is hidden.
         document.querySelectorAll('.issue-signing-field').forEach((el) => { el.hidden = true; });
         // The activity log is shared history on a demo, and the server
-        // refuses to clear it. Leaving the button would offer an action that
-        // can only fail.
+        // refuses to clear it.
         document.getElementById('clear-log-btn').hidden = true;
         if (!localStorage.getItem('demo-banner-dismissed')) {
           document.getElementById('demo-banner').hidden = false;
@@ -2564,13 +2552,9 @@
     }
   }
 
-  // "daily at 00:00 CET", "every hour", or null when resets are disabled.
-  // Shows what an incoming request has to satisfy. The wording is
-  // deliberately about consequences rather than flag names: "enforced" only
-  // means something if you can see what it rejects.
   // Conformance is the wallet's own process-level setting, reported by
   // /api/config. Only a locally-hosted wallet can change it (PUT/DELETE
-  // /api/config/conformance); the public demo shows it read-only.
+  // /api/config/conformance). The public demo shows it read-only.
   let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false, vci_version: '1.0' };
 
   function effectiveConformance() {
@@ -2633,6 +2617,7 @@
       .catch(() => { applyConformanceToControls(); });
   }
 
+  // Shows what an incoming request has to satisfy.
   function renderConformance(config) {
     conformanceDefaults = config || conformanceDefaults;
     applyConformanceToControls();
@@ -2646,8 +2631,8 @@
     set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
     set('conf-format', config.preferred_format || 'no preference',
       config.preferred_format ? 'neutral' : 'off');
-    // The demo's settings are read-only; say so in the intro so the disabled
-    // controls make sense, rather than trailing the popup with more text.
+    // The demo's settings are read-only. The intro says so, so the disabled
+    // controls make sense.
     const intro = document.getElementById('conf-intro');
     if (intro) {
       const base = 'How this wallet checks incoming requests, and which OpenID4VCI version it uses when it asks an issuer for a credential. A failed check is a warning in debug mode and rejects the request in strict mode.';
@@ -2657,6 +2642,7 @@
     if (reset) reset.hidden = demoMode;
   }
 
+  // "daily at 00:00 CET", "every hour", or null when resets are disabled.
   function describeReset(demo) {
     if (demo.reset_daily_at) return 'daily at ' + demo.reset_daily_at;
     const secs = demo.reset_interval_seconds || 0;

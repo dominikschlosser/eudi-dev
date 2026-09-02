@@ -51,7 +51,6 @@ func TestFromSDJWT(t *testing.T) {
 		t.Errorf("meta.vct_values = %v, want [urn:eudi:pid:1]", cq.Meta)
 	}
 
-	// Should not include standard claims
 	for _, c := range cq.Claims {
 		name, _ := c.Path[0].(string)
 		if skipClaims[name] {
@@ -59,7 +58,6 @@ func TestFromSDJWT(t *testing.T) {
 		}
 	}
 
-	// Should include user claims
 	claimNames := make(map[string]bool)
 	for _, c := range cq.Claims {
 		name, _ := c.Path[0].(string)
@@ -86,7 +84,6 @@ func TestFromSDJWT_NestedObject(t *testing.T) {
 	q := FromSDJWT(token)
 	cq := q.Credentials[0]
 
-	// Should generate ["address", "locality"] and ["address", "street_address"]
 	paths := make(map[string]bool)
 	for _, c := range cq.Claims {
 		if len(c.Path) == 2 {
@@ -195,7 +192,6 @@ func TestFromJWT(t *testing.T) {
 		}
 	}
 
-	// Should not include standard claims
 	for _, c := range cq.Claims {
 		name, _ := c.Path[0].(string)
 		if skipClaims[name] {
@@ -233,7 +229,6 @@ func TestFromMDOC(t *testing.T) {
 		t.Fatalf("expected 2 claims, got %d", len(cq.Claims))
 	}
 
-	// Claims should have [namespace, element] paths
 	for _, c := range cq.Claims {
 		if len(c.Path) != 2 {
 			t.Errorf("claim path should have 2 elements, got %v", c.Path)

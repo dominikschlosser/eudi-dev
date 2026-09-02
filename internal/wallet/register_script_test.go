@@ -22,9 +22,8 @@ import (
 	"testing"
 )
 
-// The generated script is what actually runs on a scheme dispatch, and it is
-// only exercised by hand otherwise. These pin the parts that have broken the
-// consent flow before. Rendering it touches nothing: RegisterURLSchemes
+// The generated script is what runs on a scheme dispatch, and it is only
+// exercised by hand otherwise. Rendering it touches nothing: RegisterURLSchemes
 // writes files and talks to Launch Services, handlerScriptSource does not.
 func TestHandlerScriptSource(t *testing.T) {
 	script := handlerScriptSource("/usr/local/bin/eudi", RegisterOptions{ListenerPort: 8085})
@@ -38,7 +37,7 @@ func TestHandlerScriptSource(t *testing.T) {
 		t.Error("both submissions must carry the page name slot")
 	}
 	// A local wallet opens its own tab, which holds no name, so the request
-	// has to stay unowned to reach it. The name is minted only in the branch
+	// has to stay unowned to reach it. The name is created only in the branch
 	// that opens a page with it.
 	if !strings.Contains(script, `OWNER_HEADER="X-Eudi-Owner:"`) {
 		t.Error("the submission names no page until this script opens one")

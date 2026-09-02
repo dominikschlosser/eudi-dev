@@ -61,7 +61,7 @@ copy_stack() {
   scp -q Caddyfile Dockerfile docker-compose.yml "${DEMO_HOST}:${DEMO_DIR}/"
   # The imprint carries the operator's real address, so it is never taken from
   # the repository (which only holds a placeholder). Keep yours in
-  # imprint.local.html (gitignored); without it the host's copy is left alone.
+  # imprint.local.html (gitignored). Without it the host's copy is left alone.
   if [[ -f imprint.local.html ]]; then
     scp -q imprint.local.html "${DEMO_HOST}:${DEMO_DIR}/imprint.html"
   else
@@ -119,8 +119,8 @@ preview_version() {
 }
 
 # The image runs as uid 1000, but Docker creates a named volume owned by root,
-# which makes the wallet crash-loop on a fresh host (the same fix setup applies
-# to the production volume).
+# which makes the wallet crash-loop on a fresh host (setup does the same for
+# the production volume).
 ensure_preview_volume() {
   remote "docker volume create eudi-demo_wallet-data-preview >/dev/null && docker run --rm -v eudi-demo_wallet-data-preview:/d alpine chown 1000:1000 /d >/dev/null"
 }
@@ -166,10 +166,8 @@ current_wallet_tag() {
 }
 
 # The pin only does something if the compose file on the host reads
-# WALLET_TAG. A host deployed before rollback existed still has one with a
-# fixed tag, where writing the pin changes nothing and the demo quietly stays
-# where it is. Only the image line differs, so the file can be brought up to
-# date without touching how the wallet is run.
+# WALLET_TAG. A host whose compose file carries a fixed tag gets the current
+# file, which differs only in the image line.
 ensure_pinnable_compose() {
   if remote "grep -q WALLET_TAG docker-compose.yml 2>/dev/null"; then
     return 0
@@ -198,9 +196,8 @@ case "${COMMAND}" in
     record_running_version
     copy_stack
     # Pull first: the compose file can use flags a released image does not
-    # know yet (a wall-clock --demo-reset once crash-looped the wallet this
-    # way), and recreating containers against a stale image is the one way
-    # push can take the demo down.
+    # know yet, and recreating containers against a stale image is the one
+    # way push can take the demo down.
     apply_stack
     ;;
   update)
@@ -346,9 +343,8 @@ case "${COMMAND}" in
       grep -v '/api/' |
       head -10 | while read -r hits path; do printf '  %6s  %s\n' "${hits}" "${path}"; done
 
-    # The API is where the demo is actually used: every credential issued,
-    # presented, imported or deleted goes through it, whether it came from the
-    # UI, from an external wallet, or from someone's test suite.
+    # Every credential issued, presented, imported or deleted goes through the
+    # API, whether from the UI, an external wallet, or a test suite.
     api="$(sed -n 's/^"[0-9]*",,"requests","\([0-9]*\)".*,"\([^"]*\)"$/\1 \2/p' "${summary}" | grep '/api/' || true)"
     if [[ -n "${api}" ]]; then
       echo

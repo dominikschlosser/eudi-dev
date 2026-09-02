@@ -490,9 +490,7 @@ func TestValidateCommand_OfflineViaEmbeddedX5C(t *testing.T) {
 	}
 }
 
-// --haip reports what the profile adds without failing the command: asking
-// for the profile is asking what a credential breaks, and the answer is worth
-// reading whether or not the credential is otherwise valid.
+// --haip reports what the profile adds without failing the command.
 func TestValidateHAIPFindings(t *testing.T) {
 	caKey, err := mock.GenerateKey()
 	if err != nil {

@@ -34,7 +34,7 @@ func TestBaseDirResolution(t *testing.T) {
 		t.Errorf("fresh: expected %s, got %s", newDir, got)
 	}
 
-	// Only the legacy directory exists: keep using it.
+	// Only the legacy directory exists: it is used.
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

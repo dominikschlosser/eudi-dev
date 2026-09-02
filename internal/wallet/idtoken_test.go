@@ -52,7 +52,6 @@ func TestCreateSelfIssuedIDToken(t *testing.T) {
 		t.Fatalf("parsing JWT: %v", err)
 	}
 
-	// Check header
 	if header["alg"] != "ES256" {
 		t.Errorf("expected alg=ES256, got %v", header["alg"])
 	}
@@ -63,7 +62,6 @@ func TestCreateSelfIssuedIDToken(t *testing.T) {
 		t.Error("expected jwk in header")
 	}
 
-	// Check payload
 	if payload["iss"] != "https://self-issued.me/v2" {
 		t.Errorf("expected iss=https://self-issued.me/v2, got %v", payload["iss"])
 	}
@@ -86,23 +84,20 @@ func TestCreateSelfIssuedIDToken(t *testing.T) {
 		t.Error("expected exp in payload")
 	}
 
-	// Verify exp > iat
 	iat, _ := payload["iat"].(float64)
 	exp, _ := payload["exp"].(float64)
 	if exp <= iat {
 		t.Errorf("expected exp > iat, got exp=%v iat=%v", exp, iat)
 	}
 
-	// Verify signature
 	if !verifyES256(t, token, &key.PublicKey) {
 		t.Error("signature verification failed")
 	}
 }
 
 func TestJWKThumbprint(t *testing.T) {
-	// Use a known key to verify thumbprint computation.
-	// RFC 7638 §3.1 example uses RSA, so we just verify our P-256 implementation
-	// produces a stable, deterministic result.
+	// The RFC 7638 §3.1 example uses RSA, so the P-256 thumbprint is held to
+	// being stable and deterministic here and to a known vector below.
 	key, err := mock.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -124,15 +119,15 @@ func TestJWKThumbprint(t *testing.T) {
 		t.Error("thumbprint should not be empty")
 	}
 
-	// Verify it's a base64url-encoded SHA-256 (32 bytes → 43 chars in base64url without padding)
+	// A SHA-256 hash is 43 characters in unpadded base64url.
 	if len(tp1) != 43 {
 		t.Errorf("expected 43 char base64url thumbprint, got %d chars: %s", len(tp1), tp1)
 	}
 }
 
 func TestJWKThumbprint_KnownVector(t *testing.T) {
-	// Manually construct a key with known coordinates and verify the thumbprint
-	// matches the expected SHA-256 of the canonical JWK form.
+	// RFC 7638 §3: the thumbprint is the SHA-256 of the required members in
+	// lexicographic order with no whitespace.
 	x, _ := hex.DecodeString("60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6")
 	y, _ := hex.DecodeString("7903FE1008B8BC99A41AE9E95628BC64F2F1B20C2D7E9F5177A3C294D4462299")
 
@@ -146,7 +141,6 @@ func TestJWKThumbprint_KnownVector(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify by computing expected thumbprint manually
 	jwk := mock.PublicKeyJWKMap(key)
 	canonical := `{"crv":"` + jwk["crv"] + `","kty":"` + jwk["kty"] + `","x":"` + jwk["x"] + `","y":"` + jwk["y"] + `"}`
 	h := sha256.Sum256([]byte(canonical))
@@ -207,7 +201,6 @@ func verifyES256(t *testing.T, token string, pub *ecdsa.PublicKey) bool {
 		t.Fatalf("parsing JWT for verification: %v", err)
 	}
 
-	// Extract signing input (everything before last dot)
 	parts := splitJWT(token)
 	sigInput := parts[0] + "." + parts[1]
 	h := sha256.Sum256([]byte(sigInput))
@@ -244,7 +237,6 @@ func TestBuildFragmentRedirect_WithIDToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify all parts present
 	for _, want := range []string{"vp_token=", "id_token=", "state=state1"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected URL to contain %q, got: %s", want, got)
@@ -270,7 +262,6 @@ func TestBuildFragmentRedirect_IDTokenOnly(t *testing.T) {
 func TestServerIDTokenFlow(t *testing.T) {
 	srv := newTestServer(t, true)
 
-	// Set up a verifier that checks for both vp_token and id_token
 	var receivedVPToken, receivedIDToken string
 	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -314,7 +305,6 @@ func TestServerIDTokenFlow(t *testing.T) {
 		t.Error("expected id_token in verifier request")
 	}
 
-	// Verify the id_token is a valid JWT
 	header, payload, _, err := format.ParseJWTParts(receivedIDToken)
 	if err != nil {
 		t.Fatalf("parsing id_token: %v", err)

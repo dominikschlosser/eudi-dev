@@ -123,7 +123,6 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	requiresVP := wallet.ResponseTypeRequiresVP(parsed.ResponseType)
 
-	// Evaluate DCQL
 	var matches []wallet.CredentialMatch
 	if parsed.DCQLQuery != nil && requiresVP {
 		matches = w.EvaluateDCQL(parsed.DCQLQuery)
@@ -168,7 +167,6 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 		fmt.Printf("  Disclosing: %v\n", m.SelectedKeys)
 	}
 
-	// Wait for consent if not auto-accepting
 	matches, submissionCh, denied := waitForConsent(w, matches, parsed, responseURI, addr, dim)
 	if denied {
 		return nil
@@ -176,7 +174,6 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	dim.Println("───────────────────────────────────────")
 
-	// Create and submit VP tokens
 	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, dim)
 	if err != nil {
 		return err
@@ -361,9 +358,7 @@ func runningWalletServerBaseURLs(opts dispatchOID4Opts) []string {
 
 func registeredWalletListenerBaseURL() string {
 	// config.BaseDir resolves the state directory itself (EUDI_DEV_HOME, then
-	// the home directory), so there is no need to look up the home directory
-	// here; doing so aborted the lookup when EUDI_DEV_HOME was set but no home
-	// directory was resolvable.
+	// the home directory).
 	raw, err := os.ReadFile(filepath.Join(config.BaseDir(), "url-handler.sh"))
 	if err != nil {
 		return ""
@@ -523,8 +518,6 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		return fmt.Errorf("creating VP tokens: %w", err)
 	}
 
-	// Submit to verifier (encrypts if direct_post.jwt with encryption key)
-	// Create self-issued id_token if requested
 	var idToken string
 	if wallet.ResponseTypeContains(parsed.ResponseType, "id_token") {
 		idToken, err = w.CreateSelfIssuedIDToken(parsed.Nonce, parsed.ClientID)
@@ -547,7 +540,6 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		return fmt.Errorf("submitting presentation: %w", err)
 	}
 
-	// Print result and notify UI
 	submission := wallet.SubmissionResult{
 		RedirectURI: result.RedirectURI,
 		StatusCode:  result.StatusCode,
@@ -634,9 +626,8 @@ func processCredentialOffer(uri string, txCode string, resolved *oid4vc.Credenti
 	}
 
 	if result.Pending {
-		// The issuer took the request but is not ready. Without a wallet
-		// server there is nothing to collect it later, so say so rather than
-		// leave the impression that it will turn up.
+		// Without a wallet server nothing collects a deferred credential
+		// later, so say so.
 		fmt.Printf("Issuer %s deferred the credential (transaction %s, retry every %s)\n",
 			result.Issuer, result.TransactionID, result.RetryInterval)
 		fmt.Println("Run 'eudi wallet serve' and accept the offer there to have the wallet collect it in the background.")
@@ -665,15 +656,10 @@ func processCredentialOffer(uri string, txCode string, resolved *oid4vc.Credenti
 }
 
 // followVerifierRedirect takes the user back to the verifier once the
-// presentation is in. OID4VP has the wallet send the user agent to the
-// redirect_uri the verifier answers with, which is how a same-device flow
-// returns to the site that asked (OpenID4VP 1.0 section 8.2).
-//
-// A script does not want browser windows appearing, so this only opens one
-// when a person is running the command. The URL is printed either way.
-//
-// browserWaiting says a browser is already holding this flow (the consent
-// tab), which the result reaches and which navigates there itself.
+// presentation is in: the wallet sends the user agent to the redirect_uri the
+// verifier answers with (OpenID4VP 1.0 section 8.2). The URL is always
+// printed and only opened when a person runs the command. browserWaiting
+// says the consent tab already holds this flow and navigates there itself.
 func followVerifierRedirect(redirectURI string, browserWaiting bool) {
 	if redirectURI == "" {
 		return

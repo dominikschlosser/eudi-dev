@@ -120,9 +120,7 @@ func printProxyEntriesJSON(out io.Writer, entries []*proxy.TrafficEntry) error {
 }
 
 // followProxyEntries prints entries as the proxy records them, reattaching
-// when the stream ends. A proxy that restarts, or a connection something
-// between here and it dropped, is the normal case for a long-running follow,
-// so it keeps trying until it is interrupted.
+// whenever the stream ends, until the follow is interrupted.
 func followProxyEntries(ctx context.Context, client *proxy.DashboardClient, stream *proxy.EntryStream, out io.Writer, lastID int64) error {
 	for {
 		for {
@@ -179,9 +177,7 @@ func reattachToProxy(ctx context.Context, client *proxy.DashboardClient, out io.
 }
 
 // printMissedEntries prints what the proxy recorded while the stream was
-// down, and returns the id to continue from. A proxy that restarted numbers
-// its entries from the beginning again, which is why the highest id in the
-// list decides rather than the count.
+// down, and returns the id to continue from.
 func printMissedEntries(ctx context.Context, client *proxy.DashboardClient, out io.Writer, lastID int64) int64 {
 	entries, err := client.Entries(ctx)
 	if err != nil {

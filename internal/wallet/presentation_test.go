@@ -249,23 +249,19 @@ func TestCreateVPToken_SDJWT(t *testing.T) {
 		t.Fatal("expected non-empty VP token")
 	}
 
-	// Parse the resulting SD-JWT to validate structure
 	parsed, err := sdjwt.Parse(result.Token)
 	if err != nil {
 		t.Fatalf("parsing VP token: %v", err)
 	}
 
-	// Should have a key binding JWT
 	if parsed.KeyBindingJWT == nil {
 		t.Fatal("expected key binding JWT in VP token")
 	}
 
-	// KB-JWT should have correct typ
 	if typ, ok := parsed.KeyBindingJWT.Header["typ"].(string); !ok || typ != "kb+jwt" {
 		t.Errorf("expected KB-JWT typ kb+jwt, got %v", parsed.KeyBindingJWT.Header["typ"])
 	}
 
-	// KB-JWT payload should contain nonce and aud
 	if nonce, ok := parsed.KeyBindingJWT.Payload["nonce"].(string); !ok || nonce != "test-nonce" {
 		t.Errorf("expected nonce test-nonce, got %v", parsed.KeyBindingJWT.Payload["nonce"])
 	}
@@ -387,7 +383,6 @@ func TestCreateVPToken_SDJWT_SelectiveDisclosure(t *testing.T) {
 		}
 	}
 
-	// Only disclose given_name
 	match := CredentialMatch{
 		QueryID:      "test",
 		CredentialID: sdCred.ID,
@@ -405,7 +400,6 @@ func TestCreateVPToken_SDJWT_SelectiveDisclosure(t *testing.T) {
 		t.Fatalf("parsing VP token: %v", err)
 	}
 
-	// Count non-array disclosures
 	var names []string
 	for _, d := range parsed.Disclosures {
 		if !d.IsArrayEntry {
@@ -474,9 +468,7 @@ func TestCreateVPToken_SDJWT_NestedSelectiveDisclosure(t *testing.T) {
 
 // A claim under a cleartext structural parent (the payload carries "address"
 // directly with its children in _sd, as real SD-JWT VCs commonly do) is
-// disclosed when requested, the same as a top-level SD claim. The parent is
-// not itself a disclosure, so resolving through the top-level _sd alone used to
-// drop the child.
+// disclosed when requested, the same as a top-level SD claim.
 func TestCreateSDJWTPresentation_ClearTextParentChildIsDisclosed(t *testing.T) {
 	w := generateTestWallet(t)
 
@@ -510,7 +502,6 @@ func TestCreateSDJWTPresentation_ClearTextParentChildIsDisclosed(t *testing.T) {
 func TestCreateVPToken_PlainJWT(t *testing.T) {
 	w := generateTestWallet(t)
 
-	// Create and import a plain JWT
 	jwt, err := signJWT(
 		map[string]any{"alg": "ES256", "typ": "JWT"},
 		map[string]any{"sub": "user123", "vct": "urn:test:credential", "given_name": "Erika"},
@@ -536,18 +527,16 @@ func TestCreateVPToken_PlainJWT(t *testing.T) {
 		t.Fatalf("CreateVPToken error: %v", err)
 	}
 
-	// Should return the raw JWT as-is (no ~ separator, no KB-JWT)
+	// A plain JWT is presented as-is: no ~ separator, no KB-JWT.
 	if result.Token != jwt {
 		t.Errorf("expected raw JWT to be returned as-is")
 	}
 
-	// Should be a 3-part JWT
 	parts := strings.Split(result.Token, ".")
 	if len(parts) != 3 {
 		t.Errorf("expected 3 JWT parts, got %d", len(parts))
 	}
 
-	// Should NOT contain ~ (SD-JWT separator)
 	if strings.Contains(result.Token, "~") {
 		t.Error("plain JWT presentation should not contain ~ separator")
 	}
@@ -568,7 +557,6 @@ func TestCreateVPToken_MDoc(t *testing.T) {
 		t.Fatal("no mDoc credential found")
 	}
 
-	// Select a few claims
 	var selectedKeys []string
 	for k := range mdocCred.Claims {
 		selectedKeys = append(selectedKeys, k)
@@ -593,7 +581,6 @@ func TestCreateVPToken_MDoc(t *testing.T) {
 		t.Fatal("expected non-empty VP token")
 	}
 
-	// Token should be base64url encoded
 	if strings.Contains(result.Token, " ") || strings.Contains(result.Token, "\n") {
 		t.Error("VP token should not contain whitespace")
 	}
@@ -758,7 +745,6 @@ func TestBuildSessionTranscriptOID4VP(t *testing.T) {
 		t.Fatalf("expected 3 elements, got %d", len(decoded))
 	}
 
-	// First two elements should be null
 	for i := 0; i < 2; i++ {
 		var v any
 		if err := cbor.Unmarshal(decoded[i], &v); err != nil {
@@ -769,7 +755,6 @@ func TestBuildSessionTranscriptOID4VP(t *testing.T) {
 		}
 	}
 
-	// Third element should be ["OpenID4VPHandover", <hash bytes>]
 	var handover []cbor.RawMessage
 	if err := cbor.Unmarshal(decoded[2], &handover); err != nil {
 		t.Fatalf("decoding OID4VPHandover: %v", err)
@@ -791,7 +776,6 @@ func TestBuildSessionTranscriptOID4VP(t *testing.T) {
 		t.Fatalf("decoding handover hash: %v", err)
 	}
 
-	// Verify hash matches SHA256(CBOR([clientId, nonce, null, responseUri]))
 	handoverInfo, _ := cbor.Marshal([]any{clientID, nonce, nil, responseURI})
 	expectedHash := sha256.Sum256(handoverInfo)
 	if string(hashBytes) != string(expectedHash[:]) {
@@ -860,7 +844,6 @@ func TestSignJWT(t *testing.T) {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
 	}
 
-	// All parts should be non-empty
 	for i, p := range parts {
 		if p == "" {
 			t.Errorf("JWT part %d is empty", i)
@@ -886,7 +869,6 @@ func TestCreateVPToken_ImportedSDJWT_PreservesDisclosures(t *testing.T) {
 		t.Fatalf("generating external SD-JWT: %v", err)
 	}
 
-	// Import it
 	if _, err := w.ImportCredential(rawSDJWT); err != nil {
 		t.Fatalf("importing SD-JWT: %v", err)
 	}
@@ -909,7 +891,6 @@ func TestCreateVPToken_ImportedSDJWT_PreservesDisclosures(t *testing.T) {
 	w.Credentials[0] = cred
 	w.mu.Unlock()
 
-	// Present with selective disclosure
 	match := CredentialMatch{
 		QueryID:      "test",
 		CredentialID: cred.ID,
@@ -926,7 +907,6 @@ func TestCreateVPToken_ImportedSDJWT_PreservesDisclosures(t *testing.T) {
 		t.Fatalf("CreateVPToken error: %v", err)
 	}
 
-	// Parse the VP token and verify user_id disclosure is present
 	parsed, err := sdjwt.Parse(result.Token)
 	if err != nil {
 		t.Fatalf("parsing VP token: %v", err)
@@ -945,7 +925,6 @@ func TestCreateVPToken_ImportedSDJWT_PreservesDisclosures(t *testing.T) {
 		t.Error("user_id disclosure missing from VP token — disclosures were stripped during import/persist/present")
 	}
 
-	// Resolved claims should contain user_id
 	if parsed.ResolvedClaims["user_id"] != "abc123" {
 		t.Errorf("expected user_id in resolved claims, got %v", parsed.ResolvedClaims["user_id"])
 	}
@@ -980,7 +959,6 @@ func TestEncryptResponse_UsesEncryptedResponseEncValuesSupported(t *testing.T) {
 		t.Fatalf("EncryptResponse error: %v", err)
 	}
 
-	// Parse JWE header to verify enc algorithm
 	parts := strings.Split(jweStr, ".")
 	if len(parts) != 5 {
 		t.Fatalf("expected 5 JWE parts, got %d", len(parts))
@@ -1040,7 +1018,8 @@ func TestEncryptResponse_TopLevelJWKSNotUsed(t *testing.T) {
 	key, _ := mock.GenerateKey()
 	jwk := testEncJWK(t, &key.PublicKey)
 
-	// JWK only at top-level jwks (not in client_metadata). Wallet should reject
+	// The encryption key is read from client_metadata.jwks only, so a top-level
+	// jwks does not count.
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{
@@ -1071,7 +1050,7 @@ func TestEncryptResponse_LegacyFieldNamesIgnored(t *testing.T) {
 	key, _ := mock.GenerateKey()
 	jwk := testEncJWK(t, &key.PublicKey)
 
-	// Legacy field names only. Wallet should ignore them and use default A128GCM
+	// Draft-era field names carry no preference, so the default A128GCM applies.
 	reqObj := &oid4vc.RequestObjectJWT{
 		Payload: map[string]any{
 			"client_metadata": map[string]any{
@@ -1101,7 +1080,6 @@ func TestEncryptResponse_LegacyFieldNamesIgnored(t *testing.T) {
 	headerJSON, _ := format.DecodeBase64URL(parts[0])
 	var header map[string]any
 	json.Unmarshal(headerJSON, &header)
-	// Legacy authorization_encrypted_response_enc should be ignored. Default A128GCM used
 	if header["enc"] != "A128GCM" {
 		t.Errorf("expected default enc=A128GCM (legacy fields ignored), got %v", header["enc"])
 	}
@@ -1141,7 +1119,6 @@ func TestCreateVPToken_SDJWT_SurvivesPersistReload(t *testing.T) {
 		t.Fatalf("expected %d disclosures after rehydrate, got %d", originalDisclosureCount, len(sdCred.Disclosures))
 	}
 
-	// Put the rehydrated credential back into the wallet
 	w.mu.Lock()
 	for i, c := range w.Credentials {
 		if c.ID == sdCred.ID {
@@ -1151,7 +1128,6 @@ func TestCreateVPToken_SDJWT_SurvivesPersistReload(t *testing.T) {
 	}
 	w.mu.Unlock()
 
-	// Now present. Should include disclosures
 	match := CredentialMatch{
 		QueryID:      "test",
 		CredentialID: sdCred.ID,
@@ -1169,7 +1145,6 @@ func TestCreateVPToken_SDJWT_SurvivesPersistReload(t *testing.T) {
 		t.Fatalf("parsing VP token: %v", err)
 	}
 
-	// Must have disclosures in the presentation
 	var names []string
 	for _, d := range parsed.Disclosures {
 		if !d.IsArrayEntry {
@@ -1180,7 +1155,6 @@ func TestCreateVPToken_SDJWT_SurvivesPersistReload(t *testing.T) {
 		t.Errorf("expected 2 disclosures after persist/reload round-trip, got %d: %v", len(names), names)
 	}
 
-	// Must have KB-JWT
 	if parsed.KeyBindingJWT == nil {
 		t.Error("expected KB-JWT in VP token after persist/reload round-trip")
 	}
@@ -1256,7 +1230,6 @@ func TestEncryptResponse_ErrorWhenJWKMissingAlg(t *testing.T) {
 	w := generateTestWallet(t)
 	key, _ := mock.GenerateKey()
 
-	// Create JWK without alg field
 	jwkJSON := mock.PublicKeyJWK(&key.PublicKey)
 	var jwk map[string]any
 	json.Unmarshal([]byte(jwkJSON), &jwk)
@@ -1360,7 +1333,6 @@ func TestEncryptJWE_A128CBCHS256(t *testing.T) {
 		t.Fatalf("expected 5 JWE parts, got %d", len(parts))
 	}
 
-	// Verify header
 	headerJSON, _ := format.DecodeBase64URL(parts[0])
 	var header map[string]any
 	json.Unmarshal(headerJSON, &header)

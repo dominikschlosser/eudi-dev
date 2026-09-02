@@ -46,7 +46,6 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 	result.Algorithm = jsonutil.GetString(token.Header, "alg")
 	result.Issuer = jsonutil.GetString(token.Payload, "iss")
 
-	// Parse time claims
 	now := time.Now()
 	if exp, ok := jsonutil.GetFloat64(token.Payload, "exp"); ok {
 		t := time.Unix(int64(exp), 0)
@@ -63,7 +62,6 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 		result.NotYetValid = now.Before(t)
 	}
 
-	// Verify signature
 	jwtRaw := strings.SplitN(token.Raw, "~", 2)[0]
 	if strings.Count(jwtRaw, ".") != 2 {
 		result.Errors = append(result.Errors, "invalid JWT structure")
@@ -83,8 +81,8 @@ func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {
 	return result
 }
 
-// isSupportedAlgorithm keeps the "unsupported algorithm" report this function
-// has always made, which is more use than the parse error underneath it.
+// isSupportedAlgorithm lets Verify name an unsupported algorithm before the
+// signature check fails on it.
 func isSupportedAlgorithm(alg string) bool {
 	for _, supported := range jws.SupportedAlgorithms {
 		if string(supported) == alg {

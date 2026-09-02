@@ -16,9 +16,9 @@
 // (OpenID4VP) mounted on the wallet server, so a deployment can demonstrate
 // complete protocol flows out of the box.
 //
-// Both are deliberately small: the issuer offers pre-authorized and
+// Both are deliberately small. The issuer offers pre-authorized and
 // authorization code grants and is its own authorization server (one hardcoded
-// demo account); the verifier sends a signed request object by reference and
+// demo account). The verifier sends a signed request object by reference and
 // takes an encrypted direct_post.jwt response, verifying SD-JWT VC and mdoc.
 // Credentials are signed with the wallet's issuer key under a leaf from the
 // wallet CA, so the wallet's own trust list closes the loop.
@@ -57,18 +57,16 @@ const (
 type DemoRP struct {
 	wallet  *wallet.Wallet
 	baseURL func() string
-	// onWalletChange persists the wallet after the issuer changed something in
-	// it, which so far means reserving a status list index.
+	// onWalletChange persists the wallet after the issuer changed it (reserving
+	// a status list index).
 	onWalletChange func()
 	// clientAuth is what the demo authorization server demands of a wallet.
-	// The zero value is ClientAuthRequired, so a caller that never sets it gets
-	// the profile the demo is meant to show.
+	// The zero value is ClientAuthRequired.
 	clientAuth ClientAuthMode
 	// verifierTrustAnchors are CAs the demo verifier accepts issuer
 	// certificate chains under, next to the wallet's own CA. They admit
-	// presentations issued outside this wallet, such as the ones the OIDF
-	// conformance suite signs when it plays the wallet against the demo
-	// verifier.
+	// presentations issued outside this wallet, such as the ones a conformance
+	// suite signs when it plays the wallet against the demo verifier.
 	verifierTrustAnchors []*x509.Certificate
 
 	mu       sync.Mutex

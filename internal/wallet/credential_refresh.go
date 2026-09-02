@@ -144,7 +144,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 }
 
 // RefreshCredential renews a credential and persists the result. The wallet
-// does the exchange; the server owns the store and the log the operator sees.
+// does the exchange. The server owns the store and the log the operator sees.
 func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 	renewed, err := s.wallet.RefreshCredential(id)
 	if err != nil {
@@ -216,15 +216,11 @@ func (w *Wallet) ReplaceCredential(id, raw string, renewal *CredentialRenewal) (
 const renewalCheckInterval = 30 * time.Second
 
 // renewalRetryAfter keeps a credential whose renewal failed from being retried
-// on every sweep. An issuer that refused once will usually refuse again, and a
-// wallet asking every half minute until the credential expires is noise that
-// buries the reason.
+// on every sweep.
 const renewalRetryAfter = 10 * time.Minute
 
 // renewExpiringCredentials renews what is close enough to expiry to be worth
-// renewing. One credential failing is not a failure of the sweep: the others
-// still need doing, and the task would otherwise be abandoned over a single
-// issuer being unreachable.
+// renewing. One credential failing does not stop the sweep.
 func (s *Server) renewExpiringCredentials(now time.Time) error {
 	for _, cred := range s.wallet.GetCredentials() {
 		if !cred.CanRenew() || !CredentialNeedsRenewal(cred, now) {

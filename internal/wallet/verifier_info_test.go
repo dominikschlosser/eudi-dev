@@ -200,9 +200,9 @@ func TestDefaultSigningMaterialPairsKeyAndChain(t *testing.T) {
 	}
 }
 
-// A request sent as plain parameters has no payload document, so its
-// verifier_info used to be dropped: the same certificate showed its purpose
-// in a signed request object but not on the bare query string.
+// A request sent as plain parameters has no payload document, and its
+// verifier_info shows the certificate's purpose the same as a signed request
+// object does.
 func TestPlainParameterRequestShowsThePurpose(t *testing.T) {
 	srv := newTestServer(t, false)
 	cert := signTestRegistrationCertificate(t, srv.wallet, "Checking who you are")

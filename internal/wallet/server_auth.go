@@ -34,7 +34,7 @@ import (
 )
 
 // Authorization Error Response codes. invalid_request and access_denied are
-// the OAuth 2.0 codes OpenID4VP 1.0 §8.5 clarifies for this protocol; the
+// the OAuth 2.0 codes OpenID4VP 1.0 §8.5 clarifies for this protocol. The
 // other three are codes §8.5 adds and Appendix E.3 registers in the IANA
 // "OAuth Extensions Error" registry.
 const (
@@ -104,7 +104,7 @@ func unsatisfiableQueryError(query map[string]any) (string, string) {
 }
 
 // refusalCodeForRequest maps a rejected request to its OpenID4VP 1.0 §8.5
-// error code. A code the error already carries wins; otherwise the request
+// error code. A code the error already carries wins. Otherwise the request
 // itself is inspected for the two cases §8.5 singles out by parameter.
 func refusalCodeForRequest(authReq *AuthorizationRequestParams, err error) string {
 	if code := authorizationErrorCode(err); code != errorCodeInvalidRequest {
@@ -203,7 +203,6 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	authReq.Source = source
 	s.addPresentationRequestLog(authReq, source)
 
-	// Check one-shot error override
 	if override := s.wallet.ConsumeNextError(); override != nil {
 		s.log("  Next-error override consumed: %s", override.Error)
 		s.wallet.AddLog("presentation", fmt.Sprintf("Returned error override: %s", override.Error), false)
@@ -241,7 +240,6 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	s.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
 	s.wallet.warnUndefinedRequestParameters("presentation", authReq)
 
-	// Log DCQL query
 	if authReq.DCQLQuery != nil {
 		if dcqlJSON, err := json.Marshal(authReq.DCQLQuery); err == nil {
 			s.log("  DCQL Query:    %s", string(dcqlJSON))
@@ -250,7 +248,6 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	requiresVP := ResponseTypeRequiresVP(authReq.ResponseType)
 
-	// Evaluate DCQL query
 	var matches []CredentialMatch
 	var credentialOptions *ConsentCredentialOptions
 	if authReq.DCQLQuery != nil && requiresVP {
@@ -294,8 +291,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 
-	// Interactive mode: create consent request and wait
-	s.log("  Mode:          interactive — waiting for consent...")
+	s.log("  Mode:          interactive (waiting for consent)")
 	consentReq := &ConsentRequest{
 		ID:           newConsentID(),
 		Type:         "presentation",
@@ -354,7 +350,6 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 		// the dialog. Without overrides this keeps the auto-selection.
 		matches = ApplyConsentSelection(consentReq.CredentialOptions, matches, result)
 
-		// Apply user's claim selections if provided
 		if result.SelectedClaims != nil {
 			for i, m := range matches {
 				if selectedKeys, ok := result.SelectedClaims[m.CredentialID]; ok {
@@ -374,9 +369,8 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 	case result := <-consentReq.ResultCh:
 		handle(result)
 	case <-time.After(config.ConsentTimeout):
-		// The timer races an arriving decision, and the request's status is
-		// the referee: a decision that already resolved the request is
-		// honored, only a request still pending times out.
+		// The timer races an arriving decision. A decision that already
+		// resolved the request wins, only a request still pending times out.
 		if _, ok := s.wallet.ResolveRequest(consentReq.ID, statusExpired); !ok {
 			handle(<-consentReq.ResultCh)
 			return
@@ -569,10 +563,9 @@ func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, 
 	return result, nil
 }
 
-// reportRefusalToVerifier tells the verifier why the wallet is not answering,
-// which is the copy §5.6 owes it: a refusal the wallet decided on its own ends
-// the verifier's wait instead of hanging it. A delivery failure is logged and
-// swallowed, since the refusal stands either way.
+// reportRefusalToVerifier sends the verifier the error response §5.6 owes it,
+// so a refusal the wallet decided on its own ends the verifier's wait. A
+// delivery failure is logged and ignored, since the refusal stands either way.
 func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) {
 	if !canDeliverAuthorizationError(authReq) {
 		return
@@ -745,7 +738,6 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		}
 	}
 
-	// Parse dcql_query if present
 	if dq := get("dcql_query"); dq != "" {
 		var query map[string]any
 		if err := json.Unmarshal([]byte(dq), &query); err != nil {
@@ -784,7 +776,6 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		params.RequestPayload = requestPayload(parsed.RequestObject, nil)
 	}
 
-	// If request (JWT) is present, parse it
 	if requestJWT := get("request"); requestJWT != "" {
 		parsed, err := ParseAuthorizationRequestWithOptions(requestJWT, opts)
 		if err != nil {

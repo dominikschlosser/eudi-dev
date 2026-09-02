@@ -57,10 +57,9 @@ func (c *Client) do(method, path string, body any, out any) error {
 	return c.doWithTimeout(0, method, path, body, out)
 }
 
-// doWithTimeout is do with a per-request deadline, for the calls that
-// legitimately outlast a normal round trip. Accepting a credential offer is
-// one: the issuer may defer the credential, and the wallet then polls for it.
-// A zero timeout keeps the client's own default.
+// doWithTimeout is do with a per-request deadline for calls that outlast a
+// normal round trip, such as accepting an offer whose issuer defers the
+// credential. A zero timeout keeps the client's own default.
 func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body any, out any) error {
 	var reader io.Reader
 	contentType := ""
@@ -314,8 +313,7 @@ func (c *Client) TrustList(id, vct, docType string) (string, error) {
 }
 
 // TrustListPath maps a trust list selection to its endpoint. The CLI prints
-// this path as well as fetching it, and a second copy of the mapping is how
-// the two drift apart.
+// this path as well as fetching it, so the mapping lives in one place.
 func TrustListPath(id, vct, docType string) string {
 	if id != "" {
 		return "/api/trustlists/" + url.PathEscape(id)
@@ -362,7 +360,7 @@ func (c *Client) DeferredIssuances() ([]map[string]any, error) {
 }
 
 // CollectDeferred asks the remote wallet to make one deferred credential
-// request now, rather than at the next scheduled attempt.
+// request immediately instead of waiting for the next scheduled attempt.
 func (c *Client) CollectDeferred(id string) (map[string]any, error) {
 	var out map[string]any
 	err := c.doWithTimeout(config.SlowRequestTimeout, http.MethodPost, "/api/deferred/"+id+"/collect", nil, &out)
@@ -387,8 +385,7 @@ func (c *Client) Shutdown() error {
 	return c.do(http.MethodPost, "/api/shutdown", nil, nil)
 }
 
-// version is the release this binary was built as, set by the cmd package for
-// the same reason it sets the server's.
+// version is the release this binary was built as, set by the cmd package.
 var version = "dev"
 
 // SetVersion records the release the CLI reports to a wallet it drives.
@@ -408,8 +405,8 @@ func NewOwnerToken() string {
 	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
-// ActsForAPage reports whether this client named a browser to the wallet. What
-// the wallet hands that browser, this client does not also act on.
+// ActsForAPage reports whether this client named a browser to the wallet. The
+// wallet then hands consent to that browser rather than to this client.
 func (c *Client) ActsForAPage() bool {
 	return c.owner != ""
 }

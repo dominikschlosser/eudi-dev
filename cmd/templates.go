@@ -45,7 +45,7 @@ var templatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "Manage credential templates",
 	Long: "Manage credential templates: named, reusable claim sets with per-format defaults. " +
-		"Pre-defined templates (german-pid-sdjwt, german-pid-mdoc) are built in; user templates are JSON files " +
+		"Pre-defined templates (pid-sdjwt, pid-mdoc, german-pid-sdjwt, german-pid-mdoc) are built in. User templates are JSON files " +
 		"in the wallet directory's templates/ subdirectory. Use them with `issue <format> --template <name>`.",
 }
 
@@ -242,7 +242,7 @@ var templatesDeleteCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(templatesCmd)
-	templatesCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory holding the templates/ subdirectory (default ~/.eudi-dev/wallet/, legacy ~/.oid4vc-dev/wallet/ keeps working)")
+	templatesCmd.PersistentFlags().StringVar(&walletDir, "wallet-dir", "", "Wallet storage directory holding the templates/ subdirectory (default ~/.eudi-dev/wallet/, or an existing ~/.oid4vc-dev/wallet/)")
 	templatesCmd.PersistentFlags().StringVar(&templatesDir, "templates-dir", "", "Credential template directory (default <wallet-dir>/templates/)")
 	templatesCmd.PersistentFlags().StringVar(&remoteFlag, "remote", "", "Manage templates on a remote wallet server at this URL (\"local\" forces the local store)")
 	templatesCmd.AddCommand(templatesListCmd)

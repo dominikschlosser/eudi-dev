@@ -109,11 +109,10 @@ python3 -m venv "$VENV_DIR"
 # the mdoc issuerAuth, cryptography checks the leaf against the CA).
 "$VENV_DIR/bin/pip" install --quiet cbor2 cryptography
 
-# The suite runs on this same machine and competes with the wallet for it, so
-# a request it would normally answer at once can take tens of seconds under
-# load. The wallet's default wait is short on purpose (a developer pointed at
-# a dead endpoint wants to hear about it), but here giving up costs the module
-# and the flow cannot be resumed, so the run ends up measuring the machine.
+# The suite runs on this machine and competes with the wallet for it, so a
+# request it would normally answer at once can take tens of seconds under
+# load. Giving up costs the module and the flow cannot be resumed, so the
+# wallet's remote timeout is raised well above its default.
 EUDI_REMOTE_TIMEOUT=${EUDI_REMOTE_TIMEOUT:-120s}
 export EUDI_REMOTE_TIMEOUT
 

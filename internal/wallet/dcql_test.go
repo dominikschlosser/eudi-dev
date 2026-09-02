@@ -494,7 +494,8 @@ func TestEvaluateDCQL_ClaimSets_StringIDs(t *testing.T) {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
 
-	// First claim_set should be selected (preference order). All three claims
+	// The first satisfiable claim_set wins, so all three of its claims are
+	// selected.
 	if len(matches[0].SelectedKeys) != 3 {
 		t.Errorf("expected 3 selected keys (first claim_set), got %d: %v",
 			len(matches[0].SelectedKeys), matches[0].SelectedKeys)
@@ -530,7 +531,7 @@ func TestEvaluateDCQL_ClaimSets_FallbackToSecond(t *testing.T) {
 		t.Fatalf("expected 1 match, got %d", len(matches))
 	}
 
-	// Second claim_set should be selected (first was unsatisfiable)
+	// The first claim_set is unsatisfiable, so the second one is selected.
 	if len(matches[0].SelectedKeys) != 2 {
 		t.Errorf("expected 2 selected keys (second claim_set), got %d: %v",
 			len(matches[0].SelectedKeys), matches[0].SelectedKeys)
@@ -569,7 +570,7 @@ func TestEvaluateDCQL_ClaimSets_NoneMatchable(t *testing.T) {
 func TestEvaluateDCQL_ClaimSets_IntegerIndicesRejected(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Integer indices are not valid per spec. Claim_sets must use string IDs
+	// A claim_sets entry references claims by their string ids.
 	query := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -674,8 +675,8 @@ func TestEvaluateDCQL_PartialClaimMatch_StrictModeRejected(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeStrict
 
-	// Request given_name (exists in SD-JWT) and a nonexistent claim.
-	// In strict mode, the credential should NOT match because the missing claim is required by default.
+	// A requested claim is required by default, so a credential missing one
+	// does not match in strict mode.
 	query := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -701,8 +702,7 @@ func TestEvaluateDCQL_PartialClaimMatch_StrictModeRejected(t *testing.T) {
 func TestEvaluateDCQL_OptionalClaimMissing_Accepted(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Request given_name (exists) and an optional nonexistent claim.
-	// The credential should match because the missing claim is optional.
+	// A credential missing only an optional claim still matches.
 	query := map[string]any{
 		"credentials": []any{
 			map[string]any{
@@ -862,7 +862,7 @@ func serveTrustList(t *testing.T, tlJWT string) *httptest.Server {
 func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Generate a trust list from the wallet's CA cert (same CA that signed the credentials)
+	// The trust list names the CA that signed the credentials.
 	tlJWT, err := GenerateTrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
 	if err != nil {
 		t.Fatalf("generating trust list: %v", err)
@@ -897,7 +897,8 @@ func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
 func TestEvaluateDCQL_TrustedAuthorities_NoMatch(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	// Generate a trust list from a DIFFERENT CA. Credentials should NOT match
+	// The trust list names a CA unrelated to the one that signed the
+	// credentials.
 	otherKey, _ := mock.GenerateKey()
 	otherCACert, _ := mock.GenerateCACert(otherKey)
 	tlJWT, err := GenerateTrustListJWT(otherKey, otherCACert)
@@ -1060,7 +1061,6 @@ func TestEvaluateDCQL_TrustedAuthorities_UnsupportedType(t *testing.T) {
 }
 
 func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
-	// Create a wallet and import a credential WITHOUT x5c
 	w := generateTestWallet(t)
 
 	sdRaw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
@@ -1077,7 +1077,8 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 		t.Fatalf("ImportCredential: %v", err)
 	}
 
-	// Even with a matching trust list, credential has no x5c → rejected
+	// A credential without x5c has no chain to match the trust list against,
+	// so it is rejected even when the list names its signer's CA.
 	tlJWT, _ := GenerateTrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
 	ts := serveTrustList(t, tlJWT)
 
@@ -1102,7 +1103,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 
 // credential_sets does two jobs: several entries ask for several credentials
 // at once, and the options inside one entry are alternatives. These cover the
-// first job, which the tests above did not.
+// first job.
 func TestEvaluateDCQL_CredentialSets_MultipleRequiredSets(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
@@ -1208,8 +1209,7 @@ func TestEvaluateDCQL_CredentialSets_OptionalSetIsSkipped(t *testing.T) {
 // Preferred-format sorting has to group without disturbing what it does not
 // need to move. A comparator that only asks whether the left side is the
 // preferred format claims i before j and j before i when both are, which sort
-// is entitled to resolve any way it likes: it reversed equally preferred
-// matches, so which credential a caller took first was arbitrary.
+// may resolve either way, so equally preferred matches keep their order.
 func TestEvaluateDCQL_PreferredFormatSortIsStable(t *testing.T) {
 	w := generateTestWallet(t)
 	w.PreferredFormat = "dc+sd-jwt"
@@ -1236,11 +1236,9 @@ func TestEvaluateDCQL_PreferredFormatSortIsStable(t *testing.T) {
 
 // A DCQL credential query asks for one credential, and this wallet does not
 // implement `multiple`, so two credentials of the same type must not both be
-// reported as matches. They used to be: every candidate was signed into a
-// presentation and written to the same key of the vp_token map, so all but
-// the last were discarded and the survivor was whichever happened to be
-// stored last. The OIDF conformance suite caught it once an issuance plan
-// had left a second PID in the wallet.
+// reported as matches: every candidate would be signed into a presentation and
+// written to the same key of the vp_token map, and only the last would
+// survive.
 func addSDJWTPID(t *testing.T, w *Wallet, id string, iat int64) {
 	t.Helper()
 	key, err := mock.GenerateKey()
@@ -1296,9 +1294,8 @@ func TestEvaluateDCQL_OneCredentialPerQueryNewestWins(t *testing.T) {
 	}
 }
 
-// Stored last must not decide it either: that was the old behaviour, so a
-// wallet whose newest credential is not the last one stored proves the
-// selection is by issuance date rather than by arrival.
+// The selection is by issuance date rather than by arrival: a wallet whose
+// newest credential is not the last one stored still presents the newest.
 func TestEvaluateDCQL_NewestWinsEvenWhenStoredFirst(t *testing.T) {
 	w := generateTestWallet(t)
 	addSDJWTPID(t, w, "newest", 9000)

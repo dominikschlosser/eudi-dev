@@ -189,7 +189,7 @@ func fetchIssuerMetadataDocument(metadataURL string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Some issuers (e.g. Procivis One) reject requests without an Accept header.
+	// Some issuers reject requests without an Accept header.
 	req.Header.Set("Accept", "application/json")
 	resp, err := format.HTTPClientForURL(metadataURL).Do(req)
 	if err != nil {

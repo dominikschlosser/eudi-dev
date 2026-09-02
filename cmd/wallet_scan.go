@@ -33,10 +33,9 @@ import (
 // since the issuer delivers it out of band. Anything that goes wrong leaves
 // the code empty and lets the flow run, where the issuer's error is clearer.
 //
-// It returns the offer it read along with the code. The issuance reads the URI
-// again (that is how it notices an offer that changed under it), and against an
-// issuer that serves it once that read fails, so the offer read here is handed
-// over as what the issuance falls back to.
+// It also returns the offer it read. The issuance reads the URI again, and an
+// issuer that serves it once fails that read, so the offer read here is the
+// fallback.
 func resolveTxCode(uri, given string) (string, *oid4vc.CredentialOffer) {
 	if strings.TrimSpace(given) != "" {
 		return given, nil
@@ -204,7 +203,6 @@ func walletScanCmd() *cobra.Command {
 
 			detected := format.Detect(content)
 
-			// For credential formats, import into the managed wallet
 			if detected == format.FormatSDJWT || detected == format.FormatMDOC || detected == format.FormatJWT {
 				svc, err := managedWallet()
 				if err != nil {
@@ -219,9 +217,7 @@ func walletScanCmd() *cobra.Command {
 				return nil
 			}
 
-			// For OID4 URIs, accept the scanned request exactly like `wallet
-			// accept`: route to a running or remote wallet when one is
-			// configured, otherwise run the local flow.
+			// Accept the scanned request exactly like `wallet accept`.
 			return acceptOID4URI(content, dispatchOID4Opts{
 				port:              port,
 				portExplicit:      cmd.Flags().Changed("port"),

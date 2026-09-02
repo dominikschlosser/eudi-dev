@@ -59,23 +59,18 @@ eudi-test.dev {
 	# by the Dockerfile). A request is counted in every zone that matches it,
 	# and exceeding a zone answers 429 with Retry-After.
 	#
-	# These are ceilings against abuse, not traffic shaping. They sit far above
-	# what the demo produces today (an idle page is about 14 requests, since
-	# updates arrive over one long-lived event stream, and a busy visitor with
-	# three tabs open, issuing and presenting, produced 36 in a minute), so
-	# there is room for a browser, a test suite driving the HTTP API, and
-	# everyone behind one office or conference address at once.
+	# Ceilings against abuse, far above measured use: an idle page is about 14
+	# requests (updates arrive over one event stream) and a busy visitor with
+	# three tabs open, issuing and presenting, produced 36 in a minute. That
+	# leaves room for everyone behind one office or conference address.
 	rate_limit {
-		# Endpoints that cost the demo something: they either make the wallet
-		# fetch a URL somebody handed it (a request object, issuer metadata, a
-		# credential, a status list, each holding an outbound connection for up
-		# to 15 seconds) or grow state that only the next reset clears
-		# (credentials in wallet.json, activity log entries, status list
-		# indices).
+		# Endpoints that cost the demo something: they make the wallet fetch a
+		# URL somebody handed it (holding an outbound connection for up to 15
+		# seconds) or grow state that only the next reset clears.
 		#
-		# Two windows on the same set: the minute allows a burst, such as a
-		# test suite working through a scenario, and the hour bounds what a
-		# loop left running can accumulate before the daily reset.
+		# Two windows on the same set: the minute allows a burst (a test suite
+		# working through a scenario), the hour bounds what a loop left running
+		# can accumulate before the daily reset.
 		zone flows_burst {
 			match {
 				method POST
@@ -105,19 +100,12 @@ eudi-test.dev {
 
 # Conformance host: a strict-mode HAIP wallet the hosted OIDF suite tests for
 # certification (STRICT_TAG in the compose file, ./deploy.sh strict). The
-# public origin is read-only: the suite and other counterparties only read
-# metadata, the status list, the CRL, and deliver GET /authorize requests.
-# Every mutating call (settings, presentations, credential management) comes
-# from the conformance harness over an SSH tunnel to the wallet's
-# loopback-published port on this host, so nobody on the internet can change
-# the wallet under test.
+# public origin is read-only: GET and HEAD pass (the UI, metadata, status
+# list, CRL, trust lists, and the GET /authorize a url_query request is
+# delivered to), every mutating method is refused. The conformance harness
+# drives the management API over an SSH tunnel to the wallet's
+# loopback-published port on this host.
 strict.eudi-test.dev {
-	# The public origin is fully read-only: GET and HEAD pass (the UI, the
-	# wallet's metadata, status list, CRL, trust lists, and the GET
-	# /authorize a url_query request is delivered to), every mutating
-	# method is refused. Visitors can watch the wallet under test but
-	# cannot change it; the conformance harness drives the management API
-	# over an SSH tunnel to the loopback-published wallet port.
 	@write not method GET HEAD
 	handle @write {
 		respond 403

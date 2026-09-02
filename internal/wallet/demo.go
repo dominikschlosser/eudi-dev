@@ -24,20 +24,16 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
 )
 
-// DemoOptions configures the public-demo profile: a shared, anonymous
-// demo environment exposed on the internet. ("Sandbox" is deliberately
-// avoided here, it names the official German EUDI test ecosystem.)
-// Visitors keep the full credential flows
-// (issue, present, decode, delete), while endpoints that control the process
-// or write to the host are disabled.
+// DemoOptions configures the demo profile: a shared, anonymous environment
+// exposed on the internet. Visitors keep the full credential flows (issue,
+// present, decode, delete). Endpoints that control the process or write to
+// the host are disabled.
 type DemoOptions struct {
 	// ResetInterval restores the wallet to a clean baseline (default PID
 	// credentials, empty log) on this interval. 0 disables periodic resets.
 	ResetInterval time.Duration
-	// ResetDaily restores the baseline at a fixed wall-clock time instead of
-	// on an interval, so the reset lands at the same local time every day
-	// rather than drifting with process restarts. Takes precedence over
-	// ResetInterval.
+	// ResetDaily restores the baseline at a fixed wall-clock time. Takes
+	// precedence over ResetInterval.
 	ResetDaily *DailySchedule
 }
 
@@ -48,9 +44,8 @@ type DailySchedule struct {
 	Location *time.Location
 }
 
-// Next returns the next occurrence strictly after now. Using the location's
-// own calendar keeps it correct across DST changes: the reset stays at the
-// configured local time rather than shifting by an hour.
+// Next returns the next occurrence strictly after now, in the location's own
+// calendar so a DST change keeps the configured local time.
 func (d DailySchedule) Next(now time.Time) time.Time {
 	local := now.In(d.Location)
 	next := time.Date(local.Year(), local.Month(), local.Day(), d.Hour, d.Minute, 0, 0, d.Location)
@@ -110,9 +105,9 @@ func (s *Server) DemoEnabled() bool {
 	return s.demo != nil
 }
 
-// maxRequestBodyBytes caps request bodies on every server, demo or not,
-// because several handlers read one fully into memory. Every legitimate
-// payload (credentials, offers, presentations, templates) is far smaller.
+// maxRequestBodyBytes caps request bodies on every server, demo or not. Every
+// legitimate payload (credentials, offers, presentations, templates) is far
+// smaller.
 const maxRequestBodyBytes = 1 << 20
 
 // Handler returns the server's root handler: the mux, wrapped with the
@@ -136,8 +131,8 @@ func (s *Server) Handler() http.Handler {
 // working when the proxy does not pass the public Host through.
 func (s *Server) guardAPI(next http.Handler) http.Handler {
 	// /api/dc-api is the Digital Credentials API endpoint. A verifier's page
-	// invokes it from its own origin by design, so it is exempt and relies on
-	// the origin the platform reports and the consent dialog instead.
+	// invokes it from its own origin, so it is exempt and relies on the
+	// platform-reported origin and the consent dialog.
 	return httpsec.GuardAPIExcept(next, []string{"/api/dc-api"}, s.wallet.BaseURL, s.wallet.IssuerURL)
 }
 
@@ -159,11 +154,8 @@ func demoBlockedRoute(r *http.Request) bool {
 		return true
 	case (r.Method == http.MethodPut || r.Method == http.MethodDelete) && p == "/api/config/conformance":
 		return true
-	// Clearing the shared history is a change to what every other visitor
-	// sees, and nothing on a demo instance needs it. The log is bounded on
-	// its own, so keeping it is not a growth problem. DELETE /api/error is
-	// not here: it clears only what its caller can read, and a visitor who
-	// cannot dismiss an error is shown it again on every load.
+	// Clearing the shared history changes what every other visitor sees.
+	// DELETE /api/error stays open: it clears only what its caller can read.
 	case r.Method == http.MethodDelete && p == "/api/log":
 		return true
 	}
@@ -199,7 +191,7 @@ func (s *Server) startDemoReset() {
 	}
 
 	// nextResetAfter is evaluated per cycle so a daily schedule stays pinned
-	// to the wall clock (and survives DST) instead of drifting.
+	// to the wall clock.
 	nextResetAfter := func(now time.Time) time.Time {
 		if daily != nil {
 			return daily.Next(now)
@@ -255,10 +247,8 @@ func (s *Server) demoReset() error {
 	defer s.storeSyncMu.Unlock()
 
 	s.wallet.ResetToBaseline()
-	// Re-issue the signing leaf from the same CA. Leaves are valid for a year
-	// and a long-lived demo would eventually serve an expired one, which is
-	// only ever noticed by whatever stops verifying. A daily reset keeps it
-	// fresh. The CA itself is untouched, so anyone who pinned it stays good.
+	// Re-issue the signing leaf from the same CA: leaves are valid for a year,
+	// and the CA stays pinnable.
 	if err := s.wallet.RefreshSigningCertificate(); err != nil {
 		return err
 	}
@@ -269,8 +259,8 @@ func (s *Server) demoReset() error {
 		if err := s.store.Save(s.wallet); err != nil {
 			return err
 		}
-		// Clearing the baseline orphaned the assets of whatever was issued since
-		// the last reset, so sweep them now that the fresh baseline is on disk.
+		// Clearing the baseline orphaned the assets issued since the last reset.
+		// They are swept once the fresh baseline is on disk.
 		s.store.PruneUnreferencedAssets()
 	}
 	// Scheduling belongs to startDemoReset: computing it here would break a

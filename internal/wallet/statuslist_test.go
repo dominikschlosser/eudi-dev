@@ -45,7 +45,6 @@ func TestSetCredentialStatus(t *testing.T) {
 		t.Errorf("expected index 0, got %d", entry.Index)
 	}
 
-	// Verify it was persisted in the map
 	if w.StatusEntries["cred-1"].Status != 1 {
 		t.Error("status not updated in map")
 	}
@@ -82,7 +81,6 @@ func TestBuildStatusList_Empty(t *testing.T) {
 	if len(bs) < 1 {
 		t.Fatal("expected at least 1 byte")
 	}
-	// All zeros
 	for i, b := range bs {
 		if b != 0 {
 			t.Errorf("expected byte %d to be 0, got %d", i, b)
@@ -140,17 +138,14 @@ func TestGenerateDefaultCredentials_WithStatusList(t *testing.T) {
 		t.Fatalf("expected 2 credentials, got %d", len(creds))
 	}
 
-	// Both credentials should have status entries
 	if len(w.StatusEntries) != 2 {
 		t.Fatalf("expected 2 status entries, got %d", len(w.StatusEntries))
 	}
 
-	// Counter should be 2
 	if w.StatusListCounter != 2 {
 		t.Errorf("expected counter=2, got %d", w.StatusListCounter)
 	}
 
-	// SD-JWT credential should have status claim in payload
 	sdCred := creds[0]
 	token, err := sdjwt.Parse(sdCred.Raw)
 	if err != nil {
@@ -192,12 +187,10 @@ func TestGenerateDefaultCredentials_WithoutStatusList(t *testing.T) {
 		t.Fatalf("expected 2 credentials, got %d", len(creds))
 	}
 
-	// No status entries
 	if len(w.StatusEntries) != 0 {
 		t.Errorf("expected 0 status entries, got %d", len(w.StatusEntries))
 	}
 
-	// SD-JWT should not have status claim
 	sdCred := creds[0]
 	token, err := sdjwt.Parse(sdCred.Raw)
 	if err != nil {
@@ -213,7 +206,6 @@ func TestGenerateDefaultCredentials_StatusIndexIncrement(t *testing.T) {
 	w.BaseURL = "http://localhost:8085"
 	w.IssuerURL = "https://localhost:8086"
 
-	// Generate first batch
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("first GenerateDefaultCredentials: %v", err)
 	}
@@ -246,14 +238,12 @@ func TestStatusListAPI(t *testing.T) {
 		t.Errorf("expected Content-Type application/statuslist+jwt, got %s", ct)
 	}
 
-	// Should be a valid 3-part JWT
 	jwt := w.Body.String()
 	parts := strings.SplitN(jwt, ".", 3)
 	if len(parts) != 3 {
 		t.Fatalf("expected 3 JWT parts, got %d", len(parts))
 	}
 
-	// Parse payload
 	payloadBytes, err := format.DecodeBase64URL(parts[1])
 	if err != nil {
 		t.Fatalf("decoding payload: %v", err)
@@ -277,7 +267,6 @@ func TestStatusListAPI_WithRevokedCredential(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	// Revoke the first credential
 	creds := w.GetCredentials()
 	w.SetCredentialStatus(creds[0].ID, 1)
 
@@ -286,7 +275,6 @@ func TestStatusListAPI_WithRevokedCredential(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.Code)
 	}
 
-	// The JWT should contain the revocation
 	jwt := resp.Body.String()
 	parts := strings.SplitN(jwt, ".", 3)
 	payloadBytes, _ := format.DecodeBase64URL(parts[1])
@@ -319,7 +307,6 @@ func TestSetCredentialStatusAPI(t *testing.T) {
 	creds := w.GetCredentials()
 	credID := creds[0].ID
 
-	// Revoke
 	resp := serverRequest(t, srv, "POST", "/api/credentials/"+credID+"/status", `{"status":1}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", resp.Code, resp.Body.String())
@@ -333,7 +320,6 @@ func TestSetCredentialStatusAPI(t *testing.T) {
 		t.Errorf("expected status 1, got %d", entry.Status)
 	}
 
-	// Un-revoke
 	resp = serverRequest(t, srv, "POST", "/api/credentials/"+credID+"/status", `{"status":0}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.Code)
@@ -384,16 +370,13 @@ func TestWalletStore_StatusEntriesPersistence(t *testing.T) {
 		t.Fatalf("generating credentials: %v", err)
 	}
 
-	// Revoke one credential
 	creds := w.GetCredentials()
 	w.SetCredentialStatus(creds[0].ID, 1)
 
-	// Save
 	if err := store.Save(w); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	// Reload
 	w2, err := store.LoadOrCreate()
 	if err != nil {
 		t.Fatalf("LoadOrCreate after save: %v", err)
@@ -406,7 +389,6 @@ func TestWalletStore_StatusEntriesPersistence(t *testing.T) {
 		t.Errorf("expected counter=%d, got %d", w.StatusListCounter, w2.StatusListCounter)
 	}
 
-	// Check the revoked entry survived
 	entry := w2.StatusEntries[creds[0].ID]
 	if entry.Status != 1 {
 		t.Errorf("expected status 1 after reload, got %d", entry.Status)
@@ -553,10 +535,10 @@ func TestImportAdoptsNothingWithoutAStatusList(t *testing.T) {
 }
 
 // A credential that points at this wallet's status list has its index adopted
-// on import, so the number is whoever issued the credential. A negative one
-// used to be stored and then panic with "negative shift amount" every time
-// the bitstring was built, which is on every request for the status list.
-// On a demo instance both importing and reading the list are open.
+// on import, so the number is whoever issued the credential. A negative one is
+// dropped rather than stored, since building the bitstring (on every request
+// for the status list) would panic on a negative shift. On a demo instance
+// both importing and reading the list are open.
 func TestStatusBitstring_SurvivesANegativeAdoptedIndex(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {

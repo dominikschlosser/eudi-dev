@@ -123,9 +123,8 @@ func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *
 		http.Error(w, fmt.Sprintf("signing issuer metadata: %v", err), http.StatusInternalServerError)
 		return
 	}
-	// §12.2.2 names application/jwt as the media type of the signed form.
-	// openidvci-issuer-metadata+jwt is the typ header value inside it (§12.2.3),
-	// not something that belongs in Content-Type.
+	// §12.2.2 names application/jwt as the media type of the signed form. The
+	// typ header inside it is openidvci-issuer-metadata+jwt (§12.2.3).
 	w.Header().Set("Content-Type", "application/jwt")
 	w.Write([]byte(jwt))
 }

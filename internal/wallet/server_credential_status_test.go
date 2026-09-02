@@ -81,7 +81,6 @@ func TestRevokeAndActivateCredential(t *testing.T) {
 	creds := srv.wallet.GetCredentials()
 	id := creds[0].ID
 
-	// Revoke
 	resp := serverRequest(t, srv, http.MethodPost, "/api/credentials/"+id+"/status", `{"status": 1}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("revoke: expected 200, got %d: %s", resp.Code, resp.Body.String())
@@ -103,7 +102,6 @@ func TestRevokeAndActivateCredential(t *testing.T) {
 		t.Errorf("summary status not updated: %v", cred["status"])
 	}
 
-	// Activate again
 	resp = serverRequest(t, srv, http.MethodPost, "/api/credentials/"+id+"/status", `{"status": 0}`)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("activate: expected 200, got %d", resp.Code)

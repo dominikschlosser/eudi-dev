@@ -62,7 +62,6 @@ func TestConcatKDF(t *testing.T) {
 		t.Errorf("expected 32-byte derived key, got %d bytes", len(derived256))
 	}
 
-	// Same inputs should produce same output (deterministic)
 	derived256Again := ConcatKDF(z, "A256GCM", []byte("test"), nil, 256)
 	for i := range derived256 {
 		if derived256[i] != derived256Again[i] {
@@ -71,7 +70,6 @@ func TestConcatKDF(t *testing.T) {
 		}
 	}
 
-	// Different apu should produce different output
 	derivedDiffApu := ConcatKDF(z, "A256GCM", []byte("other"), nil, 256)
 	same := true
 	for i := range derived256 {

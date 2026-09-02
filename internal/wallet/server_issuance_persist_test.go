@@ -61,9 +61,9 @@ func TestSaveMutationFencesOutAReload(t *testing.T) {
 
 // An issuance flow can stay open for a long time: an authorization code flow
 // waits for the user to sign in at the issuer, and meanwhile every request
-// reloads the wallet from the store, replacing the credential list. A reload
-// landing between the import and the save used to drop the freshly issued
-// credential, so issuance reported success and stored nothing.
+// reloads the wallet from the store, replacing the credential list. The
+// credential the flow imports survives a reload that lands between the import
+// and the save.
 func TestSaveIssuedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	srv := newTestServer(t, true)
 
@@ -97,11 +97,9 @@ func TestSaveIssuedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	}
 }
 
-// The reload race also wiped the status entry adopted at import for a
-// credential on this wallet's own status list (the demo issuer's ticket is the
-// common case). The credential was put back, its entry was not, so the UI
-// showed "External status" on a list this wallet serves and nothing could
-// revoke the credential.
+// A credential on this wallet's own status list (the demo issuer's ticket is
+// the common case) adopts its status entry at import. The entry survives a
+// concurrent reload together with the credential, so the wallet can revoke it.
 func TestSaveIssuedCredential_KeepsTheAdoptedStatusEntry(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.onSave = func() {}
