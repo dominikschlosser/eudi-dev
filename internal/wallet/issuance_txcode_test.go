@@ -90,7 +90,7 @@ func txCodeIssuer(t *testing.T, w *Wallet, wantCode string) (*httptest.Server, s
 		},
 	}
 	offerJSON, _ := json.Marshal(offer)
-	return srv, "openid-credential-offer://?credential_offer=" + url.QueryEscape(string(offerJSON))
+	return srv, "openid-credential-offer://?" + oid4vc.EncodeURIQuery(url.Values{"credential_offer": {string(offerJSON)}})
 }
 
 // TestApproveRequest_CarriesTxCodeIntoIssuance covers the wallet UI's path: the

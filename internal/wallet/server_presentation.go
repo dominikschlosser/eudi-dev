@@ -43,7 +43,9 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	var values map[string][]string
 
 	if r.Method == "GET" {
-		values = r.URL.Query()
+		// A GET carries the request in the URI's query component, where "+"
+		// is a literal plus (RFC 3986), not the form encoding of a space.
+		values = oid4vc.URIQueryValues(r.URL)
 	} else {
 		if parseErr := r.ParseForm(); parseErr != nil {
 			http.Error(w, "invalid form data", http.StatusBadRequest)

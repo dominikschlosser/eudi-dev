@@ -17,6 +17,8 @@ package wallet
 import (
 	"net/http"
 	"net/url"
+
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 )
 
 // handleCredentialOfferEndpoint is the wallet's OID4VCI credential offer
@@ -44,5 +46,5 @@ func (s *Server) handleCredentialOfferEndpoint(w http.ResponseWriter, r *http.Re
 	if browser && session == "" {
 		session = newBrowserSession(w, r, s.browserSecure(r))
 	}
-	s.processOfferURI(w, "openid-credential-offer://?"+offerParams.Encode(), query.Get("tx_code"), session, browser, false)
+	s.processOfferURI(w, "openid-credential-offer://?"+oid4vc.EncodeURIQuery(offerParams), query.Get("tx_code"), session, browser, false)
 }

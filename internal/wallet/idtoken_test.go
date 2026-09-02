@@ -25,8 +25,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+
 	"strings"
 	"testing"
+
+	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/mock"
@@ -291,7 +294,7 @@ func TestServerIDTokenFlow(t *testing.T) {
 		"dcql_query":    {string(dcqlJSON)},
 	}
 
-	req := httptest.NewRequest("GET", "/authorize?"+qp.Encode(), nil)
+	req := httptest.NewRequest("GET", "/authorize?"+oid4vc.EncodeURIQuery(qp), nil)
 	w := httptest.NewRecorder()
 	srv.mux.ServeHTTP(w, req)
 
@@ -353,7 +356,7 @@ func TestServerIDTokenOnlyFlowWithoutCredentialMatch(t *testing.T) {
 		"response_uri":  {verifier.URL},
 	}
 
-	req := httptest.NewRequest("GET", "/authorize?"+qp.Encode(), nil)
+	req := httptest.NewRequest("GET", "/authorize?"+oid4vc.EncodeURIQuery(qp), nil)
 	w := httptest.NewRecorder()
 	srv.mux.ServeHTTP(w, req)
 

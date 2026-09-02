@@ -66,13 +66,60 @@ func isJWT(s string) bool {
 	return len(parts) == 3 && len(parts[0]) > 0 && len(parts[1]) > 0
 }
 
+// URIQueryValues parses a request URI's query with RFC 3986 semantics:
+// percent escapes are decoded and "+" stays a literal plus. Authorization
+// requests and credential offers travel as links and QR codes, not as
+// submitted forms, and their values carry literal plus signs ("dc+sd-jwt"
+// in a dcql_query, vct URNs).
+func URIQueryValues(u *url.URL) url.Values {
+	values := url.Values{}
+	for _, part := range strings.Split(u.RawQuery, "&") {
+		if part == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(part, "=")
+		if decoded, err := url.PathUnescape(key); err == nil {
+			key = decoded
+		}
+		if decoded, err := url.PathUnescape(value); err == nil {
+			value = decoded
+		}
+		values.Add(key, value)
+	}
+	return values
+}
+
+// DeriveResponseURI fills an absent response_uri for the redirect_uri client
+// id prefix: OID4VP 1.0 §5.9.3 makes the prefix value the response endpoint,
+// so a verifier may omit the parameter for the direct_post response modes and
+// the wallet derives it from the client_id.
+func DeriveResponseURI(clientID, responseMode, responseURI string) string {
+	if responseURI != "" {
+		return responseURI
+	}
+	if responseMode != "direct_post" && responseMode != "direct_post.jwt" {
+		return ""
+	}
+	if value, ok := strings.CutPrefix(clientID, "redirect_uri:"); ok && value != "" {
+		return value
+	}
+	return ""
+}
+
+// EncodeURIQuery encodes values for a request URI's query component with RFC
+// 3986 semantics, the counterpart of URIQueryValues: a space becomes %20, so
+// a receiver reading "+" as a literal plus sees the original text.
+func EncodeURIQuery(values url.Values) string {
+	return strings.ReplaceAll(values.Encode(), "+", "%20")
+}
+
 // parseVCIURI parses an openid-credential-offer:// or haip-vci:// URI.
 func parseVCIURI(raw string) (RequestType, any, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return TypeVCI, nil, fmt.Errorf("parsing VCI URI: %w", err)
 	}
-	return parseVCIParams(u.Query())
+	return parseVCIParams(URIQueryValues(u))
 }
 
 // parseVPURI parses an openid4vp://, haip-vp://, or eudi-openid4vp:// URI.
@@ -81,7 +128,7 @@ func parseVPURI(raw string, opts ParseOptions) (RequestType, any, error) {
 	if err != nil {
 		return TypeVP, nil, fmt.Errorf("parsing VP URI: %w", err)
 	}
-	return parseVPParams(u.Query(), opts)
+	return parseVPParams(URIQueryValues(u), opts)
 }
 
 // parseHTTPURL parses an HTTPS/HTTP URL by checking query params.
@@ -90,7 +137,7 @@ func parseHTTPURL(raw string, opts ParseOptions) (RequestType, any, error) {
 	if err != nil {
 		return 0, nil, fmt.Errorf("parsing URL: %w", err)
 	}
-	q := u.Query()
+	q := URIQueryValues(u)
 	if q.Has("credential_offer") || q.Has("credential_offer_uri") {
 		return parseVCIParams(q)
 	}
@@ -167,7 +214,7 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 	req.Nonce = q.Get("nonce")
 	req.State = q.Get("state")
 	req.RedirectURI = q.Get("redirect_uri")
-	req.ResponseURI = q.Get("response_uri")
+	req.ResponseURI = DeriveResponseURI(req.ClientID, req.ResponseMode, q.Get("response_uri"))
 	req.Scope = q.Get("scope")
 	req.RequestURIMethod = q.Get("request_uri_method") // OID4VP 1.0 §5.10
 	if cm := q.Get("client_metadata"); cm != "" {
@@ -259,7 +306,7 @@ func applyRequestObjectPayload(req *AuthorizationRequest, payload map[string]any
 	req.Nonce = str("nonce")
 	req.State = str("state")
 	req.RedirectURI = str("redirect_uri")
-	req.ResponseURI = str("response_uri")
+	req.ResponseURI = DeriveResponseURI(req.ClientID, req.ResponseMode, str("response_uri"))
 	req.Scope = str("scope")
 
 	req.DCQLQuery, _ = payload["dcql_query"].(map[string]any)
@@ -344,7 +391,7 @@ func buildVPFromJSON(m map[string]any) (RequestType, *AuthorizationRequest) {
 	req.Nonce = jsonutil.GetString(m, "nonce")
 	req.State = jsonutil.GetString(m, "state")
 	req.RedirectURI = jsonutil.GetString(m, "redirect_uri")
-	req.ResponseURI = jsonutil.GetString(m, "response_uri")
+	req.ResponseURI = DeriveResponseURI(req.ClientID, req.ResponseMode, jsonutil.GetString(m, "response_uri"))
 	req.Scope = jsonutil.GetString(m, "scope")
 	if cm := jsonutil.GetMap(m, "client_metadata"); cm != nil {
 		req.ClientMetadata = cm

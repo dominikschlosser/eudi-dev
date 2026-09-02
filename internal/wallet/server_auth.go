@@ -706,7 +706,7 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 		Nonce:            get("nonce"),
 		State:            get("state"),
 		RedirectURI:      get("redirect_uri"),
-		ResponseURI:      get("response_uri"),
+		ResponseURI:      oid4vc.DeriveResponseURI(get("client_id"), get("response_mode"), get("response_uri")),
 		RequestURIMethod: get("request_uri_method"),
 		FullParams:       fullParams,
 	}
