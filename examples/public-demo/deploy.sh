@@ -9,6 +9,7 @@
 #   DEMO_DIR=/opt/eudi-demo          # optional, this is the default
 #   DEMO_URL=https://demo.example    # optional, enables the post-deploy check
 #   PREVIEW_URL=https://preview.demo.example   # optional, the preview host
+#   STRICT_URL=https://strict.demo.example     # optional, the conformance host
 #
 # Usage: ./deploy.sh <command>
 #   setup     install Docker, copy the stack, start it (first deployment)
@@ -17,11 +18,13 @@
 #   preview [tag]   run a release on the preview host (default latest), leaving
 #             the main site as it is, so a big change can be tried there first
 #   promote   move the main site to the release the preview host runs
+#   strict [tag]    run a release on the strict conformance host (default
+#             latest), the wallet the hosted OIDF suite tests for certification
 #   rollback [version]  put the previous release back (or a named one, e.g.
 #             v2.0.0). Without an argument it uses the release that was live
 #             before the last push or update
 #   status    container status and the version the site reports
-#   logs [preview]  follow the wallet log (the preview wallet with "preview")
+#   logs [preview|strict]  follow the wallet log (that host's wallet when named)
 #   verify    check that the deployed endpoints respond
 #   stats     print a usage summary from the access log (pages and API calls)
 #   stats-reset     discard the access log and rebuild the report from zero
@@ -122,6 +125,23 @@ ensure_preview_volume() {
   remote "docker volume create eudi-demo_wallet-data-preview >/dev/null && docker run --rm -v eudi-demo_wallet-data-preview:/d alpine chown 1000:1000 /d >/dev/null"
 }
 
+# STRICT_TAG pins the release the strict conformance host runs, independently
+# of the main site and the preview host.
+set_strict_tag() {
+  local tag="$1"
+  remote "touch .env && sed -i.bak '/^STRICT_TAG=/d' .env && rm -f .env.bak && printf 'STRICT_TAG=%s\n' '${tag}' >> .env"
+}
+
+strict_version() {
+  [[ -n "${STRICT_URL:-}" ]] || return 0
+  curl -fsS --max-time 15 "${STRICT_URL%/}/api/version" 2>/dev/null |
+    sed -n 's/.*"version":"\([^"]*\)".*/\1/p'
+}
+
+ensure_strict_volume() {
+  remote "docker volume create eudi-demo_wallet-data-strict >/dev/null && docker run --rm -v eudi-demo_wallet-data-strict:/d alpine chown 1000:1000 /d >/dev/null"
+}
+
 apply_stack() {
   compose "pull -q wallet" >/dev/null
   # --build keeps the Caddy image in step with the Dockerfile (the rate
@@ -214,6 +234,27 @@ case "${COMMAND}" in
     echo "Try it${PREVIEW_URL:+ at ${PREVIEW_URL}}, then ./deploy.sh promote to move the main site to it."
     ;;
 
+  strict)
+    require_host
+    target="${2:-latest}"
+    # Copy the stack so the host has the Caddy strict block and the
+    # wallet-strict service, then prepare its data volume.
+    copy_stack
+    ensure_strict_volume
+    set_strict_tag "${target}"
+    compose "--profile strict pull -q wallet-strict" >/dev/null
+    # Start the strict wallet, leaving production untouched.
+    compose "--profile strict up -d --quiet-pull wallet-strict" >/dev/null
+    # A graceful reload applies the new Caddy block with no downtime and
+    # provisions the strict host's certificate.
+    compose "exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile" >/dev/null
+    sleep 3
+    compose "--profile strict ps --format '{{.Name}} {{.Status}}'"
+    version="$(strict_version)"
+    [[ -n "${version}" ]] && echo "Strict conformance host now live: ${version}"
+    echo "Run conformance against it${STRICT_URL:+ at ${STRICT_URL}} (see docs/conformance-run.md)."
+    ;;
+
   promote)
     require_host
     target="$(preview_version)"
@@ -272,12 +313,16 @@ case "${COMMAND}" in
     [[ -n "${version}" ]] && echo "Version reported by ${DEMO_URL}: ${version}"
     pversion="$(preview_version)"
     [[ -n "${pversion}" ]] && echo "Version reported by ${PREVIEW_URL}: ${pversion}"
+    sversion="$(strict_version)"
+    [[ -n "${sversion}" ]] && echo "Version reported by ${STRICT_URL}: ${sversion}"
     ;;
   logs)
     require_host
-    # ./deploy.sh logs preview follows the preview wallet instead of the main one.
+    # ./deploy.sh logs preview|strict follows that wallet instead of the main one.
     if [[ "${2:-}" == "preview" ]]; then
       compose "--profile preview logs -f --tail 100 wallet-preview"
+    elif [[ "${2:-}" == "strict" ]]; then
+      compose "--profile strict logs -f --tail 100 wallet-strict"
     else
       compose "logs -f --tail 100 wallet"
     fi

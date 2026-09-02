@@ -103,6 +103,37 @@ eudi-test.dev {
 	}
 }
 
+# Conformance host: a strict-mode HAIP wallet the hosted OIDF suite tests for
+# certification (STRICT_TAG in the compose file, ./deploy.sh strict). The
+# public origin is read-only: the suite and other counterparties only read
+# metadata, the status list, the CRL, and deliver GET /authorize requests.
+# Every mutating call (settings, presentations, credential management) comes
+# from the conformance harness over an SSH tunnel to the wallet's
+# loopback-published port on this host, so nobody on the internet can change
+# the wallet under test.
+strict.eudi-test.dev {
+	# The public origin is fully read-only: GET and HEAD pass (the UI, the
+	# wallet's metadata, status list, CRL, trust lists, and the GET
+	# /authorize a url_query request is delivered to), every mutating
+	# method is refused. Visitors can watch the wallet under test but
+	# cannot change it; the conformance harness drives the management API
+	# over an SSH tunnel to the loopback-published wallet port.
+	@write not method GET HEAD
+	handle @write {
+		respond 403
+	}
+	handle {
+		reverse_proxy wallet-strict:8085
+	}
+	rate_limit {
+		zone strict_site {
+			key {remote_host}
+			events 1200
+			window 1m
+		}
+	}
+}
+
 # Preview host: the same wallet on its own release (PREVIEW_TAG in the compose
 # file), where a big change goes live before ./deploy.sh promote moves the main
 # site to it. Caddy provisions its TLS certificate automatically. No usage

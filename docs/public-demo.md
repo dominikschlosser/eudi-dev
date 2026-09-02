@@ -156,6 +156,20 @@ PREVIEW_URL=https://preview.demo.example
 
 `preview` copies the stack (so the host gets the Caddy preview block and the `wallet-preview` service), prepares the preview data volume, pins its release as `PREVIEW_TAG` in the host's `.env`, and recreates only Caddy and the preview wallet. Without a tag it runs `latest`, so the preview mirrors the newest release until a change is pinned. `promote` reads the version the preview reports and moves the main site to exactly that image, recording the release it replaces so `rollback` still works. `./deploy.sh update` on the main site clears the pin and returns to the newest release.
 
+### Strict conformance host
+
+The certification target for the OIDF wallet plans is a third wallet on the same box, served at its own subdomain (`strict.eudi-test.dev` in the example). It runs in strict mode with HAIP enforced, auto-accept, and the default PID baseline. It is not a demo: nothing about it is meant to be driven by visitors. The Caddy block only lets reads through (GET and HEAD), so the public origin serves exactly what the conformance suite and other counterparties consume (issuer metadata, status list, CRL, trust lists, the CA certificate, GET `/authorize` requests) and nobody on the internet can change settings or state. The conformance harness reaches the full management API through an SSH tunnel to the wallet's loopback-published port (`127.0.0.1:18086` on the host). Its release is pinned independently with `STRICT_TAG`, and its OID4VCI redirect URI points at the fixed suite alias `oid4vc-dev-vci-strict` on the production conformance service.
+
+```bash
+# in deploy.env, alongside DEMO_HOST and DEMO_URL:
+STRICT_URL=https://strict.demo.example
+
+./deploy.sh strict v2.3.0    # run v2.3.0 on the strict host, main site untouched
+./deploy.sh logs strict      # follow the strict wallet log
+```
+
+[The conformance runbook](./conformance-run.md) describes the run against it.
+
 ## Usage statistics
 
 The compose example ships an optional usage report that shows whether the demo is actually used. It is not analytics: Caddy writes an access log with the client address anonymized at write time (`ip_mask` zeroes the last IPv4 octet and the last 80 bits of IPv6, for both `remote_ip` and `client_ip`), [GoAccess](https://goaccess.io) turns that log into a static HTML report every two minutes, and Caddy serves it at `/stats` behind basic auth. No JavaScript is added to the pages, the report sets no cookies, and no third party is involved.

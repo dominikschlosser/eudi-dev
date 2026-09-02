@@ -108,6 +108,50 @@ services:
       - wallet-data-preview:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 
+  # Conformance host served at strict.eudi-test.dev by the same Caddy: a
+  # strict-mode wallet the hosted OIDF suite tests for certification. Not a
+  # demo profile: it runs headless with auto-accept so the conformance
+  # harness can drive it over the API (see docs/conformance-run.md). Its
+  # release is pinned independently with STRICT_TAG (./deploy.sh strict).
+  wallet-strict:
+    image: ghcr.io/dominikschlosser/eudi-dev:${STRICT_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    # Opt-in: a plain production up/push leaves it alone, and ./deploy.sh
+    # strict names it explicitly to bring it up.
+    profiles: ["strict"]
+    # The management API is not public (the Caddy block only lets reads
+    # through), so the conformance harness reaches this loopback port over an
+    # SSH tunnel. Bound to the host's loopback only, never the internet.
+    ports:
+      - "127.0.0.1:18086:8085"
+    command:
+      - wallet
+      - serve
+      - --mode
+      - strict
+      - --haip
+      - --auto-accept
+      - --pid
+      - --preferred-format
+      - dc+sd-jwt
+      - --port
+      - "8085"
+      - --base-url
+      - https://strict.eudi-test.dev
+      # The redirect URI the OIDF suite's authorization server sends the
+      # wallet back to. The alias is fixed so the harness and this wallet
+      # agree on it across runs (OIDF_VCI_ALIAS=oid4vc-dev-vci-strict).
+      - --vci-client-id
+      - "52480754053"
+      - --vci-redirect-uri
+      - https://www.certification.openid.net/test/a/oid4vc-dev-vci-strict/callback
+      - --imprint-file
+      - /config/imprint.html
+    volumes:
+      - wallet-data-strict:/home/app/.eudi-dev
+      - ./imprint.html:/config/imprint.html:ro
+
   # Usage statistics: turns Caddy's (IP-anonymized) access log into a static
   # HTML report. No JavaScript, no cookies, nothing added to the pages.
   stats:
@@ -140,3 +184,4 @@ volumes:
   stats-report:
   wallet-data:
   wallet-data-preview:
+  wallet-data-strict:
