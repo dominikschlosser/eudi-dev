@@ -183,5 +183,11 @@ volumes:
   caddy-logs:
   stats-report:
   wallet-data:
+  # deploy.sh creates these two before the first start, so it can hand them
+  # to uid 1000 (the user the image runs as). Compose only attaches to them.
   wallet-data-preview:
+    name: eudi-demo_wallet-data-preview
+    external: true
   wallet-data-strict:
+    name: eudi-demo_wallet-data-strict
+    external: true
