@@ -42,7 +42,7 @@ sequenceDiagram
 | `state` | Reflected in the authorization response when present. |
 | `response_uri` | Required for `direct_post` and `direct_post.jwt`. |
 | `redirect_uri` | Used for `fragment`. When absent, the wallet falls back to `response_uri`. |
-| `dcql_query` | Practically required for credential selection in `eudi-dev`. This is how the wallet matches stored credentials. |
+| `dcql_query` | How the wallet matches stored credentials. |
 | `request` or `request_uri` | Used when the verifier sends a request object directly or by reference. |
 | `client_metadata` | Important for format negotiation and mandatory for encrypted response modes because `client_metadata.jwks` carries the verifier encryption key. |
 
@@ -144,6 +144,7 @@ sequenceDiagram
 |-----------------|----------|
 | Browser API protocol `openid4vp-v1-unsigned` | Unsigned Browser API request branch. |
 | Browser API protocol `openid4vp-v1-signed` | Signed Browser API request branch. Request data can be a compact JWT or an object containing `request` or `request_uri`. |
+| Browser API protocol `openid4vp-v1-multisigned` | Multi-signed Browser API request branch. The wallet takes the first signature it can verify, or the first that parses. |
 | `response_mode=dc_api` | Wallet returns plain JSON through the Browser API response envelope. |
 | `response_mode=dc_api.jwt` | Wallet encrypts the response and returns a `response` JWT in the Browser API envelope. |
 | Unsigned Browser API request | Carries no `client_id` (OpenID4VP Appendix A.2). The verifier is identified by the origin the platform reports, and any `client_id` or `expected_origins` in the request data is discarded. |
@@ -157,7 +158,7 @@ sequenceDiagram
 | `redirect_uri:` | Implemented. Requires unsigned request objects and must match `response_uri`. |
 | `verifier_attestation:` | Validated structurally. |
 | `decentralized_identifier:` | DID syntax and `kid` cross-check are validated. Full DID resolution is not implemented. |
-| No prefix (no `:` in the value) | Treated as a pre-registered client, per OpenID4VP §5.9.2. |
+| No prefix (no `:` in the value) | Treated as a pre-registered client, per OpenID4VP §5.9.2. The wallet registers no clients, so a signed request object under it is reported as not verified. |
 | `origin:` | Refused. §5.9.3 reserves it and forbids a wallet to accept it in a request. |
 | `openid_federation:` | Refused. The trust chain resolution it requires is not implemented. |
 | `--haip` | Holds the counterparty to HAIP 1.0: `response_type=vp_token`, encrypted response modes, the `x509_hash` prefix with a verified request signature and certificate rules, JAR through `request_uri`, DCQL, the `mso_mdoc` and `dc+sd-jwt` formats, `A128GCM` plus `A256GCM` in the verifier's client metadata, and ES256. What a violation does follows the wallet mode: strict refuses the request, debug reports it and carries on. |

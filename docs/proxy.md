@@ -33,7 +33,7 @@ Traffic is automatically classified into protocol steps:
 | VCI Credential Offer| `credential_offer` / `credential_offer_uri` in query              |
 | VCI Metadata        | Path contains `.well-known/openid-credential-issuer`              |
 | VCI Token Request   | POST to path ending `/token`                                      |
-| VCI Credential Req  | POST to path ending `/credential`                                 |
+| VCI Credential Request | POST to path ending `/credential` or `/credentials`            |
 
 By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, health checks, etc.) are still proxied but hidden. Pass `--all-traffic` or toggle the "All traffic" checkbox in the dashboard to see everything.
 

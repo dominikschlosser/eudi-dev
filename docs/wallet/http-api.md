@@ -6,17 +6,17 @@ Everything the wallet CLI can do locally is also available over HTTP on a runnin
 
 ## HTTP API
 
-Everything the wallet CLI can do locally is also available over HTTP on a running `wallet serve` instance. That covers listing, showing, importing, and removing credentials, issuing new credentials, generating PIDs, managing credential templates, setting revocation status, exporting certificates, instance introspection, and shutdown. Use it to manage a non-local wallet or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also controls wallet behavior for tests (simulated errors, preferred credential format). The CLI's [remote control](#remote-control) mode uses exactly this API.
+Use it to manage a non-local wallet or to drive a hosted instance from automated tests (CI jobs, Testcontainers, E2E suites). It also controls wallet behavior for tests (simulated errors, preferred credential format). The CLI's [remote control](#remote-control) mode uses exactly this API.
 
-> **Security: no authentication.** The wallet's HTTP API has **no authentication or authorization whatsoever**. Anyone who can reach the wallet's port has full control over the wallet and its credentials. This is intentional: it is a testing wallet for local development and isolated test networks. Keep it off untrusted networks and never store real credentials in it. To host it on the public internet anyway, use [`--demo`](../public-demo.md), which turns off the admin endpoints (shutdown, template writes, error injection, changes to the format, auto-accept and conformance settings, log and error clearing), blocks server-side fetches into private networks, and resets state periodically. The remaining endpoints stay open on purpose, so treat everything in such a wallet as public and disposable.
+> **Security: no authentication.** The wallet's HTTP API has **no authentication or authorization whatsoever**. Anyone who can reach the wallet's port has full control over the wallet and its credentials. It is a testing wallet for local development and isolated test networks. Keep it off untrusted networks and never store real credentials in it. To host it on the public internet anyway, use [`--demo`](../public-demo.md), which turns off the admin endpoints (shutdown, template writes, error injection, changes to the format, auto-accept and conformance settings, log and error clearing), blocks server-side fetches into private networks, and resets state periodically. The remaining endpoints stay open, so treat everything in such a wallet as public and disposable.
 
-> **Cross-origin requests are refused.** An `/api/` request arriving with an `Origin` header from another site is answered `403`, because any web page a developer visits can reach localhost too. The intended callers are unaffected: a CLI, a curl invocation, a CI job or a Testcontainers test sends no `Origin` at all, and the wallet's own UI is on the same origin. Behind a reverse proxy that does not pass the public `Host` through, `--base-url` is also accepted as this wallet's own origin.
+> **Cross-origin requests are refused.** An `/api/` request arriving with an `Origin` header from another site is answered `403`, because any web page a developer visits can reach localhost too. A CLI, a curl invocation, a CI job or a Testcontainers test sends no `Origin` at all, and the wallet's own UI is on the same origin. Behind a reverse proxy that does not pass the public `Host` through, `--base-url` is also accepted as this wallet's own origin.
 
-> **Pending consent requests are listed per caller.** `GET /api/requests` and the event stream return the requests the caller owns plus the ones no client claimed a page for, so several people using one wallet do not answer each other's flows. A caller that names no page (a curl invocation, a CI job, a CLI running non-interactively or with `--no-open`) creates unowned requests and sees every unowned request, which is why existing clients are unaffected. A client that opens the wallet UI for a user names that page with `owner` in the URL it opens and with the `X-Eudi-Owner` header on the call it makes, and what it submits then reaches that page alone. The CLI does this, and the URL handler does it when it routes to a wallet somewhere else. Request documents carry `mine` to say whether the caller is the one being asked. Clients this project ships also send `X-Eudi-Client: <name>/<release>`, and an interactive submission without it is reported once in the activity log as a client worth upgrading.
+> **Pending consent requests are listed per caller.** `GET /api/requests` and the event stream return the requests the caller owns plus the ones no client claimed a page for, so several people using one wallet do not answer each other's flows. A caller that names no page (a curl invocation, a CI job, a CLI running non-interactively or with `--no-open`) creates unowned requests and sees every unowned request. A client that opens the wallet UI for a user names that page with `owner` in the URL it opens and with the `X-Eudi-Owner` header on the call it makes, and what it submits then reaches that page alone. The CLI does this, and the URL handler does it when it routes to a wallet somewhere else. Request documents carry `mine` to say whether the caller is the one being asked. Clients this project ships also send `X-Eudi-Client: <name>/<release>`, and an interactive submission without it is reported once in the activity log.
 
 `GET /api/error` and `DELETE /api/error` are scoped the same way: a caller reads and clears its own last error and the ones no client named a page for. `POST /api/requests/{id}/approve` and `/deny` answer `404` when the caller neither owns the request nor names it with `?request=<id>`, which is the id the wallet put in the URL it redirected that browser to.
 
-`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the full number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential, so existing clients are unaffected. An offset past the end returns an empty array. The web UI uses this to page through long lists ten credentials at a time.
+`GET /api/credentials` accepts optional `limit` and `offset` query parameters and reports the full number of stored credentials in the `X-Total-Count` response header. Without parameters it returns every credential. An offset past the end returns an empty array. The web UI uses this to page through long lists ten credentials at a time.
 
 Credentials carrying `"protected": true` in the wallet file are refused by `DELETE /api/credentials/{id}` and `POST /api/credentials/{id}/status` with 403, and `DELETE /api/credentials` keeps them (its response reports `kept_protected`). The flag exists for shared deployments that need a stable baseline. It can only be set or cleared by editing `wallet.json`. `--demo` marks the PID credentials it generates.
 
@@ -65,6 +65,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `trust_profile`   | string  | Trust-list profile for registration metadata: `auto` (default), `pid`, or `local`            |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
 | `display`         | object  | The appearance the card shows: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
+| `display_template`| string  | Template whose display (logo and background image) the credential wears, for a form that flattened the template's claims into `claims` |
 | `batch`           | int     | Issue this many distinct-key copies, so the wallet presents an unused one each time (like `--batch`) |
 | `unbound`         | bool    | Issue without a holder key (a bearer credential), the default binds it to the wallet (like `--unbound`) |
 | `signing_key`     | string  | PEM or JWK private key that signs the credential instead of the wallet issuer key. Requires `signing_cert` (like `--key` with `--cert`). Refused in public demo mode |
@@ -134,7 +135,7 @@ curl http://localhost:8085/api/certificates/ca > wallet-ca-cert.pem
 curl 'http://localhost:8085/api/certificates/tls?format=jwks'
 ```
 
-The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL). Unlike `wallet tls-cert` there are no `--port`, `--base-url`, or `--docker` flags to keep in sync.
+The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL).
 
 ### One-shot error override
 
@@ -158,8 +159,6 @@ The next OID4VP authorization request will return the configured error instead o
 }
 ```
 
-After that single request, the wallet resumes normal behavior.
-
 **Clear override without consuming:**
 
 ```bash
@@ -173,7 +172,7 @@ curl -X DELETE http://localhost:8085/api/next-error
 
 ### Preferred credential format
 
-When a DCQL query matches both SD-JWT and mDoc credentials (e.g. both PID formats), the wallet normally picks whichever option appears first. The preferred format setting lets you control which format wins.
+When a DCQL query matches both SD-JWT and mDoc credentials (e.g. both PID formats), the preferred format setting decides which format wins.
 
 **Set preference:**
 
@@ -272,7 +271,7 @@ curl http://localhost:8085/api/credentials/<id>/status
 
 Any Status Type from 0 to 255 is accepted, not just 0 and 1, so a credential can be set to SUSPENDED (`2`) or to an application specific value. The published list is 1, 2, 4 or 8 bits wide depending on the largest status it holds (the issuer's choice under section 7) and carries the value that was set rather than a flattened revoked flag.
 
-The GET response contains `status`, `managed`, `uri`, `idx`, and `source` (`wallet` for the wallet's own list, `remote` for a fetched external list). It returns 404 for credentials without any status list reference and 502 when an external status list cannot be fetched.
+The GET response contains `status`, `managed`, `uri`, `idx`, and `source` (`wallet` for the wallet's own list, `remote` for a fetched external list). It returns 404 for credentials without any status list reference, 422 for a malformed reference, and 502 when an external status list cannot be fetched.
 
 Credential listings (`GET /api/credentials` and `GET /api/credentials/{id}`) include a `status` object for credentials that carry a status list reference: `uri` and `idx` from the credential, `managed` (true when the entry lives on this wallet's own status list), and the current `status` value for managed entries.
 
@@ -285,7 +284,7 @@ curl -H 'Accept: application/statuslist+cwt' http://localhost:8085/api/statuslis
 
 Reading a list works for both forms too. When the wallet or `eudi validate` resolves a credential's status reference, it asks for both media types and parses whichever comes back, so an mdoc ecosystem serving CWT lists is resolvable.
 
-`GET /api/crl` serves the certificate revocation list of the wallet CA as a DER CRL (`application/pkix-crl`). The CRL distribution points of generated document signer certificates name this URL (ISO/IEC 18013-5 Table B.3). The list is empty (credential revocation runs over the status list, not certificate revocation) and carries a fresh signature with a week of validity.
+`GET /api/crl` serves the certificate revocation list of the wallet CA as a DER CRL (`application/pkix-crl`). The CRL distribution points of generated document signer certificates name this URL (ISO/IEC 18013-5 Table B.3). The list is empty (credential revocation runs over the status list) and carries a fresh signature with a week of validity.
 
 ### Deferred issuance
 
@@ -327,9 +326,7 @@ The UI polls this on page load so a failure that happened while no page was open
 
 ### Encrypted request objects (`request_uri_method=post`)
 
-OID4VP 1.0 Section 5.10 defines an optional mechanism where the wallet POSTs its capabilities and an encryption key to the verifier's `request_uri` endpoint, instead of using a plain GET. This allows the verifier to encrypt the request object so that only the wallet can read it.
-
-**Note:** This is an OID4VP 1.0 feature. HAIP 1.0 does not mention `wallet_metadata`, `wallet_nonce`, or `request_uri_method`. Use this to test verifiers that support the optional encrypted request object flow.
+OID4VP 1.0 Section 5.10 defines an optional mechanism where the wallet POSTs its capabilities and an encryption key to the verifier's `request_uri` endpoint. This lets the verifier encrypt the request object so that only the wallet can read it. HAIP 1.0 does not mention `wallet_metadata`, `wallet_nonce`, or `request_uri_method`.
 
 When a request sets `request_uri_method=post`, the wallet:
 
@@ -415,7 +412,7 @@ The instance version is shown when a target is selected, in the `VERSION` column
 
 ### Automatic routing (single writer)
 
-A running wallet server owns its wallet directory. When no remote target is configured and a live instance serves the same wallet directory, the CLI automatically routes its commands through that instance's REST API and prints `Routing through the running wallet instance <url>` (with the instance's release and pid) to stderr. An incompatible instance is reported there too, since a long running server can be a major release behind the binary now driving it. This keeps one writer per wallet directory. Otherwise a CLI command and the running server would write the same files with different in-memory state and leave the wallet inconsistent (for example credentials pointing at issuer URLs the server does not serve).
+A running wallet server owns its wallet directory. When no remote target is configured and a live instance serves the same wallet directory, the CLI automatically routes its commands through that instance's REST API and prints `Routing through the running wallet instance <url>` (with the instance's release and pid) to stderr. An incompatible instance is reported there too, since a long running server can be a major release behind the CLI. This keeps one writer per wallet directory. Otherwise a CLI command and the running server would write the same files with different in-memory state and leave the wallet inconsistent (for example credentials pointing at issuer URLs the server does not serve).
 
 Two flags opt out and force direct file access: `--remote local` and an explicit `--templates-dir`. Direct writes while a server runs can diverge from the server's state, so prefer the routed default.
 
@@ -432,12 +429,12 @@ eudi wallet kill 18924               # stop by port, pid, or URL
 eudi wallet kill --all               # stop every running instance
 ```
 
-The former spellings `wallet instances list`, `wallet instances use`, and `wallet instances kill` keep working as hidden deprecated aliases.
+`wallet instances list`, `wallet instances use`, and `wallet instances kill` are hidden deprecated aliases.
 
-Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. The health check also supplies each instance's release and build id, so the `VERSION` column reflects the running process rather than what was recorded at startup. `wallet kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
+Every `wallet serve` registers itself in `~/.eudi-dev/instances/` and deregisters on shutdown. Discovery combines that registry with a scan of the local process list, health checks each candidate (`GET /api/version`), and prunes stale registry entries. The health check also supplies each instance's release and build id, so the `VERSION` column reflects the running process. `wallet kill` asks the instance to exit via `POST /api/shutdown` and falls back to SIGTERM for local processes that stopped responding.
 
 Discovery only sees instances running directly on this system. A wallet server inside a Docker container (or on another machine) is neither in the local registry nor in the local process list. The active remote target is the exception. After `wallet use <url>` (for example `wallet use http://localhost:9085` for a wallet published by a container) the target is health checked and listed with source `active` as long as it responds. The `ACTIVE` column marks the instance the CLI currently manages with `*`. This includes the auto-routed case (a running instance that serves the local wallet directory while no remote target is set). In `--json` output the same information is the `active` field. When the active remote stops responding, `wallet ps` prints a warning instead of listing it.
 
 ### Introspection
 
-`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `vci_version`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, `imprint`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`. In demo mode those host details are replaced by a `demo` object. `POST /api/shutdown` stops the instance (the response is sent before the process exits).
+`GET /api/config` returns the full introspection document of an instance, so a remote controller can learn everything it needs: `port`, `build_id`, `version`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `validation_mode`, `vci_version`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `tls_listener`, `imprint`, and `credential_count`. Outside demo mode it also reports `pid`, `wallet_dir` and `templates_dir`. In demo mode a `demo` object replaces them. `POST /api/shutdown` stops the instance (the response is sent before the process exits).

@@ -18,7 +18,7 @@ Locate the exact section in the current document and confirm its requirement lev
 
 ## After
 
-Confirm every citation the change touches is verbatim and correctly attributed, and that the tests state the requirement they encode, so a rule that later moves is found by reading them. `gofmt`, `golangci-lint run ./...` and `go test ./...` pass: a conformance claim that does not run is not a claim.
+Confirm every citation the change touches is verbatim and correctly attributed, and that the tests state the requirement they encode, so a rule that later moves is found by reading them. `gofmt`, `golangci-lint run ./...` and `go test ./...` pass.
 
 [ADR-0001](0001-debug-by-default-validation-with-opt-in-strict-mode.md) covers what happens to a finding once it is raised. This decision is about the ground it stands on.
 
@@ -40,8 +40,8 @@ No other executable conformance suite exists for EUDI or the ARF as of 2026-08. 
 
 ## Consequences
 
-A check whose grounding cannot be produced is removed rather than kept on the chance it is useful, because an ungrounded check refuses conformant input, which is the failure this tool exists to prevent in others. Version 1.25.2 removed one: an `iss`-to-certificate binding attributed to HAIP 1.0 §6.1.1, which HAIP never stated. It came from SD-JWT VC draft-08 and was dropped by the draft-13 that HAIP 1.0 references, and in strict mode it had been refusing conformant credentials.
+A check whose grounding cannot be produced is removed rather than kept on the chance it is useful, because an ungrounded check refuses conformant input, which is the failure this tool exists to prevent in others. One such check was an `iss`-to-certificate binding attributed to HAIP 1.0 §6.1.1 that came from SD-JWT VC draft-08 and is absent from the draft-13 HAIP 1.0 references.
 
-Behaviour kept for interoperability with implementations built against an older rule may stay, as long as the code says so and does not call it a requirement. The wallet still names the issuer in the subject alternative names of the leaves it signs with, for exactly that reason.
+Behaviour kept for interoperability with implementations built against an older rule may stay, as long as the code says so and does not call it a requirement. The wallet names the issuer in the subject alternative names of the leaves it signs with for that reason.
 
 Documentation is held to the same standard as code. `docs/spec-compliance.md`, `docs/wallet.md` and `docs/validate.md` state what is checked and why, so a rule that changes is corrected in all of them at once.

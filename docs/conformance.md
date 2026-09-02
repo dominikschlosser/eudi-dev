@@ -30,8 +30,6 @@ The wrapper runs the current Final wallet plans plus the current HAIP wallet pla
 - `oid4vp-1final-wallet-haip-test-plan`
 - `oid4vci-1_0-wallet-haip-test-plan`
 
-It does not use the older ID3 wallet plan.
-
 Only the two HAIP plans are part of the OIDF certification program. The suite publishes the plain Final wallet plans as alpha tests, so their runs are evidence but not certifiable yet. The wrapper enforces the split: against the production certification service it runs only the HAIP plans (complete and unfiltered), while local and demo-service runs cover the whole matrix.
 
 ## Default Matrix
@@ -50,9 +48,9 @@ The HAIP plans expose fewer selectable variants (they pin the rest per module en
 - VP HAIP: SD-JWT and mDoc with `direct_post.jwt` and `dc_api.jwt`, the latter covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules (4 plans)
 - VCI HAIP: SD-JWT and mDoc with `by_value` and `by_reference` offers, each covering immediate plain, deferred plain, and immediate encrypted responses (4 plans)
 
-Variant values the wallet deliberately does not implement are absent from the matrix: the `pre_registered` and `decentralized_identifier` prefixes (no pre-registered trust anchoring, no DIDs), the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows (issuance starts from a credential offer), `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
+The matrix leaves out the variants the wallet does not implement: the `pre_registered` and `decentralized_identifier` prefixes, the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows (issuance starts from a credential offer), `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
 
-Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallback. Use the official runner `--rerun` selector for targeted reruns of an already generated matrix, or `ONLY_SCENARIOS` (a comma separated list of slug substrings) to generate and run a subset.
+The matrix is fixed in the wrapper. Use the official runner `--rerun` selector for targeted reruns of an already generated matrix, or `ONLY_SCENARIOS` (a comma separated list of slug substrings) to generate and run a subset.
 
 ## Harness Behavior
 
@@ -78,26 +76,22 @@ Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallba
 - keeps the VCI suite alias aligned with the configured `redirect_uri` and helper-page paths
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
-- sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started. This works against a locally hosted wallet, which is what a conformance run targets
+- sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started
 - passes explicit VP module lists for the alpha Final scenarios so the suite runs executable coverage for that generated variant, and runs the certifiable HAIP plans complete without a filter
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs
 
 ## Design Rule
 
-There is no conformance-only wallet mode in this flow.
+The wallet runs a conformance test with its normal keys:
 
-The wallet uses:
-
-- its normal holder key for DPoP and proof binding
-- its normal issuer signing key and certificate chain for client attestation and key attestation
-- its normal shared wallet CA as the trust anchor
-
-This keeps the run aligned with real wallet behavior. There are no suite-only signing paths.
+- its holder key for DPoP and proof binding
+- its issuer signing key and certificate chain for client attestation and key attestation
+- its shared wallet CA as the trust anchor
 
 ## What the Suite Does Not Cover
 
-The suite plays the authorization server, and its authorization endpoint issues the code on the first request and redirects straight back. No sign-in happens, so no plan reaches the branch where the wallet hands the authorization URL to a browser. The Playwright suite covers that branch against the demo issuer, which serves a real login page and gives the pushed `request_uri` one use (RFC 9126 section 4).
+The suite plays the authorization server, and its authorization endpoint issues the code on the first request without a sign-in. So no plan reaches the branch where the wallet hands the authorization URL to a browser. The Playwright suite covers that branch against the demo issuer, which serves a real login page and gives the pushed `request_uri` one use (RFC 9126 section 4).
 
 ## References
 

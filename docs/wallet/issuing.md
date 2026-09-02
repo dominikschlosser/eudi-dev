@@ -6,7 +6,7 @@ A credential offer is accepted with [`wallet accept`](presenting.md#wallet-accep
 
 ## Sign-in during issuance
 
-An authorization code offer sends the user to the issuer to authenticate. Only a browser can do that, and the wallet never opens one itself (a hosted wallet opening a browser on its own server reaches nobody). Instead it hands out the authorization URL. An open UI tab takes it off the event stream and navigates. An API caller gets `HTTP 202` and the URL, and opens it itself only when it named no tab, so exactly one browser arrives:
+An authorization code offer sends the user to the issuer to authenticate. Only a browser can do that, and the wallet never opens one itself (a hosted wallet opening a browser on its own server reaches nobody). It hands out the authorization URL. An open UI tab takes it off the event stream and navigates. An API caller gets `HTTP 202` and the URL, and opens it itself only when it named no tab, so exactly one browser arrives:
 
 ```json
 {
@@ -45,7 +45,7 @@ An issuer that cannot produce the credential straight away answers the credentia
 
 While the credential is not ready the issuer answers with the `issuance_pending` error and an `interval` to wait ([OID4VCI 1.0 §9.3](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)). The wallet honors that interval. Some issuers signal the same thing by echoing the `transaction_id` back in a success response, which is accepted too.
 
-The wallet does not wait. It records the transaction and returns straight away, and `wallet serve` collects the credential in the background on the interval the issuer asked for. The caller (a consent dialog, a CLI run) is not held for an interval that may be hours.
+The wallet records the transaction and returns straight away, and `wallet serve` collects the credential in the background on the interval the issuer asked for. The caller (a consent dialog, a CLI run) is not held for an interval that may be hours.
 
 Accepting such an offer answers `HTTP 202` with the outcome:
 
@@ -68,7 +68,7 @@ eudi wallet deferred abandon <id>    # stop collecting it
 
 **Check now** asks the issuer straight away, for when the credential is known to be ready (or you want to watch the exchange). It reports what came back: the credential, a still-working issuer, or a refusal. The next scheduled attempt then moves on by one interval, as if the poller had made it. The UI has the same button on each entry.
 
-**Abandon** drops the entry from the schedule. The transaction stays valid at the issuer. The wallet just stops asking. Use it instead of waiting out the 24 hours after which the wallet gives up on its own.
+**Abandon** drops the entry from the schedule. The transaction stays valid at the issuer. The wallet stops asking.
 
 Pending issuances are persisted, so a wallet that restarts keeps collecting. A record is dropped when the credential arrives, when the issuer answers something that will not improve by asking again (a rejected token, an unknown transaction), when it is abandoned, or after 24 hours.
 
@@ -78,7 +78,7 @@ Collecting happens in `wallet serve`. A one-shot `wallet accept` against the loc
 
 On OID4VCI token requests the wallet authenticates itself with a wallet attestation ([OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/)), sent as the `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers. The attestation is signed by the wallet's own CA and carries only the leaf in `x5c`, so an issuer verifying it needs the CA from `wallet ca-cert` as its trust anchor. The same client authentication applies at every authorization server endpoint the wallet calls, including the PAR endpoint, the token endpoint, and the Authorization Challenge Endpoint of interactive authorization (OpenID4VCI 1.1 section 6).
 
-Three drafts of that document are supported, following [ADR-0014](../adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md). The outgoing JWTs carry the union of what those drafts define, which is the draft-07 shape OpenID4VCI 1.0 pins (its section 14.7 says to prefer the pinned version): `iss` and `nbf` in both the attestation and its PoP, whatever `--vci-version` is configured. Draft-08 stopped defining those claims without forbidding them (section 5.1 and section 5.2 rule 1 let a JWT carry claims the draft does not define), so the one shape verifies under every supported draft, including at issuers that check attestations against draft-07. The additions of the latest draft-10 are negotiated through server metadata regardless of the configured version. A server that offers only `attest_jwt_client_auth_dpop`, or whose `client_attestation_pop_methods_supported` names only `dpop_combined`, gets the attestation with the DPoP proof as its possession proof and no dedicated PoP header, with a warning that the mechanism postdates the configured draft. A challenge served in the `OAuth-Client-Attestation-Challenge` response header, or demanded with the `use_attestation_challenge` error, is carried in the next PoP, and the refused request is retried once. The `challenge_endpoint` route stays in use where the metadata names one.
+Three drafts of that document are supported, following [ADR-0014](../adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md). The outgoing JWTs carry the union of what those drafts define, which is the draft-07 shape OpenID4VCI 1.0 pins (its section 14.7 says to prefer the pinned version): `iss` and `nbf` in both the attestation and its PoP, whatever `--vci-version` is configured. Draft-08 does not define those claims and does not forbid them (section 5.1 and section 5.2 rule 1 let a JWT carry claims the draft does not define), so the one shape verifies under every supported draft. The additions of draft-10 are negotiated through server metadata regardless of the configured version. A server that offers only `attest_jwt_client_auth_dpop`, or whose `client_attestation_pop_methods_supported` names only `dpop_combined`, gets the attestation with the DPoP proof as its possession proof and no dedicated PoP header, with a warning that the mechanism postdates the configured draft. A challenge served in the `OAuth-Client-Attestation-Challenge` response header, or demanded with the `use_attestation_challenge` error, is carried in the next PoP, and the refused request is retried once. The `challenge_endpoint` route is used where the metadata names one.
 
 Under `--haip` the wallet attests. HAIP 1.0 §4.4.1 requires it of both sides:
 
@@ -86,8 +86,8 @@ Under `--haip` the wallet attests. HAIP 1.0 §4.4.1 requires it of both sides:
 
 A conformant issuer both requires and advertises client authentication, and the wallet attests. Two kinds of issuer deviate, and `--mode debug` (which the public demo runs) reads each so issuance can proceed:
 
-- An issuer that requires an attestation but advertises no client authentication method at all. Advertising is only a SHOULD in §10.1, so a silent issuer may still require one. The wallet attests anyway and warns about the missing advertisement. An issuer like the Animo playground works this way.
-- An issuer that explicitly advertises only unauthenticated access (`none`). The wallet takes it at its word, proceeds without client authentication, and warns (attesting would only be refused). This makes a non-HAIP issuer like Procivis One reachable.
+- An issuer that requires an attestation but advertises no client authentication method at all. Advertising is only a SHOULD in §10.1, so a silent issuer may still require one. The wallet attests anyway and warns about the missing advertisement.
+- An issuer that explicitly advertises only unauthenticated access (`none`). The wallet takes it at its word, proceeds without client authentication, and warns (attesting would only be refused).
 
 `--mode strict` attests in both cases and lets the exchange fail at the token endpoint if the issuer refuses.
 
@@ -111,7 +111,7 @@ The override never displaces client authentication the server did ask for: an au
 
 ## OpenID4VCI feature level
 
-The wallet speaks [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html), the published final version, and that does not change. `--vci-version` decides whether it also uses what the [1.1 draft](https://openid.github.io/OpenID4VCI/openid-4-verifiable-credential-issuance-1_1-wg-draft.html) adds on top.
+The wallet speaks [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html), the published final version. `--vci-version` decides whether it also uses what the [1.1 draft](https://openid.github.io/OpenID4VCI/openid-4-verifiable-credential-issuance-1_1-wg-draft.html) adds on top.
 
 ```bash
 eudi wallet serve --vci-version 1.1
@@ -119,7 +119,7 @@ eudi wallet serve --vci-version 1.1
 
 `1.0` is the default. `1.1` is what the public demo runs (`--demo` selects it, and `--vci-version 1.0` overrides that).
 
-Every 1.1 feature is negotiated in the issuer's metadata. The level says what the wallet is willing to use, not what it demands. Against an issuer that publishes none of the features the two levels behave identically, so 1.1 is safe on a wallet that also talks to 1.0 issuers.
+Every 1.1 feature is negotiated in the issuer's metadata. Against an issuer that publishes none of them the two levels behave identically, so 1.1 is safe on a wallet that also talks to 1.0 issuers.
 
 Like the other conformance settings, the level is changeable at runtime on a locally-hosted wallet (see [changing the conformance settings](serve.md#changing-the-conformance-settings)) and reported as `vci_version` by `GET /api/config`.
 
@@ -127,11 +127,11 @@ What 1.1 selects:
 
 | Feature | 1.0 | 1.1 |
 |---------|-----|-----|
-| Interactive Authorization (1.1 §6), where the issuer publishes `authorization_challenge_endpoint` | Not used. The offer is recorded in the activity log naming the flag that would use it, and the redirect flow of §5 runs as before | Used. See [interactive authorization](#interactive-authorization) |
+| Interactive Authorization (1.1 §6), where the issuer publishes `authorization_challenge_endpoint` | Not used. The offer is recorded in the activity log naming the flag that would use it, and the redirect flow of §5 runs | Used. See [interactive authorization](#interactive-authorization) |
 
 ### Interactive authorization
 
-An issuer can make presenting a credential a condition of issuing one. Instead of sending the user to a browser, the wallet talks to the issuer's Authorization Challenge Endpoint. The issuer answers that the authorization is not sufficient yet and sends an OpenID4VP request with it. The wallet asks the user and presents what was asked for, and the issuer verifies that presentation as a verifier would. Only then does it hand over an authorization code. Everything after that is the ordinary token and credential exchange.
+An issuer can make presenting a credential a condition of issuing one. The wallet talks to the issuer's Authorization Challenge Endpoint. The issuer answers that the authorization is not sufficient yet and sends an OpenID4VP request with it. The wallet asks the user and presents what was asked for, and the issuer verifies that presentation as a verifier would. Only then does it hand over an authorization code. Everything after that is the ordinary token and credential exchange.
 
 ```mermaid
 sequenceDiagram

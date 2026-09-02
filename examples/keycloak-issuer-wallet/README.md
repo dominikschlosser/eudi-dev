@@ -5,7 +5,7 @@ This example runs a local OpenID4VCI issuance flow from Keycloak into `eudi-dev`
 ## How It Works
 
 1. `docker compose up -d --force-recreate` starts Keycloak `26.7.2`, enables OID4VCI, and imports `realm/oid4vc-demo-realm.json`.
-2. `./scripts/bootstrap.sh` waits for the imported realm, assigns the `membership-credential` to `alice` through the admin API (Keycloak 26.7.2 mints an offer only for a credential the user already holds), and prints the issuer endpoints.
+2. `./scripts/bootstrap.sh` waits for the imported realm, assigns the `membership-credential` to `alice` through the admin API (Keycloak 26.7.2 creates an offer only for a credential the user already holds), and prints the issuer endpoints.
 3. `./scripts/create-offer.sh` logs in as `alice`, calls Keycloak's `create-credential-offer` endpoint, resolves the generated offer once, and emits an inline `openid-credential-offer://?credential_offer=...` URI.
 4. `eudi wallet accept` resolves the offer URI, fetches issuer metadata and authorization details from Keycloak, creates proof-of-possession material, and stores the returned SD-JWT VC in the local wallet directory.
 
@@ -97,13 +97,12 @@ eudi wallet accept "$OFFER_URI"
 
 ### Why Inline `credential_offer`
 
-This example uses the OpenID4VCI by-value `credential_offer` form instead of `credential_offer_uri`.
+This example uses the OpenID4VCI by-value `credential_offer` form.
 
-- OpenID4VCI allows both forms.
 - Some wallets dereference `credential_offer_uri` more than once across preview and issuance steps.
-- Current Keycloak offer-URI behavior is effectively one-shot for this flow, which breaks those wallets on the second fetch.
-- Resolving the offer once in the example and handing the wallet the inline JSON avoids that interoperability issue while staying within the spec.
-- The demo realm also omits `vc.credential_identifier`, so wallets that still request credentials by `credential_configuration_id` keep working. With that attribute set, Keycloak 26.7.2 requires a final `credential_identifier` field on the credential request.
+- Keycloak serves an offer URI once for this flow, so the second fetch fails.
+- Resolving the offer once in the example and handing the wallet the inline JSON avoids that.
+- The demo realm also omits `vc.credential_identifier`, so wallets that request credentials by `credential_configuration_id` work. With that attribute set, Keycloak 26.7.2 requires a `credential_identifier` field on the credential request.
 
 ## Useful Overrides
 

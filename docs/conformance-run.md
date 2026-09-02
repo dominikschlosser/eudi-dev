@@ -26,7 +26,7 @@ git checkout release-v5.2.4
 mvn clean package
 ```
 
-Run the suite server **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>` and the suite fetches that URL itself. Inside a container, `localhost` is the container. Every module that checks credential status then fails with `Connect to https://localhost:<port> failed: Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host, so `localhost` resolves to the machine the wallet runs on.
+Run the suite server **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>` and the suite fetches that URL itself. Inside a container `localhost` is the container, and every module that checks credential status fails with `Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host.
 
 The `eudi-dev` wrapper defaults to plain `localhost` URLs. The server must advertise the same host, not the upstream default of `localhost.emobix.co.uk`:
 
@@ -154,7 +154,7 @@ When updating [Current conformance results](./conformance-results.md), include t
 
 ## Hosted Mode
 
-Hosted mode creates private plans on the OIDF service. It does not delete plans, publish plans, or create certification packages.
+Hosted mode creates private plans on the OIDF service.
 
 The hosted suite fetches the wallet status list itself, so the wallet needs a public https origin.
 
@@ -178,7 +178,7 @@ OIDF_REQUEST_TIMEOUT=60 \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch (the deployed wallet runs strict with HAIP enforced by default, Final modules run non-HAIP and HAIP modules enforced as usual). `OIDF_VCI_ALIAS` must match the redirect URI the deployed wallet was started with (the compose file pins `oid4vc-dev-vci-strict`). The wallet CA is fetched from the wallet's `/api/certificates/ca`. Deploy a release that contains the wallet behavior being certified before the run.
+The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch. `OIDF_VCI_ALIAS` must match the redirect URI the deployed wallet was started with (the compose file pins `oid4vc-dev-vci-strict`). The wallet CA is fetched from the wallet's `/api/certificates/ca`. Deploy a release that contains the wallet behavior being certified before the run.
 
 ### Against a local wallet through a tunnel
 
@@ -195,7 +195,7 @@ OIDF_REQUEST_TIMEOUT=60 \
   scripts/oidf-wallet-conformance.sh
 ```
 
-Hosted-mode runs do not appear on the public OIDF pages. That is expected. Use the printed `plan-detail.html?plan=...` URLs while signed into the OIDF account that owns the bearer token.
+Hosted-mode plans are private. Open the printed `plan-detail.html?plan=...` URLs while signed into the OIDF account that owns the bearer token.
 
 To clear the account's plans on the hosted service between attempts:
 

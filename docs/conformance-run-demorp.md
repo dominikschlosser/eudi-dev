@@ -63,7 +63,7 @@ The wallet runbook's suite and server overrides apply unchanged (`CONFORMANCE_MO
 - `OIDF_DEMO_BASE_URL`: the https origin the demo issuer and verifier advertise. Defaults to `https://localhost:<port+1>`
 - `ONLY_SCENARIOS`: comma separated scenario slug substrings to run a subset
 
-`CONFORMANCE_MODE=hosted` exists for parity with the wallet wrapper but the hosted suite would have to reach the demo endpoints, so it only works with a publicly reachable `OIDF_DEMO_BASE_URL` (a tunnel with its own TLS terminator). The local mode is the supported path.
+`CONFORMANCE_MODE=hosted` needs a publicly reachable `OIDF_DEMO_BASE_URL` (a tunnel with its own TLS terminator), because the hosted suite fetches the demo endpoints itself. It refuses the production certification service. Local mode is the supported path.
 
 ## Result Artifacts
 

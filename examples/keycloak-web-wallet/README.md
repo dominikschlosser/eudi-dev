@@ -1,6 +1,6 @@
 # Keycloak + Web Wallet (Web URLs Instead of Custom Schemes)
 
-This example runs the complete triangle in one Docker compose project: a Keycloak issuer, a Keycloak verifier (`keycloak-extension-oid4vp`), and the `eudi-dev` wallet as a **web wallet**. It drives issuance and verification by invoking the wallet at its own localhost URL instead of a custom URL scheme. No OS scheme handlers, no link rewriting: the verifier is configured with the wallet's URL and verification is an ordinary browser OIDC login.
+This example runs the complete triangle in one Docker compose project: a Keycloak issuer, a Keycloak verifier (`keycloak-extension-oid4vp`), and the `eudi-dev` wallet as a **web wallet**. It drives issuance and verification by invoking the wallet at its own localhost URL instead of a custom URL scheme. The verifier is configured with the wallet's URL and verification is an ordinary browser OIDC login.
 
 Custom schemes (`openid4vp://`, `openid-credential-offer://`) need OS-level handler registration, which only exists on macOS and never inside containers or CI. The wallet's web endpoints take exactly the same query parameters:
 
@@ -33,7 +33,7 @@ docker compose run --rm demo demo-issuance.py
 docker compose run --rm demo demo-verification.py
 ```
 
-The default host ports (Keycloak `9080`, wallet `9085`, demo UI `9090`) deliberately avoid the wallet's and Keycloak's standard ports, so the example runs alongside a locally running `eudi-dev` wallet or Keycloak. If a port is taken anyway, `start.sh` picks the next free one automatically and prints what it chose. To pin the ports yourself, override them explicitly:
+The default host ports (Keycloak `9080`, wallet `9085`, demo UI `9090`) avoid the wallet's and Keycloak's standard ports, so the example runs alongside a locally running `eudi-dev` wallet or Keycloak. If a port is taken anyway, `start.sh` picks the next free one automatically and prints what it chose. To pin the ports yourself, override them explicitly:
 
 ```bash
 KEYCLOAK_PORT=18080 WALLET_PORT=18085 APP_PORT=18090 ./start.sh
@@ -41,7 +41,7 @@ KEYCLOAK_PORT=18080 WALLET_PORT=18085 APP_PORT=18090 ./start.sh
 
 ## How It Works
 
-Every service joins Keycloak's network namespace (`network_mode: service:keycloak`), so `localhost:<port>` means the same thing in the host browser and inside every container. That removes the usual split between "URL the browser sees" and "URL the wallet container can reach". Keycloak pages, wallet links, `request_uri`, and all redirects use one origin scheme: plain localhost. The listen ports equal the published ports, which is why the port overrides must be set together.
+Every service joins Keycloak's network namespace (`network_mode: service:keycloak`), so `localhost:<port>` means the same thing in the host browser and inside every container. Keycloak pages, wallet links, `request_uri`, and all redirects use plain localhost. The listen ports equal the published ports, which is why the port overrides must be set together.
 
 Services:
 
@@ -51,9 +51,9 @@ Services:
 - `demo`. A one-shot container for the headless demo scripts
 - `wallet-init`. Setup-only helper to export the wallet CA before Keycloak starts
 
-`start.sh` runs `scripts/configure-wallet-links.py` after startup, which sets the `oid4vp` provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and the `demo-trust-list` provider's `trustListUrl` to the wallet's trust list via the admin API. That is the whole "integration": from then on Keycloak's login page links straight to the wallet.
+`start.sh` runs `scripts/configure-wallet-links.py` after startup, which sets the `oid4vp` provider's `walletScheme` to `http://localhost:<wallet-port>/authorize` and the `demo-trust-list` provider's `trustListUrl` to the wallet's trust list via the admin API. From then on Keycloak's login page links straight to the wallet.
 
-Keycloak `26.7.2` notes: the `create-credential-offer` REST endpoint sits behind the new `oid4vc-vci-rest-credential-offer` feature flag, and offers can only be created for credentials assigned to the user. The demo assigns `membership-credential` to `alice` via the admin API (`POST /admin/realms/{realm}/users/{id}/vc/credentials`) before creating an offer.
+Keycloak `26.7.2` notes: the `create-credential-offer` REST endpoint sits behind the `oid4vc-vci-rest-credential-offer` feature flag, and offers can only be created for credentials assigned to the user. The demo assigns `membership-credential` to `alice` via the admin API (`POST /admin/realms/{realm}/users/{id}/vc/credentials`) before creating an offer.
 
 **Extension version**: this example uses `keycloak-extension-oid4vp` `0.11.1`, downloaded by `scripts/download-extension.sh`. A local checkout of the extension next to this repository (or pointed to via `KEYCLOAK_OID4VP_REPO`) is preferred when present, so changes to the extension can be tested before release.
 
@@ -66,7 +66,7 @@ Keycloak `26.7.2` notes: the `create-credential-offer` REST endpoint sits behind
 ### Verification (`demo-verification.py`)
 
 1. Starts an OIDC login for the `wallet-mock` client in the `wallet-demo` realm.
-2. Takes the wallet link from the extension's login page. After `configure-wallet-links.py` this already *is* the wallet's `/authorize` URL.
+2. Takes the wallet link from the extension's login page. After `configure-wallet-links.py` this is the wallet's `/authorize` URL.
 3. GETs it. The wallet fetches the request object and waits for consent. The script approves it via `POST /api/requests/{id}/approve`, and the wallet presents the PID credential via `direct_post` and returns the verifier's `redirect_uri`.
 4. Completes the broker flow with that redirect and exchanges the authorization code. The login lands as the PID subject (`preferred_username=123456782`, mapped from `personal_administrative_number`).
 

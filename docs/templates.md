@@ -13,11 +13,11 @@ Four pre-defined templates ship with the binary, a PID per format for each of th
 
 The `pid-*` templates follow the attribute tables of the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) and carry the rulebook's own Jan Wijnand ('t Hart) example identity. The `german-pid-*` templates follow the claim table of the [German PID Rulebook](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) (version 1.0.0) and carry the German ERIKA MUSTERMANN specimen. The two describe different people. Each pre-defined PID names its rulebook in its display description, with the link, so the holder of the credential can check the claim set against its source.
 
-Each rulebook defines its own attribute set. The German one adds national attributes (`birth_name`, `title`, `also_known_as`, `source_document_type`, `no_place_info`, and the age thresholds in `age_equal_or_over`). The EU one carries attributes the German eID leaves to other documents (`sex`, `document_number`, `personal_administrative_number`, `date_of_issuance`, `birth_family_name`). Shared attributes can be encoded differently: the German birth name is `birth_name` where the EU one is `birth_family_name`, and the German street address holds the house number where the EU one has `address.house_number`.
+Each rulebook defines its own attribute set. The German one adds national attributes (`birth_name`, `academic_title`, `source_document_type`, `raw_eid_birth_date`, and the age thresholds in `age_equal_or_over`). The EU one carries attributes the German eID leaves to other documents (`sex`, `document_number`, `personal_administrative_number`, `date_of_issuance`, `birth_family_name`). Shared attributes can be encoded differently: the German birth name is `birth_name` where the EU one is `birth_family_name`, and the German street address holds the house number where the EU one has `address.house_number`.
 
 The German SD-JWT PID carries an `aka_vcts` claim naming `urn:eudi:pid:1` ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §2.2.2.2), so a request for the country-independent PID is answered by it. See [credential type inheritance](wallet.md#credential-type-inheritance).
 
-The German mdoc PID spans two namespaces, as the rulebook prescribes: the European elements in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `also_known_as`, `no_place_info`, `source_document_type`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Its doctype is `eu.europa.ec.eudi.pid.1`, the one every PID carries. An mdoc claim key with a `namespace:element` prefix goes into that namespace. Everything else lands in the template's namespace. Dates are CBOR tagged as ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
+The German mdoc PID spans two namespaces, as the rulebook prescribes: the European elements in `eu.europa.ec.eudi.pid.1` and the national additions (`birth_name`, `academic_title`, `source_document_type`, `raw_eid_birth_date`, `age_over_*`) in `eu.europa.ec.eudi.pid.de.1`. Its doctype is `eu.europa.ec.eudi.pid.1`, the one every PID carries. An mdoc claim key with a `namespace:element` prefix goes into that namespace. Everything else lands in the template's namespace. Dates are CBOR tagged as ISO 18013-5 expects, a calendar day as full-date (tag 1004) and a timestamp as tdate (tag 0).
 
 Regenerating a PID (`wallet generate-pid`, `POST /api/generate-pid`) replaces the mdoc PID that uses the same namespaces, since the two share a doctype. Give an overridden `german-pid-mdoc` at least one `eu.europa.ec.eudi.pid.de.1` element to keep it apart from `pid-mdoc`.
 
@@ -63,7 +63,7 @@ All fields except `claims` are optional:
 | `claims` | The default claim set |
 | `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
 | `display` | The appearance credentials issued from the template wear (`name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image`). Image fields take a data URI or an http(s) URL. The pre-defined PID templates set it |
-| `predefined` | Set by the server on pre-defined templates in listings and exports. Ignored on import |
+| `predefined` | Set on pre-defined templates in listings and exports. Ignored on import |
 
 A template reference (`--template`, `--from`) resolves in this order. A value containing a path separator or a `.json` or `.template` extension loads that file directly. Otherwise the name is looked up in the template directory (both extensions), then in the pre-defined templates.
 
@@ -91,9 +91,9 @@ The two image fields (`logo`, `background_image`) take one of three sources:
 
 Whatever the source, the image is fetched through the wallet's size-capped policed cache and embedded as a `data:` URI on the issued credential, so a card never calls out again after issuance. All display text is length-bounded when it is issued or read.
 
-The pre-defined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The German PID adds `background_image` `embedded:german-id-specimen.jpg` (the public Personalausweis specimen, which is also what tells it apart from the country-independent PID on the card).
+The pre-defined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The German PID adds `background_image` `embedded:german-id-specimen.jpg` (the public Personalausweis specimen, which tells it apart from the EUDI PID on the card).
 
-Display is set in the template JSON `display` object. There are no `templates save` flags for it (unlike the claim and format flags). An explicit display value at issue time overlays the template's: the `issue` command's `--display-name`, `--display-description`, `--background-color`, `--text-color`, `--logo`, `--logo-alt` and `--background-image` flags (and the same fields in the Issue dialog and `POST /api/issue`) take precedence over the template's, so setting a name keeps the template's art while replacing the name.
+Display is set in the template JSON `display` object. An explicit display value at issue time overlays the template's: the `issue` command's `--display-name`, `--display-description`, `--background-color`, `--text-color`, `--logo`, `--logo-alt` and `--background-image` flags (and the same fields in the Issue dialog and `POST /api/issue`) take precedence over the template's, so setting a name keeps the template's art while replacing the name.
 
 ```json
 {

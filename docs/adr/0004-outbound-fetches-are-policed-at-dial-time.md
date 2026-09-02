@@ -6,6 +6,6 @@ So the policy is a `net.Dialer.Control` hook (`internal/format/policy.go`). It r
 
 ## Consequences
 
-Every HTTP client in the toolkit must be built through `format.HTTPClientForURL` or it silently bypasses the policy. That is a real footgun and the reason `internal/wallet/issuance.go` keeps a sentinel default client and routes through `doIssuanceRequest` instead of calling `http.DefaultClient`. A new package that reaches for `http.Get` gets no policy and no error telling it so.
+Every HTTP client in the toolkit must be built through `format.HTTPClientForURL` or it silently bypasses the policy. That is why `internal/wallet/issuance.go` keeps a sentinel default client and routes through `doIssuanceRequest` rather than calling `http.DefaultClient`. A new package that reaches for `http.Get` gets no policy and no error telling it so.
 
 A demo wallet also has to reach its own endpoints, all of which resolve to loopback and would be refused. `AllowOwnOrigins` exempts the operator-configured URLs by exact resolved address and port, so a visitor-supplied URL that merely happens to point at loopback is still blocked.

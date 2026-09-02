@@ -10,7 +10,7 @@ Each example should be self-contained in its own subfolder and include:
 - any compose files, scripts, or fixtures needed to run it
 - the exact versions or assumptions the scenario was tested against
 
-The examples in this directory prefer fixed ports, fixed demo identities, and static Keycloak realm files where that keeps the flow easier to understand. Dynamic bootstrap scripts are kept for cases that genuinely need runtime-generated keys, trust lists, or provider wiring.
+The examples in this directory prefer fixed ports, fixed demo identities, and static Keycloak realm files where that keeps the flow easier to understand. Bootstrap scripts are used only where runtime-generated keys, trust lists, or provider wiring are needed.
 
 The example scripts are written for Bash. On Windows, run them from Git Bash or WSL. The wallet flows themselves avoid macOS-only assumptions and fall back to `eudi wallet accept '<uri>'` when custom URL handlers are unavailable.
 

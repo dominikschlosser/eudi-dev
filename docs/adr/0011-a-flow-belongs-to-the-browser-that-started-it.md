@@ -10,13 +10,13 @@ Anyone can send any cookie or any header. [ADR-0002](0002-the-wallet-http-api-is
 
 ## Unowned is load-bearing
 
-A flow whose client named no browser is visible and answerable to every caller. That is what keeps the CLI, curl, CI, Testcontainers, the conformance harness and every URL handler installed before this working, and it is the invariant most likely to be tidied away by a later change. `TestBackwardsCompatibility_ClientsThatNameNoBrowser` and `TestUnownedRequestStaysAnswerable` exist to stop that.
+A flow whose client named no browser is visible and answerable to every caller. That is what keeps the CLI, curl, CI, Testcontainers, the conformance harness and every URL handler working. `TestBackwardsCompatibility_ClientsThatNameNoBrowser` and `TestUnownedRequestStaysAnswerable` pin it.
 
 The sign-in prompt is the one signal that acts on a browser rather than informing it, so it only ever reaches its owner. A client that named no browser already has the URL, in the answer to the call it made. An error report informs, so it follows the rule the consent request follows. A consent request nobody named waits in the banner, which is what a local wallet sees too: it is a shared wallet with one visitor, and the wallet names the request in the URL of the tab it opens so that tab answers it directly.
 
 ## The redirect hands over an id
 
-A browser the wallet redirects is given the request id in the URL. Naming that id reaches and answers that request, which is what a browser that keeps no cookie has to show for itself: one inside a cross-site frame, or one with cookies turned off. The id is unguessable and the wallet gave it to that browser, so it is treated as the capability it already was.
+A browser the wallet redirects is given the request id in the URL. Naming that id reaches and answers that request, which is what a browser that keeps no cookie has to show for itself: one inside a cross-site frame, or one with cookies turned off. The id is unguessable and the wallet gave it to that browser, so it serves as a capability.
 
 ## Consequences
 

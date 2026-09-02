@@ -1,8 +1,8 @@
 # Flow Diagrams
 
-The diagrams in this section are written as Mermaid source, so the pages stay reviewable in plain text and do not depend on generated image assets.
+The diagrams are Mermaid source, so the pages stay reviewable in plain text.
 
-These diagrams intentionally treat `eudi-dev` as a single actor. They show the external interaction pattern and the request parameters or wallet flags that change behavior, not the internal package structure.
+They treat `eudi-dev` as a single actor and show the external interaction pattern and the request parameters or wallet flags that change behavior.
 
 ## Pages
 

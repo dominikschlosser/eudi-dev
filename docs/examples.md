@@ -10,7 +10,7 @@ Each scenario is a complete local setup around `eudi-dev`: Docker compose files,
 
 Folder: [`examples/keycloak-issuer-wallet`](../examples/keycloak-issuer-wallet/README.md)
 
-Use this when you want to run Keycloak `26.6.0` as an OpenID4VCI issuer and redeem the resulting offer with an `eudi-dev` wallet.
+Use this when you want to run Keycloak `26.7.2` as an OpenID4VCI issuer and redeem the resulting offer with an `eudi-dev` wallet.
 
 It includes:
 
@@ -23,7 +23,7 @@ It includes:
 
 Folder: [`examples/keycloak-verifier-oid4vp`](../examples/keycloak-verifier-oid4vp/README.md)
 
-Use this when you want to run Keycloak `26.6.0` as an OpenID4VP verifier with `keycloak-extension-oid4vp` and use `eudi-dev` as the wallet.
+Use this when you want to run Keycloak `26.7.2` as an OpenID4VP verifier with `keycloak-extension-oid4vp` and use `eudi-dev` as the wallet.
 
 It includes:
 
@@ -37,23 +37,22 @@ It includes:
 
 Folder: [`examples/keycloak-issuer-verifier-app`](../examples/keycloak-issuer-verifier-app/README.md)
 
-Use this for a fuller local integration: one Keycloak `26.6.0` instance issues a credential and verifies it through `keycloak-extension-oid4vp` with HAIP-style verifier settings, and a sample application drives both steps.
+Use this for a fuller local integration: one Keycloak `26.7.2` instance signs users in with their wallet as an OpenID4VP verifier (`keycloak-extension-oid4vp`, subject-binding model) and issues them a membership credential during the first login. Later logins present the PID together with that credential and need no password. A Go relying party drives the login.
 
 It includes:
 
-- a Keycloak compose setup with both OID4VCI and OID4VP pieces enabled
-- a realm bootstrap script for issuance and verification together
-- a custom first-broker authenticator that links the verified credential back to the existing Keycloak user by `keycloak_user_id`
-- a small local demo application with issue and login actions
+- a Keycloak compose setup with the OID4VP provider jar, the realm import, and the wallet CA in its truststore
+- a static realm with the verifier, the subject-binding first broker login flow, the membership credential scope, and the trust material
+- a bootstrap script that adds a CA-issued realm signing key
+- a small Go relying party with a wallet sign-in
 - HAIP verifier settings using `haip-vp://`, `direct_post.jwt`, and `x509_hash`
-- local issuer metadata / JWKS trust, plus public ngrok mode with a generated Keycloak signing-certificate trust list
-- a headless smoke test for the combined flow
+- a headless smoke test driving the first (password plus offer) and second (passwordless) login
 
 ### Keycloak + Web Wallet (Web URLs Instead of Custom Schemes)
 
 Folder: [`examples/keycloak-web-wallet`](../examples/keycloak-web-wallet/README.md)
 
-Use this to run the full triangle in containers with no host-side wallet and no custom URL schemes at all. One Keycloak `26.7.0` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`). Verification is then an ordinary browser OIDC login. This is the setup to copy for hosted environments, automated tests, and non-macOS platforms.
+Use this to run the full triangle in containers with no host-side wallet and no custom URL schemes at all. One Keycloak `26.7.2` instance issues and verifies (via `keycloak-extension-oid4vp`), the `eudi-dev` wallet runs as a compose service, and the verifier is *configured* with the wallet's `/authorize` URL (`walletScheme`). Verification is then an ordinary browser OIDC login. This is the setup to copy for hosted environments, automated tests, and non-macOS platforms.
 
 It includes:
 

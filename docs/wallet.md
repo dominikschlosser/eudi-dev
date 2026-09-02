@@ -6,7 +6,7 @@ The wallet has two validation modes. Both run the same checks. The mode decides 
 - `debug` (default) reports each finding and keeps processing the request, so the failure surfaces where its effect is visible. During DCQL evaluation it warns and keeps a credential match when some required claim paths are missing but other requested claims still match
 - `strict` treats the same findings as errors and refuses the request
 
-`--haip` is a separate switch and not a third mode. See [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement).
+`--haip` is a separate switch. See [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement).
 
 For OpenID Foundation conformance work, see [docs/conformance.md](./conformance.md).
 For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/diagrams](./diagrams/README.md).
@@ -93,7 +93,7 @@ eudi wallet register
 
 On Linux and Windows, `wallet register` and `wallet unregister` are accepted as no-ops so shared scripts stay portable. Use `eudi wallet accept '<uri>'` with copied `openid4vp://` or `openid-credential-offer://` links instead.
 
-The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet use <url>`, clicked links are submitted to that instance instead of the local listener (useful when the wallet runs in a Docker container). The handler also opens the remote consent UI after submitting the link, since a remote instance cannot open a browser on this desktop. It never restarts or replaces a remote instance. `wallet use local` switches link handling back to the local wallet server.
+The macOS URL handler honors the active remote wallet. While a remote target is set with `wallet use <url>`, clicked links are submitted to that instance (useful when the wallet runs in a Docker container). The handler also opens the remote consent UI after submitting the link, since a remote instance cannot open a browser on this desktop. `wallet use local` switches link handling back to the local wallet server.
 
 ## Credential type inheritance
 
@@ -133,16 +133,16 @@ All wallet state is stored in `~/.eudi-dev/wallet/` by default:
     └── templates/          # User credential templates (see templates.md)
 ```
 
-A credential's display images (logo, background) are kept as content-addressed files in `assets/`, and `wallet.json` holds a reference (`asset:<hash>.<ext>`) rather than the image bytes. This keeps `wallet.json` small enough to reparse on every request on a busy hosted instance. The same image is stored once (content-addressed), and an image the wallet embedded before this layout (a `data:` URI inside `wallet.json`) is still served and moves to `assets/` on the next save.
+A credential's display images (logo, background) are kept as content-addressed files in `assets/`, and `wallet.json` holds a reference (`asset:<hash>.<ext>`) rather than the image bytes. This keeps `wallet.json` small enough to reparse on every request on a busy hosted instance. The same image is stored once. A `data:` URI inside `wallet.json` is still served and moves to `assets/` on the next save.
 
-Wallet interaction logs are stored in `wallet.json` under the top-level `log` field. `wallet logs clean` clears those entries and writes `wallet-log-cleaned-at` so an already-running wallet server cannot later save old in-memory log entries back to disk. If you use `--wallet-dir`, both files live in that custom wallet directory instead.
+Wallet interaction logs are stored in `wallet.json` under the top-level `log` field. `wallet logs clean` clears those entries and writes `wallet-log-cleaned-at` so an already-running wallet server cannot later save old in-memory log entries back to disk. With `--wallet-dir`, both files live in that directory.
 
 Keys are P-256 EC keys, auto-generated on first use and reused across invocations. Wallets under the same wallet base directory share a persisted **CA key** and build certificate chains from it:
 
 1. **CA certificate**: self-signed, used as trust anchor in the trust list (`/api/trustlist`)
 2. **Leaf certificate**: signed by the CA, wraps the issuer key's public key
 
-Generated credentials are signed with the **issuer key**. SD-JWT credentials include a deterministic `kid` header, expose the signing key through JWT VC issuer metadata, and include the leaf signing certificate in `x5c`. The shared trust-anchor CA stays in the wallet trust list so verifiers can validate the signing key through the exposed trust chain instead of trusting a bare public key.
+Generated credentials are signed with the **issuer key**. SD-JWT credentials include a deterministic `kid` header, expose the signing key through JWT VC issuer metadata, and include the leaf signing certificate in `x5c`. The shared CA is the anchor in the wallet trust list, so verifiers validate the signing key through that chain.
 
 Each wallet keeps its own issuer key. Its credential-signing leaf certificate and HTTPS wallet certificate are generated from the shared CA.
 

@@ -32,8 +32,8 @@ eudi decode -f trustlist https://example.com/trust-list.jwt
 2. **HTTP(S) URL with OID4 query params**: `credential_offer` / `credential_offer_uri` (VCI), `client_id` / `response_type` / `request_uri` (VP)
 3. **SD-JWT**: contains `~` separator
 4. **mDOC**: hex or base64url encoded CBOR
-5. **JSON**: inspected for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
-6. **JWT**: 3 dot-separated parts. Payload inspected for OID4 markers and trust list markers (`TrustedEntitiesList`)
+5. **JSON**: inspected for a trust list `LoTE` object and for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
+6. **JWT**: 3 dot-separated parts. Payload inspected for the same markers
 
 ## Format override
 
@@ -94,8 +94,8 @@ SD-JWT Credential
   [3] birthdate: 1978-02-12
 ```
 
-`decode` is an inspection tool. It still verifies JWT or SD-JWT signatures automatically, against the embedded `x5c` certificate when the credential carries one, otherwise against issuer metadata resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
+`decode` verifies JWT or SD-JWT signatures automatically, against the embedded `x5c` certificate when the credential carries one, otherwise against issuer metadata resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
 
-An SD-JWT that breaks an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is still printed. The violated rule is named above the output. A decoder exists to show broken credentials. Anything that decides trust, including the wallet's import path, rejects such a credential instead.
+An SD-JWT that breaks an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is printed with the violated rule named above the output. The wallet's import path rejects such a credential.
 
 Use `-v` for x5c chains, digest IDs, and device key info. Use `--json` for machine-readable output.

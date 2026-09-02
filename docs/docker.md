@@ -18,7 +18,7 @@ echo "eyJhbGci..." | docker run -i ghcr.io/dominikschlosser/eudi-dev decode
 docker run -i ghcr.io/dominikschlosser/eudi-dev validate --trust-list https://example.com/trustlist.jwt < credential.txt
 ```
 
-## Demo mode
+## Demo profile
 
 The container also runs the demo profile of the public instance at [eudi-test.dev](https://eudi-test.dev):
 
@@ -55,7 +55,7 @@ Without a volume the state is ephemeral: removing the container discards the key
 | `/api/templates`, `/api/templates/<name>` | GET/PUT/DELETE | List and manage [credential templates](templates.md) |
 | `/api/next-error` | POST/DELETE | Set or clear a one-shot error override |
 | `/api/config/preferred-format` | PUT | Set credential format preference (`dc+sd-jwt` / `mso_mdoc` / `jwt_vc_json` / empty) |
-| `/api/config` | GET | Instance introspection (pid, directories, URLs, behavior) |
+| `/api/config` | GET | Instance introspection (PID baseline, directories, URLs, behavior) |
 | `/api/shutdown` | POST | Stop the wallet server process |
 
 ## Typical verifier integration test flow
@@ -65,9 +65,7 @@ Without a volume the state is ephemeral: removing the container discards the key
 3. Redirect/send the request to `http://<wallet>/authorize?client_id=...&response_type=vp_token&response_mode=direct_post&response_uri=http://<your-verifier>/callback&nonce=...&dcql_query=...`
 4. The wallet auto-selects matching credentials and POSTs `vp_token` + `state` to your `response_uri`
 5. Your verifier receives the VP token and can validate its signing chain using the wallet's trust list from `/api/trustlist`
-6. If your verifier enforces current EUDI issuer authorization semantics, resolve provider entitlements and exact attestation types from the signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp` responses instead of expecting custom trust-list fields
-
-`/api/trustlist` is the legacy default endpoint. It stays certificate-centric and backward compatible. `/api/trustlists` lists the available profile IDs and routes. `/api/trustlists/<id>` serves the ETSI trust-list JWT for one profile.
+6. For EUDI issuer authorization checks, resolve provider entitlements and exact attestation types from the signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp` responses
 
 Behind Docker port mappings or Testcontainers, use the relative `path` from `/api/trustlists` and resolve it against the URL you actually used to reach the wallet. `advertised_url` is the wallet's configured issuer URL and can differ from the externally reachable test URL.
 
@@ -149,7 +147,7 @@ docker run -p 8085:8085 -v ./my-templates:/templates ghcr.io/dominikschlosser/eu
   wallet serve --auto-accept --pid --port 8085 --templates-dir /templates
 ```
 
-Alternatively generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/`, so the shared CA persists alongside the credentials (`wallet generate-pid` is deprecated, use the template based issuance):
+Alternatively generate customized PIDs into a mounted data directory first. Mount the parent of `wallet/`, so the shared CA persists alongside the credentials:
 
 ```bash
 docker run --rm -v wallet-data:/home/app/.eudi-dev ghcr.io/dominikschlosser/eudi-dev \
@@ -265,4 +263,4 @@ curl -X POST http://localhost:8085/api/credentials/<id>/status \
 
 ## Supported response modes
 
-`direct_post` (default) and `direct_post.jwt` (JARM. The wallet encrypts the response using the verifier's ephemeral key from the request object).
+`direct_post` (default) and `direct_post.jwt` (JARM, the response encrypted to the verifier's ephemeral key from the request object).

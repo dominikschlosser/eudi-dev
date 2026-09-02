@@ -41,21 +41,20 @@ The whole UI is built for browser automation. Every interactive control has a st
 
 The UI header links to the project on GitHub and to CLI install instructions. The header also has an Auto-accept toggle button (filled while active, since consent dialogs never appear then). It flips the setting at runtime on a locally-hosted wallet. The demo refuses the change, like its other fixed settings. The **Trust & certificates** dialog (opened from the header) lists the wallet's trust list URLs with copy buttons, each labelled with the provider profile it describes, plus direct downloads for the CA, signing and HTTPS keys. It covers both counterparties: a verifier trusting the wallet's self-issued credentials, and an issuer verifying the wallet attestation and key attestation the wallet sends during issuance. Both chain to the same CA.
 
-By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. An https `--base-url` is used as the issuer URL directly instead, so issuer metadata, trust lists, and status lists live on the public origin and an external TLS terminator serves them (see [public demo hosting](../public-demo.md)). If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless you explicitly replace it with `--base-url` or `--docker`.
+By default, a fresh wallet uses a local issuer URL on `https://localhost:<port+1>`. An https `--base-url` is used as the issuer URL directly, so issuer metadata, trust lists, and status lists live on the public origin and an external TLS terminator serves them (see [public demo hosting](../public-demo.md)). If the wallet already has a persisted issuer URL, `wallet serve` reuses it unless `--base-url` or `--docker` replaces it.
 
 For a local https origin without a terminator, add `--serve-tls`. The wallet then binds the base URL's own port and serves it with its own TLS certificate, next to the plain HTTP port. It requires an https `--base-url` with an explicit port. The [demo issuer and verifier conformance run](../conformance-run-demorp.md) uses this, because the OIDF suite requires https endpoints from the party under test.
 
 The demo verifier accepts presented credentials whose issuer chains anchor in the wallet's own CA. `--demo-verifier-trust-anchor <pem>` (repeatable) adds further anchors, for presentations issued outside this wallet (the OIDF conformance suite signs the credentials it presents under its own CAs).
 
-The shared wallet CA can be exported with `wallet ca-cert` for verifier trust stores or CI fixtures. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate when you need the exact server certificate instead. Endpoints and response formats are the same on top of the shared trust root.
-The trust list is certificate- and service-centric. EUDI-style issuer authorization data such as provider entitlements and `providesAttestations` is published through signed OpenID Credential Issuer metadata and registrar-style responses, not through custom trust-list fields.
+The shared wallet CA can be exported with `wallet ca-cert` for verifier trust stores or CI fixtures. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate when you need the exact server certificate.
 
 The wallet persists an issued-attestation registry alongside the stored credentials. Each issued or imported credential type can register:
 - its attestation identifier (`vct` or `docType`)
 - its registrar entitlements
 - its trust-list profile data such as LoTE type, entity name, and issuance or revocation service type identifiers
 
-Trust lists are created from that registry, not by scanning certificates alone:
+Trust lists are created from that registry:
 - `wallet generate-pid` and `wallet serve --pid` register PID attestation types with the PID trust-list profile
 - `issue ... --wallet` issues with the wallet issuer context, stores the credential, and registers one issued-attestation entry for its credential type
 - `wallet import` registers a default issued-attestation entry for the imported credential type
@@ -63,13 +62,13 @@ Trust lists are created from that registry, not by scanning certificates alone:
 
 Credential-signing certificates are derived per trust-list profile. The wallet keeps one shared CA root, but credentials for different profiles can present different leaf certificates while still chaining to that same CA.
 
-An issuer needs the same shared CA on the other side of the flow. The wallet attestation (`OAuth-Client-Attestation`) and the key attestation in credential proofs are signed by the wallet's issuer key and carry only the leaf in `x5c`. The anchor comes from `/api/certificates/ca` or from any trust list (they all embed the same CA). A trust list id such as `pid` names the credential profile it describes. It does not limit what the list can anchor.
+An issuer needs the same shared CA on the other side of the flow. The wallet attestation (`OAuth-Client-Attestation`) and the key attestation in credential proofs are signed by the wallet's issuer key and carry only the leaf in `x5c`. The anchor comes from `/api/certificates/ca` or from any trust list (they all embed the same CA). A trust list id such as `pid` names the credential profile it describes, and every list anchors the same CA.
 
-`wallet serve` reuses persisted issuer and status-list URLs by default, so credentials generated earlier keep resolving against the same issuer metadata, trust-list, and status-list endpoints. `--base-url` or `--docker` replaces them. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They never rewrite persisted serving URLs unless the flags ask for it, and they print a note when the embedded URLs are not live because no server is running.
+`wallet serve` reuses persisted issuer and status-list URLs by default, so credentials generated earlier keep resolving against the same issuer metadata, trust-list, and status-list endpoints. `--base-url` or `--docker` replaces them. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule and print a note when the embedded URLs are not live because no server is running.
 
 The startup banner warns about serving config that cannot work in the current environment: a persisted Docker hostname when the server does not run in Docker, and stored credentials that embed issuer or status list URLs this server does not serve (they keep failing validation and status checks until they are issued again).
 
-Every trust list a wallet serves carries the same certificate, its own CA. The profiles differ in what they declare that CA to be (LoTE type, entity name, service types), not in what they anchor. `eudi wallet trust-list` follows the wallet the CLI is pointed at: with an active remote target it fetches from that wallet, because the local store holds a different CA that anchors nothing the remote issues.
+Every trust list a wallet serves carries the same certificate, its own CA. The profiles differ in what they declare that CA to be (LoTE type, entity name, service types). `eudi wallet trust-list` follows the wallet the CLI is pointed at: with an active remote target it fetches from that wallet, because the local store holds a different CA that anchors nothing the remote issues.
 
 The wallet groups registered attestation entries by trust-list profile. Each group is exposed as its own trust list under `/api/trustlists/{id}`. The `id` is a stable profile identifier:
 - `pid` for the built-in PID profile
@@ -87,15 +86,15 @@ wallet-provider           Wallet providers      /api/trustlists/wallet-provider
 
 With `--json` it emits the `/api/trustlists` body unchanged, so a caller parsing one parses the other.
 
-`/api/trustlists` is a local discovery endpoint for those profiles. It is not the ETSI trust-list payload itself. Each entry includes:
+`/api/trustlists` is a local discovery endpoint for those profiles. Each entry includes:
 - `id`, for example `pid` or `local`
 - `path`, for example `/api/trustlists/pid`
 - `advertised_url` when the wallet has an issuer URL configured, for example `https://localhost:8086/api/trustlists/pid`
-- `url` as a backward-compatible alias for `advertised_url`
+- `url`, an alias for `advertised_url`
 
-Clients that call the wallet through Docker port mappings, reverse proxies, or Testcontainers should resolve `path` against the URL they actually used to reach `/api/trustlists`. `advertised_url` is the wallet's configured publication URL and may intentionally differ from the caller's local route.
+Clients that call the wallet through Docker port mappings, reverse proxies, or Testcontainers should resolve `path` against the URL they actually used to reach `/api/trustlists`. `advertised_url` is the wallet's configured publication URL and may differ from the caller's local route.
 
-`/api/trustlist` remains the backward-compatible legacy endpoint. Its selection rules are:
+`/api/trustlist` is the legacy endpoint. Its selection rules are:
 - if a PID trust-list profile exists, `/api/trustlist` returns that PID trust list
 - if no PID profile exists, `/api/trustlist` returns the first available profile
 - `vct` and `doctype` query parameters can be used to select the trust list for a specific credential type
@@ -160,7 +159,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--register`            | `false`  | Register OS URL scheme handlers                  |
 | `--no-register`         | `false`  | Skip URL scheme registration (overrides --register) |
 | `--preferred-format`    | —        | Preferred credential format when multiple match: `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json` |
-| `--status-list`         | `false`  | Embed status list references in generated credentials (auto-enabled with `--pid`) |
+| `--status-list`         | `false`  | Embed status list references in generated credentials |
 | `--base-url`            | —        | Base URL for the wallet's HTTP endpoints. An https base URL becomes the issuer URL directly (external TLS terminator). An http base URL derives a self-signed HTTPS issuer URL on port+1. Existing persisted issuer URLs are reused unless this flag is set |
 | `--docker`              | `false`  | Use `host.docker.internal` instead of `localhost` when deriving new HTTP and HTTPS wallet endpoint URLs |
 | `--vci-client-id`       | —        | Client ID to use for OID4VCI authorization-code flows |
@@ -180,7 +179,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 
 ## `wallet trust-list`
 
-Generates and prints the ETSI trust list JWT containing the wallet's CA certificate (trust anchor). Verifiers use it to validate the x5c/x5chain certificate chain embedded in credentials. It stays certificate-centric and does not embed issuer authorization data such as provider entitlements or `providesAttestations`. Those are exposed through `/.well-known/openid-credential-issuer` and `/api/registrar/wrp`.
+Generates and prints the ETSI trust list JWT containing the wallet's CA certificate (trust anchor). Verifiers use it to validate the x5c/x5chain certificate chain embedded in credentials. Issuer authorization data such as provider entitlements and `providesAttestations` is exposed through `/.well-known/openid-credential-issuer` and `/api/registrar/wrp`.
 
 `wallet trust-list` prints the same trust list as the legacy `/api/trustlist` endpoint. If the wallet has a PID trust-list profile, that PID trust list is printed. Otherwise the first available profile is printed.
 
@@ -258,7 +257,7 @@ On a running wallet server the same export is available as `GET /api/certificate
 
 Registers (or removes) OS-level URL scheme handlers so that `openid4vp://`, `eudi-openid4vp://`, `haip-vp://`, `openid-credential-offer://`, and `haip-vci://` links automatically open the wallet.
 
-By default, the handler script makes sure a local `wallet serve` instance is available and forwards the incoming URI to it. The wallet opens its UI for the request when no tab is already watching, and names the request in the URL it opens so that tab answers it. A tab that is already open is told over its event stream instead.
+By default, the handler script makes sure a local `wallet serve` instance is available and forwards the incoming URI to it. The wallet opens its UI for the request when no tab is already watching, and names the request in the URL it opens so that tab answers it. A tab that is already open is told over its event stream.
 
 Use `--auto-accept` to keep URL handling silent: the handler first tries to POST to a running `wallet serve` instance and otherwise falls back to invoking the CLI directly (`wallet accept`).
 

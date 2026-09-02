@@ -2,7 +2,7 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-The canonical repo is `dominikschlosser/eudi-dev`. The `origin` URL still reads `oid4vc-dev` (pre-rename). GitHub redirects, so `gh` run inside the clone resolves correctly.
+The canonical repo is `dominikschlosser/eudi-dev`.
 
 ## Conventions
 

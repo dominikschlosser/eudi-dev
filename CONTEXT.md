@@ -1,6 +1,6 @@
 # eudi-dev
 
-A developer toolkit for the EUDI and OpenID4VC ecosystem. It borrows most of its vocabulary from the specifications it implements, so this glossary covers the terms this project overloads, renames, or uses more narrowly than the specs do. Terms the specs define unambiguously and this project uses unchanged are not repeated here.
+A developer toolkit for the EUDI and OpenID4VC ecosystem. It borrows most of its vocabulary from the specifications it implements, so this glossary covers only the terms this project overloads, renames, or uses more narrowly than the specs do.
 
 ## Language
 
@@ -26,7 +26,7 @@ A reusable, named claim set and issuance settings that a credential can be issue
 _Avoid_: Preset, profile
 
 **PID**:
-Person Identification Data, the EUDI-defined identity credential. It comes as the country-independent **EUDI PID** of the ARF rulebook and as domestic types that extend it, such as the **German PID**. Say which one is meant when it matters. "PID" unqualified means the credential, not a type. Never abbreviate process id this way in code that also touches credentials, because the collision has already produced one shadowing bug.
+Person Identification Data, the EUDI-defined identity credential. It comes as the country-independent **EUDI PID** of the ARF rulebook and as domestic types that extend it, such as the **German PID**. Say which one is meant when it matters. "PID" unqualified means the credential, not a type. Never abbreviate process id this way in code that also touches credentials.
 _Avoid_: PID as process id (write `processID`)
 
 ### Roles
@@ -58,7 +58,7 @@ A pending decision put to the user before a presentation is sent. Internal to th
 
 **Owner**:
 The browser a flow belongs to, recognised by the `eudi_session` cookie or named by a client in `X-Eudi-Owner`. A consent request, an error report and an issuer sign-in prompt each carry one. Not the wallet that owns a deferred issuance, not the credential holder, and not OAuth's resource owner. A flow whose client named no browser is **unowned**, and stays visible and answerable to every caller.
-_Avoid_: session, page, acting owner (all name the same value in older code)
+_Avoid_: session, page, acting owner
 
 **Presentation**:
 What the wallet sends a verifier in answer to an authorization request. The act and the artifact share the name, which is fine, but the artifact is a **VP token** when precision is needed.
@@ -68,11 +68,11 @@ An issuer's invitation to collect a credential. Accepting one starts an issuance
 _Avoid_: Invitation, issuance request
 
 **Deferred issuance**:
-An issuance the issuer accepted but could not complete immediately, which the wallet collects later. Prefer this over "pending issuance", which names the same thing in older code and on disk.
+An issuance the issuer accepted but could not complete immediately, which the wallet collects later. The on-disk field is named `pending`.
 _Avoid_: Pending issuance
 
 **Renewal**:
-Replacing a credential with a fresh copy from its issuer before it expires, keeping the same credential id. Distinct from a **refresh token**, which is the OAuth grant a renewal may use, and from **certificate refresh**, which re-issues the wallet's own signing leaf. The CLI verb is `refresh` for historical reasons.
+Replacing a credential with a fresh copy from its issuer before it expires, keeping the same credential id. Distinct from a **refresh token**, which is the OAuth grant a renewal may use, and from **certificate refresh**, which re-issues the wallet's own signing leaf. The CLI verb is `refresh`.
 _Avoid_: Refresh (for the credential operation)
 
 ### Trust and status

@@ -8,7 +8,7 @@ Recognise what arrived and hand it over. A scan additionally turns a picture int
 
 ## What a door may not do
 
-Read anything the flow will read. A `credential_offer_uri` and a `request_uri` are fetched by whoever runs the flow, and a door does not fetch them to look inside first. Issuers and verifiers do serve these once: eudiplo consumes a credential offer on the first read unless `ISSUER_MULTI_CONSUMPTION` is set, and RFC 9126 §4 says "the client MUST only use a `request_uri` value once". A door that peeks spends the read the flow needed and leaves it with a 404 for something the user is holding in front of them, which is what `eudi wallet scan` did against the eudiplo playground.
+Read anything the flow will read. A `credential_offer_uri` and a `request_uri` are fetched by whoever runs the flow, and a door does not fetch them to look inside first. Issuers and verifiers may serve these once: some issuers consume a credential offer on the first read, and RFC 9126 §4 says "the client MUST only use a `request_uri` value once". A door that peeks spends the read the flow needed and leaves it with a 404 for something the user is holding in front of them.
 
 Where a door genuinely holds a copy of what the flow will read, it passes it on so the flow survives an issuer that will not serve a second read. `OfferOptions.ResolvedOffer` is that channel.
 
@@ -18,7 +18,7 @@ Nor may a door decide what the flow decides from the protocol: which credentials
 
 A transaction code is delivered out of band, so somebody has to ask for it. The wallet's consent dialog asks whenever a wallet with a UI is asked interactively, which covers the handler, a remote wallet, and a scan or a link routed to a running instance. An issuance that is not interactive (`--auto-accept`, or an API caller) is not asked, and §4.1.1 puts `tx_code` in the grant because the Authorization Server expects one, so an issuance holding an offer that names it and no code refuses before the pre-authorized code is spent, naming what to supply.
 
-The one flow with no UI is the local headless one, `eudi wallet accept` with no wallet server running, where the CLI prompt is the only channel. It is the single exception to the rule above and it pays for it: the issuance reads the URI again to notice an offer that changed under it, so against a one-shot issuer that read fails and the issuance continues on the copy the prompt handed over, with `credential_offer_reread_failed` in the activity log.
+The one flow with no UI is the local headless one, `eudi wallet accept` with no wallet server running, where the CLI prompt is the only channel. It is the single exception to the rule above, at a cost: the issuance reads the URI again to notice an offer that changed under it, so against a one-shot issuer that read fails and the issuance continues on the copy the prompt handed over, with `credential_offer_reread_failed` in the activity log.
 
 ## Consequences
 

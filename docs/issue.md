@@ -86,7 +86,7 @@ eudi issue mdoc  | eudi decode
 | `--status-list-uri` | —              | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
 
-Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims directly in the payload. No selective disclosure, no `_sd` or `_sd_alg` fields.
+The JWT subcommand produces a standard JWT with all claims directly in the payload (no `_sd` or `_sd_alg` fields).
 
 ### `issue mdoc`
 
@@ -109,11 +109,11 @@ Unlike SD-JWT, the JWT subcommand produces a standard JWT with all claims direct
 | `--status-list-uri` | —                       | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 
-Without `--claims`, a minimal set of PID-like claims is used (given_name, family_name, birthdate). `--pid` generates the full PID claim set of the requested type: fourteen top-level SD-JWT claims (including the nested `address` and `place_of_birth` objects) and eighteen mdoc elements, matching the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
+Without `--claims`, a minimal set of PID-like claims is used (given_name, family_name, birthdate). `--pid` generates the full PID claim set of the requested type: fifteen top-level SD-JWT claims (including the nested `address` and `place_of_birth` objects) and nineteen mdoc elements, matching the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
 
-The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` puts the same claim set in a plain JWT VC. That is a test artifact for exercising verifiers, not a credential the EUDI ecosystem defines.
+The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` puts the same claim set in a plain JWT VC, a test artifact for exercising verifiers.
 
-`--vct urn:eudi:pid:de:1` selects the German PID, following the German PID Rulebook: fifteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-four mdoc elements across that rulebook's two namespaces. A credential from this tool is interchangeable with one from the German PID provider. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
+`--vct urn:eudi:pid:de:1` selects the German PID, following the German PID Rulebook: fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-three mdoc elements across that rulebook's two namespaces. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
 
 `--template` supplies the claim set plus type, namespace, and expiry defaults for flags not set explicitly. `--claims` overrides individual top level claims. `--omit` removes claims from the merged result. See [templates](templates.md) for the file format and the `templates` management commands.
 
@@ -134,7 +134,7 @@ If a wallet server is already running for the same wallet directory, `--wallet` 
 Trust lists are created from the wallet's issued-attestation registry:
 - each issued or imported credential type contributes one registry entry
 - entries with the same trust-list profile fields are grouped into one trust list
-- the legacy `/api/trustlist` endpoint stays PID-first
+- the legacy `/api/trustlist` endpoint serves the PID trust list first
 - the full set of groups is exposed through `/api/trustlists`, with concrete IDs such as `pid` or `local`, a relative `path` for local resolution, and an optional `advertised_url` for the configured issuer URL
 
 If you do not pass any trust-metadata flags, the wallet derives defaults from the credential type:
@@ -159,7 +159,7 @@ These flags give explicit control over the stored trust and issuer metadata for 
 
 ### Display metadata
 
-These flags set the appearance the imported credential shows on its card, so they apply with `--wallet` (on all three subcommands). Colors are held to the §12.2.4 value space (a bad one is dropped with a warning) and images run through the policed, size-capped cache, the same as an issuer's display metadata. A public demo takes no operator image (the logo and background-image flags are ignored there), while a template's own art still applies.
+These flags set the appearance the imported credential shows on its card, so they apply with `--wallet` (on all three subcommands). Colors are held to the OpenID4VCI 1.0 §12.2.4 value space (a bad one is dropped with a warning) and images run through the policed, size-capped cache, the same as an issuer's display metadata. A public demo takes no operator image (the logo and background-image flags are ignored there), while a template's own art still applies.
 
 | Flag | Default | Description |
 |------|---------|-------------|

@@ -120,14 +120,14 @@ sequenceDiagram
 
 | Field / setting | Used how |
 |-----------------|----------|
-| `eudi wallet serve --vci-client-id ...` | Required. The wallet will reject the authorization-code flow without a configured client ID. |
+| `eudi wallet serve --vci-client-id ...` | Required. The wallet rejects the authorization-code flow without a configured client ID. |
 | `eudi wallet serve --vci-redirect-uri ...` | Required for the redirect flow. Interactive authorization (below) runs without one, and the flow is rejected only when neither applies. |
 | OAuth metadata `pushed_authorization_request_endpoint` | Used when published (RFC 9126 makes publishing it a SHOULD). Absent, the request goes straight to the authorization endpoint. `--haip` requires PAR unless the server publishes an `authorization_challenge_endpoint`. |
 | OAuth metadata `authorization_endpoint` | Required for the browser redirect. |
 | OAuth metadata DPoP support | Optional. The wallet binds its tokens with DPoP when the metadata advertises it and uses bearer tokens otherwise. Under `--haip`, advertising DPoP without `ES256` is a violation (silent metadata is not). |
 | `credential_configuration_ids[0] -> scope` | The wallet resolves the scope from the selected credential configuration and uses it in PAR. |
 | `grants.authorization_code.issuer_state` | If present, forwarded into the PAR request. |
-| `token_endpoint_auth_methods_supported` | `eudi-dev` supports `private_key_jwt` and `attest_jwt_client_auth` here. Unsupported methods are rejected. |
+| `token_endpoint_auth_methods_supported` | `eudi-dev` supports `none`, `private_key_jwt`, `attest_jwt_client_auth` and `attest_jwt_client_auth_dpop` here. Methods needing a credential the wallet was never issued (`client_secret_*`) are rejected. |
 | `transaction_id` + `deferred_credential_endpoint` | If the credential response is deferred, the wallet follows this branch automatically. |
 | `notification_id` + `notification_endpoint` | If both are present, the wallet sends a notification after successful import. |
 
