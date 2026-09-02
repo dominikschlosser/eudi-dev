@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The German PID matches the German PID Rulebook 1.0.0.** The BMI blueprint's rulebook supersedes the old provider claim table: `academic_title` replaces `title`, `raw_eid_birth_date` is new, and `also_known_as`, `date_of_expiry` and `place_of_birth.no_place_info` are gone (the locality stays present and empty when the eID does not know the place). `birth_name` stays deliberately (it may carry both given and family name at birth, unlike the EU rulebook's `birth_family_name`).
 - **The default PIDs match PID Rulebook 1.7.** The country-independent PID now carries the portrait the rulebook's CIR 2024/2977 alignment makes mandatory (the OIDC `picture` claim as a JPEG data URL in SD-JWT, the `portrait` element as raw JPEG bytes in mdoc, a neutral placeholder silhouette), and the SD-JWT `address.street_address` includes the house number ("Rietveld 1") the way §2.3 defines `resident_street` (`address.house_number` stays as the rulebook's own additional member).
 
 ## [2.2.0] - 2026-09-01 

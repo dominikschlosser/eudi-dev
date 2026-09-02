@@ -123,10 +123,11 @@ var SDJWTPIDClaims = map[string]any{
 }
 
 // SDJWTGermanPIDClaims holds the SD-JWT VC claims of the German PID (vct
-// urn:eudi:pid:de:1): every claim the German claim table lists as present,
-// including those it defines as present but empty (title, also_known_as). The
-// ones it lists as unused are absent, which is why this is not a superset of
-// the country-independent set.
+// urn:eudi:pid:de:1), following the German PID Rulebook 1.0.0 (the BMI
+// blueprint): every claim its SD-JWT payload carries, including
+// academic_title, which is present and empty when the eID carries none. The
+// claims the German PID does not include are absent, which is why this is
+// not a superset of the country-independent set.
 var SDJWTGermanPIDClaims = map[string]any{
 	// The country-independent type this credential is also of. A verifier
 	// asking for urn:eudi:pid:1 is answered by this credential
@@ -135,12 +136,15 @@ var SDJWTGermanPIDClaims = map[string]any{
 
 	"family_name": "MUSTERMANN",
 	"given_name":  "ERIKA",
-	"birth_name":  "GABLER",
-	// Always present, and empty when the eID does not carry them.
-	"title":          "",
-	"also_known_as":  "",
+	// The German birth_name may carry both given and family name at birth,
+	// which is why it is not the rulebook's birth_family_name.
+	"birth_name": "GABLER",
+	// Present and empty when the eID carries no title.
+	"academic_title": "",
 	"birthdate":      "1964-08-12",
-	"date_of_expiry": PIDExpiryDate(),
+	// The birth date exactly as the eID stores it, which may carry 00 parts
+	// for unknown day or month.
+	"raw_eid_birth_date": "1964-08-12",
 	// Derived from birthdate at issuance, which is why 65 is false while the
 	// lower thresholds are true.
 	"age_equal_or_over": map[string]any{
@@ -151,10 +155,10 @@ var SDJWTGermanPIDClaims = map[string]any{
 		"21": true,
 		"65": false,
 	},
+	// locality stays present and becomes empty when the eID says the place
+	// of birth is unknown.
 	"place_of_birth": map[string]any{
 		"locality": "BERLIN",
-		// True only when the eID says the place of birth is unknown.
-		"no_place_info": false,
 	},
 	"address": map[string]any{
 		"street_address": "HEIDESTRAẞE 17",
@@ -217,8 +221,7 @@ var MDOCGermanPIDClaims = map[string]any{
 
 	GermanPIDNamespace + ":birth_name":           "GABLER",
 	GermanPIDNamespace + ":academic_title":       "",
-	GermanPIDNamespace + ":also_known_as":        "",
-	GermanPIDNamespace + ":no_place_info":        false,
+	GermanPIDNamespace + ":raw_eid_birth_date":   "1964-08-12",
 	GermanPIDNamespace + ":age_over_12":          true,
 	GermanPIDNamespace + ":age_over_14":          true,
 	GermanPIDNamespace + ":age_over_16":          true,

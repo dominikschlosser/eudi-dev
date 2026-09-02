@@ -835,9 +835,9 @@ func TestSDJWTGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	want := map[string]bool{
 		credtype.AkaVCTsClaim: true,
 		"family_name":         true, "given_name": true, "birth_name": true,
-		"title": true, "also_known_as": true, "birthdate": true,
-		"date_of_expiry": true, "age_equal_or_over": true,
-		"place_of_birth": true, "address": true, "nationalities": true,
+		"academic_title": true, "birthdate": true, "raw_eid_birth_date": true,
+		"age_equal_or_over": true,
+		"place_of_birth":    true, "address": true, "nationalities": true,
 		"issuing_authority": true, "issuing_country": true,
 		"source_document_type": true,
 	}
@@ -894,7 +894,7 @@ func TestSDJWTGermanPIDClaims_HasExpectedFields(t *testing.T) {
 		t.Fatal("place_of_birth should be a map")
 	}
 	assertClaimSet(t, "place_of_birth", pob, map[string]bool{
-		"locality": true, "no_place_info": true,
+		"locality": true,
 	})
 
 	nats, ok := mock.SDJWTGermanPIDClaims["nationalities"].([]any)
@@ -945,7 +945,7 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 		"resident_city": true, "resident_state": true, "resident_country": true,
 		"issuing_authority": true, "issuing_country": true,
 		de + "birth_name": true, de + "academic_title": true,
-		de + "also_known_as": true, de + "no_place_info": true,
+		de + "raw_eid_birth_date":   true,
 		de + "source_document_type": true,
 		de + "age_over_12":          true, de + "age_over_14": true,
 		de + "age_over_16": true, de + "age_over_18": true,
@@ -1001,7 +1001,6 @@ func TestPIDClaims_TypesAreCorrect(t *testing.T) {
 		{"German family_name", mock.SDJWTGermanPIDClaims, mock.MDOCGermanPIDClaims, "family_name", "family_name"},
 		{"German given_name", mock.SDJWTGermanPIDClaims, mock.MDOCGermanPIDClaims, "given_name", "given_name"},
 		{"German birthdate", mock.SDJWTGermanPIDClaims, mock.MDOCGermanPIDClaims, "birthdate", "birth_date"},
-		{"German expiry", mock.SDJWTGermanPIDClaims, mock.MDOCGermanPIDClaims, "date_of_expiry", "expiry_date"},
 	}
 	for _, p := range pairs {
 		if p.sdjwt[p.sdjwtKey] != p.mdoc[p.mdocKey] {
