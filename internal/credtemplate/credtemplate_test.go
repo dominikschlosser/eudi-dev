@@ -155,7 +155,7 @@ func TestPIDTemplateNames(t *testing.T) {
 	for _, tt := range tests {
 		sdjwt, mdoc, known := PIDTemplateNames(tt.vct)
 		if sdjwt != tt.sdjwt || mdoc != tt.mdoc || known != tt.known {
-			t.Errorf("PIDTemplateNames(%q) = %q, %q, %t; want %q, %q, %t",
+			t.Errorf("PIDTemplateNames(%q) = %q, %q, %t, want %q, %q, %t",
 				tt.vct, sdjwt, mdoc, known, tt.sdjwt, tt.mdoc, tt.known)
 		}
 	}

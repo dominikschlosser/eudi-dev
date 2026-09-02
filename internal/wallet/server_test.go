@@ -2887,7 +2887,7 @@ func TestPresentationFlow_RequestURIMethodPost_Encrypted(t *testing.T) {
 	}
 
 	if receivedVPToken == "" {
-		t.Fatal("verifier did not receive VP token — wallet failed to decrypt JWE request object")
+		t.Fatal("verifier did not receive VP token, wallet failed to decrypt JWE request object")
 	}
 }
 

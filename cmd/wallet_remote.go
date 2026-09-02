@@ -375,7 +375,7 @@ func walletKillCmd() *cobra.Command {
 				// belongs to another host, so it has to be named explicitly.
 				for _, inst := range instances {
 					if inst.Source == "active" {
-						fmt.Fprintf(os.Stderr, "Skipping active remote %s; stop it by name if you mean to.\n", inst.URL)
+						fmt.Fprintf(os.Stderr, "Skipping active remote %s (stop it by name if you mean to).\n", inst.URL)
 						continue
 					}
 					targets = append(targets, inst)
@@ -435,11 +435,11 @@ func matchInstance(instances []remote.DiscoveredInstance, target string) (remote
 		case len(byPort) == 1:
 			return byPort[0], nil
 		case len(byPort) > 1:
-			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match port %d; disambiguate by URL", len(byPort), number)
+			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match port %d (disambiguate by URL)", len(byPort), number)
 		case len(byPID) == 1:
 			return byPID[0], nil
 		case len(byPID) > 1:
-			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match pid %d; disambiguate by URL", len(byPID), number)
+			return remote.DiscoveredInstance{}, fmt.Errorf("%d instances match pid %d (disambiguate by URL)", len(byPID), number)
 		}
 		return remote.DiscoveredInstance{}, noMatch
 	}

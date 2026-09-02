@@ -551,7 +551,7 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []C
 
 	sigDetail := result.SignatureInfo
 	if len(result.Warnings) > 0 {
-		sigDetail = strings.Join(result.Warnings, "; ")
+		sigDetail = strings.Join(result.Warnings, ". ")
 	}
 	signature := CheckResult{Name: "status list signature", Status: "warning", Detail: sigDetail}
 	if result.TrustAnchored {

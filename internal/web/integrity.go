@@ -79,9 +79,9 @@ func CheckSDJWTIntegrity(token *sdjwt.Token) CheckResult {
 }
 
 // CheckSDJWTType verifies the typ header parameter of the Issuer-signed JWT.
-// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
+// draft-ietf-oauth-sd-jwt-vc-19 §2.2.1: "The Issuer MUST include the typ
 // header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt". The
-// transitional vc+sd-jwt decodes but fails this check.
+// earlier vc+sd-jwt decodes but fails this check.
 func CheckSDJWTType(token *sdjwt.Token) CheckResult {
 	if err := sdjwt.ValidateVCType(token.Header); err != nil {
 		return CheckResult{
@@ -95,7 +95,7 @@ func CheckSDJWTType(token *sdjwt.Token) CheckResult {
 		return CheckResult{
 			Name:   "type",
 			Status: "fail",
-			Detail: fmt.Sprintf("%s is the transitional media type draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced with %s", typ, sdjwt.TypeSDJWTVC),
+			Detail: fmt.Sprintf("the typ header is %s, draft-ietf-oauth-sd-jwt-vc-19 §2.2.1 requires %s", typ, sdjwt.TypeSDJWTVC),
 		}
 	}
 	return CheckResult{

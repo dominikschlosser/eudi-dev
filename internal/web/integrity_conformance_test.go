@@ -20,9 +20,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
 )
 
-// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
+// draft-ietf-oauth-sd-jwt-vc-19 §2.2.1: "The Issuer MUST include the typ
 // header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt". The
-// transitional vc+sd-jwt still decodes but deviates from that MUST, so the
+// earlier vc+sd-jwt still decodes but deviates from that MUST, so the
 // decoder flags it.
 func TestCheckSDJWTType(t *testing.T) {
 	tests := []struct {

@@ -39,7 +39,7 @@ func Parse(raw string) (*Token, error) {
 	// A rule break that resolution tolerated and recorded is an error here.
 	// RFC 9901 §7.1 aborts processing when any step fails.
 	if len(token.Deviations) > 0 {
-		return nil, fmt.Errorf("%s", strings.Join(token.Deviations, "; "))
+		return nil, fmt.Errorf("%s", strings.Join(token.Deviations, ". "))
 	}
 	return token, nil
 }

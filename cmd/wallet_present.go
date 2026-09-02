@@ -200,7 +200,7 @@ func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int,
 			return 0, err
 		}
 		yellow := color.New(color.FgYellow)
-		yellow.Printf("  Note: port %d/%d is already in use; using temporary port %d\n", port, port+1, fallbackPort)
+		yellow.Printf("  Note: port %d/%d is already in use (using temporary port %d)\n", port, port+1, fallbackPort)
 		return fallbackPort, nil
 	}
 
@@ -213,7 +213,7 @@ func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int,
 		return 0, fmt.Errorf("resolving temporary auto-accept port after %d was busy: %w", port, err)
 	}
 	yellow := color.New(color.FgYellow)
-	yellow.Printf("  Note: port %d is already in use; auto-accept will use temporary port %d\n", port, fallbackPort)
+	yellow.Printf("  Note: port %d is already in use (auto-accept uses temporary port %d)\n", port, fallbackPort)
 	return fallbackPort, nil
 }
 

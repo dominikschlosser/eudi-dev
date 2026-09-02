@@ -22,7 +22,7 @@
 // Answers decides.
 //
 // The ARF does not say how that relationship is discovered. Type Metadata with
-// extends (draft-ietf-oauth-sd-jwt-vc-18 §4.4) is only something ARB_31 "SHOULD
+// extends (draft-ietf-oauth-sd-jwt-vc-19 §5.4) is only something ARB_31 "SHOULD
 // consider defining" and needs a retrievable document, which a URN vct is not.
 // Extends therefore applies PID_14 directly. The aka_vcts claim (§2.2.2.2)
 // puts the statement in the credential itself, and Chain reads it.
@@ -47,7 +47,7 @@ const (
 )
 
 // AkaVCTsClaim is the SD-JWT VC claim naming the further types a credential
-// is also of (draft-ietf-oauth-sd-jwt-vc-18 §2.2.2.2).
+// is also of (draft-ietf-oauth-sd-jwt-vc-19 §2.2.2.2).
 const AkaVCTsClaim = "aka_vcts"
 
 // PIDVCTPrefix is the URN namespace every PID type lives in.

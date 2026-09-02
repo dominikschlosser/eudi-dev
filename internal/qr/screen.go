@@ -28,7 +28,7 @@ import (
 // selected area, and decodes a QR code from it.
 func ScanScreen() (string, error) {
 	if runtime.GOOS != "darwin" {
-		return "", fmt.Errorf("--screen is only supported on macOS; use --qr with an image file instead")
+		return "", fmt.Errorf("--screen is only supported on macOS (use --qr with an image file instead)")
 	}
 
 	tmpDir, err := os.MkdirTemp("", "oid4vc-dev-qr-*")

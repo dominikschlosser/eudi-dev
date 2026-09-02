@@ -922,7 +922,7 @@ func TestCreateVPToken_ImportedSDJWT_PreservesDisclosures(t *testing.T) {
 		}
 	}
 	if !foundUserID {
-		t.Error("user_id disclosure missing from VP token — disclosures were stripped during import/persist/present")
+		t.Error("user_id disclosure missing from VP token, disclosures were stripped during import/persist/present")
 	}
 
 	if parsed.ResolvedClaims["user_id"] != "abc123" {

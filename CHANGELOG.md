@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-09-02
+
+### Changed
+
+- **Documentation and comments reviewed.** Every guide, the README, the ADRs and the flow diagrams describe the current design only, with history and filler removed and stale facts corrected (template attribute lists, PID claim counts, the OID4VCI diagram's token endpoint auth methods, the examples overview, missing flags and API fields). Code comments, CLI help, log and error texts got the same pass. Help texts no longer claim `--vci-version` changes the wallet attestation shape, and list every registered URI scheme and every built-in template.
+- **Spec citations checked against the current drafts.** The SD-JWT VC profile is cited as draft-19 with its renumbered sections, and the attestation-based client authentication error codes and metadata parameters are cited at their own sections (§7.4 and §8).
+
 ## [2.3.1] - 2026-09-02
 
 ### Changed

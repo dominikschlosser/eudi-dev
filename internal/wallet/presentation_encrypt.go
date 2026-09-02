@@ -243,7 +243,7 @@ func joinFindings(findings ...string) string {
 			continue
 		}
 		if out != "" {
-			out += "; "
+			out += ". "
 		}
 		out += f
 	}

@@ -128,7 +128,7 @@ var SDJWTPIDClaims = map[string]any{
 var SDJWTGermanPIDClaims = map[string]any{
 	// The country-independent type this credential is also of. A verifier
 	// asking for urn:eudi:pid:1 is answered by this credential
-	// (draft-ietf-oauth-sd-jwt-vc-18 §2.2.2.2).
+	// (draft-ietf-oauth-sd-jwt-vc-19 §2.2.2.2).
 	credtype.AkaVCTsClaim: []any{credtype.PIDVCT},
 
 	"family_name": "MUSTERMANN",

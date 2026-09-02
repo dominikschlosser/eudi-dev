@@ -277,7 +277,7 @@ func Load(nameOrPath, dir string) (*Template, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("template %q not found (looked in %s and pre-defined templates; run `templates list`)", nameOrPath, dir)
+	return nil, fmt.Errorf("template %q not found (looked in %s and the pre-defined templates, see `templates list`)", nameOrPath, dir)
 }
 
 // Save writes a user template to dir (the default directory when dir is

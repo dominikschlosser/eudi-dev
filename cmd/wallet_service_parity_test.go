@@ -221,7 +221,7 @@ func saveParityTemplate(t *testing.T, s walletService) {
 func parityCases() []parityCase {
 	return []parityCase{
 		{method: "URL", skip: "the local store has no URL by definition, which is what distinguishes the backends"},
-		{method: "Config", skip: "a running server knows its port, build and listeners and a store on disk does not; TestConfigDocumentsMatchAcrossBackends pins the direction that must hold"},
+		{method: "Config", skip: "a running server knows its port, build and listeners and a store on disk does not. TestConfigDocumentsMatchAcrossBackends pins the direction that must hold"},
 
 		{method: "Credentials", observe: func(t *testing.T, s walletService) any {
 			docs, err := s.Credentials()
@@ -255,7 +255,7 @@ func parityCases() []parityCase {
 			}
 			return keysOf(imported)
 		}},
-		{method: "RefreshCredential", skip: "renewing needs a live issuer to exchange a refresh token with; internal/wallet covers the operation against a stub"},
+		{method: "RefreshCredential", skip: "renewing needs a live issuer to exchange a refresh token with. internal/wallet covers the operation against a stub"},
 		{method: "RemoveCredential", observe: func(t *testing.T, s walletService) any {
 			id := importedCredential(t, s)
 			before, err := s.Credentials()

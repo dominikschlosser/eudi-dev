@@ -610,7 +610,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	}
 	if w.RequireHAIP {
 		fmt.Printf("  HAIP:        enforced (presentations: x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
-		fmt.Printf("               enforced (issuance: https issuer; authorization code offers also need PAR, PKCE S256, DPoP, client auth)\n")
+		fmt.Printf("               enforced (issuance needs an https issuer, authorization code offers also PAR, PKCE S256, DPoP and client auth)\n")
 	}
 	for _, warning := range servingConfigWarnings(w, opts.Port, opts.Docker) {
 		yellow.Printf("  Warning:     %s\n", warning)
@@ -630,7 +630,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		} else if wallet.SupportsURLSchemeRegistration() {
 			fmt.Printf("  Register:    URL scheme handlers registered\n")
 		} else {
-			yellow.Printf("  Register:    not supported on this platform; use 'wallet accept <uri>' for copied links\n")
+			yellow.Printf("  Register:    not supported on this platform (use 'wallet accept <uri>' for copied links)\n")
 		}
 	}
 

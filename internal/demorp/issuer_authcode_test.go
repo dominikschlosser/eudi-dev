@@ -340,7 +340,7 @@ func TestPushedAuthorizationRequestAcceptsADPoPCombinedProof(t *testing.T) {
 }
 
 // An attestation that was presented and did not verify is a different answer
-// from no attestation at all, and draft -10 §6.2 has a code for it.
+// from no attestation at all, and draft -10 §7.4 has a code for it.
 func TestPushedAuthorizationRequestNamesABrokenAttestation(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	provider := foreignWalletProvider(t)
@@ -785,7 +785,7 @@ func TestAuthorizationServerMetadata(t *testing.T) {
 		"authorization_endpoint",
 		"token_endpoint",
 		"S256",
-		// draft-ietf-oauth-attestation-based-client-auth-10 §10.1 requires
+		// draft-ietf-oauth-attestation-based-client-auth-10 §8 requires
 		// both of a server that supports the method.
 		"client_attestation_signing_alg_values_supported",
 		"client_attestation_pop_signing_alg_values_supported",

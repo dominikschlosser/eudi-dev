@@ -347,7 +347,7 @@ func TestResolveTokenEndpoint_FromMetadata(t *testing.T) {
 	w := generateTestWallet(t)
 	got, err := w.resolveTokenEndpoint(map[string]any{}, map[string]any{"token_endpoint": "https://as.example/token"}, "https://issuer.example")
 	if err != nil || got != "https://as.example/token" {
-		t.Errorf("token endpoint = %q, err = %v; want the authorization server value", got, err)
+		t.Errorf("token endpoint = %q, err = %v, want the authorization server value", got, err)
 	}
 }
 
@@ -384,7 +384,7 @@ func TestResolveEndpoint_MissingOrEmptyIsADeviation(t *testing.T) {
 			debug := generateTestWallet(t)
 			got, err := tc.resolve(debug)
 			if err != nil || got != tc.want {
-				t.Errorf("debug: endpoint = %q, err = %v; want %q", got, err, tc.want)
+				t.Errorf("debug: endpoint = %q, err = %v, want %q", got, err, tc.want)
 			}
 			if findLogEntry(debug.GetLog(), "server_deviation") == nil {
 				t.Error("debug: expected a server_deviation warning")
@@ -736,10 +736,10 @@ func TestResolveTokenEndpoint_PrefersTheAuthorizationServerMetadata(t *testing.T
 	oauthMeta := map[string]any{"token_endpoint": "https://as.example/token"}
 
 	if got, err := w.resolveTokenEndpoint(metadata, oauthMeta, "https://issuer.example"); err != nil || got != "https://as.example/token" {
-		t.Errorf("token endpoint = %q, err = %v; want the authorization server's", got, err)
+		t.Errorf("token endpoint = %q, err = %v, want the authorization server's", got, err)
 	}
 	if got, err := w.resolveTokenEndpoint(metadata, nil, "https://issuer.example"); err != nil || got != "https://issuer.example/token" {
-		t.Errorf("token endpoint = %q, err = %v; want the issuer's own when no AS metadata was reachable", got, err)
+		t.Errorf("token endpoint = %q, err = %v, want the issuer's own when no AS metadata was reachable", got, err)
 	}
 }
 

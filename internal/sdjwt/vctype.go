@@ -18,15 +18,12 @@ import "fmt"
 
 const (
 	// TypeSDJWTVC is the typ header parameter of an SD-JWT VC.
-	// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1: "The Issuer MUST include the typ
+	// draft-ietf-oauth-sd-jwt-vc-19 §2.2.1: "The Issuer MUST include the typ
 	// header parameter in the SD-JWT. The typ value MUST use dc+sd-jwt."
 	TypeSDJWTVC = "dc+sd-jwt"
 
-	// TypeSDJWTVCLegacy is the earlier typ value. §2.2.1 keeps it alive: "In
-	// order to facilitate a
-	// minimally disruptive transition, both vc+sd-jwt and dc+sd-jwt should be
-	// accepted as the value of the typ header for a reasonable transitional
-	// period."
+	// TypeSDJWTVCLegacy is the typ value earlier SD-JWT VC drafts used. Reading
+	// accepts it and reports a deviation, issuance never uses it.
 	TypeSDJWTVCLegacy = "vc+sd-jwt"
 )
 
@@ -45,7 +42,7 @@ func IsAcceptedVCType(typ string) bool {
 
 // ValidateVCType checks the typ header parameter of an Issuer-signed JWT
 // against the two accepted values. A credential that omits typ, or names
-// something else, is not an SD-JWT VC per draft-ietf-oauth-sd-jwt-vc-18
+// something else, is not an SD-JWT VC per draft-ietf-oauth-sd-jwt-vc-19
 // §2.2.1.
 func ValidateVCType(header map[string]any) error {
 	raw, present := header["typ"]

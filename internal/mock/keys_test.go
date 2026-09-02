@@ -284,7 +284,7 @@ func TestGenerateLeafCert_DocumentSignerProfile(t *testing.T) {
 			continue
 		}
 		if !ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 15}) && !ext.Id.Equal(asn1.ObjectIdentifier{2, 5, 29, 37}) {
-			t.Errorf("extension %v is critical; only keyUsage and extendedKeyUsage may be", ext.Id)
+			t.Errorf("extension %v is critical, only keyUsage and extendedKeyUsage may be", ext.Id)
 		}
 	}
 }

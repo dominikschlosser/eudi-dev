@@ -44,7 +44,7 @@ func TestOAuthErrorMessage(t *testing.T) {
 		{
 			name: "a message listing everything that was wrong",
 			body: `{"message":["grant_type is required","code is required"],"error":"Bad Request"}`,
-			want: "Bad Request: grant_type is required; code is required",
+			want: "Bad Request: grant_type is required, code is required",
 		},
 		{
 			name: "error_description wins over a message",

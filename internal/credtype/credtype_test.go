@@ -123,7 +123,7 @@ func TestAkaVCTs(t *testing.T) {
 // PID_14 makes every domestic PID type an extension of the
 // country-independent one, so this holds for countries nothing here has heard
 // of. Inheritance says what a credential is, not who may issue it: nothing
-// here may grow into a trust decision (draft-ietf-oauth-sd-jwt-vc-18 §6.6).
+// here may grow into a trust decision (draft-ietf-oauth-sd-jwt-vc-19 §7.7).
 func TestExtends(t *testing.T) {
 	tests := []struct {
 		vct    string
@@ -150,12 +150,12 @@ func TestExtends(t *testing.T) {
 		parent, ok := Extends(tt.vct)
 		if tt.parent == "" {
 			if ok {
-				t.Errorf("Extends(%q) = %q, true; want no parent", tt.vct, parent)
+				t.Errorf("Extends(%q) = %q, true, want no parent", tt.vct, parent)
 			}
 			continue
 		}
 		if !ok || parent != tt.parent {
-			t.Errorf("Extends(%q) = %q, %t; want %q, true", tt.vct, parent, ok, tt.parent)
+			t.Errorf("Extends(%q) = %q, %t, want %q, true", tt.vct, parent, ok, tt.parent)
 		}
 	}
 }

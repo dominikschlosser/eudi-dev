@@ -657,6 +657,6 @@ func TestParseVPRequestURIObjectOutranksTheQueryString(t *testing.T) {
 		t.Errorf("nonce = %q, want the signed one", ar.Nonce)
 	}
 	if ar.RequestURI == "" {
-		t.Error("request_uri was dropped; it records how the object arrived")
+		t.Error("request_uri was dropped, it records how the object arrived")
 	}
 }

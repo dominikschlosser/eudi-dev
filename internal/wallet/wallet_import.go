@@ -203,20 +203,20 @@ func (w *Wallet) parseCredentialSDJWT(raw string) (*sdjwt.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the vc+sd-jwt media type
-	// with dc+sd-jwt. The transitional value still decodes but is a deviation.
+	// draft-ietf-oauth-sd-jwt-vc-19 §2.2.1 requires the typ dc+sd-jwt. The
+	// earlier vc+sd-jwt value still decodes but is a deviation.
 	var vcType []string
 	if typ, _ := token.Header["typ"].(string); typ == sdjwt.TypeSDJWTVCLegacy {
-		vcType = append(vcType, fmt.Sprintf("the typ header is %s, the transitional media type draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced with %s", sdjwt.TypeSDJWTVCLegacy, sdjwt.TypeSDJWTVC))
+		vcType = append(vcType, fmt.Sprintf("the typ header is %s, draft-ietf-oauth-sd-jwt-vc-19 §2.2.1 requires %s", sdjwt.TypeSDJWTVCLegacy, sdjwt.TypeSDJWTVC))
 	}
 	if w.Mode() == ValidationModeStrict {
 		if all := append(append([]string{}, token.Deviations...), vcType...); len(all) > 0 {
-			return nil, fmt.Errorf("%s", strings.Join(all, "; "))
+			return nil, fmt.Errorf("%s", strings.Join(all, ". "))
 		}
 		return token, nil
 	}
 	w.recordCredentialDeviations("RFC 9901", token.Deviations)
-	w.recordCredentialDeviations("draft-ietf-oauth-sd-jwt-vc-18", vcType)
+	w.recordCredentialDeviations("draft-ietf-oauth-sd-jwt-vc-19", vcType)
 	return token, nil
 }
 
@@ -321,7 +321,7 @@ func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential
 	// Strict refuses a credential the parser had to drop parts of, debug keeps it.
 	if len(doc.Deviations) > 0 {
 		if w.Mode() == ValidationModeStrict {
-			return nil, fmt.Errorf("%s", strings.Join(doc.Deviations, "; "))
+			return nil, fmt.Errorf("%s", strings.Join(doc.Deviations, ". "))
 		}
 		w.recordCredentialDeviations("ISO/IEC 18013-5", doc.Deviations)
 	}

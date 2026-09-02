@@ -49,7 +49,7 @@ type abcaIssuerConfig struct {
 	challengeValue string
 	// refuseFirstAsStale answers the first token request with
 	// use_fresh_attestation, the error a server uses for an attestation it
-	// deems too old (§6.2).
+	// deems too old (§7.4).
 	refuseFirstAsStale bool
 }
 
@@ -341,7 +341,7 @@ func sortedKeys(m map[string]any) []string {
 	return keys
 }
 
-// TestUseFreshAttestationRetry covers the second §6.2 retry signal: a server
+// TestUseFreshAttestationRetry covers the second §7.4 retry signal: a server
 // refusing the attestation as stale gets one retried request, carrying a
 // freshly issued attestation.
 func TestUseFreshAttestationRetry(t *testing.T) {

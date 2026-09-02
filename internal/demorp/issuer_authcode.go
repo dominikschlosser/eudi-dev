@@ -154,7 +154,7 @@ func (d *DemoRP) authorizationServerMetadata() map[string]any {
 		"dpop_signing_alg_values_supported":                []string{"ES256"},
 		"token_endpoint_auth_methods_supported":            authMethods,
 		"token_endpoint_auth_signing_alg_values_supported": []string{"ES256"},
-		// draft-ietf-oauth-attestation-based-client-auth-10 §10.1 requires
+		// draft-ietf-oauth-attestation-based-client-auth-10 §8 requires
 		// these two of a server that supports the method, and a wallet reading
 		// only the auth methods list has no other way to learn which signature
 		// algorithms it may use.
@@ -616,7 +616,7 @@ func (d *DemoRP) authenticateTokenClient(w http.ResponseWriter, r *http.Request,
 
 // attestationFailed reports something wrong with an attestation that was
 // presented, using the invalid_client_attestation of
-// draft-ietf-oauth-attestation-based-client-auth-10 §6.2. A client that
+// draft-ietf-oauth-attestation-based-client-auth-10 §7.4. A client that
 // presented none is answered with invalid_client instead.
 func attestationFailed(format string, args ...any) *clientAuthError {
 	return &clientAuthError{code: "invalid_client_attestation", description: fmt.Sprintf(format, args...)}
@@ -703,7 +703,7 @@ func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clie
 	}
 	// The checklist requires that the confirmation key is not a private key.
 	if _, holdsPrivate := cnfJWK["d"]; holdsPrivate {
-		return clientAuthentication{}, attestationFailed("client attestation cnf.jwk carries private key material; the confirmation key must be a public key")
+		return clientAuthentication{}, attestationFailed("client attestation cnf.jwk carries private key material, the confirmation key must be a public key")
 	}
 	clientKey, err := holderKeyFromJWK(cnfJWK)
 	if err != nil {

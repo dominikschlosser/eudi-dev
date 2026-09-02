@@ -24,7 +24,7 @@ import (
 )
 
 // legacyTypeCredential issues a mock SD-JWT VC and re-heads it with the
-// transitional vc+sd-jwt typ. Re-encoding the header invalidates the
+// earlier vc+sd-jwt typ. Re-encoding the header invalidates the
 // signature, which import parsing does not check.
 func legacyTypeCredential(t *testing.T, w *Wallet) string {
 	t.Helper()
@@ -54,9 +54,9 @@ func legacyTypeCredential(t *testing.T, w *Wallet) string {
 	return strings.Join(seg, ".") + "~" + rest
 }
 
-// draft-ietf-oauth-sd-jwt-vc-18 §2.2.1 replaced the vc+sd-jwt media type with
-// dc+sd-jwt. Debug mode keeps a credential on the transitional typ and records
-// the deviation, strict mode refuses it.
+// draft-ietf-oauth-sd-jwt-vc-19 §2.2.1 requires the typ dc+sd-jwt. Debug mode
+// keeps a credential on the earlier vc+sd-jwt typ and records the deviation,
+// strict mode refuses it.
 func TestImportSDJWT_LegacyType(t *testing.T) {
 	t.Run("debug keeps it", func(t *testing.T) {
 		w := generateTestWallet(t)
@@ -70,7 +70,7 @@ func TestImportSDJWT_LegacyType(t *testing.T) {
 		w := generateTestWallet(t)
 		w.ValidationMode = ValidationModeStrict
 		if _, err := w.importSDJWT(legacyTypeCredential(t, w), "", ""); err == nil {
-			t.Fatal("strict import accepted a credential on the transitional typ")
+			t.Fatal("strict import accepted a credential on the earlier typ")
 		}
 	})
 }

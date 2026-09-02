@@ -411,7 +411,7 @@ func TestRefreshSigningCertificate(t *testing.T) {
 		t.Error("the refreshed leaf expires no later than the one it replaced")
 	}
 	if !newCA.Equal(oldCA) {
-		t.Error("the CA changed; anything that pinned it would break")
+		t.Error("the CA changed, anything that pinned it would break")
 	}
 	leafKey, ok := newLeaf.PublicKey.(*ecdsa.PublicKey)
 	if !ok || !leafKey.Equal(&w.IssuerKey.PublicKey) {

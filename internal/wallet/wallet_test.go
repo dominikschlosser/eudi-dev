@@ -898,7 +898,7 @@ func TestHasEncryptionKey_TopLevelJWKSNotUsed(t *testing.T) {
 		},
 	}
 	if HasEncryptionKey(reqObj) {
-		t.Error("expected false — wallet should only accept JWK in client_metadata.jwks per OID4VP 1.0")
+		t.Error("expected false, wallet should only accept JWK in client_metadata.jwks per OID4VP 1.0")
 	}
 }
 

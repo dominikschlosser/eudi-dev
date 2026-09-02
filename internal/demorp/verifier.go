@@ -1183,7 +1183,7 @@ func (d *DemoRP) verifySDJWTEntry(req *requestState, presentation, expectedVCT s
 	// rule comes from the profile.
 	certs, _ := validate.X5CCertificates(token.Header)
 	if violations := validate.HAIPCredentialChain(certs); len(violations) > 0 {
-		log.warn(label+"issuer certificate chain follows HAIP", fmt.Errorf("%s", strings.Join(violations, "; ")))
+		log.warn(label+"issuer certificate chain follows HAIP", fmt.Errorf("%s", strings.Join(violations, ". ")))
 	} else {
 		log.warn(label+"issuer certificate chain follows HAIP", nil)
 	}
@@ -1421,7 +1421,7 @@ func (d *DemoRP) verifyMDOCPresentation(req *requestState, presentation string, 
 	}
 
 	result := mdoc.Verify(doc, issuerKey)
-	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid: %s", strings.Join(result.Errors, "; "))); err != nil {
+	if err = check("issuer signature verifies", errIf(!result.SignatureValid, "issuer signature is invalid: %s", strings.Join(result.Errors, ". "))); err != nil {
 		return nil, log.entries, err
 	}
 	for _, warning := range result.Warnings {

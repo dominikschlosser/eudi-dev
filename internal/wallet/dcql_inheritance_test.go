@@ -92,7 +92,7 @@ func TestEvaluateDCQL_BothPIDTypesHeld(t *testing.T) {
 }
 
 // A credential of a type this tool knows nothing about still answers for the
-// types its aka_vcts claim names (draft-ietf-oauth-sd-jwt-vc-18 §2.2.2.2),
+// types its aka_vcts claim names (draft-ietf-oauth-sd-jwt-vc-19 §2.2.2.2),
 // which is how an issuer states inheritance without retrievable Type Metadata.
 func TestEvaluateDCQL_AkaVCTsFromAnUnknownType(t *testing.T) {
 	w := generateTestWallet(t)

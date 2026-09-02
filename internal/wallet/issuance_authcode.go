@@ -1202,7 +1202,7 @@ func errorBodyMessage(raw json.RawMessage) string {
 	}
 	var many []string
 	if err := json.Unmarshal(raw, &many); err == nil {
-		return strings.TrimSpace(strings.Join(many, "; "))
+		return strings.TrimSpace(strings.Join(many, ", "))
 	}
 	return ""
 }
@@ -1578,7 +1578,7 @@ func credentialAccept(credentialResponseEncryption map[string]any) string {
 // sends no DPoP proof, which is what an issuer that does not advertise
 // dpop_signing_alg_values_supported expects. A refusal that comes with the
 // material to do better is answered once: a DPoP nonce (RFC 9449 §8), and an
-// attestation challenge or freshness demand (ABCA §6.2), each with its own
+// attestation challenge or freshness demand (ABCA §6.2 and §7.4), each with its own
 // retry so one does not spend the other's.
 func doDPoPRequest(method, target, contentType, accept string, body []byte, authScheme, token string, key *ecdsa.PrivateKey, nonce *string, attestor *clientAttestor) ([]byte, int, error) {
 	if accept == "" {

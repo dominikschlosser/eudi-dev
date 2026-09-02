@@ -120,7 +120,7 @@ These are the HAIP rules the wallet enforces, the ones the OIDF HAIP wallet conf
 
 ## SD-JWT (Selective Disclosure JWT)
 
-Selective disclosure itself is RFC 9901. The credential profile on top of it is `draft-ietf-oauth-sd-jwt-vc-18`, which is still an Internet-Draft.
+Selective disclosure itself is RFC 9901. The credential profile on top of it is `draft-ietf-oauth-sd-jwt-vc-19`, which is still an Internet-Draft.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -136,7 +136,7 @@ Selective disclosure itself is RFC 9901. The credential profile on top of it is 
 | Disclosure digest integrity check | Implemented | Verifies each disclosure hash appears in `_sd` arrays |
 | `kid` header on generated SD-JWTs | Implemented | Deterministic RFC 7638 thumbprint of the signing key |
 | X.509 trust-chain based issuer key publication | Implemented | Generated SD-JWTs carry leaf `x5c`. Trust anchor remains in wallet trust list |
-| SD-JWT VC `typ` header | Implemented | Generated credentials carry `dc+sd-jwt`. Reading one accepts that value and `vc+sd-jwt`, which SD-JWT VC §2.2.1 keeps valid for a transitional period, and nothing else |
+| SD-JWT VC `typ` header | Implemented | Generated credentials carry `dc+sd-jwt`. Reading one also accepts the earlier `vc+sd-jwt` value and reports it as a deviation (strict mode refuses it). |
 | Credentials with no selectively disclosable claims | Implemented | `_sd` is omitted from the payload and the serialization ends in a single tilde (SD-JWT VC §2.2.2.5 and RFC 9901 §4) |
 | Registered claims that cannot be selectively disclosed | Enforced | `iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status` are embedded plainly when generating a credential (SD-JWT VC §2.2.2.3), and `iat` with them because the generator writes one itself |
 | `aka_vcts` claim | Implemented | Read when deciding whether a credential answers a requested type (§2.2.2.2), and written into the credentials this tool issues for a type that extends another. Never treated as evidence of issuer authorization (§6.6) |
