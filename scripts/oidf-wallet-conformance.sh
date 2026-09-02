@@ -105,6 +105,9 @@ echo "Using run directory: $RUN_DIR"
 echo "Installing runner dependencies..."
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --quiet -r "$SUITE_DIR/scripts/requirements.txt"
+# The monitor verifies which credentials chain to the wallet CA (cbor2 reads
+# the mdoc issuerAuth, cryptography checks the leaf against the CA).
+"$VENV_DIR/bin/pip" install --quiet cbor2 cryptography
 
 # The suite runs on this same machine and competes with the wallet for it, so
 # a request it would normally answer at once can take tens of seconds under

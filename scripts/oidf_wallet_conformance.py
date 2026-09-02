@@ -554,25 +554,67 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
     )
 
 
-def baseline_credential_ids(wallet_url: str, wallet_issuer_url: str) -> set[str]:
+def credential_leaf_der(detail: dict) -> bytes | None:
+    """The DER signer certificate of a stored credential: the first x5c entry
+    of an SD-JWT, the x5chain of an mdoc issuerAuth (COSE header 33)."""
+    raw = detail.get("raw")
+    if not isinstance(raw, str) or not raw:
+        return None
+    fmt = str(detail.get("format", ""))
+    try:
+        if "sd-jwt" in fmt or "jwt" in fmt:
+            header_b64 = raw.split("~")[0].split(".")[0]
+            header = json.loads(base64.urlsafe_b64decode(header_b64 + "=" * (-len(header_b64) % 4)))
+            x5c = header.get("x5c") or []
+            return base64.b64decode(x5c[0]) if x5c else None
+        import cbor2  # noqa: PLC0415 (installed into the runner venv)
+
+        padded = raw + "=" * (-len(raw) % 4)
+        issuer_signed = cbor2.loads(base64.urlsafe_b64decode(padded))
+        issuer_auth = issuer_signed["issuerAuth"]
+        for header_map in (cbor2.loads(issuer_auth[0]) if issuer_auth[0] else {}, issuer_auth[1] or {}):
+            chain = header_map.get(33)
+            if chain is None:
+                continue
+            return chain[0] if isinstance(chain, list) else chain
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def chains_to_wallet_ca(leaf_der: bytes, ca_pem: str) -> bool:
+    from cryptography import x509 as cx509
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes
+
+    try:
+        leaf = cx509.load_der_x509_certificate(leaf_der)
+        ca = cx509.load_pem_x509_certificate(ca_pem.encode("utf-8"))
+        ca.public_key().verify(leaf.signature, leaf.tbs_certificate_bytes, ec.ECDSA(hashes.SHA256()))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def baseline_credential_ids(wallet_url: str, wallet_ca_cert: Path) -> set[str]:
     """Credential ids of the wallet's own baseline (the --pid credentials).
 
     Not everything present at startup: a persistent wallet (the strict
     conformance host) can still hold credentials an earlier run's issuance
-    modules deposited. Those name a foreign https issuer and chain to that
-    issuer's CA rather than the wallet's, so a presentation module that picks
-    one fails certificate validation. Only what the wallet itself issued is
-    baseline, and the startup purge clears the rest."""
-    own_issuer = wallet_issuer_url.rstrip("/")
+    modules deposited. Those chain to the suite's CA rather than the
+    wallet's, so a presentation module that picks one fails certificate
+    validation. Membership is decided by the signature: a credential whose
+    signer certificate verifies under the wallet CA is baseline, everything
+    else is purged at startup."""
+    ca_pem = wallet_ca_cert.read_text()
     baseline = set()
     for credential in wallet_request(wallet_url, "GET", "/api/credentials"):
         cred_id = credential.get("id")
         if not cred_id:
             continue
         detail = wallet_request(wallet_url, "GET", f"/api/credentials/{cred_id}")
-        issuer = detail.get("issuer")
-        issuer_value = issuer.get("value", "") if isinstance(issuer, dict) else ""
-        if issuer_value.startswith(("http://", "https://")) and issuer_value.rstrip("/") != own_issuer:
+        leaf = credential_leaf_der(detail)
+        if leaf is None or not chains_to_wallet_ca(leaf, ca_pem):
             continue
         baseline.add(cred_id)
     return baseline
@@ -1353,7 +1395,7 @@ def main() -> int:
     verify_suite_support(suite_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
     materials = fetch_wallet_materials(args.wallet_url, args.wallet_issuer_url, Path(args.wallet_ca_cert))
-    baseline_ids = baseline_credential_ids(args.wallet_url, args.wallet_issuer_url)
+    baseline_ids = baseline_credential_ids(args.wallet_url, Path(args.wallet_ca_cert))
     removed = purge_issued_credentials(args.wallet_url, baseline_ids)
     if removed:
         print(f"[runner] cleared {removed} foreign credential(s) left by earlier runs", flush=True)
