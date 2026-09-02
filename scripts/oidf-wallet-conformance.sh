@@ -14,8 +14,28 @@ fi
 PORT=${PORT:-$(pick_port_pair)}
 RUN_DIR=${OIDF_RUN_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/oidf-wallet-conformance.XXXXXX")}
 WALLET_DIR=${OIDF_WALLET_DIR:-"$RUN_DIR/wallet"}
+# An explicit OIDF_WALLET_URL names an externally managed wallet (for example
+# the strict conformance host, see docs/conformance-run.md). The wrapper then
+# drives that wallet over its API instead of starting one.
+WALLET_MANAGED=1
+if [ -n "${OIDF_WALLET_URL:-}" ]; then
+  WALLET_MANAGED=0
+fi
 WALLET_URL=${OIDF_WALLET_URL:-"http://127.0.0.1:${PORT}"}
-WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"https://localhost:$((PORT + 1))"}
+# A hosted suite fetches the wallet's status list itself, so the wallet needs
+# a public https base URL (a tunnel terminating TLS in front of $PORT). An
+# https base URL becomes the issuer origin, so status list and issuer
+# metadata live on it directly.
+WALLET_BASE_URL=${OIDF_WALLET_BASE_URL:-}
+if [ -n "$WALLET_BASE_URL" ]; then
+  WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"${WALLET_BASE_URL%/}"}
+elif [ "$WALLET_MANAGED" = "0" ]; then
+  # An external wallet on a public https origin serves its issuer metadata
+  # and status list on that same origin.
+  WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"${WALLET_URL%/}"}
+else
+  WALLET_ISSUER_URL=${OIDF_WALLET_ISSUER_URL:-"https://localhost:$((PORT + 1))"}
+fi
 WALLET_CA_CERT=${OIDF_WALLET_CA_CERT:-"$RUN_DIR/wallet-ca-cert.pem"}
 CONFORMANCE_MODE=${CONFORMANCE_MODE:-local}
 OIDF_WALLET_MODE=${OIDF_WALLET_MODE:-strict}
@@ -62,7 +82,9 @@ RUNNER_LOG="$RUN_DIR/runner.log"
 WALLET_LOG="$RUN_DIR/wallet.log"
 
 mkdir -p "$RESULTS_DIR" "$WALLET_DIR"
-build_local_oid4vc_dev
+if [ "$WALLET_MANAGED" = "1" ]; then
+  build_local_oid4vc_dev
+fi
 fetch_suite_source
 
 if [ "$CONFORMANCE_MODE" = "local" ]; then
@@ -92,35 +114,56 @@ python3 -m venv "$VENV_DIR"
 EUDI_REMOTE_TIMEOUT=${EUDI_REMOTE_TIMEOUT:-120s}
 export EUDI_REMOTE_TIMEOUT
 
-echo "Starting wallet on $WALLET_URL (remote timeout $EUDI_REMOTE_TIMEOUT)"
-(
-  cd "$ROOT_DIR"
-  exec "$LOCAL_OID4VC_DEV" wallet serve \
-    --mode "$OIDF_WALLET_MODE" \
-    --auto-accept \
-    --pid \
-    --preferred-format dc+sd-jwt \
-    --wallet-dir "$WALLET_DIR" \
-    --port "$PORT" \
-    --vci-client-id "$OIDF_VCI_CLIENT_ID" \
-    --vci-redirect-uri "$OIDF_VCI_REDIRECT_URI"
-) >"$WALLET_LOG" 2>&1 &
-WALLET_PID=$!
+if [ "$WALLET_MANAGED" = "1" ]; then
+  echo "Starting wallet on $WALLET_URL (remote timeout $EUDI_REMOTE_TIMEOUT)"
+  (
+    cd "$ROOT_DIR"
+    if [ -n "$WALLET_BASE_URL" ]; then
+      set -- --base-url "$WALLET_BASE_URL"
+    else
+      set --
+    fi
+    exec "$LOCAL_OID4VC_DEV" wallet serve "$@" \
+      --mode "$OIDF_WALLET_MODE" \
+      --auto-accept \
+      --pid \
+      --preferred-format dc+sd-jwt \
+      --wallet-dir "$WALLET_DIR" \
+      --port "$PORT" \
+      --vci-client-id "$OIDF_VCI_CLIENT_ID" \
+      --vci-redirect-uri "$OIDF_VCI_REDIRECT_URI"
+  ) >"$WALLET_LOG" 2>&1 &
+  WALLET_PID=$!
 
-attempt=0
-until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; do
-  attempt=$((attempt + 1))
-  if ! kill -0 "$WALLET_PID" 2>/dev/null; then
-    echo "error: wallet exited before becoming ready" >&2
-    cat "$WALLET_LOG" >&2
+  attempt=0
+  until curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; do
+    attempt=$((attempt + 1))
+    if ! kill -0 "$WALLET_PID" 2>/dev/null; then
+      echo "error: wallet exited before becoming ready" >&2
+      cat "$WALLET_LOG" >&2
+      exit 1
+    fi
+    if [ "$attempt" -ge 60 ]; then
+      echo "error: wallet did not become ready" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+else
+  echo "Using externally managed wallet at $WALLET_URL"
+  if ! curl -fsS "$WALLET_URL/api/credentials" >/dev/null 2>&1; then
+    echo "error: the wallet at $WALLET_URL does not answer /api/credentials" >&2
     exit 1
   fi
-  if [ "$attempt" -ge 60 ]; then
-    echo "error: wallet did not become ready" >&2
-    exit 1
+  # The external wallet's shared CA, fetched once. It anchors the wallet's
+  # attestations and status list signatures in the generated configs.
+  if [ ! -f "$WALLET_CA_CERT" ]; then
+    if ! curl -fsS "$WALLET_URL/api/certificates/ca" -o "$WALLET_CA_CERT"; then
+      echo "error: could not fetch the wallet CA from $WALLET_URL/api/certificates/ca" >&2
+      exit 1
+    fi
   fi
-  sleep 1
-done
+fi
 
 echo "Running OIDF Final + HAIP wallet plans against $CONFORMANCE_SERVER ($CONFORMANCE_MODE mode)"
 RUN_STATUS=0

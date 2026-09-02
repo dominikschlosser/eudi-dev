@@ -10,6 +10,7 @@ import re
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -170,155 +171,149 @@ def verify_suite_support(suite_dir: Path) -> None:
         raise FileNotFoundError(f"the extracted OIDF suite is missing required Final plan files:\n{formatted}")
 
 
+VP_FINAL_RESPONSE_MODES = ("direct_post", "direct_post.jwt")
+VP_FINAL_DCAPI_RESPONSE_MODES = ("dc_api", "dc_api.jwt")
+
+# The (client_id_prefix, request_method) pairs the wallet supports, per
+# response-mode family. The pairing is constrained: redirect_uri and
+# web-origin identify unsigned requests, the x509 prefixes authenticate via a
+# signed request, url_query exists only outside the Browser API and
+# multisigned only inside it (OID4VP 1.0 Appendix A.3.2). The prefixes the
+# wallet deliberately does not implement are absent: pre_registered (no
+# pre-registered trust anchoring) and decentralized_identifier (no DIDs).
+VP_FINAL_REDIRECT_COMBOS = (
+    ("redirect_uri", "url_query"),
+    ("redirect_uri", "request_uri_unsigned"),
+    ("x509_hash", "request_uri_signed"),
+    ("x509_san_dns", "request_uri_signed"),
+)
+VP_FINAL_DCAPI_COMBOS = (
+    ("web-origin", "request_uri_unsigned"),
+    ("x509_hash", "request_uri_signed"),
+    ("x509_san_dns", "request_uri_signed"),
+    ("x509_hash", "request_uri_multisigned"),
+    ("x509_san_dns", "request_uri_multisigned"),
+)
+
+VP_SLUG_TOKENS = {
+    "redirect_uri": "redirect",
+    "web-origin": "origin",
+    "x509_hash": "hash",
+    "x509_san_dns": "sandns",
+    "url_query": "query",
+    "request_uri_unsigned": "unsigned",
+    "request_uri_signed": "signed",
+    "request_uri_multisigned": "multisigned",
+    "direct_post": "direct-post",
+    "direct_post.jwt": "direct-post-jwt",
+    "dc_api": "dc-api",
+    "dc_api.jwt": "dc-api-jwt",
+}
+
+VP_TEMPLATES = {
+    "sdjwt": "scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-sdjwt.json",
+    "mdoc": "scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-mdoc.json",
+}
+VP_FORMAT_VARIANTS = {"sdjwt": "sd_jwt_vc", "mdoc": "iso_mdl"}
+
+
+def vp_final_scenarios() -> list[PlanScenario]:
+    """Every OID4VP Final wallet plan variant combination the wallet supports."""
+    scenarios = []
+    families = (
+        (VP_FINAL_REDIRECT_COMBOS, VP_FINAL_RESPONSE_MODES),
+        (VP_FINAL_DCAPI_COMBOS, VP_FINAL_DCAPI_RESPONSE_MODES),
+    )
+    for kind in ("sdjwt", "mdoc"):
+        for combos, response_modes in families:
+            for prefix, method in combos:
+                for response_mode in response_modes:
+                    slug = "vp-final-{}-{}-{}-{}".format(
+                        kind, VP_SLUG_TOKENS[prefix], VP_SLUG_TOKENS[method], VP_SLUG_TOKENS[response_mode]
+                    )
+                    scenarios.append(
+                        PlanScenario(
+                            slug=slug,
+                            kind="vp",
+                            template_relpath=VP_TEMPLATES[kind],
+                            plan_name="oid4vp-1final-wallet-test-plan",
+                            variant={
+                                "vp_profile": "plain_vp",
+                                "credential_format": VP_FORMAT_VARIANTS[kind],
+                                "client_id_prefix": prefix,
+                                "request_method": method,
+                                "response_mode": response_mode,
+                            },
+                            credential_kind=kind,
+                        )
+                    )
+    return scenarios
+
+
+VCI_FORMAT_VARIANTS = {"sdjwt": "sd_jwt_vc", "mdoc": "mdoc"}
+VCI_SLUG_TOKENS = {
+    "authorization_code": "authcode",
+    "pre_authorization_code": "preauth",
+    "by_value": "byval",
+    "by_reference": "byref",
+    "immediate": "immediate",
+    "deferred": "deferred",
+    "plain": "plain",
+    "encrypted": "encrypted",
+}
+
+
+def vci_final_scenarios() -> list[PlanScenario]:
+    """Every OID4VCI Final wallet plan variant combination the wallet supports.
+
+    The flow is always issuer_initiated: issuance starts from a credential
+    offer here, so the wallet_initiated and issuer_initiated_dc_api variants
+    do not apply. Authorization always uses client attestation, DPoP, and a
+    plain scope request (the wallet authorizes via scope, not rar).
+    """
+    scenarios = []
+    for kind in ("sdjwt", "mdoc"):
+        for grant in ("authorization_code", "pre_authorization_code"):
+            for offer in ("by_value", "by_reference"):
+                for mode in ("immediate", "deferred"):
+                    for encryption in ("plain", "encrypted"):
+                        slug = "vci-final-{}-{}-{}-{}-{}".format(
+                            kind, VCI_SLUG_TOKENS[grant], VCI_SLUG_TOKENS[offer],
+                            VCI_SLUG_TOKENS[mode], VCI_SLUG_TOKENS[encryption]
+                        )
+                        scenarios.append(
+                            PlanScenario(
+                                slug=slug,
+                                kind="vci",
+                                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
+                                plan_name="oid4vci-1_0-wallet-test-plan",
+                                variant={
+                                    "client_auth_type": "client_attestation",
+                                    "fapi_request_method": "unsigned",
+                                    "sender_constrain": "dpop",
+                                    "authorization_request_type": "simple",
+                                    "fapi_profile": "vci",
+                                    "vci_grant_type": grant,
+                                    # Pre-authorized offers are always
+                                    # issuer-initiated: there is no
+                                    # authorization endpoint for a wallet to
+                                    # start from.
+                                    "vci_authorization_code_flow_variant": "issuer_initiated",
+                                    "vci_credential_offer_variant": offer,
+                                    "credential_format": VCI_FORMAT_VARIANTS[kind],
+                                    "vci_credential_issuance_mode": mode,
+                                    "vci_credential_encryption": encryption,
+                                },
+                                credential_kind=kind,
+                            )
+                        )
+    return scenarios
+
+
 def final_scenarios() -> list[PlanScenario]:
     import os as _os
     _only = _os.environ.get("ONLY_SCENARIOS", "")
-    scenarios = [
-        PlanScenario(
-            slug="vp-final-sdjwt-signed-direct-post",
-            kind="vp",
-            template_relpath="scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-sdjwt.json",
-            plan_name="oid4vp-1final-wallet-test-plan",
-            variant={
-                "vp_profile": "plain_vp",
-                "credential_format": "sd_jwt_vc",
-                "client_id_prefix": "x509_hash",
-                "request_method": "request_uri_signed",
-                "response_mode": "direct_post",
-            },
-            credential_kind="sdjwt",
-        ),
-        PlanScenario(
-            slug="vp-final-sdjwt-signed-direct-post-jwt",
-            kind="vp",
-            template_relpath="scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-sdjwt.json",
-            plan_name="oid4vp-1final-wallet-test-plan",
-            variant={
-                "vp_profile": "plain_vp",
-                "credential_format": "sd_jwt_vc",
-                "client_id_prefix": "x509_hash",
-                "request_method": "request_uri_signed",
-                "response_mode": "direct_post.jwt",
-            },
-            credential_kind="sdjwt",
-        ),
-        PlanScenario(
-            slug="vp-final-sdjwt-unsigned-direct-post",
-            kind="vp",
-            template_relpath="scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-sdjwt.json",
-            plan_name="oid4vp-1final-wallet-test-plan",
-            variant={
-                "vp_profile": "plain_vp",
-                "credential_format": "sd_jwt_vc",
-                "client_id_prefix": "redirect_uri",
-                "request_method": "request_uri_unsigned",
-                "response_mode": "direct_post",
-            },
-            credential_kind="sdjwt",
-        ),
-        PlanScenario(
-            slug="vp-final-mdoc-signed-direct-post-jwt",
-            kind="vp",
-            template_relpath="scripts/test-configs-rp-against-op/vp-wallet-test-config-dcql-mdoc.json",
-            plan_name="oid4vp-1final-wallet-test-plan",
-            variant={
-                "vp_profile": "plain_vp",
-                "credential_format": "iso_mdl",
-                "client_id_prefix": "x509_hash",
-                "request_method": "request_uri_signed",
-                "response_mode": "direct_post.jwt",
-            },
-            credential_kind="mdoc",
-        ),
-        PlanScenario(
-            slug="vci-final-sdjwt",
-            kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
-            plan_name="oid4vci-1_0-wallet-test-plan",
-            variant={
-                "client_auth_type": "client_attestation",
-                "fapi_request_method": "unsigned",
-                "sender_constrain": "dpop",
-                "authorization_request_type": "simple",
-                "fapi_profile": "vci",
-                "vci_grant_type": "authorization_code",
-                "vci_authorization_code_flow_variant": "issuer_initiated",
-                "vci_credential_offer_variant": "by_value",
-                "credential_format": "sd_jwt_vc",
-                "vci_credential_issuance_mode": "immediate",
-                "vci_credential_encryption": "plain",
-            },
-            credential_kind="sdjwt",
-        ),
-        PlanScenario(
-            slug="vci-final-mdoc",
-            kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
-            plan_name="oid4vci-1_0-wallet-test-plan",
-            variant={
-                "client_auth_type": "client_attestation",
-                "fapi_request_method": "unsigned",
-                "sender_constrain": "dpop",
-                "authorization_request_type": "simple",
-                "fapi_profile": "vci",
-                "vci_grant_type": "authorization_code",
-                "vci_authorization_code_flow_variant": "issuer_initiated",
-                "vci_credential_offer_variant": "by_value",
-                "credential_format": "mdoc",
-                "vci_credential_issuance_mode": "immediate",
-                "vci_credential_encryption": "plain",
-            },
-            credential_kind="mdoc",
-        ),
-        # The pre-authorized code grant. It is the flow a wallet meets most
-        # often in the wild (scan a QR, get a credential, no sign-in) and the
-        # one the authorization-code scenarios above never exercise. HAIP is
-        # deliberately absent: the suite refuses the combination outright
-        # (AbstractVCIWalletTest rejects PRE_AUTHORIZATION_CODE under
-        # VCI_HAIP), and pre-authorized offers are out of HAIP's scope anyway.
-        PlanScenario(
-            slug="vci-final-sdjwt-preauth",
-            kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
-            plan_name="oid4vci-1_0-wallet-test-plan",
-            variant={
-                "client_auth_type": "client_attestation",
-                "fapi_request_method": "unsigned",
-                "sender_constrain": "dpop",
-                "authorization_request_type": "simple",
-                "fapi_profile": "vci",
-                "vci_grant_type": "pre_authorization_code",
-                # Pre-authorized offers are always issuer-initiated: there is
-                # no authorization endpoint for a wallet to start from.
-                "vci_authorization_code_flow_variant": "issuer_initiated",
-                "vci_credential_offer_variant": "by_value",
-                "credential_format": "sd_jwt_vc",
-                "vci_credential_issuance_mode": "immediate",
-                "vci_credential_encryption": "plain",
-            },
-            credential_kind="sdjwt",
-        ),
-        PlanScenario(
-            slug="vci-final-mdoc-preauth",
-            kind="vci",
-            template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-plain.json",
-            plan_name="oid4vci-1_0-wallet-test-plan",
-            variant={
-                "client_auth_type": "client_attestation",
-                "fapi_request_method": "unsigned",
-                "sender_constrain": "dpop",
-                "authorization_request_type": "simple",
-                "fapi_profile": "vci",
-                "vci_grant_type": "pre_authorization_code",
-                "vci_authorization_code_flow_variant": "issuer_initiated",
-                "vci_credential_offer_variant": "by_value",
-                "credential_format": "mdoc",
-                "vci_credential_issuance_mode": "immediate",
-                "vci_credential_encryption": "plain",
-            },
-            credential_kind="mdoc",
-        ),
-    ]
+    scenarios = vp_final_scenarios() + vci_final_scenarios()
     scenarios.extend(
         [
             PlanScenario(
@@ -369,32 +364,27 @@ def final_scenarios() -> list[PlanScenario]:
                 credential_kind="mdoc",
                 requires_haip=True,
             ),
-            PlanScenario(
-                slug="vci-haip-sdjwt",
-                kind="vci",
-                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
-                plan_name="oid4vci-1_0-wallet-haip-test-plan",
-                variant={
-                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                    "vci_credential_offer_variant": "by_value",
-                    "credential_format": "sd_jwt_vc",
-                },
-                credential_kind="sdjwt",
-                requires_haip=True,
-            ),
-            PlanScenario(
-                slug="vci-haip-mdoc",
-                kind="vci",
-                template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
-                plan_name="oid4vci-1_0-wallet-haip-test-plan",
-                variant={
-                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                    "vci_credential_offer_variant": "by_value",
-                    "credential_format": "mdoc",
-                },
-                credential_kind="mdoc",
-                requires_haip=True,
-            ),
+            # Every selectable HAIP VCI variant: format and offer delivery.
+            # The HAIP plan pins the rest internally (authorization code with
+            # client attestation and DPoP, immediate/deferred/encrypted as
+            # module entries).
+            *[
+                PlanScenario(
+                    slug="vci-haip-{}-{}".format(kind, VCI_SLUG_TOKENS[offer]),
+                    kind="vci",
+                    template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
+                    plan_name="oid4vci-1_0-wallet-haip-test-plan",
+                    variant={
+                        "vci_authorization_code_flow_variant": "issuer_initiated",
+                        "vci_credential_offer_variant": offer,
+                        "credential_format": VCI_FORMAT_VARIANTS[kind],
+                    },
+                    credential_kind=kind,
+                    requires_haip=True,
+                )
+                for kind in ("sdjwt", "mdoc")
+                for offer in ("by_value", "by_reference")
+            ],
         ]
     )
     if _only:
@@ -515,7 +505,11 @@ def load_config_template(source: Path) -> dict:
 
 
 def ssl_context_for_ca(ca_path: Path) -> ssl.SSLContext:
-    context = ssl.create_default_context(cafile=str(ca_path))
+    # The wallet CA joins the system roots instead of replacing them: the
+    # issuer URL is the wallet's own listener locally, but a public tunnel
+    # origin with a publicly-issued certificate in a hosted run.
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=str(ca_path))
     context.check_hostname = False
     return context
 
@@ -560,10 +554,28 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
     )
 
 
-def baseline_credential_ids(wallet_url: str) -> set[str]:
-    """Credential ids the wallet was started with (the --pid baseline)."""
-    credentials = wallet_request(wallet_url, "GET", "/api/credentials")
-    return {c["id"] for c in credentials if c.get("id")}
+def baseline_credential_ids(wallet_url: str, wallet_issuer_url: str) -> set[str]:
+    """Credential ids of the wallet's own baseline (the --pid credentials).
+
+    Not everything present at startup: a persistent wallet (the strict
+    conformance host) can still hold credentials an earlier run's issuance
+    modules deposited. Those name a foreign https issuer and chain to that
+    issuer's CA rather than the wallet's, so a presentation module that picks
+    one fails certificate validation. Only what the wallet itself issued is
+    baseline, and the startup purge clears the rest."""
+    own_issuer = wallet_issuer_url.rstrip("/")
+    baseline = set()
+    for credential in wallet_request(wallet_url, "GET", "/api/credentials"):
+        cred_id = credential.get("id")
+        if not cred_id:
+            continue
+        detail = wallet_request(wallet_url, "GET", f"/api/credentials/{cred_id}")
+        issuer = detail.get("issuer")
+        issuer_value = issuer.get("value", "") if isinstance(issuer, dict) else ""
+        if issuer_value.startswith(("http://", "https://")) and issuer_value.rstrip("/") != own_issuer:
+            continue
+        baseline.add(cred_id)
+    return baseline
 
 
 def purge_issued_credentials(wallet_url: str, baseline_ids: set[str]) -> int:
@@ -615,10 +627,21 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
     config["description"] = f"oid4vc-dev wallet ({scenario.slug})"
     config.setdefault("client", {})
     config["client"]["dcql"] = build_vp_dcql_query(scenario.credential_kind)
-    if scenario.requires_haip:
+    if scenario.requires_haip or scenario.variant.get("client_id_prefix") == "x509_san_dns":
         # The HAIP VP plan includes x509_san_dns Browser API variants where no response_uri
-        # exists, so the suite expects a static client_id in the config.
+        # exists, and the Final plan's x509_san_dns variant names the DNS
+        # subject alternative name of the suite certificate. Both take the
+        # static client_id from the config.
         config["client"]["client_id"] = conformance_server_host()
+    if scenario.variant.get("request_method") == "url_query":
+        # A url_query request has no request_uri for the harness to observe:
+        # the suite's browser control delivers the whole authorization request
+        # to the wallet's authorization endpoint itself, so the config names
+        # the wallet's real endpoint instead of the template placeholder. The
+        # issuer origin is the one the suite can reach in both local and
+        # hosted runs.
+        config.setdefault("server", {})
+        config["server"]["authorization_endpoint"] = args.wallet_issuer_url.rstrip("/") + "/authorize"
     response_mode = scenario.variant.get("response_mode", "")
     if response_mode.endswith(".jwt"):
         config["client"]["authorization_encrypted_response_alg"] = "ECDH-ES"
@@ -628,10 +651,12 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
         keys = secondary_jwks.get("keys", [])
         if keys and isinstance(keys[0], dict) and isinstance(keys[0].get("kid"), str):
             keys[0]["kid"] = keys[0]["kid"] + "-second"
-        config["client2"] = {
-            "client_id": config["client"]["client_id"],
-            "jwks": secondary_jwks,
-        }
+        # For x509_hash the suite derives the second signer's client_id from
+        # its certificate, so the config carries only the static one when the
+        # prefix names one.
+        config["client2"] = {"jwks": secondary_jwks}
+        if "client_id" in config["client"]:
+            config["client2"]["client_id"] = config["client"]["client_id"]
     if scenario.requires_haip:
         config.setdefault("credential", {})
         config["credential"]["trust_anchor_pem"] = materials.ca_pem
@@ -745,6 +770,19 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     if scenario.kind != "vp":
         return None
 
+    # OIDF_VP_MODULES names an explicit module list for every VP plan, for
+    # targeted reproductions (a plan holding one module of interest, such as
+    # a suite-defect demonstration for an upstream report).
+    forced = os.environ.get("OIDF_VP_MODULES", "")
+    if forced:
+        return tuple(name.strip() for name in forced.split(",") if name.strip())
+
+    # The certifiable HAIP plans run complete: the suite's plan definition
+    # already excludes what its variants cannot execute, and a certification
+    # run must not filter modules on top of that.
+    if scenario.requires_haip:
+        return None
+
     modules = list(VP_FINAL_MODULES)
     variant = scenario.variant
     response_mode = variant.get("response_mode", "")
@@ -757,20 +795,16 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     if response_mode in {"dc_api", "dc_api.jwt"} and request_method != "request_uri_signed":
         modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
 
-    if scenario.requires_haip:
-        modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
-        return tuple(modules)
-
     if response_mode in {"direct_post", "dc_api"}:
         # @VariantNotApplicable: the unencrypted modes never advertise an
         # encryption key, so there is no unusable-key scenario to test.
         modules.remove(VP_FINAL_MODULE_IGNORES_UNUSABLE_ENCRYPTION_KEY)
-    if response_mode == "direct_post":
+    if response_mode in {"direct_post", "dc_api"}:
         # The alternate module unconditionally replaces the encrypted-response
-        # setup, which is absent for plain direct_post. Still present in
-        # release-v5.2.4.
+        # setup, which is absent for the unencrypted response modes. Still
+        # present in release-v5.2.4.
         modules.remove(VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW)
-    if client_id_prefix != "redirect_uri":
+    if client_id_prefix != "redirect_uri" and response_mode not in {"dc_api", "dc_api.jwt"}:
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
     if request_method in {"request_uri_unsigned", "url_query"}:
         modules.remove(VP_FINAL_MODULE_INVALID_REQUEST_SIGNATURE)
@@ -781,8 +815,32 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)
         modules.remove(VP_FINAL_MODULE_MISMATCHED_CLIENT_ID)
         modules.remove(VP_FINAL_MODULE_REDIRECT_URI_WITH_DIRECT_POST)
-    else:
-        modules.remove(VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS)
+    elif request_method in {"url_query", "request_uri_multisigned"}:
+        # @VariantNotApplicable: the mismatched-client-id module corrupts the
+        # request object of a single signed request delivered by reference.
+        modules.remove(VP_FINAL_MODULE_MISMATCHED_CLIENT_ID)
+    # @VariantNotApplicable: expected_origins only exists in encrypted Browser
+    # API requests that are signed (unsigned requests carry no
+    # expected_origins to falsify).
+    if not (response_mode == "dc_api.jwt" and request_method in {"request_uri_signed", "request_uri_multisigned"}):
+        if VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS in modules:
+            modules.remove(VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS)
+    if request_method == "url_query":
+        # The negative modules create their error-screenshot placeholder when
+        # the wallet retrieves the request_uri
+        # (AbstractVP1FinalWalletTest.handleRequestUriRequest), and a
+        # url_query request has no request_uri, so they wait forever. The
+        # request_uri variants of the same response modes carry this negative
+        # coverage.
+        for module in (
+            VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID,
+            VP_FINAL_MODULE_MISSING_NONCE,
+            VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX,
+            VP_FINAL_MODULE_REDIRECT_URI_WITH_DIRECT_POST,
+            VP_FINAL_MODULE_UNKNOWN_TRANSACTION_DATA,
+        ):
+            if module in modules:
+                modules.remove(module)
 
     return tuple(modules)
 
@@ -819,23 +877,50 @@ def reader_thread(stream, line_queue: queue.Queue[str]) -> None:
         stream.close()
 
 
-def upload_placeholder(base_url: str, token: str | None, module_id: str, placeholder: str) -> None:
+def capture_wallet_screenshot(wallet_url: str) -> str | None:
+    """A PNG data URL of the wallet UI, which shows the error the module
+    provoked, or None when the capture fails (no browser, headless CI)."""
+    script = Path(__file__).with_name("oidf_capture_screenshot.js")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+        out_path = Path(handle.name)
+    try:
+        subprocess.run(
+            ["node", str(script), wallet_url, str(out_path)],
+            check=True,
+            capture_output=True,
+            timeout=45,
+        )
+        encoded = base64.b64encode(out_path.read_bytes()).decode("ascii")
+        return "data:image/png;base64," + encoded
+    except Exception as exc:  # noqa: BLE001
+        print(f"[monitor] wallet screenshot capture failed, using placeholder: {exc}", flush=True)
+        return None
+    finally:
+        out_path.unlink(missing_ok=True)
+
+
+def upload_placeholder(base_url: str, token: str | None, module_id: str, placeholder: str, wallet_url: str | None = None) -> None:
+    image = capture_wallet_screenshot(wallet_url) if wallet_url else None
+    kind = "wallet error screenshot" if image else "screenshot placeholder"
     api_request(
         base_url,
         token,
         "POST",
         f"api/log/{module_id}/images/{placeholder}",
-        body=SCREENSHOT_DATA_URL.encode("utf-8"),
+        body=(image or SCREENSHOT_DATA_URL).encode("utf-8"),
         content_type="text/plain;charset=utf-8",
     )
-    print(f"[monitor] uploaded screenshot placeholder for {module_id}: {placeholder}", flush=True)
+    print(f"[monitor] uploaded {kind} for {module_id}: {placeholder}", flush=True)
 
 
 def follow_redirect(redirect_uri: str) -> None:
+    # Short timeout on purpose: the caller retries, and the module only waits
+    # 30 seconds for the redirect to be opened.
+    timeout = min(REQUEST_TIMEOUT, 10)
     parsed = urllib.parse.urlsplit(redirect_uri)
     request_uri = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
     req = urllib.request.Request(request_uri, method="GET")
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=conformance_api_context()) as resp:
         body = resp.read().decode("utf-8", errors="replace")
 
     if not parsed.fragment:
@@ -852,7 +937,7 @@ def follow_redirect(redirect_uri: str) -> None:
         method="POST",
         headers={"Content-Type": "text/plain"},
     )
-    with urllib.request.urlopen(submit_req, timeout=REQUEST_TIMEOUT, context=conformance_api_context()):
+    with urllib.request.urlopen(submit_req, timeout=timeout, context=conformance_api_context()):
         pass
 
 
@@ -879,12 +964,22 @@ TX_CODE_IN_DESCRIPTION = re.compile(r"<(\d{4,12})>")
 def tx_code_from_offer(request_url: str) -> str | None:
     query = urllib.parse.parse_qs(urllib.parse.urlsplit(request_url).query)
     raw = (query.get("credential_offer") or [None])[0]
-    if not raw:
-        return None
-    try:
-        offer = json.loads(raw)
-    except (TypeError, ValueError):
-        return None
+    if raw:
+        try:
+            offer = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+    else:
+        # A by-reference offer hides the tx_code behind its URI. Reading it
+        # here does not consume it: offer URIs stay readable (the wallet
+        # itself re-reads them during issuance).
+        offer_uri = (query.get("credential_offer_uri") or [None])[0]
+        if not offer_uri:
+            return None
+        try:
+            offer = request_json(offer_uri, context=conformance_api_context())
+        except Exception:  # noqa: BLE001
+            return None
     grants = offer.get("grants")
     if not isinstance(grants, dict):
         return None
@@ -998,11 +1093,19 @@ def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool
     response = result.get("response", {})
     redirect_uri = response.get("redirect_uri")
     if redirect_uri:
-        try:
-            follow_redirect(redirect_uri)
-            print(f"[monitor] followed verifier redirect_uri: {redirect_uri}", flush=True)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[monitor] failed to follow redirect_uri {redirect_uri}: {exc}", flush=True)
+        # The module expects the redirect_uri opened within 30 seconds, and a
+        # loaded suite can stall a single fetch past that. Short attempts with
+        # retries fit inside the window where one long attempt cannot.
+        for attempt in range(1, 4):
+            try:
+                follow_redirect(redirect_uri)
+                print(f"[monitor] followed verifier redirect_uri: {redirect_uri}", flush=True)
+                break
+            except Exception as exc:  # noqa: BLE001
+                if attempt < 3:
+                    print(f"[monitor] retrying verifier redirect_uri ({attempt}/3): {exc}", flush=True)
+                    continue
+                print(f"[monitor] failed to follow redirect_uri {redirect_uri}: {exc}", flush=True)
     return WalletSubmissionResult(completed=True, retryable=False)
 
 
@@ -1216,17 +1319,21 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
             if result.completed or not result.retryable:
                 state["submitted_browser_api_requests"].add(submit_url)
 
+    # Placeholders first: a screenshot upload is what lets a negative module
+    # finish, and a wallet submission below can block for its full timeout
+    # (or raise), which must not starve the upload.
+    for entry in logs:
+        placeholder = entry.get("upload")
+        if placeholder and placeholder not in state["uploaded_placeholders"]:
+            state["uploaded_placeholders"].add(placeholder)
+            upload_placeholder(base_url, token, module_id, placeholder, wallet_url)
+
     for entry in logs:
         request_url = entry.get("redirect_to") or entry.get("credential_offer_redirect_url")
         if request_url and request_url not in state["submitted_urls"]:
             result = submit_wallet_request(wallet_url, request_url, state.get("requires_haip", False), state.get("test_name"))
             if result.completed or not result.retryable:
                 state["submitted_urls"].add(request_url)
-
-        placeholder = entry.get("upload")
-        if placeholder and placeholder not in state["uploaded_placeholders"]:
-            state["uploaded_placeholders"].add(placeholder)
-            upload_placeholder(base_url, token, module_id, placeholder)
 
     status = info.get("status", "")
     if status in TERMINAL_STATES:
@@ -1246,8 +1353,17 @@ def main() -> int:
     verify_suite_support(suite_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
     materials = fetch_wallet_materials(args.wallet_url, args.wallet_issuer_url, Path(args.wallet_ca_cert))
-    baseline_ids = baseline_credential_ids(args.wallet_url)
+    baseline_ids = baseline_credential_ids(args.wallet_url, args.wallet_issuer_url)
+    removed = purge_issued_credentials(args.wallet_url, baseline_ids)
+    if removed:
+        print(f"[runner] cleared {removed} foreign credential(s) left by earlier runs", flush=True)
     scenarios = final_scenarios()
+    if "www.certification.openid.net" in base_url:
+        # Only the certification program's plans run on the production
+        # service. The alpha Final plans are quality evidence and run against
+        # the local suite or the hosted demo service instead.
+        scenarios = [scenario for scenario in scenarios if scenario.requires_haip]
+        print("[runner] production certification service: running the certifiable HAIP plans only", flush=True)
     config_jobs = [(scenario, create_config(args, suite_dir, results_dir, scenario, materials)) for scenario in scenarios]
     config_variants = {config_path.name: scenario.variant for scenario, config_path in config_jobs}
 
@@ -1346,6 +1462,29 @@ def main() -> int:
                 break
 
             if proc.poll() is None and idle_timeout > 0 and time.monotonic() - last_runner_output > idle_timeout:
+                # First try to unstick the run by cancelling the stuck modules
+                # on the suite (DELETE moves them to INTERRUPTED, which the
+                # official runner records as that module's failure and moves
+                # on). Only a run that stays silent after that is terminated.
+                stalled = [
+                    module_id
+                    for module_id, state in module_state.items()
+                    if not state["terminal"] and not state.get("cancelled")
+                ]
+                if stalled:
+                    for module_id in stalled:
+                        module_state[module_id]["cancelled"] = True
+                        try:
+                            api_request(base_url, token, "DELETE", f"api/runner/{module_id}")
+                            print(
+                                f"[monitor] no run-test-plan output for {idle_timeout}s; "
+                                f"cancelled stuck module {module_id} so the plan can continue",
+                                flush=True,
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            print(f"[monitor] could not cancel stuck module {module_id}: {exc}", flush=True)
+                    last_runner_output = time.monotonic()
+                    continue
                 active_modules = [module_id for module_id, state in module_state.items() if not state["terminal"]]
                 active = ", ".join(active_modules) if active_modules else "unknown"
                 print(

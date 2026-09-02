@@ -2,6 +2,8 @@
 
 This runbook runs the official OIDF issuer and verifier plans against the demo issuer and demo verifier that `wallet serve` mounts under `/issuer` and `/verifier`. It is the counterpart of [Running OIDF Wallet Conformance](./conformance-run.md). There the suite plays the issuer and the verifier and our wallet is under test. Here the suite plays the wallet and our demo counterparties are under test.
 
+Certification is sought for the wallet alone. These issuer and verifier plans run locally (or on the hosted demo service) as quality checks, and the wrapper refuses the production certification service.
+
 ## What Runs
 
 The wrapper starts one wallet server and drives these plans through the official `run-test-plan.py`:

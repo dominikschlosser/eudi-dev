@@ -12,6 +12,29 @@ The 4 `WARNING` are one condition, four times: `CheckForUnexpectedParametersInSe
 
 Suite defect in `release-v5.2.4`: under the pre-authorized code grant the client attestation negative modules keep running after their expected token refusal and interrupt themselves ("This is a bug in the test module"). Those six modules are excluded there and covered by the authorization code scenarios.
 
+## Run of 2026-09-02 (expanded matrix and production certification)
+
+Two records from the same day, both on suite `release-v5.2.4` (revision `ab35a8d`), after the ISO 18013-5 certificate profile work, the RFC 3986 request URI parsing, and the derived `response_uri` of the 2.3.0 release.
+
+### Production certification run
+
+The certifiable HAIP plans ran on `https://www.certification.openid.net/` against the hosted strict wallet at `https://strict.eudi-test.dev` (see [the runbook](./conformance-run.md)). 8 plans (4 VP HAIP, 4 VCI HAIP including `by_reference` offer delivery), 192 modules, complete and unfiltered: **zero wallet condition failures and zero warnings**. The only non passing entries:
+
+- 2 modules `INTERRUPTED` by a suite defect: `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` under `request_uri_multisigned` throws a NullPointerException in the suite's own request construction (`AddInvalidClientIdPrefixToRequestObject` reads a `client_id` the multisigned sequence deliberately never puts into the shared payload). It dies before contacting the wallet, the identical configuration passes the same module in the signed entry, and it reproduces on a local suite build. Reported upstream.
+- the negative modules end `REVIEW` behind an uploaded screenshot of the wallet's error, as designed.
+- the deliberate mdoc `batch-credential-issuance` skips (single-proof rule of the key attestation appendices).
+
+### Local full matrix
+
+The expanded local matrix (76 plans: the full supported cross product of the alpha Final plans plus the HAIP plans) ran in one pass: 768 modules, 69411 condition successes against 4 condition failures and 26 warnings. Every one of the non clean entries is accounted for:
+
+- the 4 condition failures are the two occurrences of the multisigned suite NullPointerException above
+- the 26 warnings are the pre-fix IACA subject key identifier (this run's wallet binary was built minutes before the SHA-1 fix landed, the deployed build and the production run above are clean)
+- one VCI module ended `INTERRUPTED` after a machine-load stall (the harness cancelled it so the run could continue, the same module passes in the neighbouring plans)
+- 18 mdoc VCI plans carry the deliberate batch skips
+
+New variants exercised for the first time in this matrix: `url_query`, `x509_san_dns`, `web-origin`, multisigned requests and the Browser API response modes in the Final plan, plus grant, offer delivery, issuance mode and encryption cross products in VCI. Two real wallet gaps surfaced and were fixed on the way: request URIs are now read with RFC 3986 semantics (an unencoded `+` in `dc+sd-jwt` survived as a plus), and an omitted `response_uri` is derived from a `redirect_uri` client id (OID4VP 1.0 §5.9.3).
+
 ## Baseline
 
 - date: 2026-08-09 (previous: 2026-08-08 and 2026-08-07 on suite release-v5.2.1, 2026-08-05 and 2026-08-04 across 12 plans. And 2026-07-30, which did not exercise credential status. See below)

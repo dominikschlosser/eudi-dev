@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-02
+
+### Added
+
+- **A strict conformance host joins the public-demo stack.** `./deploy.sh strict <tag>` serves a strict-mode HAIP wallet with auto-accept at its own subdomain (`strict.eudi-test.dev` in the example), pinned independently with `STRICT_TAG`, as the certification target for the hosted OIDF suite. Its public origin is read-only (Caddy only lets GET and HEAD through), and the harness drives the management API over an SSH tunnel to a loopback-published port. The harness tests an externally managed wallet with `OIDF_WALLET_URL` (no local wallet is started, the CA comes from the wallet's `/api/certificates/ca`).
+- **The wallet conformance harness runs against the hosted OIDF service for certification.** `OIDF_WALLET_BASE_URL` gives the wallet a public https origin (a tunnel terminating TLS in front of the wallet port), which hosted runs need because the suite fetches the wallet's status list itself. The runner's TLS trust adds the wallet CA to the system roots instead of replacing them, so it can read issuer metadata through a publicly-certified tunnel. `scripts/oidf-delete-hosted-plans.sh` clears the account's plans on the hosted service between attempts. The [runbook](docs/conformance-run.md) documents the production invocation.
+- **The conformance matrix covers every plan variant the wallet supports.** VP Final expands to the cross product of format, response mode, and the supported client id prefix and request method pairs, now including `url_query`, `x509_san_dns`, `web-origin`, multisigned requests, and the Browser API response modes (36 plans). VCI Final expands to the cross product of grant type, offer delivery, issuance mode, and credential response encryption (32 plans). VCI HAIP adds `by_reference` offer delivery. See [the matrix](docs/conformance.md).
+- **The wallet serves a certificate revocation list.** `GET /api/crl` answers with a DER CRL signed by the wallet CA (empty, credential revocation runs over the status list). Generated document signer certificates point their CRL distribution points there.
+
+### Changed
+
+- **Generated certificates follow the ISO/IEC 18013-5 Annex B profiles.** The wallet CA matches the IACA root profile (Table B.1: subject countryName, pathLenConstraint 0, issuer alternative name with contact URI). Signing leaves match the document signer profile (Table B.3: subject countryName taken from the credential's issuing_country claim, critical mdlDS extended key usage, SHA-1 subject key identifier, CRL distribution points, issuer alternative name, no basicConstraints). The OIDF suite's mdoc certificate profile checks pass without warnings. Existing wallet stores keep their old CA until it is regenerated (delete `wallet-ca-cert.pem` and `wallet-ca-key.pem` next to the wallet directory).
+- **An omitted response_uri is derived from a redirect_uri client id.** OID4VP 1.0 §5.9.3 makes the redirect_uri prefix value the response endpoint, so a verifier may omit the response_uri parameter for the direct_post response modes. The wallet refused such requests. The OIDF alternate-happy-flow module sends exactly this shape.
+- **Request URIs are read with RFC 3986 semantics.** In `openid4vp://`, `openid-credential-offer://`, and the wallet's GET `/authorize` and `/credential-offer` query components, `+` is a literal plus and only percent escapes decode. The OIDF suite's `url_query` request method sends `dc+sd-jwt` unencoded and a form-decoding reader turned it into `dc sd-jwt`. Links the wallet builds itself encode spaces as `%20` accordingly. POSTed form bodies keep form semantics.
+
 ## [2.2.0] - 2026-09-01 
 
 ### Added

@@ -17,7 +17,7 @@ Current local status:
 - VCI Final SD-JWT and mDoc wallet plans pass in strict mode. The SD-JWT plans include the batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key). The mdoc batch modules are skipped deliberately under the single-proof rule of the key attestation appendices (see [conformance results](conformance-results.md)).
 - VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for SD-JWT (the mdoc batch modules are the same deliberate skips).
 - VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` count as pass-equivalent for the local harness when the runner reports zero condition failures.
-- The wrapper passes explicit VP module lists per generated variant. Suite-side not-applicable or broken modules then appear as documented exclusions instead of red result boxes.
+- The wrapper passes explicit VP module lists for the alpha Final plans only, so suite-side not-applicable or broken modules appear as documented exclusions instead of red result boxes. The certifiable HAIP plans always run complete (the suite's plan definition decides what runs, and a certification run must not filter modules).
 
 See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite-side exclusions.
 
@@ -32,26 +32,27 @@ The wrapper runs the current Final wallet plans plus the current HAIP wallet pla
 
 It does not use the older ID3 wallet plan.
 
+Only the two HAIP plans are part of the OIDF certification program. The suite publishes the plain Final wallet plans as alpha tests, so their runs are evidence but not certifiable yet. The wrapper enforces the split: against the production certification service it runs only the HAIP plans (complete and unfiltered), while local and demo-service runs cover the whole matrix.
+
 ## Default Matrix
 
-The default run covers these Final and HAIP scenarios:
+The default run covers every plan variant combination the wallet supports.
 
-- VP Final: SD-JWT `direct_post`, signed `request_uri`, `x509_hash`
-- VP Final: SD-JWT `direct_post.jwt`, signed `request_uri`, `x509_hash`
-- VP Final: SD-JWT `direct_post`, unsigned `request_uri`, `redirect_uri`
-- VP Final: mDoc `direct_post.jwt`, signed `request_uri`, `x509_hash`
-- VP HAIP: SD-JWT `direct_post.jwt`
-- VP HAIP: mDoc `direct_post.jwt`
-- VP HAIP: SD-JWT `dc_api.jwt`, covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules
-- VP HAIP: mDoc `dc_api.jwt`, covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules
-- VCI Final: SD-JWT authorization-code issuer-initiated flow with client attestation and DPoP
-- VCI Final: mDoc authorization-code issuer-initiated flow with client attestation and DPoP
-- VCI Final: SD-JWT pre-authorized code flow
-- VCI Final: mDoc pre-authorized code flow
-- VCI HAIP: SD-JWT, covering immediate plain, deferred plain, and immediate encrypted responses
-- VCI HAIP: mDoc, covering immediate plain, deferred plain, and immediate encrypted responses
+VP Final generates the cross product of credential format (SD-JWT, mDoc), response mode, and the supported prefix and request pairs (36 plans):
 
-Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallback. Use the official runner `--rerun` selector only for targeted reruns of an already generated matrix.
+- `direct_post` and `direct_post.jwt` with `redirect_uri` (`url_query` and unsigned `request_uri`), `x509_hash` (signed), and `x509_san_dns` (signed)
+- `dc_api` and `dc_api.jwt` with `web-origin` (unsigned), `x509_hash` and `x509_san_dns` (signed and multisigned)
+
+VCI Final generates the cross product of credential format, grant type (authorization code, pre-authorized code), offer delivery (`by_value`, `by_reference`), issuance mode (immediate, deferred), and credential response encryption (plain, encrypted), always issuer initiated with client attestation, DPoP, and a plain scope request (32 plans).
+
+The HAIP plans expose fewer selectable variants (they pin the rest per module entry internally):
+
+- VP HAIP: SD-JWT and mDoc with `direct_post.jwt` and `dc_api.jwt`, the latter covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules (4 plans)
+- VCI HAIP: SD-JWT and mDoc with `by_value` and `by_reference` offers, each covering immediate plain, deferred plain, and immediate encrypted responses (4 plans)
+
+Variant values the wallet deliberately does not implement are absent from the matrix: the `pre_registered` and `decentralized_identifier` prefixes (no pre-registered trust anchoring, no DIDs), the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows (issuance starts from a credential offer), `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
+
+Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallback. Use the official runner `--rerun` selector for targeted reruns of an already generated matrix, or `ONLY_SCENARIOS` (a comma separated list of slug substrings) to generate and run a subset.
 
 ## Harness Behavior
 
@@ -78,7 +79,7 @@ Those runs are fixed in the wrapper. There is no plan selector and no ID3 fallba
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
 - sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started. This works against a locally hosted wallet, which is what a conformance run targets
-- passes explicit VP module lists for each scenario so the suite runs executable coverage for that generated variant
+- passes explicit VP module lists for the alpha Final scenarios so the suite runs executable coverage for that generated variant, and runs the certifiable HAIP plans complete without a filter
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs
 

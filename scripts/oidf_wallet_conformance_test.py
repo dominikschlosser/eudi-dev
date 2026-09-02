@@ -33,9 +33,10 @@ class ScenarioPlanArgTests(unittest.TestCase):
         self.assertNotIn("oid4vp-1final-wallet-ignores-unusable-encryption-key", plan_arg)
         self.assertIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
 
-    def test_haip_dc_api_omits_invalid_client_id_prefix(self):
-        # @VariantNotApplicableWhen on the module: an unsigned DC API request
-        # carries no client_id to corrupt (OID4VP 1.0 Appendix A.2).
+    def test_haip_plans_run_complete(self):
+        # The certifiable HAIP plans carry no module filter: the suite's plan
+        # definition decides what runs, and a certification run covers the
+        # whole plan.
         scenario = PlanScenario(
             slug="vp-haip-sdjwt-dc-api-jwt",
             kind="vp",
@@ -49,8 +50,10 @@ class ScenarioPlanArgTests(unittest.TestCase):
             requires_haip=True,
         )
         plan_arg = scenario_plan_arg(scenario)
-        self.assertNotIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
-        self.assertIn("oid4vp-1final-wallet-negative-test-wrong-expected-origins", plan_arg)
+        self.assertEqual(
+            plan_arg,
+            "oid4vp-1final-wallet-haip-test-plan[credential_format=sd_jwt_vc][response_mode=dc_api.jwt]",
+        )
 
     def test_final_redirect_uri_direct_post_keeps_applicable_response_uri_negative_test(self):
         scenario = PlanScenario(
@@ -73,28 +76,6 @@ class ScenarioPlanArgTests(unittest.TestCase):
         self.assertIn("oid4vp-1final-wallet-negative-test-response-uri-not-client-id", plan_arg)
         self.assertNotIn("oid4vp-1final-wallet-negative-test-invalid-request-object-signature", plan_arg)
         self.assertNotIn("oid4vp-1final-wallet-multisigned-one-invalid-signature", plan_arg)
-
-    def test_haip_dc_api_omits_web_origin_invalid_prefix_suite_bug(self):
-        scenario = PlanScenario(
-            slug="vp-haip-sdjwt-dc-api-jwt",
-            kind="vp",
-            template_relpath="unused.json",
-            plan_name="oid4vp-1final-wallet-haip-test-plan",
-            variant={
-                "credential_format": "sd_jwt_vc",
-                "response_mode": "dc_api.jwt",
-            },
-            credential_kind="sdjwt",
-            requires_haip=True,
-        )
-
-        plan_arg = scenario_plan_arg(scenario)
-
-        self.assertIn(":oid4vp-1final-wallet-happy-flow", plan_arg)
-        self.assertIn("oid4vp-1final-wallet-multisigned-one-invalid-signature", plan_arg)
-        self.assertNotIn("oid4vp-1final-wallet-negative-test-invalid-client-id-prefix", plan_arg)
-        # encrypted response mode: unusable-key module applies
-        self.assertIn("oid4vp-1final-wallet-ignores-unusable-encryption-key", plan_arg)
 
     def test_final_direct_post_jwt_includes_unusable_encryption_key_module(self):
         scenario = PlanScenario(

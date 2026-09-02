@@ -33,6 +33,15 @@ case "$CONFORMANCE_MODE" in
     ;;
   hosted)
     CONFORMANCE_SERVER=${CONFORMANCE_SERVER:-https://demo.certification.openid.net/}
+    # Certification is sought for the wallet alone. The issuer and verifier
+    # plans stay off the production certification service, so nothing there
+    # ever mixes into a wallet certification package.
+    case "$CONFORMANCE_SERVER" in
+      *www.certification.openid.net*)
+        echo "error: the issuer and verifier plans are not run on the production certification service (only the wallet is certified). Use the demo service or the local suite." >&2
+        exit 1
+        ;;
+    esac
     CONFORMANCE_SERVER_LOCAL=${CONFORMANCE_SERVER_LOCAL:-$CONFORMANCE_SERVER}
     CONFORMANCE_SERVER_MTLS=${CONFORMANCE_SERVER_MTLS:-$CONFORMANCE_SERVER}
     if [ -z "${CONFORMANCE_TOKEN:-}" ]; then
