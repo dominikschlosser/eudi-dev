@@ -785,7 +785,7 @@ func TestSDJWTPIDClaims_HasExpectedFields(t *testing.T) {
 	want := map[string]bool{
 		"family_name": true, "given_name": true, "birthdate": true,
 		"birth_family_name": true, "sex": true, "place_of_birth": true,
-		"address": true, "nationalities": true,
+		"address": true, "nationalities": true, "picture": true,
 		"personal_administrative_number": true, "document_number": true,
 		"date_of_issuance": true, "date_of_expiry": true,
 		"issuing_authority": true, "issuing_country": true,
@@ -909,7 +909,7 @@ func TestMDOCPIDClaims_HasExpectedFields(t *testing.T) {
 	want := map[string]bool{
 		"family_name": true, "given_name": true, "birth_date": true,
 		"family_name_birth": true, "sex": true, "place_of_birth": true,
-		"nationality": true, "resident_street": true,
+		"portrait": true, "nationality": true, "resident_street": true,
 		"resident_postal_code": true, "resident_city": true,
 		"resident_state": true, "resident_country": true,
 		"personal_administrative_number": true, "document_number": true,

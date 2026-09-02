@@ -16,6 +16,7 @@
 package mock
 
 import (
+	"encoding/base64"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/internal/credtype"
@@ -36,6 +37,27 @@ const (
 	// GermanPIDNamespace is the mdoc namespace of the German additions.
 	GermanPIDNamespace = credtype.GermanPIDNamespace
 )
+
+// portraitJPEGBase64 is a neutral placeholder portrait (head and shoulders
+// silhouette, 120x150 grayscale JPEG) standing in for the facial image the
+// rulebook's portrait attribute carries.
+const portraitJPEGBase64 = "/9j/2wCEAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9PjsBCgsLDg0OHBAQHDsoIig7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O//AAAsIAJYAeAEBEQD/xADSAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgsQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/aAAgBAQAAPwD0WiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiisHWPFdnp3mQQfv7pcrtA+VG/wBo/wBB6Y4rlbzxPq16Tm6MCZBCQfJjjHXr+ZqmdU1EuHN/c7wCA3nNkA4yOvsPyqzaeI9WtH3LeySAkErMd4OO3PI/DFdNpPjK2uQsWoYt5icbwD5Z549x178cda6Wiiiiiiiiub8W65Lp0SWdq2yeZSzOM5RenHueee2Poa4Siiiiuw8H65K8q6VctuG0+QxzkY/h+mMkemMemOvooooooprusaM7sFRRlmY4AHqa8qvrtr6+nunyDK5bBbO0dhn2HH4VXoooopyO0bq6MVdTlWU4IPqK9Vsbtb6xgukwBKgbAbO09xn2PH4VYoooooqlrTBNEvSQf9Q44BPUEdq8toooooor0bwkwbw5bAA/KXByCP4iePXr2rZoooooqtqUTz6ZdQxLukkhdVGcZJUgV5TRRRRRRXpXhmJ4fDtoki7SVLAZ7FiR+hFatFFFFFFeb+JNKbTNVfAHkzkyRbVwACfu+nHt2x61kUUUUVc0rTZdV1CO0iO3dyz4JCKOp/z3Ir1FEWNFRFCoowqqMAD0FOooooooqhq+kW+sWnkzDa68xyAcof6j1H/1q861DTbvTLgw3URXkhXx8r+4PfqKqUUVNa2lxezCG2heWQ9lHTnGT6Dnqa9D0HQYdGt8nEl1IP3knp/sj2/n+QGtRRRRRRRRUVxbw3du9vcRiSKQYZT3rn7zwRYzEtaTSWxJHyn51Ax2zz+tUz4CbeANRGzByfJ5B4xxu+tWbTwNaRvuurqScAghUXYD6g9T+WK6CzsbbT7cQWkQijBJwMnJ9STyasUUUUUUUUUUUUUUUUUUUUUUUyWaK3iMs0iRxr1Z2AA/E1zOpeNoIsx6dF5zf89ZAQvboOp7jt+NcxLrmqzSmR9QuAT1CSFB+QwKZ/a+p/8AQRu/+/7f40f2vqf/AEEbv/v+3+NH9r6n/wBBG7/7/t/jTk1rVEdXGo3JKnI3SsR+IPBrotL8bfdi1OL0HnRj6clfzJI/Kuptbu3vYRNbTJLGe6npxnB9Dz0NTUUUUyWaK3iMs0iRxr1Z2AA/E1zOpeNoIsx6dF5zf89ZAQvboOp7jt+Ncle6jeajKJLu4eUjoDwF+gHA6DpVaiiiiiiprW7uLKYTW0zxSDupxnnOD6jjoa6rS/G33YtTi9B50Y+nJX8ySPyrqbW7t72ETW0ySxnup6cZwfQ89DU1ctqXjaCLMenRec3/AD1kBC9ug6nuO341yV7qN5qMoku7h5SOgPAX6AcDoOlVqKKKKKKKKKKmtbu4sphNbTPFIO6nGec4PqOOhrqtL8bfdi1OL0HnRj6clfzJI/KuPoooooooooooooooooooooooooooooooooooooooooooor//2Q=="
+
+// PortraitJPEG returns the placeholder portrait as raw JPEG bytes, the mdoc
+// portrait encoding (bstr).
+func PortraitJPEG() []byte {
+	data, err := base64.StdEncoding.DecodeString(portraitJPEGBase64)
+	if err != nil {
+		panic(err)
+	}
+	return data
+}
+
+// PortraitDataURL returns the placeholder portrait as a data URL, the SD-JWT
+// picture encoding.
+func PortraitDataURL() string {
+	return "data:image/jpeg;base64," + portraitJPEGBase64
+}
 
 // DefaultClaims returns a minimal set of PID-like claims.
 var DefaultClaims = map[string]any{
@@ -74,9 +96,10 @@ var SDJWTPIDClaims = map[string]any{
 		"country":  "NL",
 	},
 	"address": map[string]any{
-		// The rulebook keeps the house number out of the street, which is
-		// where this differs from the German encoding.
-		"street_address": "Rietveld",
+		// resident_street includes the house number (rulebook §2.3), and the
+		// rulebook additionally defines address.house_number as its own
+		// disclosable member.
+		"street_address": "Rietveld 1",
 		"house_number":   "1",
 		"postal_code":    "2312 JD",
 		"locality":       "Leiden",
@@ -84,6 +107,10 @@ var SDJWTPIDClaims = map[string]any{
 		"country":        "NL",
 	},
 	"nationalities": []any{"NL"},
+	// The portrait, mandatory under CIR 2024/2977 (rulebook §2.2) unless the
+	// user opts out: a data URL with a JPEG for SD-JWT (the OIDC picture
+	// claim) and raw JPEG bytes for the mdoc portrait element.
+	"picture": PortraitDataURL(),
 	// No age thresholds: the rulebook removed the age verification attributes
 	// in version 1.1, following CIR 2024/2977. Germany keeps its own, which
 	// is why they are in the German claim set and not here.
@@ -152,6 +179,7 @@ var MDOCPIDClaims = map[string]any{
 	"birth_date":                     "1978-02-12",
 	"family_name_birth":              "'t Hart",
 	"sex":                            1,
+	"portrait":                       PortraitJPEG(),
 	"place_of_birth":                 map[string]any{"locality": "Amsterdam", "country": "NL"},
 	"nationality":                    []any{"NL"},
 	"resident_street":                "Rietveld 1",

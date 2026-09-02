@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An omitted response_uri is derived from a redirect_uri client id.** OID4VP 1.0 §5.9.3 makes the redirect_uri prefix value the response endpoint, so a verifier may omit the response_uri parameter for the direct_post response modes. The wallet refused such requests. The OIDF alternate-happy-flow module sends exactly this shape.
 - **Request URIs are read with RFC 3986 semantics.** In `openid4vp://`, `openid-credential-offer://`, and the wallet's GET `/authorize` and `/credential-offer` query components, `+` is a literal plus and only percent escapes decode. The OIDF suite's `url_query` request method sends `dc+sd-jwt` unencoded and a form-decoding reader turned it into `dc sd-jwt`. Links the wallet builds itself encode spaces as `%20` accordingly. POSTed form bodies keep form semantics.
 
+### Fixed
+
+- **The default PIDs match PID Rulebook 1.7.** The country-independent PID now carries the portrait the rulebook's CIR 2024/2977 alignment makes mandatory (the OIDC `picture` claim as a JPEG data URL in SD-JWT, the `portrait` element as raw JPEG bytes in mdoc, a neutral placeholder silhouette), and the SD-JWT `address.street_address` includes the house number ("Rietveld 1") the way §2.3 defines `resident_street` (`address.house_number` stays as the rulebook's own additional member).
+
 ## [2.2.0] - 2026-09-01 
 
 ### Added
