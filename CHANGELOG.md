@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-09-02
+
+### Changed
+
+- **The pre-defined PIDs link to their rulebooks.** Each PID's display description ends with the URL of the rulebook its claims follow (the EUDI PID Rulebook 1.7 for `pid-*`, the German PID Rulebook 1.0.0 of the BMI blueprint for `german-pid-*`), so whoever holds the credential can check the claim set against its source. The wallet renders a bare URL in a description as a link, in the card's About pane and in the offer dialog, and a description may now be 500 characters (it was 300) so a link fits alongside a few sentences.
+
 ## [2.3.0] - 2026-09-02
 
 ### Added

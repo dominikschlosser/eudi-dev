@@ -587,7 +587,7 @@
             '<div class="cred-desc-head"><span class="cred-desc-label">Description</span>' +
               '<button class="cred-desc-back" data-desc-close="' + cred.id + '" aria-label="Back to card">' +
                 descIcon('', '<path d="M15 18l-6-6 6-6"/>') + '<span>Back</span></button></div>' +
-            '<div class="cred-desc-body">' + escHtml(cred.display.description) + '</div>' +
+            '<div class="cred-desc-body">' + linkifyText(cred.display.description) + '</div>' +
           '</div></div>'
         : '';
       card.innerHTML = '<div class="cred-front">' + body.html + actionsHtml + '</div>' + descPane;
@@ -1799,7 +1799,7 @@
         '<div class="credential-info">' +
           '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
           typeMeta +
-          (cred.description ? '<div class="offer-description">' + escHtml(cred.description) + '</div>' : '') +
+          (cred.description ? '<div class="offer-description">' + linkifyText(cred.description) + '</div>' : '') +
         '</div>' +
       '</div>';
     let claims = '';
@@ -2430,6 +2430,17 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  // Escapes a description and turns each bare http(s) URL in it into a link
+  // that opens in a new tab. The pre-defined PIDs end their description with
+  // the rulebook they follow, and an issuer may do the same. Only the URL's
+  // escaped text goes into the href, so nothing in the description can add an
+  // attribute of its own.
+  function linkifyText(s) {
+    return escHtml(s).replace(/https?:\/\/[^\s<>"']+/g, function (url) {
+      return '<a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+    });
   }
 
   // Footer: version, imprint link, demo note; demo mode also hides the

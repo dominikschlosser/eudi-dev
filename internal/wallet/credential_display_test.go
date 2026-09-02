@@ -658,7 +658,7 @@ func TestIssueUnboundCredentialHasNoHolderKey(t *testing.T) {
 func TestIssuedDisplayBoundsTextAndKeepsAltText(t *testing.T) {
 	w := generateTestWallet(t)
 	noStatus := ""
-	longDesc := strings.Repeat("x", 500)
+	longDesc := strings.Repeat("x", maxDisplayDescriptionRunes+200)
 	res, err := w.IssueCredential(IssueOptions{
 		Format:        "sdjwt",
 		VCT:           "urn:example:x",

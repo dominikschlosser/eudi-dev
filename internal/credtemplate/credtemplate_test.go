@@ -85,14 +85,16 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	}
 }
 
+// Each PID names the rulebook it follows and links to it, so the holder can
+// check the claim set against its source.
 func TestPIDTemplatesCarryDisplayDescription(t *testing.T) {
-	cases := map[string]string{
-		"pid-sdjwt":        "EUDI PID Rulebook",
-		"pid-mdoc":         "EUDI PID Rulebook",
-		"german-pid-sdjwt": "German PID provider",
-		"german-pid-mdoc":  "German PID provider",
+	cases := map[string][]string{
+		"pid-sdjwt":        {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
+		"pid-mdoc":         {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
+		"german-pid-sdjwt": {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
+		"german-pid-mdoc":  {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
 	}
-	for name, want := range cases {
+	for name, wants := range cases {
 		tpl, err := Load(name, t.TempDir())
 		if err != nil {
 			t.Fatalf("loading %s: %v", name, err)
@@ -100,8 +102,10 @@ func TestPIDTemplatesCarryDisplayDescription(t *testing.T) {
 		if tpl.Display == nil || tpl.Display.Description == "" {
 			t.Fatalf("%s carries no display description", name)
 		}
-		if !strings.Contains(tpl.Display.Description, want) {
-			t.Errorf("%s description %q does not mention %q", name, tpl.Display.Description, want)
+		for _, want := range wants {
+			if !strings.Contains(tpl.Display.Description, want) {
+				t.Errorf("%s description %q does not mention %q", name, tpl.Display.Description, want)
+			}
 		}
 	}
 }

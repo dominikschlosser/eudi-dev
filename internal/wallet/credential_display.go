@@ -55,10 +55,12 @@ type CredentialDisplay struct {
 // The text a credential's display carries is cosmetic, so it is capped rather
 // than trusted: an issuer's metadata, an operator form, and a template all feed
 // it, and any of them can be long or hostile. The cap bounds what the wallet
-// stores and renders. Images are already byte-capped in cacheDisplayImage.
+// stores and renders. Images are already byte-capped in cacheDisplayImage. A
+// description has room for a few sentences and a link to the credential's
+// specification.
 const (
 	maxDisplayNameRunes        = 80
-	maxDisplayDescriptionRunes = 300
+	maxDisplayDescriptionRunes = 500
 	maxDisplayLocaleRunes      = 35
 	maxDisplayAltTextRunes     = 120
 )

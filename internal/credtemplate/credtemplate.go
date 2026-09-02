@@ -136,11 +136,14 @@ func PredefinedTemplates() []Template {
 			LogoAltText:     "eudi-dev logo",
 		}
 	}
+	// Each description ends with the link to the rulebook it follows, so anyone
+	// holding the credential can check the claim set against its source. The
+	// wallet renders a bare URL in a description as a link.
 	eudiPIDDisplay := func() *TemplateDisplay {
-		return pidDisplay("EUDI PID", "A demo Person Identification Data (PID) credential for testing PID verification flows. Its attributes follow the EUDI PID Rulebook v1.7 (the country-independent EU dataset), populated with the rulebook's own Jan Wijnand sample identity. Created by eudi-dev, not a real identity.")
+		return pidDisplay("EUDI PID", "A demo Person Identification Data (PID) credential for testing PID verification flows. Its attributes follow the EUDI PID Rulebook v1.7 (the country-independent EU dataset), populated with the rulebook's own Jan Wijnand sample identity. Created by eudi-dev, not a real identity. Rulebook: https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md")
 	}
 	germanDisplay := func() *TemplateDisplay {
-		d := pidDisplay("German PID", "A demo German PID credential for testing PID verification flows. It extends the EUDI PID with national attributes from the German PID provider dataset (Bundesdruckerei), for the sample ERIKA MUSTERMANN identity. Created by eudi-dev, not a real identity.")
+		d := pidDisplay("German PID", "A demo German PID credential for testing PID verification flows. It extends the EUDI PID with the national attributes of the German PID Rulebook 1.0.0 (the BMI blueprint), for the sample ERIKA MUSTERMANN identity. Created by eudi-dev, not a real identity. Rulebook: https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/")
 		d.BackgroundImage = "embedded:german-id-specimen.jpg"
 		return d
 	}

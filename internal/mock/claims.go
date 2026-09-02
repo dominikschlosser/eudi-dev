@@ -69,8 +69,8 @@ var DefaultClaims = map[string]any{
 // The country-independent claim sets follow the EUDI PID Rulebook v1.7
 // (github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog,
 // rulebooks/pid/pid-rulebook.md) and carry its own worked example, the Dutch
-// Jan Wijnand 't Hart identity. The German ones follow the German PID provider's
-// claim table (https://demo.pid-provider.bundesdruckerei.de/credential-claims)
+// Jan Wijnand 't Hart identity. The German ones follow the German PID Rulebook
+// 1.0.0 of the BMI blueprint (https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/)
 // and carry the Erika Mustermann specimen from the German ID card.
 //
 // The two describe different people. The German PID carries national attributes
