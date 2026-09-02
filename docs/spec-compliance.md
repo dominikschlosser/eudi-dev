@@ -95,7 +95,7 @@ The 1.1 draft is not final, so none of this is used at the default feature level
 | Authorization via web (§6.2.1.2) | Implemented | `urn:openid:dcp:ia:auth_via_web` is advertised when a redirect URI is configured and the server publishes an `authorization_endpoint`, since the wallet cannot complete it otherwise. The response's `request_uri` becomes an authorization request as RFC 9126 §4 defines, the sign-in URL is handed to the user's browser, and the redirect back is accepted with a `code` or with the `auth_session` that continues the challenge conversation. The token request repeats the redirect URI for a code obtained this way (RFC 6749 §4.1.3) and omits it for one from the challenge endpoint (first-party-apps §6). A server asking for the interaction unadvertised is refused |
 | Custom interaction types (§6.2.1.3) | Not implemented | An unsupported `interaction_type_required` aborts the issuance, which is what §6.2.1 requires |
 
-## HAIP 1.0 (Current wallet coverage)
+## HAIP 1.0 (High Assurance Interoperability Profile)
 
 Every row here is a MUST in the profile, and `--haip` is what makes these checks run. What a violation then does follows `--mode`, as for any other finding. In strict mode a request that fails any of them is answered with HTTP 400 naming the failed checks. In debug mode the same findings are logged as warnings and the flow continues.
 
