@@ -24,11 +24,11 @@ import (
 	"time"
 )
 
-// maxBatchProofKeys caps how many proofs the wallet sends for a batch. The
-// wallet requests the batch the issuer advertises, one credential per proof
-// (§8.3), so it holds several copies and can present an unused one each time
-// (EUDI ARF method C). The cap keeps a large advertised batch_size from making
-// a single request enormous.
+// maxBatchProofKeys caps the keys of one batch request. The wallet requests
+// the batch the issuer advertises, one credential per key (§8.3), so it holds
+// several copies and can present an unused one each time (EUDI ARF method C).
+// The cap keeps a large advertised batch_size from making a single request
+// enormous.
 const maxBatchProofKeys = 8
 
 // advertisedBatchSize returns the issuer's batch_credential_issuance.batch_size,
@@ -45,14 +45,13 @@ func advertisedBatchSize(metadata map[string]any) int {
 	return int(size)
 }
 
-// issuanceProofKeys returns the private keys to prove possession of in the
-// credential request. The wallet's holder key is always first. When the issuer
+// issuanceProofKeys returns the keys a credential request binds copies to,
+// holder key first: each signs a proof, or under a key attestation the single
+// attestation names them all (buildCredentialProofs). When the issuer
 // advertises batch issuance with batch_size >= 2, fresh ephemeral keys are
 // added so each credential in the batch is bound to a distinct key (required
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).
 func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]*ecdsa.PrivateKey, error) {
-	// Under a required key attestation every proof carries the one attestation
-	// covering all of these keys (HAIP §4.5.1).
 	keys := []*ecdsa.PrivateKey{holderKey}
 	batchSize := advertisedBatchSize(metadata)
 	if batchSize < 2 {
@@ -69,13 +68,12 @@ func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]
 		}
 		keys = append(keys, key)
 	}
-	log.Printf("[VCI] Issuer advertises batch_credential_issuance (batch_size=%d), sending %d proofs", batchSize, len(keys))
+	log.Printf("[VCI] Issuer advertises batch_credential_issuance (batch_size=%d), requesting %d copies", batchSize, len(keys))
 	return keys, nil
 }
 
 // createProofJWTs creates one proof JWT per key. All proofs share the same
-// audience, client id, nonce, and extra header members (e.g. a key_attestation
-// covering every proof key).
+// audience, client id, nonce, and extra header members.
 func createProofJWTs(keys []*ecdsa.PrivateKey, audience, clientID, cNonce string, extraHeader map[string]any) ([]string, error) {
 	proofs := make([]string, 0, len(keys))
 	for _, key := range keys {
@@ -93,7 +91,7 @@ func createProofJWTs(keys []*ecdsa.PrivateKey, audience, clientID, cNonce string
 // order of the credentials array and the proofs in the request, so the binding
 // key is identified from each credential itself.
 //
-// An issuer may "issue fewer Credentials" than the proofs sent and binds each
+// An issuer may "issue fewer Credentials" than the keys sent and binds each
 // key to at most one Credential. A single credential is taken whichever proof
 // key it names. Among several, each is matched to a distinct proof key and the
 // holder-key copy is preferred as the primary, falling back to the first.
@@ -103,6 +101,9 @@ func selectPrimaryCredential(credResp map[string]any, keys []*ecdsa.PrivateKey) 
 		return "", fmt.Errorf("no credential in response")
 	}
 	if len(creds) == 1 {
+		if len(keys) > 1 {
+			log.Printf("[VCI] Issuer returned one credential for %d keys, storing a single copy", len(keys))
+		}
 		return creds[0], nil
 	}
 
@@ -155,7 +156,7 @@ func primaryBindingKeyPEM(raw string, keys []*ecdsa.PrivateKey) string {
 
 // storeBatchSiblings stores the other copies of a batch alongside the copy
 // importPrimaryCredential imported as primary. A batch credential response
-// holds one credential per proof key (§8.3). Each copy is stored bound to the
+// holds one credential per key (§8.3). Each copy is stored bound to the
 // key it was issued against, under a batch group shared with the primary, so
 // the wallet presents an unused copy each time and a verifier cannot link two
 // presentations (EUDI ARF Annex 2 Topic 10 method C, ISSU_51-54).

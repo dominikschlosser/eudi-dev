@@ -22,7 +22,7 @@ The certifiable HAIP plans ran on `https://www.certification.openid.net/` agains
 
 - 2 modules `INTERRUPTED` by a suite defect: `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` under `request_uri_multisigned` throws a NullPointerException in the suite's own request construction (`AddInvalidClientIdPrefixToRequestObject` reads a `client_id` the multisigned sequence never puts into the shared payload). It dies before contacting the wallet, the same module passes in the signed entry, and it reproduces on a local suite build. Reported upstream.
 - the negative modules end `REVIEW` behind an uploaded screenshot of the wallet's error.
-- the mdoc `batch-credential-issuance` skips: the wallet sent one proof where a key attestation was required (fixed in 2.3.4, see the release-v5.2.1 coverage below).
+- the mdoc `batch-credential-issuance` skips (the key attestation configuration, see the release-v5.2.1 coverage below).
 
 ### Local full matrix
 
@@ -31,7 +31,7 @@ The expanded local matrix (76 plans: the full supported cross product of the alp
 - the 4 condition failures are the two occurrences of the multisigned suite NullPointerException above
 - the 26 warnings are the IACA subject key identifier check on a wallet binary built before the SHA-1 fix (the deployed build and the production run above are clean)
 - one VCI module ended `INTERRUPTED` after a machine-load stall (the harness cancelled it, the same module passes in the neighbouring plans)
-- 18 mdoc VCI plans carry the batch skips fixed in 2.3.4
+- 18 mdoc VCI plans carry the mdoc batch skips
 
 Variants exercised for the first time in this matrix: `url_query`, `x509_san_dns`, `web-origin`, multisigned requests and the Browser API response modes in the Final plan, plus grant, offer delivery, issuance mode and encryption cross products in VCI. They surfaced the two wallet gaps fixed in 2.3.0 (request URI parsing, derived `response_uri`).
 
@@ -103,7 +103,7 @@ The matrix is 14 plans: the pre-authorized code flow is covered for both credent
 
 The 2 `SKIPPED` modules are `credential-issuance-notification` in the `vci_credential_issuance_mode=deferred` variant of the two VCI HAIP plans. The suite exits non-zero on an unexpected skip even with no failures, so a run reporting these ends with status 1.
 
-The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules, which releases 1.19.20 through 2.3.3 report as `SKIPPED` (see below).
+The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules, which the key attestation shape of later releases leaves `SKIPPED` (see below).
 
 ## Run of 2026-08-08
 
@@ -129,9 +129,9 @@ The 1 condition failure sits in a module that still finished `PASSED`: a suite p
 
 Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet and pass:
 
-- `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet requests the advertised batch (one proof per copy, capped at its own ceiling of 8) with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
+- `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet requests the advertised batch (one key per copy, capped at its own ceiling of 8) with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
-  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations. Releases 1.19.20 through 2.3.3 sent a single proof there, which the module skips as "batch behavior cannot be evaluated". Since 2.3.4 the wallet requests the batch with one proof per copy, every proof carrying the one key attestation that attests all batch keys (HAIP §4.5.1), and the issuer issues one credential per proof (§8.3). Verified on 2026-09-03 with the local suite (`release-v5.2.4`): the VCI HAIP mdoc `by_value` plan ran its 23 modules with 4110 condition successes, 0 failures, 0 warnings and no skip, the three batch modules `PASSED`, and the wallet stored 8 copies per issuance (run directory `/tmp/oidf-batch-verify`).
+  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations. There the wallet sends one proof, signed by the holder key, whose key attestation names every batch key. Appendix F.1 has the issuer "issue a Credential for each cryptographic public key specified in the `attested_keys` claim", HAIP §4.5.1 wants all keys of a batch attested within a single key attestation, and Credo-based issuers refuse more than one proof once a key attestation is present. The suite reads `attested_keys` only for the `attestation` proof type and issues for the proof key of a `jwt` proof, so the wallet receives one credential and the module skips as "batch behavior cannot be evaluated". Checked 2026-09-03: the three batch modules of the local mdoc VCI HAIP plan end `SKIPPED` with 0 condition failures, and the Animo playground (key attestation required, batch_size 10) issues 8 credentials for the single attested proof, which the wallet stores as a batch of 8.
 - `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 9, 10, 11, 12).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, and preserves the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.

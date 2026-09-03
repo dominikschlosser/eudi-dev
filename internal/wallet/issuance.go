@@ -1438,14 +1438,20 @@ type credentialRequestAttempt struct {
 	nonce *string
 }
 
-// buildCredentialProofs signs one key proof per proof key over one challenge. A
-// key attestation covers the challenge too, so the header is rebuilt with them.
+// buildCredentialProofs signs the key proofs over one challenge: one proof per
+// proof key, or under a required key attestation a single holder-key proof
+// whose attestation names every batch key (OID4VCI 1.0 Appendix F.1, HAIP
+// §4.5.1).
 func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string) ([]string, error) {
 	header, err := createCredentialProofHeader(w, a.metadata, a.configID, cNonce, a.proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("building credential proof header: %w", err)
 	}
-	proofs, err := createProofJWTs(a.proofKeys, a.issuer, a.clientID, cNonce, header)
+	keys := a.proofKeys
+	if _, attested := credentialKeyAttestationRequirement(a.metadata, a.configID); attested && len(keys) > 1 {
+		keys = keys[:1]
+	}
+	proofs, err := createProofJWTs(keys, a.issuer, a.clientID, cNonce, header)
 	if err != nil {
 		return nil, fmt.Errorf("creating proof JWT: %w", err)
 	}

@@ -63,7 +63,7 @@ type DeferredIssuance struct {
 	NextAttemptAt   time.Time             `json:"next_attempt_at"`
 	Attempts        int                   `json:"attempts,omitempty"`
 	LastError       string                `json:"last_error,omitempty"`
-	// ProofKeyPEMs holds the keys the credential request proved possession of,
+	// ProofKeyPEMs holds the keys the credential request offered for binding,
 	// holder key first. A batch request adds ephemeral keys that exist nowhere
 	// else, and the credential still has to be matched back to one of them.
 	ProofKeyPEMs []string `json:"proof_keys,omitempty"`

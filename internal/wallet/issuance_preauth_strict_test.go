@@ -132,25 +132,21 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 				json.Unmarshal(body, &reqBody)
 				proofs, _ := reqBody["proofs"].(map[string]any)
 				jwts, _ := proofs["jwt"].([]any)
-				// The advertised batch arrives as one proof per copy, every
-				// proof carrying the one key attestation that attests all of
-				// their keys (HAIP §4.5.1).
-				if len(jwts) != maxBatchProofKeys {
-					writeErr(http.StatusBadRequest, "invalid_proof", fmt.Sprintf("got %d proofs, want the batch of %d", len(jwts), maxBatchProofKeys))
+				// The advertised batch arrives as one holder-key proof whose
+				// key attestation names every batch key, and the issuer issues
+				// one credential per attested key (Appendix F.1).
+				if len(jwts) != 1 {
+					writeErr(http.StatusBadRequest, "invalid_proof", fmt.Sprintf("got %d proofs, want one carrying the key attestation", len(jwts)))
 					return
 				}
-				var attestation string
-				for _, proof := range jwts {
-					header := decodeJWTPart(t, proof.(string), 0)
-					got, _ := header["key_attestation"].(string)
-					if got == "" {
-						writeErr(http.StatusBadRequest, "invalid_proof", "key attestation is required")
-						return
-					}
-					if attestation != "" && got != attestation {
-						t.Error("proofs of one batch carry different key attestations")
-					}
-					attestation = got
+				header := decodeJWTPart(t, jwts[0].(string), 0)
+				if jwk, _ := header["jwk"].(map[string]any); jwk["x"] != mock.SigningJWKMap(&w.HolderKey.PublicKey)["x"] {
+					t.Error("the attested proof is not signed by the holder key")
+				}
+				attestation, _ := header["key_attestation"].(string)
+				if attestation == "" {
+					writeErr(http.StatusBadRequest, "invalid_proof", "key attestation is required")
+					return
 				}
 				attHeader := decodeJWTPart(t, attestation, 0)
 				if attHeader["typ"] != "key-attestation+jwt" {
@@ -160,8 +156,9 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 				if attPayload["nonce"] != "test-c-nonce" {
 					t.Errorf("key attestation nonce = %v, want test-c-nonce", attPayload["nonce"])
 				}
-				if keys, _ := attPayload["attested_keys"].([]any); len(keys) != len(jwts) {
-					t.Errorf("key attestation attests %d keys, want one per proof (%d)", len(keys), len(jwts))
+				attested, _ := attPayload["attested_keys"].([]any)
+				if len(attested) != maxBatchProofKeys {
+					t.Errorf("key attestation attests %d keys, want the batch of %d", len(attested), maxBatchProofKeys)
 				}
 				for _, claim := range []string{"key_storage", "user_authentication"} {
 					values, _ := attPayload[claim].([]any)
@@ -169,6 +166,17 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 						t.Errorf("key attestation %s = %v, want the required [iso_18045_high]", claim, attPayload[claim])
 					}
 				}
+				credentials := make([]any, 0, len(attested))
+				for _, key := range attested {
+					jwk, _ := key.(map[string]any)
+					pub, _, err := ecdsaPublicKeyFromJWK(ValidationModeDebug, jwk["x"].(string), jwk["y"].(string))
+					if err != nil {
+						t.Fatalf("attested key: %v", err)
+					}
+					credentials = append(credentials, map[string]any{"credential": sdJWTBoundTo(t, w, pub)})
+				}
+				json.NewEncoder(rw).Encode(map[string]any{"credentials": credentials})
+				return
 			}
 			json.NewEncoder(rw).Encode(map[string]any{"credentials": []any{map[string]any{"credential": credRaw}}})
 
@@ -221,13 +229,27 @@ func TestProcessCredentialOffer_PreAuthHonorsIssuerProtections(t *testing.T) {
 			if result.CredentialID == "" {
 				t.Error("expected a credential to be imported")
 			}
+			if !tc.requireKeyAttest {
+				return
+			}
+			// The issuer answered the single attested proof with one
+			// credential per attested key, stored as one batch.
+			creds := w.GetCredentials()
+			if len(creds) != maxBatchProofKeys {
+				t.Fatalf("stored %d copies, want the batch of %d", len(creds), maxBatchProofKeys)
+			}
+			for i := range creds {
+				if creds[i].BatchGroup == "" || creds[i].BatchGroup != creds[0].BatchGroup {
+					t.Fatalf("copy %s is not in the batch group", creds[i].ID)
+				}
+			}
 		})
 	}
 }
 
 // TestIssuanceProofKeys_KeyAttestationCoversBatch covers batch issuance and
-// key attestation meeting: the batch keeps one proof per copy, and the single
-// key attestation every proof carries attests all of their keys (HAIP §4.5.1).
+// key attestation meeting: the batch keeps one key per copy, and the key
+// attestation attests all of them (Appendix F.1, HAIP §4.5.1).
 func TestIssuanceProofKeys_KeyAttestationCoversBatch(t *testing.T) {
 	w := generateTestWallet(t)
 	metadata := map[string]any{

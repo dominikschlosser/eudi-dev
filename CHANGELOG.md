@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.5] - 2026-09-03
+
+### Fixed
+
+- **A batch under key attestation is requested with one proof.** Where the credential configuration requires a key attestation, the wallet sends a single `jwt` proof, signed by the holder key, whose key attestation names every batch key (OpenID4VCI 1.0 Appendix F.1, HAIP §4.5.1), and matches the returned credentials to the attested keys. Credo-based issuers such as the Animo playground refuse more than one proof under a key attestation and issue one credential per attested key. The OIDF suite issues for the proof key only, so its `batch-credential-issuance` module skips in the mdoc plans.
+
 ## [2.3.4] - 2026-09-03
 
 ### Fixed
