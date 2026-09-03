@@ -83,15 +83,18 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 		findings = append(findings, finding)
 	}
 	findings = append(findings, authorizationFindings(params, payload)...)
+	var advisories []string
 	if requireHAIP {
 		findings = append(findings, ValidateHAIPCompliance(params, reqObj)...)
+		advisories = HAIPAdvisories(params)
 	}
 
 	if mode == ValidationModeStrict && len(findings) > 0 {
 		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, ", "))
 	}
 
-	return findings, nil
+	// An advisory is a warning in every mode.
+	return append(findings, advisories...), nil
 }
 
 // authorizationFindings collects what an authorization request gets wrong

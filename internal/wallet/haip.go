@@ -177,15 +177,37 @@ func haipCredentialFormatViolations(query map[string]any) []string {
 }
 
 // haipClientMetadataViolations checks what §5 requires a Verifier to publish
-// about response encryption.
+// about response encryption. A Verifier listing neither of the content
+// encryption algorithms the profile names leaves the wallet nothing to
+// encrypt with.
 func haipClientMetadataViolations(metadata map[string]any) []string {
 	if metadata == nil {
 		return nil
 	}
-	var violations []string
+	if listed := haipContentEncryptionAlgorithms(metadata); !listed["A128GCM"] && !listed["A256GCM"] {
+		return []string{"HAIP 1.0 §5: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported, and lists neither"}
+	}
+	return nil
+}
 
-	// §5: "Verifiers MUST list both A128GCM and A256GCM in
-	// encrypted_response_enc_values_supported in their client metadata."
+// HAIPAdvisories reports what a Verifier gets wrong against HAIP 1.0 without
+// affecting the exchange. §5 has Verifiers list both A128GCM and A256GCM,
+// while a wallet needs only one of them, so a Verifier listing one is
+// reported in every mode and the response is encrypted with the algorithm it
+// names.
+func HAIPAdvisories(params *AuthorizationRequestParams) []string {
+	if params == nil || params.ClientMetadata == nil || isInteractiveAuthorizationResponseMode(params.ResponseMode) {
+		return nil
+	}
+	if listed := haipContentEncryptionAlgorithms(params.ClientMetadata); listed["A128GCM"] != listed["A256GCM"] {
+		return []string{"HAIP 1.0 §5: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported"}
+	}
+	return nil
+}
+
+// haipContentEncryptionAlgorithms returns the content encryption algorithms
+// the Verifier lists in encrypted_response_enc_values_supported.
+func haipContentEncryptionAlgorithms(metadata map[string]any) map[string]bool {
 	values, _ := metadata["encrypted_response_enc_values_supported"].([]any)
 	listed := make(map[string]bool, len(values))
 	for _, value := range values {
@@ -193,12 +215,7 @@ func haipClientMetadataViolations(metadata map[string]any) []string {
 			listed[text] = true
 		}
 	}
-	if !listed["A128GCM"] || !listed["A256GCM"] {
-		violations = append(violations,
-			"HAIP 1.0 §5: client metadata MUST list both 'A128GCM' and 'A256GCM' in encrypted_response_enc_values_supported")
-	}
-
-	return violations
+	return listed
 }
 
 func originAllowedByExpectedOrigins(payload map[string]any, origin string) bool {

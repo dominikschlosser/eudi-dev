@@ -599,16 +599,30 @@ func TestHAIPRejectsCredentialFormatsOutsideTheProfile(t *testing.T) {
 }
 
 // HAIP §5: "Verifiers MUST list both A128GCM and A256GCM in
-// encrypted_response_enc_values_supported in their client metadata."
-func TestHAIPRequiresBothContentEncryptionAlgorithms(t *testing.T) {
-	for _, listed := range []any{[]any{"A128GCM"}, []any{"A256GCM"}, []any{}} {
+// encrypted_response_enc_values_supported in their client metadata." A
+// Verifier listing one of them is reported in every mode and the exchange
+// goes on with the algorithm it names, since a wallet needs only one. A
+// Verifier listing neither is refused in strict mode.
+func TestHAIPContentEncryptionAlgorithmsListing(t *testing.T) {
+	for _, listed := range []any{[]any{"A128GCM"}, []any{"A256GCM"}} {
 		params, reqObj := haipCompliantParams(t)
+		params.RequestObject = reqObj
 		params.ClientMetadata = map[string]any{"encrypted_response_enc_values_supported": listed}
 
-		violations := ValidateHAIPCompliance(params, reqObj)
-		if !containsSubstring(violations, "encrypted_response_enc_values_supported") {
-			t.Errorf("listing %v: violations = %v, want both algorithms required", listed, violations)
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, params)
+		if err != nil {
+			t.Fatalf("listing %v: strict mode refused the request: %v", listed, err)
 		}
+		if !containsSubstring(findings, "encrypted_response_enc_values_supported") {
+			t.Errorf("listing %v: findings = %v, want the missing algorithm reported", listed, findings)
+		}
+	}
+
+	params, reqObj := haipCompliantParams(t)
+	params.RequestObject = reqObj
+	params.ClientMetadata = map[string]any{"encrypted_response_enc_values_supported": []any{}}
+	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, true, params); err == nil || !strings.Contains(err.Error(), "lists neither") {
+		t.Errorf("listing neither algorithm: err = %v, want the request refused", err)
 	}
 }
 
@@ -670,9 +684,9 @@ func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 		t.Helper()
 		params, reqObj := haipCompliantParams(t)
 		params.RequestObject = reqObj
-		// A Verifier listing one content encryption algorithm violates §5.
+		// A Verifier listing no content encryption algorithm violates §5.
 		params.ClientMetadata = map[string]any{
-			"encrypted_response_enc_values_supported": []any{"A128GCM"},
+			"encrypted_response_enc_values_supported": []any{},
 		}
 		return params
 	}

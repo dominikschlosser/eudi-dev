@@ -1059,42 +1059,6 @@ def tx_code_from_offer(request_url: str) -> str | None:
 # exchange completes, which is what those modules are there to exercise. The
 # negative modules keep the configured mode, because refusing a bad request is
 # exactly what they test and a debug run would accept it.
-# A negative module whose refusal comes from evaluating the DCQL query rather
-# than from validating the request. The request itself is valid, so it runs in
-# debug like the positive modules: the wallet gets past the verifier's
-# encryption-metadata gap, finds nothing that satisfies the required credential
-# and answers access_denied, which is what the module expects and screenshots.
-VP_NEGATIVE_MODULE_NON_MATCHING_CREDENTIAL = "oid4vp-1final-wallet-negative-test-required-non-matching-credential"
-
-
-def wallet_mode_for(test_name: str | None, requires_haip: bool) -> str:
-    if not requires_haip:
-        return WALLET_MODE
-    if test_name and test_name.startswith(VP_NEGATIVE_MODULE_NON_MATCHING_CREDENTIAL):
-        return "debug"
-    if test_name and "negative" in test_name:
-        return WALLET_MODE
-    if test_name and is_rejection_fapi2_client_test(test_name):
-        return WALLET_MODE
-    return "debug"
-
-
-# A FAPI2 client test whose name marks a bad authorization server response (a
-# mismatched discovery issuer, an invalid, missing, or removed value, a response
-# the client must fail) passes only when the wallet refuses that response, so it
-# runs in the enforcing mode. Its happy-path and valid-* siblings complete a
-# clean exchange and stay in debug. The debug rationale above is the VP verifier's
-# encryption-metadata gap, which these issuance tests do not touch, so enforcing
-# the negative ones is safe.
-_FAPI2_REJECTION_MARKERS = ("mismatch", "invalid", "-fails", "remove-authorization", "without-")
-
-
-def is_rejection_fapi2_client_test(test_name: str) -> bool:
-    if not test_name.startswith("fapi2-security-profile-final-client-test-"):
-        return False
-    return any(marker in test_name for marker in _FAPI2_REJECTION_MARKERS)
-
-
 def set_wallet_conformance(wallet_url: str, mode: str, requires_haip: bool) -> None:
     # Set the wallet's own conformance setting before each submission, so the
     # HAIP modules run enforced and the rest run without HAIP, whatever the
@@ -1114,7 +1078,7 @@ def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool
     api_path = wallet_api_path_for_request(request_url)
     # The non-HAIP modules must run without HAIP and the HAIP modules with it,
     # so set the wallet's own conformance for this submission first.
-    set_wallet_conformance(wallet_url, wallet_mode_for(test_name, requires_haip), requires_haip)
+    set_wallet_conformance(wallet_url, WALLET_MODE, requires_haip)
     payload = {"uri": request_url}
     tx_code = tx_code_from_offer(request_url)
     if tx_code:
@@ -1263,7 +1227,7 @@ def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) ->
 
 
 def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
-    set_wallet_conformance(wallet_url, wallet_mode_for(test_name, requires_haip), requires_haip)
+    set_wallet_conformance(wallet_url, WALLET_MODE, requires_haip)
     extra_headers = {}
     # This POST stands in for the browser, and a browser derives Origin from
     # where the page actually runs, never from what the page's request claims.

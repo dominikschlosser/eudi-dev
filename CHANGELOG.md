@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.6] - 2026-09-03
+
+### Changed
+
+- **A Verifier listing one content encryption algorithm is reported, not refused.** HAIP 1.0 §5 has Verifiers list both A128GCM and A256GCM in their client metadata, while a wallet needs only one of them. A Verifier naming one gets a warning in every mode and the response is encrypted with the algorithm it names. A Verifier naming neither is still refused in strict mode. The conformance harness no longer switches the wallet to debug mode for the HAIP modules, whose driving verifier lists one algorithm.
+
 ## [2.3.5] - 2026-09-03
 
 ### Fixed
