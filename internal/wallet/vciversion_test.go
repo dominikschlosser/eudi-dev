@@ -323,7 +323,37 @@ func TestConformanceAPICarriesTheVCIFeatureVersion(t *testing.T) {
 	}
 }
 
+// The key attestation level is a conformance setting like the others: it is
+// reported, changed at runtime, refused when it is not an Appendix D.2 value,
+// and restored by the reset.
+func TestConformanceAPICarriesTheKeyAttestationLevel(t *testing.T) {
+	srv := newTestServer(t, true)
+
+	if got := conformanceField(t, srv, http.MethodPut, "/api/config/conformance", `{"key_attestation_level":"none"}`, "key_attestation_level"); got != "none" {
+		t.Fatalf("PUT key_attestation_level = %q, want none", got)
+	}
+	if got := srv.wallet.KeyAttestationLevelSetting(); got != "none" {
+		t.Fatalf("wallet setting = %q, want none", got)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/config/conformance", strings.NewReader(`{"key_attestation_level":"None"}`))
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("PUT of a value Appendix D.2 does not define = %d, want 400: %s", rec.Code, rec.Body.String())
+	}
+
+	if got := conformanceField(t, srv, http.MethodDelete, "/api/config/conformance", "", "key_attestation_level"); got != "" {
+		t.Fatalf("after reset key_attestation_level = %q, want the startup value", got)
+	}
+}
+
 func conformanceVCIVersion(t *testing.T, srv *Server, method, path, body string) string {
+	t.Helper()
+	return conformanceField(t, srv, method, path, body, "vci_version")
+}
+
+func conformanceField(t *testing.T, srv *Server, method, path, body, field string) string {
 	t.Helper()
 
 	var reader io.Reader
@@ -336,12 +366,8 @@ func conformanceVCIVersion(t *testing.T, srv *Server, method, path, body string)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%s %s = %d, want 200: %s", method, path, rec.Code, rec.Body.String())
 	}
-	var out map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decoding %s %s: %v", method, path, err)
-	}
-	version, _ := out["vci_version"].(string)
-	return version
+	value, _ := decodeJSON(t, rec)[field].(string)
+	return value
 }
 
 func findInteractiveAuthorizationNote(w *Wallet) (LogEntry, bool) {

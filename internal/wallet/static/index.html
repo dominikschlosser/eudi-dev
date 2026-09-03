@@ -165,6 +165,16 @@
         </td></tr>
         <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
         <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
+        <tr><td>Key attestation</td><td>
+          <select id="conf-key-attestation-select" class="conf-input">
+            <option value="">claims what the issuer requires</option>
+            <option value="none">claims nothing</option>
+            <option value="iso_18045_high">claims iso_18045_high</option>
+            <option value="iso_18045_moderate">claims iso_18045_moderate</option>
+            <option value="iso_18045_enhanced-basic">claims iso_18045_enhanced-basic</option>
+            <option value="iso_18045_basic">claims iso_18045_basic</option>
+          </select>
+        </td></tr>
       </table>
       <div class="consent-buttons">
         <button class="btn" id="conf-reset">Reset to defaults</button>

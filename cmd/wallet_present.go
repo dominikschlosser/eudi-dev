@@ -46,6 +46,9 @@ type dispatchOID4Opts struct {
 	txCode            string
 	haip              bool
 	mode              string
+	// keyAttestationLevel is what a key attestation claims (see
+	// Wallet.KeyAttestationLevel).
+	keyAttestationLevel string
 	// docker serves the presentation trust and status lists under
 	// host.docker.internal, so a verifier in a container reaches them and the
 	// status list token subject matches the URI the credential carries.
@@ -74,6 +77,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if opts.haip {
 			w.RequireHAIP = true
 		}
+		w.KeyAttestationLevel = opts.keyAttestationLevel
 		if err := applySessionTranscriptMode(w, opts.sessionTranscript); err != nil {
 			return err
 		}
@@ -94,7 +98,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		return runPresent(w, store, uri, port, opts.docker)
 
 	case format.FormatOID4VCI:
-		return processCredentialOffer(uri, opts.txCode, opts.resolvedOffer)
+		return processCredentialOffer(uri, opts)
 
 	default:
 		return fmt.Errorf("unable to detect URI type (expected openid4vp://, openid-credential-offer://, or similar): %s", format.Truncate(uri, 80))
@@ -610,13 +614,14 @@ func authorizationRequestParamsFromParsed(parsed *oid4vc.AuthorizationRequest, r
 }
 
 // processCredentialOffer fetches and stores a credential from an OID4VCI offer URI.
-func processCredentialOffer(uri string, txCode string, resolved *oid4vc.CredentialOffer) error {
+func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 	w, store, err := loadWallet()
 	if err != nil {
 		return err
 	}
+	w.KeyAttestationLevel = opts.keyAttestationLevel
 
-	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: txCode, ResolvedOffer: resolved})
+	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: opts.txCode, ResolvedOffer: opts.resolvedOffer})
 	if err != nil {
 		return fmt.Errorf("processing credential offer: %w", err)
 	}

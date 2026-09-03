@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -932,15 +933,11 @@ func createKeyAttestation(w *Wallet, metadata map[string]any, configID, cNonce s
 		"exp":           time.Now().Add(5 * time.Minute).Unix(),
 		"attested_keys": attestedKeys,
 	}
-	// OID4VCI 1.0 Appendix D: the attestation states how well key storage and
-	// user authentication resist attack. An issuer naming values in
-	// key_attestations_required rejects an attestation claiming nothing, so
-	// the attestation repeats what it asks for.
-	for _, claim := range []string{"key_storage", "user_authentication"} {
-		if values, ok := requirement[claim].([]any); ok && len(values) > 0 {
-			payload[claim] = values
-		}
+	claims := w.keyAttestationClaims(requirement)
+	for claim, values := range claims {
+		payload[claim] = values
 	}
+	w.noteKeyAttestationClaims(claims, requirement)
 	if cNonce != "" {
 		payload["nonce"] = cNonce
 	}
@@ -949,6 +946,64 @@ func createKeyAttestation(w *Wallet, metadata map[string]any, configID, cNonce s
 		return "", fmt.Errorf("creating key attestation JWT: %w", err)
 	}
 	return keyAttestationJWT, nil
+}
+
+// keyAttestationClaimNames are the attack potential resistance claims of a
+// key attestation (OpenID4VCI 1.0 Appendix D.2).
+var keyAttestationClaimNames = []string{"key_storage", "user_authentication"}
+
+// keyAttestationLevelValues are the values Appendix D.2 defines for those
+// claims.
+var keyAttestationLevelValues = []string{"iso_18045_high", "iso_18045_moderate", "iso_18045_enhanced-basic", "iso_18045_basic"}
+
+// ParseKeyAttestationLevel reads the --key-attestation-level setting: "" (what
+// the issuer requires), "none", or one of the Appendix D.2 values.
+func ParseKeyAttestationLevel(value string) (string, error) {
+	if value == "" || value == "none" || slices.Contains(keyAttestationLevelValues, value) {
+		return value, nil
+	}
+	return "", fmt.Errorf("%q is not a key attestation level: use 'none' or one of %s", value, strings.Join(keyAttestationLevelValues, ", "))
+}
+
+// keyAttestationClaims returns the key_storage and user_authentication
+// claims of a key attestation: what the issuer requires by default, nothing
+// for KeyAttestationLevel "none", and the named level for both otherwise.
+func (w *Wallet) keyAttestationClaims(requirement map[string]any) map[string]any {
+	switch level := w.KeyAttestationLevelSetting(); level {
+	case "none":
+		return nil
+	case "":
+		return requiredKeyAttestationClaims(requirement)
+	default:
+		claims := map[string]any{}
+		for _, claim := range keyAttestationClaimNames {
+			claims[claim] = []any{level}
+		}
+		return claims
+	}
+}
+
+// requiredKeyAttestationClaims returns the levels a key_attestations_required
+// object names.
+func requiredKeyAttestationClaims(requirement map[string]any) map[string]any {
+	required := map[string]any{}
+	for _, claim := range keyAttestationClaimNames {
+		if values, ok := requirement[claim].([]any); ok && len(values) > 0 {
+			required[claim] = values
+		}
+	}
+	return required
+}
+
+// noteKeyAttestationClaims marks in the activity log what the attestation
+// says about its key storage: a claim this wallet's file-held keys cannot
+// back, or a requirement the attestation leaves unanswered.
+func (w *Wallet) noteKeyAttestationClaims(claims, requirement map[string]any) {
+	if len(claims) > 0 {
+		w.AddWarning("issuance", "The key attestation claims key storage levels this wallet's file-held keys cannot back (a test setting, see --key-attestation-level)", claims)
+	} else if required := requiredKeyAttestationClaims(requirement); len(required) > 0 {
+		w.AddWarning("issuance", "The key attestation omits levels the issuer requires (--key-attestation-level none)", required)
+	}
 }
 
 // credentialProofTypes returns the proof_types_supported of a credential

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - Unreleased
+
+### Added
+
+- **`--key-attestation-level` on `wallet serve`, `wallet accept` and `wallet scan`.** The key attestation claims `key_storage` and `user_authentication` levels (OpenID4VCI Appendix D.2) that this wallet's file-held keys cannot back. By default it claims what the issuer requires, so issuers gating on a level can be tested. `none` claims nothing, a level such as `iso_18045_high` claims that level for both. Every attestation carrying a claim is marked in the activity log, as is one that omits a level the issuer requires. The setting is one of the conformance settings: the Conformance panel changes it at runtime on a local wallet (`PUT /api/config/conformance` with `key_attestation_level`, `DELETE` restores the startup value), the public demo shows it read-only, and [SECURITY.md](SECURITY.md) states the behaviour.
+
 ## [2.3.7] - 2026-09-04
 
 ### Added

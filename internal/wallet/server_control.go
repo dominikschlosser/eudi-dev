@@ -149,19 +149,20 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	// A local PUT /api/config/conformance can be changing them concurrently.
 	mode, requireHAIP, requireEncrypted := s.wallet.ConformanceSettings()
 	config := map[string]any{
-		"port":               s.port,
-		"build_id":           processBuildID(),
-		"version":            s.version,
-		"imprint":            len(s.imprintHTML) > 0,
-		"base_url":           s.wallet.BaseURL,
-		"issuer_url":         s.wallet.IssuerURL,
-		"status_list_url":    s.wallet.StatusListURL(),
-		"preferred_format":   s.wallet.PreferredFormat,
-		"validation_mode":    string(mode),
-		"vci_version":        string(s.wallet.VCIFeatureVersion()),
-		"auto_accept":        s.wallet.AutoAccept,
-		"session_transcript": string(s.wallet.SessionTranscript),
-		"require_haip":       requireHAIP,
+		"port":                  s.port,
+		"build_id":              processBuildID(),
+		"version":               s.version,
+		"imprint":               len(s.imprintHTML) > 0,
+		"base_url":              s.wallet.BaseURL,
+		"issuer_url":            s.wallet.IssuerURL,
+		"status_list_url":       s.wallet.StatusListURL(),
+		"preferred_format":      s.wallet.PreferredFormat,
+		"key_attestation_level": s.wallet.KeyAttestationLevelSetting(),
+		"validation_mode":       string(mode),
+		"vci_version":           string(s.wallet.VCIFeatureVersion()),
+		"auto_accept":           s.wallet.AutoAccept,
+		"session_transcript":    string(s.wallet.SessionTranscript),
+		"require_haip":          requireHAIP,
 		// Presentations and issuance are gated by the same flag, but they are
 		// reported separately: a client should be able to tell which half it
 		// is being held to without inferring it.
@@ -264,10 +265,11 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Mode       *string `json:"mode,omitempty"`
-		HAIP       *bool   `json:"haip,omitempty"`
-		Encrypted  *bool   `json:"encrypted,omitempty"`
-		VCIVersion *string `json:"vci_version,omitempty"`
+		Mode                *string `json:"mode,omitempty"`
+		HAIP                *bool   `json:"haip,omitempty"`
+		Encrypted           *bool   `json:"encrypted,omitempty"`
+		VCIVersion          *string `json:"vci_version,omitempty"`
+		KeyAttestationLevel *string `json:"key_attestation_level,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -291,9 +293,21 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 		}
 		vciVersion = parsed
 	}
+	var keyAttestationLevel string
+	if body.KeyAttestationLevel != nil {
+		parsed, err := ParseKeyAttestationLevel(*body.KeyAttestationLevel)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		keyAttestationLevel = parsed
+	}
 	s.wallet.mu.Lock()
 	if body.Mode != nil {
 		s.wallet.ValidationMode = mode
+	}
+	if body.KeyAttestationLevel != nil {
+		s.wallet.KeyAttestationLevel = keyAttestationLevel
 	}
 	if body.VCIVersion != nil {
 		s.wallet.VCIVersion = vciVersion
@@ -320,6 +334,7 @@ func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) 
 	s.wallet.RequireHAIP = s.defaultRequireHAIP
 	s.wallet.RequireEncryptedRequest = s.defaultRequireEncryptedRequest
 	s.wallet.VCIVersion = s.defaultVCIVersion
+	s.wallet.KeyAttestationLevel = s.defaultKeyAttestationLevel
 	s.wallet.mu.Unlock()
 	s.writeConformanceConfig(w)
 }
@@ -337,6 +352,7 @@ func (s *Server) writeConformanceConfig(w http.ResponseWriter) {
 		"require_haip":              s.wallet.RequireHAIP,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"vci_version":               string(vciVersion),
+		"key_attestation_level":     s.wallet.KeyAttestationLevel,
 	}
 	s.wallet.mu.RUnlock()
 	writeJSON(w, http.StatusOK, resp)

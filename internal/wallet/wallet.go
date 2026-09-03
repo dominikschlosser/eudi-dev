@@ -77,6 +77,10 @@ type Wallet struct {
 	RequireEncryptedRequest bool                  // when true, rejects a request_uri response that is not a JWE (the encryption key is advertised regardless)
 	RequestEncryptionKey    *ecdsa.PrivateKey     // key for decrypting encrypted request objects
 	RequireHAIP             bool                  // when true, enforce HAIP 1.0 compliance checks
+	// KeyAttestationLevel is what the key attestation claims about its key
+	// storage (see ParseKeyAttestationLevel). Runtime-mutable like the
+	// conformance settings, read through KeyAttestationLevelSetting.
+	KeyAttestationLevel string `json:"-"`
 	// VCIVersion is the OpenID4VCI feature level the wallet uses as a client.
 	// "1.0" (the default) is the published final version, "1.1" also uses what
 	// the 1.1 draft adds where an issuer offers it.
@@ -1043,6 +1047,14 @@ func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {
 	return w.ValidationMode, w.RequireHAIP, w.RequireEncryptedRequest
 }
 
+// KeyAttestationLevelSetting returns KeyAttestationLevel under the read lock,
+// since PUT /api/config/conformance can change it while a flow runs.
+func (w *Wallet) KeyAttestationLevelSetting() string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.KeyAttestationLevel
+}
+
 // resolveIDLocked maps a credential id or an unambiguous id prefix to the full
 // stored id, so a command can name a credential by the short id the UI shows.
 // An exact id wins over any prefix. A prefix that matches nothing or more than
@@ -1104,8 +1116,8 @@ func (w *Wallet) AddLogDetails(action, detail string, success bool, details map[
 	})
 }
 
-// AddWarning records a spec violation the wallet noted without failing the
-// flow (debug mode, and the demo). It is not a failure, so Success stays true
+// AddWarning records a finding the wallet noted without failing the flow: a
+// spec violation in debug mode and the demo, or a test setting worth seeing. It is not a failure, so Success stays true
 // and the entry carries the warning severity for the UI to mark distinctly.
 func (w *Wallet) AddWarning(action, detail string, details map[string]any) {
 	w.appendLogEntry(LogEntry{

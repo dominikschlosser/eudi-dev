@@ -52,6 +52,7 @@ type walletServeOptions struct {
 	BaseURL                 string
 	Docker                  bool
 	PreferredFormat         string
+	KeyAttestationLevel     string
 	RequireEncryptedRequest bool
 	HAIP                    bool
 	VCIVersion              string
@@ -112,6 +113,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.BaseURL, "base-url", "", "Base URL for the wallet's HTTP endpoints (its host is also reused for HTTPS wallet endpoints)")
 	cmd.Flags().BoolVar(&opts.Docker, "docker", false, "Use host.docker.internal instead of localhost for both HTTP and HTTPS wallet endpoint URLs")
 	cmd.Flags().StringVar(&opts.PreferredFormat, "preferred-format", "", "Preferred credential format when multiple match: 'dc+sd-jwt', 'mso_mdoc', or 'jwt_vc_json'")
+	cmd.Flags().StringVar(&opts.KeyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them")
 	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Reject a Verifier's Request Object that is not encrypted (the wallet always sends an encryption key in wallet_metadata, so this only requires the Verifier to use it)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
@@ -433,6 +435,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 
 	if opts.PreferredFormat != "" {
 		w.PreferredFormat = opts.PreferredFormat
+	}
+	if w.KeyAttestationLevel, err = wallet.ParseKeyAttestationLevel(opts.KeyAttestationLevel); err != nil {
+		return fmt.Errorf("--key-attestation-level: %w", err)
 	}
 
 	// Always hold a request-object encryption key so wallet_metadata can offer

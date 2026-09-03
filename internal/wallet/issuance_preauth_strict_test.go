@@ -343,6 +343,67 @@ func TestCredentialProofType(t *testing.T) {
 	}
 }
 
+// TestKeyAttestationClaims covers what the attestation says about its key
+// storage under each setting, and the activity log entry that goes with it.
+func TestKeyAttestationClaims(t *testing.T) {
+	metadataRequiring := func(requirement map[string]any) map[string]any {
+		return map[string]any{"credential_configurations_supported": map[string]any{
+			"cfg": map[string]any{"proof_types_supported": map[string]any{
+				"jwt": map[string]any{"key_attestations_required": requirement},
+			}},
+		}}
+	}
+	requiring := metadataRequiring(map[string]any{"key_storage": []any{"iso_18045_high"}})
+	requiringNothing := metadataRequiring(map[string]any{})
+	attest := func(t *testing.T, metadata map[string]any, level string) (map[string]any, *Wallet) {
+		t.Helper()
+		w := generateTestWallet(t)
+		w.KeyAttestationLevel = level
+		attestation, err := createKeyAttestation(w, metadata, "cfg", "nonce", nil)
+		if err != nil {
+			t.Fatalf("createKeyAttestation(%q): %v", level, err)
+		}
+		return decodeJWTPart(t, attestation, 1), w
+	}
+
+	payload, w := attest(t, requiring, "")
+	if got, _ := payload["key_storage"].([]any); len(got) != 1 || got[0] != "iso_18045_high" || payload["user_authentication"] != nil {
+		t.Errorf("default: key_storage = %v, user_authentication = %v, want the required key_storage only", payload["key_storage"], payload["user_authentication"])
+	}
+	if !hasWarningContaining(w, "cannot back") {
+		t.Error("default: want the claim marked in the activity log")
+	}
+
+	payload, w = attest(t, requiring, "none")
+	if payload["key_storage"] != nil || payload["user_authentication"] != nil {
+		t.Errorf("none: attestation still claims %v / %v", payload["key_storage"], payload["user_authentication"])
+	}
+	if !hasWarningContaining(w, "omits") {
+		t.Error("none: want the omitted requirement marked in the activity log")
+	}
+
+	payload, w = attest(t, requiring, "iso_18045_moderate")
+	for _, claim := range keyAttestationClaimNames {
+		if got, _ := payload[claim].([]any); len(got) != 1 || got[0] != "iso_18045_moderate" {
+			t.Errorf("level: %s = %v, want [iso_18045_moderate]", claim, payload[claim])
+		}
+	}
+	if !hasWarningContaining(w, "cannot back") {
+		t.Error("level: want the claim marked in the activity log")
+	}
+
+	for _, level := range []string{"", "none"} {
+		payload, w := attest(t, requiringNothing, level)
+		if payload["key_storage"] != nil || hasWarningContaining(w, "key attestation") {
+			t.Errorf("level %q without a requirement: claims %v, want no claim and no note", level, payload["key_storage"])
+		}
+	}
+
+	if _, err := ParseKeyAttestationLevel("None"); err == nil {
+		t.Error("ParseKeyAttestationLevel accepted a value Appendix D.2 does not define")
+	}
+}
+
 // TestProofSigningAlgMustBeListed covers Appendix F.1 and F.3: the proof's alg
 // has to be one the configuration lists. This wallet signs ES256 only, so a
 // configuration listing other algorithms is refused in strict mode and

@@ -2465,7 +2465,7 @@
       // it only shows the state.
       renderAutoAccept(!!config.auto_accept);
       renderConformance(config);
-      ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input', 'conf-vci-version-select'].forEach((id) => {
+      ['conf-mode-select', 'conf-haip-input', 'conf-encrypted-input', 'conf-vci-version-select', 'conf-key-attestation-select'].forEach((id) => {
         const el = document.getElementById(id);
         if (el && !el.dataset.wired) {
           el.dataset.wired = '1';
@@ -2555,7 +2555,7 @@
   // Conformance is the wallet's own process-level setting, reported by
   // /api/config. Only a locally-hosted wallet can change it (PUT/DELETE
   // /api/config/conformance). The public demo shows it read-only.
-  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false, vci_version: '1.0' };
+  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false, vci_version: '1.0', key_attestation_level: '' };
 
   function effectiveConformance() {
     return {
@@ -2563,6 +2563,7 @@
       haip: !!conformanceDefaults.require_haip,
       encrypted: !!conformanceDefaults.require_encrypted_request,
       vciVersion: conformanceDefaults.vci_version === '1.1' ? '1.1' : '1.0',
+      keyAttestationLevel: conformanceDefaults.key_attestation_level || '',
     };
   }
 
@@ -2572,10 +2573,12 @@
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
     const vci = document.getElementById('conf-vci-version-select');
+    const level = document.getElementById('conf-key-attestation-select');
     if (mode) { mode.value = eff.mode === 'strict' ? 'strict' : 'debug'; mode.disabled = demoMode; }
     if (haip) { haip.checked = eff.haip; haip.disabled = demoMode; }
     if (enc) { enc.checked = eff.encrypted; enc.disabled = demoMode; }
     if (vci) { vci.value = eff.vciVersion; vci.disabled = demoMode; }
+    if (level) { level.value = eff.keyAttestationLevel; level.disabled = demoMode; }
   }
 
   function currentControlValues() {
@@ -2583,11 +2586,13 @@
     const haip = document.getElementById('conf-haip-input');
     const enc = document.getElementById('conf-encrypted-input');
     const vci = document.getElementById('conf-vci-version-select');
+    const level = document.getElementById('conf-key-attestation-select');
     return {
       mode: mode ? mode.value : undefined,
       haip: haip ? haip.checked : undefined,
       encrypted: enc ? enc.checked : undefined,
       vci_version: vci ? vci.value : undefined,
+      key_attestation_level: level ? level.value : undefined,
     };
   }
 

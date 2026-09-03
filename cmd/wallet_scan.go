@@ -26,6 +26,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/internal/qr"
+	"github.com/dominikschlosser/eudi-dev/internal/wallet"
 )
 
 // resolveTxCode returns the transaction code for an offer: the one passed on
@@ -103,6 +104,9 @@ func stdinIsTerminal() bool {
 //
 // [ADR-0012]: docs/adr/0012-every-entry-point-runs-the-same-flow.md
 func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
+	if _, err := wallet.ParseKeyAttestationLevel(opts.keyAttestationLevel); err != nil {
+		return fmt.Errorf("--key-attestation-level: %w", err)
+	}
 	c, err := remoteClientIfConfigured()
 	if err != nil {
 		return err
@@ -119,12 +123,13 @@ func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
 
 func walletAcceptCmd() *cobra.Command {
 	var (
-		port              int
-		autoAccept        bool
-		sessionTranscript string
-		txCode            string
-		haip              bool
-		docker            bool
+		port                int
+		autoAccept          bool
+		sessionTranscript   string
+		txCode              string
+		haip                bool
+		docker              bool
+		keyAttestationLevel string
 	)
 
 	cmd := &cobra.Command{
@@ -144,18 +149,20 @@ request boundaries, so later presentation requests see the new credential.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return acceptOID4URI(args[0], dispatchOID4Opts{
-				port:              port,
-				portExplicit:      cmd.Flags().Changed("port"),
-				autoAccept:        autoAccept,
-				sessionTranscript: sessionTranscript,
-				txCode:            txCode,
-				haip:              haip,
-				mode:              walletValidationMode,
-				docker:            docker,
+				port:                port,
+				portExplicit:        cmd.Flags().Changed("port"),
+				autoAccept:          autoAccept,
+				sessionTranscript:   sessionTranscript,
+				txCode:              txCode,
+				haip:                haip,
+				mode:                walletValidationMode,
+				docker:              docker,
+				keyAttestationLevel: keyAttestationLevel,
 			})
 		},
 	}
 
+	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them. A running wallet server applies its own setting")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Server port for OID4VP (serves trust list and consent UI)")
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve OID4VP presentations")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
@@ -167,13 +174,14 @@ request boundaries, so later presentation requests see the new credential.`,
 
 func walletScanCmd() *cobra.Command {
 	var (
-		port              int
-		screen            bool
-		autoAccept        bool
-		sessionTranscript string
-		txCode            string
-		haip              bool
-		docker            bool
+		port                int
+		screen              bool
+		autoAccept          bool
+		sessionTranscript   string
+		txCode              string
+		haip                bool
+		docker              bool
+		keyAttestationLevel string
 	)
 
 	cmd := &cobra.Command{
@@ -219,14 +227,15 @@ func walletScanCmd() *cobra.Command {
 
 			// Accept the scanned request exactly like `wallet accept`.
 			return acceptOID4URI(content, dispatchOID4Opts{
-				port:              port,
-				portExplicit:      cmd.Flags().Changed("port"),
-				autoAccept:        autoAccept,
-				sessionTranscript: sessionTranscript,
-				txCode:            txCode,
-				haip:              haip,
-				mode:              walletValidationMode,
-				docker:            docker,
+				port:                port,
+				portExplicit:        cmd.Flags().Changed("port"),
+				autoAccept:          autoAccept,
+				sessionTranscript:   sessionTranscript,
+				txCode:              txCode,
+				haip:                haip,
+				mode:                walletValidationMode,
+				docker:              docker,
+				keyAttestationLevel: keyAttestationLevel,
 			})
 		},
 	}
@@ -237,6 +246,7 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mDoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
+	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them. A running wallet server applies its own setting")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	return cmd
 }

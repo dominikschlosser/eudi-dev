@@ -158,6 +158,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--session-transcript`  | `oid4vp` | mDoc session transcript mode: `oid4vp` or `iso`  |
 | `--register`            | `false`  | Register OS URL scheme handlers                  |
 | `--no-register`         | `false`  | Skip URL scheme registration (overrides --register) |
+| `--key-attestation-level` | — | What the key attestation claims as `key_storage` and `user_authentication` (OpenID4VCI Appendix D.2): whatever the issuer requires (default), `none`, or a level such as `iso_18045_high` for both. The wallet holds its keys in files and can prove none of them (see [SECURITY.md](../../SECURITY.md)). Changeable at runtime from the Conformance panel |
 | `--preferred-format`    | —        | Preferred credential format when multiple match: `dc+sd-jwt`, `mso_mdoc`, or `jwt_vc_json` |
 | `--status-list`         | `false`  | Embed status list references in generated credentials |
 | `--base-url`            | —        | Base URL for the wallet's HTTP endpoints. An https base URL becomes the issuer URL directly (external TLS terminator). An http base URL derives a self-signed HTTPS issuer URL on port+1. Existing persisted issuer URLs are reused unless this flag is set |
@@ -278,7 +279,7 @@ eudi wallet unregister             # Remove URL handlers
 
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet header shows four settings: validation mode (strict/debug), HAIP, encrypted requests, and the [OpenID4VCI feature level](issuing.md#openid4vci-feature-level).
+The **Conformance** panel in the wallet header shows five settings: validation mode (strict/debug), HAIP, encrypted requests, the [OpenID4VCI feature level](issuing.md#openid4vci-feature-level), and what the key attestation claims about its key storage (see [SECURITY.md](../../SECURITY.md)).
 
 **A locally-hosted wallet** changes them from that panel, which calls `PUT /api/config/conformance` (`DELETE` restores the startup values). The change is process-level and holds until the process restarts. Every flow reaching this wallet honors it: the UI, a scanned QR, and `openid4vp://` or credential-offer links routed here by the CLI or the macOS handler.
 

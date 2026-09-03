@@ -221,6 +221,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		AutoAccept:              src.AutoAccept,
 		SessionTranscript:       src.SessionTranscript,
 		PreferredFormat:         src.PreferredFormat,
+		KeyAttestationLevel:     src.KeyAttestationLevelSetting(),
 		RequireEncryptedRequest: srcEncrypted,
 		RequestEncryptionKey:    src.RequestEncryptionKey,
 		RequireHAIP:             srcHAIP,
