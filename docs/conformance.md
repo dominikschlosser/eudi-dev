@@ -46,7 +46,7 @@ VCI Final generates the cross product of credential format, grant type (authoriz
 The HAIP plans expose fewer selectable variants (they pin the rest per module entry internally):
 
 - VP HAIP: SD-JWT and mDoc with `direct_post.jwt` and `dc_api.jwt`, the latter covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules (4 plans)
-- VCI HAIP: SD-JWT and mDoc with `by_value` and `by_reference` offers, each covering immediate plain, deferred plain, and immediate encrypted responses (4 plans)
+- VCI HAIP: SD-JWT and mDoc, each issuer-initiated with the offer `by_value` and `by_reference` and wallet-initiated without an offer, each covering immediate plain, deferred plain, and immediate encrypted responses (6 plans)
 
 The matrix leaves out the variants the wallet does not implement: the `pre_registered` and `decentralized_identifier` prefixes, the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows (issuance starts from a credential offer), `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
 
@@ -77,6 +77,7 @@ The matrix is fixed in the wrapper. Use the official runner `--rerun` selector f
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
 - sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started
+- starts the wallet-initiated VCI modules itself: the suite seeds no offer there, so the harness hands the wallet an offer naming the suite's issuer and the configured credential with no `issuer_state`, the flow a wallet begins from an issuer it picked
 - passes explicit VP module lists for the alpha Final scenarios so the suite runs executable coverage for that generated variant, and runs the certifiable HAIP plans complete without a filter
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs

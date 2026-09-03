@@ -366,10 +366,12 @@ def final_scenarios() -> list[PlanScenario]:
                 credential_kind="mdoc",
                 requires_haip=True,
             ),
-            # Every selectable HAIP VCI variant: format and offer delivery.
-            # The HAIP plan pins the rest internally (authorization code with
-            # client attestation and DPoP, immediate/deferred/encrypted as
-            # module entries).
+            # Every selectable HAIP VCI variant: format, and the flow as the
+            # certification program runs it (issuer-initiated with the offer
+            # by value and by reference, and wallet-initiated, which has no
+            # offer). The HAIP plan pins the rest internally (authorization
+            # code with client attestation and DPoP, immediate/deferred/
+            # encrypted as module entries).
             *[
                 PlanScenario(
                     slug="vci-haip-{}-{}".format(kind, VCI_SLUG_TOKENS[offer]),
@@ -386,6 +388,21 @@ def final_scenarios() -> list[PlanScenario]:
                 )
                 for kind in ("sdjwt", "mdoc")
                 for offer in ("by_value", "by_reference")
+            ],
+            *[
+                PlanScenario(
+                    slug="vci-haip-{}-wallet-initiated".format(kind),
+                    kind="vci",
+                    template_relpath="scripts/test-configs-rp-against-op/vci-wallet-test-config-haip.json",
+                    plan_name="oid4vci-1_0-wallet-haip-test-plan",
+                    variant={
+                        "vci_authorization_code_flow_variant": "wallet_initiated",
+                        "credential_format": VCI_FORMAT_VARIANTS[kind],
+                    },
+                    credential_kind=kind,
+                    requires_haip=True,
+                )
+                for kind in ("sdjwt", "mdoc")
             ],
         ]
     )
@@ -1173,25 +1190,26 @@ def module_credential_offer_endpoint(info: dict, state: dict) -> str | None:
     return None
 
 
-def synthetic_fapi_vci_offer_url(info: dict, state: dict) -> str | None:
-    test_name = module_test_name(info, state)
-    if not isinstance(test_name, str) or not test_name.startswith("fapi2-security-profile-final-client-test-"):
-        return None
+def synthetic_vci_offer_url(info: dict, state: dict) -> str | None:
+    """The nudge that starts a wallet-initiated flow.
+
+    The suite seeds no offer in the wallet_initiated variant: it waits for the
+    wallet to start the authorization code flow against its issuer on its own.
+    The wallet starts from an offer, so the harness hands it one naming the
+    suite's issuer and the configured credential, with no issuer_state, which
+    is the same flow a wallet begins from an issuer it picked itself. An
+    issuer-initiated flow is driven by the credential offer the suite generates
+    (its issuer_state is checked by VCIVerifyIssuerStateInAuthorizationRequest),
+    which handle_module submits from credential_offer_redirect_url."""
     variant = module_variant(info, state)
     if variant.get("fapi_profile") not in {"vci", "vci_haip"}:
         return None
-    # An issuer-initiated flow is driven by the credential offer the suite itself
-    # generates, which carries the issuer_state the suite then matches against the
-    # wallet's authorization request (VCIVerifyIssuerStateInAuthorizationRequest).
-    # handle_module submits that real offer from credential_offer_redirect_url, so
-    # the wallet must use it. The synthetic offer is only for a wallet-initiated
-    # flow, which the suite does not seed with an offer.
-    if variant.get("vci_authorization_code_flow_variant") == "issuer_initiated":
+    if variant.get("vci_authorization_code_flow_variant") != "wallet_initiated":
         return None
     credential_offer_endpoint = module_credential_offer_endpoint(info, state)
     if not credential_offer_endpoint:
         return None
-    credential_configuration_id = fapi_vci_credential_configuration_id(variant)
+    credential_configuration_id = module_credential_configuration_id(info) or fapi_vci_credential_configuration_id(variant)
     if not credential_configuration_id:
         return None
     credential_issuer = credential_offer_endpoint.removesuffix("/credential_offer").rstrip("/") + "/"
@@ -1206,27 +1224,32 @@ def synthetic_fapi_vci_offer_url(info: dict, state: dict) -> str | None:
     return f"{credential_offer_endpoint}?credential_offer={encoded_offer}"
 
 
-def submit_synthetic_fapi_vci_offer(wallet_url: str, info: dict, state: dict) -> None:
-    offer_url = synthetic_fapi_vci_offer_url(info, state)
-    test_name = module_test_name(info, state)
+def module_credential_configuration_id(info: dict) -> str | None:
+    config = info.get("config")
+    vci = config.get("vci") if isinstance(config, dict) else None
+    configuration_id = vci.get("credential_configuration_id") if isinstance(vci, dict) else None
+    return configuration_id if isinstance(configuration_id, str) and configuration_id else None
+
+
+def submit_synthetic_vci_offer(wallet_url: str, info: dict, state: dict) -> None:
+    offer_url = synthetic_vci_offer_url(info, state)
+    variant = module_variant(info, state)
     if (
         not offer_url
-        and isinstance(test_name, str)
-        and test_name.startswith("fapi2-security-profile-final-client-test-")
-        and not state.get("logged_synthetic_fapi_skip")
+        and variant.get("vci_authorization_code_flow_variant") == "wallet_initiated"
+        and not state.get("logged_synthetic_skip")
     ):
-        state["logged_synthetic_fapi_skip"] = True
-        variant = module_variant(info, state)
+        state["logged_synthetic_skip"] = True
         print(
-            "[monitor] FAPI VCI module is waiting, but no synthetic offer could be built "
+            "[monitor] wallet-initiated module is waiting, but no synthetic offer could be built "
             f"(baseUrl={info.get('baseUrl') or state.get('base_url')!r}, variant={variant!r})",
             flush=True,
         )
-    if not offer_url or state.get("submitted_synthetic_fapi_offer"):
+    if not offer_url or state.get("submitted_synthetic_offer"):
         return
-    result = submit_wallet_request(wallet_url, offer_url, requires_haip=False)
+    result = submit_wallet_request(wallet_url, offer_url, state.get("requires_haip", False), state.get("test_name"))
     if result.completed or not result.retryable:
-        state["submitted_synthetic_fapi_offer"] = True
+        state["submitted_synthetic_offer"] = True
 
 
 def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_url: str, requires_haip: bool = False, test_name: str | None = None) -> WalletSubmissionResult:
@@ -1307,7 +1330,7 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
             state["base_url"] = entry_base_url
             break
 
-    submit_synthetic_fapi_vci_offer(wallet_url, info, state)
+    submit_synthetic_vci_offer(wallet_url, info, state)
 
     browser_entries = []
     browser = info.get("browser")
@@ -1456,8 +1479,8 @@ def main() -> int:
                                 "uploaded_placeholders": set(),
                                 "terminal": False,
                                 "requires_haip": pending_module_requires_haip,
-                                "submitted_synthetic_fapi_offer": False,
-                                "logged_synthetic_fapi_skip": False,
+                                "submitted_synthetic_offer": False,
+                                "logged_synthetic_skip": False,
                                 "test_name": pending_module_context.get("test_name"),
                                 "variant": pending_module_context.get("variant", {}),
                             },
