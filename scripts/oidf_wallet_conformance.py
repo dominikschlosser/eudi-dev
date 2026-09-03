@@ -54,6 +54,8 @@ class WalletMaterials:
     holder_jwk: dict
     issuer_jwk: dict
     ca_pem: str
+    # The release under test, as the plan description names it.
+    version: str
 
 
 @dataclass(frozen=True)
@@ -546,11 +548,12 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
     if len(keys) != 1 or not isinstance(keys[0], dict):
         raise RuntimeError(f"wallet issuer metadata did not expose exactly one issuer JWK: {keys!r}")
 
-    ca_pem = wallet_ca_cert.read_text()
+    version = str(wallet_request(wallet_url, "GET", "/api/version").get("version", ""))
     return WalletMaterials(
         holder_jwk=public_jwk(holder_jwk),
         issuer_jwk=public_jwk(keys[0]),
-        ca_pem=ca_pem,
+        ca_pem=wallet_ca_cert.read_text(),
+        version=version.removeprefix("v"),
     )
 
 
@@ -666,7 +669,7 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
     # new test naming one an earlier test still holds takes it over, so a fixed
     # alias would make every run contend with the leftovers of the one before.
     config["alias"] = f"oid4vc-dev-{scenario.slug}-{wallet_run_suffix(args)}"
-    config["description"] = f"oid4vc-dev wallet ({scenario.slug})"
+    config["description"] = f"eudi-dev wallet {materials.version}"
     config.setdefault("client", {})
     config["client"]["dcql"] = build_vp_dcql_query(scenario.credential_kind)
     if scenario.requires_haip or scenario.variant.get("client_id_prefix") == "x509_san_dns":
@@ -720,7 +723,7 @@ def create_vci_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanS
         raise ValueError(f"VCI redirect_uri must include an alias path segment before /callback: {redirect_uri}")
 
     config["alias"] = alias
-    config["description"] = f"oid4vc-dev wallet ({scenario.slug})"
+    config["description"] = f"eudi-dev wallet {materials.version}"
     config["waitTimeoutSeconds"] = 10
     config["maxWaitForAdditionalRequestSeconds"] = 20
 
