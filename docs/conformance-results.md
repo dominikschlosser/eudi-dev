@@ -12,17 +12,17 @@ The 4 `WARNING` are one condition, four times: `CheckForUnexpectedParametersInSe
 
 Suite defect in `release-v5.2.4`: under the pre-authorized code grant the client attestation negative modules keep running after their expected token refusal and interrupt themselves ("This is a bug in the test module"). Those six modules are excluded there and covered by the authorization code scenarios.
 
-## Runs of 2026-09-02 and 2026-09-03 (production certification and expanded matrix)
+## Runs of 2026-09-02 and 2026-09-04 (production certification and expanded matrix)
 
-The production certification run of 2026-09-03 on the 2.3.6 release, and the expanded local matrix of 2026-09-02, both on suite `release-v5.2.4` (revision `ab35a8d`), the matrix for the 2.3.0 release (ISO 18013-5 certificate profile, RFC 3986 request URI parsing, `response_uri` derived from a `redirect_uri` client id per OID4VP 1.0 §5.9.3).
+The production certification run of 2026-09-04 on the 2.3.7 release, and the expanded local matrix of 2026-09-02, both on suite `release-v5.2.4` (revision `ab35a8d`), the matrix for the 2.3.0 release (ISO 18013-5 certificate profile, RFC 3986 request URI parsing, `response_uri` derived from a `redirect_uri` client id per OID4VP 1.0 §5.9.3).
 
 ### Production certification run
 
-The certifiable HAIP plans ran on 2026-09-03 on `https://www.certification.openid.net/` against the hosted strict wallet at `https://strict.eudi-test.dev` running release 2.3.6, the wallet in strict mode for every module (see [the runbook](./conformance-run.md)). 8 plans (4 VP HAIP, 4 VCI HAIP including `by_reference` offer delivery), 184 modules, complete and unfiltered: **142 `PASSED`, 34 `REVIEW`, 6 `SKIPPED`, 2 `FAILED`**, 21580 condition successes, zero wallet condition failures and zero warnings. Run directory `/tmp/oidf-strict-2.3.6`. The non passing entries:
+The certifiable HAIP plans ran on 2026-09-04 on `https://www.certification.openid.net/` against the hosted strict wallet at `https://strict.eudi-test.dev` running release 2.3.7, the wallet in strict mode for every module (see [the runbook](./conformance-run.md)). 10 plans, the matrix the certification program uses (4 VP HAIP, and per format the VCI HAIP plan issuer-initiated with the offer `by_value` and `by_reference` and wallet-initiated), 228 modules, complete and unfiltered: **192 `PASSED`, 34 `REVIEW`, 2 `FAILED`, no skips**, 29466 condition successes, zero wallet condition failures and zero warnings. Run directory `/tmp/oidf-strict-2.3.7`. The non passing entries:
 
 - the 2 `FAILED` are `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` under `request_uri_multisigned`, one per `dc_api.jwt` plan, where the suite throws a NullPointerException in its own request construction before contacting the wallet (`AddInvalidClientIdPrefixToRequestObject` reads a `client_id` the multisigned sequence never puts into the shared payload). The same module passes in the signed entry. Reported upstream.
-- the 6 `SKIPPED` are the mdoc `batch-credential-issuance` modules, three per mdoc VCI plan (the key attestation configuration, see the release-v5.2.1 coverage below).
 - the negative modules end `REVIEW` behind an uploaded screenshot of the wallet's error, each naming the rule the module breaks (request object signature, mismatched `client_id`, `redirect_uri` with `direct_post`, missing nonce, invalid prefix, `transaction_data`, `expected_origins`, and for the FAPI2 tests the issuer, `iss` and `state` checks of the authorization response). `required-non-matching-credential` ends `PASSED`: the wallet answers `access_denied`.
+- the mdoc plans run on the key attestation configuration with the `attestation` proof type, where the suite issues one credential per attested key, so `batch-credential-issuance` passes in every VCI plan.
 
 | Plan | Modules | Conditions |
 |---|---|---|
@@ -32,8 +32,10 @@ The certifiable HAIP plans ran on 2026-09-03 on `https://www.certification.openi
 | VP HAIP mdoc `dc_api.jwt` | 34 | 1423 successes, 2 suite failures |
 | VCI HAIP SD-JWT `by_value` | 22 | 3997 successes |
 | VCI HAIP SD-JWT `by_reference` | 22 | 4283 successes |
-| VCI HAIP mdoc `by_value` | 22 | 4107 successes, 3 batch skips |
-| VCI HAIP mdoc `by_reference` | 22 | 4393 successes, 3 batch skips |
+| VCI HAIP mdoc `by_value` | 22 | 4063 successes |
+| VCI HAIP mdoc `by_reference` | 22 | 4349 successes |
+| VCI HAIP SD-JWT wallet-initiated | 22 | 3954 successes |
+| VCI HAIP mdoc wallet-initiated | 22 | 4020 successes |
 
 ### Local full matrix
 
