@@ -50,16 +50,10 @@ func advertisedBatchSize(metadata map[string]any) int {
 // advertises batch issuance with batch_size >= 2, fresh ephemeral keys are
 // added so each credential in the batch is bound to a distinct key (required
 // for SD-JWT batches per RFC 9901 §10.1, recommended for mdoc).
-func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any, configID string) ([]*ecdsa.PrivateKey, error) {
+func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]*ecdsa.PrivateKey, error) {
+	// Under a required key attestation every proof carries the one attestation
+	// covering all of these keys (HAIP §4.5.1).
 	keys := []*ecdsa.PrivateKey{holderKey}
-	// With a key attestation the batch is counted from the attestation rather
-	// than the proofs: Appendix F.1 and F.3 have the issuer "issue a Credential
-	// for each cryptographic public key specified in the attested_keys claim".
-	// Several proofs over the same keys is not a shape the spec defines, so the
-	// request stays at one proof.
-	if _, required := credentialKeyAttestationRequirement(metadata, configID); required {
-		return keys, nil
-	}
 	batchSize := advertisedBatchSize(metadata)
 	if batchSize < 2 {
 		return keys, nil

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.4] - 2026-09-03
+
+### Fixed
+
+- **Batch issuance under key attestation.** Where the credential configuration requires a key attestation and the issuer advertises `batch_credential_issuance`, the wallet requests the batch: one `jwt` proof per copy, every proof carrying the one key attestation that attests all of the batch keys. HAIP §4.5.1 asks for exactly this shape ("all public keys used in Credential Request SHOULD be attested within a single key attestation"), and the issuer answers one credential per proof (OpenID4VCI 1.0 §8.3). This reverses the single-proof rule of 1.19.20, which read the Appendix F.1 sentence about issuing for each key in `attested_keys` as counting the batch on the attestation: that sentence covers a lone proof whose attestation lists several keys, and a batch request names its keys in the proofs. The single proof left the OIDF `batch-credential-issuance` module skipped in every mdoc plan (those use the key attestation configuration); the module passes now.
+
 ## [2.3.3] - 2026-09-03
 
 ### Added

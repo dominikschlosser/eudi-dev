@@ -398,7 +398,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 	if len(offer.CredentialConfigurationIDs) > 0 {
 		configID = offer.CredentialConfigurationIDs[0]
 	}
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}

@@ -335,7 +335,7 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
-	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata, configID)
+	proofKeys, err := issuanceProofKeys(w.HolderKey, metadata)
 	if err != nil {
 		return nil, fmt.Errorf("preparing proof keys: %w", err)
 	}

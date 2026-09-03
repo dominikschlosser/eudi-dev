@@ -22,7 +22,7 @@ The certifiable HAIP plans ran on `https://www.certification.openid.net/` agains
 
 - 2 modules `INTERRUPTED` by a suite defect: `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` under `request_uri_multisigned` throws a NullPointerException in the suite's own request construction (`AddInvalidClientIdPrefixToRequestObject` reads a `client_id` the multisigned sequence never puts into the shared payload). It dies before contacting the wallet, the same module passes in the signed entry, and it reproduces on a local suite build. Reported upstream.
 - the negative modules end `REVIEW` behind an uploaded screenshot of the wallet's error.
-- the deliberate mdoc `batch-credential-issuance` skips (single-proof rule of the key attestation appendices).
+- the mdoc `batch-credential-issuance` skips: the wallet sent one proof where a key attestation was required (fixed in 2.3.4, see the release-v5.2.1 coverage below).
 
 ### Local full matrix
 
@@ -31,7 +31,7 @@ The expanded local matrix (76 plans: the full supported cross product of the alp
 - the 4 condition failures are the two occurrences of the multisigned suite NullPointerException above
 - the 26 warnings are the IACA subject key identifier check on a wallet binary built before the SHA-1 fix (the deployed build and the production run above are clean)
 - one VCI module ended `INTERRUPTED` after a machine-load stall (the harness cancelled it, the same module passes in the neighbouring plans)
-- 18 mdoc VCI plans carry the deliberate batch skips
+- 18 mdoc VCI plans carry the batch skips fixed in 2.3.4
 
 Variants exercised for the first time in this matrix: `url_query`, `x509_san_dns`, `web-origin`, multisigned requests and the Browser API response modes in the Final plan, plus grant, offer delivery, issuance mode and encryption cross products in VCI. They surfaced the two wallet gaps fixed in 2.3.0 (request URI parsing, derived `response_uri`).
 
@@ -68,13 +68,13 @@ The 21 `WARNING` modules all carry the same two conditions, new in 5.2.4, which 
 
 These are profile gaps in the wallet's mdoc certificate generation of that release. They are advisory (`WARNING`), so no module fails on them. The SD-JWT VC profile has no equivalent certificate profile, so its flows stay clean.
 
-The 1 `FAILED` module is `oid4vp-1final-wallet-negative-test-unknown-transaction-data-type` in the HAIP mdoc direct_post.jwt plan. Its own assertion passed: the wallet refused the unknown transaction_data type (the response carried `invalid_transaction_data`) and the module's `ExpectUnknownTransactionDataTypeErrorPage` resolved to `REVIEW`. The `FAILED` came from an unrelated second request_uri hitting the shared wallet, which the module counted as unexpected. Re-running that one plan returned the module to `REVIEW` with 0 condition failures. The 2 `SKIPPED` are the deliberate mdoc `batch-credential-issuance` skips described below.
+The 1 `FAILED` module is `oid4vp-1final-wallet-negative-test-unknown-transaction-data-type` in the HAIP mdoc direct_post.jwt plan. Its own assertion passed: the wallet refused the unknown transaction_data type (the response carried `invalid_transaction_data`) and the module's `ExpectUnknownTransactionDataTypeErrorPage` resolved to `REVIEW`. The `FAILED` came from an unrelated second request_uri hitting the shared wallet, which the module counted as unexpected. Re-running that one plan returned the module to `REVIEW` with 0 condition failures. The 2 `SKIPPED` are the mdoc `batch-credential-issuance` skips described below.
 
 Suite 5.2.4 does not validate `wallet_metadata.response_types_supported`: the `request_uri_method=post` module parses the posted wallet metadata for JSON validity and the wallet nonce (`ExtractWalletMetadataAndNonceFromRequestUriPost`) and never reads it again.
 
 ## Run of 2026-08-24
 
-Full matrix on suite `release-v5.2.2` (version `5.2.2`, revision `321bc5b`), strict mode, for the 2.0.0 release (batch issuance, deferred issuance, credential display UI): **111 modules `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`**, 0 condition failures and 0 warnings across all 14 plans. The 5 skips are the deliberate mdoc `batch-credential-issuance` skips described below, so the run exits non-zero on the expected skip.
+Full matrix on suite `release-v5.2.2` (version `5.2.2`, revision `321bc5b`), strict mode, for the 2.0.0 release (batch issuance, deferred issuance, credential display UI): **111 modules `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`**, 0 condition failures and 0 warnings across all 14 plans. The 5 skips are the mdoc `batch-credential-issuance` skips described below, so the run exits non-zero on the skip.
 
 The batch behavior of this release (the wallet requests the advertised batch, up to a ceiling of 8 proofs) is conformant: every SD-JWT `batch-credential-issuance` module `PASSED` (plans 5, 7, 13), and the deferred-issuance modules pass. Run directory `/tmp/oidf-wallet-conformance-local-strict`.
 
@@ -103,7 +103,7 @@ The matrix is 14 plans: the pre-authorized code flow is covered for both credent
 
 The 2 `SKIPPED` modules are `credential-issuance-notification` in the `vci_credential_issuance_mode=deferred` variant of the two VCI HAIP plans. The suite exits non-zero on an unexpected skip even with no failures, so a run reporting these ends with status 1.
 
-The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules, which later runs `SKIP` under the single-proof rule of the key attestation appendices (see below).
+The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules, which releases 1.19.20 through 2.3.3 report as `SKIPPED` (see below).
 
 ## Run of 2026-08-08
 
@@ -111,7 +111,7 @@ Full matrix for the 1.19.22 release, suite pinned to `release-v5.2.1` to match t
 
 The wrapper's `EUDI_REMOTE_TIMEOUT=120s` carried the run through 6 suite pauses (visible as `[monitor] failed to monitor module`). At the wallet's 15 second default such a pause times out the module's exchange, which cannot be resumed.
 
-The 5 `SKIPPED` are the deliberate mdoc `batch-credential-issuance` skips (see below).
+The 5 `SKIPPED` are the mdoc `batch-credential-issuance` skips (see below).
 
 The 1 `FAILED` is `oid4vci-1_0-wallet-test-credential-issuance-notification` on `VCIVerifyIssuerStateInAuthorizationRequest`, an artifact of two modules overlapping. The module logs the check twice: the first authorization request carries the `issuer_state` of the offer under test and passes, and a second one 18 seconds later carries the `issuer_state` of a later offer, which the module compares against the first. The wallet echoed the value each offer gave it (OID4VCI 1.0 §5.1.3). Expect this artifact to move between runs.
 
@@ -131,7 +131,7 @@ Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet
 
 - `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet requests the advertised batch (one proof per copy, capped at its own ceiling of 8) with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
-  The 5 mdoc variants are `SKIPPED`. Those plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations, and there the wallet sends a single proof, which the module skips as "batch behavior cannot be evaluated". Appendix F.1 and F.3 both put the batch count on the attestation rather than the proofs, so where an attestation is required the request holds one proof and the issuer issues for each key in `attested_keys`. The suite's credential builder counts `proof_jwts` for the `jwt` proof type and reads `attested_keys` only for the `attestation` proof type, so the module expects a shape an issuer applying those appendices answers with `invalid_proof`.
+  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations. Releases 1.19.20 through 2.3.3 sent a single proof there, which the module skips as "batch behavior cannot be evaluated". Since 2.3.4 the wallet requests the batch with one proof per copy, every proof carrying the one key attestation that attests all batch keys (HAIP §4.5.1), and the issuer issues one credential per proof (§8.3). Verified on 2026-09-03 with the local suite (`release-v5.2.4`): the VCI HAIP mdoc `by_value` plan ran its 23 modules with 4110 condition successes, 0 failures, 0 warnings and no skip, the three batch modules `PASSED`, and the wallet stored 8 copies per issuance (run directory `/tmp/oidf-batch-verify`).
 - `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 9, 10, 11, 12).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, and preserves the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
@@ -165,7 +165,7 @@ Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screen
 
 ## Passing VCI Coverage
 
-- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass. The SD-JWT plan includes the batch credential issuance module (the mdoc batch modules are the deliberate skips described above).
+- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass. The SD-JWT plan includes the batch credential issuance module (the mdoc batch modules are the skips described above).
 - VCI Final SD-JWT and mDoc pre-authorized code flows pass, including the notification endpoint and, for SD-JWT, batch issuance.
 - VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for SD-JWT.
 - Strict mode rejects issuer mismatch in authorization server metadata, invalid authorization-response `iss`, removed authorization-response `iss`, invalid `state`, and missing `state`.
