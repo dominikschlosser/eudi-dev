@@ -111,12 +111,12 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		clientID: renewal.ClientID,
 		nonce:    &nonce,
 	}
-	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
+	proofs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {
 		return nil, fmt.Errorf("building the proof: %w", err)
 	}
 
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting the credential: %w", err)
 	}

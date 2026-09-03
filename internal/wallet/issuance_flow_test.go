@@ -486,16 +486,12 @@ func TestCreateCredentialProofHeader_KeyAttestation(t *testing.T) {
 		},
 	}
 
-	header, err := createCredentialProofHeader(w, metadata, "pid", "nonce-123", nil)
+	keyAttestationJWT, err := createKeyAttestation(w, metadata, "pid", "nonce-123", nil)
 	if err != nil {
-		t.Fatalf("createCredentialProofHeader: %v", err)
+		t.Fatalf("createKeyAttestation: %v", err)
 	}
-	if header == nil {
-		t.Fatal("expected key attestation header")
-	}
-	keyAttestationJWT, ok := header["key_attestation"].(string)
-	if !ok || keyAttestationJWT == "" {
-		t.Fatalf("expected key_attestation JWT, got %v", header["key_attestation"])
+	if keyAttestationJWT == "" {
+		t.Fatal("expected a key attestation")
 	}
 
 	keyAttestationHeader := decodeJWTPart(t, keyAttestationJWT, 0)

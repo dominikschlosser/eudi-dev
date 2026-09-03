@@ -367,12 +367,12 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		clientID: clientID,
 		nonce:    &nonces.resource,
 	}
-	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
+	proofs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {
 		return nil, err
 	}
 
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -903,13 +903,13 @@ func fetchAttestationChallenge(endpoint string) (string, error) {
 	return challenge, nil
 }
 
-func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, cNonce string, proofKeys []*ecdsa.PrivateKey) (map[string]any, error) {
+func createKeyAttestation(w *Wallet, metadata map[string]any, configID, cNonce string, proofKeys []*ecdsa.PrivateKey) (string, error) {
 	requirement, required := credentialKeyAttestationRequirement(metadata, configID)
 	if !required {
-		return nil, nil
+		return "", nil
 	}
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
-		return nil, fmt.Errorf("wallet issuer signing material is not configured")
+		return "", fmt.Errorf("wallet issuer signing material is not configured")
 	}
 	if len(proofKeys) == 0 {
 		proofKeys = []*ecdsa.PrivateKey{w.HolderKey}
@@ -946,41 +946,87 @@ func createCredentialProofHeader(w *Wallet, metadata map[string]any, configID, c
 	}
 	keyAttestationJWT, err := signJWT(header, payload, w.IssuerKey)
 	if err != nil {
-		return nil, fmt.Errorf("creating key attestation JWT: %w", err)
+		return "", fmt.Errorf("creating key attestation JWT: %w", err)
 	}
-	return map[string]any{"key_attestation": keyAttestationJWT}, nil
+	return keyAttestationJWT, nil
 }
 
-// credentialKeyAttestationRequirement reports whether a credential
-// configuration requires a key attestation, and what it requires. The presence
-// of key_attestations_required alone makes it mandatory, so an empty one (or a
-// non-object, which some issuers send) still gets an attestation.
+// credentialProofTypes returns the proof_types_supported of a credential
+// configuration (§12.2.4), keyed by proof type.
+func credentialProofTypes(metadata map[string]any, configID string) map[string]any {
+	configs, _ := metadata["credential_configurations_supported"].(map[string]any)
+	cfg, _ := configs[configID].(map[string]any)
+	proofTypes, _ := cfg["proof_types_supported"].(map[string]any)
+	return proofTypes
+}
+
+// credentialProofType picks the proof type of the credential request from
+// what the configuration offers: attestation (Appendix F.3, the key
+// attestation is the proof) when it is the only type offered or when the jwt
+// type would need a key attestation anyway, jwt (Appendix F.1) otherwise.
+func credentialProofType(metadata map[string]any, configID string) string {
+	proofTypes := credentialProofTypes(metadata, configID)
+	if _, offered := proofTypes["attestation"].(map[string]any); !offered {
+		return "jwt"
+	}
+	jwtProof, offered := proofTypes["jwt"].(map[string]any)
+	if !offered {
+		return "attestation"
+	}
+	if _, required := jwtProof["key_attestations_required"]; required {
+		return "attestation"
+	}
+	return "jwt"
+}
+
+// proofSigningAlgFinding reports a configuration whose
+// proof_signing_alg_values_supported for the chosen proof type leaves out
+// ES256, the one algorithm this wallet signs with. Appendix F.1 and F.3 have
+// the proof's alg (and the key attestation's) match that list, so the wallet
+// cannot send a conforming proof. Under HAIP the issuer is in breach as well:
+// §7 has issuers support ES256 for key proofs and key attestations.
+func proofSigningAlgFinding(metadata map[string]any, configID string, requireHAIP bool) string {
+	proofType := credentialProofType(metadata, configID)
+	proof, _ := credentialProofTypes(metadata, configID)[proofType].(map[string]any)
+	algs, ok := proof["proof_signing_alg_values_supported"].([]any)
+	if !ok {
+		return ""
+	}
+	for _, alg := range algs {
+		if alg == "ES256" {
+			return ""
+		}
+	}
+	finding := fmt.Sprintf("OID4VCI 1.0 Appendix F: the %s proof type lists proof_signing_alg_values_supported %v without ES256, the algorithm this wallet signs with", proofType, algs)
+	if requireHAIP {
+		finding += " (HAIP 1.0 §7: issuers MUST support ES256 for key proofs and key attestations)"
+	}
+	return finding
+}
+
+// credentialKeyAttestationRequirement reports whether the credential request
+// carries a key attestation, and what the configuration requires of it. The
+// attestation proof type is a key attestation, so it always carries one, and
+// the levels it states are those the attestation entry names, else those the
+// jwt entry names (the entry whose requirement chose the type). For the jwt
+// proof type the presence of key_attestations_required alone makes it
+// mandatory, so an empty one (or a non-object, which some issuers send) still
+// gets an attestation.
 func credentialKeyAttestationRequirement(metadata map[string]any, configID string) (map[string]any, bool) {
-	if configID == "" {
-		return nil, false
-	}
-	configs, ok := metadata["credential_configurations_supported"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	cfg, ok := configs[configID].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	proofTypes, ok := cfg["proof_types_supported"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	jwtProof, ok := proofTypes["jwt"].(map[string]any)
-	if !ok {
-		return nil, false
-	}
-	raw, ok := jwtProof["key_attestations_required"]
-	if !ok {
-		return nil, false
+	proofTypes := credentialProofTypes(metadata, configID)
+	proofType := credentialProofType(metadata, configID)
+	proof, _ := proofTypes[proofType].(map[string]any)
+	raw, ok := proof["key_attestations_required"]
+	if proofType == "attestation" {
+		if !ok {
+			jwtProof, _ := proofTypes["jwt"].(map[string]any)
+			raw = jwtProof["key_attestations_required"]
+		}
+		requirement, _ := raw.(map[string]any)
+		return requirement, true
 	}
 	requirement, _ := raw.(map[string]any)
-	return requirement, true
+	return requirement, ok
 }
 
 func codeChallengeS256(verifier string) string {
@@ -1207,11 +1253,12 @@ func errorBodyMessage(raw json.RawMessage) string {
 	return ""
 }
 
-func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+// credentialRequestBody is the credential request (§8.2): the proofs, the
+// credential named by identifier or configuration, and the response
+// encryption the wallet asks for.
+func credentialRequestBody(proofs credentialProofs, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
 	reqBody := map[string]any{
-		"proofs": map[string]any{
-			"jwt": proofJWTs,
-		},
+		"proofs": map[string]any{proofs.Type: proofs.Values},
 	}
 	if credentialIdentifier != "" {
 		reqBody["credential_identifier"] = credentialIdentifier
@@ -1221,6 +1268,11 @@ func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, end
 	if credentialResponseEncryption != nil {
 		reqBody["credential_response_encryption"] = credentialResponseEncryption
 	}
+	return reqBody
+}
+
+func requestCredentialWithDPoP(mode ValidationMode, metadata map[string]any, endpoint, accessToken, authScheme string, proofs credentialProofs, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any, dpopKey, holderKey *ecdsa.PrivateKey, nonce *string) (map[string]any, error) {
+	reqBody := credentialRequestBody(proofs, credentialIdentifier, credentialConfigurationID, credentialResponseEncryption)
 	body, contentType, err := prepareCredentialRequestBody(mode, metadata, reqBody)
 	if err != nil {
 		return nil, err

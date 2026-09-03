@@ -440,13 +440,13 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		clientID:                  proofClientID,
 		nonce:                     &nonces.resource,
 	}
-	proofJWTs, err := w.buildCredentialProofs(attempt, cNonce)
+	proofs, err := w.buildCredentialProofs(attempt, cNonce)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[VCI] Proof JWT: %s", proofJWTs[0])
+	log.Printf("[VCI] Proof (%s): %s", proofs.Type, proofs.Values[0])
 
-	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofJWTs)
+	credResp, err := w.requestCredentialWithNonceRetry(attempt, proofs)
 	if err != nil {
 		return nil, fmt.Errorf("requesting credential: %w", err)
 	}
@@ -1438,31 +1438,52 @@ type credentialRequestAttempt struct {
 	nonce *string
 }
 
-// buildCredentialProofs signs the key proofs over one challenge: one proof per
-// proof key, or under a required key attestation a single holder-key proof
-// whose attestation names every batch key (OID4VCI 1.0 Appendix F.1, HAIP
-// §4.5.1).
-func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string) ([]string, error) {
-	header, err := createCredentialProofHeader(w, a.metadata, a.configID, cNonce, a.proofKeys)
+// credentialProofs is the proofs object of a credential request (§8.2): the
+// proofs of one proof type.
+type credentialProofs struct {
+	Type   string
+	Values []string
+}
+
+// buildCredentialProofs builds the key proofs over one challenge. With the
+// attestation proof type the key attestation naming every batch key is the
+// proof (Appendix F.3). With the jwt proof type there is one proof per proof
+// key, or under a required key attestation a single holder-key proof whose
+// attestation names every batch key (Appendix F.1, HAIP §4.5.1).
+func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string) (credentialProofs, error) {
+	if finding := proofSigningAlgFinding(a.metadata, a.configID, w.RequireHAIP); finding != "" {
+		if w.Mode() == ValidationModeStrict {
+			return credentialProofs{}, fmt.Errorf("%s", finding)
+		}
+		w.AddWarning("issuance", finding, nil)
+	}
+	attestation, err := createKeyAttestation(w, a.metadata, a.configID, cNonce, a.proofKeys)
 	if err != nil {
-		return nil, fmt.Errorf("building credential proof header: %w", err)
+		return credentialProofs{}, fmt.Errorf("building key attestation: %w", err)
+	}
+	if credentialProofType(a.metadata, a.configID) == "attestation" {
+		return credentialProofs{Type: "attestation", Values: []string{attestation}}, nil
 	}
 	keys := a.proofKeys
-	if _, attested := credentialKeyAttestationRequirement(a.metadata, a.configID); attested && len(keys) > 1 {
-		keys = keys[:1]
+	var header map[string]any
+	if attestation != "" {
+		header = map[string]any{"key_attestation": attestation}
+		if len(keys) > 1 {
+			keys = keys[:1]
+		}
 	}
 	proofs, err := createProofJWTs(keys, a.issuer, a.clientID, cNonce, header)
 	if err != nil {
-		return nil, fmt.Errorf("creating proof JWT: %w", err)
+		return credentialProofs{}, fmt.Errorf("creating proof JWT: %w", err)
 	}
-	return proofs, nil
+	return credentialProofs{Type: "jwt", Values: proofs}, nil
 }
 
 // requestCredentialWithNonceRetry sends a credential request and, on
 // invalid_nonce, fetches a fresh challenge and sends it once more (§8.3.1.2).
 // One retry only: a second rejection is the issuer disagreeing with itself.
-func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, proofJWTs []string) (map[string]any, error) {
-	credResp, err := w.sendCredentialRequest(a, proofJWTs)
+func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, proofs credentialProofs) (map[string]any, error) {
+	credResp, err := w.sendCredentialRequest(a, proofs)
 	if err == nil || !isInvalidNonceError(err) {
 		return credResp, err
 	}
@@ -1478,16 +1499,16 @@ func (w *Wallet) requestCredentialWithNonceRetry(a credentialRequestAttempt, pro
 	return w.sendCredentialRequest(a, retryProofs)
 }
 
-func (w *Wallet) sendCredentialRequest(a credentialRequestAttempt, proofJWTs []string) (map[string]any, error) {
+func (w *Wallet) sendCredentialRequest(a credentialRequestAttempt, proofs credentialProofs) (map[string]any, error) {
 	w.addProtocolLog("issuance", "credential_request", fmt.Sprintf("Request credential from %s", a.endpoint), true,
-		credentialRequestLogDetails(a.endpoint, a.accessToken, proofJWTs, a.credentialIdentifier, a.credentialConfigurationID, a.responseEncryption))
+		credentialRequestLogDetails(a.endpoint, a.accessToken, proofs, a.credentialIdentifier, a.credentialConfigurationID, a.responseEncryption))
 	credResp, err := requestCredentialWithDPoP(
 		w.Mode(),
 		a.metadata,
 		a.endpoint,
 		a.accessToken,
 		a.authScheme,
-		proofJWTs,
+		proofs,
 		a.credentialIdentifier,
 		a.credentialConfigurationID,
 		a.responseEncryption,
@@ -1519,20 +1540,8 @@ func parseCredentialResponseBody(body []byte, holderKey *ecdsa.PrivateKey) (map[
 	return out, nil
 }
 
-func credentialRequestLogDetails(endpoint, accessToken string, proofJWTs []string, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
-	reqBody := map[string]any{
-		"proofs": map[string]any{
-			"jwt": proofJWTs,
-		},
-	}
-	if credentialIdentifier != "" {
-		reqBody["credential_identifier"] = credentialIdentifier
-	} else if credentialConfigurationID != "" {
-		reqBody["credential_configuration_id"] = credentialConfigurationID
-	}
-	if credentialResponseEncryption != nil {
-		reqBody["credential_response_encryption"] = credentialResponseEncryption
-	}
+func credentialRequestLogDetails(endpoint, accessToken string, proofs credentialProofs, credentialIdentifier, credentialConfigurationID string, credentialResponseEncryption map[string]any) map[string]any {
+	reqBody := credentialRequestBody(proofs, credentialIdentifier, credentialConfigurationID, credentialResponseEncryption)
 	details := map[string]any{
 		"direction": "outbound",
 		"method":    "POST",
@@ -1541,8 +1550,8 @@ func credentialRequestLogDetails(endpoint, accessToken string, proofJWTs []strin
 		"request":   reqBody,
 	}
 	addStringDetail(details, "access_token", accessToken)
-	if len(proofJWTs) > 0 {
-		addStringDetail(details, "proof_jwt", proofJWTs[0])
+	if len(proofs.Values) > 0 {
+		addStringDetail(details, "proof_"+proofs.Type, proofs.Values[0])
 	}
 	addStringDetail(details, "credential_identifier", credentialIdentifier)
 	addStringDetail(details, "credential_configuration_id", credentialConfigurationID)

@@ -100,7 +100,7 @@ On the authorization-code path the wallet authenticates with attestation-based c
 - `OAuth-Client-Attestation`, signed by the wallet's issuer key (`sub` is the client id, `cnf.jwk` is the wallet's holder key, and `iss` names the wallet origin, which draft 10 permits). Its `x5c` header carries only the leaf certificate (the self-signed root is stripped).
 - `OAuth-Client-Attestation-PoP`, signed by that holder key. If the authorization server metadata advertises a `challenge_endpoint`, the wallet fetches a challenge first and includes it.
 
-Credential proofs carry a `key-attestation+jwt` from the same signer when the credential configuration sets `key_attestations_required`.
+Credential proofs carry a `key-attestation+jwt` from the same signer when the credential configuration sets `key_attestations_required`, in the header of a `jwt` proof or as the `attestation` proof itself, whichever the configuration offers.
 
 So the leaf comes with the attestation and the trust anchor is fetched once:
 

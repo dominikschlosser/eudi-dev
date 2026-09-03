@@ -51,7 +51,7 @@ sequenceDiagram
     else authorization challenge endpoint published (1.1)
         Wallet->>AS: challenge request, answered by a presentation or a browser sign-in, then token request
     end
-    Wallet->>Issuer: credential request with proofs.jwt
+    Wallet->>Issuer: credential request with proofs (jwt or attestation)
     opt transaction_id returned
         Wallet->>Issuer: deferred credential request
     end

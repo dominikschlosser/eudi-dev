@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,7 +33,10 @@ import (
 // proof, which issuer metadata may ask for all three of at once. Each
 // requirement is enforced, so a wallet that omits one gets the same error an
 // issuer would send.
-func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAttestation, requireKeyAttestation bool) (*httptest.Server, string) {
+// proofTypes names what the issuer offers: "jwt", "attestation", or "both"
+// (a jwt type requiring a key attestation next to an attestation type that
+// states no requirement of its own).
+func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAttestation, requireKeyAttestation bool, proofTypes string) (*httptest.Server, string) {
 	t.Helper()
 
 	credRaw := generateTestCredential(t, w)
@@ -46,12 +50,19 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
-			jwtProof := map[string]any{"proof_signing_alg_values_supported": []any{"ES256"}}
+			proof := map[string]any{"proof_signing_alg_values_supported": []any{"ES256"}}
 			if requireKeyAttestation {
-				jwtProof["key_attestations_required"] = map[string]any{
+				proof["key_attestations_required"] = map[string]any{
 					"key_storage":         []any{"iso_18045_high"},
 					"user_authentication": []any{"iso_18045_high"},
 				}
+			}
+			offered := map[string]any{"jwt": proof}
+			switch proofTypes {
+			case "attestation":
+				offered = map[string]any{"attestation": proof}
+			case "both":
+				offered["attestation"] = map[string]any{"proof_signing_alg_values_supported": []any{"ES256"}}
 			}
 			json.NewEncoder(rw).Encode(map[string]any{
 				"credential_issuer":         serverURL,
@@ -64,7 +75,7 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 						"format":                "dc+sd-jwt",
 						"vct":                   "urn:test:credential",
 						"scope":                 "test-config",
-						"proof_types_supported": map[string]any{"jwt": jwtProof},
+						"proof_types_supported": offered,
 					},
 				},
 			})
@@ -131,19 +142,28 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 				var reqBody map[string]any
 				json.Unmarshal(body, &reqBody)
 				proofs, _ := reqBody["proofs"].(map[string]any)
-				jwts, _ := proofs["jwt"].([]any)
-				// The advertised batch arrives as one holder-key proof whose
-				// key attestation names every batch key, and the issuer issues
-				// one credential per attested key (Appendix F.1).
-				if len(jwts) != 1 {
-					writeErr(http.StatusBadRequest, "invalid_proof", fmt.Sprintf("got %d proofs, want one carrying the key attestation", len(jwts)))
+				// The advertised batch arrives as one proof of one type whose
+				// key attestation names every batch key, holder key first, and
+				// the issuer issues one credential per attested key: the
+				// attestation itself under the attestation proof type
+				// (Appendix F.3), else a holder-key jwt carrying it (F.1).
+				wantType := "attestation"
+				if proofTypes == "jwt" {
+					wantType = "jwt"
+				}
+				values, _ := proofs[wantType].([]any)
+				if len(proofs) != 1 || len(values) != 1 {
+					writeErr(http.StatusBadRequest, "invalid_proof", fmt.Sprintf("got proofs %v, want one %s proof", reqBody["proofs"], wantType))
 					return
 				}
-				header := decodeJWTPart(t, jwts[0].(string), 0)
-				if jwk, _ := header["jwk"].(map[string]any); jwk["x"] != mock.SigningJWKMap(&w.HolderKey.PublicKey)["x"] {
-					t.Error("the attested proof is not signed by the holder key")
+				attestation, _ := values[0].(string)
+				if wantType == "jwt" {
+					header := decodeJWTPart(t, attestation, 0)
+					if jwk, _ := header["jwk"].(map[string]any); jwk["x"] != mock.SigningJWKMap(&w.HolderKey.PublicKey)["x"] {
+						t.Error("the attested proof is not signed by the holder key")
+					}
+					attestation, _ = header["key_attestation"].(string)
 				}
-				attestation, _ := header["key_attestation"].(string)
 				if attestation == "" {
 					writeErr(http.StatusBadRequest, "invalid_proof", "key attestation is required")
 					return
@@ -159,6 +179,9 @@ func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAtte
 				attested, _ := attPayload["attested_keys"].([]any)
 				if len(attested) != maxBatchProofKeys {
 					t.Errorf("key attestation attests %d keys, want the batch of %d", len(attested), maxBatchProofKeys)
+				}
+				if first, _ := attested[0].(map[string]any); first["x"] != mock.SigningJWKMap(&w.HolderKey.PublicKey)["x"] {
+					t.Error("the key attestation does not name the holder key first")
 				}
 				for _, claim := range []string{"key_storage", "user_authentication"} {
 					values, _ := attPayload[claim].([]any)
@@ -206,16 +229,19 @@ func TestProcessCredentialOffer_PreAuthHonorsIssuerProtections(t *testing.T) {
 	for _, tc := range []struct {
 		name                                               string
 		requireDPoP, requireClientAttest, requireKeyAttest bool
+		proofTypes                                         string
 	}{
-		{"all", true, true, true},
-		{"dpop only", true, false, false},
-		{"client attestation only", false, true, false},
-		{"key attestation only", false, false, true},
-		{"none", false, false, false},
+		{"all", true, true, true, "jwt"},
+		{"attestation proof type", true, true, true, "attestation"},
+		{"both proof types offered", true, true, true, "both"},
+		{"dpop only", true, false, false, "jwt"},
+		{"client attestation only", false, true, false, "jwt"},
+		{"key attestation only", false, false, true, "jwt"},
+		{"none", false, false, false, "jwt"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := generateTestWallet(t)
-			srv, offerURI := strictPreAuthIssuer(t, w, tc.requireDPoP, tc.requireClientAttest, tc.requireKeyAttest)
+			srv, offerURI := strictPreAuthIssuer(t, w, tc.requireDPoP, tc.requireClientAttest, tc.requireKeyAttest, tc.proofTypes)
 			defer srv.Close()
 
 			oldClient := httpClient
@@ -272,11 +298,11 @@ func TestIssuanceProofKeys_KeyAttestationCoversBatch(t *testing.T) {
 		t.Fatalf("batch produced %d proof keys, want %d", len(keys), maxBatchProofKeys)
 	}
 
-	header, err := createCredentialProofHeader(w, metadata, "attested", "nonce-1", keys)
+	attestation, err := createKeyAttestation(w, metadata, "attested", "nonce-1", keys)
 	if err != nil {
-		t.Fatalf("createCredentialProofHeader: %v", err)
+		t.Fatalf("createKeyAttestation: %v", err)
 	}
-	payload := decodeJWTPart(t, header["key_attestation"].(string), 1)
+	payload := decodeJWTPart(t, attestation, 1)
 	attested, _ := payload["attested_keys"].([]any)
 	if len(attested) != len(keys) {
 		t.Fatalf("key attestation lists %d keys, want every proof key (%d)", len(attested), len(keys))
@@ -285,6 +311,68 @@ func TestIssuanceProofKeys_KeyAttestationCoversBatch(t *testing.T) {
 		if got, _ := attested[i].(map[string]any); got["x"] != mock.SigningJWKMap(&key.PublicKey)["x"] {
 			t.Errorf("attested key %d is not proof key %d", i, i)
 		}
+	}
+}
+
+// TestCredentialProofType covers Appendix F.1 and F.3 meeting the issuer's
+// proof_types_supported: attestation when it is the only type offered or when
+// the jwt type would need a key attestation anyway, jwt otherwise.
+func TestCredentialProofType(t *testing.T) {
+	metadataFor := func(proofTypes map[string]any) map[string]any {
+		return map[string]any{"credential_configurations_supported": map[string]any{
+			"cfg": map[string]any{"proof_types_supported": proofTypes},
+		}}
+	}
+	for _, tc := range []struct {
+		name       string
+		proofTypes map[string]any
+		want       string
+	}{
+		{"jwt only", map[string]any{"jwt": map[string]any{}}, "jwt"},
+		{"attestation only", map[string]any{"attestation": map[string]any{}}, "attestation"},
+		{"both, no key attestation", map[string]any{"jwt": map[string]any{}, "attestation": map[string]any{}}, "jwt"},
+		{"both, key attestation required", map[string]any{"jwt": map[string]any{"key_attestations_required": map[string]any{}}, "attestation": map[string]any{}}, "attestation"},
+		{"nothing offered", nil, "jwt"},
+	} {
+		if got := credentialProofType(metadataFor(tc.proofTypes), "cfg"); got != tc.want {
+			t.Errorf("%s: proof type %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if _, required := credentialKeyAttestationRequirement(metadataFor(map[string]any{"attestation": map[string]any{}}), "cfg"); !required {
+		t.Error("the attestation proof type must carry a key attestation")
+	}
+}
+
+// TestProofSigningAlgMustBeListed covers Appendix F.1 and F.3: the proof's alg
+// has to be one the configuration lists. This wallet signs ES256 only, so a
+// configuration listing other algorithms is refused in strict mode and
+// reported in debug mode, with HAIP §7 named when the profile is on.
+func TestProofSigningAlgMustBeListed(t *testing.T) {
+	metadata := map[string]any{"credential_configurations_supported": map[string]any{
+		"cfg": map[string]any{"proof_types_supported": map[string]any{
+			"jwt": map[string]any{"proof_signing_alg_values_supported": []any{"ES384"}},
+		}},
+	}}
+	attempt := credentialRequestAttempt{metadata: metadata, configID: "cfg", issuer: "https://issuer.example"}
+
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	attempt.proofKeys = []*ecdsa.PrivateKey{w.HolderKey}
+	if _, err := w.buildCredentialProofs(attempt, "nonce"); err == nil || !strings.Contains(err.Error(), "ES256") || strings.Contains(err.Error(), "HAIP") {
+		t.Fatalf("strict mode without HAIP: err = %v, want the missing ES256 named without a HAIP citation", err)
+	}
+	w.RequireHAIP = true
+	if _, err := w.buildCredentialProofs(attempt, "nonce"); err == nil || !strings.Contains(err.Error(), "HAIP 1.0 §7") {
+		t.Fatalf("strict mode with HAIP: err = %v, want HAIP §7 named", err)
+	}
+
+	w.ValidationMode = ValidationModeDebug
+	proofs, err := w.buildCredentialProofs(attempt, "nonce")
+	if err != nil || len(proofs.Values) != 1 {
+		t.Fatalf("debug mode: proofs = %v, err = %v, want the proof sent anyway", proofs, err)
+	}
+	if entries := w.GetLog(); len(entries) == 0 || !strings.Contains(entries[len(entries)-1].Detail, "ES256") {
+		t.Fatalf("debug mode: want a warning naming the missing ES256, got %v", entries)
 	}
 }
 

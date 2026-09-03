@@ -114,7 +114,7 @@ The matrix is 14 plans: the pre-authorized code flow is covered for both credent
 
 The 2 `SKIPPED` modules are `credential-issuance-notification` in the `vci_credential_issuance_mode=deferred` variant of the two VCI HAIP plans. The suite exits non-zero on an unexpected skip even with no failures, so a run reporting these ends with status 1.
 
-The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules, which the key attestation shape of later releases leaves `SKIPPED` (see below).
+The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules (see the release-v5.2.1 coverage below for the key attestation configurations).
 
 ## Run of 2026-08-08
 
@@ -142,7 +142,7 @@ Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet
 
 - `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet requests the advertised batch (one key per copy, capped at its own ceiling of 8) with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
-  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest`, a configuration requiring key attestations. There the wallet sends one proof, signed by the holder key, whose key attestation names every batch key. Appendix F.1 has the issuer "issue a Credential for each cryptographic public key specified in the `attested_keys` claim", HAIP §4.5.1 wants all keys of a batch attested within a single key attestation, and Credo-based issuers refuse more than one proof once a key attestation is present. The suite reads `attested_keys` only for the `attestation` proof type and issues for the proof key of a `jwt` proof, so the wallet receives one credential and the module skips as "batch behavior cannot be evaluated". Checked 2026-09-03: the three batch modules of the local mdoc VCI HAIP plan end `SKIPPED` with 0 condition failures, and the Animo playground (key attestation required, batch_size 10) issues 8 credentials for the single attested proof, which the wallet stores as a batch of 8.
+  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest`, a configuration requiring key attestations that offers the `attestation` proof type. There the key attestation naming every batch key is the proof (Appendix F.3, HAIP §4.5.1) and the suite issues one credential per attested key, so the module passes in the mdoc plans as well. Under the `jwt.keyattest` configuration the wallet sends one `jwt` proof whose attestation names every batch key (Appendix F.1). The suite reads `attested_keys` only for the `attestation` proof type and issues for the proof key of a `jwt` proof, so the wallet receives one credential there and the module skips as "batch behavior cannot be evaluated". Credo-based issuers apply F.1 as written and issue per attested key for both proof types (checked 2026-09-03 at the Animo playground: a batch of 8 for one `jwt` proof and for one `attestation` proof).
 - `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 9, 10, 11, 12).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, and preserves the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
@@ -164,21 +164,21 @@ Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screen
 | 3 | VP Final | SD-JWT, `direct_post`, unsigned `redirect_uri` | 507 success / 0 failure. `response-uri-not-client-id` finishes as pass-equivalent `REVIEW`. | [PNG](./conformance-results/2026-07-30/plan-03-vp-final-sdjwt-unsigned-direct-post.png) |
 | 4 | VP Final | mDoc, `direct_post.jwt`, signed `x509_hash` | 592 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-04-vp-final-mdoc-direct-post-jwt.png) |
 | 5 | VCI Final | SD-JWT | 1021 success / 0 failure. Includes batch credential issuance. | [PNG](./conformance-results/2026-07-30/plan-05-vci-final-sdjwt.png) |
-| 6 | VCI Final | mDoc | 1055 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
+| 6 | VCI Final | mDoc | 1055 success / 0 failure. Batch credential issuance `SKIPPED` in this run (the `jwt.keyattest` configuration, see below). | [PNG](./conformance-results/2026-07-30/plan-06-vci-final-mdoc.png) |
 | 7 | VCI Final | SD-JWT, pre-authorized code | 665 success / 0 failure. | (added after the screenshot run) |
-| 8 | VCI Final | mDoc, pre-authorized code | 671 success / 0 failure. Batch credential issuance is `SKIPPED` here, see below. | (added after the screenshot run) |
+| 8 | VCI Final | mDoc, pre-authorized code | 671 success / 0 failure. Batch credential issuance `SKIPPED` in this run (the `jwt.keyattest` configuration, see below). | (added after the screenshot run) |
 | 9 | VP HAIP | SD-JWT, `direct_post.jwt` | 751 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-07-vp-haip-sdjwt-direct-post-jwt.png) |
 | 10 | VP HAIP | mDoc, `direct_post.jwt` | 625 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-08-vp-haip-mdoc-direct-post-jwt.png) |
 | 11 | VP HAIP | SD-JWT, `dc_api.jwt` | 579 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-09-vp-haip-sdjwt-dc-api-jwt.png) |
 | 12 | VP HAIP | mDoc, `dc_api.jwt` | 399 success / 0 failure. Includes `ignores-unusable-encryption-key`. | [PNG](./conformance-results/2026-07-30/plan-10-vp-haip-mdoc-dc-api-jwt.png) |
 | 13 | VCI HAIP | SD-JWT | 3978 success / 0 failure. Batch issuance passes in immediate, deferred, and encrypted variants. | [PNG](./conformance-results/2026-07-30/plan-11-vci-haip-sdjwt.png) |
-| 14 | VCI HAIP | mDoc | 4244 success / 1 failure. Batch issuance is `SKIPPED` in all three variants, see below. The 1 failure is the retried-submission artifact described above. The module finished `PASSED`. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
+| 14 | VCI HAIP | mDoc | 4244 success / 1 failure. Batch issuance `SKIPPED` in all three variants in this run (the `jwt.keyattest` configuration, see below). The 1 failure is the retried-submission artifact described above. The module finished `PASSED`. | [PNG](./conformance-results/2026-07-30/plan-12-vci-haip-mdoc.png) |
 
 ## Passing VCI Coverage
 
-- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass. The SD-JWT plan includes the batch credential issuance module (the mdoc batch modules are the skips described above).
-- VCI Final SD-JWT and mDoc pre-authorized code flows pass, including the notification endpoint and, for SD-JWT, batch issuance.
-- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for SD-JWT.
+- VCI Final SD-JWT and mDoc issuer-initiated authorization-code flows pass, including the batch credential issuance module in both formats.
+- VCI Final SD-JWT and mDoc pre-authorized code flows pass, including the notification endpoint and batch issuance.
+- VCI HAIP SD-JWT and mDoc pass for plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance in both formats.
 - Strict mode rejects issuer mismatch in authorization server metadata, invalid authorization-response `iss`, removed authorization-response `iss`, invalid `state`, and missing `state`.
 
 ## Debug Mode Reference Run

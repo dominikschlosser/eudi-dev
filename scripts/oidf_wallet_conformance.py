@@ -743,7 +743,10 @@ def create_vci_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanS
     config.setdefault("client_attestation", {})
     config["vci"]["credential_offer_endpoint"] = credential_offer_endpoint
     if scenario.credential_kind == "mdoc":
-        config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.mdoc.1.jwt.keyattest"
+        # The key attestation configuration with the attestation proof type
+        # (Appendix F.3): the suite issues one credential per attested key
+        # there, so batch issuance and key attestations are covered together.
+        config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest"
     else:
         config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.1"
     config["client_attestation"]["issuer"] = args.wallet_issuer_url

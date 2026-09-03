@@ -20,7 +20,7 @@ sequenceDiagram
         Wallet->>AS: Authorization request via request_uri
         Wallet->>AS: Token request with code + PKCE
     end
-    Wallet->>Issuer: Credential request with proofs.jwt
+    Wallet->>Issuer: Credential request with proofs (jwt or attestation)
     opt transaction_id returned
         Wallet->>Issuer: Deferred credential request
     end
@@ -55,7 +55,7 @@ sequenceDiagram
     AS-->>Wallet: access_token,<br/>optional authorization_details
     Wallet->>Issuer: POST nonce request
     Issuer-->>Wallet: c_nonce
-    Wallet->>Issuer: POST credential request with proofs.jwt
+    Wallet->>Issuer: POST credential request with proofs (jwt or attestation)
     alt Deferred issuance
         Issuer-->>Wallet: transaction_id
         Wallet->>Issuer: POST deferred credential request
@@ -80,6 +80,7 @@ sequenceDiagram
 | `grants...tx_code` | Optional. If present, the issuer expects an out-of-band transaction code. The wallet can send it via `wallet accept --tx-code ...`. |
 | `access_token` | Used to authorize the credential endpoint call. |
 | `c_nonce` | Taken from the Nonce Endpoint. A `c_nonce` in the token response is a pre-1.0 parameter: strict mode ignores it, debug mode uses it (naming the issuer as pre-1.0) when the issuer advertises no Nonce Endpoint. A challenge the issuer rejects with `invalid_nonce` is fetched again and the request is retried once with rebuilt proofs (§8.3.1.2). |
+| `proofs` | One proof type, chosen from the configuration's `proof_types_supported`: `jwt` proofs (one per batch key, or a single holder-key proof carrying the key attestation when one is required) or the key attestation itself as the `attestation` proof (Appendix F.1 and F.3). |
 | `credential_identifier` vs `credential_configuration_id` | `credential_identifier` wins when the token response exposes it. Otherwise the wallet falls back to the first `credential_configuration_id` from the offer. |
 
 ## Authorization Code Flow
@@ -102,7 +103,7 @@ sequenceDiagram
     AS-->>Wallet: access_token,<br/>optional authorization_details
     Wallet->>Issuer: POST nonce request
     Issuer-->>Wallet: c_nonce
-    Wallet->>Issuer: POST credential request with proofs.jwt
+    Wallet->>Issuer: POST credential request with proofs (jwt or attestation)
     alt Deferred issuance
         Issuer-->>Wallet: transaction_id
         Wallet->>Issuer: POST deferred credential request

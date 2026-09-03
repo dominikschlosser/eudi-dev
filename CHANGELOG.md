@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.7] - 2026-09-04
+
+### Added
+
+- **The `attestation` proof type.** Where a credential configuration offers the `attestation` proof type (OpenID4VCI 1.0 Appendix F.3) as its only proof type, or next to a `jwt` proof type that requires a key attestation, the wallet sends the key attestation itself as the proof: `proofs.attestation` holds the one attestation naming every batch key, with the issuer's `c_nonce` inside it, and no proof JWT. The issuer issues one credential per attested key. HAIP §4.5.1 lists this proof type next to the `jwt` one. The conformance harness runs the mdoc plans on `eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest`, where the OIDF suite issues per attested key, so the `batch-credential-issuance` module passes there as well.
+- **The proof signing algorithm is checked against the issuer's list.** Appendix F.1 and F.3 have the proof's `alg` (and the key attestation's) match the configuration's `proof_signing_alg_values_supported`. The wallet signs ES256, so a configuration listing other algorithms only is refused in strict mode and reported in debug mode. With HAIP on the finding names §7, which has issuers support ES256 for key proofs and key attestations.
+
 ## [2.3.6] - 2026-09-03
 
 ### Changed
