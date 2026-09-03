@@ -1059,9 +1059,19 @@ def tx_code_from_offer(request_url: str) -> str | None:
 # exchange completes, which is what those modules are there to exercise. The
 # negative modules keep the configured mode, because refusing a bad request is
 # exactly what they test and a debug run would accept it.
+# A negative module whose refusal comes from evaluating the DCQL query rather
+# than from validating the request. The request itself is valid, so it runs in
+# debug like the positive modules: the wallet gets past the verifier's
+# encryption-metadata gap, finds nothing that satisfies the required credential
+# and answers access_denied, which is what the module expects and screenshots.
+VP_NEGATIVE_MODULE_NON_MATCHING_CREDENTIAL = "oid4vp-1final-wallet-negative-test-required-non-matching-credential"
+
+
 def wallet_mode_for(test_name: str | None, requires_haip: bool) -> str:
     if not requires_haip:
         return WALLET_MODE
+    if test_name and test_name.startswith(VP_NEGATIVE_MODULE_NON_MATCHING_CREDENTIAL):
+        return "debug"
     if test_name and "negative" in test_name:
         return WALLET_MODE
     if test_name and is_rejection_fapi2_client_test(test_name):
