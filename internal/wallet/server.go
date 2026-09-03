@@ -213,6 +213,7 @@ func (s *Server) setupRoutes() {
 
 	// Operator-supplied legal notice (404 until SetImprint is called)
 	s.mux.HandleFunc("GET /imprint", s.handleImprint)
+	s.mux.HandleFunc("GET /.well-known/security.txt", handleSecurityTxt)
 
 	// Static files. Embedded files carry no modtime, so http.FileServer
 	// sends no cache validators and browsers may keep stale assets across

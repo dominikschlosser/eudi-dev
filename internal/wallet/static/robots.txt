@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /issuer/api/
+Disallow: /verifier/api/
+Disallow: /authorize
+Disallow: /callback
+Disallow: /credential-offer

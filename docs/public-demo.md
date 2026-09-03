@@ -23,6 +23,10 @@ eudi wallet serve --demo --base-url https://eudi-test.dev \
 
 A shared wallet renders one visitor's data in another visitor's browser, so the server sends `Content-Security-Policy` (scripts from this origin only, no inline script, no framing, no `<base>` rewriting), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` on every response. The UI escapes values for attribute contexts as well as text, so a credential cannot inject markup through a status list URI, a `vct`, a claim name or a credential configuration id. The consent event stream is same-origin only.
 
+## robots.txt and security.txt
+
+The server serves `/robots.txt` (pages allowed, the API and the protocol endpoints excluded) and `/.well-known/security.txt` (RFC 9116, contact and policy of the project, expiry six months from the request), and every page carries a meta description. None of it is configurable.
+
 ## What stays open (accepted risk)
 
 Every wallet server also hosts a demo issuer at `/issuer` and a demo verifier at `/verifier`. The issuer hands out a Demo Event Ticket through a real OpenID4VCI pre-authorized code flow. HAIP permits this: §4 requires an issuer to support the authorization code flow but not to use it for every credential. The issuer also offers the authorization code flow itself (see below), so the profile's client authentication can be exercised. The verifier requests and cryptographically verifies presentations of the ticket or the PID through OpenID4VP, following HAIP 1.0: it signs its authorization request (served by reference from `/verifier/request/{id}`), identifies itself with an `x509_hash:` client id derived from its signing certificate, and receives the response encrypted as `direct_post.jwt` with a per-request key. Together they make the demo usable (issue, then present, in the browser) and serve as protocol counterparties for external wallets. Offers and verification requests are in-memory and expire after ten minutes. Each verification request accepts exactly one answer.

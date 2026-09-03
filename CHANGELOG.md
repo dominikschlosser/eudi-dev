@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.3] - 2026-09-03
+
+### Added
+
+- **`robots.txt`, `security.txt` and page descriptions.** The wallet server answers `/robots.txt` (pages allowed, the API and the protocol endpoints excluded) and `/.well-known/security.txt` (RFC 9116, contact and policy of the project). The wallet, decoder, demo issuer and demo verifier pages carry a meta description.
+
 ## [2.3.2] - 2026-09-02
 
 ### Changed

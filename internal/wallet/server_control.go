@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -62,6 +63,17 @@ func (s *Server) handleImprint(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(s.imprintHTML)
+}
+
+// handleSecurityTxt serves the RFC 9116 contact file. Reports go to the
+// project, whoever hosts the wallet. Expires must lie under a year ahead, so
+// it is computed per request.
+func handleSecurityTxt(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprintf(w, "Contact: https://github.com/dominikschlosser/eudi-dev/issues\n"+
+		"Policy: https://github.com/dominikschlosser/eudi-dev/blob/main/SECURITY.md\n"+
+		"Preferred-Languages: en, de\n"+
+		"Expires: %s\n", time.Now().UTC().AddDate(0, 6, 0).Format(time.RFC3339))
 }
 
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {

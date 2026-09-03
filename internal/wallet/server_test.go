@@ -2934,7 +2934,7 @@ func TestSetIssuerListenPortDisablesTLSListener(t *testing.T) {
 // must be reachable from the binary.
 func TestStaticAssetsServed(t *testing.T) {
 	srv := newTestServer(t, true)
-	for _, path := range []string{"/", "/app.js", "/style.css", "/favicon.svg", "/logo.svg"} {
+	for _, path := range []string{"/", "/app.js", "/style.css", "/favicon.svg", "/logo.svg", "/robots.txt"} {
 		rec := serverRequest(t, srv, "GET", path, "")
 		if rec.Code != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, rec.Code)
@@ -2942,6 +2942,28 @@ func TestStaticAssetsServed(t *testing.T) {
 		if rec.Body.Len() == 0 {
 			t.Errorf("GET %s served an empty body", path)
 		}
+	}
+}
+
+// TestSecurityTxt checks the RFC 9116 file: a contact and an expiry under a
+// year ahead.
+func TestSecurityTxt(t *testing.T) {
+	srv := newTestServer(t, true)
+	rec := serverRequest(t, srv, "GET", "/.well-known/security.txt", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET security.txt = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Contact: https://") {
+		t.Errorf("security.txt lacks a Contact line:\n%s", body)
+	}
+	_, rest, _ := strings.Cut(body, "Expires: ")
+	expires, err := time.Parse(time.RFC3339, strings.TrimSpace(rest))
+	if err != nil {
+		t.Fatalf("Expires is not RFC 3339: %v", err)
+	}
+	if until := time.Until(expires); until <= 0 || until > 365*24*time.Hour {
+		t.Errorf("Expires %v is not within the coming year", expires)
 	}
 }
 
