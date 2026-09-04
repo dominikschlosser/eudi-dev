@@ -25,6 +25,7 @@ RUNNING_MODULE_RE = re.compile(r"Running test module:\s*([^\[]+)(.*)$")
 VARIANT_RE = re.compile(r"\[([^=\]]+)=([^\]]*)\]")
 PLAN_URL_RE = re.compile(r"(https://[^\s]+plan-detail\.html\?plan=[A-Za-z0-9]+)")
 RUNNING_PLAN_CONFIG_RE = re.compile(r"Running plan '.+?' with configuration file '(.+?)'")
+RESULTS_SAVED_RE = re.compile(r'results saved to "(.+?)"')
 IMPLICIT_SUBMIT_RE = re.compile(r"xhr\.open\('POST',\s*([\"'])(.+?)\1", re.DOTALL)
 JSON_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9._-]+\.json)\}")
 TERMINAL_STATES = {"FINISHED", "INTERRUPTED"}
@@ -146,7 +147,22 @@ def wallet_request(wallet_url: str, method: str, path: str, payload: dict | None
     url = wallet_url.rstrip("/") + "/" + path.lstrip("/")
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        data = resp.read()
+        return json.loads(data.decode("utf-8")) if data else None
+
+
+def export_wallet_activity(wallet_url: str, output: Path, clear: bool) -> None:
+    """Saves the wallet's activity log, the client-side record of a plan (every
+    token and credential request with its body), and clears it so the next
+    plan's record fits under the wallet's entry cap."""
+    try:
+        entries = wallet_request(wallet_url, "GET", "/api/log")
+        output.write_text(json.dumps(entries, indent=1))
+        if clear:
+            wallet_request(wallet_url, "DELETE", "/api/log")
+        print(f"[monitor] saved the wallet activity log to {output.name}", flush=True)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        print(f"[monitor] wallet activity log export failed: {exc}", flush=True)
 
 
 def should_retry_wallet_submission(status_code: int, body: str) -> bool:
@@ -1402,6 +1418,9 @@ def main() -> int:
     removed = purge_issued_credentials(args.wallet_url, baseline_ids)
     if removed:
         print(f"[runner] cleared {removed} foreign credential(s) left by earlier runs", flush=True)
+    # Each plan's activity log is exported when the plan ends, so the log
+    # starts empty.
+    wallet_request(args.wallet_url, "DELETE", "/api/log")
     scenarios = final_scenarios()
     if "www.certification.openid.net" in base_url:
         # Only the certification program's plans run on the production
@@ -1436,6 +1455,7 @@ def main() -> int:
     pending_module_requires_haip = False
     pending_module_context: dict = {}
     current_plan_variant: dict = {}
+    current_plan_stem = ""
     idle_timeout = int(os.environ.get("OIDF_MODULE_IDLE_TIMEOUT", str(DEFAULT_MODULE_IDLE_TIMEOUT)))
     last_runner_output = time.monotonic()
 
@@ -1460,6 +1480,9 @@ def main() -> int:
                     if plan_config_match:
                         config_name = Path(plan_config_match.group(1)).name
                         current_plan_variant = config_variants.get(config_name, {})
+                        current_plan_stem = config_name.removesuffix("-config.json")
+                    if RESULTS_SAVED_RE.search(line) and current_plan_stem:
+                        export_wallet_activity(args.wallet_url, results_dir / f"{current_plan_stem}-wallet-activity.json", clear=True)
                     match = MODULE_ID_RE.search(line)
                     if match:
                         module_id = match.group(1)

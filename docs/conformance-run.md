@@ -113,6 +113,7 @@ The wrapper prints the run directory and leaves these artifacts:
 - `runner.log`: mirrored official runner output
 - `results/`: exported OIDF result archives
 - `results/*-config.json`: generated OIDF config files
+- `results/*-wallet-activity.json`: the wallet's activity log for each plan, every token and credential request and response with its body. The client-side log the certification submission asks for with the VCI plans (the wallet is the OAuth client there)
 
 The Python runner also prints local `plan-detail.html?plan=...` URLs for inspecting the created plans in the suite UI.
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The conformance harness saves the wallet's activity log per plan.** When a plan's results are exported, the wallet's activity log goes to `results/<plan>-wallet-activity.json` and is cleared, so every plan's client-side record (each token and credential request with its body) survives the wallet's entry cap. The certification submission asks for that record with the VCI plans.
 - **`--key-attestation-level` on `wallet serve`, `wallet accept` and `wallet scan`.** The key attestation claims `key_storage` and `user_authentication` levels (OpenID4VCI Appendix D.2) that this wallet's file-held keys cannot back. By default it claims what the issuer requires, so issuers gating on a level can be tested. `none` claims nothing, a level such as `iso_18045_high` claims that level for both. Every attestation carrying a claim is marked in the activity log, as is one that omits a level the issuer requires. The setting is one of the conformance settings: the Conformance panel changes it at runtime on a local wallet (`PUT /api/config/conformance` with `key_attestation_level`, `DELETE` restores the startup value), the public demo shows it read-only, and [SECURITY.md](SECURITY.md) states the behaviour.
 
 ## [2.3.7] - 2026-09-04
