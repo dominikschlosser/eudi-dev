@@ -1,6 +1,6 @@
 # Proxy
 
-Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point your wallet at the proxy instead of the real server. Every request and response is captured, classified by protocol step, decoded, and shown in the terminal and a live web dashboard.
+Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer. Point the wallet at the proxy instead of the real server. Every request and response is captured, classified by protocol step, decoded, and shown in the terminal and a live web dashboard.
 
 ```bash
 eudi proxy --target http://localhost:8080
@@ -14,7 +14,7 @@ Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
             Live dashboard (:9091)
 ```
 
-Optionally launch the target service as a subprocess. The proxy scans its stdout for encryption keys and credentials:
+The proxy can launch the target service as a subprocess and scan its stdout for encryption keys and credentials:
 
 ```bash
 eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
@@ -23,7 +23,7 @@ eudi proxy --target http://localhost:3000 -- npm start
 
 ## Traffic classification
 
-Traffic is automatically classified into protocol steps:
+Traffic is classified into protocol steps:
 
 | Badge               | Detected when                                                     |
 |---------------------|-------------------------------------------------------------------|
@@ -35,18 +35,18 @@ Traffic is automatically classified into protocol steps:
 | VCI Token Request   | POST to path ending `/token`                                      |
 | VCI Credential Request | POST to path ending `/credential` or `/credentials`            |
 
-By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, health checks, etc.) are still proxied but hidden. Pass `--all-traffic` or toggle the "All traffic" checkbox in the dashboard to see everything.
+By default only OID4VP/VCI traffic is shown. Other requests (favicon, health checks) are proxied but hidden. Pass `--all-traffic` or tick the "All traffic" checkbox in the dashboard to see everything.
 
 ## Features
 
-- **Smart decoding**: payloads are decoded inline (SD-JWT, JWT, mDOC, DCQL queries, JWE headers)
-- **Credential decode hints**: detected credentials are printed as `eudi decode` commands for quick inspection
-- **JARM/JWE decryption**: when the built-in wallet sends a `direct_post.jwt` response through the proxy, the encrypted payload is automatically decrypted (see [JWE Decryption](#jwe-decryption) below)
+- **Decoding**: payloads are decoded inline (SD-JWT, JWT, mDOC, DCQL queries, JWE headers)
+- **Credential decode hints**: detected credentials are printed as `eudi decode` commands
+- **JARM/JWE decryption**: a `direct_post.jwt` response from the built-in wallet is decrypted (see [JWE Decryption](#jwe-decryption))
 - **Flow correlation**: related protocol steps are grouped by shared `state`/`nonce` values
 - **Web dashboard** at `http://localhost:9091` with live SSE updates, expandable cards, "View in Decoder" links, HAR export, and cURL copy
 - **JARM/JWE detection**: shows encrypted response headers and the verifier's ephemeral public key
-- **NDJSON output**: `--json` for machine-readable output, pipe to `jq` or log to file
-- **Attach to a running proxy**: `eudi proxy logs` prints the traffic of a proxy that is already running, from another terminal (see [reading a running proxy](#reading-a-running-proxy))
+- **NDJSON output**: `--json` for machine-readable output, pipe to `jq` or log to a file
+- **Attach to a running proxy**: `eudi proxy logs` prints the traffic of a running proxy from another terminal (see [reading a running proxy](#reading-a-running-proxy))
 
 ## Flags
 
@@ -56,7 +56,7 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 | `--port`         | `9090`  | Proxy listen port                        |
 | `--dashboard`    | `9091`  | Dashboard listen port                    |
 | `--no-dashboard` | `false` | Disable web dashboard                    |
-| `--all-traffic`  | `false` | Show all traffic, not just OID4VP/VCI    |
+| `--all-traffic`  | `false` | Show all traffic                          |
 | `--json`         | `false` | NDJSON output to stdout (global flag)    |
 | `-- <command>`   | —       | Launch target as subprocess, scan stdout |
 
@@ -70,9 +70,7 @@ By default, only OID4VP/VCI traffic is shown. Non-matching requests (favicon, he
 
 ## Reading a running proxy
 
-A proxy in a container, in the background, or on another machine prints to a
-terminal you do not have. The CLI reads its traffic from the dashboard
-instead:
+A proxy in a container, in the background, or on another machine prints to a terminal you cannot see. `eudi proxy logs` reads its traffic from the dashboard:
 
 ```bash
 # a proxy on this machine
@@ -85,17 +83,9 @@ eudi proxy logs http://localhost:9091 --follow
 eudi proxy logs https://proxy.internal.example --follow
 ```
 
-The output is the same the proxy prints itself, with decode links pointing at
-that dashboard. `--follow` keeps printing as traffic arrives and keeps
-reattaching when the stream ends, until you interrupt it: after each
-reattachment it re-reads the recorded traffic, so what arrived while the
-stream was down is printed too, including after a proxy restart (which numbers
-its traffic from the beginning again). `--json` prints the recorded traffic as
-JSON and cannot be combined with `--follow`.
+The output is the same as the proxy's own output, with decode links pointing at that dashboard. `--follow` keeps printing as traffic arrives and reattaches when the stream ends, until you interrupt it. After a reattachment it re-reads the recorded traffic, so nothing that arrived in between is lost. This also covers a proxy restart. `--json` prints the recorded traffic as JSON and ends, so it cannot be combined with `--follow`.
 
-The argument is the dashboard URL, not the proxy port. A proxy started without
-`--all-traffic` never recorded non-OID4VP/VCI requests, so they cannot be read
-back here either.
+The argument is the dashboard URL (port 9091 by default). A proxy started without `--all-traffic` records only OID4VP/VCI requests, so only those can be read back.
 
 ## Example output
 
@@ -121,9 +111,7 @@ back here either.
 
 When the built-in wallet (`eudi wallet`) sends an encrypted JARM response (`direct_post.jwt`) through the proxy, the proxy decrypts the payload and shows the contained `vp_token` and `state`.
 
-This works via a debug header. The wallet puts the AES content encryption key (CEK) in `X-Debug-JWE-CEK`. The proxy strips this header before forwarding, so the verifier never sees it.
-
-No configuration is needed. Route the wallet through the proxy:
+The wallet puts the AES content encryption key (CEK) in the `X-Debug-JWE-CEK` header. The proxy strips the header before forwarding, so the verifier never sees it. Route the wallet through the proxy:
 
 ```
 eudi wallet serve                    # wallet sends to response_uri
@@ -132,21 +120,21 @@ eudi proxy --target http://verifier  # proxy intercepts, decrypts, forwards
 
 ### Automatic key detection from service stdout
 
-A **third-party wallet** does not send the debug header. If you launch the verifier service as a subprocess (with `--`), the proxy scans its stdout for CEK values and uses them to decrypt JWE responses:
+A third-party wallet sends no debug header. When the verifier service runs as a subprocess (with `--`), the proxy scans its stdout for CEK values and uses them to decrypt JWE responses:
 
 ```bash
 eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
 ```
 
-The proxy detects lines matching patterns like:
+The proxy detects lines like:
 - `CEK: <base64url>` or `content encryption key: <base64url>`
 - JWK objects containing a `"d"` (private key) parameter
 
-This is best-effort. If no key is found, the proxy shows only the JWE header fields (`alg`, `enc`, `kid`, `epk`).
+Without a key the proxy shows the JWE header fields only (`alg`, `enc`, `kid`, `epk`).
 
 ### Credential detection from service stdout
 
-The proxy also scans the subprocess's stdout for JWT/SD-JWT credentials. Detected credentials are added to the activity log with decode links:
+The proxy also scans the subprocess's stdout for JWT and SD-JWT credentials and adds them to the activity log with decode links:
 
 ```
   → eudi decode 'eyJhbGci...'  (vp_token)
@@ -158,10 +146,6 @@ The proxy also scans the subprocess's stdout for JWT/SD-JWT credentials. Detecte
 - The wallet logs credentials and encryption keys to stdout for local debugging:
   - `[VP] JWE content encryption key for proxy debugging: <base64url CEK>`
   - `[VP] SD-JWT presentation created: ...`
-- Launch the target service with `--` to auto-detect keys/credentials from its stdout:
-  ```bash
-  eudi proxy --target http://localhost:3000 -- mvn spring-boot:run
-  ```
-  Service output appears with a `[service]` prefix. Detected credentials get decode links.
-- Use `--all-traffic` to see non-OID4VP/VCI requests (health checks, favicon, etc.)
-- Pipe to `jq` with `--json` for structured analysis: `eudi proxy --target ... --json | jq '.credentials'`
+- Output of a service launched with `--` appears with a `[service]` prefix.
+- `--all-traffic` shows the hidden requests too (health checks, favicon)
+- `--json` pipes to `jq`: `eudi proxy --target ... --json | jq '.credentials'`

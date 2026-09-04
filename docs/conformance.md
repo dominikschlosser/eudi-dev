@@ -2,7 +2,7 @@
 
 This repository runs the current OpenID Foundation plans for OID4VP 1.0 Final, OID4VCI 1.0 Final, and HAIP 1.0 Final variants against the local `eudi-dev` testing wallet, and the issuer and verifier plans against the demo issuer and verifier.
 
-The docs are split by purpose:
+Related docs:
 
 - [How to run the wallet conformance suite](./conformance-run.md)
 - [How to run the demo issuer and verifier plans](./conformance-run-demorp.md)
@@ -17,7 +17,7 @@ Current local status:
 - VCI Final SD-JWT and mDoc wallet plans pass in strict mode. The SD-JWT plans include the batch credential issuance module (the wallet sends multiple distinct proof keys and matches the reordered credentials by binding key). The mdoc plans use the key attestation configuration with the `attestation` proof type, where the key attestation naming every batch key is the proof (Appendix F.3, HAIP §4.5.1) and the suite issues one credential per attested key.
 - VCI HAIP SD-JWT and mDoc wallet plans pass in strict mode, including plain immediate issuance, deferred issuance, encrypted credential request variants, FAPI happy-path modules, and FAPI negative authorization-response modules, plus batch issuance for both formats.
 - VP Final, VP HAIP `direct_post.jwt`, and VP HAIP `dc_api.jwt` selected modules pass in strict mode, including the unusable-encryption-key module (the wallet ignores JWKS keys it cannot use per RFC 7517 §5). Negative modules that finish as `REVIEW` count as pass-equivalent for the local harness when the runner reports zero condition failures.
-- The wrapper passes explicit VP module lists for the alpha Final plans only, so suite-side not-applicable or broken modules appear as documented exclusions instead of red result boxes. The certifiable HAIP plans always run complete (the suite's plan definition decides what runs, and a certification run must not filter modules).
+- The wrapper passes explicit VP module lists for the alpha Final plans only, so modules the suite marks not applicable appear as documented exclusions. The certifiable HAIP plans always run complete (a certification run must not filter modules).
 
 See [Current conformance results](./conformance-results.md) for the detailed plan matrix, artifact locations, result-page screenshots, and suite-side exclusions.
 
@@ -30,7 +30,7 @@ The wrapper runs the current Final wallet plans plus the current HAIP wallet pla
 - `oid4vp-1final-wallet-haip-test-plan`
 - `oid4vci-1_0-wallet-haip-test-plan`
 
-Only the two HAIP plans are part of the OIDF certification program. The suite publishes the plain Final wallet plans as alpha tests, so their runs are evidence but not certifiable yet. The wrapper enforces the split: against the production certification service it runs only the HAIP plans (complete and unfiltered), while local and demo-service runs cover the whole matrix.
+Only the two HAIP plans are part of the OIDF certification program. The suite publishes the plain Final wallet plans as alpha tests. Against the production certification service the wrapper runs only the HAIP plans, complete and unfiltered. Local and demo-service runs cover the whole matrix.
 
 ## Default Matrix
 
@@ -43,12 +43,12 @@ VP Final generates the cross product of credential format (SD-JWT, mDoc), respon
 
 VCI Final generates the cross product of credential format, grant type (authorization code, pre-authorized code), offer delivery (`by_value`, `by_reference`), issuance mode (immediate, deferred), and credential response encryption (plain, encrypted), always issuer initiated with client attestation, DPoP, and a plain scope request (32 plans).
 
-The HAIP plans expose fewer selectable variants (they pin the rest per module entry internally):
+The HAIP plans expose fewer selectable variants (the module entries fix the rest):
 
 - VP HAIP: SD-JWT and mDoc with `direct_post.jwt` and `dc_api.jwt`, the latter covering unsigned (no `client_id`), signed `x509_hash`, and multisigned `x509_hash` Browser API modules (4 plans)
 - VCI HAIP: SD-JWT and mDoc, each issuer-initiated with the offer `by_value` and `by_reference` and wallet-initiated without an offer, each covering immediate plain, deferred plain, and immediate encrypted responses (6 plans)
 
-The matrix leaves out the variants the wallet does not implement: the `pre_registered` and `decentralized_identifier` prefixes, the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows (issuance starts from a credential offer), `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
+The matrix skips the variants the wallet does not implement: the `pre_registered` and `decentralized_identifier` prefixes, the `wallet_initiated` and `issuer_initiated_dc_api` VCI flows, `rar` authorization requests (the wallet authorizes via scope), and mTLS or `private_key_jwt` client authentication.
 
 The matrix is fixed in the wrapper. Use the official runner `--rerun` selector for targeted reruns of an already generated matrix, or `ONLY_SCENARIOS` (a comma separated list of slug substrings) to generate and run a subset.
 
@@ -76,9 +76,9 @@ The matrix is fixed in the wrapper. Use the official runner `--rerun` selector f
 - keeps the VCI suite alias aligned with the configured `redirect_uri` and helper-page paths
 - disables the suite's VCI browser helper page and drives the same offer URL directly through the wallet API
 - drives Browser API `dc_api` / `dc_api.jwt` presentation requests through the wallet's `/api/dc-api` endpoint
-- sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, no matter how the wallet was started
-- starts the wallet-initiated VCI modules itself: the suite seeds no offer there, so the harness hands the wallet an offer naming the suite's issuer and the configured credential with no `issuer_state`, the flow a wallet begins from an issuer it picked
-- passes explicit VP module lists for the alpha Final scenarios so the suite runs executable coverage for that generated variant, and runs the certifiable HAIP plans complete without a filter
+- sets the wallet's conformance mode before each submission through `PUT /api/config/conformance`. Final modules run non-HAIP and HAIP modules run enforced, whatever flags the wallet was started with
+- starts the wallet-initiated VCI modules itself: the suite seeds no offer there, so the harness sends the wallet an offer for the suite's issuer and the configured credential, without `issuer_state`
+- passes explicit VP module lists for the alpha Final scenarios and runs the certifiable HAIP plans complete
 - monitors waiting modules and automatically submits presentation requests, Browser API requests, credential offers, verifier redirects, and negative-review screenshot placeholders
 - prints the created local `plan-detail.html?plan=...` URLs
 
@@ -92,7 +92,7 @@ The wallet runs a conformance test with its normal keys:
 
 ## What the Suite Does Not Cover
 
-The suite plays the authorization server, and its authorization endpoint issues the code on the first request without a sign-in. So no plan reaches the branch where the wallet hands the authorization URL to a browser. The Playwright suite covers that branch against the demo issuer, which serves a real login page and gives the pushed `request_uri` one use (RFC 9126 section 4).
+The suite acts as the authorization server and issues the code on the first request without a sign-in, so no plan reaches the branch where the wallet passes the authorization URL to a browser. The Playwright suite covers that branch against the demo issuer, which serves a real login page and allows one use of the pushed `request_uri` (RFC 9126 section 4).
 
 ## References
 

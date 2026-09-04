@@ -1,8 +1,6 @@
 # Issue
 
-Generate test SD-JWT, JWT, or mDOC credentials for development and testing. Output is valid and signed, using an ephemeral P-256 key by default (the public JWK is printed to stderr).
-
-Use `--wallet-dir` on `issue` when `--wallet` should target a non-default wallet store.
+Issue test SD-JWT, JWT, or mDOC credentials. The output is signed with an ephemeral P-256 key by default (the public JWK goes to stderr).
 
 ```bash
 eudi issue sdjwt
@@ -37,7 +35,7 @@ eudi issue mdoc  | eudi decode
 
 ## Flags
 
-`issue` also supports:
+Flags shared by all three subcommands:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -105,43 +103,43 @@ The JWT subcommand produces a standard JWT with all claims directly in the paylo
 | `--save-template` | —                          | Save the issued claims and settings as a template with this name |
 | `--wallet`    | `false`                        | Import the issued credential into the wallet   |
 | `--batch`     | `0`                            | With `--wallet`: issue this many distinct-key copies, so the wallet presents an unused one each time |
-| `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a deliberately malformed mdoc for testing verifier rejection). The default binds it to the wallet |
+| `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a malformed mdoc for testing verifier rejection). The default binds it to the wallet |
 | `--status-list-uri` | —                       | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 
-Without `--claims`, a minimal set of PID-like claims is used (given_name, family_name, birthdate). `--pid` generates the full PID claim set of the requested type: fifteen top-level SD-JWT claims (including the nested `address` and `place_of_birth` objects) and nineteen mdoc elements, matching the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7) attribute for attribute.
+Without `--claims`, a minimal PID-like claim set is used (given_name, family_name, birthdate). `--pid` issues the full PID claim set: fifteen top-level SD-JWT claims (including the nested `address` and `place_of_birth` objects) or nineteen mdoc elements, matching the [EUDI PID Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md) (version 1.7).
 
-The PID Rulebook defines the PID in two encodings, SD-JWT VC and ISO 18013-5 mdoc. `issue jwt --pid` puts the same claim set in a plain JWT VC, a test artifact for exercising verifiers.
+`issue jwt --pid` puts the same claim set in a plain JWT VC for verifier testing.
 
-`--vct urn:eudi:pid:de:1` selects the German PID, following the German PID Rulebook: fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) and twenty-three mdoc elements across that rulebook's two namespaces. Both claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
+`--vct urn:eudi:pid:de:1` selects the German PID: fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) or twenty-three mdoc elements across two namespaces. The claim sets come from the pre-defined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names changes what `--pid` issues. See [templates](templates.md).
 
-`--template` supplies the claim set plus type, namespace, and expiry defaults for flags not set explicitly. `--claims` overrides individual top level claims. `--omit` removes claims from the merged result. See [templates](templates.md) for the file format and the `templates` management commands.
+`--template` supplies the claim set and defaults for type, namespace, and expiry. Explicit flags override the template. `--claims` overrides individual top level claims. `--omit` removes claims from the result. See [templates](templates.md) for the file format and the `templates` commands.
 
-Every SD-JWT claim is selectively disclosable by default, apart from the registered claims SD-JWT VC §2.2.2.3 says cannot be (`iss`, `nbf`, `exp`, `cnf`, `vct`, `vct#integrity`, `aka_vcts` and `status`, plus `iat`, which the generator writes itself). Those are always embedded plainly. `_sd`, `_sd_alg` and `...` are reserved by RFC 9901 and rejected as claim names. `--always-disclosed` (or the template's `always_disclosed` list) embeds further named claims plainly in the signed payload, so they cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). The flag exists only on `issue sdjwt`. A template's `always_disclosed` list is rejected for mdoc (every mdoc element is selectively disclosable by design) and ignored for jwt (all claims are plain there).
+Every SD-JWT claim is selectively disclosable by default. `--always-disclosed` (or the template's `always_disclosed` list) embeds the named claims plainly in the signed payload, so they cannot be withheld during presentation. Nested subclaims use dotted paths (`address.country`). `_sd`, `_sd_alg` and `...` are reserved by RFC 9901 and rejected as claim names. See [always disclosed claims](templates.md#always-disclosed-claims) for the registered claims that are always plain and for the mdoc and jwt behavior.
 
 ## Wallet Registration Metadata
 
-With `--wallet`, the credential is issued with the wallet's issuer key and a trust-profile-specific leaf certificate chain under the shared wallet CA. `--key` alone swaps the issuer key and re-leafs the wallet chain for it. `--key` together with `--cert` signs with exactly that key and chain instead (the trust profile and registration metadata of the request are not applied, the type registers like an imported credential). The chain is embedded as given. One carrying its self-signed root warns in debug mode and is refused in strict mode. The credential is stored in the wallet together with an issued-attestation entry for that credential type. That entry later drives:
+With `--wallet`, the credential is signed with the wallet's issuer key and a trust-profile-specific leaf certificate under the shared wallet CA. `--key` alone replaces the issuer key, and the wallet issues a new leaf certificate for it. `--key` together with `--cert` signs with exactly that key and chain. The trust profile and registration metadata flags are then skipped, and the credential type is registered like that of an imported credential. A chain carrying its self-signed root warns in debug mode and is refused in strict mode. The wallet stores the credential together with an issued-attestation entry for its credential type. The wallet builds these from that entry:
 - `/.well-known/openid-credential-issuer`
 - `/api/registrar/wrp`
 - `/api/trustlist`
 - `/api/trustlists`
 
-Unless you override the status-list flags, `--wallet` also uses the wallet's own status-list endpoint and registers a wallet-managed status entry for the new credential.
+Without explicit status-list flags, `--wallet` registers the credential in the wallet's own status list.
 
-If a wallet server is already running for the same wallet directory, `--wallet` issuance routes through that instance's REST API to keep its state consistent (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Without a running server the command issues directly into the store, keeps any persisted issuer and base URLs untouched, and notes that the embedded URLs resolve once `wallet serve` runs.
+If a wallet server is running for the same wallet directory, `--wallet` issues through its REST API (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Otherwise the command writes directly into the store and the embedded URLs resolve once `wallet serve` runs.
 
-Trust lists are created from the wallet's issued-attestation registry:
+Trust lists come from the wallet's issued-attestation registry:
 - each issued or imported credential type contributes one registry entry
 - entries with the same trust-list profile fields are grouped into one trust list
 - the legacy `/api/trustlist` endpoint serves the PID trust list first
-- the full set of groups is exposed through `/api/trustlists`, with concrete IDs such as `pid` or `local`, a relative `path` for local resolution, and an optional `advertised_url` for the configured issuer URL
+- `/api/trustlists` lists every group with its ID (`pid`, `local`), a relative `path`, and an optional `advertised_url`
 
-If you do not pass any trust-metadata flags, the wallet derives defaults from the credential type:
+Without trust-metadata flags, the defaults follow the credential type:
 - PID attestation types default to the PID trust-list and entitlement profile
 - other attestation types default to `Non_Q_EAA_Provider` plus the local ETSI-shaped trust-list profile
 
-These flags give explicit control over the stored trust and issuer metadata for that credential type:
+These flags set the stored trust and issuer metadata for the credential type:
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -159,7 +157,7 @@ These flags give explicit control over the stored trust and issuer metadata for 
 
 ### Display metadata
 
-These flags set the appearance the imported credential shows on its card, so they apply with `--wallet` (on all three subcommands). Colors are held to the OpenID4VCI 1.0 §12.2.4 value space (a bad one is dropped with a warning) and images run through the policed, size-capped cache, the same as an issuer's display metadata. A public demo takes no operator image (the logo and background-image flags are ignored there), while a template's own art still applies.
+These flags set the card appearance of the imported credential and apply with `--wallet` on all three subcommands. Colors must fit OpenID4VCI 1.0 §12.2.4 (an invalid one is dropped with a warning). Images pass the same address policy and size cap as an issuer's display metadata. A public demo ignores the logo and background-image flags and keeps the template's images.
 
 | Flag | Default | Description |
 |------|---------|-------------|

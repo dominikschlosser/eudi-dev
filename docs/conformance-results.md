@@ -1,12 +1,12 @@
 # Current OIDF Wallet Conformance Results
 
-These are the current local wallet conformance results for `eudi-dev`. Use [Running OIDF Wallet Conformance](./conformance-run.md) to reproduce or update them.
+Reproduce these runs with [Running OIDF Wallet Conformance](./conformance-run.md).
 
 ## Demo Issuer and Verifier (2026-08-31)
 
-The demo issuer and demo verifier are tested with the suite playing the wallet. Use [the demo runbook](./conformance-run-demorp.md) to reproduce. Suite `release-v5.2.4` (revision `ab35a8d`), 9 plans (4 issuer, 5 verifier), 101 modules: **61 `PASSED`, 36 `REVIEW`, 4 `WARNING`, 0 `FAILED`, 0 `SKIPPED`**, 7645 condition successes against 0 condition failures.
+The demo issuer and demo verifier are tested with the suite acting as the wallet. Use [the demo runbook](./conformance-run-demorp.md) to reproduce. Suite `release-v5.2.4` (revision `ab35a8d`), 9 plans (4 issuer, 5 verifier), 101 modules: **61 `PASSED`, 36 `REVIEW`, 4 `WARNING`, 0 `FAILED`, 0 `SKIPPED`**, 7645 condition successes against 0 condition failures.
 
-The 36 `REVIEW` are every verifier module. The suite cannot observe whether the verifier under test verified, so its verifier modules end in `REVIEW` behind an uploaded screenshot. The harness reads the demo verifier's own verdict per module instead: 36 of 36 as expected, every tampered presentation refused, every clean one verified.
+The 36 `REVIEW` are every verifier module. The suite cannot observe whether the verifier under test verified, so its verifier modules end in `REVIEW` after an uploaded screenshot. The harness reads the demo verifier's own verdict per module instead: 36 of 36 as expected, every tampered presentation refused, every clean one verified.
 
 The 4 `WARNING` are one condition, four times: `CheckForUnexpectedParametersInServerMetadata` flags `client_attestation_pop_methods_supported` in the demo issuer's authorization server metadata as unknown. The parameter comes from the proof of possession methods registry of draft-ietf-oauth-attestation-based-client-auth-10, which the suite's RFC 8414 schema does not know (it knows the two signing algorithm parameters from the same document).
 
@@ -14,14 +14,14 @@ Suite defect in `release-v5.2.4`: under the pre-authorized code grant the client
 
 ## Runs of 2026-09-02 and 2026-09-04 (production certification and expanded matrix)
 
-The production certification run of 2026-09-04 on the 2.3.7 release, and the expanded local matrix of 2026-09-02, both on suite `release-v5.2.4` (revision `ab35a8d`), the matrix for the 2.3.0 release (ISO 18013-5 certificate profile, RFC 3986 request URI parsing, `response_uri` derived from a `redirect_uri` client id per OID4VP 1.0 §5.9.3).
+Both runs use suite `release-v5.2.4` (revision `ab35a8d`): the production certification run of 2026-09-04 on release 2.3.7, and the expanded local matrix of 2026-09-02 for release 2.3.0 (ISO 18013-5 certificate profile, RFC 3986 request URI parsing, `response_uri` derived from a `redirect_uri` client id per OID4VP 1.0 §5.9.3).
 
 ### Production certification run
 
-The certifiable HAIP plans ran on 2026-09-04 on `https://www.certification.openid.net/` against the hosted strict wallet at `https://strict.eudi-test.dev` running release 2.3.7, the wallet in strict mode for every module (see [the runbook](./conformance-run.md)). 10 plans, the matrix the certification program uses (4 VP HAIP, and per format the VCI HAIP plan issuer-initiated with the offer `by_value` and `by_reference` and wallet-initiated), 228 modules, complete and unfiltered: **192 `PASSED`, 34 `REVIEW`, 2 `FAILED`, no skips**, 29466 condition successes, zero wallet condition failures and zero warnings. Run directory `/tmp/oidf-strict-2.3.7`. The non passing entries:
+The certifiable HAIP plans ran on 2026-09-04 on `https://www.certification.openid.net/` against the hosted strict wallet at `https://strict.eudi-test.dev` (release 2.3.7, strict mode for every module, see [the runbook](./conformance-run.md)). 10 plans (4 VP HAIP, and per format the VCI HAIP plan issuer-initiated `by_value`, issuer-initiated `by_reference` and wallet-initiated), 228 modules, complete and unfiltered: **192 `PASSED`, 34 `REVIEW`, 2 `FAILED`, no skips**, 29466 condition successes, 0 wallet condition failures, 0 warnings. Run directory `/tmp/oidf-strict-2.3.7`. Details:
 
 - the 2 `FAILED` are `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` under `request_uri_multisigned`, one per `dc_api.jwt` plan, where the suite throws a NullPointerException in its own request construction before contacting the wallet (`AddInvalidClientIdPrefixToRequestObject` reads a `client_id` the multisigned sequence never puts into the shared payload). The same module passes in the signed entry. Reported upstream.
-- the negative modules end `REVIEW` behind an uploaded screenshot of the wallet's error, each naming the rule the module breaks (request object signature, mismatched `client_id`, `redirect_uri` with `direct_post`, missing nonce, invalid prefix, `transaction_data`, `expected_origins`, and for the FAPI2 tests the issuer, `iss` and `state` checks of the authorization response). `required-non-matching-credential` ends `PASSED`: the wallet answers `access_denied`.
+- the negative modules end `REVIEW` after an uploaded screenshot of the wallet's error, each stating the rule the module breaks (request object signature, mismatched `client_id`, `redirect_uri` with `direct_post`, missing nonce, invalid prefix, `transaction_data`, `expected_origins`, and for the FAPI2 tests the issuer, `iss` and `state` checks of the authorization response). `required-non-matching-credential` ends `PASSED`: the wallet answers `access_denied`.
 - the mdoc plans run on the key attestation configuration with the `attestation` proof type, where the suite issues one credential per attested key, so `batch-credential-issuance` passes in every VCI plan.
 
 | Plan | Modules | Conditions |
@@ -39,14 +39,14 @@ The certifiable HAIP plans ran on 2026-09-04 on `https://www.certification.openi
 
 ### Local full matrix
 
-The expanded local matrix (76 plans: the full supported cross product of the alpha Final plans plus the HAIP plans) ran in one pass: 768 modules, 69411 condition successes against 4 condition failures and 26 warnings. The non clean entries:
+The expanded local matrix (76 plans: the full supported cross product of the alpha Final plans plus the HAIP plans) ran in one pass: 768 modules, 69411 condition successes against 4 condition failures and 26 warnings. Details:
 
 - the 4 condition failures are the two occurrences of the multisigned suite NullPointerException above
 - the 26 warnings are the IACA subject key identifier check on a wallet binary built before the SHA-1 fix (the deployed build and the production run above are clean)
 - one VCI module ended `INTERRUPTED` after a machine-load stall (the harness cancelled it, the same module passes in the neighbouring plans)
-- 18 mdoc VCI plans carry the mdoc batch skips
+- 18 mdoc VCI plans contain the mdoc batch skips
 
-Variants exercised for the first time in this matrix: `url_query`, `x509_san_dns`, `web-origin`, multisigned requests and the Browser API response modes in the Final plan, plus grant, offer delivery, issuance mode and encryption cross products in VCI. They surfaced the two wallet gaps fixed in 2.3.0 (request URI parsing, derived `response_uri`).
+Variants exercised for the first time in this matrix: `url_query`, `x509_san_dns`, `web-origin`, multisigned requests and the Browser API response modes in the Final plan, plus grant, offer delivery, issuance mode and encryption cross products in VCI. They revealed the two wallet gaps fixed in 2.3.0 (request URI parsing, derived `response_uri`).
 
 ## Baseline
 
@@ -68,7 +68,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The full matrix runs in one pass: 14 plans, 160 modules, 111 `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`, 16,305 condition successes against 1 condition failure. The skips and the condition failure are explained below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the status-list conditions were skipped rather than passed.
+The full matrix runs in one pass: 14 plans, 160 modules, 111 `PASSED`, 44 negative modules `REVIEW`, 5 `SKIPPED`, 0 `FAILED`, 16,305 condition successes against 1 condition failure. The skips and the condition failure are explained below. The 2026-07-30 run reported comparable totals, but its credentials carried no status list, so the suite skipped the status-list conditions.
 
 ## Run of 2026-08-27
 
@@ -79,7 +79,7 @@ The 21 `WARNING` modules all carry the same two conditions, new in 5.2.4, which 
 - `ValidateMdocDsCertificateProfile` on the document signer certificate (CN=EUDI Dev Wallet PID Provider): no countryName in the subject, no subject key identifier extension, no extended key usage extension (which must be present, critical, and name the document signing purpose), no CRL distribution points extension, no issuer alternative name extension.
 - `ValidateMdocTrustAnchorIacaCertificateProfile` on the IACA trust anchor (CN=OID4VC Dev Wallet CA): no countryName in the subject, a subject key identifier that is not the SHA-1 of the subject public key, a basicConstraints pathLenConstraint of 1 where Table B.1 requires 0, no issuer alternative name extension.
 
-These are profile gaps in the wallet's mdoc certificate generation of that release. They are advisory (`WARNING`), so no module fails on them. The SD-JWT VC profile has no equivalent certificate profile, so its flows stay clean.
+These are profile gaps in that release's mdoc certificate generation. They are advisory, so no module fails on them.
 
 The 1 `FAILED` module is `oid4vp-1final-wallet-negative-test-unknown-transaction-data-type` in the HAIP mdoc direct_post.jwt plan. Its own assertion passed: the wallet refused the unknown transaction_data type (the response carried `invalid_transaction_data`) and the module's `ExpectUnknownTransactionDataTypeErrorPage` resolved to `REVIEW`. The `FAILED` came from an unrelated second request_uri hitting the shared wallet, which the module counted as unexpected. Re-running that one plan returned the module to `REVIEW` with 0 condition failures. The 2 `SKIPPED` are the mdoc `batch-credential-issuance` skips described below.
 
@@ -102,7 +102,7 @@ This run exercises credential status for the first time (earlier runs' credentia
 - the token carried the self-signed trust anchor inside its `x5c` chain, which HAIP 6.1 rejects ("Trust anchor certificate must not be included in x5c chain"). 14 modules
 - the token offered no key-resolution route the Final (non-HAIP) plans accept: that branch verifies with a `jwk` embedded in the header or with `server_jwks`, and `server_jwks` is unreachable in these plans. 17 modules
 
-The token strips the trust anchor from `x5c` and embeds the signing key as a `jwk` header. `x5c` is the anchored route that HAIP validates. `jwk` is permitted because Token Status List §5.1 requires only `typ` and `jwk` is a registered JOSE header (RFC 7515 §4.1.3).
+The token carries `x5c` without the trust anchor (the anchored route HAIP validates) and the signing key in a `jwk` header (Token Status List §5.1 requires only `typ`, and `jwk` is a registered JOSE header per RFC 7515 §4.1.3).
 
 ## Run of 2026-08-05
 
@@ -122,11 +122,11 @@ The 114 `PASSED` include the 5 mdoc `batch-credential-issuance` modules (see the
 
 Full matrix for the 1.19.22 release, suite pinned to `release-v5.2.1` to match the running server: **110 modules PASSED, 38 negative modules REVIEW, 5 SKIPPED, 1 FAILED**, 15,404 condition successes across 14 plans, with no watchdog termination.
 
-The wrapper's `EUDI_REMOTE_TIMEOUT=120s` carried the run through 6 suite pauses (visible as `[monitor] failed to monitor module`). At the wallet's 15 second default such a pause times out the module's exchange, which cannot be resumed.
+The wrapper's `EUDI_REMOTE_TIMEOUT=120s` kept the run going through 6 suite pauses (visible as `[monitor] failed to monitor module`). At the wallet's 15 second default such a pause times out the module's exchange.
 
 The 5 `SKIPPED` are the mdoc `batch-credential-issuance` skips (see below).
 
-The 1 `FAILED` is `oid4vci-1_0-wallet-test-credential-issuance-notification` on `VCIVerifyIssuerStateInAuthorizationRequest`, an artifact of two modules overlapping. The module logs the check twice: the first authorization request carries the `issuer_state` of the offer under test and passes, and a second one 18 seconds later carries the `issuer_state` of a later offer, which the module compares against the first. The wallet echoed the value each offer gave it (OID4VCI 1.0 §5.1.3). Expect this artifact to move between runs.
+The 1 `FAILED` is `oid4vci-1_0-wallet-test-credential-issuance-notification` on `VCIVerifyIssuerStateInAuthorizationRequest`, an artifact of two modules overlapping. The module logs the check twice: the first authorization request carries the `issuer_state` of the offer under test and passes, and a second one 18 seconds later carries the `issuer_state` of a later offer, which the module compares against the first. The wallet echoed the value each offer gave it (OID4VCI 1.0 §5.1.3). This artifact can appear in a different module in another run.
 
 ## Run of 2026-08-09
 
@@ -134,30 +134,30 @@ Full matrix on suite `release-v5.2.2`, the first run on that release: **111 modu
 
 The matrix is 160 modules (154 on release-v5.2.1) because `oid4vp-1final-wallet-negative-test-invalid-client-id-prefix` runs in 6 VP plans (REVIEW in all) since release-v5.2.2 fixed the module (upstream `4f790f161`). It stays out of the DC API plans per its own `@VariantNotApplicableWhen`: an unsigned DC API request carries no `client_id` to corrupt (OID4VP 1.0 Appendix A.2).
 
-Release-v5.2.2 reworked `alternate-happy-flow` to plant a decoy origin in an unsigned DC API request's `expected_origins` and check that the wallet ignores it. The monitor derives the `Origin` header of its stand-in browser POST from the submit URL, where the suite serves the page, as a real browser does.
+Release-v5.2.2 reworked `alternate-happy-flow` to put a decoy origin into an unsigned DC API request's `expected_origins` and check that the wallet ignores it. The monitor derives the `Origin` header of the POST it sends in place of the browser from the submit URL, where the suite serves the page, as a real browser does.
 
-The 1 condition failure sits in a module that still finished `PASSED`: a suite pause made the monitor retry an offer submission, the wallet ran the flow twice, and `ValidateAuthorizationCode` compared the code of one flow against the other. The same retry artifact family as the 2026-08-08 `issuer_state` failure.
+The 1 condition failure occurs in a module that still finished `PASSED`: a suite pause made the monitor retry an offer submission, the wallet ran the flow twice, and `ValidateAuthorizationCode` compared the code of one flow against the other. Same retry artifact as the 2026-08-08 `issuer_state` failure.
 
 ## New release-v5.2.1 Coverage
 
-Release-v5.2.1 added two wallet test modules. Both are implemented by the wallet and pass:
+Release-v5.2.1 added two wallet test modules. Both pass:
 
 - `oid4vci-1_0-wallet-test-batch-credential-issuance`: the emulated issuer advertises `batch_credential_issuance` with `batch_size: 10` and returns the issued credentials in reverse proof order. The wallet requests the advertised batch (one key per copy, capped at its own ceiling of 8) with distinct, freshly generated keys and identifies the holder-key-bound credential from the credential itself (`cnf.jwk` for SD-JWT, MSO `deviceKey` for mdoc). It passes in the SD-JWT plans.
 
-  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest`, a configuration requiring key attestations that offers the `attestation` proof type. There the key attestation naming every batch key is the proof (Appendix F.3, HAIP §4.5.1) and the suite issues one credential per attested key, so the module passes in the mdoc plans as well. Under the `jwt.keyattest` configuration the wallet sends one `jwt` proof whose attestation names every batch key (Appendix F.1). The suite reads `attested_keys` only for the `attestation` proof type and issues for the proof key of a `jwt` proof, so the wallet receives one credential there and the module skips as "batch behavior cannot be evaluated". Credo-based issuers apply F.1 as written and issue per attested key for both proof types (checked 2026-09-03 at the Animo playground: a batch of 8 for one `jwt` proof and for one `attestation` proof).
+  The mdoc plans request `eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest`, a configuration requiring key attestations that offers the `attestation` proof type. There the key attestation naming every batch key is the proof (Appendix F.3, HAIP §4.5.1) and the suite issues one credential per attested key, so the module passes in the mdoc plans as well. Under the `jwt.keyattest` configuration the wallet sends one `jwt` proof whose attestation names every batch key (Appendix F.1). The suite reads `attested_keys` only for the `attestation` proof type and issues for the proof key of a `jwt` proof, so the wallet receives one credential there and the module skips as "batch behavior cannot be evaluated". Credo-based issuers apply F.1 as written and issue per attested key for both proof types (checked 2026-09-03: a batch of 8 for one `jwt` proof and for one `attestation` proof).
 - `oid4vp-1final-wallet-ignores-unusable-encryption-key`: the verifier's `client_metadata.jwks` advertises two unusable keys (a post-quantum-shaped `kty: AKP` key and a made-up `kty`) alongside the usable key. The wallet ignores keys it cannot use per RFC 7517 §5 and encrypts to the usable key. Passes in all encrypted response mode variants (plans 2, 4, 9, 10, 11, 12).
 
 Release-v5.2.1 also enforces RFC 8414 §3.1 on the wallet's OAuth authorization server metadata request: the wallet strips the issuer's terminating `/` before inserting `/.well-known/oauth-authorization-server`, and preserves the Credential Issuer Identifier path verbatim for `/.well-known/openid-credential-issuer` per OID4VCI 1.0 §12.2.2.
 
 ## Result Classification
 
-- `PASSED` is green.
+- `PASSED` is a pass.
 - `REVIEW` is pass-equivalent for this local harness when the runner summary shows `FINISHED`, `REVIEW`, and `0 FAILURE`. These modules are negative tests where the wallet rejects the request and the harness uploads the required screenshot placeholder.
-- `INTERRUPTED` is not pass-equivalent.
+- `INTERRUPTED` counts as a failure.
 
 ## Matrix
 
-Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run, so they are linked against the plan they depict rather than the row number, and the two pre-authorized code plans have none.
+Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screenshots are the plan-detail pages of the 2026-07-30 12-plan run. Each links to the plan it depicts, and the two pre-authorized code plans have none.
 
 | # | Plan | Variant | Current result | Screenshot |
 |---|---|---|---|---|
@@ -185,23 +185,23 @@ Condition counts are from the 2026-08-09 run on suite release-v5.2.2. The screen
 
 ## Debug Mode Reference Run
 
-The documented matrix above runs the wallet in `strict` mode. A full reference run with `OIDF_WALLET_MODE=debug` (2026-07-31, same suite baseline, run directory `/tmp/oidf-wallet-conformance-local-debug`) shows exactly which coverage depends on strict-mode enforcement:
+The documented matrix above runs the wallet in `strict` mode. A full reference run with `OIDF_WALLET_MODE=debug` (2026-07-31, same suite baseline, run directory `/tmp/oidf-wallet-conformance-local-debug`) shows which coverage depends on strict mode:
 
-- 38 negative modules fail in debug mode because the wallet logs the violation and continues instead of rejecting:
+- 38 negative modules fail in debug mode because the wallet logs the violation and continues:
   - every VP plan: `invalid-request-object-signature` (signed variants), `missing-nonce`, `unknown-transaction-data-type`, plus `redirect-uri-with-direct-post` (redirect variants) and `response-uri-not-client-id` (plan 3)
   - both VCI HAIP plans: FAPI `discovery-issuer-mismatch`, `invalid-authorization-response-iss`, `remove-authorization-response-iss`, and `missing-state`
-- Everything else still passes: all positive modules, both VCI Final plans in full, and the negative checks that are not mode-gated (`mismatched-client-id`, `wrong-expected-origins`, FAPI `invalid-state`).
+- Everything else still passes: all positive modules, both VCI Final plans in full, and the negative checks that apply in both modes (`mismatched-client-id`, `wrong-expected-origins`, FAPI `invalid-state`).
 
 Debug mode is for troubleshooting verifier and issuer integrations. Only strict-mode runs count as conformance results.
 
 ## VP Module Selection
 
-The wrapper passes explicit module lists for the alpha Final VP plans, so the local result pages show executable coverage for each generated variant.
+The wrapper passes explicit module lists for the alpha Final VP plans, so each result page shows only the modules that apply to its variant.
 
 Suite-side exclusions:
 
 - `invalid-client-id-prefix` runs everywhere except the DC API plans, whose unsigned requests carry no `client_id` to corrupt (the module's own `@VariantNotApplicableWhen`).
-- VP Final `direct_post` omits `alternate-happy-flow` because that module unconditionally replaces encrypted-response setup that is absent for plain `direct_post`.
+- VP Final `direct_post` omits `alternate-happy-flow` because that module rewrites the encrypted-response setup, which plain `direct_post` lacks.
 - VP Final x509 variants omit `response-uri-not-client-id`. The suite marks that module not applicable for `x509_hash`, and the applicable `redirect_uri` variant passes as `REVIEW`.
 - VP Final non-multisigned variants omit `multisigned-one-invalid-signature`.
 - VP unencrypted variants (`direct_post`, `dc_api`) omit `ignores-unusable-encryption-key` per the module's `@VariantNotApplicable`. The unencrypted modes never advertise an encryption key.
@@ -215,7 +215,7 @@ Current `no-claims-in-dcql-query` status:
 
 ## Visual Evidence
 
-These screenshots are the local OIDF `plan-detail.html` pages from the current documented runs. They preserve the suite's green, review, and not-run status boxes.
+Local OIDF `plan-detail.html` pages from the documented runs.
 
 <details>
 <summary>Plan 1: VP Final SD-JWT direct_post</summary>
@@ -318,7 +318,7 @@ Use the printed `plan-detail.html?plan=...` URLs from `runner.log` to inspect mo
 When the wallet or suite baseline changes:
 
 - rerun the full matrix unless the change is clearly limited to a documented targeted rerun
-- preserve all previously passing conformance coverage
+- keep every passing module passing
 - update the baseline tag, suite revision, run directory, runner log, and exported artifact location
 - update the matrix, suite-side exclusions, and screenshots in this file
 - keep suite-side exclusions visible until the upstream suite behavior changes

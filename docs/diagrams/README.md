@@ -1,8 +1,6 @@
 # Flow Diagrams
 
-The diagrams are Mermaid source, so the pages stay reviewable in plain text.
-
-They treat `eudi-dev` as a single actor and show the external interaction pattern and the request parameters or wallet flags that change behavior.
+The diagrams are Mermaid source, reviewable in plain text. They treat `eudi-dev` as a single actor and show the external interaction pattern plus the request parameters and wallet flags that change behavior.
 
 ## Pages
 
@@ -76,6 +74,6 @@ sequenceDiagram
 
 ## Reading Guide
 
-- Start with [OID4VCI Flows](./oid4vci.md) if you want to understand how credentials get into the wallet.
-- Start with [OID4VP Flows](./oid4vp.md) if you want to understand how the wallet selects and returns stored credentials.
-- Use the parameter tables on each page to see which request fields and wallet flags change behavior in `eudi-dev`.
+- [OID4VCI Flows](./oid4vci.md) shows how credentials get into the wallet.
+- [OID4VP Flows](./oid4vp.md) shows how the wallet selects and returns stored credentials.
+- The parameter tables on each page list the request fields and wallet flags that change behavior.

@@ -1,6 +1,6 @@
 # Running OIDF Wallet Conformance
 
-This runbook runs the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. Status and result matrix: [Current conformance results](./conformance-results.md). The reverse direction (the suite playing the wallet against the demo issuer and verifier) has [its own runbook](./conformance-run-demorp.md).
+This runbook runs the current OIDF Final and HAIP wallet plans against the local `eudi-dev` testing wallet. Status and result matrix: [Current conformance results](./conformance-results.md). The reverse direction (the suite acting as the wallet against the demo issuer and verifier) has [its own runbook](./conformance-run-demorp.md).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ You need:
 - Maven
 - a local OpenID Foundation conformance-suite checkout
 
-The documented suite baseline is `release-v5.2.4`. Use a newer release only when intentionally updating the baseline and [results](./conformance-results.md).
+The documented suite baseline is `release-v5.2.4`. Use a newer release only when updating the baseline and the [results](./conformance-results.md).
 
 ## Start the Local Suite
 
@@ -26,9 +26,9 @@ git checkout release-v5.2.4
 mvn clean package
 ```
 
-Run the suite server **on the host**, not inside a container. The wallet advertises its status list at `https://localhost:<port+1>` and the suite fetches that URL itself. Inside a container `localhost` is the container, and every module that checks credential status fails with `Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host.
+Run the suite server **on the host**. The wallet advertises its status list at `https://localhost:<port+1>` and the suite fetches that URL itself. From inside a container every module that checks credential status fails with `Connection refused`. The `-nodocker` compose file keeps mongo and nginx in Docker and expects the server on the host.
 
-The `eudi-dev` wrapper defaults to plain `localhost` URLs. The server must advertise the same host, not the upstream default of `localhost.emobix.co.uk`:
+The `eudi-dev` wrapper defaults to plain `localhost` URLs, so the server must advertise `localhost` too (the upstream default is `localhost.emobix.co.uk`):
 
 ```bash
 cd ../conformance-suite
@@ -42,7 +42,7 @@ java -jar target/fapi-test-suite.jar \
   --spring.mongodb.uri=mongodb://127.0.0.1:27017/test_suite
 ```
 
-The suite must advertise the same host in generated authorization, callback, and helper URLs:
+The wrapper's server variables use the same host:
 
 - `CONFORMANCE_SERVER=https://localhost:8443/`
 - `CONFORMANCE_SERVER_LOCAL=https://localhost:8443/`
@@ -84,7 +84,7 @@ OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
 
-At the current baseline the full matrix runs with zero condition failures. The expected warnings and skips, and the exit status they produce, are recorded in [Current conformance results](./conformance-results.md). If a run reports failures, first compare against that matrix and its suite-side exclusions before treating the wallet as regressed.
+At the current baseline the full matrix runs with zero condition failures. The expected warnings and skips, and the exit status they produce, are recorded in [Current conformance results](./conformance-results.md). Compare a failing run against that matrix before treating the wallet as regressed.
 
 ## Rerun Selected Plans or Modules
 
@@ -113,7 +113,7 @@ The wrapper prints the run directory and leaves these artifacts:
 - `runner.log`: mirrored official runner output
 - `results/`: exported OIDF result archives
 - `results/*-config.json`: generated OIDF config files
-- `results/*-wallet-activity.json`: the wallet's activity log for each plan, every token and credential request and response with its body. The client-side log the certification submission asks for with the VCI plans (the wallet is the OAuth client there)
+- `results/*-wallet-activity.json`: the wallet's activity log per plan (every token and credential request and response with its body). The certification submission asks for this client-side log with the VCI plans
 
 The Python runner also prints local `plan-detail.html?plan=...` URLs for inspecting the created plans in the suite UI.
 
@@ -129,7 +129,7 @@ When updating [Current conformance results](./conformance-results.md), include t
 
 ## Environment Overrides
 
-- `CONFORMANCE_MODE`: `local` by default. Use `hosted` only when intentionally running against the OIDF hosted service
+- `CONFORMANCE_MODE`: `local` (default) or `hosted` for the OIDF hosted service
 - `CONFORMANCE_SERVER`: local conformance-suite base URL. Defaults to `https://localhost:8443/`
 - `CONFORMANCE_SERVER_LOCAL`: local callback/helper base URL. Defaults to `CONFORMANCE_SERVER`
 - `CONFORMANCE_SERVER_MTLS`: local mTLS base URL. Defaults to `https://localhost:8444/`
@@ -147,11 +147,11 @@ When updating [Current conformance results](./conformance-results.md), include t
 - `OIDF_VCI_REDIRECT_URI`: override the configured OID4VCI redirect URI
 - `OIDF_VCI_ALIAS`: convenience alias used by the default `OIDF_VCI_REDIRECT_URI`
 - `OIDF_SUITE_URL`: override the suite tarball URL. Defaults to the latest upstream release archive
-- `OIDF_VP_MODULES`: comma separated module names to run instead of each VP plan's own list, for targeted reproductions (a plan holding one module of interest). Never for certification runs
-- `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the harness cancels the stuck modules on the suite (they record as that module's failure and the plan continues). A run that stays silent after cancelling is terminated. Defaults to `180`, set `0` to disable
+- `OIDF_VP_MODULES`: comma separated module names to run instead of each VP plan's own list, for targeted reproductions (a plan with one module of interest). Never for certification runs
+- `OIDF_MODULE_IDLE_TIMEOUT`: seconds without `run-test-plan.py` output before the harness cancels the stuck modules on the suite (they record as that module's failure and the plan continues). A run that produces no output after the cancel is terminated. Defaults to `180`, set `0` to disable
 - `OIDF_REQUEST_TIMEOUT`: seconds the monitor waits for a suite API response. Defaults to `20`, set `60` on a loaded machine
-- `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite shares the machine with the wallet and can take tens of seconds to answer under load. The wallet's own default is `15s`, kept short for interactive use. An unparseable value is ignored and the default applies
-- `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite database after a run. Otherwise the wrapper drops it, because a database carrying days of runs makes the server pause long enough to stall a run
+- `EUDI_REMOTE_TIMEOUT`: how long the wallet waits for a counterparty, as a Go duration (`45s`, `2m`). The wrapper sets `120s` because the suite can take tens of seconds to answer under load (the wallet's own default is `15s`). An unparseable value is ignored
+- `OIDF_KEEP_SUITE_DB`: set to `1` to keep the local suite database after a run. By default the wrapper drops it, since a database holding many runs slows the server enough to stall a run
 
 ## Hosted Mode
 
@@ -161,7 +161,7 @@ The hosted suite fetches the wallet status list itself, so the wallet needs a pu
 
 The default hosted target is the demo service. Certification runs go to the production service, which needs its own token. The token comes from `OIDF_TOKEN` in `.env` (or export `CONFORMANCE_TOKEN`). Tokens are per instance (a production token gets 401 on the demo host).
 
-On the production service the wrapper runs only the certifiable HAIP plans, complete and unfiltered. The alpha Final plans are quality evidence and run against the local suite or the hosted demo service, where the full matrix applies.
+On the production service the wrapper runs only the certifiable HAIP plans, complete and unfiltered. The alpha Final plans run against the local suite or the hosted demo service.
 
 ### Against the strict conformance host
 
@@ -179,11 +179,11 @@ OIDF_REQUEST_TIMEOUT=60 \
   scripts/oidf-wallet-conformance.sh
 ```
 
-The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch. `OIDF_VCI_ALIAS` must match the redirect URI the deployed wallet was started with (the compose file pins `oid4vc-dev-vci-strict`). The wallet CA is fetched from the wallet's `/api/certificates/ca`. Deploy a release that contains the wallet behavior being certified before the run.
+The wrapper starts no wallet of its own. It drives the tunneled instance over its API, including the per-module conformance switch. `OIDF_VCI_ALIAS` must match the redirect URI the deployed wallet was started with (the compose file sets `oid4vc-dev-vci-strict`). The wallet CA is fetched from the wallet's `/api/certificates/ca`. Deploy the release under certification before the run.
 
 ### Against a local wallet through a tunnel
 
-Without the strict host, start a tunnel that terminates TLS in front of the wallet port and pass it as `OIDF_WALLET_BASE_URL`. The wallet then serves its issuer metadata and status list on that origin (an https base URL becomes the issuer origin directly):
+For a local wallet, start a tunnel that terminates TLS in front of the wallet port and pass it as `OIDF_WALLET_BASE_URL`. The wallet then serves its issuer metadata and status list on that origin:
 
 ```bash
 ngrok http 18085
@@ -204,4 +204,4 @@ To clear the account's plans on the hosted service between attempts:
 scripts/oidf-delete-hosted-plans.sh
 ```
 
-It deletes every plan the token owns on `CONFORMANCE_SERVER` (default production). Published plans are immutable on the service and are reported and kept.
+It deletes every plan the token owns on `CONFORMANCE_SERVER` (default production). Published plans are immutable and are listed and kept.

@@ -1,15 +1,15 @@
 # Validate
 
-Check a credential's signature, expiry, and revocation status. `decode` only parses and displays. `validate` checks correctness.
+Check a credential's signature, expiry, and revocation status. `decode` parses and displays, `validate` checks.
 
 Signature keys are resolved in this order:
 
 1. The credential's x5c (SD-JWT/JWT) or x5chain (mDOC) certificate chain, validated against `--trust-list` when given
 2. An explicitly provided `--key`
-3. The embedded leaf certificate alone, when no trust list is given. This works fully offline. The output notes that the chain was not validated (the signature is intact, trust is not established)
-4. JWT VC Issuer Metadata, for credentials without an embedded certificate. SD-JWT VC §3 puts `/.well-known/jwt-vc-issuer` between the host and the path of `iss`, so `https://example.com/tenant/1234` is read from `https://example.com/.well-known/jwt-vc-issuer/tenant/1234`. The document's `issuer` must be identical to `iss`, and the keys come from `jwks` or `jwks_uri` (never both)
+3. The embedded leaf certificate alone, when no trust list is given. This works offline. The output notes that the chain was not validated
+4. JWT VC Issuer Metadata, for credentials without an embedded certificate. SD-JWT VC §3 puts `/.well-known/jwt-vc-issuer` between the host and the path of `iss`, so `https://example.com/tenant/1234` is read from `https://example.com/.well-known/jwt-vc-issuer/tenant/1234`. The document's `issuer` must equal `iss`, and the keys come from `jwks` or `jwks_uri` (never both)
 
-A credential that carries its certificate chain validates without network access, even when its issuer is unreachable. Credentials without keys or certificates get expiry and status checks only.
+A credential with its certificate chain validates without network access. Credentials without keys or certificates get expiry and status checks only.
 
 ```bash
 # Full validation with signature verification
@@ -29,16 +29,16 @@ eudi validate credential.txt
 | `--key`           | Public key file (PEM or JWK), optional            |
 | `--trust-list`    | ETSI trust list JWT (file path or URL), optional   |
 | `--status-list`   | Check revocation via status list when the credential contains a status reference (enabled by default) |
-| `--allow-expired` | Don't fail on expired credentials                  |
+| `--allow-expired` | Accept expired credentials                         |
 | `--haip` | Also check the credential against HAIP 1.0 and report what it breaks |
 
 ## Revocation status
 
-When a credential carries a status reference, `validate` fetches the Status List Token and reads the entry. It requests `application/statuslist+jwt` and `application/statuslist+cwt` and parses whichever comes back, so CWT lists work as well as JWT ones.
+When a credential carries a status reference, `validate` fetches the Status List Token and reads the entry. It accepts both `application/statuslist+jwt` and `application/statuslist+cwt`.
 
-The token's signature is always verified. A check that cannot be completed is an error, not a result. The signing key is trusted via `--trust-list` when the token's chain is anchored there. Otherwise the key comes from the token itself (`x5c` / `x5chain`, or a `jwk` in its header) and the result says the key is not trust anchored. The token's `sub` must equal the `uri` in the credential's status claim. `typ`, `iat` and `exp` are checked too, so a stale list or one for a different credential is rejected.
+The token's signature is always verified. A check that cannot complete is an error. The signing key is trusted through `--trust-list` when the token's certificate chain ends in one of its CAs. Otherwise the key comes from the token itself (`x5c` / `x5chain`, or a header `jwk`) and the result notes the key is unanchored. The token's `sub` must equal the `uri` in the credential's status claim. `typ`, `iat` and `exp` are checked too.
 
-The status is reported by name (VALID, INVALID, SUSPENDED, an application specific value, or unknown) with the raw value alongside. A two-bit or wider list is not flattened into revoked and not revoked.
+The status is reported by name (VALID, INVALID, SUSPENDED, an application specific value, or unknown) with the raw value. Multi-bit lists keep their full value.
 
 ## Certificate chain validation
 
@@ -49,14 +49,13 @@ When a trust list is given and the credential contains an x5c (SD-JWT/JWT) or x5
 3. The leaf certificate is verified to chain up to a trust list CA via any intermediates
 4. The leaf certificate's public key is used to verify the credential signature
 
-Wallet-generated SD-JWT credentials follow the same model. The SD-JWT header carries a deterministic `kid` plus the leaf signing certificate in `x5c`. The wallet trust list exposes the CA trust anchor separately. The wallet also publishes HTTPS JWT VC issuer metadata at `/.well-known/jwt-vc-issuer` for ecosystems that resolve issuer keys via metadata/JWKS.
+Wallet-issued SD-JWT credentials follow the same model. The header carries a deterministic `kid` and the leaf certificate in `x5c`, and the wallet trust list carries the CA. The wallet also publishes JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`.
 
-The web decoder (`eudi serve` and the wallet's embedded decoder) additionally uses the local wallet's CA as an implicit trust anchor when no key or trust list is provided. Credentials issued by the local wallet then show a fully verified chain without any configuration.
+The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the local wallet's CA as an implicit trust anchor when no key or trust list is given. Credentials issued by the local wallet then show a verified chain.
 
-Trust-list validation covers certificate trust and service listing. Provider class and attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar data.
-The trust-list parser and decoder accept the ETSI field names, including `ListIssueDateTime`. When a wallet exposes multiple trust-list profiles, use the legacy `/api/trustlist` endpoint for PID compatibility or resolve a specific profile from `/api/trustlists`. For containerized callers, prefer the index entry's relative `path` over its optional advertised URL.
+Trust-list validation covers certificate trust and service listing. Provider class and attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar data. When a wallet exposes several trust-list profiles, `/api/trustlist` serves the PID list and `/api/trustlists` lists every profile. In containers, use the index entry's relative `path` instead of its advertised URL.
 
-If a verifier test environment needs to trust the wallet's local HTTPS endpoints, export the shared wallet CA with `eudi wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. Use `wallet tls-cert` only when you need the exact per-wallet HTTPS leaf certificate as a single PEM.
+To let a verifier trust the wallet's local HTTPS endpoints, export the wallet CA with `eudi wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate as a single PEM instead.
 
 ```bash
 # Validate a wallet-issued credential against the wallet's trust list
@@ -68,6 +67,6 @@ eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-
 
 ## HAIP 1.0
 
-`--haip` adds the rules the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) puts on a credential, on top of what the format itself requires. Today that is section 6.1.1: an SD-JWT VC must carry its issuer's signing certificate and a trust chain in the `x5c` header, the certificate of the trust anchor must not be included there, and the signing certificate must not be self-signed. A HAIP verifier refuses a credential that breaks these. This flag reports it before one does.
+`--haip` adds the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) rules to the format's own checks. Section 6.1.1 requires an SD-JWT VC to carry its issuer's signing certificate and chain in the `x5c` header, without the trust anchor, and forbids a self-signed signing certificate.
 
-Findings are printed. The exit code follows the credential's own validity (signature, expiry, revocation), so `--haip` reports what a credential breaks whether or not it is otherwise valid.
+Findings are printed. The exit code follows only the credential's own validity (signature, expiry, revocation).

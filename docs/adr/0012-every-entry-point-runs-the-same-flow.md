@@ -1,29 +1,29 @@
 # Every entry point runs the same flow
 
-An issuance or a presentation reaches this wallet through several doors: a URL-scheme dispatch from the handler, `eudi wallet accept` with a link, `eudi wallet scan` off a QR code or an image, a paste into the wallet UI, `POST /api/offers` or `POST /api/presentations` from a script, `GET /credential-offer` and `GET /authorize` addressed by an issuer or a verifier, and `POST /api/dc-api` for the Digital Credentials API. All of them run the same flow. A door decides only how a request arrives. What happens to it afterwards is one code path, and any door may be swapped for another without the protocol behaving differently.
+An issuance or a presentation reaches this wallet through several entry points: a URL-scheme dispatch from the handler, `eudi wallet accept` with a link, `eudi wallet scan` off a QR code or an image, a paste into the wallet UI, `POST /api/offers` or `POST /api/presentations` from a script, `GET /credential-offer` and `GET /authorize` addressed by an issuer or a verifier, and `POST /api/dc-api` for the Digital Credentials API. All of them run the same flow. An entry point only decides how a request arrives. Everything after that is one code path.
 
-## What a door may do
+## What an entry point may do
 
-Recognise what arrived and hand it over. A scan additionally turns a picture into a URI, and a prompt may collect something the user has to type.
+Recognise the input and pass it to the flow. A scan additionally turns a picture into a URI, and a prompt may collect something the user has to type.
 
-## What a door may not do
+## What an entry point may not do
 
-Read anything the flow will read. A `credential_offer_uri` and a `request_uri` are fetched by whoever runs the flow, and a door does not fetch them to look inside first. Issuers and verifiers may serve these once: some issuers consume a credential offer on the first read, and RFC 9126 §4 says "the client MUST only use a `request_uri` value once". A door that peeks spends the read the flow needed and leaves it with a 404 for something the user is holding in front of them.
+Read anything the flow will read. A `credential_offer_uri` and a `request_uri` are fetched by whoever runs the flow. Some issuers consume a credential offer on the first read, and RFC 9126 §4 says "the client MUST only use a `request_uri` value once". An entry point that fetches it first uses up that read, and the flow gets a 404.
 
-Where a door genuinely holds a copy of what the flow will read, it passes it on so the flow survives an issuer that will not serve a second read. `OfferOptions.ResolvedOffer` is that channel.
+An entry point that already holds a copy of the offer passes it on in `OfferOptions.ResolvedOffer`, so the flow works with an issuer that serves the offer once.
 
-Nor may a door decide what the flow decides from the protocol: which credentials match, whether consent is required, what the user is asked. Settings the user chose (`--haip`, the validation mode, `--auto-accept`) are a different thing, and they travel as options rather than being inferred from what arrived.
+An entry point does not decide what the protocol decides: which credentials match, whether consent is required, what the user is asked. Settings the user chose (`--haip`, the validation mode, `--auto-accept`) are passed as options.
 
 ## Where the transaction code comes from
 
-A transaction code is delivered out of band, so somebody has to ask for it. The wallet's consent dialog asks whenever a wallet with a UI is asked interactively, which covers the handler, a remote wallet, and a scan or a link routed to a running instance. An issuance that is not interactive (`--auto-accept`, or an API caller) is not asked, and §4.1.1 puts `tx_code` in the grant because the Authorization Server expects one, so an issuance holding an offer that names it and no code refuses before the pre-authorized code is spent, naming what to supply.
+A transaction code is delivered out of band, so the wallet has to ask the user for it. The consent dialog asks whenever an interactive wallet with a UI handles the offer. That covers the handler, a remote wallet, and a scan or a link routed to a running instance. A non-interactive issuance (`--auto-accept`, or an API caller) is never asked. §4.1.1 puts `tx_code` in the grant because the Authorization Server expects one. An issuance with such an offer and no code is refused before the pre-authorized code is used, and the refusal says what to supply.
 
-The one flow with no UI is the local headless one, `eudi wallet accept` with no wallet server running, where the CLI prompt is the only channel. It is the single exception to the rule above, at a cost: the issuance reads the URI again to notice an offer that changed under it, so against a one-shot issuer that read fails and the issuance continues on the copy the prompt handed over, with `credential_offer_reread_failed` in the activity log.
+The local headless flow (`eudi wallet accept` with no wallet server running) has no UI, so the CLI prompt asks. It is the single exception to the rule above. The issuance reads the URI again to notice an offer that changed in the meantime. With an issuer that serves the offer once, that read fails and the issuance continues with the copy from the prompt, with `credential_offer_reread_failed` in the activity log.
 
 ## Consequences
 
-The CLI has one junction, `acceptOID4URI`: it decides local or remote, and nothing above it touches what arrived. The server has one per protocol, `POST /api/offers` and `POST /api/presentations`, which the handler, the UI and script callers all reach. A new entry point calls one of them rather than growing its own variant.
+The CLI has one entry, `acceptOID4URI`. It decides between local and remote, and nothing before it reads the URI. The server has one per protocol, `POST /api/offers` and `POST /api/presentations`, which the handler, the UI and script callers all reach. A new entry point calls one of them.
 
-A bug found at one door is a bug at all of them, and a test written for one covers the rest. `TestRemoteAcceptLeavesTheOfferForTheWallet` pins the rule that costs the most when it is broken: a door that reads what the flow will read.
+A bug found at one entry point is a bug at all of them, and a test written for one covers the rest. `TestRemoteAcceptLeavesTheOfferForTheWallet` covers the most damaging violation, an entry point that reads what the flow will read.
 
-Behaviour that differs between doors is a defect unless it is the door's own job (a camera, a terminal prompt). Where you find one, make the doors agree rather than documenting the difference.
+Behaviour that differs between entry points is a defect unless it is the entry point's own job (a camera, a terminal prompt). Fix the difference instead of documenting it.

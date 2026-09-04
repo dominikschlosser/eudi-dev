@@ -1,6 +1,6 @@
 # Decode
 
-Auto-detect and inspect credentials (SD-JWT, JWT VC, mDOC), OpenID4VCI/VP requests, and ETSI trust lists.
+Inspect credentials (SD-JWT, JWT VC, mDOC), OpenID4VCI/VP requests, and ETSI trust lists. The format is detected from the input.
 
 ```bash
 # Credentials
@@ -37,7 +37,7 @@ eudi decode -f trustlist https://example.com/trust-list.jwt
 
 ## Format override
 
-Use `--format` / `-f` to skip auto-detection when it gets it wrong (e.g. a credential JWT whose payload happens to contain `credential_issuer`):
+`--format` / `-f` sets the format when auto-detection picks the wrong one (for example a credential JWT whose payload contains `credential_issuer`):
 
 ```bash
 eudi decode -f jwt "eyJhbGci..."
@@ -58,15 +58,15 @@ eudi decode --qr screenshot.png
 eudi decode --screen
 ```
 
-`--screen` uses the native macOS `screencapture` tool in interactive selection mode. A crosshair lets you select the region with the QR code. On other platforms, take a screenshot and use `--qr screenshot.png` instead.
+`--screen` runs the macOS `screencapture` tool in interactive selection mode. Select the region with the QR code. On other platforms, take a screenshot and pass it with `--qr`.
 
-> **Note:** macOS grants screen capture permission to the **terminal app** (Terminal.app, iTerm2, etc.), not to the `eudi` binary. If permission is missing, System Settings opens at the Screen Recording pane. Enable access for your terminal app there, then re-run the command.
+> **Note:** macOS grants screen capture permission to the terminal app (Terminal.app, iTerm2). If it is missing, System Settings opens at the Screen Recording pane. Enable access for your terminal app there and run the command again.
 
 ## Flags
 
 | Flag             | Description                                                  |
 |------------------|--------------------------------------------------------------|
-| `-f`, `--format` | Pin format: `sdjwt`, `jwt`, `mdoc`, `vci`, `vp`, `trustlist` |
+| `-f`, `--format` | Set the format: `sdjwt`, `jwt`, `mdoc`, `vci`, `vp`, `trustlist` |
 | `--qr`           | Decode QR from a PNG or JPEG image file                      |
 | `--screen`       | Open interactive screen region selector and decode a QR code from the selection (macOS only) |
 
@@ -96,6 +96,6 @@ SD-JWT Credential
 
 `decode` verifies JWT or SD-JWT signatures automatically, against the embedded `x5c` certificate when the credential carries one, otherwise against issuer metadata resolved from `iss` and `kid`. Use `validate` for explicit trust inputs (`--key`, `--trust-list`, status-list checking).
 
-An SD-JWT that breaks an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is printed with the violated rule named above the output. The wallet's import path rejects such a credential.
+An SD-JWT that violates an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, a disclosure nothing refers to) is printed with the violated rule named above the output. The wallet refuses to import such a credential.
 
 Use `-v` for x5c chains, digest IDs, and device key info. Use `--json` for machine-readable output.

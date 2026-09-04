@@ -1,15 +1,15 @@
 # Architecture
 
-Where things live and how a request moves through them. Why things are the way they are is in the [decision records](#decisions).
+The package layout and how a request passes through it. The reasons are in the [decision records](#decisions).
 
-For the vocabulary these documents use (and the terms this project overloads), see [CONTEXT.md](CONTEXT.md).
+For the vocabulary these documents use, see [CONTEXT.md](CONTEXT.md).
 
 ## Layout
 
 ```
 main.go        Entry point
 cmd/           CLI commands (Cobra), one file per command or command group
-internal/      Everything else (see ADR-0007 for why nothing is importable)
+internal/      Everything else (ADR-0007)
 e2e/           Playwright tests against a running wallet server
 examples/      Keycloak and web-wallet integration examples
 ```
@@ -28,7 +28,7 @@ examples/      Keycloak and web-wallet integration examples
 | `imprint` | Operator-supplied legal notice page |
 | `jsonutil` | Type-safe accessors for `map[string]any` |
 | `jwe` | Compact JWE decryption (ECDH-ES, Concat KDF, AES-GCM) |
-| `jws` | JWS signing (ES256) and verification (ES, RS and PS families), shared so neither can drift (ADR-0008) |
+| `jws` | JWS signing (ES256) and verification (ES, RS and PS families), shared by signer and verifier (ADR-0008) |
 | `keys` | PEM and JWK key loading and conversion |
 | `mdoc` | mdoc parsing (CBOR) and COSE_Sign1 verification |
 | `mock` | Test credential generators |
@@ -46,15 +46,13 @@ examples/      Keycloak and web-wallet integration examples
 
 ## Flows
 
-Described in domain terms rather than function names, which go stale.
+**Decode and validate.** Input arrives from a file, URL, stdin or a QR scan. Format detection picks the parser. The parser produces a token or document. The result is printed or carried into verification (signature, validity period, revocation).
 
-**Decode and validate.** Input arrives from a file, URL, stdin or a QR scan. Format detection picks the parser, the parser produces a token or document, and the result is either printed or carried into verification (signature, validity period, revocation).
+**Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, fetched by reference and possibly encrypted. A request object replaces the parameter set, so the wallet acts on what the verifier signed. The wallet validates the request (client identifier, request object, signature, required parameters) and handles findings according to the active validation mode (ADR-0001). With `--haip` it also checks the request against HAIP, and those violations are errors in either mode. It then matches the request against held credentials with DCQL. The wallet answers a request for a type with a credential of that type or of one extending it. The user consents or the wallet auto-accepts. The wallet builds a VP token (SD-JWT with a key binding JWT, or an mdoc DeviceResponse) and sends it to the verifier, encrypted when the response mode asks for it.
 
-**Presentation (OID4VP).** An authorization request arrives as a URI, an HTTP request to the wallet, or a browser API call. Its parameters may be inside a request object, which may itself be fetched by reference and encrypted. A request object replaces the parameter set rather than being merged into it, so what the verifier signed is what the wallet acts on. The request is validated (client identifier, request object, signature, required parameters) with the findings handled by the active validation mode (ADR-0001), optionally checked against HAIP, whose violations are errors either way, and then matched against held credentials with DCQL, where a requested type is answered by a credential of that type or of one extending it. The user consents or the wallet auto-accepts, a VP token is built (SD-JWT with a key binding JWT, or an mdoc DeviceResponse), and the response goes to the verifier, encrypted when the response mode asks for it.
+**Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata. It then runs the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata requires). At OpenID4VCI feature level 1.1, the wallet runs the interactive flow instead when the issuer publishes an authorization challenge endpoint. The wallet answers the challenge with an OpenID4VP presentation or sends the user to a browser sign-in (`auth_via_web`) and exchanges the resulting code as usual. It proves possession of its holder key, receives the credential, and imports it. An issuer that defers returns a transaction id, and the wallet collects the credential in the background.
 
-**Issuance (OID4VCI).** A credential offer arrives by URI or by reference. The wallet fetches issuer metadata and authorization server metadata, then runs either the pre-authorized code flow or the authorization code flow (PAR, PKCE, DPoP and client attestation as the issuer's metadata demands). At OpenID4VCI feature level 1.1, an issuer publishing an authorization challenge endpoint gets the interactive flow instead: the wallet answers the challenge with an OpenID4VP presentation or hands the user to a browser sign-in (`auth_via_web`) and exchanges the resulting code as usual. It proves possession of its holder key, receives the credential, and imports it. An issuer that defers hands back a transaction id, and collection continues in the background.
-
-**Proxy.** The wallet talks to a verifier or issuer through the proxy, which classifies each exchange as an OID4VP or OID4VCI step and shows it on a dashboard.
+**Proxy.** The wallet connects to a verifier or issuer through the proxy. The proxy classifies each exchange as an OID4VP or OID4VCI step and shows it on a dashboard.
 
 ## Decisions
 
@@ -63,7 +61,7 @@ Described in domain terms rather than function names, which go stale.
 | [0001](docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md) | Debug-by-default validation with an opt-in strict mode |
 | [0002](docs/adr/0002-the-wallet-http-api-is-unauthenticated.md) | The wallet HTTP API is unauthenticated |
 | [0003](docs/adr/0003-keys-and-credentials-are-stored-unencrypted.md) | Keys and credentials are stored unencrypted |
-| [0004](docs/adr/0004-outbound-fetches-are-policed-at-dial-time.md) | Outbound fetches are policed at dial time, not at the URL |
+| [0004](docs/adr/0004-outbound-fetches-are-policed-at-dial-time.md) | Outbound fetches are policed at dial time |
 | [0005](docs/adr/0005-the-server-reloads-its-store-on-every-request.md) | The server reloads its store on every request |
 | [0006](docs/adr/0006-one-binary-plays-wallet-issuer-verifier-and-ca.md) | One binary plays wallet, issuer, verifier and CA |
 | [0007](docs/adr/0007-everything-lives-under-internal.md) | Everything lives under `internal/` |
@@ -72,9 +70,12 @@ Described in domain terms rather than function names, which go stale.
 | [0010](docs/adr/0010-spec-conformance-is-checked-before-and-after-every-change.md) | Spec conformance is checked before and after every change |
 | [0011](docs/adr/0011-a-flow-belongs-to-the-browser-that-started-it.md) | A flow belongs to the browser that started it |
 | [0012](docs/adr/0012-every-entry-point-runs-the-same-flow.md) | Every entry point runs the same flow |
+| [0013](docs/adr/0013-only-the-eudi-stack-is-supported.md) | Only what the EUDI stack references is supported |
+| [0014](docs/adr/0014-pinned-draft-versions-stay-supported-alongside-the-latest.md) | Pinned draft versions stay supported alongside the latest |
+| [0015](docs/adr/0015-the-web-ui-lays-out-at-phone-width.md) | The web UI lays out at phone width |
 
 ## Related
 
 - [CONTEXT.md](CONTEXT.md) glossary
 - [docs/spec-compliance.md](docs/spec-compliance.md) feature-by-feature status against the specifications
-- [SECURITY.md](SECURITY.md) what this tool does and does not protect
+- [SECURITY.md](SECURITY.md) scope and threat model

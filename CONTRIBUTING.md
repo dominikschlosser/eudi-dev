@@ -33,34 +33,31 @@ go test -v -count=1 ./internal/wallet/...
 
 ### E2E Tests
 
-E2E tests use Playwright. The Playwright `webServer` builds and starts the
-binary's `serve` command, so the suite drives a live server:
+E2E tests use Playwright. Its `webServer` builds the binary and starts `serve`, so the suite runs against a live server:
 
 ```bash
 cd e2e
 npm install
-npx playwright install --with-deps chromium   # download the browser (npm install does not)
+npx playwright install --with-deps chromium
 npx playwright test
 ```
 
-Some specs (`docker.spec.js`) build and run a Docker image, so they need a
-running Docker daemon. Skip them with `--grep-invert docker` if Docker is
-unavailable.
+The Docker specs (`docker.spec.js`) need a running Docker daemon. Skip them with `--grep-invert docker`.
 
 ## Code Style
 
 - Run `go vet ./...` before committing
 - CI runs `golangci-lint` (errcheck, errorlint, gosec, govet, staticcheck, unused, plus gofmt and goimports as formatters)
 - Imports: stdlib first, then external deps, then internal packages (enforced by goimports)
-- Use `internal/jsonutil` for type assertions on `map[string]any` instead of inline casts
-- Constants (ports, timeouts) go in `internal/config/defaults.go`
+- Use `internal/jsonutil` for type assertions on `map[string]any`
+- Defaults (ports, timeouts) go in `internal/config/defaults.go`
 
 ## Test Patterns
 
 - Use `t.Helper()` in test helper functions
 - Use `mock.GenerateKey()`, `mock.GenerateSDJWT()`, `mock.GenerateMDOC()` for test fixtures
 - Table-driven tests with `t.Run()` for multiple cases
-- Test files live next to the code they test (`foo_test.go` in the same package)
+- Test files are in the same package as the code they test (`foo_test.go`)
 
 ## Project Structure
 
@@ -70,9 +67,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and data flow.
 
 1. Create a feature branch from `main`
 2. Ensure `go build ./...`, `go vet ./...`, and `go test ./...` pass
-3. Keep changes focused. One feature or fix per PR
+3. One feature or fix per PR
 4. Update docs in `docs/` if adding or changing CLI flags
 
 ## Sign-off (DCO)
 
-Every commit needs a [Developer Certificate of Origin](https://developercertificate.org/) sign-off, which `git commit -s` adds as a `Signed-off-by` trailer with your name and email. The DCO check on pull requests verifies it. To fix a branch with unsigned commits: `git rebase --signoff main`.
+Every commit needs a [Developer Certificate of Origin](https://developercertificate.org/) sign-off. `git commit -s` adds the `Signed-off-by` trailer. Pull requests are checked for it. To sign off an existing branch: `git rebase --signoff main`.

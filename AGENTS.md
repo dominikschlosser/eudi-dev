@@ -12,12 +12,11 @@ See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
-Single-context: `CONTEXT.md` and `docs/adr/` at the repo root.
+Single-context repo: the glossary is `CONTEXT.md` at the root, the decision records live in `docs/adr/`.
 See `docs/agents/domain.md`.
 
 ### Comments
 
-A comment earns its place or it goes. Cite a spec, name a constraint the code
-cannot show, or say why the obvious approach fails. Do not restate the code,
-narrate what was removed, or explain a one-line constant in a paragraph.
+A comment cites a spec, names a constraint the code cannot show, or says why
+the obvious approach fails. Otherwise leave it out.
 See `docs/agents/comments.md`.
