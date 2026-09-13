@@ -75,11 +75,19 @@
   const CREDENTIALS_PER_PAGE = 10;
   let credentialPage = 0;
   let credentialTotal = 0;
+  let credentialsLoaded = false;
+  let logLoaded = false;
+  let credentialLoadId = 0;
+  let logLoadId = 0;
 
   const credContainer = document.getElementById('credentials');
   const credEmpty = document.getElementById('cred-empty');
+  const credLoading = document.getElementById('cred-loading');
+  const credError = document.getElementById('cred-error');
   const logContainer = document.getElementById('log');
   const logEmpty = document.getElementById('log-empty');
+  const logLoading = document.getElementById('log-loading');
+  const logError = document.getElementById('log-error');
   const offerInput = document.getElementById('offer-input');
   const processBtn = document.getElementById('process-btn');
   const importBtn = document.getElementById('import-btn');
@@ -186,10 +194,16 @@
   }
 
   async function loadCredentials() {
+    const loadId = ++credentialLoadId;
+    credLoading.hidden = credentialsLoaded;
+    credError.hidden = true;
     try {
       const offset = credentialPage * CREDENTIALS_PER_PAGE;
       const resp = await fetch('/api/credentials?limit=' + CREDENTIALS_PER_PAGE + '&offset=' + offset);
-      credentials = await resp.json();
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const loadedCredentials = await resp.json();
+      if (loadId !== credentialLoadId) return;
+      credentials = loadedCredentials;
       credentialTotal = parseInt(resp.headers.get('X-Total-Count') || '0', 10);
       // Deleting the last credential on a page can move the offset past the end of the
       // list.
@@ -199,12 +213,18 @@
       }
       renderCredentials();
       renderPager();
+      credentialsLoaded = true;
       // Issuance can create trust profiles, so refresh their links too.
       loadTrustLists();
     } catch (e) {
+      if (loadId === credentialLoadId) credError.hidden = false;
       console.error('Failed to load credentials:', e);
+    } finally {
+      if (loadId === credentialLoadId) credLoading.hidden = true;
     }
   }
+
+  document.getElementById('cred-retry').addEventListener('click', loadCredentials);
 
   // Consent summaries contain only requested claims. Cache full credentials for Edit,
   // including failed reads to avoid repeated requests.
@@ -450,11 +470,11 @@
 
   function renderCredentials() {
     if (credentials.length === 0) {
-      credEmpty.style.display = '';
+      credEmpty.hidden = false;
       credContainer.querySelectorAll('.credential-card').forEach(el => el.remove());
       return;
     }
-    credEmpty.style.display = 'none';
+    credEmpty.hidden = true;
     credContainer.querySelectorAll('.credential-card').forEach(el => el.remove());
 
     credentials.forEach(cred => {
@@ -1248,14 +1268,25 @@
   });
 
   async function loadLog() {
+    const loadId = ++logLoadId;
+    logLoading.hidden = logLoaded;
+    logError.hidden = true;
     try {
       const resp = await fetch('/api/log');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
       const log = await resp.json();
+      if (loadId !== logLoadId) return;
       renderLog(log);
+      logLoaded = true;
     } catch (e) {
+      if (loadId === logLoadId) logError.hidden = false;
       console.error('Failed to load log:', e);
+    } finally {
+      if (loadId === logLoadId) logLoading.hidden = true;
     }
   }
+
+  document.getElementById('log-retry').addEventListener('click', loadLog);
 
   // Stop propagation so the drawer header does not toggle when this button is activated.
   const clearLogBtn = document.getElementById('clear-log-btn');
@@ -1287,10 +1318,10 @@
   function renderLog(log) {
     logContainer.querySelectorAll('.log-entry').forEach(el => el.remove());
     if (!log || log.length === 0) {
-      logEmpty.style.display = '';
+      logEmpty.hidden = false;
       return;
     }
-    logEmpty.style.display = 'none';
+    logEmpty.hidden = true;
 
     log.slice().reverse().forEach(entry => {
       const el = document.createElement('div');

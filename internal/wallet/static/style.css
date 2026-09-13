@@ -1524,6 +1524,27 @@ header h1 {
   font-size: 13px;
 }
 
+.loading-state,
+.load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 180px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+#log .loading-state,
+#log .load-error {
+  min-height: 110px;
+}
+
+.load-error {
+  color: var(--red);
+}
+
 @media (max-width: 768px) {
   body {
     overflow: auto;
@@ -1809,7 +1830,8 @@ header h1 {
   align-items: center;
   gap: 6px;
 }
-.deferred-spinner {
+.deferred-spinner,
+.loading-spinner {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
@@ -1818,11 +1840,16 @@ header h1 {
   border-top-color: var(--accent);
   animation: deferred-spin 0.9s linear infinite;
 }
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+}
 @keyframes deferred-spin {
   to { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .deferred-spinner { animation: none; }
+  .deferred-spinner,
+  .loading-spinner { animation: none; }
 }
 .deferred-name {
   font-size: 13px;

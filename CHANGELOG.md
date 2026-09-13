@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The demo issuer offers every credential template the wallet knows** beside its ticket, selectable on the issuer page and by `?credential=<id>` on `POST /api/offers`, so it can stand in as the PID provider of a wallet under test.
 
+## [2.4.2] - 2026-09-13
+
+### Fixed
+
+- **Wallet loading states.** Credentials and activity show centered loading spinners while their initial requests are pending, preventing empty messages from flashing on slow networks. Failed requests show a Retry button, and background refreshes keep existing content visible. Named loading statuses and existing selectors support third-party Playwright tests.
+
 ## [2.4.0] - 2026-09-06
 
 ### Added

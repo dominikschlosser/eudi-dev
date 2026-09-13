@@ -198,6 +198,153 @@ test.describe("Wallet Dashboard", () => {
   });
 });
 
+test.describe("Wallet loading states", () => {
+  test("loads credentials and activity independently without flashing empty messages", async ({ page }) => {
+    let releaseCredentials;
+    let releaseActivity;
+    const credentialsReady = new Promise((resolve) => { releaseCredentials = resolve; });
+    const activityReady = new Promise((resolve) => { releaseActivity = resolve; });
+    await page.route("**/api/credentials?*", async (route) => {
+      await credentialsReady;
+      await route.continue();
+    });
+    await page.route("**/api/log", async (route) => {
+      await activityReady;
+      await route.fulfill({ json: [{ time: "2026-09-13T05:00:00Z", action: "issue", detail: "Credential issued", success: true }] });
+    });
+
+    try {
+      await page.goto(WALLET_URL);
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeVisible();
+      await expect(page.locator("#cred-empty")).toBeHidden();
+      await expect(page.locator("#log-empty")).toBeHidden();
+
+      releaseCredentials();
+      await expect(page.locator(".credential-card")).toHaveCount(2);
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeHidden();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeVisible();
+      await expect(page.locator("#cred-empty")).toBeHidden();
+
+      releaseActivity();
+      await expect(page.locator(".log-entry")).toContainText("Credential issued");
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeHidden();
+      await expect(page.locator("#log-empty")).toBeHidden();
+    } finally {
+      releaseCredentials();
+      releaseActivity();
+    }
+  });
+
+  test("shows empty messages only after successful empty responses", async ({ page }) => {
+    let release;
+    const ready = new Promise((resolve) => { release = resolve; });
+    await page.route("**/api/credentials?*", async (route) => {
+      await ready;
+      await route.fulfill({ json: [] });
+    });
+    await page.route("**/api/log", async (route) => {
+      await ready;
+      await route.fulfill({ contentType: "application/json", body: "null" });
+    });
+    try {
+      await page.goto(WALLET_URL);
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeVisible();
+      await expect(page.locator("#cred-empty")).toBeHidden();
+      await expect(page.locator("#log-empty")).toBeHidden();
+      release();
+      await expect(page.locator("#cred-empty")).toBeVisible();
+      await expect(page.locator("#log-empty")).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeHidden();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeHidden();
+    } finally {
+      release();
+    }
+  });
+
+  test("keeps content visible while a state event refreshes both sections", async ({ page }) => {
+    let sendEvent;
+    let releaseRefresh;
+    const eventReady = new Promise((resolve) => { sendEvent = resolve; });
+    const refreshReady = new Promise((resolve) => { releaseRefresh = resolve; });
+    let refreshing = false;
+    await page.route("**/api/requests/stream", async (route) => {
+      await eventReady;
+      await route.fulfill({ contentType: "text/event-stream", body: "event: state\ndata: {}\n\n" });
+    });
+    await page.route("**/api/credentials?*", async (route) => {
+      if (refreshing) await refreshReady;
+      await route.continue();
+    });
+    await page.route("**/api/log", async (route) => {
+      if (refreshing) await refreshReady;
+      await route.fulfill({ json: [{ time: "2026-09-13T05:00:00Z", action: "issue", detail: refreshing ? "Updated activity" : "Original activity", success: true }] });
+    });
+    try {
+      await page.goto(WALLET_URL);
+      await expect(page.locator(".credential-card")).toHaveCount(2);
+      await expect(page.locator(".log-entry")).toContainText("Original activity");
+      refreshing = true;
+      const requests = Promise.all([
+        page.waitForRequest((request) => new URL(request.url()).pathname === "/api/credentials"),
+        page.waitForRequest((request) => new URL(request.url()).pathname === "/api/log"),
+      ]);
+      sendEvent();
+      await requests;
+      await expect(page.locator(".credential-card")).toHaveCount(2);
+      await expect(page.locator(".log-entry")).toContainText("Original activity");
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeHidden();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeHidden();
+      releaseRefresh();
+      await expect(page.locator(".log-entry")).toContainText("Updated activity");
+    } finally {
+      sendEvent();
+      releaseRefresh();
+    }
+  });
+
+  for (const failure of ["http", "network", "json"]) {
+    test(`recovers from ${failure} failures through Retry`, async ({ page }) => {
+      const fail = async (route) => {
+        if (failure === "network") await route.abort();
+        else if (failure === "json") await route.fulfill({ contentType: "application/json", body: "{" });
+        else await route.fulfill({ status: 503, json: { error: "Unavailable" } });
+      };
+      await page.route("**/api/credentials?*", fail);
+      await page.route("**/api/log", fail);
+      await page.goto(WALLET_URL);
+      await expect(page.getByText("Could not load credentials.")).toBeVisible();
+      await expect(page.getByText("Could not load activity.")).toBeVisible();
+      await expect(page.getByRole("status", { name: "Loading credentials" })).toBeHidden();
+      await expect(page.getByRole("status", { name: "Loading activity" })).toBeHidden();
+      await expect(page.locator("#cred-empty")).toBeHidden();
+      await expect(page.locator("#log-empty")).toBeHidden();
+
+      let release;
+      const ready = new Promise((resolve) => { release = resolve; });
+      const retry = async (route) => { await ready; await route.continue(); };
+      await page.route("**/api/credentials?*", retry);
+      await page.route("**/api/log", retry);
+      try {
+        await page.locator("#credentials").getByRole("button", { name: "Retry" }).click();
+        await page.locator("#log").getByRole("button", { name: "Retry" }).click();
+        await expect(page.getByRole("status", { name: "Loading credentials" })).toBeVisible();
+        await expect(page.getByRole("status", { name: "Loading activity" })).toBeVisible();
+        await expect(page.getByText("Could not load credentials.")).toBeHidden();
+        await expect(page.getByText("Could not load activity.")).toBeHidden();
+        release();
+        await expect(page.locator(".credential-card")).toHaveCount(2);
+        await expect(page.locator("#log-empty")).toBeVisible();
+        await expect(page.getByRole("status", { name: "Loading credentials" })).toBeHidden();
+        await expect(page.getByRole("status", { name: "Loading activity" })).toBeHidden();
+      } finally {
+        release();
+      }
+    });
+  }
+});
+
 test.describe("Credential Import via UI", () => {
   test("import modal opens and closes", async ({ page }) => {
     await page.goto(WALLET_URL);

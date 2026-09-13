@@ -70,7 +70,15 @@
     <div>
       <div class="section-title">Credentials</div>
       <div id="credentials" class="credentials">
-        <div class="empty-state" id="cred-empty">No credentials loaded</div>
+        <div class="loading-state" id="cred-loading" role="status" aria-label="Loading credentials">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <span>Loading credentials…</span>
+        </div>
+        <div class="load-error" id="cred-error" role="alert" hidden>
+          <span>Could not load credentials.</span>
+          <button class="btn" id="cred-retry" type="button">Retry</button>
+        </div>
+        <div class="empty-state" id="cred-empty" hidden>No credentials loaded</div>
       </div>
       <div class="pager" id="cred-pager" hidden>
         <button class="btn btn-sm" id="cred-prev">Previous</button>
@@ -89,7 +97,15 @@
       </span>
     </div>
     <div id="log" class="log-entries drawer-body">
-      <div class="empty-state" id="log-empty">No activity yet</div>
+      <div class="loading-state" id="log-loading" role="status" aria-label="Loading activity">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span>Loading activity…</span>
+      </div>
+      <div class="load-error" id="log-error" role="alert" hidden>
+        <span>Could not load activity.</span>
+        <button class="btn" id="log-retry" type="button">Retry</button>
+      </div>
+      <div class="empty-state" id="log-empty" hidden>No activity yet</div>
     </div>
   </div>
 
