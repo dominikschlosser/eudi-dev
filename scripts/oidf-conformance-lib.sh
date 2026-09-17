@@ -1,4 +1,6 @@
 #!/bin/sh
+
+set -e
 # Source this file so helpers can read and update the wrapper's global settings.
 
 build_local_oid4vc_dev() {
@@ -78,6 +80,7 @@ fetch_suite_source() {
     SUITE_URL=$OIDF_SUITE_URL
     SUITE_TAG=${OIDF_SUITE_TAG:-unknown}
   else
+    # shellcheck disable=SC2046
     set -- $(latest_suite_release)
     SUITE_TAG=$1
     SUITE_URL=$2
