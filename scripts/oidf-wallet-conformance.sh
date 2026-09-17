@@ -1,10 +1,12 @@
 #!/bin/sh
 set -eu
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+unset CDPATH
+ROOT_DIR=$(cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ -f "$ROOT_DIR/.env" ]; then
   set -a
+  # shellcheck source=/dev/null
   . "$ROOT_DIR/.env"
   set +a
 fi
@@ -94,6 +96,7 @@ if [ "$CONFORMANCE_MODE" = "local" ]; then
   export CONFORMANCE_DEV_MODE DISABLE_SSL_VERIFY
 fi
 
+# shellcheck disable=SC2329
 cleanup() {
   if [ -n "${WALLET_PID:-}" ] && kill -0 "$WALLET_PID" 2>/dev/null; then
     kill "$WALLET_PID" 2>/dev/null || true

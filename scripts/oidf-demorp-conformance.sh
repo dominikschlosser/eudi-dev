@@ -1,14 +1,17 @@
 #!/bin/sh
 set -eu
 
-ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+unset CDPATH
+ROOT_DIR=$(cd -- "$(dirname -- "$0")/.." && pwd)
 
 if [ -f "$ROOT_DIR/.env" ]; then
   set -a
+  # shellcheck source=/dev/null
   . "$ROOT_DIR/.env"
   set +a
 fi
 
+# shellcheck source-path=SCRIPTDIR/..
 . "$ROOT_DIR/scripts/oidf-conformance-lib.sh"
 
 PORT=${PORT:-$(pick_port_pair)}
@@ -98,6 +101,7 @@ PY
   echo "Extracted the suite's mdoc IACA root from its source (the /mdoc-iaca-root.pem endpoint was unavailable)"
 fi
 
+# shellcheck disable=SC2329
 cleanup() {
   if [ -n "${WALLET_PID:-}" ] && kill -0 "$WALLET_PID" 2>/dev/null; then
     kill "$WALLET_PID" 2>/dev/null || true
