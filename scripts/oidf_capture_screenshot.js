@@ -16,9 +16,8 @@ const { chromium } = require(path.join(__dirname, "..", "e2e", "node_modules", "
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(url, { waitUntil: "networkidle", timeout: 15000 }).catch(() => {});
-    // The error banner arrives over the event stream shortly after load.
-    await page.waitForTimeout(1500);
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.locator("#error-dismiss").waitFor({ state: "visible", timeout: 15000 });
     await page.screenshot({ path: out });
   } finally {
     await browser.close();

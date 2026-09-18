@@ -958,7 +958,7 @@ def capture_wallet_screenshot(wallet_url: str) -> str | None:
         encoded = base64.b64encode(out_path.read_bytes()).decode("ascii")
         return "data:image/png;base64," + encoded
     except Exception as exc:  # noqa: BLE001
-        print(f"[monitor] wallet screenshot capture failed, using placeholder: {exc}", flush=True)
+        print(f"[monitor] wallet screenshot capture failed: {exc}", flush=True)
         return None
     finally:
         out_path.unlink(missing_ok=True)
@@ -966,6 +966,8 @@ def capture_wallet_screenshot(wallet_url: str) -> str | None:
 
 def upload_placeholder(base_url: str, token: str | None, module_id: str, placeholder: str, wallet_url: str | None = None) -> None:
     image = capture_wallet_screenshot(wallet_url) if wallet_url else None
+    if wallet_url and not image:
+        raise RuntimeError(f"no wallet error screenshot available for {module_id}")
     kind = "wallet error screenshot" if image else "screenshot placeholder"
     api_request(
         base_url,
@@ -1363,15 +1365,8 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
             result = submit_browser_api_request(wallet_url, browser_request, submit_url, state.get("requires_haip", False), state.get("test_name"))
             if result.completed or not result.retryable:
                 state["submitted_browser_api_requests"].add(submit_url)
-
-    # Placeholders first: a screenshot upload is what lets a negative module
-    # finish, and a wallet submission below can block for its full timeout
-    # (or raise), which must not starve the upload.
-    for entry in logs:
-        placeholder = entry.get("upload")
-        if placeholder and placeholder not in state["uploaded_placeholders"]:
-            state["uploaded_placeholders"].add(placeholder)
-            upload_placeholder(base_url, token, module_id, placeholder, wallet_url)
+            else:
+                return
 
     for entry in logs:
         request_url = entry.get("redirect_to") or entry.get("credential_offer_redirect_url")
@@ -1379,6 +1374,17 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
             result = submit_wallet_request(wallet_url, request_url, state.get("requires_haip", False), state.get("test_name"))
             if result.completed or not result.retryable:
                 state["submitted_urls"].add(request_url)
+            else:
+                return
+
+    # The suite can expose an upload placeholder before the wallet has received
+    # this request. Capturing then would show the preceding module's error.
+    if state["submitted_urls"] or state["submitted_browser_api_requests"] or state.get("submitted_synthetic_offer"):
+        for entry in logs:
+            placeholder = entry.get("upload")
+            if placeholder and placeholder not in state["uploaded_placeholders"]:
+                upload_placeholder(base_url, token, module_id, placeholder, wallet_url)
+                state["uploaded_placeholders"].add(placeholder)
 
     status = info.get("status", "")
     if status in TERMINAL_STATES:

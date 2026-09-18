@@ -98,10 +98,6 @@ class ScenarioPlanArgTests(unittest.TestCase):
         self.assertIn("oid4vp-1final-wallet-ignores-unusable-encryption-key", plan_arg)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PurgeIssuedCredentialsTests(unittest.TestCase):
     """One wallet serves every plan, so credentials an issuance plan deposits
     are still present when a presentation plan runs. Only the baseline the
@@ -147,3 +143,65 @@ class PurgeIssuedCredentialsTests(unittest.TestCase):
 
         self.assertEqual(removed, 0)
         self.assertEqual(deleted, [])
+
+
+class ScreenshotEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.state = {
+            "submitted_urls": set(),
+            "submitted_browser_api_requests": set(),
+            "uploaded_placeholders": set(),
+        }
+        self.logs = [{"upload": "error-photo"}, {"redirect_to": "openid4vp://request"}]
+        self.error = "nonce is required"
+        self.images = []
+
+    def submit(self, *args):
+        self.error = "client_id uses an unsupported prefix"
+        return oidf.WalletSubmissionResult(completed=True, retryable=False)
+
+    def poll(self, submit=None, upload=None):
+        with mock.patch.object(oidf, "api_request", side_effect=[{}, self.logs]), mock.patch.object(
+            oidf, "submit_wallet_request", side_effect=submit or self.submit
+        ), mock.patch.object(
+            oidf, "upload_placeholder", side_effect=upload or (lambda *args: self.images.append(self.error))
+        ):
+            oidf.handle_module("https://suite/", None, "http://wallet", "module", self.state)
+
+    def test_captures_current_rejection_after_submission(self):
+        self.poll()
+        self.poll()
+        self.assertEqual(self.images, ["client_id uses an unsupported prefix"])
+
+    def test_waits_for_retryable_submission(self):
+        self.poll(submit=lambda *args: oidf.WalletSubmissionResult(completed=False, retryable=True))
+        self.assertEqual(self.images, [])
+        self.poll()
+        self.assertEqual(self.images, ["client_id uses an unsupported prefix"])
+
+    def test_waits_for_request_when_placeholder_arrives_first(self):
+        self.logs = [{"upload": "error-photo"}]
+        self.poll()
+        self.assertEqual(self.images, [])
+        self.logs.append({"redirect_to": "openid4vp://request"})
+        self.poll()
+        self.assertEqual(self.images, ["client_id uses an unsupported prefix"])
+
+    def test_retries_failed_capture_or_upload(self):
+        with self.assertRaises(RuntimeError):
+            self.poll(upload=mock.Mock(side_effect=RuntimeError("capture failed")))
+        self.assertEqual(self.state["uploaded_placeholders"], set())
+        self.poll()
+        self.assertEqual(self.images, ["client_id uses an unsupported prefix"])
+
+    def test_capture_failure_does_not_upload_placeholder_image(self):
+        with mock.patch.object(oidf, "capture_wallet_screenshot", return_value=None), mock.patch.object(
+            oidf, "api_request"
+        ) as api:
+            with self.assertRaises(RuntimeError):
+                oidf.upload_placeholder("https://suite/", None, "module", "error-photo", "http://wallet")
+        api.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

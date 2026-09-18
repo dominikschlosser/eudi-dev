@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.8] - 2026-09-18
+
+### Fixed
+
+- **Conformance screenshots show the current test's error.** The wallet harness processes each request before capturing its rejection and retries failed captures and uploads. This prevents the invalid-client-id-prefix test from receiving the preceding missing-nonce test's screenshot. Wallet protocol behavior is unchanged from 2.3.7.
+
 ## [2.3.7] - 2026-09-04
 
 ### Added
