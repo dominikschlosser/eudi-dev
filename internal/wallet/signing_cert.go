@@ -137,6 +137,29 @@ func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 	return chain, err
 }
 
+func (w *Wallet) StatusListSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	w.mu.RLock()
+	issuerKey, caKey := w.IssuerKey, w.CAKey
+	chain := append([]*x509.Certificate(nil), w.CertChain...)
+	w.mu.RUnlock()
+	if issuerKey == nil || len(chain) == 0 {
+		return nil, nil, fmt.Errorf("wallet has no status list signing material")
+	}
+	if caKey == nil || len(chain) < 2 {
+		return issuerKey, chain, nil
+	}
+	caCert := chain[len(chain)-1]
+	leaf, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, mock.LeafCertOptions{
+		CommonName:            "EUDI Dev Status List Signer",
+		StatusListSigner:      true,
+		CRLDistributionPoints: crlDistributionPoints(w.IssuerURL),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating status list signer certificate: %w", err)
+	}
+	return issuerKey, []*x509.Certificate{leaf, caCert}, nil
+}
+
 // DefaultSigningMaterial returns the signing key together with the default
 // chain, read as one. Reading them separately can pair a fresh key with a
 // stale chain when a reload or the demo reset lands in between, and nothing

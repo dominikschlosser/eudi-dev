@@ -221,9 +221,10 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bits, bitstring := s.wallet.BuildStatusList()
-	certChain := s.wallet.CertChain
-	if derived, err := s.wallet.DefaultSigningCertChain(); err == nil && len(derived) > 0 {
-		certChain = derived
+	signingKey, certChain, err := s.wallet.StatusListSigningMaterial()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("loading status list signing material: %v", err), http.StatusInternalServerError)
+		return
 	}
 	cfg := statuslist.StatusListConfig{
 		URI:       s.wallet.StatusListURL(),
@@ -233,7 +234,7 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if statuslist.NegotiateMediaType(r.Header.Get("Accept")) == statuslist.MediaTypeCWT {
-		token, err := statuslist.GenerateStatusListCWT(bitstring, s.wallet.IssuerKey, cfg)
+		token, err := statuslist.GenerateStatusListCWT(bitstring, signingKey, cfg)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("generating status list: %v", err), http.StatusInternalServerError)
 			return
@@ -243,7 +244,7 @@ func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jwt, err := statuslist.GenerateStatusListJWT(bitstring, s.wallet.IssuerKey, cfg)
+	jwt, err := statuslist.GenerateStatusListJWT(bitstring, signingKey, cfg)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("generating status list: %v", err), http.StatusInternalServerError)
 		return

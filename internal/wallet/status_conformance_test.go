@@ -17,12 +17,16 @@ package wallet
 import (
 	"bytes"
 	"compress/zlib"
+	"crypto/x509"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/veraison/go-cose"
 
 	"github.com/dominikschlosser/eudi-dev/internal/format"
 	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
@@ -223,7 +227,59 @@ func TestHandleStatusList_ServesCWTWhenAsked(t *testing.T) {
 		t.Fatalf("the body must be a tagged COSE_Sign1 (tag 18), got % x", body[:min(len(body), 4)])
 	}
 
-	// The default is still the JWT form.
+	var message cose.Sign1Message
+	if err := message.UnmarshalCBOR(body); err != nil {
+		t.Fatal(err)
+	}
+	leafDER, ok := message.Headers.Protected[int64(33)].([]byte)
+	if !ok {
+		t.Fatal("protected x5chain must contain the status signer certificate, without the root")
+	}
+	if _, exists := message.Headers.Unprotected[int64(33)]; exists {
+		t.Error("x5chain must not also occur in the unprotected header")
+	}
+	leaf, err := x509.ParseCertificate(leafDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaf.KeyUsage != x509.KeyUsageDigitalSignature {
+		t.Errorf("status signer key usage = %v, want digitalSignature only", leaf.KeyUsage)
+	}
+	if len(leaf.SubjectKeyId) == 0 || !bytes.Equal(leaf.AuthorityKeyId, w.TrustAnchorCertificate().SubjectKeyId) {
+		t.Error("status signer must identify its key and the wallet CA's key")
+	}
+	if leaf.NotAfter.Sub(leaf.NotBefore) > 1187*24*time.Hour {
+		t.Error("status signer validity exceeds 1187 days")
+	}
+	for _, extension := range leaf.Extensions {
+		if extension.Critical && extension.Id.String() != "2.5.29.15" {
+			t.Errorf("status signer has unexpected critical extension %s", extension.Id)
+		}
+	}
+	if len(leaf.ExtKeyUsage) != 0 || len(leaf.UnknownExtKeyUsage) != 0 {
+		t.Error("status signer must omit the optional EKU rather than assert document signing")
+	}
+	if len(leaf.CRLDistributionPoints) != 1 || leaf.CRLDistributionPoints[0] != w.IssuerURL+"/api/crl" {
+		t.Errorf("status signer CRL distribution points = %v", leaf.CRLDistributionPoints)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(w.TrustAnchorCertificate())
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		t.Fatalf("status signer does not chain to the wallet CA: %v", err)
+	}
+	verifier, err := cose.NewVerifier(cose.AlgorithmES256, leaf.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := message.Verify(nil, verifier); err != nil {
+		t.Fatalf("status list signature does not verify: %v", err)
+	}
+	message.Headers.RawProtected = nil
+	message.Headers.Protected[int64(33)] = w.TrustAnchorCertificate().Raw
+	if err := message.Verify(nil, verifier); err == nil {
+		t.Error("replacing the protected certificate must invalidate the signature")
+	}
+
 	jwtResp := serverRequest(t, srv, "GET", "/api/statuslist", "")
 	if got := jwtResp.Header().Get("Content-Type"); got != statuslist.MediaTypeJWT {
 		t.Errorf("Content-Type = %q, want %q", got, statuslist.MediaTypeJWT)

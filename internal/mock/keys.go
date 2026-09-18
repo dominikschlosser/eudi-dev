@@ -210,6 +210,9 @@ func GenerateLeafCert(caKey *ecdsa.PrivateKey, caCert *x509.Certificate, leafPub
 type LeafCertOptions struct {
 	CommonName   string
 	SerialNumber *big.Int
+	// StatusListSigner selects the MSO revocation list signer profile (Table B.9).
+	// Its optional EKU is omitted; mdlDS is only for document signing.
+	StatusListSigner bool
 	// Country becomes the subject countryName. ISO/IEC 18013-5 Table B.3
 	// requires it to equal the signed credential's issuing_country element,
 	// so pass that value when the claims carry one. Empty uses
@@ -233,6 +236,7 @@ type LeafCertOptions struct {
 // usage with the mdlDS document signing purpose, a SHA-1 subject key
 // identifier, CRL distribution points, an issuer alternative name with issuer
 // contact information, and no basicConstraints (an end-entity certificate).
+// StatusListSigner selects Table B.9 and omits the optional extended key usage.
 func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certificate, leafPubKey *ecdsa.PublicKey, opts LeafCertOptions) (*x509.Certificate, error) {
 	commonName := opts.CommonName
 	if commonName == "" {
@@ -254,10 +258,6 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 	if err != nil {
 		return nil, err
 	}
-	extendedKeyUsage, err := asn1.Marshal([]asn1.ObjectIdentifier{oidMdlDocumentSigner})
-	if err != nil {
-		return nil, fmt.Errorf("encoding extended key usage: %w", err)
-	}
 	issuerAltName, err := issuerAltNameExtension()
 	if err != nil {
 		return nil, err
@@ -277,9 +277,17 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 		URIs:                  opts.URIs,
 		IPAddresses:           opts.IPAddresses,
 		ExtraExtensions: []pkix.Extension{
-			{Id: oidExtensionExtendedKeyUsage, Critical: true, Value: extendedKeyUsage},
 			issuerAltName,
 		},
+	}
+	if !opts.StatusListSigner {
+		extendedKeyUsage, err := asn1.Marshal([]asn1.ObjectIdentifier{oidMdlDocumentSigner})
+		if err != nil {
+			return nil, fmt.Errorf("encoding extended key usage: %w", err)
+		}
+		template.ExtraExtensions = append(template.ExtraExtensions, pkix.Extension{
+			Id: oidExtensionExtendedKeyUsage, Critical: true, Value: extendedKeyUsage,
+		})
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, caCert, leafPubKey, caKey)
