@@ -56,6 +56,7 @@ jobs:
         with:
           generate_release_notes: true
           make_latest: false
+          prerelease: true
           files: |
             dist/*
 
