@@ -205,8 +205,7 @@ func GenerateLeafCert(caKey *ecdsa.PrivateKey, caCert *x509.Certificate, leafPub
 type LeafCertOptions struct {
 	CommonName   string
 	SerialNumber *big.Int
-	// StatusListSigner selects the MSO revocation list signer profile (Table B.9).
-	// Its optional EKU is omitted; mdlDS is only for document signing.
+	// EU 2026/1731, EAA-6.2.10.1-08 permits status signing without an EKU.
 	StatusListSigner bool
 	// Country becomes the subject countryName. ISO/IEC 18013-5 Table B.3
 	// requires it to equal the signed credential's issuing_country element,
@@ -225,13 +224,12 @@ type LeafCertOptions struct {
 	IPAddresses []net.IP
 }
 
-// GenerateLeafCertWithOptions creates a leaf certificate signed by the CA. It
-// follows the document signer certificate profile of ISO/IEC 18013-5 Table
+// GenerateLeafCertWithOptions creates a leaf certificate signed by the CA. By default,
+// it follows the document signer certificate profile of ISO/IEC 18013-5:2021 Table
 // B.3: subject countryName, digitalSignature only, a critical extended key
 // usage with the mdlDS document signing purpose, a SHA-1 subject key
 // identifier, CRL distribution points, an issuer alternative name with issuer
 // contact information, and no basicConstraints (an end-entity certificate).
-// StatusListSigner selects Table B.9 and omits the optional extended key usage.
 func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certificate, leafPubKey *ecdsa.PublicKey, opts LeafCertOptions) (*x509.Certificate, error) {
 	commonName := opts.CommonName
 	if commonName == "" {

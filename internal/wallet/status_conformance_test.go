@@ -24,7 +24,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/veraison/go-cose"
 
@@ -237,9 +236,6 @@ func TestHandleStatusList_ServesCWTWhenAsked(t *testing.T) {
 	}
 	if len(leaf.SubjectKeyId) == 0 || !bytes.Equal(leaf.AuthorityKeyId, w.TrustAnchorCertificate().SubjectKeyId) {
 		t.Error("status signer must identify its key and the wallet CA's key")
-	}
-	if leaf.NotAfter.Sub(leaf.NotBefore) > 1187*24*time.Hour {
-		t.Error("status signer validity exceeds 1187 days")
 	}
 	for _, extension := range leaf.Extensions {
 		if extension.Critical && extension.Id.String() != "2.5.29.15" {

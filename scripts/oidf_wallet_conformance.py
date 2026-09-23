@@ -1259,6 +1259,9 @@ def submit_browser_api_request(wallet_url: str, browser_request: dict, submit_ur
 
 def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: str, state: dict) -> None:
     info = api_request(base_url, token, "GET", f"api/info/{module_id}")
+    if info.get("status") in TERMINAL_STATES:
+        state["terminal"] = True
+        return
     logs = api_request(base_url, token, "GET", f"api/log/{module_id}")
 
     for entry in logs:
@@ -1320,10 +1323,6 @@ def handle_module(base_url: str, token: str | None, wallet_url: str, module_id: 
             if placeholder and placeholder not in state["uploaded_placeholders"]:
                 upload_placeholder(base_url, token, module_id, placeholder, wallet_url)
                 state["uploaded_placeholders"].add(placeholder)
-
-    status = info.get("status", "")
-    if status in TERMINAL_STATES:
-        state["terminal"] = True
 
 
 def main() -> int:

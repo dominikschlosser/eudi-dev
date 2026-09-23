@@ -149,6 +149,7 @@ class ScreenshotEvidenceTests(unittest.TestCase):
             "submitted_urls": set(),
             "submitted_browser_api_requests": set(),
             "uploaded_placeholders": set(),
+            "terminal": False,
         }
         self.logs = [{"upload": "error-photo"}, {"redirect_to": "openid4vp://request"}]
         self.error = "nonce is required"
@@ -158,8 +159,8 @@ class ScreenshotEvidenceTests(unittest.TestCase):
         self.error = "client_id uses an unsupported prefix"
         return oidf.WalletSubmissionResult(completed=True, retryable=False)
 
-    def poll(self, submit=None, upload=None):
-        with mock.patch.object(oidf, "api_request", side_effect=[{}, self.logs]), mock.patch.object(
+    def poll(self, submit=None, upload=None, status="WAITING"):
+        with mock.patch.object(oidf, "api_request", side_effect=[{"status": status}, self.logs]), mock.patch.object(
             oidf, "submit_wallet_request", side_effect=submit or self.submit
         ), mock.patch.object(
             oidf, "upload_placeholder", side_effect=upload or (lambda *args: self.images.append(self.error))
@@ -199,6 +200,19 @@ class ScreenshotEvidenceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 oidf.upload_placeholder("https://suite/", None, "module", "error-photo", "http://wallet")
         api.assert_not_called()
+
+    def test_terminal_module_stops_before_submissions_and_screenshots(self):
+        for status in ("FINISHED", "INTERRUPTED"):
+            for submitted in (False, True):
+                with self.subTest(status=status, submitted=submitted):
+                    self.state["terminal"] = False
+                    self.state["submitted_urls"] = {"openid4vp://request"} if submitted else set()
+                    submit = mock.Mock(side_effect=RuntimeError("request no longer available"))
+                    upload = mock.Mock(side_effect=RuntimeError("capture unavailable"))
+                    self.poll(submit=submit, upload=upload, status=status)
+                    self.assertTrue(self.state["terminal"])
+                    submit.assert_not_called()
+                    upload.assert_not_called()
 
 
 if __name__ == "__main__":
