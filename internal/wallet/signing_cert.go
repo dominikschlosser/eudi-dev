@@ -121,6 +121,29 @@ func (w *Wallet) DefaultSigningCertChain() ([]*x509.Certificate, error) {
 	return chain, err
 }
 
+func (w *Wallet) StatusListSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	w.mu.RLock()
+	issuerKey, caKey := w.IssuerKey, w.CAKey
+	chain := append([]*x509.Certificate(nil), w.CertChain...)
+	w.mu.RUnlock()
+	if issuerKey == nil || len(chain) == 0 {
+		return nil, nil, fmt.Errorf("wallet has no status list signing material")
+	}
+	if caKey == nil || len(chain) < 2 {
+		return issuerKey, chain, nil
+	}
+	caCert := chain[len(chain)-1]
+	leaf, err := mock.GenerateLeafCertWithOptions(caKey, caCert, &issuerKey.PublicKey, mock.LeafCertOptions{
+		CommonName:            "EUDI Dev Status List Signer",
+		StatusListSigner:      true,
+		CRLDistributionPoints: crlDistributionPoints(w.IssuerURL),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating status list signer certificate: %w", err)
+	}
+	return issuerKey, []*x509.Certificate{leaf, caCert}, nil
+}
+
 // DefaultSigningMaterial reads the key and chain together. A reload or demo reset between
 // separate reads could return a pair that cannot produce a verifiable signature.
 func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {

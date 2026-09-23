@@ -305,16 +305,17 @@ func GenerateStatusListCWT(bitstring []byte, signingKey *ecdsa.PrivateKey, cfg S
 	msg.Headers.Protected[int64(coseHeaderType)] = MediaTypeCWT
 	msg.Payload = payload
 
-	// Omit the root because relying parties obtain their trust anchors separately.
+	// RFC 9360 section 2 requires integrity protection for the leaf certificate.
+	// EAA-6.2.10.1-08 (EU 2026/1731) places x5chain in the protected header.
 	if chain := mock.WithoutSelfSignedTrustAnchor(cfg.CertChain); len(chain) > 0 {
 		if len(chain) == 1 {
-			msg.Headers.Unprotected[int64(coseHeaderX5Chain)] = chain[0].Raw
+			msg.Headers.Protected[int64(coseHeaderX5Chain)] = chain[0].Raw
 		} else {
 			ders := make([][]byte, 0, len(chain))
 			for _, cert := range chain {
 				ders = append(ders, cert.Raw)
 			}
-			msg.Headers.Unprotected[int64(coseHeaderX5Chain)] = ders
+			msg.Headers.Protected[int64(coseHeaderX5Chain)] = ders
 		}
 	}
 

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The demo issuer offers every credential template the wallet knows** beside its ticket, selectable on the issuer page and by `?credential=<id>` on `POST /api/offers`, so it can stand in as the PID provider of a wallet under test.
 
+### Fixed
+
+- **Status-list signing and conformance screenshots.** Includes the certificate and screenshot fixes from 2.3.7-2 and 2.3.7-1.
+
 ## [2.4.2] - 2026-09-13
 
 ### Fixed
@@ -30,6 +34,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Docker image keeps its state in memory and derives its keys from the public seed `eudi-dev`.** It needs no volume and runs on a read-only filesystem. A deployment that mounts a volume sets `EUDI_DEV_STORAGE=file` and `EUDI_DEV_SEED=`, as the public-demo and Keycloak examples do.
 - The `[DCQL]` log lists matched credentials. When no credential matches, it groups rejected candidates by reason.
+
+## [2.3.7-2] - 2026-09-19
+
+### Fixed
+
+- **Status-list CWT certificate verification.** The demo issuer includes its certificate chain in the protected COSE header and uses a status-list signing certificate without the document signer's critical extended key usage.
+
+## [2.3.7-1] - 2026-09-18
+
+### Fixed
+
+- **Conformance screenshots show the current test's error.** The wallet harness processes each request before capturing its rejection and retries failed captures and uploads. This prevents the invalid-client-id-prefix test from receiving the preceding missing-nonce test's screenshot. Wallet protocol behavior is unchanged from 2.3.7.
 
 ## [2.3.7] - 2026-09-04
 
