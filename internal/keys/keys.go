@@ -29,7 +29,7 @@ import (
 
 	josev4 "github.com/go-jose/go-jose/v4"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 )
 
 // DIDReference identifies unsupported DID keys so callers can distinguish them from

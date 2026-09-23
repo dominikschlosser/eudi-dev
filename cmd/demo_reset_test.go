@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 func TestParseDemoResetForms(t *testing.T) {

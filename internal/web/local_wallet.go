@@ -17,10 +17,10 @@ package web
 import (
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 // Use the mounted wallet, or the default wallet when running the decoder alone.

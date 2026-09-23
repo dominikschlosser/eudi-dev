@@ -28,8 +28,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 var tinyPNG, _ = base64.StdEncoding.DecodeString(

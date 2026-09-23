@@ -28,8 +28,8 @@ import (
 
 	"github.com/veraison/go-cose"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
 )
 
 func readPublishedStatus(t *testing.T, token string, idx int) (int, int) {

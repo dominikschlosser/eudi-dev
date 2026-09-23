@@ -29,10 +29,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 func TestCreateSelfIssuedIDToken(t *testing.T) {

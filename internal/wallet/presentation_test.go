@@ -24,10 +24,10 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
 )
 
 func testEncJWK(t *testing.T, pub *ecdsa.PublicKey) map[string]any {

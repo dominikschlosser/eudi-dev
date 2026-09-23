@@ -20,10 +20,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/internal/jsonutil"
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/validate"
 )
 
 // ValidateHAIPCompliance checks an authorization request against HAIP 1.0 and

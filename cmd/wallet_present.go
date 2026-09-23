@@ -31,10 +31,10 @@ import (
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 type dispatchOID4Opts struct {

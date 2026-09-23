@@ -29,15 +29,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/credtype"
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
-	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/internal/statuslist"
-	"github.com/dominikschlosser/eudi-dev/internal/trustlist"
-	"github.com/dominikschlosser/eudi-dev/internal/validate"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/httpsec"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/validate"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 // The German PID extends the base SD-JWT PID type. It can satisfy a request for the

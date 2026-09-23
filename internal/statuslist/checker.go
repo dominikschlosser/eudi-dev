@@ -28,9 +28,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/jws"
-	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/keys"
 )
 
 // Allow one minute of clock drift when checking expiry. The specification defines no

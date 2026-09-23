@@ -22,8 +22,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
-	"github.com/dominikschlosser/eudi-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/httpsec"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/web"
 )
 
 // streamKeepaliveInterval is how often an idle event stream sends a comment

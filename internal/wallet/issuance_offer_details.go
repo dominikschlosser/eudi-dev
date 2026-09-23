@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
 )
 
 type OfferedCredential struct {

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 func buildTestJWT(t *testing.T, header, payload map[string]any) string {

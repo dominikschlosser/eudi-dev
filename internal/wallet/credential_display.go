@@ -31,7 +31,7 @@ import (
 
 	"golang.org/x/image/draw"
 
-	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
 )
 
 // CredentialDisplay is the appearance a §12.2.4 display entry declares for a

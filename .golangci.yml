@@ -64,4 +64,4 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/dominikschlosser/eudi-dev
+      local-prefixes: github.com/dominikschlosser/eudi-dev/v2

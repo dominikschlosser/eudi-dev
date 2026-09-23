@@ -17,8 +17,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 // Explicit flags can override each demo default.

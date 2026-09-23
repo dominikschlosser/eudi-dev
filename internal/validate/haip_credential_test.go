@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 // A self-signed leaf is what HAIP §6.1.1 forbids for the credential's signer.

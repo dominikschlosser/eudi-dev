@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 )
 
 // Instance describes a running wallet server. Every `wallet serve` writes an

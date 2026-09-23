@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 )
 
 func TestEncryptJWE_CompactFormat(t *testing.T) {

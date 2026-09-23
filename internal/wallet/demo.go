@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/httpsec"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/httpsec"
 )
 
 // DemoOptions configures the demo profile: a shared, anonymous environment

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Go installation for v2 releases.** The module and package imports now use `github.com/dominikschlosser/eudi-dev/v2`, so new v2 tags can be installed with `go install github.com/dominikschlosser/eudi-dev/v2@latest`. Updated install examples and build version injection. Existing tags retain their original module path. Fixes [#19](https://github.com/dominikschlosser/eudi-dev/issues/19).
 - **Status-list signing and conformance screenshots.** Includes the certificate and screenshot fixes from 2.3.7-2 and 2.3.7-1.
 
 ## [2.4.2] - 2026-09-13

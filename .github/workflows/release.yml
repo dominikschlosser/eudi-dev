@@ -24,7 +24,7 @@ jobs:
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          LDFLAGS="-s -w -X github.com/dominikschlosser/eudi-dev/cmd.Version=${VERSION}"
+          LDFLAGS="-s -w -X github.com/dominikschlosser/eudi-dev/v2/cmd.Version=${VERSION}"
 
           targets=(
             "linux/amd64"

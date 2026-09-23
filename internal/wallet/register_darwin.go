@@ -24,7 +24,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 )
 
 const appBundleName = "EUDI-Dev-Wallet.app"

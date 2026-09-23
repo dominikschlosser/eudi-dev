@@ -28,15 +28,15 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
-	"github.com/dominikschlosser/eudi-dev/internal/credtemplate"
-	"github.com/dominikschlosser/eudi-dev/internal/demorp"
-	"github.com/dominikschlosser/eudi-dev/internal/format"
-	"github.com/dominikschlosser/eudi-dev/internal/imprint"
-	"github.com/dominikschlosser/eudi-dev/internal/remote"
-	"github.com/dominikschlosser/eudi-dev/internal/storage"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
-	"github.com/dominikschlosser/eudi-dev/internal/web"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/demorp"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/imprint"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/web"
 )
 
 type walletServeOptions struct {

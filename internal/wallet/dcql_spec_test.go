@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 func sdjwtQuery(id, vct string, claims ...any) map[string]any {

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
 )
 
 type JWTConfig struct {

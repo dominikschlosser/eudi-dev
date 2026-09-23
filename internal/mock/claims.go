@@ -19,7 +19,7 @@ import (
 	"encoding/base64"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/credtype"
 )
 
 // German and base PIDs use distinct SD-JWT types. For mdoc, both use the same doctype

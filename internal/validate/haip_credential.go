@@ -18,7 +18,7 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/keys"
 )
 
 // NonStatusListFormat describes a status claim that does not use the IETF Token

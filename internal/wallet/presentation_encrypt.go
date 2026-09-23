@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
 )
 
 // extractJWKThumbprint extracts the encryption JWK from the request object

@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 // strictPreAuthIssuer serves a pre-authorized_code issuer that requires

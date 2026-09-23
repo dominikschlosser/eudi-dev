@@ -28,9 +28,9 @@ import (
 	"github.com/fatih/color"
 	"github.com/google/uuid"
 
-	"github.com/dominikschlosser/eudi-dev/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 )
 
 // OpenID4VP 1.0 §8.5 uses invalid_request and access_denied from OAuth 2.0. Appendix

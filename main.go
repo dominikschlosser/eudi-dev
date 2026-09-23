@@ -21,7 +21,7 @@ import (
 
 	"os"
 
-	"github.com/dominikschlosser/eudi-dev/cmd"
+	"github.com/dominikschlosser/eudi-dev/v2/cmd"
 )
 
 func main() {

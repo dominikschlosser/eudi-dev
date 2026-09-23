@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 )
 
 // Identifies the browser that owns a request. It does not authenticate users

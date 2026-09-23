@@ -46,6 +46,10 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: Test versioned Go installation
+        if: matrix.storage.name == 'file'
+        run: python3 scripts/test_go_install.py
+
       - name: Vet
         if: matrix.storage.name == 'file'
         run: |

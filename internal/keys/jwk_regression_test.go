@@ -25,7 +25,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 )
 
 func ecJWK(t *testing.T, key *ecdsa.PublicKey, crv string) []byte {

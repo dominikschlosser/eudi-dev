@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"hash"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mdoc"
-	"github.com/dominikschlosser/eudi-dev/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
 )
 
 type CheckResult struct {

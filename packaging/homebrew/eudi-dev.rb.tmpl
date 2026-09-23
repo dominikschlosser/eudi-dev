@@ -15,7 +15,7 @@ class EudiDev < Formula
   depends_on "go" => :build
 
   def install
-    ldflags = "-s -w -X github.com/dominikschlosser/eudi-dev/cmd.Version=v#{version}"
+    ldflags = "-s -w -X github.com/dominikschlosser/eudi-dev/v2/cmd.Version=v#{version}"
     system "go", "build", *std_go_args(ldflags: ldflags, output: bin/"eudi")
     # Legacy command name keeps working for the time being
     bin.install_symlink "eudi" => "oid4vc-dev"

@@ -17,7 +17,7 @@ package wallet
 import (
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 )
 
 func pidBaselineWallet(t *testing.T) *Wallet {

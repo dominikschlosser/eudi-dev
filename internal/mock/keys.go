@@ -32,7 +32,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 )
 
 // DefaultCertificateCountry is the subject countryName generated certificates

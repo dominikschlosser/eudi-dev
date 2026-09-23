@@ -17,8 +17,8 @@ package cmd
 import (
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/internal/storage"
-	"github.com/dominikschlosser/eudi-dev/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
 func TestOpenStore_FlagBeatsEnvironment(t *testing.T) {

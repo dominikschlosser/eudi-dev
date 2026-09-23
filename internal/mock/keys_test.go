@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/keys"
 )
 
 func TestGenerateKey_ReturnsP256(t *testing.T) {
