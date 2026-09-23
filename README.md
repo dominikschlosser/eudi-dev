@@ -7,6 +7,7 @@
 [![CI](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml/badge.svg)](https://github.com/dominikschlosser/eudi-dev/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/dominikschlosser/eudi-dev/graph/badge.svg)](https://codecov.io/gh/dominikschlosser/eudi-dev)
 [![Release](https://img.shields.io/github/v/release/dominikschlosser/eudi-dev)](https://github.com/dominikschlosser/eudi-dev/releases/latest)
+[![OpenID Certified](https://img.shields.io/badge/OpenID-Certified-orange)](#openid-certification)
 
 [![OpenID4VP](https://img.shields.io/badge/OpenID4VP-1.0-blue)](docs/spec-compliance.md#oid4vp-10-openid-for-verifiable-presentations)
 [![OpenID4VCI](https://img.shields.io/badge/OpenID4VCI-1.0%20%2B%201.1%20draft-blue)](docs/spec-compliance.md#oid4vci-10-openid-for-verifiable-credential-issuance)
@@ -49,7 +50,7 @@ Use eudi-dev as a wallet to test your issuer or verifier. The table below shows 
 
 When to use something else:
 
-- For certification, the OIDF suite is the authority. This repository runs its plans (see [conformance](docs/conformance.md)), but only the OIDF certifies.
+- To certify your own implementation, use the [OpenID Foundation certification program](https://openid.net/certification/).
 - To test a wallet, point it at one of the hosted issuer or verifier services above.
 - To ship a product, use an SDK. Everything here is under `internal/`.
 - For proximity flows (BLE, NFC), use Multipaz. This tool implements OID4VP over HTTP.
@@ -305,6 +306,21 @@ eudi dcql credential.txt
 
 See [docs/spec-compliance.md](docs/spec-compliance.md) for the compliance status against OID4VP 1.0, OID4VCI 1.0, HAIP 1.0, SD-JWT (RFC 9901) and SD-JWT VC, mDoc (ISO 18013-5), ETSI trust lists, and Token Status List.
 For the issuer and verifier interactions as diagrams, see [docs/diagrams/README.md](docs/diagrams/README.md).
+
+## OpenID certification
+
+<a href="https://openid.net/certification/mark/">
+  <img src="docs/assets/openid-certified.jpg" alt="OpenID Certified" width="200">
+</a>
+
+**eudi-dev v2.3.7 is OpenID Certified™** for the OpenID4VP 1.0 and OpenID4VCI 1.0 wallet profiles with HAIP 1.0, for both SD-JWT VC and mdoc credentials.
+
+| Certification | Certified flows | Date |
+|---|---|---|
+| [OpenID4VP 1.0 + HAIP 1.0](https://openid.net/certification/certified-oid4vp-haip-final/) | Presentation using `direct_post.jwt` | 18 September 2026 |
+| [OpenID4VCI 1.0 + HAIP 1.0](https://openid.net/certification/certified-oid4vci-haip-final/) | Wallet-initiated issuance and issuer-initiated issuance with offers by value or reference | 3 September 2026 |
+
+The official listings link to the certification submissions and test results. See also the repository's [conformance results](docs/conformance-results.md) and [runbook](docs/conformance-run.md). The OpenID Certified mark is a trademark of the OpenID Foundation and is used under its [mark usage terms](https://openid.net/certification/mark/).
 
 ## Global Flags
 

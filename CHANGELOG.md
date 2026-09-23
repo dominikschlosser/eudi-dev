@@ -5,10 +5,11 @@ Notable changes by release.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.3] - 2026-09-23
 
 ### Added
 
+- **OpenID certification in the README.** Added the official certification mark and the certified OpenID4VP 1.0 and OpenID4VCI 1.0 wallet profiles with HAIP 1.0 for eudi-dev v2.3.7.
 - **The demo issuer offers every credential template the wallet knows** beside its ticket, selectable on the issuer page and by `?credential=<id>` on `POST /api/offers`, so it can stand in as the PID provider of a wallet under test.
 
 ### Fixed
