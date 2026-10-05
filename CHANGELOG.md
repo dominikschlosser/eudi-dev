@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **HAIP on one-shot accept.** `wallet accept --haip` and `wallet scan --haip` without a running wallet server check credential offers and presentation requests against HAIP 1.0. Before, the flag had no effect on that path. Presentation requests on that path also get the OID4VP 1.0 request checks the wallet server applies, so strict mode rejects the same requests on both.
+- **HAIP on one-shot accept.** `wallet accept --haip` and `wallet scan --haip` without a running wallet server check credential offers and presentation requests against HAIP 1.0. Before, the flag had no effect on that path. Presentation requests on that path also get the OID4VP 1.0 request checks the wallet server applies, so strict mode rejects the same requests on both, except the DC API `expected_origins` check, since the CLI has no request origin.
 - **HAIP findings in JSON output.** `validate --haip --json` prints the findings as a `haipFindings` object. Before, JSON output left them out. The exit code still depends only on signature, expiry and revocation.
 
 ## [2.6.0] - 2026-10-04 
