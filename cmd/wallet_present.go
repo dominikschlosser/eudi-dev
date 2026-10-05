@@ -111,7 +111,9 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 		return fmt.Errorf("parsing authorization request: %w", err)
 	}
 
-	findings, err := wallet.ValidatePresentationRequest(w.ValidationMode, parsed.ClientID, parsed.RequestObject, wallet.GetResponseURI(parsed))
+	responseURI := wallet.GetResponseURI(parsed)
+	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
+	findings, err := wallet.ValidateAuthorizationRequest(w.ValidationMode, w.RequireHAIP, authReq)
 	if err != nil {
 		return err
 	}
@@ -132,11 +134,6 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 		return fmt.Errorf("no matching credentials found for the DCQL query")
 	}
 
-	responseURI := parsed.ResponseURI
-	if responseURI == "" {
-		responseURI = parsed.RedirectURI
-	}
-	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
 	requestDetails := wallet.PresentationSubmissionLogDetails(authReq, w, nil, nil, "", nil)
 	requestDetails["event"] = "presentation_request"
 	requestDetails["direction"] = "inbound"
@@ -593,18 +590,21 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 
 func authorizationRequestParamsFromParsed(parsed *oid4vc.AuthorizationRequest, responseURI, source string) *wallet.AuthorizationRequestParams {
 	return &wallet.AuthorizationRequestParams{
-		ClientID:       parsed.ClientID,
-		ResponseType:   parsed.ResponseType,
-		ResponseMode:   parsed.ResponseMode,
-		Nonce:          parsed.Nonce,
-		State:          parsed.State,
-		RedirectURI:    parsed.RedirectURI,
-		ResponseURI:    responseURI,
-		ClientMetadata: parsed.ClientMetadata,
-		DCQLQuery:      parsed.DCQLQuery,
-		RequestObject:  parsed.RequestObject,
-		RequestPayload: wallet.RequestPayload(parsed.RequestObject, parsed.FullJSON),
-		Source:         source,
+		ClientID:         parsed.ClientID,
+		ResponseType:     parsed.ResponseType,
+		ResponseMode:     parsed.ResponseMode,
+		Nonce:            parsed.Nonce,
+		State:            parsed.State,
+		RedirectURI:      parsed.RedirectURI,
+		ResponseURI:      responseURI,
+		Scope:            parsed.Scope,
+		RequestURIMethod: parsed.RequestURIMethod,
+		RequestURI:       parsed.RequestURI,
+		ClientMetadata:   parsed.ClientMetadata,
+		DCQLQuery:        parsed.DCQLQuery,
+		RequestObject:    parsed.RequestObject,
+		RequestPayload:   wallet.RequestPayload(parsed.RequestObject, parsed.FullJSON),
+		Source:           source,
 	}
 }
 
@@ -614,6 +614,9 @@ func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 		return err
 	}
 	w.KeyAttestationLevel = opts.keyAttestationLevel
+	if opts.haip {
+		w.RequireHAIP = true
+	}
 
 	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: opts.txCode, ResolvedOffer: opts.resolvedOffer})
 	if err != nil {

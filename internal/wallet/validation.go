@@ -60,12 +60,6 @@ func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP bool, params 
 	return validatePresentationRequestCore(mode, requireHAIP, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
 }
 
-// ValidatePresentationRequest returns violations as warnings in debug mode. Strict mode
-// rejects violations. Advisories remain warnings in both modes.
-func ValidatePresentationRequest(mode ValidationMode, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string) ([]string, error) {
-	return validatePresentationRequestCore(mode, false, clientID, reqObj, responseURI, "", nil, nil)
-}
-
 func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
 	var findings []string
 

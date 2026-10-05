@@ -5,6 +5,12 @@ Notable changes by release.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **HAIP on one-shot accept.** `wallet accept --haip` and `wallet scan --haip` without a running wallet server check credential offers and presentation requests against HAIP 1.0. Before, the flag had no effect on that path. Presentation requests on that path also get the OID4VP 1.0 request checks the wallet server applies, so strict mode rejects the same requests on both.
+
 ## [2.6.0] - 2026-10-04 
 
 ### Added
