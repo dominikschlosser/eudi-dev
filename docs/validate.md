@@ -71,4 +71,4 @@ eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-
 
 `--haip` adds the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) rules to the format's own checks. Section 6.1.1 requires an SD-JWT VC to carry its issuer's signing certificate and chain in the `x5c` header, without the trust anchor, and forbids a self-signed signing certificate.
 
-Findings are printed. The exit code depends only on the credential's own validity (signature, expiry, revocation).
+Findings are printed. With `--json` they appear as a separate `{"haipFindings": [...]}` object, empty when there are none. The exit code depends only on the credential's own validity (signature, expiry, revocation).

@@ -21,6 +21,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/json"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -563,5 +564,85 @@ func TestValidateHAIPFindings(t *testing.T) {
 	}
 	if findings := haipCredentialFindings(anchorToken); len(findings) != 1 {
 		t.Errorf("a chain carrying the trust anchor produced %v, want the anchor finding", findings)
+	}
+}
+
+func TestValidateHAIPFindingsInJSON(t *testing.T) {
+	caKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	caCert, err := mock.GenerateCACert(caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuerKey, err := mock.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := mock.GenerateLeafCert(caKey, caCert, &issuerKey.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previousHAIP, previousJSON := validateHAIP, jsonOutput
+	t.Cleanup(func() { validateHAIP, jsonOutput = previousHAIP, previousJSON })
+
+	for _, tc := range []struct {
+		name         string
+		chain        []*x509.Certificate
+		wantFindings int
+	}{
+		{name: "issuer chain", chain: []*x509.Certificate{leaf, caCert}, wantFindings: 0},
+		{name: "chain with the trust anchor", chain: []*x509.Certificate{leaf, caCert, caCert}, wantFindings: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := mock.GenerateSDJWT(mock.SDJWTConfig{
+				Issuer:    "https://localhost:1",
+				VCT:       mock.DefaultPIDVCT,
+				ExpiresIn: time.Hour,
+				Claims:    map[string]any{"given_name": "ERIKA"},
+				Key:       issuerKey,
+				CertChain: tc.chain,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credFile := filepath.Join(t.TempDir(), "cred.txt")
+			if err := os.WriteFile(credFile, []byte(raw), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			var runErr error
+			out := captureStdout(t, func() {
+				rootCmd.SetArgs([]string{"validate", "--haip", "--json", credFile})
+				runErr = rootCmd.Execute()
+			})
+			if runErr != nil {
+				t.Fatalf("validate --haip --json: %v", runErr)
+			}
+
+			var findings []string
+			found := false
+			dec := json.NewDecoder(strings.NewReader(out))
+			for dec.More() {
+				var doc map[string]json.RawMessage
+				if err := dec.Decode(&doc); err != nil {
+					t.Fatalf("decoding output: %v\n%s", err, out)
+				}
+				if rawFindings, ok := doc["haipFindings"]; ok {
+					found = true
+					if err := json.Unmarshal(rawFindings, &findings); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("no haipFindings in the JSON output:\n%s", out)
+			}
+			if findings == nil || len(findings) != tc.wantFindings {
+				t.Errorf("haipFindings = %#v, want %d findings", findings, tc.wantFindings)
+			}
+		})
 	}
 }

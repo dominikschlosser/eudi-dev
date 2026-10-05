@@ -366,6 +366,7 @@ func printSkippedSignatureNote(token *sdjwt.Token) {
 // affect the exit code.
 func printHAIPFindings(findings []string, opts output.Options) {
 	if opts.JSON {
+		output.PrintJSON(map[string][]string{"haipFindings": append([]string{}, findings...)})
 		return
 	}
 	if len(findings) == 0 {
