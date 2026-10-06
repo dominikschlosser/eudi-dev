@@ -219,19 +219,18 @@ func (s *Server) handleRegistrationStatusList(w http.ResponseWriter, r *http.Req
 	_, _ = w.Write([]byte(token))
 }
 
-// registrarPlaceholderPages serve the default contact URLs the registrar
-// assigns when a relying party registers none. That way the links in
-// registration certificates and in the consent dialog work.
+// registrarPlaceholderPages serve the default URLs the registrar assigns when
+// a registration or a catalogue entry names none. That way the links in
+// registration certificates, in the consent dialog and in the catalogue work.
 var registrarPlaceholderPages = map[string]string{
-	"/privacy-policy":        "privacy policy",
-	"/support":               "support page",
-	"/supervisory-authority": "supervisory authority contact",
+	"/privacy-policy":        "This page stands in for the privacy policy of a relying party registered with the eudi-dev test registrar. A relying party that registers its own URL links that one instead.",
+	"/support":               "This page stands in for the support page of a relying party registered with the eudi-dev test registrar. A relying party that registers its own URL links that one instead.",
+	"/supervisory-authority": "This page stands in for the supervisory authority contact of a relying party registered with the eudi-dev test registrar. A relying party that registers its own URL links that one instead.",
+	"/rulebook":              "This page stands in for the rulebook of an attestation in the eudi-dev test catalogue. An attestation added with its own rulebook URL links that one instead.",
 }
 
-func placeholderPage(page string) http.HandlerFunc {
-	body := "<!doctype html><meta charset=\"utf-8\"><title>Test registrar placeholder</title>" +
-		"<p>This page stands in for the " + page + " of a relying party registered with the eudi-dev test registrar. " +
-		"A relying party that registers its own URL links that one instead.</p>"
+func placeholderPage(text string) http.HandlerFunc {
+	body := "<!doctype html><meta charset=\"utf-8\"><title>Test registrar placeholder</title><p>" + text + "</p>"
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(body))

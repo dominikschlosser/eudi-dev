@@ -210,6 +210,13 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("POST /api/registrar/registration-certificates/status", s.withFreshStore(s.handleSetRegistrationCertificateStatus))
 	s.routeFunc("GET "+registrationStatusListPath, s.withFreshStore(s.handleRegistrationStatusList))
 	s.routeFunc("POST /api/registrar/access-certificates", s.withFreshStore(s.handleIssueAccessCertificate))
+	s.routeFunc("GET "+catalogSchemaPath, s.withFreshStore(s.handleCatalogSchemas))
+	s.routeFunc("GET "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleCatalogSchema))
+	s.routeFunc("PUT "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleUpdateCatalogSchema))
+	s.routeFunc("DELETE "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleDeleteCatalogSchema))
+	s.routeFunc("GET "+catalogSchemaPath+"/{id}/{format}", s.withFreshStore(s.handleCatalogFormatSchema))
+	s.routeFunc("GET /api/catalog/attestations", s.withFreshStore(s.handleCatalogAttestations))
+	s.routeFunc("POST /api/catalog/attestations", s.withFreshStore(s.handleAddCatalogAttestation))
 	for path, page := range registrarPlaceholderPages {
 		s.routeFunc("GET "+path, placeholderPage(page))
 	}
@@ -462,6 +469,7 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
 	s.wallet.RelyingParties = slices.Clone(reloaded.RelyingParties)
 	s.wallet.RegistrationStatuses = slices.Clone(reloaded.RegistrationStatuses)
+	s.wallet.Catalog = slices.Clone(reloaded.Catalog)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
 	// The poller and issuance flow manage deferred issuances in memory. Reloading them
 	// here could erase a new deferral before it has been saved.

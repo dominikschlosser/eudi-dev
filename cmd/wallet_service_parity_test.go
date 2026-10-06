@@ -388,6 +388,33 @@ func parityCases() []parityCase {
 			second := s.DeleteRelyingParty(rp.Identifier[0].Identifier)
 			return []bool{first == nil, second != nil}
 		}},
+		{method: "CatalogAttestations", observe: func(t *testing.T, s walletService) any {
+			entries, err := s.CatalogAttestations()
+			if err != nil {
+				t.Fatal(err)
+			}
+			names := make([]string, 0, len(entries))
+			for _, e := range entries {
+				names = append(names, e.Name)
+			}
+			return names
+		}},
+		{method: "AddCatalogAttestation", observe: func(t *testing.T, s walletService) any {
+			added, err := s.AddCatalogAttestation(parityCatalogEntry())
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []any{added.Name, added.Schema.Version, added.Schema.SupportedFormats, added.Schema.ID != ""}
+		}},
+		{method: "DeleteCatalogAttestation", observe: func(t *testing.T, s walletService) any {
+			added, err := s.AddCatalogAttestation(parityCatalogEntry())
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := s.DeleteCatalogAttestation(added.Schema.ID)
+			second := s.DeleteCatalogAttestation(added.Schema.ID)
+			return []bool{first == nil, second != nil}
+		}},
 		{method: "AccessCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
 			result, err := s.AccessCertificate(wallet.AccessCertificateRequest{CSR: testCSR(t), Identifier: rp.Identifier[0].Identifier})
@@ -396,6 +423,13 @@ func parityCases() []parityCase {
 			}
 			return []bool{strings.HasPrefix(result.Certificate, "-----BEGIN CERTIFICATE-----"), strings.HasPrefix(result.ClientIDs[0], "x509_hash:")}
 		}},
+	}
+}
+
+func parityCatalogEntry() wallet.CatalogAttestation {
+	return wallet.CatalogAttestation{
+		Name:        "Parity diploma",
+		Credentials: []wallet.CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:example:diploma:1"}},
 	}
 }
 

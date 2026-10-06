@@ -3519,6 +3519,7 @@
     registrarFromList = !!fromList;
     applyRegistrarMode(registrarTarget ? 'verifier' : (mode || 'verifier'));
     showRegistered(false);
+    loadCatalogSuggestions();
     registrarForm.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
     if (registrarTarget) document.getElementById('registrar-purpose').value = '';
     document.getElementById('registrar-title').textContent = registrarTarget
@@ -3545,10 +3546,12 @@
   // an ETSI TS 119 475 registration certificate.
   let registrarCredentialCount = 0;
   const registrarCredentials = document.getElementById('registrar-credentials');
+  // The type field suggests catalogue types in the row's format.
   function credentialPlaceholders(row) {
     const mdoc = row.querySelector('select').value === 'mso_mdoc';
     const type = row.querySelector('[data-field="type"]');
     type.placeholder = mdoc ? 'doctype, e.g. eu.europa.ec.eudi.pid.1' : 'vct, e.g. urn:eudi:pid:1';
+    type.setAttribute('list', mdoc ? 'registrar-types-mdoc' : 'registrar-types-sdjwt');
     const claims = row.querySelector('[data-field="claims"]');
     if (claims) {
       claims.placeholder = mdoc
@@ -3877,6 +3880,230 @@
     ['registrar-copy-issuer-info', 'registrar-issuer-info'],
     ['registrar-copy-csr-command', 'registrar-csr-command'],
   ].forEach(([buttonId, fieldId]) => wireCopyButton(document.getElementById(buttonId), document.getElementById(fieldId)));
+
+  // The attestation catalogue (EC TS11 v1.0). Its entries fill the type
+  // suggestions of the registration dialogs.
+  let catalogEntries = [];
+  async function loadCatalogEntries() {
+    catalogEntries = await registrarRequest('GET', 'api/catalog/attestations');
+    const lists = { 'dc+sd-jwt': 'registrar-types-sdjwt', 'mso_mdoc': 'registrar-types-mdoc' };
+    Object.values(lists).forEach(id => { document.getElementById(id).innerHTML = ''; });
+    const seen = new Set();
+    catalogEntries.forEach(entry => (entry.credentials || []).forEach(c => {
+      const key = c.format + ' ' + c.type;
+      if (!lists[c.format] || seen.has(key)) return;
+      seen.add(key);
+      const option = new Option(entry.name, c.type);
+      option.value = c.type;
+      option.label = entry.name;
+      document.getElementById(lists[c.format]).appendChild(option);
+    }));
+  }
+  function loadCatalogSuggestions() {
+    loadCatalogEntries().catch(() => { /* The fields work without suggestions. */ });
+  }
+
+  const LOS_LABELS = { 'iso_18045_high': 'High', 'iso_18045_moderate': 'Moderate', 'iso_18045_enhanced-basic': 'Enhanced basic', 'iso_18045_basic': 'Basic' };
+  // TS11 bindingType: how an attestation is bound to its holder.
+  const BINDING_LABELS = { key: 'Bound to a wallet key', claim: 'Linked to another credential', biometric: 'Bound to biometrics', none: 'Not bound to the holder' };
+  const catalogOverlay = document.getElementById('registrar-catalog-overlay');
+  const catalogList = document.getElementById('registrar-catalog-list');
+  const catalogSearch = document.getElementById('registrar-catalog-search');
+  // Only web URLs become links, so an entry can't smuggle in a script URL.
+  const catalogLink = (href, text, id) => /^https?:\/\//i.test(href || '')
+    ? '<a href="' + escHtml(href) + '" target="_blank" rel="noopener" id="' + id + '">' + escHtml(text) + ' \u2197</a>'
+    : '<span id="' + id + '">' + escHtml(text) + '</span>';
+
+  function renderCatalog() {
+    const query = catalogSearch.value.trim().toLowerCase();
+    const matching = catalogEntries.filter(entry => !query ||
+      [entry.name].concat((entry.credentials || []).map(c => c.type)).join('\n').toLowerCase().includes(query));
+    catalogList.innerHTML = '';
+    matching.forEach(entry => {
+      const schema = entry.schema || {};
+      const prefix = 'registrar-catalog-entry-' + registrarDomID(schema.id);
+      const trust = (schema.trustedAuthorities || [])[0];
+      const card = document.createElement('div');
+      card.className = 'registrar-party';
+      card.id = prefix;
+      card.innerHTML =
+        '<div class="registrar-party-head" id="' + prefix + '-head">' +
+          '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(entry.name) + '</span>' +
+          (entry.template ? '' : '<span class="registrar-party-actions"><button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button></span>') +
+        '</div>' +
+        '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
+          (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change or delete the credential template to change this entry.">Template</span>' : '') +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
+          '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
+          '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +
+          '<code class="registrar-party-identifier registrar-catalog-version" id="' + prefix + '-version">v' + escHtml(schema.version) + '</code>' +
+        '</div>' +
+        '<ul class="registrar-use-credentials" id="' + prefix + '-formats">' +
+          (entry.credentials || []).map((c, i) => {
+            const uri = ((schema.schemaURIs || []).find(u => u.formatIdentifier === c.format) || {}).uri;
+            return '<li id="' + prefix + '-format-' + i + '">' + escHtml(c.format + ': ' + c.type) +
+              (uri ? ' ' + catalogLink(uri, 'schema', prefix + '-schema-' + i) : '') + '</li>';
+          }).join('') +
+        '</ul>' +
+        '<div class="registrar-catalog-links" id="' + prefix + '-links">' +
+          catalogLink(schema.rulebookURI, 'Rulebook', prefix + '-rulebook') +
+          (trust ? catalogLink(trust.value, 'Trusted list', prefix + '-trust') : '<span id="' + prefix + '-trust">No trusted list</span>') +
+        '</div>';
+      const remove = card.querySelector('#' + prefix + '-delete');
+      if (remove) {
+        remove.addEventListener('click', async () => {
+          const error = document.getElementById('registrar-catalog-error');
+          error.textContent = '';
+          remove.disabled = true;
+          try {
+            await registrarRequest('DELETE', 'api/catalog/schemas/' + encodeURIComponent(schema.id));
+            await loadCatalogEntries();
+            renderCatalog();
+            document.getElementById('registrar-catalog-title').focus();
+          } catch (e) {
+            error.textContent = e.message;
+            remove.disabled = false;
+          }
+        });
+      }
+      catalogList.appendChild(card);
+    });
+    const empty = document.getElementById('registrar-catalog-empty');
+    empty.textContent = 'No attestation matches "' + catalogSearch.value.trim() + '".';
+    empty.hidden = matching.length > 0;
+  }
+
+  async function openCatalog() {
+    document.getElementById('registrar-catalog-error').textContent = '';
+    catalogSearch.value = '';
+    catalogOverlay.classList.add('active');
+    catalogSearch.focus();
+    try {
+      await loadCatalogEntries();
+    } catch (e) {
+      document.getElementById('registrar-catalog-error').textContent = e.message;
+    }
+    renderCatalog();
+  }
+  document.getElementById('registrar-catalog-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    openCatalog();
+  });
+  catalogSearch.addEventListener('input', renderCatalog);
+  document.getElementById('registrar-catalog-close').addEventListener('click', () => {
+    catalogOverlay.classList.remove('active');
+    focusRegistrarOpener();
+  });
+  makeModal(catalogOverlay, document.getElementById('registrar-catalog-close'));
+
+  const catalogForm = document.getElementById('registrar-catalog-form');
+  const catalogAddOverlay = document.getElementById('registrar-catalog-add-overlay');
+  // The dialog opens with an example filled in. Names are unique, so the
+  // example name gets a number when the catalogue already has it.
+  function resetCatalogForm() {
+    const taken = new Set(catalogEntries.map(e => e.name.toLowerCase()));
+    let name = 'University diploma';
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = 'University diploma ' + n;
+    document.getElementById('registrar-catalog-name').value = name;
+    catalogFormats.innerHTML = '';
+    addCatalogFormat('dc+sd-jwt', 'urn:example:diploma:1', 'degree, graduation_date');
+    document.getElementById('registrar-catalog-rulebook').value = '';
+    document.getElementById('registrar-catalog-los').value = 'iso_18045_basic';
+    document.getElementById('registrar-catalog-binding').value = 'key';
+    document.getElementById('registrar-catalog-trust').value = '';
+  }
+  function openCatalogForm() {
+    resetCatalogForm();
+    document.getElementById('registrar-catalog-form-error').textContent = '';
+    catalogForm.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
+    catalogOverlay.classList.remove('active');
+    catalogAddOverlay.classList.add('active');
+    document.getElementById('registrar-catalog-name').focus();
+  }
+  function closeCatalogForm() {
+    catalogAddOverlay.classList.remove('active');
+    catalogOverlay.classList.add('active');
+  }
+  let catalogFormatCount = 0;
+  const catalogFormats = document.getElementById('registrar-catalog-formats');
+  function addCatalogFormat(format, type, claims) {
+    const n = ++catalogFormatCount;
+    const row = document.createElement('div');
+    row.className = 'registrar-credential';
+    row.id = 'registrar-catalog-format-' + n;
+    row.innerHTML =
+      '<select class="form-input" data-field="format" id="registrar-catalog-format-' + n + '-format" aria-label="Format">' +
+        '<option value="dc+sd-jwt">SD-JWT VC</option><option value="mso_mdoc">mdoc</option></select>' +
+      '<input type="text" class="form-input" data-field="type" id="registrar-catalog-format-' + n + '-type" aria-label="Type" autocomplete="off">' +
+      '<input type="text" class="form-input" data-field="claims" id="registrar-catalog-format-' + n + '-claims" aria-label="Claims, comma separated">' +
+      '<button type="button" class="btn btn-sm" data-field="remove" id="registrar-catalog-format-' + n + '-remove" aria-label="Remove this format">Remove</button>';
+    row.querySelector('select').value = format;
+    row.querySelector('[data-field="type"]').value = type;
+    row.querySelector('[data-field="claims"]').value = claims;
+    row.querySelector('select').addEventListener('change', () => credentialPlaceholders(row));
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    credentialPlaceholders(row);
+    // A new type is not in the catalogue yet, so this field suggests nothing.
+    row.querySelector('[data-field="type"]').removeAttribute('list');
+    catalogFormats.appendChild(row);
+  }
+  document.getElementById('registrar-catalog-add-format').addEventListener('click', () => {
+    addCatalogFormat('mso_mdoc', '', '');
+    catalogFormats.lastElementChild.querySelector('[data-field="type"]').focus();
+  });
+  document.getElementById('registrar-catalog-add').addEventListener('click', openCatalogForm);
+  document.getElementById('registrar-catalog-cancel').addEventListener('click', () => {
+    closeCatalogForm();
+    document.getElementById('registrar-catalog-add').focus();
+  });
+  makeModal(catalogAddOverlay, document.getElementById('registrar-catalog-cancel'));
+  catalogForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const error = document.getElementById('registrar-catalog-form-error');
+    error.textContent = '';
+    const credentials = [];
+    catalogFormats.querySelectorAll('.registrar-credential').forEach(row => {
+      const format = row.querySelector('select').value;
+      const type = row.querySelector('[data-field="type"]').value.trim();
+      if (!type) return;
+      const claims = row.querySelector('[data-field="claims"]').value.split(',').map(c => c.trim()).filter(Boolean).map(claim => {
+        if (format !== 'mso_mdoc') return window.eudiParseClaimPath(claim);
+        const at = claim.lastIndexOf(':');
+        return at > 0 ? [claim.slice(0, at), claim.slice(at + 1)] : [type, claim];
+      });
+      credentials.push({ format: format, type: type, claims: claims });
+    });
+    const trust = document.getElementById('registrar-catalog-trust').value.trim();
+    const save = document.getElementById('registrar-catalog-save');
+    save.disabled = true;
+    try {
+      const added = await registrarRequest('POST', 'api/catalog/attestations', {
+        name: document.getElementById('registrar-catalog-name').value.trim(),
+        credentials: credentials,
+        schema: {
+          rulebookURI: document.getElementById('registrar-catalog-rulebook').value.trim(),
+          attestationLoS: document.getElementById('registrar-catalog-los').value,
+          bindingType: document.getElementById('registrar-catalog-binding').value,
+          trustedAuthorities: trust ? [{ frameworkType: 'etsi_tl', value: trust, isLOTE: true }] : [],
+        },
+      });
+      closeCatalogForm();
+      await loadCatalogEntries();
+      catalogSearch.value = '';
+      renderCatalog();
+      const card = document.getElementById('registrar-catalog-entry-' + registrarDomID(added.schema.id));
+      if (card) {
+        card.scrollIntoView({ block: 'nearest' });
+        (card.querySelector('button') || document.getElementById('registrar-catalog-title')).focus();
+      }
+    } catch (e) {
+      error.textContent = e.message;
+    } finally {
+      save.disabled = false;
+      // The disabled button dropped the focus while the request ran.
+      if (catalogAddOverlay.classList.contains('active') && document.activeElement === document.body) save.focus();
+    }
+  });
 
   const conformanceOverlay = document.getElementById('conformance-overlay');
   document.getElementById('conformance-link').addEventListener('click', (event) => {

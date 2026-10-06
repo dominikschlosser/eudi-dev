@@ -55,6 +55,9 @@ type walletService interface {
 	RegistrarRecords() ([]wallet.WalletRelyingParty, error)
 	SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error)
 	DeleteRelyingParty(identifier string) error
+	CatalogAttestations() ([]wallet.CatalogAttestation, error)
+	AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error)
+	DeleteCatalogAttestation(id string) error
 	Config() (map[string]any, error)
 }
 
@@ -186,6 +189,22 @@ func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier string, sco
 
 func (r *remoteWallet) DeleteRelyingParty(identifier string) error {
 	return r.c.DeleteRelyingParty(identifier)
+}
+
+func (r *remoteWallet) CatalogAttestations() ([]wallet.CatalogAttestation, error) {
+	var out []wallet.CatalogAttestation
+	err := r.c.CatalogAttestations(&out)
+	return out, err
+}
+
+func (r *remoteWallet) AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error) {
+	var out wallet.CatalogAttestation
+	err := r.c.AddCatalogAttestation(entry, &out)
+	return out, err
+}
+
+func (r *remoteWallet) DeleteCatalogAttestation(id string) error {
+	return r.c.DeleteCatalogAttestation(id)
 }
 
 func (r *remoteWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
@@ -431,6 +450,43 @@ func (l *localWallet) DeleteRelyingParty(identifier string) error {
 		return err
 	}
 	if err := w.DeleteRelyingParty(identifier); err != nil {
+		return err
+	}
+	if err := store.Save(w); err != nil {
+		return fmt.Errorf("saving wallet: %w", err)
+	}
+	return nil
+}
+
+func (l *localWallet) CatalogAttestations() ([]wallet.CatalogAttestation, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	return w.CatalogAttestations(w.RegistrarBase()), nil
+}
+
+func (l *localWallet) AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return wallet.CatalogAttestation{}, err
+	}
+	stored, err := w.AddCatalogAttestation(entry, w.RegistrarBase())
+	if err != nil {
+		return wallet.CatalogAttestation{}, err
+	}
+	if err := store.Save(w); err != nil {
+		return wallet.CatalogAttestation{}, fmt.Errorf("saving wallet: %w", err)
+	}
+	return stored, nil
+}
+
+func (l *localWallet) DeleteCatalogAttestation(id string) error {
+	w, store, err := l.load()
+	if err != nil {
+		return err
+	}
+	if err := w.DeleteCatalogAttestation(id, w.RegistrarBase()); err != nil {
 		return err
 	}
 	if err := store.Save(w); err != nil {

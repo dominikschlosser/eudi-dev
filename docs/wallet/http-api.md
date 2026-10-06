@@ -196,7 +196,11 @@ These endpoints are available on both wallet ports. Like credentials, anyone wit
 | `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates |
 | `POST` | `/api/registrar/registration-certificates/status` | Revoke or activate registration certificates |
 | `GET` | `/api/registrar/status-list` | Status list of the registration certificates |
-| `GET` | `/privacy-policy`, `/support`, `/supervisory-authority` | Placeholder pages for the default privacy policy, support and supervisory authority URLs |
+| `GET` | `/api/catalog/schemas` | Catalogue of attestations (EC TS11 v1.0), signed and paged |
+| `GET`, `PUT`, `DELETE` | `/api/catalog/schemas/{id}` | One attestation schema |
+| `GET` | `/api/catalog/schemas/{id}/{format}` | The schema behind a schema URI |
+| `GET`, `POST` | `/api/catalog/attestations` | The catalogue with names and types, and adding to it |
+| `GET` | `/privacy-policy`, `/support`, `/supervisory-authority`, `/rulebook` | Placeholder pages for the default privacy policy, support, supervisory authority and rulebook URLs |
 
 ### One-shot error override
 

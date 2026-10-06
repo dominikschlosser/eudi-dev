@@ -23,6 +23,7 @@
           <button type="button" class="header-submenu-toggle" id="registrar-menu-toggle" aria-expanded="false" aria-controls="registrar-submenu">Registrar</button>
           <span class="header-submenu" id="registrar-submenu" hidden>
             <a href="#" id="registrar-parties-link">Relying parties</a>
+            <a href="#" id="registrar-catalog-link">Attestation catalogue</a>
           </span>
         </span>
         <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
@@ -429,6 +430,69 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
       </form>
     </div>
   </div>
+
+  <div class="consent-overlay" id="registrar-catalog-overlay">
+    <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-catalog-title" id="registrar-catalog-dialog">
+      <div class="consent-title" id="registrar-catalog-title" tabindex="-1">Attestation catalogue</div>
+      <p class="dialog-hint" id="registrar-catalog-hint">Each entry describes an attestation type: its formats and schemas, its rulebook and the trusted list of its issuers. When you register a verifier or an issuer, the type fields suggest these entries.</p>
+      <input type="search" id="registrar-catalog-search" class="form-input registrar-search" placeholder="Search attestations" aria-label="Search attestations" autocomplete="off">
+      <div class="registrar-party-list" id="registrar-catalog-list"></div>
+      <div class="empty-state" id="registrar-catalog-empty" hidden></div>
+
+      <div class="form-error" id="registrar-catalog-error" role="alert"></div>
+      <div class="consent-buttons" id="registrar-catalog-buttons">
+        <button type="button" class="btn" id="registrar-catalog-close">Close</button>
+        <button type="button" class="btn btn-primary" id="registrar-catalog-add">Add attestation</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="consent-overlay" id="registrar-catalog-add-overlay">
+    <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-catalog-add-title" id="registrar-catalog-add-dialog">
+      <div class="consent-title" id="registrar-catalog-add-title" tabindex="-1">Add an attestation</div>
+      <p class="dialog-hint" id="registrar-catalog-add-hint">The catalogue assigns the id and serves a schema for each format.</p>
+      <form id="registrar-catalog-form">
+        <div class="form-grid">
+          <label class="form-label" for="registrar-catalog-name">Name</label>
+          <input type="text" id="registrar-catalog-name" class="form-input" value="University diploma">
+
+          <span class="form-label registrar-credentials-label" id="registrar-catalog-formats-label">Format, type and claims</span>
+          <div class="registrar-credentials" id="registrar-catalog-formats" role="group" aria-labelledby="registrar-catalog-formats-label"></div>
+          <button type="button" class="btn btn-sm registrar-add" id="registrar-catalog-add-format">+ Add format</button>
+
+          <label class="form-label" for="registrar-catalog-rulebook">Rulebook</label>
+          <input type="text" id="registrar-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
+
+          <label class="form-label" for="registrar-catalog-los">Level of security</label>
+          <select id="registrar-catalog-los" class="form-input">
+            <option value="iso_18045_basic">Basic</option>
+            <option value="iso_18045_enhanced-basic">Enhanced basic</option>
+            <option value="iso_18045_moderate">Moderate</option>
+            <option value="iso_18045_high">High</option>
+          </select>
+
+          <label class="form-label" for="registrar-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+          <select id="registrar-catalog-binding" class="form-input">
+            <option value="key">Wallet key</option>
+            <option value="claim">Another credential</option>
+            <option value="biometric">Biometrics</option>
+            <option value="none">None</option>
+          </select>
+
+          <label class="form-label" for="registrar-catalog-trust">Trusted list</label>
+          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' trusted list (optional)">
+        </div>
+        <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
+        <div class="consent-buttons">
+          <button type="button" class="btn" id="registrar-catalog-cancel">Close</button>
+          <button type="submit" class="btn btn-primary" id="registrar-catalog-save">Add to catalogue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <datalist id="registrar-types-sdjwt"></datalist>
+  <datalist id="registrar-types-mdoc"></datalist>
 
   <div class="consent-overlay" id="cli-overlay">
     <div class="consent-dialog">

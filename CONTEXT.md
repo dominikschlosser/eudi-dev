@@ -57,6 +57,9 @@ Identifies a relying party (ETSI TS 119 411-8). The verifier signs its request o
 **Registration certificate**:
 A signed JWT from the registrar (ETSI TS 119 475). A verifier's certificate lists one intended use, and the verifier sends it in `verifier_info`. An issuer's certificate lists the attestation types of its service, and the issuer publishes it in `issuer_info`.
 
+**Attestation catalogue**:
+A list of attestation types (EC TS11 catalogue of attestations). Each entry links a schema, a rulebook and a trusted list. Every credential template has an entry.
+
 **Relying party access CA**:
 Signs the access certificates that the wallet's registrar issues to relying parties. It is separate from the wallet CA.
 

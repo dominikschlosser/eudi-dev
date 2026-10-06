@@ -331,7 +331,7 @@ func TestTheRegistrarServesItsPlaceholderPages(t *testing.T) {
 	srv := newTestServer(t, true)
 	for path := range registrarPlaceholderPages {
 		resp := serverRequest(t, srv, http.MethodGet, path, "")
-		if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "test registrar") {
+		if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "eudi-dev test") {
 			t.Errorf("GET %s = %d %q", path, resp.Code, resp.Body.String())
 		}
 	}

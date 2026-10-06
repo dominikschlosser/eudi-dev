@@ -2305,4 +2305,65 @@ test.describe("Registrar", () => {
     await expect(page.locator(card)).toHaveCount(0);
   });
 
+  test("the attestation catalogue lists the PID types and adds an attestation", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-catalog-link").click();
+    await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
+    const pid = page.locator(".registrar-party", { hasText: "EUDI PID" }).first();
+    await expect(pid.locator("[id$='-template']")).toHaveText("Template");
+    await expect(pid.locator("[id$='-formats']")).toContainText("dc+sd-jwt: urn:eudi:pid:1");
+    await expect(pid.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/pid$/);
+    await expect(pid.locator("button")).toHaveCount(0);
+
+    await page.locator("#registrar-catalog-add").click();
+    await expect(page.locator("#registrar-catalog-add-overlay")).toBeVisible();
+    await expect(page.locator("#registrar-catalog-overlay")).toBeHidden();
+    await page.locator("#registrar-catalog-name").fill("Library card");
+    await page.locator("#registrar-catalog-format-1-type").fill("urn:example:library:1");
+    await page.locator("#registrar-catalog-format-1-claims").fill("member_id, address.locality");
+    await page.locator("#registrar-catalog-los").selectOption("iso_18045_moderate");
+    await page.locator("#registrar-catalog-save").click();
+    await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
+    const card = page.locator(".registrar-party", { hasText: "Library card" });
+    await expect(card.locator("[id$='-los']")).toHaveText("Security: Moderate");
+    await expect(card.locator("[id$='-trust']")).toHaveText("No trusted list");
+
+    // The schema link serves SD-JWT VC Type Metadata with the claims.
+    const schemaURL = await card.locator("[id$='-schema-0']").getAttribute("href");
+    const typeMetadata = await (await fetch(schemaURL.replace("https://localhost:18926", WALLET_URL))).json();
+    expect(typeMetadata).toEqual({ vct: "urn:example:library:1", name: "Library card", claims: [{ path: ["member_id"] }, { path: ["address", "locality"] }] });
+
+    // The registration dialogs suggest the new type.
+    await page.locator("#registrar-catalog-close").click();
+    await openRegisterDialog(page, "#registrar-parties-register-issuer");
+    await expect(page.locator("#registrar-attestation-1-type")).toHaveAttribute("list", "registrar-types-sdjwt");
+    await expect(page.locator("#registrar-types-sdjwt option[value='urn:example:library:1']")).toHaveCount(1);
+    await page.locator("#registrar-close").click();
+    await page.locator("#registrar-parties-close").click();
+
+    // A name is listed once, and an added attestation can be deleted.
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-catalog-link").click();
+    await page.locator("#registrar-catalog-add").click();
+    // The dialog opens with the example again.
+    await expect(page.locator("#registrar-catalog-name")).toHaveValue("University diploma");
+    await expect(page.locator("#registrar-catalog-formats [data-field=\"type\"]").first()).toHaveValue("urn:example:diploma:1");
+    await page.locator("#registrar-catalog-name").fill("library card");
+    await page.locator("#registrar-catalog-formats [data-field=\"type\"]").first().fill("urn:example:library:2");
+    await page.locator("#registrar-catalog-save").click();
+    await expect(page.locator("#registrar-catalog-form-error")).toContainText("already lists");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#registrar-catalog-add-overlay")).toBeHidden();
+    await card.locator("button").click();
+    await expect(page.locator(".registrar-party", { hasText: "Library card" })).toHaveCount(0);
+    // After a delete, the next add starts from the example again.
+    await page.locator("#registrar-catalog-add").click();
+    await expect(page.locator("#registrar-catalog-name")).toHaveValue("University diploma");
+    await expect(page.locator("#registrar-catalog-formats [data-field=\"claims\"]").first()).toHaveValue("degree, graduation_date");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#registrar-catalog-overlay")).toBeHidden();
+  });
+
 });

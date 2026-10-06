@@ -74,6 +74,7 @@ type walletJSON struct {
 	IssuedAttestations   []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
 	RelyingParties       []WalletRelyingParty    `json:"relying_parties,omitempty"`
 	RegistrationStatuses []RegistrationStatus    `json:"registration_statuses,omitempty"`
+	Catalog              []CatalogAttestation    `json:"catalog,omitempty"`
 	Log                  []LogEntry              `json:"log,omitempty"`
 	DeferredIssuances    []DeferredIssuance      `json:"deferred_issuances,omitempty"`
 	StatusEntries        map[string]StatusEntry  `json:"status_entries,omitempty"`
@@ -423,6 +424,7 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 	w.IssuedAttestations = dedupeIssuedAttestations(wj.IssuedAttestations)
 	w.RelyingParties = wj.RelyingParties
 	w.RegistrationStatuses = wj.RegistrationStatuses
+	w.Catalog = wj.Catalog
 	w.Log = s.filterLogEntries(wj.Log)
 	w.StatusEntries = wj.StatusEntries
 	w.StatusListCounter = wj.StatusListCounter
@@ -453,6 +455,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
 	relyingParties := slices.Clone(w.RelyingParties)
 	registrationStatuses := slices.Clone(w.RegistrationStatuses)
+	catalog := slices.Clone(w.Catalog)
 	deferredIssuances := append([]DeferredIssuance(nil), w.DeferredIssuances...)
 	logEntries := s.filterLogEntries(w.Log)
 	statusEntries := w.StatusEntries
@@ -466,6 +469,7 @@ func (s *WalletStore) Save(w *Wallet) error {
 		IssuedAttestations:   issuedAttestations,
 		RelyingParties:       relyingParties,
 		RegistrationStatuses: registrationStatuses,
+		Catalog:              catalog,
 		Log:                  logEntries,
 		StatusEntries:        statusEntries,
 		StatusListCounter:    statusListCounter,
