@@ -234,13 +234,19 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		}
 	}()
 
+	var signerChain []*x509.Certificate
+	preferSigned := w.ARFChecks()
 	metadata, err := w.fetchLoggedMetadata(metadataFetch{
 		event:         "issuer_metadata",
 		fetchLabel:    "issuer metadata",
 		responseLabel: "Issuer metadata",
 		wellKnown:     "openid-credential-issuer",
 		issuer:        offer.CredentialIssuer,
-		fetch:         fetchIssuerMetadata,
+		fetch: func(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
+			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, payloads...)
+			signerChain = chain
+			return metadata, err
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetching issuer metadata: %w", err)
@@ -281,6 +287,12 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 			if err := w.reportHAIPViolations("Credential offer", offer.CredentialIssuer, violations); err != nil {
 				return nil, err
 			}
+		}
+	}
+	// The ARF checks the issuer before any credential is requested.
+	if findings := w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs); len(findings) > 0 {
+		if err := w.reportARFIssuanceFindings(offer.CredentialIssuer, findings); err != nil {
+			return nil, err
 		}
 	}
 
@@ -568,9 +580,17 @@ func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
 }
 
 func fetchIssuerMetadata(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
+	metadata, _, err := fetchIssuerMetadataDocument(client, issuer, false, payloads...)
+	return metadata, err
+}
+
+// fetchIssuerMetadataDocument also returns the certificate chain of signed
+// metadata. preferSigned asks for the signed form first. The ARF requires
+// issuers to provide it (ISSU_22, ISSU_32).
+func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigned bool, payloads ...*LogPayload) (map[string]any, []*x509.Certificate, error) {
 	metadataURL, err := wellKnownURL(issuer, "openid-credential-issuer")
 	if err != nil {
-		return nil, fmt.Errorf("building issuer metadata URL: %w", err)
+		return nil, nil, fmt.Errorf("building issuer metadata URL: %w", err)
 	}
 
 	resp, err := fetchMetadataDocument(func() (*http.Request, error) {
@@ -579,14 +599,19 @@ func fetchIssuerMetadata(client *http.Client, issuer string, payloads ...*LogPay
 			return nil, fmt.Errorf("creating metadata request: %w", err)
 		}
 		// §12.2.2 allows application/json and application/jwt. Listing both
-		// tells the issuer that signed metadata is supported.
+		// tells the issuer that signed metadata is supported, and the quality
+		// value says which one the wallet prefers.
 		// openidvci-issuer-metadata+jwt is the typ header of the signed form
 		// (§12.2.3). It is not a media type.
-		req.Header.Set("Accept", "application/json, application/jwt")
+		accept := "application/json, application/jwt"
+		if preferSigned {
+			accept = "application/jwt, application/json;q=0.5"
+		}
+		req.Header.Set("Accept", accept)
 		return req, nil
 	}, client)
 	if err != nil {
-		return nil, fmt.Errorf("fetching metadata: %w", err)
+		return nil, nil, fmt.Errorf("fetching metadata: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -595,17 +620,17 @@ func fetchIssuerMetadata(client *http.Client, issuer string, payloads ...*LogPay
 		if payload := firstLogPayload(payloads); payload != nil {
 			payload.Body = string(body)
 		}
-		return nil, fmt.Errorf("metadata request failed (%d): %s", resp.StatusCode, string(body))
+		return nil, nil, fmt.Errorf("metadata request failed (%d): %s", resp.StatusCode, string(body))
 	}
 
 	body, err := format.ReadRemoteBody(resp.Body, "issuer response")
 	if err != nil {
-		return nil, fmt.Errorf("reading metadata: %w", err)
+		return nil, nil, fmt.Errorf("reading metadata: %w", err)
 	}
 	if payload := firstLogPayload(payloads); payload != nil {
 		payload.Body = string(body)
 	}
-	return parseIssuerMetadataResponse(body, resp.Header.Get("Content-Type"), issuer)
+	return parseIssuerMetadataDocument(body, resp.Header.Get("Content-Type"), issuer)
 }
 
 func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
@@ -632,30 +657,39 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 // metadata URL was built from. The signature check and the identity check both
 // use it.
 func parseIssuerMetadataResponse(body []byte, contentType, issuer string) (map[string]any, error) {
+	metadata, _, err := parseIssuerMetadataDocument(body, contentType, issuer)
+	return metadata, err
+}
+
+// parseIssuerMetadataDocument also returns the certificate chain that signed
+// the metadata, or nil for unsigned metadata.
+func parseIssuerMetadataDocument(body []byte, contentType, issuer string) (map[string]any, []*x509.Certificate, error) {
 	raw := strings.TrimSpace(string(body))
 	if raw == "" {
-		return nil, fmt.Errorf("issuer metadata response was empty")
+		return nil, nil, fmt.Errorf("issuer metadata response was empty")
 	}
 
 	var metadata map[string]any
+	var chain []*x509.Certificate
 	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	if mediaType == "application/jwt" || strings.Contains(mediaType, "openidvci-issuer-metadata+jwt") || isLikelyCompactJWT(raw) {
 		token, err := sdjwt.Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("parsing signed issuer metadata: %w", err)
+			return nil, nil, fmt.Errorf("parsing signed issuer metadata: %w", err)
 		}
 		if err := verifySignedIssuerMetadata(token, issuer); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		metadata = token.Payload
+		chain, _ = signedIssuerMetadataChain(token)
 	} else if err := json.Unmarshal(body, &metadata); err != nil {
-		return nil, fmt.Errorf("parsing metadata JSON: %w", err)
+		return nil, nil, fmt.Errorf("parsing metadata JSON: %w", err)
 	}
 
 	if err := checkCredentialIssuerIdentifier(metadata, issuer); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return metadata, nil
+	return metadata, chain, nil
 }
 
 // checkCredentialIssuerIdentifier checks that the metadata matches the

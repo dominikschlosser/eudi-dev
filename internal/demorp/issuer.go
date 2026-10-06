@@ -262,7 +262,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metadata["issuer_info"] = info
-	if wallet.AcceptsOnlySignedIssuerMetadata(r.Header.Get("Accept")) {
+	if wallet.PrefersSignedIssuerMetadata(r.Header.Get("Accept")) {
 		jwt, err := wallet.SignCredentialIssuerMetadata(d.wallet, issuer, metadata, time.Now().Add(time.Hour))
 		if err != nil {
 			http.Error(w, "signing issuer metadata: "+err.Error(), http.StatusInternalServerError)

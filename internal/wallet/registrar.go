@@ -490,6 +490,11 @@ func newRegistrarID() string {
 // attestations it provides.
 func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
 	dataset := buildRegistrarDataset(w, base)
+	if _, access, err := w.AccessSigningMaterial(); err == nil {
+		identifier, _, _ := accessCertificateSubject(access[0])
+		dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
+		dataset.RegistryURI = strings.TrimRight(base, "/") + "/api/registrar/wrp/" + identifier
+	}
 	return WalletRelyingParty{
 		Identifier:           dataset.Identifier,
 		LegalPerson:          LegalPerson{LegalName: []string{dataset.TradeName}},

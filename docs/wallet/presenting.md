@@ -41,7 +41,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--docker`              | `false`  | Serve the trust and status lists under `host.docker.internal` so a verifier in a container can reach them |
 | `--key-attestation-level` | Issuer requirements | Test claims for key storage and user authentication: issuer requirements (default), `none`, or a level such as `iso_18045_high`. A running wallet uses its own setting. See [key attestation claims](serve.md#key-attestation-claims) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled: strict refuses the flow, debug reports them and continues |
-| `--arf`                 | `false`  | Check the relying party's access and registration certificates in presentation requests against the ARF (see [ARF checks](#arf-checks)). `--mode` sets how violations are handled |
+| `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [ARF checks](#arf-checks) and [issuers](issuing.md#arf-checks)). `--mode` sets how violations are handled |
 | `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
 
 Pre-authorized code offers work directly with `wallet accept`. Authorization code offers require a running `wallet serve` instance. The client ID defaults to the wallet origin and the redirect URI to its `/callback` endpoint. Override them with `--vci-client-id` and `--vci-redirect-uri`. The wallet uses PAR and DPoP when advertised by the issuer.
@@ -153,7 +153,7 @@ Every request to a given wallet uses the same validation mode, HAIP, ARF and enc
 
 ## ARF checks
 
-`--arf` on `wallet serve`, `wallet accept` or `wallet scan` checks the relying party's access and registration certificates in a presentation request against the ARF. `--demo` turns it on by default. The Conformance panel and `PUT /api/config/conformance` (`arf`) switch it at runtime.
+`--arf` on `wallet serve`, `wallet accept` or `wallet scan` checks the relying party's access and registration certificates in a presentation request against the ARF. It checks issuers too (see [issuing](issuing.md#arf-checks)). `--demo` turns it on by default. The Conformance panel and `PUT /api/config/conformance` (`arf`) switch it at runtime.
 
 The wallet checks that:
 

@@ -63,9 +63,15 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	// The credential request needs the Nonce Endpoint (§8.2) and the
 	// issuer's encryption requirements. Both come from the Credential Issuer
 	// Metadata (§12.2.2).
-	metadata, metadataErr := fetchIssuerMetadata(w.HTTPClient(), renewal.Issuer)
+	metadata, signerChain, metadataErr := fetchIssuerMetadataDocument(w.HTTPClient(), renewal.Issuer, w.ARFChecks())
 	if metadataErr != nil {
 		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
+	}
+	// A renewal requests a credential too, so the ARF checks apply.
+	if findings := w.issuerARFCheck(metadata, signerChain, []string{renewal.ConfigurationID}); len(findings) > 0 {
+		if err := w.reportARFIssuanceFindings(renewal.Issuer, findings); err != nil {
+			return nil, err
+		}
 	}
 
 	cNonce, err := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)

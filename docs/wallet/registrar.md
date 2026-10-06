@@ -31,6 +31,8 @@ To use the certificates, an issuer:
 2. signs the metadata as OpenID4VCI 1.0 §12.2.3 describes, with the key of its access certificate and the access certificate chain in `x5c` (ETSI TS 119 472-3 §4.2.2)
 3. serves the signed metadata when a wallet asks for `application/jwt`
 
+A wallet with `--arf` then checks the issuer before it requests a credential (see [issuing](issuing.md#arf-checks)).
+
 A provider that also requests attributes, for example to authenticate the user during issuance, registers intended uses too. The registrar then adds the `Service_Provider` entitlement (ARF RPRC_05 note).
 
 ## Revocation
@@ -82,6 +84,7 @@ Every element has an ID for automated tests:
 | Registrar menu | `registrar-menu-toggle` opens the submenu with `registrar-parties-link` |
 | Relying parties | Filters `registrar-filter-all`, `registrar-filter-verifiers`, `registrar-filter-issuers`. `registrar-search` searches, with suggestions in `registrar-search-suggestions`. `registrar-page-prev`, `registrar-page-next` and `registrar-page-info` page through the list. `registrar-parties-register` and `registrar-parties-register-issuer` open the register dialogs, and `registrar-parties-close` closes the dialog. A party is `registrar-party-<identifier>` with `-name`, `-identifier`, `-role-verifier`, `-role-issuer`, `-add-use` and `-delete`. An intended use is `registrar-party-<identifier>-use-<intended use>` with `-purpose`, `-status`, `-credentials`, `-issue` and `-revoke` (Revoke or Activate). An issued certificate shows in `-result` with `-verifier-info` and `-copy`. An issuer service is `registrar-party-<identifier>-service-<service>` (`default` without a service identifier) with `-entitlement`, `-status`, `-attestations`, `-issue`, `-revoke`, and `-result` with `-issuer-info` and `-copy`. In `<identifier>`, `<intended use>` and `<service>`, characters other than letters, digits, `_` and `-` become `_` |
 | Register dialogs | `registrar-title`, `registrar-name`, `registrar-identifier`, `registrar-legal-name`, `registrar-country`, `registrar-support-uri`, `registrar-service-id`, `registrar-purpose`, `registrar-privacy-policy`, credential rows `registrar-credential-<n>-format`, `-type`, `-claims` and `-remove`, `registrar-add-credential`, `registrar-entitlement`, attestation rows `registrar-attestation-<n>-format`, `-type` and `-remove`, `registrar-add-attestation`, `registrar-registration-validity`, `registrar-csr`, `registrar-dns`, `registrar-access-validity`, `registrar-csr-help-toggle`, `registrar-copy-csr-command`, `registrar-error`, `registrar-submit`, `registrar-close`. Results in `registrar-result` with `registrar-result-identifier`, `registrar-client-id-<n>`, `registrar-pem` (labelled by `registrar-pem-label`), `registrar-download-pem`, `registrar-verifier-info` and `registrar-issuer-info`. `registrar-copy-pem`, `registrar-copy-verifier-info` and `registrar-copy-issuer-info` copy a result field. `registrar-client-id-<n>` counts from 0 |
+| Offer consent | With `--arf`, `offer-arf-warnings` lists the findings about the issuer in `offer-arf-warnings-list`, one `offer-arf-warning-<n>` each |
 
 ## Fields and where they go
 
@@ -112,9 +115,9 @@ The access certificate has the policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.
 
 The consent dialog shows the registered purpose and a link to the privacy policy (ARF RPA_10). API clients find them in `purposes` and `privacy_policies` of a pending request. The wallet shows them whenever the registration certificate's signature matches its `x5c` certificate, even without `--arf`.
 
-With `--arf` the wallet checks the access certificate and the registration certificates of every request, whichever registrar issued them (see [ARF checks](presenting.md#arf-checks)). It trusts two sets of CAs:
+With `--arf` the wallet checks the access certificate and the registration certificates of every request and every issuer, whichever registrar issued them (see [ARF checks for verifiers](presenting.md#arf-checks) and [for issuers](issuing.md#arf-checks)). It trusts two sets of CAs:
 
-- **Access certificates** must chain to the relying party access CA, the wallet CA (which signs the demo verifier's access certificate) or a CA from `--relying-party-ca`.
+- **Access certificates** must chain to the relying party access CA, the wallet CA (which signs the demo verifier's and the demo issuer's access certificate) or a CA from `--relying-party-ca`.
 - **Registration certificates** must chain to the wallet CA (which signs the registrar certificate) or a CA from `--relying-party-ca`. The relying party access CA is not trusted here, because it signs every visitor's CSR. Otherwise anyone with an access certificate could sign their own registration.
 
 Certificates from this registrar pass both checks. `--relying-party-ca` adds the CAs of other registrars. A registered credential without a claim list declares no attributes (ETSI TS 119 475 V1.2.1 Annex B.2.9), so any claim the request asks for counts as over-asking. TS05 registrars always list the claims.
@@ -125,7 +128,7 @@ The wallet does not check these:
 
 - **The service identifier.** ARF RPRC_17a also compares the service identifier, but ETSI TS 119 475 V1.2.1 has no claim for it. The access certificate has it as organizational unit.
 - **Access certificate revocation.** The registrar does not revoke access certificates. A deleted relying party keeps a valid access certificate until it expires.
-- **The register.** The wallet does not look up `registry_uri`. Under ARF RPRC_19 the verifier sends the certificate itself, so no lookup is needed.
+- **The register.** The wallet does not look up `registry_uri`. Under ARF RPRC_19 and RPRC_22 the relying party sends the certificate itself, so no lookup is needed.
 
 ## The demo verifier
 
@@ -138,6 +141,8 @@ On the demo verifier page you choose how the verifier identifies itself:
 - **Own certificates**: you paste a PEM bundle with your key and access certificate chain, and optionally a `verifier_info` value.
 
 The identity buttons are `identity-demo`, `identity-registrar` and `identity-own`. The registration fields are `identity-name`, `identity-purpose` and the rows `identity-credential-<n>-format`, `-type`, `-claims` and `-remove`, with `identity-add-credential`. `identity-registered-id` shows the assigned identifier. In **Own certificates** mode you paste into `signing-key` and `verifier-info`.
+
+The demo issuer signs its metadata with the wallet's access certificate and publishes a registration certificate from this registrar in `issuer_info`. It passes the `--arf` checks.
 
 ## Registrar API
 

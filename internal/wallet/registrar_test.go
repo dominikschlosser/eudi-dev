@@ -336,3 +336,15 @@ func TestTheRegistrarServesItsPlaceholderPages(t *testing.T) {
 		}
 	}
 }
+
+// ownProviderIdentifier is the identifier of the wallet's own provider
+// registration: the organizationIdentifier of its access certificate.
+func ownProviderIdentifier(t *testing.T, w *Wallet) string {
+	t.Helper()
+	_, access, err := w.AccessSigningMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier, _, _ := accessCertificateSubject(access[0])
+	return identifier
+}

@@ -2025,8 +2025,8 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	if !ok {
 		t.Fatalf("expected issuer_info data object, got %T", entry["data"])
 	}
-	if record["registryURI"] != w.IssuerURL+"/api/registrar/wrp" {
-		t.Fatalf("expected registryURI %s, got %v", w.IssuerURL+"/api/registrar/wrp", record["registryURI"])
+	if want := w.IssuerURL + "/api/registrar/wrp/" + ownProviderIdentifier(t, w); record["registryURI"] != want {
+		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
 	entitlements, ok := record["entitlements"].([]any)
 	if !ok || len(entitlements) != 1 || entitlements[0] != pidProviderEntitlement {
@@ -2088,7 +2088,7 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 		return page.Data
 	}
 	matched := list(mock.DefaultPIDVCT)
-	if len(matched) != 1 || matched[0].RegistryURI != w.IssuerURL+"/api/registrar/wrp" {
+	if len(matched) != 1 || matched[0].Identifier[0].Identifier != ownProviderIdentifier(t, w) {
 		t.Fatalf("matched %+v, want the wallet's provider record", matched)
 	}
 	if unmatched := list("urn:example:unknown"); len(unmatched) != 0 {

@@ -26,7 +26,8 @@ func TestIssuerProfileMetadata(t *testing.T) {
 		t.Fatal("issuer metadata has no registrar information")
 	}
 	dataset := info[0].(map[string]any)["data"].(map[string]any)
-	if dataset["registryURI"] != d.baseURL()+"/api/registrar/wrp" {
+	identifier := dataset["identifier"].([]any)[0].(map[string]any)["identifier"]
+	if dataset["registryURI"] != w.RegistrarBase()+"/api/registrar/wrp/"+identifier.(string) {
 		t.Errorf("registrar URL = %v", dataset["registryURI"])
 	}
 	registration := info[1].(map[string]any)

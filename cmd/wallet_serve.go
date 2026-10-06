@@ -77,7 +77,7 @@ type walletServeOptions struct {
 }
 
 const (
-	arfFlagUsage            = "Check the relying party's access and registration certificates in presentation requests against the ARF, including over-asking and revocation. With --mode strict a finding refuses the request"
+	arfFlagUsage            = "Check the access and registration certificates of verifiers and issuers against the ARF, including over-asking and revocation. With --mode strict the wallet refuses the request or the offer on any finding"
 	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. --arf trusts them in addition to the wallet's own CAs (repeatable)"
 )
 
@@ -673,7 +673,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		fmt.Printf("               enforced (issuance needs an https issuer, authorization code offers also PAR, PKCE S256, DPoP and client auth)\n")
 	}
 	if w.RequireARF {
-		fmt.Printf("  ARF:         checked (access and registration certificates, over-asking, revocation)\n")
+		fmt.Printf("  ARF:         checked (access and registration certificates of verifiers and issuers, over-asking, revocation)\n")
 	}
 	for _, warning := range servingConfigWarnings(w, opts.Port, opts.Docker) {
 		yellow.Printf("  Warning:     %s\n", warning)

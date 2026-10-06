@@ -1936,6 +1936,15 @@
       '</div>';
     }
 
+    // With --arf the wallet checks how the issuer authenticates. The ARF
+    // requires the wallet to warn the user before it requests the credential.
+    if ((details.warnings || []).length > 0) {
+      html += '<div class="offer-warnings" id="offer-arf-warnings" role="alert">' +
+        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet could not verify this issuer\'s registration</div>' +
+        '<ul id="offer-arf-warnings-list">' + details.warnings.map((w, i) => '<li id="offer-arf-warning-' + i + '">' + escHtml(w) + '</li>').join('') + '</ul>' +
+      '</div>';
+    }
+
     if (details.resolve_error) {
       html += '<p class="dialog-hint" id="offer-resolve-error">Could not retrieve the offer. ' +
         'Showing only its issuer. Approve to retry.</p>';

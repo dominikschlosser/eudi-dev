@@ -174,7 +174,7 @@ These endpoints are available on both wallet ports.
 | `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of saved profile trust lists |
 | `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved profile trust list |
 
-Issuer metadata is JSON by default. `Accept: application/jwt` selects metadata signed with the Access Certificate key. Its `issuer_info` includes a Registrar-signed registration certificate and the existing registrar dataset. The registration certificate's status list entry is never revoked.
+Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and a registration certificate signed by the registrar. The registration certificate's status list entry is never revoked.
 
 Trust lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
 

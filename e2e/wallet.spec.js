@@ -1920,6 +1920,47 @@ test.describe("ARF checks", () => {
     expect(body.error_description).toContain("RPA_03");
   });
 
+  test("with --arf the offer dialog warns about an unregistered issuer", async ({ page }) => {
+    const res = await fetch(`${WALLET_URL}/api/config/conformance`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ arf: true }),
+    });
+    expect(res.status).toBe(200);
+    // The issuer serves unsigned metadata without issuer_info.
+    const issuer = http.createServer((req, resp) => {
+      const base = `http://127.0.0.1:${issuer.address().port}`;
+      resp.setHeader("Content-Type", "application/json");
+      resp.end(JSON.stringify({
+        credential_issuer: base,
+        credential_endpoint: `${base}/credential`,
+        credential_configurations_supported: { diploma: { format: "dc+sd-jwt", vct: "urn:example:diploma:1" } },
+      }));
+    });
+    await new Promise((resolve) => issuer.listen(0, "127.0.0.1", resolve));
+    try {
+      const offer = {
+        credential_issuer: `http://127.0.0.1:${issuer.address().port}`,
+        credential_configuration_ids: ["diploma"],
+        grants: { "urn:ietf:params:oauth:grant-type:pre-authorized_code": { "pre-authorized_code": "code" } },
+      };
+      jsonPost(`${WALLET_URL}/api/offers`, {
+        uri: "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify(offer)),
+        interactive: true,
+      }).catch(() => {});
+      let pending = [];
+      for (let i = 0; i < 50 && pending.length === 0; i++) {
+        pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
+        if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
+      }
+      await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
+      await expect(page.locator("#offer-arf-warnings-title")).toHaveText("The wallet could not verify this issuer's registration");
+      await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF ISSU_34: the Credential Issuer Metadata is not signed");
+      await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF RPRC_22a");
+    } finally {
+      issuer.close();
+    }
+  });
 });
 
 test.describe("Registrar", () => {

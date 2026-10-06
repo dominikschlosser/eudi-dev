@@ -84,6 +84,9 @@ func TestAnIssuerGetsOneCertificateForItsService(t *testing.T) {
 		t.Fatalf("registrations %d, problems %v", len(registrations), problems)
 	}
 	cert := registrations[0].claims
+	if got := providerCertificateContentFindings(cert); len(got) != 0 {
+		t.Errorf("content findings %v", got)
+	}
 	// A provider certificate has no intended use (ARF RPRC_05), so it has no
 	// purpose, privacy policy or credentials. It carries the policy of ETSI TS
 	// 119 475 V1.2.1 OVR-6.1.3-01.
@@ -95,7 +98,7 @@ func TestAnIssuerGetsOneCertificateForItsService(t *testing.T) {
 	if policies, _ := cert["policy_id"].([]any); len(policies) != 1 || policies[0] != "0.4.0.19475.3.1" {
 		t.Errorf("policy_id %v", cert["policy_id"])
 	}
-	if provided := listOfMaps(cert["provides_attestations"]); len(provided) != 1 || provided[0]["format"] != "dc+sd-jwt" || credentialTypes(provided[0]["meta"])[0] != testDiplomaVCT {
+	if provided := providedAttestationsOf(cert); len(provided) != 1 || !provided[0].matches("dc+sd-jwt", []string{testDiplomaVCT}) {
 		t.Errorf("provides_attestations %v", cert["provides_attestations"])
 	}
 }

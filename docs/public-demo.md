@@ -181,7 +181,7 @@ Pin the CA through an out-of-band exchange. It is self-signed and persists acros
 
 Trust lists are grouped by role. The `pid` and `local` lists publish credential signing certificates and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
 
-The issuer metadata endpoints return JSON by default and an access-certificate-signed JWT when the request accepts only `application/jwt`. They include a registrar-signed registration certificate whose identifier, legal name and country match the access certificate. The registration certificate's status list entry is never revoked. See [test certificates](test-certificates.md) for the exact profiles and versions.
+The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registrar-signed registration certificate whose identifier, legal name and country match the access certificate. The registration certificate's status list entry is never revoked. See [test certificates](test-certificates.md) for the exact profiles and versions.
 
 ## Imprint
 

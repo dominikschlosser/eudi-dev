@@ -23,6 +23,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 // The issuer metadata lists every credential template beside the ticket,
@@ -177,5 +178,30 @@ func TestOfferRefusesUnknownConfigurations(t *testing.T) {
 	}
 	if status, errResp := d.checkRequestedCredential(credentialRequest{CredentialConfigurationID: "german-pid-sdjwt"}, []string{ticketConfigurationID}); status != http.StatusBadRequest || errResp["error"] != "unknown_credential_configuration" {
 		t.Errorf("credential request outside the offer: %d %v", status, errResp)
+	}
+}
+
+// The demo issuer authenticates as the ARF requires: its metadata is signed
+// with an access certificate and carries a registration certificate that
+// lists the ticket and the PID types (ARF ISSU_24, ISSU_34, RPRC_22a and
+// RPRC_23). A strict wallet with --arf therefore accepts its offers.
+func TestTheDemoIssuerPassesTheARFChecks(t *testing.T) {
+	w := newIssuanceWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = wallet.ValidationModeStrict
+	_, ts := serveDemoStack(t, w)
+
+	for _, id := range []string{ticketConfigurationID, "german-pid-sdjwt", "pid-mdoc"} {
+		created := postJSONTo(t, ts.URL+"/issuer/api/offers?credential="+id, "")
+		schemeURI, _ := created["scheme_uri"].(string)
+		result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`)
+		if result["error"] != nil {
+			t.Fatalf("accepting the %s offer failed: %v", id, result["error"])
+		}
+	}
+	for _, entry := range w.GetLog() {
+		if entry.Details["event"] == "arf_finding" {
+			t.Errorf("ARF finding: %s", entry.Detail)
+		}
 	}
 }
