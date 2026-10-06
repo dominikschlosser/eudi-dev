@@ -189,10 +189,10 @@ These endpoints are available on both wallet ports. Like credentials, anyone wit
 | `GET` | `/api/registrar/wrp/{identifier}/services/{serviceidentifier}` | One service of a registration |
 | `GET` | `/api/registrar/wrp/check-intended-use` | Check a registered intended use |
 | `POST` | `/api/registrar/wrp` | Register a relying party |
-| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use changes or is missing, its certificates are revoked |
+| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use or a service changes or is missing, its certificates are revoked |
 | `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
 | `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
-| `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use. Answers `409` if the registration changed in the meantime |
+| `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use (answers `verifierInfo`) or an issuer service (answers `issuerInfo`). Answers `409` if the registration changed in the meantime |
 | `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates |
 | `POST` | `/api/registrar/registration-certificates/status` | Revoke or activate registration certificates |
 | `GET` | `/api/registrar/status-list` | Status list of the registration certificates |

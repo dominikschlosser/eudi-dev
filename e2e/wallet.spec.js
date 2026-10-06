@@ -1919,15 +1919,18 @@ test.describe("ARF checks", () => {
     expect(body.error_description).toContain("RPRC_19");
     expect(body.error_description).toContain("RPA_03");
   });
+
 });
 
 test.describe("Registrar", () => {
   test.beforeEach(denyPendingRequests);
 
-  async function openRegisterDialog(page) {
+  // The register dialogs open from the relying parties list.
+  async function openRegisterDialog(page, button = "#registrar-parties-register") {
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
-    await page.locator("#registrar-register-verifier-link").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator(button).click();
     await expect(page.locator("#registrar-overlay")).toBeVisible();
   }
 
@@ -1991,7 +1994,7 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-name")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(page.locator("#registrar-overlay")).toBeHidden();
-    await expect(page.locator("#registrar-menu-toggle")).toBeFocused();
+    await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
   });
 
   test("an own CSR keeps the key outside the wallet", async ({ page }) => {
@@ -2187,6 +2190,78 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
     await page.locator("#registrar-parties-register").click();
     await expect(page.locator("#registrar-overlay")).toBeVisible();
+  });
+
+  test("registering an issuer issues its access certificate and issuer_info", async ({ page }) => {
+    await openRegisterDialog(page, "#registrar-parties-register-issuer");
+    await expect(page.locator("#registrar-title")).toHaveText("Register an issuer");
+    await expect(page.locator("#registrar-party-section-label")).toHaveText("Issuer");
+    await expect(page.locator("#registrar-purpose")).toBeHidden();
+    await expect(page.locator("#registrar-dns")).toBeHidden();
+    await expect(page.locator("#registrar-name")).toHaveValue("Example University");
+    await expect(page.locator("#registrar-attestation-1-type")).toHaveValue("urn:example:diploma:1");
+
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-result")).toBeVisible();
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Registered");
+    await expect(page.locator("#registrar-client-ids-block")).toBeHidden();
+    await expect(page.locator("#registrar-verifier-info-block")).toBeHidden();
+    await expect(page.locator("#registrar-pem-label")).toHaveText("Signing key and access certificate chain");
+    // ETSI TS 119 472-3 §4.2.3: the registrar dataset and the registration certificate.
+    const issuerInfo = JSON.parse(await page.locator("#registrar-issuer-info").inputValue());
+    expect(issuerInfo.map((e) => e.format)).toEqual(["registrar_dataset", "registration_cert"]);
+    expect(issuerInfo[0].data.providesAttestations).toEqual([{ format: "dc+sd-jwt", meta: { vct_values: ["urn:example:diploma:1"] } }]);
+
+    // The verifier dialog gets its own fields and defaults back.
+    await page.locator("#registrar-close").click();
+    await page.locator("#registrar-parties-register").click();
+    await expect(page.locator("#registrar-title")).toHaveText("Register a verifier");
+    await expect(page.locator("#registrar-name")).toHaveValue("Example Verifier");
+    await expect(page.locator("#registrar-purpose")).toBeVisible();
+    await expect(page.locator("#registrar-submit")).toHaveText("Register verifier");
+  });
+
+  test("an issuer without attestations is not registered", async ({ page }) => {
+    await openRegisterDialog(page, "#registrar-parties-register-issuer");
+    await page.locator("#registrar-attestation-1-remove").click();
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-error")).toHaveText("Add at least one attestation.");
+    await expect(page.locator("#registrar-result")).toBeHidden();
+  });
+
+  test("the relying parties list shows an issuer's service and its certificate", async ({ page }) => {
+    const { status, body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Listed University",
+      services: [{
+        serviceIdentifier: "diplomas",
+        entitlements: ["https://uri.etsi.org/19475/Entitlement/QEAA_Provider"],
+        providesAttestations: [{ format: "mso_mdoc", meta: { doctype_value: "org.example.diploma.1" } }],
+      }],
+    });
+    expect(status).toBe(201);
+    const card = "#registrar-party-" + body.identifier[0].identifier;
+    const service = card + "-service-diplomas";
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator("#registrar-filter-issuers").check();
+    await expect(page.locator(card + "-role-issuer")).toBeVisible();
+    await expect(page.locator(card + "-add-use")).toHaveCount(0);
+    await expect(page.locator(service + "-entitlement")).toHaveText("QEAA provider");
+    await expect(page.locator(service + "-attestation-0")).toHaveText("org.example.diploma.1");
+    await expect(page.locator(service + "-status")).toHaveText("No certificate");
+
+    await page.locator(service + "-issue").click();
+    await expect(page.locator(service + "-issuer-info")).toHaveValue(/registrar_dataset.*registration_cert/);
+    await expect(page.locator(service + "-status")).toHaveText("Active");
+    await page.locator(service + "-revoke").click();
+    await expect(page.locator(service + "-status")).toHaveText("Revoked");
+    await page.locator(service + "-revoke").click();
+    await expect(page.locator(service + "-status")).toHaveText("Active");
+
+    await page.locator(card + "-delete").click();
+    await expect(page.locator(card)).toHaveCount(0);
   });
 
 });

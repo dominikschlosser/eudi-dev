@@ -68,7 +68,18 @@ type verifiedRegistration struct {
 }
 
 func verifiedRegistrations(payload map[string]any) (registrations []verifiedRegistration, findings []string) {
-	for _, entry := range verifierInfoEntries(payload) {
+	registrations, problems := verifyRegistrationEntries(infoEntries(payload, "verifier_info"))
+	for _, problem := range problems {
+		findings = append(findings, "The registration certificate "+problem+", so its purpose is not shown")
+	}
+	return registrations, findings
+}
+
+// verifyRegistrationEntries verifies the rc-wrp+jwt entries of a verifier_info
+// or issuer_info array against their own x5c leaf. Each problem completes the
+// sentence "The registration certificate ...".
+func verifyRegistrationEntries(entries []map[string]any) (registrations []verifiedRegistration, problems []string) {
+	for _, entry := range entries {
 		data, _ := entry["data"].(string)
 		if strings.Count(data, ".") != 2 {
 			continue
@@ -82,16 +93,16 @@ func verifiedRegistrations(payload map[string]any) (registrations []verifiedRegi
 		}
 		key, err := validate.ExtractX5CLeafKey(header)
 		if err != nil || key == nil {
-			findings = append(findings, "The registration certificate carries no readable x5c certificate, so its signature cannot be checked and its purpose is not shown")
+			problems = append(problems, "carries no readable x5c certificate, so its signature cannot be checked")
 			continue
 		}
 		if _, err := jws.Verify(data, key); err != nil {
-			findings = append(findings, fmt.Sprintf("The registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
+			problems = append(problems, fmt.Sprintf("signature does not verify with its x5c leaf (%v)", err))
 			continue
 		}
 		registrations = append(registrations, verifiedRegistration{claims: claims, chain: x5cChain(header)})
 	}
-	return registrations, findings
+	return registrations, problems
 }
 
 // x5cChain parses a JOSE x5c header, leaf first. It skips entries that do not
@@ -144,6 +155,10 @@ func requestVerifierInfo(authReq *AuthorizationRequestParams) map[string]any {
 // finding too, because then the wallet can't tell whether the certificate is
 // revoked.
 func registrationStatusFindings(cert map[string]any, client *http.Client) []string {
+	return registrationStatusFindingsFor(cert, client, "ARF RPRC_17")
+}
+
+func registrationStatusFindingsFor(cert map[string]any, client *http.Client, rule string) []string {
 	ref := statuslist.ExtractStatusRef(cert)
 	if ref == nil {
 		return nil
@@ -151,10 +166,10 @@ func registrationStatusFindings(cert map[string]any, client *http.Client) []stri
 	name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client})
 	if err != nil {
-		return []string{fmt.Sprintf("ARF RPRC_17: the status of the registration certificate of %s cannot be checked: %v", name, err)}
+		return []string{fmt.Sprintf("%s: the status of the registration certificate of %s cannot be checked: %v", rule, name, err)}
 	}
 	if !result.IsValid {
-		return []string{fmt.Sprintf("ARF RPRC_17: the registrar revoked the registration certificate of %s (status %s at index %d of %s)", name, result.StatusName, ref.Idx, ref.URI)}
+		return []string{fmt.Sprintf("%s: the registrar revoked the registration certificate of %s (status %s at index %d of %s)", rule, name, result.StatusName, ref.Idx, ref.URI)}
 	}
 	return nil
 }
@@ -242,6 +257,10 @@ func requestAccessChain(authReq *AuthorizationRequestParams) []*x509.Certificate
 // certificate has a service identifier, so only the relying party is compared
 // (TS 119 475 V1.2.1).
 func registrationBindingFindings(cert map[string]any, access *x509.Certificate) []string {
+	return registrationBindingFindingsFor(cert, access, "ARF RPRC_17a")
+}
+
+func registrationBindingFindingsFor(cert map[string]any, access *x509.Certificate, rule string) []string {
 	identifier := stringClaim(cert["sub"])
 	if act, ok := cert["act"].(map[string]any); ok && stringClaim(act["sub"]) != "" {
 		identifier = stringClaim(act["sub"])
@@ -250,7 +269,7 @@ func registrationBindingFindings(cert map[string]any, access *x509.Certificate) 
 	if identifier != "" && identifier == accessIdentifier {
 		return nil
 	}
-	return []string{fmt.Sprintf("ARF RPRC_17a: the registration certificate identifies %q, but the access certificate's organizationIdentifier is %q", identifier, accessIdentifier)}
+	return []string{fmt.Sprintf("%s: the registration certificate identifies %q, but the access certificate's organizationIdentifier is %q", rule, identifier, accessIdentifier)}
 }
 
 func organizationIdentifier(cert *x509.Certificate) string {
@@ -307,6 +326,10 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 // ETSI TS 119 475 GEN-5.2.4-08 and ARF RPRC_17 require iat. If exp is present, it must
 // be in the future and within 12 months of iat.
 func registrationValidityFindings(cert map[string]any) []string {
+	return registrationValidityFindingsFor(cert, "ARF RPRC_17")
+}
+
+func registrationValidityFindingsFor(cert map[string]any, rule string) []string {
 	var findings []string
 	iat, hasIat := numberClaim(cert["iat"])
 	if !hasIat {
@@ -318,7 +341,7 @@ func registrationValidityFindings(cert map[string]any) []string {
 	}
 	expTime := time.Unix(int64(exp), 0)
 	if expTime.Before(time.Now()) {
-		findings = append(findings, "ARF RPRC_17: the registration certificate has expired")
+		findings = append(findings, rule+": the registration certificate has expired")
 	}
 	if hasIat && expTime.After(time.Unix(int64(iat), 0).AddDate(1, 0, 0)) {
 		findings = append(findings, "ETSI TS 119 475 GEN-5.2.4-08: the registration certificate is valid for more than 12 months")
@@ -554,12 +577,14 @@ func SignRegistrationCertificateJWT(claims map[string]any, signingKey *ecdsa.Pri
 	return signJSONWebSignature(claims, signingKey, header)
 }
 
-// Plain request parameters carry verifier_info as a JSON string.
-func verifierInfoEntries(payload map[string]any) []map[string]any {
+// infoEntries reads a verifier_info or issuer_info array. Plain request
+// parameters carry verifier_info as a JSON string. issuer_info has the
+// structure of verifier_info (ETSI TS 119 472-3 V1.1.1 ISS-MDATA-REG_CERT-4.2.3-03).
+func infoEntries(payload map[string]any, name string) []map[string]any {
 	if payload == nil {
 		return nil
 	}
-	raw := payload["verifier_info"]
+	raw := payload[name]
 	if encoded, ok := raw.(string); ok && encoded != "" {
 		var decoded any
 		if err := json.Unmarshal([]byte(encoded), &decoded); err == nil {
@@ -651,4 +676,10 @@ func decodeCompactJWT(compact string) (header, payload map[string]any, err error
 		return nil, nil, fmt.Errorf("parsing JWT payload: %w", err)
 	}
 	return header, payload, nil
+}
+
+// CredentialTypes returns the types in a DCQL meta object: vct_values for SD-JWT
+// VC and doctype_value for mdoc.
+func CredentialTypes(meta any) []string {
+	return credentialTypes(meta)
 }

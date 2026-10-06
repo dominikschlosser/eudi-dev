@@ -54,7 +54,7 @@ func TestARegistrationCertificateCarriesItsStatus(t *testing.T) {
 func TestRevokingARegistrationCertificate(t *testing.T) {
 	for name, revoke := range map[string]func(t *testing.T, w *Wallet, rp WalletRelyingParty){
 		"revoke the intended use": func(t *testing.T, w *Wallet, rp WalletRelyingParty) {
-			if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, rp.Services[0].IntendedUses[0].IntendedUseIdentifier, true); err != nil || n != 1 {
+			if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}, true); err != nil || n != 1 {
 				t.Fatalf("revoked %d (%v), want 1", n, err)
 			}
 		},
@@ -128,10 +128,10 @@ func TestAReactivatedRegistrationCertificateIsValid(t *testing.T) {
 	rp := registerTestRelyingParty(t, srv.wallet)
 	cert := issuedCertificate(t, srv.wallet, rp)
 	use := rp.Services[0].IntendedUses[0].IntendedUseIdentifier
-	if _, err := srv.wallet.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, true); err != nil {
+	if _, err := srv.wallet.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{IntendedUseIdentifier: use}, true); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := srv.wallet.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, false); err != nil || n != 1 {
+	if n, err := srv.wallet.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{IntendedUseIdentifier: use}, false); err != nil || n != 1 {
 		t.Fatalf("reactivated %d (%v), want 1", n, err)
 	}
 	if got := registrationStatusFindings(cert, ts.Client()); len(got) != 0 {
@@ -189,7 +189,7 @@ func TestExpiredStatusEntriesAreFreed(t *testing.T) {
 	id := rp.Identifier[0].Identifier
 	use := rp.Services[0].IntendedUses[0].IntendedUseIdentifier
 	w.RegistrationStatuses = []RegistrationStatus{{Index: 5, Identifier: "NTRNL-1", Expires: time.Now().Add(-time.Hour).Unix()}}
-	if _, err := w.allocateRegistrationStatus(rp, use, time.Now().Add(time.Hour)); err != nil {
+	if _, err := w.allocateRegistrationStatus(rp, certificateKey{intendedUse: use}, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	if len(w.RegistrationStatuses) != 1 || w.RegistrationStatuses[0].Identifier != id {
@@ -218,7 +218,7 @@ func TestThePresentationCopySeesRevokedRegistrationCertificates(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	cert := issuedCertificate(t, w, rp)
-	if _, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, "", true); err != nil {
+	if _, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{}, true); err != nil {
 		t.Fatal(err)
 	}
 	clone, err := cloneWalletForPresentation(w, presentationRequestOptions{})
@@ -275,7 +275,7 @@ func TestActivatingLeavesRemovedIntendedUsesRevoked(t *testing.T) {
 	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, "", false); err != nil || n != 0 {
+	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{}, false); err != nil || n != 0 {
 		t.Fatalf("activated %d (%v), want 0", n, err)
 	}
 }
@@ -295,10 +295,10 @@ func TestANewCertificateReplacesTheOldOne(t *testing.T) {
 	if got := registrationStatusFindings(current, ts.Client()); len(got) != 0 {
 		t.Fatalf("status findings %v, want the new certificate valid", got)
 	}
-	if _, err := w.SetRegistrationCertificatesRevoked(id, "", true); err != nil {
+	if _, err := w.SetRegistrationCertificatesRevoked(id, RegistrationScope{}, true); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := w.SetRegistrationCertificatesRevoked(id, "", false); err != nil || n != 1 {
+	if n, err := w.SetRegistrationCertificatesRevoked(id, RegistrationScope{}, false); err != nil || n != 1 {
 		t.Fatalf("activated %d (%v), want only the current certificate", n, err)
 	}
 	if got := registrationStatusFindings(old, ts.Client()); len(got) != 1 {
@@ -329,7 +329,7 @@ func TestActivatingLeavesChangedIntendedUsesRevoked(t *testing.T) {
 	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, "", false); err != nil || n != 0 {
+	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{}, false); err != nil || n != 0 {
 		t.Fatalf("activated %d (%v), want 0", n, err)
 	}
 }
@@ -343,7 +343,7 @@ func TestACertificateForChangedContentIsNotIssued(t *testing.T) {
 	if _, err := w.UpdateRelyingParty(changed, w.RegistrarBase()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.allocateRegistrationStatus(snapshot, use, time.Now().Add(time.Hour)); !errors.Is(err, errRegistrationChanged) {
+	if _, err := w.allocateRegistrationStatus(snapshot, certificateKey{intendedUse: use}, time.Now().Add(time.Hour)); !errors.Is(err, errRegistrationChanged) {
 		t.Errorf("error %v, want the changed registration refused", err)
 	}
 }

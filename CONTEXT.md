@@ -55,7 +55,7 @@ A purpose a relying party registers, together with the credentials and claims it
 Identifies a relying party (ETSI TS 119 411-8). The verifier signs its request objects with the matching key.
 
 **Registration certificate**:
-The signed JWT that lists one intended use (ETSI TS 119 475). A verifier sends it in `verifier_info`.
+A signed JWT from the registrar (ETSI TS 119 475). A verifier's certificate lists one intended use, and the verifier sends it in `verifier_info`. An issuer's certificate lists the attestation types of its service, and the issuer publishes it in `issuer_info`.
 
 **Relying party access CA**:
 Signs the access certificates that the wallet's registrar issues to relying parties. It is separate from the wallet CA.

@@ -32,7 +32,9 @@ import (
 
 const (
 	serviceProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+	qeaaProviderEntitlement    = "https://uri.etsi.org/19475/Entitlement/QEAA_Provider"
 	nonQEAAProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider"
+	pubEAAProviderEntitlement  = "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider"
 	pidProviderEntitlement     = "https://uri.etsi.org/19475/Entitlement/PID_Provider"
 	localTrustListType         = "http://uri.etsi.org/19602/LoTEType/local"
 	localIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/Issuance"
@@ -52,6 +54,25 @@ const (
 	walletProviderIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
 	walletProviderRevocationServiceType = "http://uri.etsi.org/19602/SvcType/WalletSolution/Revocation"
 )
+
+// registeredEntitlements are the entitlements of ETSI TS 119 475 V1.2.1 Annex
+// A.2.
+var registeredEntitlements = []string{
+	serviceProviderEntitlement,
+	qeaaProviderEntitlement,
+	nonQEAAProviderEntitlement,
+	pubEAAProviderEntitlement,
+	pidProviderEntitlement,
+	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESeal_Provider",
+	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESig_Provider",
+	"https://uri.etsi.org/19475/Entitlement/rQSealCDs_Provider",
+	"https://uri.etsi.org/19475/Entitlement/rQSigCDs_Provider",
+	"https://uri.etsi.org/19475/Entitlement/ESig_ESeal_Creation_Provider",
+}
+
+// providerEntitlements entitle a service to issue attestations, and its
+// registration certificate lists them (ETSI TS 119 475 V1.2.1 GEN-5.2.4-05).
+var providerEntitlements = []string{pidProviderEntitlement, qeaaProviderEntitlement, pubEAAProviderEntitlement, nonQEAAProviderEntitlement}
 
 type IssuedAttestationSpec struct {
 	Format                      string   `json:"format"`

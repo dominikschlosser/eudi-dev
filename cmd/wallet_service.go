@@ -53,7 +53,8 @@ type walletService interface {
 	AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error)
 	RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error)
 	RegistrarRecords() ([]wallet.WalletRelyingParty, error)
-	SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error)
+	SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error)
+	DeleteRelyingParty(identifier string) error
 	Config() (map[string]any, error)
 }
 
@@ -170,12 +171,21 @@ func (r *remoteWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
 	return out, err
 }
 
-func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error) {
+func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error) {
 	var out struct {
 		Changed int `json:"changed"`
 	}
-	err := r.c.SetRegistrationCertificateStatus(map[string]any{"identifier": identifier, "intendedUseIdentifier": intendedUse, "revoked": revoked}, &out)
+	err := r.c.SetRegistrationCertificateStatus(map[string]any{
+		"identifier":            identifier,
+		"serviceIdentifier":     scope.ServiceIdentifier,
+		"intendedUseIdentifier": scope.IntendedUseIdentifier,
+		"revoked":               revoked,
+	}, &out)
 	return out.Changed, err
+}
+
+func (r *remoteWallet) DeleteRelyingParty(identifier string) error {
+	return r.c.DeleteRelyingParty(identifier)
 }
 
 func (r *remoteWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
@@ -415,6 +425,20 @@ func (l *localWallet) RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet
 	return stored, nil
 }
 
+func (l *localWallet) DeleteRelyingParty(identifier string) error {
+	w, store, err := l.load()
+	if err != nil {
+		return err
+	}
+	if err := w.DeleteRelyingParty(identifier); err != nil {
+		return err
+	}
+	if err := store.Save(w); err != nil {
+		return fmt.Errorf("saving wallet: %w", err)
+	}
+	return nil
+}
+
 func (l *localWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
 	w, _, err := l.load()
 	if err != nil {
@@ -446,12 +470,12 @@ func (l *localWallet) RegistrationCertificate(req wallet.RegistrationCertificate
 	return result, nil
 }
 
-func (l *localWallet) SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error) {
+func (l *localWallet) SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error) {
 	w, store, err := l.load()
 	if err != nil {
 		return 0, err
 	}
-	changed, err := w.SetRegistrationCertificatesRevoked(identifier, intendedUse, revoked)
+	changed, err := w.SetRegistrationCertificatesRevoked(identifier, scope, revoked)
 	if err != nil {
 		return 0, err
 	}

@@ -47,26 +47,56 @@ var (
 )
 
 // RegistrationStatus is the status list entry of one registration certificate
-// (ETSI TS 119 475 V1.2.1 Table 7).
+// (ETSI TS 119 475 V1.2.1 Table 7). A verifier's certificate covers an intended
+// use. An attestation provider's certificate covers a service and has no
+// intended use (ARF RPRC_13).
 type RegistrationStatus struct {
 	Index       int    `json:"index"`
 	Identifier  string `json:"identifier"`
 	IntendedUse string `json:"intendedUse"`
+	Service     string `json:"service,omitempty"`
 	Revoked     bool   `json:"revoked,omitempty"`
 	// Superseded marks a certificate whose relying party was deleted or whose
-	// intended use was changed or removed. Its content is out of date, so it
-	// stays revoked.
+	// registered content was changed or removed. Its content is out of date, so
+	// it stays revoked.
 	Superseded bool `json:"superseded,omitempty"`
 	// Expires is when the certificate expires (Unix time). An expired
 	// certificate needs no status, so its entry is freed.
 	Expires int64 `json:"expires,omitempty"`
 }
 
+// RegistrationScope selects registration certificates: those of an intended
+// use, those of a service, or with both empty, all of a relying party.
+type RegistrationScope struct {
+	ServiceIdentifier     string `json:"serviceIdentifier,omitempty"`
+	IntendedUseIdentifier string `json:"intendedUseIdentifier,omitempty"`
+}
+
+// certificateKey names what one certificate certifies: an intended use, or for
+// an attestation provider, a service.
+type certificateKey struct {
+	service, intendedUse string
+}
+
+func (k certificateKey) matches(s RegistrationStatus) bool {
+	if k.intendedUse != "" {
+		return s.IntendedUse == k.intendedUse
+	}
+	return s.IntendedUse == "" && s.Service == k.service
+}
+
+func statusKey(s RegistrationStatus) certificateKey {
+	if s.IntendedUse != "" {
+		return certificateKey{intendedUse: s.IntendedUse}
+	}
+	return certificateKey{service: s.Service}
+}
+
 // allocateRegistrationStatus reserves a status list entry for a new
-// certificate of an intended use. rp is the registration as it was read before
-// signing. If it changed or was deleted since, the certificate would be out of
-// date, so this fails.
-func (w *Wallet) allocateRegistrationStatus(rp WalletRelyingParty, intendedUse string, expires time.Time) (int, error) {
+// certificate. rp is the registration as it was read before signing. If it
+// changed or was deleted since, the certificate would be out of date, so this
+// fails.
+func (w *Wallet) allocateRegistrationStatus(rp WalletRelyingParty, key certificateKey, expires time.Time) (int, error) {
 	identifier := rp.Identifier[0].Identifier
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -74,7 +104,7 @@ func (w *Wallet) allocateRegistrationStatus(rp WalletRelyingParty, intendedUse s
 	if i < 0 {
 		return 0, fmt.Errorf("%w: %s", errRelyingPartyNotFound, identifier)
 	}
-	if !sameRegistration(rp, w.RelyingParties[i], intendedUse) {
+	if !sameCertificateContent(rp, w.RelyingParties[i], key) {
 		return 0, errRegistrationChanged
 	}
 	now := time.Now().Unix()
@@ -89,23 +119,24 @@ func (w *Wallet) allocateRegistrationStatus(rp WalletRelyingParty, intendedUse s
 		}
 		index := int(n.Int64()) + 1
 		if !slices.ContainsFunc(w.RegistrationStatuses, func(s RegistrationStatus) bool { return s.Index == index }) {
-			w.RegistrationStatuses = append(w.RegistrationStatuses, RegistrationStatus{Index: index, Identifier: identifier, IntendedUse: intendedUse, Expires: expires.Unix()})
+			w.RegistrationStatuses = append(w.RegistrationStatuses, RegistrationStatus{Index: index, Identifier: identifier, IntendedUse: key.intendedUse, Service: key.service, Expires: expires.Unix()})
 			return index, nil
 		}
 	}
 }
 
-// replaceRegistrationStatus permanently revokes the older certificates of the
-// intended use once the certificate at index is signed. An intended use has
-// one valid certificate at a time. Entries are appended in issue order, so when
-// two certificates are issued at once, the later one stays valid.
-func (w *Wallet) replaceRegistrationStatus(identifier, intendedUse string, index int) {
+// replaceRegistrationStatus permanently revokes the older certificates with
+// the same key once the certificate at index is signed. An intended use or a
+// provider service has one valid certificate at a time. Entries are appended in
+// issue order, so when two certificates are issued at once, the later one stays
+// valid.
+func (w *Wallet) replaceRegistrationStatus(identifier string, key certificateKey, index int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	newest := slices.IndexFunc(w.RegistrationStatuses, func(s RegistrationStatus) bool { return s.Index == index })
 	for i := range newest {
 		s := &w.RegistrationStatuses[i]
-		if s.Identifier == identifier && s.IntendedUse == intendedUse {
+		if s.Identifier == identifier && key.matches(*s) {
 			s.Revoked, s.Superseded = true, true
 		}
 	}
@@ -129,10 +160,8 @@ func (w *Wallet) supersedeRegistrationsLocked(match func(RegistrationStatus) boo
 }
 
 // SetRegistrationCertificatesRevoked revokes or activates the registration
-// certificates issued for an intended use, or for every intended use of the
-// relying party when intendedUse is empty. It returns how many changed. The
-// registration stays.
-func (w *Wallet) SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error) {
+// certificates in scope. It returns how many changed. The registration stays.
+func (w *Wallet) SetRegistrationCertificatesRevoked(identifier string, scope RegistrationScope, revoked bool) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	i := relyingPartyIndex(w.RelyingParties, identifier)
@@ -140,13 +169,14 @@ func (w *Wallet) SetRegistrationCertificatesRevoked(identifier, intendedUse stri
 		return 0, fmt.Errorf("%w: %s", errRelyingPartyNotFound, identifier)
 	}
 	rp := w.RelyingParties[i]
-	if intendedUse != "" && !hasIntendedUse(rp, intendedUse) {
-		return 0, fmt.Errorf("%w: no intended use %q", errRelyingPartyNotFound, intendedUse)
+	inScope, err := scopeFilter(rp, scope)
+	if err != nil {
+		return 0, err
 	}
 	changed := 0
 	for j := range w.RegistrationStatuses {
 		s := &w.RegistrationStatuses[j]
-		if s.Revoked != revoked && !s.Superseded && s.Identifier == rp.Identifier[0].Identifier && (intendedUse == "" || s.IntendedUse == intendedUse) {
+		if s.Revoked != revoked && !s.Superseded && s.Identifier == rp.Identifier[0].Identifier && inScope(*s) {
 			s.Revoked = revoked
 			changed++
 		}
@@ -286,9 +316,28 @@ func (w *Wallet) RegistrationStatusListURL() string {
 	return w.RegistrarBase() + registrationStatusListPath
 }
 
-func hasIntendedUse(rp WalletRelyingParty, identifier string) bool {
-	_, _, ok := findIntendedUse(rp, "", identifier)
-	return ok
+// scopeFilter selects the status entries in scope. A service scope covers the
+// service's provider certificate and the certificates of its intended uses.
+func scopeFilter(rp WalletRelyingParty, scope RegistrationScope) (func(RegistrationStatus) bool, error) {
+	if scope.IntendedUseIdentifier != "" {
+		if _, _, ok := findIntendedUse(rp, scope.ServiceIdentifier, scope.IntendedUseIdentifier); !ok {
+			return nil, fmt.Errorf("%w: no intended use %q", errRelyingPartyNotFound, scope.IntendedUseIdentifier)
+		}
+		return func(s RegistrationStatus) bool { return s.IntendedUse == scope.IntendedUseIdentifier }, nil
+	}
+	if scope.ServiceIdentifier == "" {
+		return func(RegistrationStatus) bool { return true }, nil
+	}
+	service, ok := findService(rp, scope.ServiceIdentifier)
+	if !ok {
+		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, scope.ServiceIdentifier)
+	}
+	return func(s RegistrationStatus) bool {
+		if s.IntendedUse == "" {
+			return s.Service == service.ServiceIdentifier
+		}
+		return slices.ContainsFunc(service.IntendedUses, func(u IntendedUse) bool { return u.IntendedUseIdentifier == s.IntendedUse })
+	}, nil
 }
 
 // sameURL compares scheme, host with its default port, and path. Host and

@@ -3002,10 +3002,12 @@
   // the identifier the API returned.
   const registrarDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
 
+  // A service provider counts as a verifier even before it has intended uses.
   function relyingPartyRoles(rp) {
     const services = rp.services || [];
     const roles = [];
-    if (services.some(s => (s.intendedUses || []).length > 0)) roles.push('verifier');
+    if (services.some(s => (s.intendedUses || []).length > 0 ||
+      (s.entitlements || []).includes('https://uri.etsi.org/19475/Entitlement/Service_Provider'))) roles.push('verifier');
     if (services.some(s => (s.providesAttestations || []).length > 0)) roles.push('issuer');
     return roles;
   }
@@ -3040,12 +3042,31 @@
     if (current.length === 0) return 'outdated';
     return current.some(s => !s.revoked) ? 'active' : 'revoked';
   }
+  // A provider certificate covers a service and has no intended use (ARF
+  // RPRC_13).
+  function providerStatus(identifier, serviceIdentifier) {
+    const entries = registrarStatuses.filter(s => s.identifier === identifier && !s.intendedUse && (s.service || '') === serviceIdentifier);
+    if (entries.length === 0) return 'none';
+    const current = entries.filter(s => !s.superseded);
+    if (current.length === 0) return 'outdated';
+    return current.some(s => !s.revoked) ? 'active' : 'revoked';
+  }
+  const ENTITLEMENT_LABELS = {
+    'https://uri.etsi.org/19475/Entitlement/PID_Provider': 'PID provider',
+    'https://uri.etsi.org/19475/Entitlement/QEAA_Provider': 'QEAA provider',
+    'https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider': 'PuB-EAA provider',
+    'https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider': 'Non-qualified EAA provider',
+  };
   const USE_STATUS_BADGES = {
     none: ['status-none ico-circle', 'No certificate', 'The registrar has not issued a registration certificate for this intended use.'],
     active: ['status-active ico-dot', 'Active', 'Not revoked on the registrar\'s status list.'],
     revoked: ['status-revoked ico-block', 'Revoked', 'Revoked on the registrar\'s status list.'],
     outdated: ['status-revoked ico-block', 'Revoked', 'The intended use changed, so its certificate was revoked for good. Issue a new one.'],
   };
+  const PROVIDER_STATUS_BADGES = Object.assign({}, USE_STATUS_BADGES, {
+    none: ['status-none ico-circle', 'No certificate', 'The registrar has not issued a registration certificate for this service.'],
+    outdated: ['status-revoked ico-block', 'Revoked', 'The attestations of this service changed, so its certificate was revoked for good. Issue a new one.'],
+  });
 
   // The list re-renders after an action and replaces the clicked button. The
   // next render focuses the element with its ID, or the dialog title when the
@@ -3071,6 +3092,7 @@
     const parts = [rp.tradeName].concat((rp.legalPerson || {}).legalName || [], (rp.identifier || []).map(id => id.identifier));
     (rp.services || []).forEach(service => {
       parts.push(service.serviceTradeName);
+      (service.providesAttestations || []).forEach(a => parts.push(registeredCredentialSummary(a)));
       (service.intendedUses || []).forEach(use => {
         (use.purpose || []).forEach(p => parts.push(p.content));
         (use.credentials || []).forEach(c => parts.push(registeredCredentialSummary(c)));
@@ -3106,6 +3128,74 @@
     Array.from(suggestions).sort().forEach(value => datalist.appendChild(new Option(value, value)));
   }
 
+  // The wallet's own issuer presents its certificate in its metadata, so it
+  // has no actions here.
+  function providerRow(identifier, prefix, service, own) {
+    const servicePrefix = prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default');
+    const status = own ? 'own' : providerStatus(identifier, service.serviceIdentifier || '');
+    const issuerInfo = registrarVerifierInfo[servicePrefix];
+    const entitlements = (service.entitlements || []).map(e => ENTITLEMENT_LABELS[e]).filter(Boolean);
+    const row = document.createElement('div');
+    row.className = 'registrar-use';
+    row.id = servicePrefix;
+    row.dataset.status = status;
+    let badge = '';
+    let actions = '';
+    if (!own) {
+      const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
+      badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
+      actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
+        '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
+          (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
+          '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
+        (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
+          (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+          '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+      '</span>';
+    }
+    row.innerHTML =
+      '<div class="registrar-use-head" id="' + servicePrefix + '-head">' +
+        '<span class="registrar-use-purpose" id="' + servicePrefix + '-entitlement">' + escHtml(entitlements.join(', ') || 'Attestation provider') + '</span>' +
+        actions +
+      '</div>' +
+      (badge ? '<div class="cred-pills registrar-pills" id="' + servicePrefix + '-pills">' + badge + '</div>' : '') +
+      '<ul class="registrar-use-credentials" id="' + servicePrefix + '-attestations">' +
+        (service.providesAttestations || []).map((a, i) => '<li id="' + servicePrefix + '-attestation-' + i + '">' + escHtml(registeredCredentialSummary(a)) + '</li>').join('') +
+      '</ul>' +
+      (issuerInfo === undefined ? '' :
+        '<div class="registrar-use-result" id="' + servicePrefix + '-result">' +
+          '<div class="registrar-result-head" id="' + servicePrefix + '-result-head">' +
+            '<label class="consent-purpose-label" for="' + servicePrefix + '-issuer-info">issuer_info</label>' +
+            '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-copy">Copy</button>' +
+          '</div>' +
+          '<textarea class="form-input form-textarea" id="' + servicePrefix + '-issuer-info" readonly></textarea>' +
+        '</div>');
+    if (issuerInfo !== undefined) {
+      const field = row.querySelector('textarea');
+      field.value = issuerInfo;
+      wireCopyButton(row.querySelector('#' + servicePrefix + '-copy'), field);
+    }
+    const issue = row.querySelector('#' + servicePrefix + '-issue');
+    if (issue) {
+      issue.addEventListener('click', () => registrarAction(issue, async () => {
+        const result = await registrarRequest('POST', 'api/registrar/registration-certificates', {
+          identifier: identifier,
+          serviceIdentifier: service.serviceIdentifier || '',
+        });
+        registrarVerifierInfo[servicePrefix] = result.issuerInfo;
+      }));
+    }
+    const toggle = row.querySelector('#' + servicePrefix + '-revoke');
+    if (toggle) {
+      toggle.addEventListener('click', () => registrarAction(toggle, () => registrarRequest('POST', 'api/registrar/registration-certificates/status', {
+        identifier: identifier,
+        serviceIdentifier: service.serviceIdentifier || '',
+        revoked: status !== 'revoked',
+      })));
+    }
+    return row;
+  }
+
   function renderRegistrarParties() {
     const filter = document.querySelector('input[name="registrar-filter"]:checked').value;
     const query = registrarSearch.value.trim().toLowerCase();
@@ -3126,7 +3216,7 @@
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
           (own ? '' : '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
-            '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' +
+            (relyingPartyRoles(rp).includes('verifier') ? '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' : '') +
             '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
           '</span>') +
         '</div>' +
@@ -3137,6 +3227,9 @@
           '<code class="registrar-party-identifier" id="' + prefix + '-identifier">' + escHtml(identifier) + '</code>' +
         '</div>';
       (rp.services || []).forEach(service => {
+        if ((service.providesAttestations || []).length > 0) {
+          card.appendChild(providerRow(identifier, prefix, service, own));
+        }
         (service.intendedUses || []).forEach(use => {
           const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
           const status = intendedUseStatus(identifier, use.intendedUseIdentifier);
@@ -3213,7 +3306,7 @@
           registrarAction(remove, async () => {
             await registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(identifier));
             // A new registration may reuse the identifier.
-            Object.keys(registrarVerifierInfo).filter(key => key.startsWith(prefix + '-use-')).forEach(key => delete registrarVerifierInfo[key]);
+            Object.keys(registrarVerifierInfo).filter(key => key.startsWith(prefix + '-use-') || key.startsWith(prefix + '-service-')).forEach(key => delete registrarVerifierInfo[key]);
           }));
       }
       registrarPartyList.appendChild(card);
@@ -3221,8 +3314,7 @@
     const empty = document.getElementById('registrar-party-empty');
     empty.textContent = query
       ? 'No relying party matches "' + registrarSearch.value.trim() + '".'
-      : { all: 'No relying parties registered yet.', verifier: 'No verifiers registered yet.', issuer: 'No issuers registered yet.' }[filter] +
-        (filter === 'issuer' ? '' : ' Register a verifier to add one.');
+      : { all: 'No relying parties registered yet.', verifier: 'No verifiers registered yet. Register a verifier to add one.', issuer: 'No issuers registered yet. Register an issuer to add one.' }[filter];
     empty.hidden = shown.length > 0;
 
     document.getElementById('registrar-pager').hidden = pages < 2;
@@ -3310,6 +3402,10 @@
     registrarPartiesOverlay.classList.remove('active');
     openRegistrarDialog(null, true);
   });
+  document.getElementById('registrar-parties-register-issuer').addEventListener('click', () => {
+    registrarPartiesOverlay.classList.remove('active');
+    openRegistrarDialog(null, true, 'issuer');
+  });
 
   // The registrar dialogs are modal: Escape closes them and Tab stays inside.
   function makeModal(overlay, closeButton) {
@@ -3345,12 +3441,15 @@
   // registrarFromList is true when the dialog was opened from the relying
   // parties list, so Close returns there.
   let registrarFromList = false;
+  // registrarMode is verifier or issuer. A verifier registers an intended use,
+  // an issuer the attestations it issues.
+  let registrarMode = 'verifier';
   function showRegistered(done) {
     registrarSubmit.classList.toggle('registrar-registered', done);
     if (registrarTarget) {
       registrarSubmit.textContent = done ? '\u2713 Added' : 'Add certificate';
     } else {
-      registrarSubmit.textContent = done ? '\u2713 Registered' : 'Register verifier';
+      registrarSubmit.textContent = done ? '\u2713 Registered' : (registrarMode === 'issuer' ? 'Register issuer' : 'Register verifier');
     }
     registrarSubmit.disabled = done;
   }
@@ -3366,7 +3465,7 @@
   registrarForm.addEventListener('input', registrarFormEdited);
   registrarForm.addEventListener('change', registrarFormEdited);
   registrarForm.addEventListener('click', (event) => {
-    if (event.target.closest('#registrar-add-credential, [data-field="remove"]')) registrarFormEdited(event);
+    if (event.target.closest('#registrar-add-credential, #registrar-add-attestation, [data-field="remove"]')) registrarFormEdited(event);
   });
 
   function showRegistrarError(message, field) {
@@ -3379,15 +3478,43 @@
     error.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  function openRegistrarDialog(target, fromList) {
+  // Each mode has its own example values. They replace the other mode's
+  // values only where those are still unchanged.
+  const REGISTRAR_DEFAULTS = {
+    verifier: { 'registrar-name': 'Example Verifier', 'registrar-legal-name': 'Example Verifier B.V.', 'registrar-support-uri': 'https://verifier.example/support', 'registrar-service-id': 'checkout' },
+    issuer: { 'registrar-name': 'Example University', 'registrar-legal-name': 'Example University', 'registrar-support-uri': 'https://university.example/support', 'registrar-service-id': 'diplomas' },
+  };
+  function applyRegistrarMode(mode) {
+    if (mode !== registrarMode) {
+      Object.entries(REGISTRAR_DEFAULTS[mode]).forEach(([id, value]) => {
+        const field = document.getElementById(id);
+        if (field.value === REGISTRAR_DEFAULTS[registrarMode][id]) field.value = value;
+      });
+    }
+    registrarMode = mode;
+    const issuer = mode === 'issuer';
+    document.getElementById('registrar-party-section-label').textContent = issuer ? 'Issuer' : 'Relying party';
+    document.getElementById('registrar-issuer-section').hidden = !issuer;
+    document.getElementById('registrar-use-section').hidden = issuer;
+    document.getElementById('registrar-dns-section').hidden = issuer;
+    document.getElementById('registrar-client-ids-block').hidden = issuer;
+    document.getElementById('registrar-verifier-info-block').hidden = issuer;
+    document.getElementById('registrar-issuer-info-block').hidden = !issuer;
+    document.getElementById('registrar-csr-command').textContent = issuer
+      ? 'openssl ecparam -name prime256v1 -genkey -noout -out issuer.key\nopenssl req -new -key issuer.key -subj "/" -out issuer.csr'
+      : 'openssl ecparam -name prime256v1 -genkey -noout -out verifier.key\nopenssl req -new -key verifier.key -subj "/" -out verifier.csr';
+  }
+
+  function openRegistrarDialog(target, fromList, mode) {
     registrarTarget = target || null;
     registrarFromList = !!fromList;
+    applyRegistrarMode(registrarTarget ? 'verifier' : (mode || 'verifier'));
     showRegistered(false);
     registrarForm.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
     if (registrarTarget) document.getElementById('registrar-purpose').value = '';
     document.getElementById('registrar-title').textContent = registrarTarget
       ? 'Add a registration certificate to ' + (registrarTarget.tradeName || registrarTarget.identifier[0].identifier)
-      : 'Register a verifier';
+      : (registrarMode === 'issuer' ? 'Register an issuer' : 'Register a verifier');
     document.getElementById('registrar-party-section').hidden = !!registrarTarget;
     document.getElementById('registrar-access-section').hidden = !!registrarTarget;
     document.getElementById('registrar-access-result').hidden = !!registrarTarget;
@@ -3396,10 +3523,6 @@
     registrarOverlay.classList.add('active');
     document.getElementById(registrarTarget ? 'registrar-purpose' : 'registrar-name').focus();
   }
-  document.getElementById('registrar-register-verifier-link').addEventListener('click', (event) => {
-    event.preventDefault();
-    openRegistrarDialog();
-  });
   document.getElementById('registrar-close').addEventListener('click', () => {
     registrarOverlay.classList.remove('active');
     if (registrarFromList) {
@@ -3415,10 +3538,14 @@
   const registrarCredentials = document.getElementById('registrar-credentials');
   function credentialPlaceholders(row) {
     const mdoc = row.querySelector('select').value === 'mso_mdoc';
-    row.querySelector('[data-field="type"]').placeholder = mdoc ? 'doctype, e.g. eu.europa.ec.eudi.pid.1' : 'vct, e.g. urn:eudi:pid:1';
-    row.querySelector('[data-field="claims"]').placeholder = mdoc
-      ? 'claims, e.g. given_name, eu.europa.ec.eudi.pid.de.1:birth_name'
-      : 'claims, e.g. given_name, address.locality';
+    const type = row.querySelector('[data-field="type"]');
+    type.placeholder = mdoc ? 'doctype, e.g. eu.europa.ec.eudi.pid.1' : 'vct, e.g. urn:eudi:pid:1';
+    const claims = row.querySelector('[data-field="claims"]');
+    if (claims) {
+      claims.placeholder = mdoc
+        ? 'claims, e.g. given_name, eu.europa.ec.eudi.pid.de.1:birth_name'
+        : 'claims, e.g. given_name, address.locality';
+    }
   }
   function addRegistrarCredential(format, type, claims) {
     const n = ++registrarCredentialCount;
@@ -3428,7 +3555,7 @@
     row.innerHTML =
       '<select class="form-input" data-field="format" id="registrar-credential-' + n + '-format" aria-label="Format">' +
         '<option value="dc+sd-jwt">SD-JWT VC</option><option value="mso_mdoc">mdoc</option></select>' +
-      '<input type="text" class="form-input" data-field="type" id="registrar-credential-' + n + '-type" aria-label="Credential type">' +
+      '<input type="text" class="form-input" data-field="type" id="registrar-credential-' + n + '-type" aria-label="Credential type" autocomplete="off">' +
       '<input type="text" class="form-input" data-field="claims" id="registrar-credential-' + n + '-claims" aria-label="Claims, comma separated">' +
       '<button type="button" class="btn btn-sm" data-field="remove" id="registrar-credential-' + n + '-remove" aria-label="Remove this credential">Remove</button>';
     row.querySelector('select').value = format;
@@ -3450,6 +3577,43 @@
     addRegistrarCredential('dc+sd-jwt', '', '');
     registrarCredentials.lastElementChild.querySelector('[data-field="type"]').focus();
   });
+
+  // An issuer lists the attestation types it issues, each a format and a type
+  // (ETSI TS 119 475 V1.2.1 Table 8).
+  let registrarAttestationCount = 0;
+  const registrarAttestations = document.getElementById('registrar-attestations');
+  function addRegistrarAttestation(format, type) {
+    const n = ++registrarAttestationCount;
+    const row = document.createElement('div');
+    row.className = 'registrar-credential';
+    row.id = 'registrar-attestation-' + n;
+    row.innerHTML =
+      '<select class="form-input" data-field="format" id="registrar-attestation-' + n + '-format" aria-label="Format">' +
+        '<option value="dc+sd-jwt">SD-JWT VC</option><option value="mso_mdoc">mdoc</option></select>' +
+      '<input type="text" class="form-input" data-field="type" id="registrar-attestation-' + n + '-type" aria-label="Attestation type" autocomplete="off">' +
+      '<button type="button" class="btn btn-sm" data-field="remove" id="registrar-attestation-' + n + '-remove" aria-label="Remove this attestation">Remove</button>';
+    row.querySelector('select').value = format;
+    row.querySelector('[data-field="type"]').value = type;
+    row.querySelector('select').addEventListener('change', () => credentialPlaceholders(row));
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    credentialPlaceholders(row);
+    registrarAttestations.appendChild(row);
+  }
+  addRegistrarAttestation('dc+sd-jwt', 'urn:example:diploma:1');
+  document.getElementById('registrar-add-attestation').addEventListener('click', () => {
+    addRegistrarAttestation('dc+sd-jwt', '');
+    registrarAttestations.lastElementChild.querySelector('[data-field="type"]').focus();
+  });
+  function registrarAttestationList() {
+    const attestations = [];
+    registrarAttestations.querySelectorAll('.registrar-credential').forEach(row => {
+      const format = row.querySelector('select').value;
+      const type = row.querySelector('[data-field="type"]').value.trim();
+      if (!type) return;
+      attestations.push({ format: format, meta: format === 'mso_mdoc' ? { doctype_value: type } : { vct_values: [type] } });
+    });
+    return attestations;
+  }
 
   // For mdoc, a claim is the element name in the doctype's namespace, or
   // namespace:element for another namespace.
@@ -3482,6 +3646,10 @@
     error.textContent = '';
     if (registrarTarget) {
       await addIntendedUse(submit);
+      return;
+    }
+    if (registrarMode === 'issuer') {
+      await registerIssuer(submit);
       return;
     }
     if (!registrarValue('registrar-name')) {
@@ -3555,6 +3723,75 @@
     }
   });
 
+  // An issuer gets its access certificate and one registration certificate for
+  // its service (ARF RPRC_13). The issuer_info value carries the registration
+  // certificate in the issuer metadata (ETSI TS 119 472-3 V1.1.1 §4.2.3).
+  async function registerIssuer(submit) {
+    if (!registrarValue('registrar-name')) {
+      showRegistrarError('The issuer needs a name.', document.getElementById('registrar-name'));
+      return;
+    }
+    const attestations = registrarAttestationList();
+    if (attestations.length === 0) {
+      let field = registrarAttestations.querySelector('[data-field="type"]');
+      if (!field) {
+        addRegistrarAttestation('dc+sd-jwt', '');
+        field = registrarAttestations.querySelector('[data-field="type"]');
+      }
+      showRegistrarError('Add at least one attestation.', field);
+      return;
+    }
+    const serviceIdentifier = registrarValue('registrar-service-id');
+    const supportURI = registrarValue('registrar-support-uri');
+    const identifier = registrarValue('registrar-identifier');
+    const issuer = {
+      identifier: identifier ? [{ identifier: identifier }] : [],
+      legalPerson: { legalName: registrarValue('registrar-legal-name') ? [registrarValue('registrar-legal-name')] : [] },
+      country: registrarValue('registrar-country'),
+      tradeName: registrarValue('registrar-name'),
+      services: [{
+        serviceTradeName: registrarValue('registrar-name'),
+        serviceIdentifier: serviceIdentifier,
+        supportURI: supportURI ? [supportURI] : [],
+        entitlements: [document.getElementById('registrar-entitlement').value],
+        providesAttestations: attestations,
+      }],
+    };
+    submit.disabled = true;
+    let registered = null;
+    try {
+      let key = '';
+      let csr = registrarValue('registrar-csr');
+      if (!csr) ({ key, csr } = await window.eudiCreateKeyAndCSR());
+      registered = await registrarRequest('POST', 'api/registrar/wrp', issuer);
+      const assigned = registered.identifier[0].identifier;
+      const access = await registrarRequest('POST', 'api/registrar/access-certificates', {
+        identifier: assigned,
+        serviceIdentifier: serviceIdentifier,
+        csr: csr,
+        validity: registrarValue('registrar-access-validity'),
+      });
+      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
+        identifier: assigned,
+        serviceIdentifier: serviceIdentifier,
+        validity: registrarValue('registrar-registration-validity'),
+      });
+      document.getElementById('registrar-result-identifier').textContent = assigned;
+      document.getElementById('registrar-pem-label').textContent = key ? 'Signing key and access certificate chain' : 'Access certificate chain';
+      document.getElementById('registrar-pem').value = key + access.chain;
+      document.getElementById('registrar-issuer-info').value = registration.issuerInfo;
+      showRegistrationResult();
+    } catch (e) {
+      showRegistrarError(e.message);
+      if (registered) {
+        registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(registered.identifier[0].identifier)).catch(() => {});
+      }
+    } finally {
+      submit.disabled = submit.classList.contains('registrar-registered');
+      if (!submit.disabled && document.activeElement === document.body) submit.focus();
+    }
+  }
+
   // The dialog scrolls to its end, so the result and the confirmed submit
   // button below it are both in view.
   function showRegistrationResult() {
@@ -3619,7 +3856,7 @@
   document.getElementById('registrar-download-pem').addEventListener('click', () => {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([document.getElementById('registrar-pem').value], { type: 'application/x-pem-file' }));
-    link.download = 'verifier.pem';
+    link.download = registrarMode === 'issuer' ? 'issuer.pem' : 'verifier.pem';
     link.click();
     // Some browsers start the download after click() returns.
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
@@ -3628,6 +3865,7 @@
   [
     ['registrar-copy-pem', 'registrar-pem'],
     ['registrar-copy-verifier-info', 'registrar-verifier-info'],
+    ['registrar-copy-issuer-info', 'registrar-issuer-info'],
     ['registrar-copy-csr-command', 'registrar-csr-command'],
   ].forEach(([buttonId, fieldId]) => wireCopyButton(document.getElementById(buttonId), document.getElementById(fieldId)));
 

@@ -215,6 +215,11 @@ func (c *Client) RegistrarRecords(out any) error {
 	return json.Unmarshal(envelope.Data, out)
 }
 
+// DeleteRelyingParty deletes a registration and revokes its certificates.
+func (c *Client) DeleteRelyingParty(identifier string) error {
+	return c.do(http.MethodDelete, "/api/registrar/wrp/"+url.PathEscape(identifier), nil, nil)
+}
+
 // AccessCertificate asks the wallet's access certificate authority to sign an
 // access certificate for a CSR and decodes the answer into out.
 func (c *Client) AccessCertificate(req, out any) error {

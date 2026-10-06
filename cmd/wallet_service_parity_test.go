@@ -368,19 +368,25 @@ func parityCases() []parityCase {
 			if _, err := s.RegistrationCertificate(wallet.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use}); err != nil {
 				t.Fatal(err)
 			}
-			revoked, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, true)
+			revoked, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			again, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, true)
+			again, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			activated, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, false)
+			activated, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
 			return []int{revoked, again, activated}
+		}},
+		{method: "DeleteRelyingParty", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			first := s.DeleteRelyingParty(rp.Identifier[0].Identifier)
+			second := s.DeleteRelyingParty(rp.Identifier[0].Identifier)
+			return []bool{first == nil, second != nil}
 		}},
 		{method: "AccessCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
