@@ -312,6 +312,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		// An override chain is embedded as given, root included, to test
 		// verifier rejection.
 		keepAnchor := opts.SigningKey != nil
+		claims := mock.WithFreshItalianSubject(vct, claims)
 		switch format {
 		case "sdjwt":
 			return mock.GenerateSDJWT(mock.SDJWTConfig{

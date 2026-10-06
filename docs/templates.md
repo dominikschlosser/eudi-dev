@@ -2,7 +2,7 @@
 
 A credential template gives test credentials a name, type (VCT or doc type) and default claims. It can also set an expiry and claims that are always disclosed. The CLI, HTTP API and wallet UI share the same templates.
 
-The binary includes four predefined templates:
+The binary includes eight predefined templates:
 
 | Name | Format | Contents |
 |------|--------|----------|
@@ -10,8 +10,16 @@ The binary includes four predefined templates:
 | `pid-mdoc` | mdoc | EUDI PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1`) |
 | `german-pid-sdjwt` | sdjwt | German PID (`urn:eudi:pid:de:1`), which extends the EUDI PID |
 | `german-pid-mdoc` | mdoc | German PID (ISO 18013-5 elements, `eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.de.1`) |
+| `italian-pid-sdjwt` | sdjwt | Italian PID (`urn:eudi:pid:it:1`), which extends the EUDI PID |
+| `italian-pid-mdoc` | mdoc | Italian PID (`eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.it.1`) |
+| `dutch-pid-sdjwt` | sdjwt | Dutch PID (`urn:eudi:pid:nl:1`), which extends the EUDI PID |
+| `dutch-pid-mdoc` | mdoc | Dutch PID (`eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.nl.1`) |
 
 The `pid-*` templates follow the attribute tables of the [EUDI PID Rulebook v1.7](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) and use its example identity Jan Wijnand ('t Hart). The `german-pid-*` templates follow the [German PID Rulebook 1.0.0 consultation draft](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) and use the ERIKA MUSTERMANN specimen identity. The display description of each predefined PID links to its rulebook.
+
+The `italian-pid-*` templates follow the PID data model of the [IT-Wallet Technical Specifications 1.4.7](https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html) (§11.2). Their claims match Bianca Rossi, the person on the specimen identity card in their card image. The Italian PID has no address. The wallet always discloses `sub`, `date_of_expiry`, `verification`, `issuing_authority` and `issuing_country`. `sub` is an opaque identifier. Every credential gets its own, including each copy in a batch. The mdoc carries `sub` and `verification` in `eu.europa.ec.eudi.pid.it.1`. The optional `personal_administrative_number` is left out.
+
+The `dutch-pid-*` templates follow the [working draft of the Dutch PID](https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json) in the NL Wallet reference implementation. Their claims match Willeke Liselotte De Bruijn, the person on the specimen identity card in their card image. The address, `bsn` and `recovery_code` come from the NL Wallet sample. The draft adds `bsn`, `recovery_code` and `age_over_18` to the EUDI PID. The templates also carry the mandatory EUDI PID attributes, and country values are ISO 3166-1 codes. The `dutch-pid-mdoc` template uses the PID doctype and puts the Dutch attributes in `eu.europa.ec.eudi.pid.nl.1` (ARF PID_04, PID_05 and PID_06). The [NL Wallet mdoc](https://github.com/MinBZK/nl-wallet/blob/8f2a549cc3933e13697bfa98aea23da891380cf6/scripts/devenv/eudi_pid_nl_1_mdoc.json) uses `urn:eudi:pid:nl:1` as doctype and namespace, so a query for that doctype matches nothing here.
 
 The German rulebook adds national attributes (`birth_name`, `academic_title`, `source_document_type`, `raw_eid_birth_date`, and the age thresholds in `age_equal_or_over`). The EU rulebook defines attributes that the German eID does not have (`sex`, `document_number`, `personal_administrative_number`, `date_of_issuance`, `birth_family_name`). Some shared attributes differ in encoding. The birth name is `birth_name` in the German PID and `birth_family_name` in the EU PID. The German PID includes the house number in the street address. The EU PID uses a separate `address.house_number`.
 
@@ -26,7 +34,7 @@ Its doctype is `eu.europa.ec.eudi.pid.1`, like every PID. A claim key written as
 
 Regenerating a PID replaces the existing mdoc PID with the same doctype and namespaces. So an override of `german-pid-mdoc` needs at least one `eu.europa.ec.eudi.pid.de.1` element to stay distinguishable from `pid-mdoc`.
 
-`issue ... --pid`, the deprecated `wallet generate-pid` and `POST /api/generate-pid` use these templates. They use the `pid-*` pair by default and the `german-pid-*` pair for `--vct urn:eudi:pid:de:1`. A user template saved under the same name overrides the predefined one everywhere. Deleting the override restores the original.
+`issue ... --pid`, the deprecated `wallet generate-pid` and `POST /api/generate-pid` use these templates. They use the `pid-*` pair by default, and the national pair for `--vct urn:eudi:pid:de:1`, `urn:eudi:pid:it:1` or `urn:eudi:pid:nl:1`. A user template saved under the same name overrides the predefined one everywhere. Deleting the override restores the original.
 
 ## Template files and storage
 
@@ -98,7 +106,13 @@ The two image fields (`logo`, `background_image`) take one of three sources:
 
 A fetched image is stored in the wallet's size-limited cache and is embedded as a `data:` URI on the issued credential.
 
-The predefined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The German PID adds `background_image` `embedded:german-id-specimen.jpg` (the public Personalausweis specimen).
+The predefined PID templates set `display`: `background_color` `#3d59a1`, `text_color` `#ffffff`, and `logo` `embedded:logo.svg`. The national PIDs show the eudi-dev logo on their country's flag instead, and add a `background_image`. The image is the country's public specimen identity card, showing the same person as the claims:
+
+| Template | Logo | Image | Source and licence |
+|----------|------|-------|--------------------|
+| `german-pid-*` | `embedded:logo-de.svg` | `embedded:german-id-specimen.jpg` | [Personalausweis specimen (2010 model)](https://commons.wikimedia.org/wiki/File:Mustermann_Deutscher_Personalausweis_(2010)_Vorderseite.jpg), Bundesministerium des Innern, public domain (§ 5 UrhG) |
+| `italian-pid-*` | `embedded:logo-it.svg` | `embedded:italian-id-specimen.jpg` | [Carta d'identità elettronica specimen](https://commons.wikimedia.org/wiki/File:CIE_(fronte).jpg), Ministero dell'Interno and Istituto Poligrafico e Zecca dello Stato, resized, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `dutch-pid-*` | `embedded:logo-nl.svg` | `embedded:dutch-id-specimen.jpg` | [Nederlandse identiteitskaart specimen](https://commons.wikimedia.org/wiki/File:Nederlandse_identiteitskaart_2021-II_(Voorkant).jpg), Rijksdienst voor Identiteitsgegevens, resized, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
 
 Display values supplied during issuance override individual template fields. Setting only a name keeps the template's images.
 

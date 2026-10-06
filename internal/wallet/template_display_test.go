@@ -70,11 +70,21 @@ func TestPredefinedTemplatesCarryDisplay(t *testing.T) {
 			t.Errorf("template %q carries no display", tpl.Name)
 			continue
 		}
-		if tpl.Display.Logo != "embedded:logo.svg" {
-			t.Errorf("template %q logo = %q", tpl.Name, tpl.Display.Logo)
+		logo := "embedded:logo.svg"
+		for country, code := range map[string]string{"german": "de", "italian": "it", "dutch": "nl"} {
+			if !strings.HasPrefix(tpl.Name, country) {
+				continue
+			}
+			logo = "embedded:logo-" + code + ".svg"
+			if tpl.Display.BackgroundImage != "embedded:"+country+"-id-specimen.jpg" {
+				t.Errorf("template %q background image = %q, want the %s specimen", tpl.Name, tpl.Display.BackgroundImage, country)
+			}
 		}
-		if strings.Contains(tpl.Name, "german") && tpl.Display.BackgroundImage == "" {
-			t.Errorf("german template %q carries no specimen", tpl.Name)
+		if tpl.Display.Logo != logo {
+			t.Errorf("template %q logo = %q, want %q", tpl.Name, tpl.Display.Logo, logo)
+		}
+		if w := generateTestWallet(t); w.templateImage(tpl.Display.Logo, "logo") == "" {
+			t.Errorf("template %q logo %q is not a bundled asset", tpl.Name, tpl.Display.Logo)
 		}
 	}
 }

@@ -111,7 +111,7 @@ Without `--claims`, a minimal PID-like claim set is used (given_name, family_nam
 
 `issue jwt --pid` puts the same claim set in a plain JWT VC for verifier testing.
 
-`--vct urn:eudi:pid:de:1` selects the German PID. It has fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) or twenty-three mdoc elements across two namespaces. The claim sets come from the predefined `pid-sdjwt`, `pid-mdoc`, `german-pid-sdjwt` and `german-pid-mdoc` templates. A user template saved under one of those names overrides the claim set that `--pid` issues. See [templates](templates.md).
+`--vct urn:eudi:pid:de:1` selects the German PID. It has fourteen top-level SD-JWT claims (including `aka_vcts` and the age thresholds) or twenty-three mdoc elements across two namespaces. `--vct urn:eudi:pid:it:1` and `--vct urn:eudi:pid:nl:1` select the Italian and Dutch PIDs. The claim sets come from the predefined `pid-*`, `german-pid-*`, `italian-pid-*` and `dutch-pid-*` templates. A user template saved under one of those names overrides the claim set that `--pid` issues. See [templates](templates.md).
 
 `--template` supplies the claim set and defaults for type, namespace, and expiry. Explicit flags override the template. `--claims` overrides individual top level claims. `--omit` removes claims from the result. See [templates](templates.md) for the file format and the `templates` commands.
 
