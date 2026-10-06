@@ -237,7 +237,7 @@ Or set it at startup: `--preferred-format dc+sd-jwt`
 
 ### Credential import
 
-The wallet imports SD-JWT (`dc+sd-jwt`), plain JWT VC (`jwt_vc_json`), and mdoc (`mso_mdoc`). Plain JWT VCs are presented unchanged.
+The wallet imports SD-JWT (`dc+sd-jwt`), plain JWT VC (`jwt_vc_json`), and mdoc (`mso_mdoc`). Plain JWT VCs are presented unchanged. A DCQL query requires holder binding by default (`require_cryptographic_holder_binding`), so it matches no SD-JWT VC or mdoc issued with `unbound`. In strict mode no query matches an unbound mdoc, because strict mode never presents one. The parameter does not apply to plain JWT VCs.
 
 ```bash
 curl -X POST http://localhost:8085/api/credentials -d 'eyJhbGci...'

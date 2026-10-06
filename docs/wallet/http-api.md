@@ -77,7 +77,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `display`         | object  | Card appearance: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
 | `display_template`| string  | Template whose logo and background image the credential uses (for a form that flattened the template's claims into `claims`) |
 | `batch`           | int     | Issue this many copies with distinct holder keys. The wallet rotates between them (like `--batch`) |
-| `unbound`         | bool    | Issue a bearer credential without a holder key (like `--unbound`). By default the credential is bound to the wallet |
+| `unbound`         | bool    | Issue a bearer credential without a holder key (like `--unbound`). By default the credential is bound to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches an unbound credential. In strict mode an unbound mdoc matches no query |
 | `signing_key`     | string  | PEM or JWK private key that signs the credential instead of the wallet issuer key. Requires `signing_cert` (like `--key` with `--cert`). Refused in public demo mode |
 | `signing_cert`    | string  | PEM certificate chain, leaf first, embedded as the credential's x5c. The leaf must certify `signing_key` and the chain is embedded as given (a chain that includes its self-signed root produces a warning in debug mode and is refused in strict mode). The chain replaces the request's trust profile and registration metadata |
 
@@ -200,7 +200,7 @@ These endpoints are available on both wallet ports. Like credentials, anyone wit
 
 ### One-shot error override
 
-Pre-program the wallet to return an error for the next presentation request, even in auto-accept mode. The override is consumed after one use.
+Pre-program the wallet to return an error for the next presentation request, even in auto-accept mode. The override applies only to a request that passes validation, and only once.
 
 **Set override:**
 

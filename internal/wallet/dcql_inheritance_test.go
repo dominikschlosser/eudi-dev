@@ -99,7 +99,10 @@ func TestEvaluateDCQL_AkaVCTsFromAnUnknownType(t *testing.T) {
 		},
 	})
 
-	matches := w.EvaluateDCQL(sdjwtVCTQuery(mock.DefaultPIDVCT))
+	// The fixture has no raw credential and so no holder binding.
+	query := sdjwtVCTQuery(mock.DefaultPIDVCT)
+	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = false
+	matches := w.EvaluateDCQL(query)
 	if len(matches) != 1 {
 		t.Fatalf("expected the aka_vcts credential to answer, got %d matches", len(matches))
 	}
