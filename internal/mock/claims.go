@@ -16,8 +16,12 @@
 package mock
 
 import (
+	_ "embed"
 	"encoding/base64"
+	"maps"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/credtype"
 )
@@ -27,10 +31,14 @@ import (
 const (
 	DefaultPIDVCT = credtype.PIDVCT
 	GermanPIDVCT  = credtype.GermanPIDVCT
-	// PIDNamespace is the mdoc namespace of the country-independent EUDI PID,
-	// and also the doctype of both PIDs.
-	PIDNamespace       = credtype.PIDNamespace
-	GermanPIDNamespace = credtype.GermanPIDNamespace
+	ItalianPIDVCT = credtype.ItalianPIDVCT
+	DutchPIDVCT   = credtype.DutchPIDVCT
+	// PIDNamespace is the mdoc namespace of the country-independent EUDI PID.
+	// Every PID uses it as its doctype too.
+	PIDNamespace        = credtype.PIDNamespace
+	GermanPIDNamespace  = credtype.GermanPIDNamespace
+	ItalianPIDNamespace = credtype.ItalianPIDNamespace
+	DutchPIDNamespace   = credtype.DutchPIDNamespace
 )
 
 // The rulebook requires a portrait. The test identity uses a neutral 120x150
@@ -47,6 +55,19 @@ func PortraitJPEG() []byte {
 
 func PortraitDataURL() string {
 	return "data:image/jpeg;base64," + portraitJPEGBase64
+}
+
+// The Italian and Dutch PIDs use the photo from the specimen card on their card
+// image.
+var (
+	//go:embed portraits/italian.jpg
+	italianPortrait []byte
+	//go:embed portraits/dutch.jpg
+	dutchPortrait []byte
+)
+
+func portraitDataURL(jpeg []byte) string {
+	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpeg)
 }
 
 var DefaultClaims = map[string]any{
@@ -204,6 +225,118 @@ var MDOCGermanPIDClaims = map[string]any{
 	GermanPIDNamespace + ":age_over_21":          true,
 	GermanPIDNamespace + ":age_over_65":          false,
 	GermanPIDNamespace + ":source_document_type": "ID",
+}
+
+// SDJWTItalianPIDClaims follows the PID data model of the IT-Wallet Technical
+// Specifications 1.4.7 §11.2.1 (vct urn:eudi:pid:it:1). The identity matches
+// the identity card specimen on the card image. The Italian PID has no address.
+// sub is an opaque identifier that the wallet sets for each credential.
+var SDJWTItalianPIDClaims = map[string]any{
+	"given_name":     "Bianca",
+	"family_name":    "Rossi",
+	"birthdate":      "1964-12-30",
+	"place_of_birth": map[string]any{"locality": "Pino sulla Sponda del Lago Maggiore", "country": "IT"},
+	"nationalities":  []any{"IT"},
+	"picture":        portraitDataURL(italianPortrait),
+	"date_of_expiry": PIDExpiryDate(),
+	// IT-Wallet extension that says how the holder was identified for the PID.
+	"verification": map[string]any{
+		"trust_framework": "it_cie",
+		"assurance_level": "https://trust-anchor.example.it/loa/high",
+	},
+	"issuing_authority": "Ministero dell'Interno",
+	"issuing_country":   "IT",
+}
+
+// WithFreshItalianSubject gives an Italian PID its own sub. IT-Wallet 1.4.7
+// §11.1.2.1: "two different Credentials issued MUST NOT use the same sub
+// value". Other claims come back unchanged.
+func WithFreshItalianSubject(vct string, claims map[string]any) map[string]any {
+	key := ItalianPIDNamespace + ":sub"
+	if vct == ItalianPIDVCT {
+		key = "sub"
+	}
+	if _, ok := claims[key]; !ok {
+		return claims
+	}
+	fresh := maps.Clone(claims)
+	fresh[key] = uuid.NewString()
+	return fresh
+}
+
+// ItalianPIDAlwaysDisclosed lists the claims that IT-Wallet 1.4.7 never makes
+// selectively disclosable.
+var ItalianPIDAlwaysDisclosed = []string{"sub", "date_of_expiry", "verification", "issuing_authority", "issuing_country"}
+
+// MDOCItalianPIDClaims follows IT-Wallet 1.4.7 §11.2.2. The Italian elements sub
+// and verification go in the eu.europa.ec.eudi.pid.it.1 namespace.
+var MDOCItalianPIDClaims = map[string]any{
+	"given_name":        "Bianca",
+	"family_name":       "Rossi",
+	"birth_date":        "1964-12-30",
+	"place_of_birth":    map[string]any{"locality": "Pino sulla Sponda del Lago Maggiore", "country": "IT"},
+	"nationality":       []any{"IT"},
+	"portrait":          italianPortrait,
+	"expiry_date":       PIDExpiryDate(),
+	"issuing_authority": "Ministero dell'Interno",
+	"issuing_country":   "IT",
+
+	ItalianPIDNamespace + ":verification": map[string]any{
+		"trust_framework": "it_cie",
+		"assurance_level": "https://trust-anchor.example.it/loa/high",
+	},
+}
+
+// SDJWTDutchPIDClaims follows the working draft of the Dutch PID (vct
+// urn:eudi:pid:nl:1) in the NL Wallet reference implementation. The identity
+// matches the identity card specimen on the card image. The address, BSN and
+// recovery code come from the NL Wallet's sample identity. The draft extends
+// urn:eudi:pid:1, so the mandatory EUDI PID attributes are present too. Country
+// values use ISO 3166-1 codes as in the EUDI PID.
+var SDJWTDutchPIDClaims = map[string]any{
+	"family_name":    "De Bruijn",
+	"given_name":     "Willeke Liselotte",
+	"birthdate":      "1965-03-10",
+	"place_of_birth": map[string]any{"country": "NL"},
+	"nationalities":  []any{"NL"},
+	"address": map[string]any{
+		"street_address": "Van Wijngaerdenstraat",
+		"house_number":   "1",
+		"postal_code":    "2596TW",
+		"locality":       "Toetsoog",
+		"country":        "NL",
+	},
+	"picture":           portraitDataURL(dutchPortrait),
+	"bsn":               "999991772",
+	"recovery_code":     "1234567",
+	"age_over_18":       true,
+	"date_of_expiry":    PIDExpiryDate(),
+	"issuing_authority": "Rijksdienst voor Identiteitsgegevens",
+	"issuing_country":   "NL",
+}
+
+// MDOCDutchPIDClaims uses the PID doctype (ARF PID_04) and puts the Dutch
+// attributes in the eu.europa.ec.eudi.pid.nl.1 namespace (PID_06). The NL
+// Wallet's own mdoc uses urn:eudi:pid:nl:1 as doctype and namespace instead.
+var MDOCDutchPIDClaims = map[string]any{
+	"family_name":          "De Bruijn",
+	"given_name":           "Willeke Liselotte",
+	"birth_date":           "1965-03-10",
+	"place_of_birth":       map[string]any{"country": "NL"},
+	"nationality":          []any{"NL"},
+	"resident_street":      "Van Wijngaerdenstraat 1",
+	"resident_postal_code": "2596TW",
+	"resident_city":        "Toetsoog",
+	"resident_country":     "NL",
+	"portrait":             dutchPortrait,
+	"expiry_date":          PIDExpiryDate(),
+	"issuing_authority":    "Rijksdienst voor Identiteitsgegevens",
+	"issuing_country":      "NL",
+
+	DutchPIDNamespace + ":bsn":           "999991772",
+	DutchPIDNamespace + ":recovery_code": "1234567",
+	// The draft lists age_over_18 among its national attributes.
+	DutchPIDNamespace + ":age_over_18": true,
 }
 
 func PIDIssuanceDate() string {

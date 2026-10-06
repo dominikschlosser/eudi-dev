@@ -34,6 +34,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
@@ -321,8 +322,10 @@ func walletImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			claims, _ := imported["claims"].(map[string]any)
-			fmt.Printf("Imported %s credential (%s) with %d claims\n", docString(imported, "format"), docCredLabel(imported), len(claims))
+			printResult(imported, func() {
+				claims, _ := imported["claims"].(map[string]any)
+				fmt.Printf("Imported %s credential (%s) with %d claims\n", docString(imported, "format"), docCredLabel(imported), len(claims))
+			})
 			warnAboutCredential(imported)
 			return nil
 		},
@@ -355,13 +358,13 @@ func walletRemoveCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Removed %d credential(s)\n", count)
+				printResult(map[string]any{"removed": count}, func() { fmt.Printf("Removed %d credential(s)\n", count) })
 				return nil
 			}
 			if err := svc.RemoveCredential(args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("Removed credential %s\n", args[0])
+			printResult(map[string]any{"removed": 1, "id": args[0]}, func() { fmt.Printf("Removed credential %s\n", args[0]) })
 			return nil
 		},
 	}
@@ -389,7 +392,12 @@ openid-credential-offer://, haip-vci:// and eu-eaa-offer://.`,
 				return err
 			}
 			opts.ServeArgs = append(walletRegisterInheritedServeArgs(cmd), opts.ServeArgs...)
-			return wallet.RegisterURLSchemes(opts)
+			reg, err := wallet.RegisterURLSchemes(opts)
+			if err != nil {
+				return err
+			}
+			printResult(reg, func() { printRegistration(reg) })
+			return nil
 		},
 	}
 	return cmd
@@ -432,9 +440,44 @@ func walletUnregisterCmd() *cobra.Command {
 		Use:   "unregister",
 		Short: "Remove the OS URL scheme handlers (macOS, a no-op elsewhere)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return wallet.UnregisterURLSchemes()
+			unreg, err := wallet.UnregisterURLSchemes()
+			if err != nil {
+				return err
+			}
+			printResult(unreg, func() {
+				if !unreg.Unregistered {
+					fmt.Println("No URL scheme handlers were registered.")
+					return
+				}
+				fmt.Printf("Unregistered URL scheme handlers and removed %s\n", unreg.AppBundle)
+			})
+			return nil
 		},
 	}
+}
+
+func printRegistration(reg wallet.Registration) {
+	if !reg.Registered {
+		fmt.Println("URL scheme registration is not available on this platform. Continue with 'eudi wallet accept <uri>' for copied offer or presentation links.")
+		return
+	}
+	fmt.Println("Registered URL scheme handlers:")
+	fmt.Printf("  App bundle: %s\n", reg.AppBundle)
+	fmt.Printf("  Handler:    %s\n", reg.Handler)
+	fmt.Printf("  Binary:     %s\n", reg.Binary)
+	mode := "interactive UI"
+	if reg.AutoAccept {
+		mode = "auto-accept"
+	}
+	fmt.Printf("  Mode:       %s\n", mode)
+	if len(reg.ServeArgs) > 0 {
+		fmt.Printf("  Serve args: %s\n", strings.Join(reg.ServeArgs, " "))
+	}
+	schemes := make([]string, len(reg.Schemes))
+	for i, scheme := range reg.Schemes {
+		schemes[i] = scheme + "://"
+	}
+	fmt.Printf("  Schemes:    %s\n", strings.Join(schemes, ", "))
 }
 
 func walletTrustListCmd() *cobra.Command {
@@ -484,14 +527,16 @@ what they declare it to be, so pick the one matching what is being verified.`,
 
 			if urlOnly {
 				path := remote.TrustListPath(id, vct, docType)
+				var trustListURL string
 				switch {
 				case client != nil:
-					fmt.Printf("%s%s\n", client.BaseURL, path)
+					trustListURL = client.BaseURL + path
 				case docker:
-					fmt.Printf("http://host.docker.internal:%d%s\n", port, path)
+					trustListURL = fmt.Sprintf("http://host.docker.internal:%d%s", port, path)
 				default:
-					fmt.Printf("http://localhost:%d%s\n", port, path)
+					trustListURL = fmt.Sprintf("http://localhost:%d%s", port, path)
 				}
+				printResult(map[string]string{"url": trustListURL}, func() { fmt.Println(trustListURL) })
 				return nil
 			}
 
@@ -500,7 +545,7 @@ what they declare it to be, so pick the one matching what is being verified.`,
 				if err != nil {
 					return err
 				}
-				fmt.Println(jwt)
+				printTrustList(jwt)
 				return nil
 			}
 
@@ -525,7 +570,7 @@ what they declare it to be, so pick the one matching what is being verified.`,
 				return fmt.Errorf("generating trust list: %w", err)
 			}
 
-			fmt.Println(jwt)
+			printTrustList(jwt)
 			return nil
 		},
 	}
@@ -540,6 +585,10 @@ what they declare it to be, so pick the one matching what is being verified.`,
 	return cmd
 }
 
+func printTrustList(jwt string) {
+	printResult(map[string]string{"trust_list": jwt}, func() { fmt.Println(jwt) })
+}
+
 func certificateExportFormat(asPEM, asJWKS bool) (string, error) {
 	if asPEM && asJWKS {
 		return "", fmt.Errorf("--pem and --jwks are mutually exclusive")
@@ -550,17 +599,27 @@ func certificateExportFormat(asPEM, asJWKS bool) (string, error) {
 	return "pem", nil
 }
 
-func writeCertificateExport(cmd *cobra.Command, kind string, data []byte, outPath string) error {
+// writeCertificateExport prints the certificate, or writes it to outPath and
+// prints the path. With --json it prints {"path"} or {"pem"}. A JWKS is JSON
+// already.
+func writeCertificateExport(cmd *cobra.Command, kind, certFormat string, data []byte, outPath string) error {
+	out := cmd.OutOrStdout()
 	if outPath != "" {
 		if err := os.WriteFile(outPath, data, 0644); err != nil {
 			return fmt.Errorf("writing wallet %s certificate: %w", kind, err)
 		}
-		if _, err := fmt.Fprintln(cmd.OutOrStdout(), outPath); err != nil {
+		if jsonOutput {
+			return output.WriteJSON(out, map[string]string{"path": outPath})
+		}
+		if _, err := fmt.Fprintln(out, outPath); err != nil {
 			return fmt.Errorf("writing wallet %s certificate path: %w", kind, err)
 		}
 		return nil
 	}
-	if _, err := fmt.Fprint(cmd.OutOrStdout(), string(data)); err != nil {
+	if jsonOutput && certFormat == "pem" {
+		return output.WriteJSON(out, map[string]string{"pem": string(data)})
+	}
+	if _, err := fmt.Fprint(out, string(data)); err != nil {
 		return fmt.Errorf("writing wallet %s certificate: %w", kind, err)
 	}
 	return nil
@@ -595,7 +654,7 @@ chain).`,
 			if err != nil {
 				return err
 			}
-			return writeCertificateExport(cmd, "CA", certData, outPath)
+			return writeCertificateExport(cmd, "CA", certFormat, certData, outPath)
 		},
 	}
 
@@ -637,7 +696,7 @@ chain).`,
 			if err != nil {
 				return err
 			}
-			return writeCertificateExport(cmd, "TLS", certData, outPath)
+			return writeCertificateExport(cmd, "TLS", certFormat, certData, outPath)
 		},
 	}
 
@@ -775,11 +834,10 @@ func printTrustListIndex(client *remote.Client) error {
 	}
 
 	if jsonOutput {
-		data, err := json.MarshalIndent(map[string]any{"trust_lists": entries}, "", "  ")
-		if err != nil {
-			return err
+		if entries == nil {
+			entries = []map[string]any{}
 		}
-		fmt.Println(string(data))
+		output.PrintJSON(map[string]any{"trust_lists": entries})
 		return nil
 	}
 

@@ -33,7 +33,6 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/trustlist"
@@ -421,7 +420,7 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 				"idx": 0,
 			},
 		},
-	}, nil, output.Options{NoColor: true})
+	}, nil, nil)
 	if err == nil {
 		t.Fatal("expected revoked status list to fail validation")
 	}
@@ -622,25 +621,18 @@ func TestValidateHAIPFindingsInJSON(t *testing.T) {
 				t.Fatalf("validate --haip --json: %v", runErr)
 			}
 
-			var findings []string
-			found := false
-			dec := json.NewDecoder(strings.NewReader(out))
-			for dec.More() {
-				var doc map[string]json.RawMessage
-				if err := dec.Decode(&doc); err != nil {
-					t.Fatalf("decoding output: %v\n%s", err, out)
-				}
-				if rawFindings, ok := doc["haipFindings"]; ok {
-					found = true
-					if err := json.Unmarshal(rawFindings, &findings); err != nil {
-						t.Fatal(err)
-					}
-				}
+			var doc struct {
+				Format       string          `json:"format"`
+				Verification json.RawMessage `json:"verification"`
+				HAIPFindings []string        `json:"haipFindings"`
 			}
-			if !found {
-				t.Fatalf("no haipFindings in the JSON output:\n%s", out)
+			if err := json.Unmarshal([]byte(out), &doc); err != nil {
+				t.Fatalf("the output is not one JSON document: %v\n%s", err, out)
 			}
-			if findings == nil || len(findings) != tc.wantFindings {
+			if doc.Format != "dc+sd-jwt" || doc.Verification == nil {
+				t.Errorf("the document lacks the credential or its verification:\n%s", out)
+			}
+			if findings := doc.HAIPFindings; findings == nil || len(findings) != tc.wantFindings {
 				t.Errorf("haipFindings = %#v, want %d findings", findings, tc.wantFindings)
 			}
 		})

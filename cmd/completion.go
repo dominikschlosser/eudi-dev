@@ -67,6 +67,11 @@ func completionCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(completionInstallCmd())
+	for _, sub := range cmd.Commands() {
+		sub.PreRunE = func(*cobra.Command, []string) error {
+			return rejectJSON("completion prints a shell script")
+		}
+	}
 	return cmd
 }
 

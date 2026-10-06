@@ -240,7 +240,7 @@ func runIssueSDJWT(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generating SD-JWT: %w", err)
 	}
 
-	fmt.Println(result)
+	printIssuedCredential(result, "")
 
 	if err := saveIssueTemplate("sdjwt", claims, alwaysDisclosed); err != nil {
 		return err
@@ -299,7 +299,7 @@ func runIssueJWT(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generating JWT: %w", err)
 	}
 
-	fmt.Println(result)
+	printIssuedCredential(result, "")
 
 	if err := saveIssueTemplate("jwt", claims, nil); err != nil {
 		return err
@@ -362,7 +362,7 @@ func runIssueMDOC(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("generating mdoc: %w", err)
 	}
 
-	fmt.Println(result)
+	printIssuedCredential(result, "")
 
 	if err := saveIssueTemplate("mdoc", claims, nil); err != nil {
 		return err
@@ -499,7 +499,7 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 			return fmt.Errorf("the wallet server ignored the signing override and issued with its own issuer key (it runs a release without --key/--cert support). Update it, or remove the imported credential and retry with --remote local")
 		}
 	}
-	fmt.Println(docString(result, "raw"))
+	printIssuedCredential(docString(result, "raw"), docString(result, "id"))
 	if path := docString(result, "template_path"); path != "" {
 		printTemplateSaved("Saved", issueSaveTemplate, path)
 	}
@@ -509,6 +509,16 @@ func runIssueToWallet(cmd *cobra.Command, format string) error {
 	}
 	fmt.Fprintf(os.Stderr, "Imported %s credential (%s) into wallet\n", docString(result, "format"), label)
 	return nil
+}
+
+// printIssuedCredential prints the bare credential. With --json it prints
+// {"credential", "id"}, and leaves out id for a credential the wallet did not store.
+func printIssuedCredential(raw, id string) {
+	doc := map[string]any{"credential": raw}
+	if id != "" {
+		doc["id"] = id
+	}
+	printResult(doc, func() { fmt.Println(raw) })
 }
 
 // Explicit flags override template defaults. With --pid and no --claims, --vct selects

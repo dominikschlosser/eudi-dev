@@ -16,19 +16,11 @@
 
 package wallet
 
-import "fmt"
-
-func supportsURLSchemeRegistration() bool {
-	return false
-}
-
-func RegisterURLSchemes(opts RegisterOptions) error {
+func RegisterURLSchemes(opts RegisterOptions) (Registration, error) {
 	_ = opts
-	fmt.Println("URL scheme registration is not available on this platform. Continue with 'eudi wallet accept <uri>' for copied offer or presentation links.")
-	return nil
+	return Registration{}, nil
 }
 
-func UnregisterURLSchemes() error {
-	fmt.Println("URL scheme registration is not available on this platform. Nothing to unregister.")
-	return nil
+func UnregisterURLSchemes() (Unregistration, error) {
+	return Unregistration{}, nil
 }

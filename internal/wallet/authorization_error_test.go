@@ -32,24 +32,42 @@ import (
 // verifier that gets no answer waits until it times out.
 type captureVerifier struct {
 	*httptest.Server
-	mu   sync.Mutex
-	form url.Values
+	mu    sync.Mutex
+	form  url.Values
+	reply string
 }
 
 func newCaptureVerifier(t *testing.T) *captureVerifier {
 	t.Helper()
-	cv := &captureVerifier{}
+	return newCaptureVerifierReplying(t, `{}`)
+}
+
+func newCaptureVerifierReplying(t *testing.T, reply string) *captureVerifier {
+	t.Helper()
+	cv := &captureVerifier{reply: reply}
 	cv.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		parsed, _ := url.ParseQuery(string(body))
 		cv.mu.Lock()
 		cv.form = parsed
+		reply := cv.reply
 		cv.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{}`))
+		w.Write([]byte(reply))
 	}))
 	t.Cleanup(cv.Close)
 	return cv
+}
+
+// newRedirectingVerifier answers every response with a redirect_uri, as OpenID4VP
+// 1.0 §8.2 allows for Authorization Responses and Authorization Error Responses.
+func newRedirectingVerifier(t *testing.T, redirectURI string) *captureVerifier {
+	t.Helper()
+	reply, err := json.Marshal(map[string]string{"redirect_uri": redirectURI})
+	if err != nil {
+		t.Fatalf("marshaling verifier reply: %v", err)
+	}
+	return newCaptureVerifierReplying(t, string(reply))
 }
 
 func (cv *captureVerifier) received(t *testing.T) url.Values {
@@ -79,19 +97,16 @@ func dcqlQueryParam(t *testing.T, query map[string]any) string {
 	return string(encoded)
 }
 
-// §8.5 access_denied: "The Wallet did not have the requested Credentials to
-// satisfy the Authorization Request."
-func TestNoMatchingCredentialsReturnsAccessDeniedToTheVerifier(t *testing.T) {
-	srv := newTestServer(t, true)
-	verifier := newCaptureVerifier(t)
-
-	params := url.Values{
+// unsatisfiableRequest asks for a credential type no wallet holds.
+func unsatisfiableRequest(t *testing.T, verifierURL string) url.Values {
+	t.Helper()
+	return url.Values{
 		"client_id":     {"https://verifier.example"},
 		"response_type": {"vp_token"},
 		"response_mode": {"direct_post"},
 		"nonce":         {"n"},
 		"state":         {"s"},
-		"response_uri":  {verifier.URL},
+		"response_uri":  {verifierURL},
 		"dcql_query": {dcqlQueryParam(t, map[string]any{
 			"credentials": []any{
 				map[string]any{
@@ -102,8 +117,15 @@ func TestNoMatchingCredentialsReturnsAccessDeniedToTheVerifier(t *testing.T) {
 			},
 		})},
 	}
+}
 
-	rec := authorizeRequest(t, srv, params)
+// §8.5 access_denied: "The Wallet did not have the requested Credentials to
+// satisfy the Authorization Request."
+func TestNoMatchingCredentialsReturnsAccessDeniedToTheVerifier(t *testing.T) {
+	srv := newTestServer(t, true)
+	verifier := newCaptureVerifier(t)
+
+	rec := authorizeRequest(t, srv, unsatisfiableRequest(t, verifier.URL))
 
 	form := verifier.received(t)
 	if got := form.Get("error"); got != "access_denied" {
@@ -255,24 +277,7 @@ func TestPresentationAPINoMatchReportsAccessDeniedToTheVerifier(t *testing.T) {
 	srv := newTestServer(t, true)
 	verifier := newCaptureVerifier(t)
 
-	query := url.Values{
-		"client_id":     {"https://verifier.example"},
-		"response_type": {"vp_token"},
-		"response_mode": {"direct_post"},
-		"nonce":         {"n"},
-		"state":         {"s"},
-		"response_uri":  {verifier.URL},
-		"dcql_query": {dcqlQueryParam(t, map[string]any{
-			"credentials": []any{
-				map[string]any{
-					"id":     "nothing",
-					"format": "dc+sd-jwt",
-					"meta":   map[string]any{"vct_values": []any{"urn:nobody:holds:this"}},
-				},
-			},
-		})},
-	}
-	body, err := json.Marshal(map[string]any{"uri": "openid4vp://authorize?" + query.Encode()})
+	body, err := json.Marshal(map[string]any{"uri": "openid4vp://authorize?" + unsatisfiableRequest(t, verifier.URL).Encode()})
 	if err != nil {
 		t.Fatalf("marshaling body: %v", err)
 	}
@@ -434,5 +439,33 @@ func TestDCAPIErrorIsNotEncryptedUnderTheEncryptedResponseMode(t *testing.T) {
 	}
 	if _, encrypted := data["response"]; encrypted {
 		t.Error("the error object carries an encrypted response")
+	}
+}
+
+// A credentials file allows IDs shorter than the generated ones.
+func TestACredentialWithAShortIDIsPresented(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.ClearCredentials()
+	file, err := ParseCredentialsFile([]byte("credentials:\n  - id: pid\n    template: pid-sdjwt\n"))
+	if err != nil {
+		t.Fatalf("ParseCredentialsFile: %v", err)
+	}
+	if err := srv.wallet.AddFileCredentials(file, false); err != nil {
+		t.Fatalf("AddFileCredentials: %v", err)
+	}
+	verifier := newCaptureVerifier(t)
+	params := unsatisfiableRequest(t, verifier.URL)
+	params.Set("dcql_query", dcqlQueryParam(t, map[string]any{
+		"credentials": []any{map[string]any{
+			"id":     "pid",
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		}},
+	}))
+
+	authorizeRequest(t, srv, params)
+
+	if form := verifier.received(t); form.Get("vp_token") == "" {
+		t.Fatalf("verifier received %v, want a vp_token", form)
 	}
 }

@@ -28,6 +28,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
@@ -79,20 +80,19 @@ func warnAboutCredential(cred map[string]any) {
 }
 
 func printCredentialList(creds []map[string]any, deferred []map[string]any) error {
-	if len(creds) == 0 && len(deferred) == 0 {
-		fmt.Println("No credentials stored.")
-		return nil
-	}
 	if jsonOutput {
+		if creds == nil {
+			creds = []map[string]any{}
+		}
 		out := map[string]any{"credentials": creds}
 		if len(deferred) > 0 {
 			out["deferred"] = deferred
 		}
-		data, err := json.Marshal(out)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(data))
+		output.PrintJSON(out)
+		return nil
+	}
+	if len(creds) == 0 && len(deferred) == 0 {
+		fmt.Println("No credentials stored.")
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -276,7 +276,7 @@ func printCredentialDoc(cred map[string]any, decoded bool) error {
 	raw := docString(cred, "raw")
 	if !decoded {
 		// This form prints only the credential string so it can be piped.
-		fmt.Println(raw)
+		printResult(cred, func() { fmt.Println(raw) })
 		return nil
 	}
 	// Show a readable validity label because the decoded payload uses Unix timestamps.
@@ -342,8 +342,19 @@ func remoteGeneratePID(c *remote.Client, claims map[string]any, vct string) erro
 	if err := c.GeneratePID(claims, vct); err != nil {
 		return err
 	}
-	fmt.Println("Generated default EUDI PID credentials (SD-JWT + mdoc)")
+	printGeneratedPID(vct)
 	return nil
+}
+
+// printGeneratedPID reports which PID type the wallet generated. An empty vct
+// means the EUDI PID.
+func printGeneratedPID(vct string) {
+	if vct == "" {
+		vct = mock.DefaultPIDVCT
+	}
+	printResult(map[string]any{"vct": vct, "formats": []string{"dc+sd-jwt", "mso_mdoc"}}, func() {
+		fmt.Printf("Generated %s PID credentials (SD-JWT + mdoc)\n", vct)
+	})
 }
 
 func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error {
@@ -355,7 +366,7 @@ func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error 
 		if openBrowser(target) {
 			c.ActingFor(owner)
 		} else {
-			fmt.Printf("Waiting for consent at: %s\n", strings.TrimRight(c.BaseURL, "/"))
+			fmt.Fprintf(humanOut(), "Waiting for consent at: %s\n", strings.TrimRight(c.BaseURL, "/"))
 		}
 	}
 	var result map[string]any
@@ -374,11 +385,33 @@ func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error 
 			return err
 		}
 	}
-	data, marshalErr := json.MarshalIndent(result, "", "  ")
-	if marshalErr != nil {
-		return marshalErr
+	output.PrintJSON(result)
+	return remoteFlowError(result)
+}
+
+// remoteFlowError returns an error when the remote wallet refused or failed the
+// flow. The caller prints the document first (ADR 0020).
+func remoteFlowError(result map[string]any) error {
+	status, _ := result["status"].(string)
+	message := docString(result, "error")
+	if description := docString(result, "error_description"); description != "" {
+		message += ": " + description
 	}
-	fmt.Println(string(data))
+	switch status {
+	case "denied":
+		return fmt.Errorf("the request was denied")
+	case "no_match", "error", "failed":
+		if message == "" {
+			message = status
+		}
+		return fmt.Errorf("%s", message)
+	case "submitted":
+		if response, ok := result["response"].(map[string]any); ok {
+			if code, _ := response["status_code"].(float64); code >= 400 {
+				return fmt.Errorf("the verifier rejected the presentation with HTTP %d", int(code))
+			}
+		}
+	}
 	return nil
 }
 

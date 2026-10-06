@@ -34,6 +34,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
@@ -119,7 +120,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	}
 	for _, warning := range findings {
 		yellow := color.New(color.FgYellow)
-		yellow.Printf("  WARNING: %s\n", warning)
+		yellow.Fprintf(humanOut(), "  WARNING: %s\n", warning)
 		w.AddLog("presentation", fmt.Sprintf("request validation warning: %s", warning), false)
 	}
 
@@ -154,22 +155,22 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	}
 	defer srv.Shutdown()
 
-	dim.Println("───────────────────────────────────────")
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
 	yellow := color.New(color.FgYellow)
-	yellow.Printf("  Verifier: %s\n", parsed.ClientID)
-	fmt.Printf("  Trust List:  %s/api/trustlist\n", addr)
-	dim.Printf("               http://host.docker.internal:%d/api/trustlist\n", port)
+	yellow.Fprintf(humanOut(), "  Verifier: %s\n", parsed.ClientID)
+	fmt.Fprintf(humanOut(), "  Trust List:  %s/api/trustlist\n", addr)
+	dim.Fprintf(humanOut(), "               http://host.docker.internal:%d/api/trustlist\n", port)
 	for _, m := range matches {
-		fmt.Printf("  Credential: %s (%s)\n", m.Format, typeLabel(m.VCT, m.DocType, m.Format))
-		fmt.Printf("  Disclosing: %v\n", m.SelectedKeys)
+		fmt.Fprintf(humanOut(), "  Credential: %s (%s)\n", m.Format, typeLabel(m.VCT, m.DocType, m.Format))
+		fmt.Fprintf(humanOut(), "  Disclosing: %v\n", m.SelectedKeys)
 	}
 
-	matches, submissionCh, denied := waitForConsent(w, matches, parsed, responseURI, addr, dim)
-	if denied {
-		return nil
+	matches, submissionCh, err := waitForConsent(w, matches, parsed, responseURI, addr, dim)
+	if err != nil {
+		return err
 	}
 
-	dim.Println("───────────────────────────────────────")
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
 
 	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, dim)
 	if err != nil {
@@ -197,7 +198,7 @@ func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int,
 			return 0, err
 		}
 		yellow := color.New(color.FgYellow)
-		yellow.Printf("  Note: port %d/%d is already in use (using temporary port %d)\n", port, port+1, fallbackPort)
+		yellow.Fprintf(humanOut(), "  Note: port %d/%d is already in use (using temporary port %d)\n", port, port+1, fallbackPort)
 		return fallbackPort, nil
 	}
 
@@ -210,7 +211,7 @@ func resolvePresentationPort(port int, autoAccept bool, portExplicit bool) (int,
 		return 0, fmt.Errorf("resolving temporary auto-accept port after %d was busy: %w", port, err)
 	}
 	yellow := color.New(color.FgYellow)
-	yellow.Printf("  Note: port %d is already in use (auto-accept uses temporary port %d)\n", port, fallbackPort)
+	yellow.Fprintf(humanOut(), "  Note: port %d is already in use (auto-accept uses temporary port %d)\n", port, fallbackPort)
 	return fallbackPort, nil
 }
 
@@ -284,18 +285,20 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 		return true, fmt.Errorf("decoding running-wallet response: %w", err)
 	}
 
+	// The document prints before any error (ADR 0020).
+	if jsonOutput {
+		fmt.Println(string(raw))
+	}
 	switch result.Status {
 	case "submitted":
-		if jsonOutput {
-			fmt.Println(string(raw))
-			return true, nil
+		if !jsonOutput {
+			green := color.New(color.FgGreen)
+			green.Fprintf(humanOut(), "  Submitted: %s\n", wallet.FormatDirectPostResult(&result.Response))
+			if len(result.VPTokenKeys) > 0 {
+				fmt.Fprintf(humanOut(), "  VP tokens: %v\n", result.VPTokenKeys)
+			}
 		}
-		green := color.New(color.FgGreen)
-		green.Printf("  Submitted: %s\n", wallet.FormatDirectPostResult(&result.Response))
-		if len(result.VPTokenKeys) > 0 {
-			fmt.Printf("  VP tokens: %v\n", result.VPTokenKeys)
-		}
-		return true, nil
+		return true, verifierRejection(&result.Response)
 	case "denied":
 		return true, fmt.Errorf("presentation denied")
 	case "no_match":
@@ -444,12 +447,12 @@ func effectivePresentationPort(port int) int {
 	return config.DefaultWalletPort
 }
 
-// waitForConsent shows a consent UI and waits for the user's decision.
-// Returns the (potentially updated) matches, a submission channel for UI feedback,
-// and whether the presentation was denied or timed out.
-func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI, addr string, dim *color.Color) ([]wallet.CredentialMatch, chan wallet.SubmissionResult, bool) {
+// waitForConsent shows a consent UI and waits for the user's decision. It
+// returns the matches with the user's changes and a channel that reports the
+// submission back to the UI. A denial or a timeout returns an error.
+func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI, addr string, dim *color.Color) ([]wallet.CredentialMatch, chan wallet.SubmissionResult, error) {
 	if w.AutoAccept {
-		return matches, nil, false
+		return matches, nil, nil
 	}
 
 	consentReq := &wallet.ConsentRequest{
@@ -468,9 +471,9 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 
 	w.CreateConsentRequest(consentReq)
 
-	fmt.Printf("  Consent UI: %s\n", addr)
-	dim.Println("───────────────────────────────────────")
-	fmt.Println("Waiting for consent decision...")
+	fmt.Fprintf(humanOut(), "  Consent UI: %s\n", addr)
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
+	fmt.Fprintln(humanOut(), "Waiting for consent decision...")
 
 	if !noOpen {
 		openBrowser(addr)
@@ -479,8 +482,8 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 	select {
 	case result := <-consentReq.ResultCh:
 		if !result.Approved {
-			fmt.Println("Presentation denied.")
-			return nil, nil, true
+			consentReq.SubmissionCh <- wallet.SubmissionResult{}
+			return nil, nil, fmt.Errorf("presentation denied")
 		}
 		if result.SelectedClaims != nil {
 			for i, m := range matches {
@@ -490,11 +493,10 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 			}
 		}
 	case <-time.After(config.ConsentTimeout):
-		fmt.Println("Consent timeout.")
-		return nil, nil, true
+		return nil, nil, fmt.Errorf("consent timeout")
 	}
 
-	return matches, consentReq.SubmissionCh, false
+	return matches, consentReq.SubmissionCh, nil
 }
 
 func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI string, submissionCh chan wallet.SubmissionResult, dim *color.Color) error {
@@ -543,13 +545,13 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 
 	if result.StatusCode >= 400 {
 		red := color.New(color.FgRed)
-		red.Printf("  Error: %s\n", wallet.FormatDirectPostResult(result))
-		fmt.Printf("  Body:  %s\n", result.Body)
+		red.Fprintf(humanOut(), "  Error: %s\n", wallet.FormatDirectPostResult(result))
+		fmt.Fprintf(humanOut(), "  Body:  %s\n", result.Body)
 		submission.Error = result.Body
 		w.AddLog("presentation", fmt.Sprintf("Verifier %s rejected: %s", parsed.ClientID, result.Body), false)
 	} else {
 		green := color.New(color.FgGreen)
-		green.Printf("  Submitted: %s\n", wallet.FormatDirectPostResult(result))
+		green.Fprintf(humanOut(), "  Submitted: %s\n", wallet.FormatDirectPostResult(result))
 	}
 	resultDetails := map[string]any{
 		"event":          "verifier_response",
@@ -568,7 +570,7 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		resultDetails["response_body"] = result.Body
 	}
 	w.AddLogDetails("presentation", fmt.Sprintf("Verifier result from %s: %s", parsed.ClientID, wallet.FormatDirectPostResult(result)), result.StatusCode < 400, resultDetails)
-	dim.Println("───────────────────────────────────────")
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
 
 	followVerifierRedirect(result.RedirectURI, submissionCh != nil)
 
@@ -580,11 +582,28 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
 	}
 
+	// POST /api/presentations on a running wallet returns the same document.
 	if jsonOutput {
-		data, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(data))
+		vpTokenKeys := []string{}
+		if vpResult != nil && len(vpResult.QueryIDs()) > 0 {
+			vpTokenKeys = vpResult.QueryIDs()
+		}
+		output.PrintJSON(map[string]any{
+			"status":        "submitted",
+			"redirect_uri":  result.RedirectURI,
+			"response":      result,
+			"vp_token_keys": vpTokenKeys,
+		})
 	}
+	return verifierRejection(result)
+}
 
+// verifierRejection fails the command when the verifier rejected the
+// presentation (ADR 0020).
+func verifierRejection(result *wallet.DirectPostResult) error {
+	if result.StatusCode >= 400 {
+		return fmt.Errorf("the verifier rejected the presentation: %s", wallet.FormatDirectPostResult(result))
+	}
 	return nil
 }
 
@@ -627,34 +646,32 @@ func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 		return fmt.Errorf("saving wallet: %w", err)
 	}
 
+	printIssuanceResult(result)
+	return nil
+}
+
+// printIssuanceResult reports a one-shot issuance. With --json, stdout carries
+// only the result (ADR 0020).
+func printIssuanceResult(result *wallet.IssuanceResult) {
 	if result.Pending {
 		// Without a wallet server nothing collects a deferred credential
 		// later, so say so.
-		fmt.Printf("Issuer %s deferred the credential (transaction %s, retry every %s)\n",
+		fmt.Fprintf(humanOut(), "Issuer %s deferred the credential (transaction %s, retry every %s)\n",
 			result.Issuer, result.TransactionID, result.RetryInterval)
-		fmt.Println("Run 'eudi wallet serve' and accept the offer there to have the wallet collect it in the background.")
-		if jsonOutput {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+		fmt.Fprintln(humanOut(), "Run 'eudi wallet serve' and accept the offer there to have the wallet collect it in the background.")
+	} else {
+		fmt.Fprintf(humanOut(), "Received %s credential from %s (ID: %s)\n", result.Format, result.Issuer, result.CredentialID)
+		if result.VerificationDetail != "" {
+			fmt.Fprintf(humanOut(), "Verification: %s", result.VerificationDetail)
+			if result.VerificationStatus != "" {
+				fmt.Fprintf(humanOut(), " [%s]", result.VerificationStatus)
+			}
+			fmt.Fprintln(humanOut())
 		}
-		return nil
 	}
-
-	fmt.Printf("Received %s credential from %s (ID: %s)\n", result.Format, result.Issuer, result.CredentialID)
-	if result.VerificationDetail != "" {
-		fmt.Printf("Verification: %s", result.VerificationDetail)
-		if result.VerificationStatus != "" {
-			fmt.Printf(" [%s]", result.VerificationStatus)
-		}
-		fmt.Println()
-	}
-
 	if jsonOutput {
-		data, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(data))
+		output.PrintJSON(result)
 	}
-
-	return nil
 }
 
 // OpenID4VP 1.0 section 8.2 returns the browser to the verifier. Print the redirect
@@ -664,7 +681,7 @@ func followVerifierRedirect(redirectURI string, browserWaiting bool) {
 	if redirectURI == "" {
 		return
 	}
-	fmt.Printf("  Continue at: %s\n", redirectURI)
+	fmt.Fprintf(humanOut(), "  Continue at: %s\n", redirectURI)
 	if stdinIsTerminal() && navigatesHere(browserWaiting) {
 		openBrowser(redirectURI)
 	}

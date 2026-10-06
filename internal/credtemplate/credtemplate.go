@@ -28,6 +28,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
@@ -141,8 +143,29 @@ func PredefinedTemplates() []Template {
 	germanDisplay := func() *TemplateDisplay {
 		d := pidDisplay("German PID", "A demo German PID credential for testing PID verification flows. It extends the EUDI PID with the national attributes of the German PID Rulebook 1.0.0 (the BMI blueprint), for the sample ERIKA MUSTERMANN identity. Created by eudi-dev, not a real identity. Rulebook: https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/")
 		d.BackgroundImage = "embedded:german-id-specimen.jpg"
+		d.Logo, d.LogoAltText = "embedded:logo-de.svg", "eudi-dev logo on the German flag"
 		return d
 	}
+	// The card images are official specimens. Their licences require the
+	// credit in the description.
+	italianDisplay := func() *TemplateDisplay {
+		d := pidDisplay("Italian PID", "A demo Italian PID credential for testing PID verification flows. Its attributes follow the PID data model of the IT-Wallet Technical Specifications 1.4.7, for Bianca Rossi, the identity of the Carta d'identità elettronica specimen. Created by eudi-dev, not a real identity. Card image: specimen of the Italian electronic identity card by the Ministero dell'Interno and the Istituto Poligrafico e Zecca dello Stato, resized, CC BY 4.0. Specification: https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html")
+		d.BackgroundImage = "embedded:italian-id-specimen.jpg"
+		d.Logo, d.LogoAltText = "embedded:logo-it.svg", "eudi-dev logo on the Italian flag"
+		return d
+	}
+	dutchDisplay := func() *TemplateDisplay {
+		d := pidDisplay("Dutch PID", "A demo Dutch PID credential for testing PID verification flows. It follows the working draft of the Dutch PID in the NL Wallet reference implementation, for Willeke Liselotte De Bruijn, the identity of the Dutch identity card specimen, and carries the mandatory EUDI PID attributes. Created by eudi-dev, not a real identity. Card image: specimen of the Dutch identity card by the Rijksdienst voor Identiteitsgegevens, resized, CC BY-SA 4.0. Draft: https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json")
+		d.BackgroundImage = "embedded:dutch-id-specimen.jpg"
+		d.Logo, d.LogoAltText = "embedded:logo-nl.svg", "eudi-dev logo on the Dutch flag"
+		return d
+	}
+	// The Italian PID carries an opaque subject identifier (IT-Wallet 1.4.7 §11.2).
+	// The template shows a sample. The issuer gives every credential its own.
+	italianSDJWTClaims := mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTItalianPIDClaims))
+	italianSDJWTClaims["sub"] = uuid.NewString()
+	italianMDOCClaims := mock.RefreshPIDDates(deepCopyClaims(mock.MDOCItalianPIDClaims))
+	italianMDOCClaims[mock.ItalianPIDNamespace+":sub"] = uuid.NewString()
 	return []Template{
 		{
 			Name:        "pid-sdjwt",
@@ -186,6 +209,49 @@ func PredefinedTemplates() []Template {
 			Display:     germanDisplay(),
 			Predefined:  true,
 		},
+		{
+			Name:            "italian-pid-sdjwt",
+			Description:     "Italian PID (SD-JWT, IT-Wallet 1.4.7)",
+			Format:          "sdjwt",
+			VCT:             mock.ItalianPIDVCT,
+			Exp:             "720h",
+			Claims:          italianSDJWTClaims,
+			AlwaysDisclosed: append([]string(nil), mock.ItalianPIDAlwaysDisclosed...),
+			Display:         italianDisplay(),
+			Predefined:      true,
+		},
+		{
+			Name:        "italian-pid-mdoc",
+			Description: "Italian PID (mdoc, EUDI PID doctype plus the Italian namespace)",
+			Format:      "mdoc",
+			DocType:     mock.PIDNamespace,
+			Namespace:   mock.PIDNamespace,
+			Exp:         "720h",
+			Claims:      italianMDOCClaims,
+			Display:     italianDisplay(),
+			Predefined:  true,
+		},
+		{
+			Name:        "dutch-pid-sdjwt",
+			Description: "Dutch PID (SD-JWT, NL Wallet working draft)",
+			Format:      "sdjwt",
+			VCT:         mock.DutchPIDVCT,
+			Exp:         "720h",
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTDutchPIDClaims)),
+			Display:     dutchDisplay(),
+			Predefined:  true,
+		},
+		{
+			Name:        "dutch-pid-mdoc",
+			Description: "Dutch PID (mdoc, EUDI PID doctype plus the Dutch namespace)",
+			Format:      "mdoc",
+			DocType:     mock.PIDNamespace,
+			Namespace:   mock.PIDNamespace,
+			Exp:         "720h",
+			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCDutchPIDClaims)),
+			Display:     dutchDisplay(),
+			Predefined:  true,
+		},
 	}
 }
 
@@ -198,6 +264,10 @@ func PIDTemplateNames(vct string) (sdjwt, mdoc string, ok bool) {
 		return "pid-sdjwt", "pid-mdoc", true
 	case mock.GermanPIDVCT:
 		return "german-pid-sdjwt", "german-pid-mdoc", true
+	case mock.ItalianPIDVCT:
+		return "italian-pid-sdjwt", "italian-pid-mdoc", true
+	case mock.DutchPIDVCT:
+		return "dutch-pid-sdjwt", "dutch-pid-mdoc", true
 	default:
 		return "pid-sdjwt", "pid-mdoc", false
 	}

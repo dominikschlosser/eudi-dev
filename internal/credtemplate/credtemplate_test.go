@@ -17,6 +17,7 @@ package credtemplate
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,8 +26,8 @@ import (
 
 func TestPredefinedTemplates(t *testing.T) {
 	predefined := PredefinedTemplates()
-	if len(predefined) != 4 {
-		t.Fatalf("expected 4 pre-defined templates, got %d", len(predefined))
+	if len(predefined) != 8 {
+		t.Fatalf("expected 8 pre-defined templates, got %d", len(predefined))
 	}
 
 	sdjwt, err := Load("pid-sdjwt", FileLocation(t.TempDir()))
@@ -81,12 +82,79 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	}
 }
 
+// IT-Wallet 1.4.7 §11.2: the PID has no address, keeps the issuer claims out of
+// the selective disclosures and carries an opaque sub unique per credential.
+func TestPredefinedItalianPIDTemplates(t *testing.T) {
+	first, err := Load("italian-pid-sdjwt", FileLocation(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if first.VCT != mock.ItalianPIDVCT {
+		t.Errorf("vct = %q, want %q", first.VCT, mock.ItalianPIDVCT)
+	}
+	if _, ok := first.Claims["address"]; ok {
+		t.Error("the Italian PID carries an address")
+	}
+	for _, claim := range []string{"sub", "date_of_expiry", "verification", "issuing_authority", "issuing_country"} {
+		if !slices.Contains(first.AlwaysDisclosed, claim) {
+			t.Errorf("%s is selectively disclosable", claim)
+		}
+	}
+	second, err := Load("italian-pid-sdjwt", FileLocation(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if first.Claims["sub"] == "" || first.Claims["sub"] == second.Claims["sub"] {
+		t.Errorf("sub %v then %v, want a new identifier for each issuance", first.Claims["sub"], second.Claims["sub"])
+	}
+
+	mdoc, err := Load("italian-pid-mdoc", FileLocation(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if mdoc.DocType != mock.PIDNamespace {
+		t.Errorf("italian-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
+	}
+	for _, element := range []string{"sub", "verification"} {
+		if _, ok := mdoc.Claims[mock.ItalianPIDNamespace+":"+element]; !ok {
+			t.Errorf("italian-pid-mdoc is missing %s:%s", mock.ItalianPIDNamespace, element)
+		}
+	}
+}
+
+func TestPredefinedDutchPIDTemplates(t *testing.T) {
+	sdjwt, err := Load("dutch-pid-sdjwt", FileLocation(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if sdjwt.VCT != mock.DutchPIDVCT || sdjwt.Claims["bsn"] != "999991772" {
+		t.Errorf("dutch-pid-sdjwt has vct %q and bsn %v, want %q and the sample BSN", sdjwt.VCT, sdjwt.Claims["bsn"], mock.DutchPIDVCT)
+	}
+
+	// ARF PID_05 and PID_06: the PID doctype with the Dutch elements in a
+	// domestic namespace.
+	mdoc, err := Load("dutch-pid-mdoc", FileLocation(t.TempDir()))
+	if err != nil {
+		t.Fatalf("loading pre-defined template: %v", err)
+	}
+	if mdoc.DocType != mock.PIDNamespace {
+		t.Errorf("dutch-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
+	}
+	if _, ok := mdoc.Claims[mock.DutchPIDNamespace+":bsn"]; !ok {
+		t.Errorf("dutch-pid-mdoc is missing %s:bsn", mock.DutchPIDNamespace)
+	}
+}
+
 func TestPIDTemplatesCarryDisplayDescription(t *testing.T) {
 	cases := map[string][]string{
-		"pid-sdjwt":        {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
-		"pid-mdoc":         {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
-		"german-pid-sdjwt": {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
-		"german-pid-mdoc":  {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
+		"pid-sdjwt":         {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
+		"pid-mdoc":          {"EUDI PID Rulebook v1.7", "https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/main/rulebooks/pid/pid-rulebook.md"},
+		"german-pid-sdjwt":  {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
+		"german-pid-mdoc":   {"German PID Rulebook 1.0.0", "https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/"},
+		"italian-pid-sdjwt": {"IT-Wallet Technical Specifications 1.4.7", "https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html"},
+		"italian-pid-mdoc":  {"IT-Wallet Technical Specifications 1.4.7", "https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html"},
+		"dutch-pid-sdjwt":   {"NL Wallet", "https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json"},
+		"dutch-pid-mdoc":    {"NL Wallet", "https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json"},
 	}
 	for name, wants := range cases {
 		tpl, err := Load(name, FileLocation(t.TempDir()))
@@ -141,6 +209,8 @@ func TestPIDTemplateNames(t *testing.T) {
 		{"", "pid-sdjwt", "pid-mdoc", true},
 		{mock.DefaultPIDVCT, "pid-sdjwt", "pid-mdoc", true},
 		{mock.GermanPIDVCT, "german-pid-sdjwt", "german-pid-mdoc", true},
+		{mock.ItalianPIDVCT, "italian-pid-sdjwt", "italian-pid-mdoc", true},
+		{mock.DutchPIDVCT, "dutch-pid-sdjwt", "dutch-pid-mdoc", true},
 		// Unknown PID types use the base PID claims with the requested VCT.
 		{"urn:example:custom:1", "pid-sdjwt", "pid-mdoc", false},
 	}

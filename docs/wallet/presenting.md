@@ -100,11 +100,11 @@ curl 'http://localhost:8085/credential-offer?credential_offer=%7B...%7D&tx_code=
 
 `/credential-offer` accepts `credential_offer` or `credential_offer_uri`, plus an optional `tx_code` for the pre-authorized code flow.
 
-Browser navigations are GET requests that accept HTML, such as clicked links. After a presentation, the browser goes to the verifier's `redirect_uri`, or to the wallet UI if none was returned. After importing an offer, it goes to the wallet UI.
+Browser navigations are GET requests that accept HTML, such as clicked links. After a presentation, the browser goes to the verifier's `redirect_uri`, or to the wallet UI if none was returned. The same applies after a refusal (a denied request or no matching credential), because the verifier can return a `redirect_uri` for an error response too (OpenID4VP 1.0 §8.2). After importing an offer, it goes to the wallet UI.
 
 Other callers, including curl and test harnesses, receive the same JSON responses as `POST /api/presentations` and `POST /api/offers`. Verifiers and issuers can use these wallet URLs to complete a browser flow without custom schemes. For example, `keycloak-extension-oid4vp` can set `walletScheme` to the wallet's `/authorize` URL.
 
-In interactive mode (no `--auto-accept`) the two caller types also behave differently before consent. A browser navigation redirects to the wallet UI, which shows the pending consent request and continues the flow after approval (a presentation then redirects to the verifier's `redirect_uri`). An API call blocks until the request is approved or denied, in the UI or via `POST /api/requests/{id}/approve`.
+In interactive mode (no `--auto-accept`) the two caller types also behave differently before consent. A browser navigation redirects to the wallet UI, which shows the pending consent request and continues the flow once you approve or deny. Both then redirect to the verifier's `redirect_uri`. An API call blocks until the request is approved or denied, in the UI or via `POST /api/requests/{id}/approve` or `/deny`. Both responses carry the verifier's `redirect_uri` when it returned one.
 
 ## HAIP 1.0 Enforcement
 

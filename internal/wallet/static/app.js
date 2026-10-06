@@ -296,9 +296,11 @@
     return Math.floor(months / 12) + ' y ago';
   }
 
-  // Short IDs distinguish cards visually. API and CLI lookups use the full ID.
+  // The first 8 characters tell generated IDs apart. A name from a credentials
+  // file stays whole. API and CLI lookups use the full ID.
   function shortCredentialId(id) {
-    return String(id || '').slice(0, 8);
+    const s = String(id || '');
+    return /^[0-9a-f][0-9a-f-]{15,}$/i.test(s) ? s.slice(0, 8) : s;
   }
 
   function credentialInitials(name) {
@@ -694,6 +696,7 @@
       });
 
       const result = await resp.json();
+      if (followVerifierRedirect(result)) return;
       if (result.error) {
         alert('Error: ' + result.error);
       } else {
@@ -1804,14 +1807,22 @@
     }
   }
 
-  function showSubmissionResult(result) {
-    if (result.redirect_uri && !result.error) {
-      if (navigable(result.redirect_uri)) {
-        window.location.href = result.redirect_uri;
-        return;
-      }
+  // OpenID4VP 1.0 §8.2: the wallet follows a redirect_uri from the verifier, both after
+  // an Authorization Response and after an Authorization Error Response.
+  function followVerifierRedirect(result) {
+    if (!result.redirect_uri) return false;
+    if (!navigable(result.redirect_uri)) {
       console.error('refusing to navigate to', result.redirect_uri);
+      return false;
     }
+    // The page navigates away, so only the console keeps the error.
+    if (result.error) console.warn('wallet error before the redirect:', result.error);
+    window.location.href = result.redirect_uri;
+    return true;
+  }
+
+  function showSubmissionResult(result) {
+    if (!result.error && followVerifierRedirect(result)) return;
 
     consentOverlay.classList.add('active');
 
@@ -1943,26 +1954,38 @@
 
     const options = !isIssuance && req.credential_options &&
       (req.credential_options.queries || []).length > 0 ? req.credential_options : null;
-    const selection = { editing: false, setChoices: [], picks: {}, claims: {} };
+    const selection = { editing: false, setChoices: [], picks: {}, claims: {}, claimSets: {}, showNonMatching: {} };
     let submitting = false;
-    // A query that sets multiple presents every candidate unless the user withholds
-    // some. Any other query presents its first candidate.
+    // An optional set that only non-matching credentials answer starts skipped,
+    // because auto-accept skips it too.
+    function defaultSetChoices(opts) {
+      return (opts.sets || []).map(set =>
+        set.optional && (set.unmatched || []).length === set.options.length ? -1 : 0);
+    }
+    // A credential used for two queries shares one merged disclosure selection.
+    function defaultClaims() {
+      const claims = {};
+      options.queries.forEach(q => q.candidates.concat(q.non_matching || []).forEach(c => {
+        const kept = claims[c.credential_id] || [];
+        Object.keys(c.claims || {}).forEach(key => {
+          if (!kept.includes(key)) kept.push(key);
+        });
+        claims[c.credential_id] = kept;
+      }));
+      return claims;
+    }
+    // A query with multiple: true presents every candidate unless the user
+    // withholds some. Any other query presents its first candidate. In debug mode
+    // a query can have only non-matching credentials, and then has no automatic
+    // pick.
     function defaultPicks(q) {
+      if (q.candidates.length === 0) return [];
       return q.multiple ? q.candidates.map(c => c.credential_id) : [q.candidates[0].credential_id];
     }
     if (options) {
-      selection.setChoices = (options.sets || []).map(() => 0);
-      options.queries.forEach(q => {
-        selection.picks[q.id] = defaultPicks(q);
-        q.candidates.forEach(c => {
-          // A credential used for two queries shares one merged disclosure selection.
-          const kept = selection.claims[c.credential_id] || [];
-          Object.keys(c.claims || {}).forEach(key => {
-            if (!kept.includes(key)) kept.push(key);
-          });
-          selection.claims[c.credential_id] = kept;
-        });
-      });
+      selection.setChoices = defaultSetChoices(options);
+      options.queries.forEach(q => { selection.picks[q.id] = defaultPicks(q); });
+      selection.claims = defaultClaims();
     }
 
     function queryById(id) { return options.queries.find(q => q.id === id); }
@@ -1976,16 +1999,29 @@
       });
       return ids;
     }
-    // Picked candidates in candidate order.
     function activeCandidates(qid) {
       const q = queryById(qid);
-      const picked = q.candidates.filter(c => selection.picks[qid].includes(c.credential_id));
-      return picked.length > 0 ? picked : [q.candidates[0]];
+      const picked = q.candidates.concat(q.non_matching || [])
+        .filter(c => selection.picks[qid].includes(c.credential_id));
+      if (picked.length > 0) return picked;
+      return q.candidates.length > 0 ? [q.candidates[0]] : [];
+    }
+    function thatDoNotMatch(n) {
+      return n + (n === 1 ? ' that does not match' : ' that do not match');
+    }
+    // A credential counts once, and only when it matches no query.
+    function nonMatchingCount() {
+      const matching = new Set(options.queries.flatMap(q => q.candidates.map(c => c.credential_id)));
+      return new Set(options.queries.flatMap(q => (q.non_matching || []).map(c => c.credential_id))
+        .filter(id => !matching.has(id))).size;
     }
     function hasAlternatives() {
       if (!options) return false;
       if ((options.sets || []).some(s => s.options.length > 1 || s.optional)) return true;
-      return options.queries.some(q => q.candidates.length > 1);
+      return options.queries.some(q => q.candidates.length > 1 || (q.non_matching || []).length > 0);
+    }
+    function unansweredQueries() {
+      return options ? activeQueryIds().filter(qid => activeCandidates(qid).length === 0) : [];
     }
     // A query that sets multiple sends all its candidates, so they are not alternatives.
     function alternativeCount() {
@@ -2001,8 +2037,53 @@
       return '<div class="consent-multiple-note" id="consent-multiple-' + escHtml(qid) + '">' +
         'The verifier accepts several credentials here. Sending ' + sent + ' of ' + q.candidates.length + ' matching credentials.</div>';
     }
+    // Debug mode offers every claim_sets option the picked credentials satisfy. The
+    // first is the automatic choice.
+    function claimSetOptions(qid) {
+      const picked = activeCandidates(qid);
+      if (picked.length === 0) return [];
+      return (picked[0].claim_sets || []).filter(set =>
+        picked.every(c => (c.claim_sets || []).some(other => other.index === set.index)));
+    }
+    function chosenClaimSet(mc) {
+      const index = selection.claimSets[mc.query_id];
+      if (index === undefined) return null;
+      return (mc.claim_sets || []).find(set => set.index === index) || null;
+    }
+    // After the picks change, keep a claim set choice only while every picked
+    // credential satisfies it, and disclose its claims on each of them.
+    function syncClaimSetChoice(qid) {
+      const index = selection.claimSets[qid];
+      if (index === undefined) return;
+      if (!claimSetOptions(qid).some(set => set.index === index)) {
+        delete selection.claimSets[qid];
+        const defaults = defaultClaims();
+        activeCandidates(qid).forEach(c => {
+          selection.claims[c.credential_id] = defaults[c.credential_id].slice();
+        });
+        return;
+      }
+      activeCandidates(qid).forEach(c => {
+        selection.claims[c.credential_id] = c.claim_sets.find(set => set.index === index).keys.slice();
+      });
+    }
+    function claimSetPicker(qid) {
+      const sets = claimSetOptions(qid);
+      if (sets.length < 2) return '';
+      const current = selection.claimSets[qid] === undefined ? sets[0].index : selection.claimSets[qid];
+      const optionsHtml = sets.map((set, i) =>
+        '<option value="' + set.index + '"' + (set.index === current ? ' selected' : '') + '>' +
+          (i === 0 ? 'auto: ' : '') + escHtml(set.keys.join(', ')) + '</option>').join('');
+      return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
+        '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
+        '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">The verifier prefers its first set. Debug mode lets you send another.</div>' +
+      '</div>';
+    }
     function isAutoSelection() {
-      return selection.setChoices.every(c => c === 0) &&
+      const defaultChoices = defaultSetChoices(options);
+      return Object.keys(selection.claimSets).length === 0 &&
+        selection.setChoices.every((c, i) => c === defaultChoices[i]) &&
         options.queries.every(q => {
           const auto = defaultPicks(q);
           const picks = selection.picks[q.id];
@@ -2015,7 +2096,7 @@
       const ids = [];
       const add = id => { if (id && !ids.includes(id)) ids.push(id); };
       if (options) {
-        options.queries.forEach(q => q.candidates.forEach(c => add(c.credential_id)));
+        options.queries.forEach(q => q.candidates.concat(q.non_matching || []).forEach(c => add(c.credential_id)));
       } else if (req.matched_credentials) {
         req.matched_credentials.forEach(mc => add(mc.credential_id));
       }
@@ -2115,6 +2196,10 @@
           warnMarker('Not provided by the selected credential.') +
         '</div>';
       });
+      if (total === 0) {
+        return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">no fields</span></div>' +
+          '<div class="consent-claims-empty" id="consent-claims-empty-' + credID + '">None of the requested claims is in this credential. Only its always-disclosed claims are sent.</div>';
+      }
       return '<div class="cl-hd">↗ Shared with the verifier<span class="cl-count">' +
           shared + ' of ' + total + ' field' + (total === 1 ? '' : 's') + '</span></div>' +
         '<div class="consent-claims">' + rows + '</div>';
@@ -2129,10 +2214,13 @@
       };
       const body = credentialCardBody(cred, 'summary-');
       const kept = options ? selection.claims[mc.credential_id] : null;
+      const claimSet = options ? chosenClaimSet(mc) : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
-        untrustedAuthorityNote(mc) +
-        claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims) +
+        untrustedAuthorityNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
+        (claimSet
+          ? claimChecklist(mc.credential_id, claimSet.claims, kept, null, null)
+          : claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims)) +
       '</div>';
     }
 
@@ -2145,6 +2233,43 @@
         'because debug mode ignores that restriction.</div>';
     }
 
+
+    // Debug mode sends a non-matching credential when the user picks it. Name every
+    // reason so the expected verifier error is clear.
+    function mismatchNote(mc, id) {
+      if (!mc || !mc.mismatches || mc.mismatches.length === 0) return '';
+      return '<div class="consent-mismatch" role="note" id="' + escHtml(id) + '">' +
+        '<span class="consent-mismatch-title" id="' + escHtml(id) + '-title">⚠ Does not match the query. Debug mode sends it anyway.</span>' +
+        '<ul>' + mc.mismatches.map((r, i) => '<li id="' + escHtml(id) + '-reason-' + i + '">' + escHtml(r) + '</li>').join('') + '</ul></div>';
+    }
+    function unansweredNote(qid) {
+      return '<div class="consent-unanswered" role="note" id="consent-unanswered-' + escHtml(qid) + '">' +
+        'No credential matches <span class="query-chip">' + escHtml(qid) + '</span>. ' +
+        'Debug mode can send one that does not match. Choose it under Edit.</div>';
+    }
+    function candidateRowHtml(qid, c, i, multi) {
+      const picked = selection.picks[qid].includes(c.credential_id);
+      const nonMatching = !!(c.mismatches && c.mismatches.length);
+      // Full credential details are needed to show claims beyond those requested.
+      const detail = candidateDetails.get(c.credential_id);
+      const body = credentialCardBody(detail || {
+        id: c.credential_id, format: c.format, vct: c.vct, doctype: c.doctype, claims: c.claims,
+      }, 'candidate-');
+      return '<div class="candidate' + (picked ? ' selected' : '') + (nonMatching ? ' nonmatching' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '"' + (nonMatching ? ' data-non-matching="true"' : '') + ' tabindex="0" role="' + (multi ? 'checkbox' : 'radio') + '" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
+        '<div class="candidate-row">' +
+          '<input type="' + (multi ? 'checkbox' : 'radio') + '" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
+          '<div class="credential-card' + (detail && detail.batch ? ' batch' : '') + '">' + body.html + '</div>' +
+          '<div class="candidate-actions">' +
+            (!nonMatching && (multi || i === 0) ? '<span class="auto-chip">auto</span>' : '') +
+            (nonMatching ? '<span class="mismatch-chip" id="consent-mismatch-chip-' + escHtml(qid) + '-' + c.credential_id + '">no match</span>' : '') +
+            // Open decoding in another tab to preserve pending consent.
+            '<a class="btn btn-sm candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
+              ' href="decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
+              ' title="Open in decoder">Show</a>' +
+          '</div>' +
+        '</div>' + untrustedAuthorityNote(c) +
+        mismatchNote(c, 'consent-mismatch-' + qid + '-' + c.credential_id) + '</div>';
+    }
 
     function editScreenHtml() {
       let html = headerHtml() +
@@ -2159,7 +2284,9 @@
           html += '<label class="consent-set-option">' +
             '<input type="radio" id="consent-set-' + i + '-option-' + j + '" name="consent-set-' + i + '" value="' + j + '"' + (selection.setChoices[i] === j ? ' checked' : '') + '>' +
             opt.map(id => '<span class="query-chip">' + escHtml(id) + '</span>').join(' + ') +
-            (j === 0 ? ' <span class="auto-chip">auto</span>' : '') +
+            ((set.unmatched || []).includes(j)
+              ? ' <span class="mismatch-chip" id="consent-set-' + i + '-option-' + j + '-nomatch">no match</span>'
+              : (j === 0 ? ' <span class="auto-chip">auto</span>' : '')) +
           '</label>';
         });
         if (set.optional) {
@@ -2183,30 +2310,25 @@
           (multi ? ' data-multiple="true" role="group" aria-label="Credentials answering ' : ' role="radiogroup" aria-label="Credential answering ') + escHtml(qid) + '">' +
           '<div class="consent-credential-header">' +
             '<span class="query-id-label">' + escHtml(qid) + '</span>' +
-            '<span class="candidate-count">' + q.candidates.length +
-              (q.candidates.length === 1 ? ' credential matches' : ' of your credentials match') +
+            '<span class="candidate-count">' + (q.candidates.length === 0 ? 'no credential matches' : q.candidates.length +
+              (q.candidates.length === 1 ? ' credential matches' : ' of your credentials match')) +
               (multi ? ' · send one or more' : '') + '</span>' +
           '</div>';
-        q.candidates.forEach((c, i) => {
-          const picked = selection.picks[qid].includes(c.credential_id);
-          // Full credential details are needed to show claims beyond those requested.
-          const detail = candidateDetails.get(c.credential_id);
-          const body = credentialCardBody(detail || {
-            id: c.credential_id, format: c.format, vct: c.vct, doctype: c.doctype, claims: c.claims,
-          }, 'candidate-');
-          html += '<div class="candidate' + (picked ? ' selected' : '') + '" id="consent-candidate-' + escHtml(qid) + '-' + c.credential_id + '" data-query="' + escHtml(qid) + '" data-cred="' + c.credential_id + '" tabindex="0" role="' + (multi ? 'checkbox' : 'radio') + '" aria-checked="' + picked + '" aria-label="' + escHtml(c.vct || c.doctype || c.format) + '">' +
-            '<div class="candidate-row">' +
-              '<input type="' + (multi ? 'checkbox' : 'radio') + '" name="consent-pick-' + escHtml(qid) + '"' + (picked ? ' checked' : '') + ' tabindex="-1" aria-hidden="true">' +
-              '<div class="credential-card' + (detail && detail.batch ? ' batch' : '') + '">' + body.html + '</div>' +
-              '<div class="candidate-actions">' +
-                (multi || i === 0 ? '<span class="auto-chip">auto</span>' : '') +
-                // Open decoding in another tab to preserve pending consent.
-                '<a class="btn btn-sm candidate-decode" id="consent-decode-' + escHtml(qid) + '-' + c.credential_id + '"' +
-                  ' href="decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
-                  ' title="Open in decoder">Show</a>' +
-              '</div>' +
-            '</div>' + untrustedAuthorityNote(c) + '</div>';
-        });
+        q.candidates.forEach((c, i) => { html += candidateRowHtml(qid, c, i, multi); });
+        const others = q.non_matching || [];
+        if (others.length > 0) {
+          // A picked non-matching credential, or no matching one, keeps the rows open.
+          const forced = others.some(c => selection.picks[qid].includes(c.credential_id)) || q.candidates.length === 0;
+          const open = forced || selection.showNonMatching[qid];
+          if (forced) {
+            html += '<div class="consent-nonmatching-label" id="consent-nonmatching-label-' + escHtml(qid) + '">' +
+              others.length + (others.length === 1 ? ' credential does not match' : ' credentials do not match') + '</div>';
+          } else {
+            html += '<button type="button" class="link-btn consent-nonmatching-toggle" id="consent-show-nonmatching-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '" aria-expanded="' + open + '">' +
+              (open ? 'Hide ' : 'Show ') + thatDoNotMatch(others.length) + '</button>';
+          }
+          if (open) others.forEach((c, i) => { html += candidateRowHtml(qid, c, i, multi); });
+        }
         html += '</div>';
       });
 
@@ -2233,8 +2355,10 @@
       if (done) done.addEventListener('click', () => { selection.editing = false; renderDialog(); });
       const reset = document.getElementById('consent-selection-reset');
       if (reset) reset.addEventListener('click', () => {
-        selection.setChoices = (options.sets || []).map(() => 0);
+        selection.setChoices = defaultSetChoices(options);
+        selection.claimSets = {};
         options.queries.forEach(q => { selection.picks[q.id] = defaultPicks(q); });
+        selection.claims = defaultClaims();
         renderDialog();
       });
       consentDialog.querySelectorAll('.consent-sets input[type="radio"]').forEach(radio => {
@@ -2253,9 +2377,11 @@
             // A presentation answers the query with at least one credential.
             if (idx >= 0 && picks.length === 1) return;
             if (idx >= 0) picks.splice(idx, 1); else picks.push(el.dataset.cred);
+            syncClaimSetChoice(qid);
             renderDialog();
           } else if (picks[0] !== el.dataset.cred) {
             selection.picks[qid] = [el.dataset.cred];
+            syncClaimSetChoice(qid);
             renderDialog();
           }
         };
@@ -2269,6 +2395,27 @@
       consentDialog.querySelectorAll('.candidate-decode').forEach(link => {
         link.addEventListener('click', e => e.stopPropagation());
         link.addEventListener('keydown', e => e.stopPropagation());
+      });
+      consentDialog.querySelectorAll('.consent-nonmatching-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const qid = btn.dataset.query;
+          selection.showNonMatching[qid] = btn.getAttribute('aria-expanded') !== 'true';
+          renderDialog();
+        });
+      });
+      consentDialog.querySelectorAll('.consent-claim-set select').forEach(select => {
+        select.addEventListener('change', () => {
+          const qid = select.dataset.query;
+          const index = Number(select.value);
+          if (index === claimSetOptions(qid)[0].index) delete selection.claimSets[qid];
+          else selection.claimSets[qid] = index;
+          // Changing the claim set discloses all of its claims again.
+          activeCandidates(qid).forEach(c => {
+            const set = (c.claim_sets || []).find(other => other.index === index);
+            if (set) selection.claims[c.credential_id] = set.keys.slice();
+          });
+          renderDialog();
+        });
       });
       if (options) {
         consentDialog.querySelectorAll('.consent-claim input[type="checkbox"]').forEach(cb => {
@@ -2310,14 +2457,25 @@
     if (!isIssuance && options) {
       if (hasAlternatives()) {
         const n = alternativeCount();
+        const others = nonMatchingCount();
+        const unanswered = unansweredQueries().length;
         html += '<div class="consent-selection-row" id="consent-selection-row">' +
-          (isAutoSelection()
-            ? 'Auto-selected' + (n > 0 ? ' · ' + n + (n === 1 ? ' alternative' : ' alternatives') : '')
-            : 'Your selection (auto-choice changed)') +
+          (unanswered > 0 && isAutoSelection()
+            ? unanswered + (unanswered === 1 ? ' query needs' : ' queries need') + ' a pick' +
+              (others > 0 ? ' · ' + thatDoNotMatch(others) : '')
+            : isAutoSelection()
+              ? 'Auto-selected' + (n > 0 ? ' · ' + n + (n === 1 ? ' alternative' : ' alternatives') : '') +
+                (others > 0 ? ' · ' + thatDoNotMatch(others) : '')
+              : 'Your selection') +
           '<button class="btn" id="consent-edit-selection">Edit</button></div>';
       }
       activeQueryIds().forEach(qid => {
+        if (activeCandidates(qid).length === 0) {
+          html += unansweredNote(qid);
+          return;
+        }
         html += multipleNote(qid);
+        html += claimSetPicker(qid);
         activeCandidates(qid).forEach(c => { html += credentialCardHtml(c); });
       });
     } else if (!isIssuance && req.matched_credentials && req.matched_credentials.length > 0) {
@@ -2335,6 +2493,14 @@
 
     consentDialog.innerHTML = html;
     wireSelectionHandlers();
+    if (unansweredQueries().length > 0) {
+      const approve = document.getElementById('consent-approve');
+      approve.disabled = true;
+      approve.title = 'Pick a credential for every query first';
+      if (!selection.editing) {
+        approve.setAttribute('aria-describedby', unansweredQueries().map(qid => 'consent-unanswered-' + qid).join(' '));
+      }
+    }
 
     document.getElementById('consent-approve').addEventListener('click', async () => {
       // Validate the transaction code before sending an offer that might only be redeemed
@@ -2388,6 +2554,11 @@
             approveBody.picks[qid] = queryById(qid).multiple ? ids : ids[0];
           });
           approveBody.set_choices = selection.setChoices.slice();
+          const claimSets = {};
+          activeQueryIds().forEach(qid => {
+            if (selection.claimSets[qid] !== undefined) claimSets[qid] = selection.claimSets[qid];
+          });
+          if (Object.keys(claimSets).length > 0) approveBody.claim_sets = claimSets;
         }
         const resp = await fetch(approveURL(req.id, '/approve'), {
           method: 'POST',
@@ -2433,11 +2604,12 @@
       consentSubmitting = true;
       try {
         const resp = await fetch(approveURL(req.id, '/deny'), { method: 'POST' });
+        const result = await resp.json().catch(() => ({}));
         if (!resp.ok) {
-          const result = await resp.json().catch(() => ({}));
           showErrorDialog('This request could not be denied', result.error || 'The wallet refused the answer.');
           return;
         }
+        if (followVerifierRedirect(result)) return;
       } catch (e) {
         console.error('Deny failed:', e);
       } finally {

@@ -118,10 +118,13 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 	reqServer.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
+		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
-	if requiresVP && len(matches) == 0 {
+	// Debug mode lets the user answer with a credential that does not match.
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && !reqServer.wallet.AutoAccept {
+		reqServer.log("  Result:        no matching credentials, debug mode offers the others")
+	} else if requiresVP && len(matches) == 0 {
 		reqServer.log("  Result:        no matching credentials")
 		reqServer.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		// §8.5 access_denied: "The Wallet did not have the requested
@@ -192,7 +195,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 					matches[i].SelectedKeys = selectedKeys
 					cred, _ := reqServer.wallet.GetCredential(m.CredentialID)
 					matches[i].Claims = filterClaims(cred, selectedKeys)
-					reqServer.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
+					reqServer.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
 				}
 			}
 		}

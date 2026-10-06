@@ -1,0 +1,197 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+// resetFlags puts every flag back to its default, because cobra keeps flag
+// values between Execute calls in one process.
+func resetFlags(c *cobra.Command) {
+	reset := func(f *pflag.Flag) {
+		if slice, ok := f.Value.(pflag.SliceValue); ok {
+			_ = slice.Replace(nil)
+		} else {
+			_ = f.Value.Set(f.DefValue)
+		}
+		f.Changed = false
+	}
+	c.Flags().VisitAll(reset)
+	c.PersistentFlags().VisitAll(reset)
+	for _, sub := range c.Commands() {
+		resetFlags(sub)
+	}
+}
+
+// runJSON runs the command with --json and requires its stdout to be exactly
+// one JSON document (ADR 0020).
+func runJSON(t *testing.T, args ...string) map[string]any {
+	t.Helper()
+	var doc any
+	runJSONInto(t, &doc, args...)
+	obj, ok := doc.(map[string]any)
+	if !ok {
+		t.Fatalf("%v printed %T, want a JSON object", args, doc)
+	}
+	return obj
+}
+
+func runJSONInto(t *testing.T, doc any, args ...string) {
+	t.Helper()
+	walletDirBefore := walletDir
+	t.Cleanup(func() {
+		jsonOutput = false
+		resetFlags(rootCmd)
+		walletDir = walletDirBefore
+	})
+	var runErr error
+	out := captureStdout(t, func() {
+		// Other tests point cobra's output at a buffer.
+		rootCmd.SetOut(nil)
+		rootCmd.SetArgs(append(args, "--json"))
+		runErr = rootCmd.Execute()
+	})
+	jsonOutput = false
+	resetFlags(rootCmd)
+	walletDir = walletDirBefore
+	if runErr != nil {
+		t.Fatalf("%v: %v", args, runErr)
+	}
+	if err := json.Unmarshal([]byte(out), doc); err != nil {
+		t.Fatalf("%v did not print one JSON document: %v\n%s", args, err, out)
+	}
+}
+
+func TestJSONOutputIsOneDocument(t *testing.T) {
+	resetRemoteTestState(t)
+	dir := walletDir
+
+	if doc := runJSON(t, "version"); doc["version"] == "" {
+		t.Errorf("version: %v", doc)
+	}
+	issued := runJSON(t, "issue", "sdjwt", "--pid")
+	credential, _ := issued["credential"].(string)
+	if credential == "" {
+		t.Fatalf("issue sdjwt: %v", issued)
+	}
+	runJSON(t, "issue", "mdoc", "--pid")
+
+	if creds := runJSON(t, "wallet", "list")["credentials"]; creds == nil || len(creds.([]any)) != 0 {
+		t.Errorf("an empty wallet lists %v, want []", creds)
+	}
+	if doc := runJSON(t, "wallet", "generate-pid"); doc["vct"] == "" {
+		t.Errorf("wallet generate-pid: %v", doc)
+	}
+
+	credFile := filepath.Join(t.TempDir(), "cred.txt")
+	if err := os.WriteFile(credFile, []byte(credential), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	imported := runJSON(t, "wallet", "import", credFile)
+	id, _ := imported["id"].(string)
+	if id == "" {
+		t.Fatalf("wallet import: %v", imported)
+	}
+	if doc := runJSON(t, "wallet", "show", id); doc["raw"] != credential {
+		t.Errorf("wallet show printed %v, want the stored credential", doc)
+	}
+	if doc := runJSON(t, "wallet", "remove", id); doc["id"] != id {
+		t.Errorf("wallet remove: %v", doc)
+	}
+
+	if doc := runJSON(t, "wallet", "trust-list"); !strings.Contains(doc["trust_list"].(string), ".") {
+		t.Errorf("wallet trust-list: %v", doc)
+	}
+	if doc := runJSON(t, "wallet", "trust-list", "--url"); !strings.HasPrefix(doc["url"].(string), "http") {
+		t.Errorf("wallet trust-list --url: %v", doc)
+	}
+	runJSON(t, "wallet", "trust-list", "--list")
+	if doc := runJSON(t, "wallet", "ca-cert"); !strings.Contains(doc["pem"].(string), "BEGIN CERTIFICATE") {
+		t.Errorf("wallet ca-cert: %v", doc)
+	}
+	if doc := runJSON(t, "wallet", "ca-cert", "--jwks"); doc["keys"] == nil {
+		t.Errorf("wallet ca-cert --jwks: %v", doc)
+	}
+	var logs []any
+	runJSONInto(t, &logs, "wallet", "logs")
+	runJSON(t, "wallet", "logs", "clean")
+	if doc := runJSON(t, "wallet", "use"); doc["target"] != "local" {
+		t.Errorf("wallet use: %v", doc)
+	}
+
+	var templates []any
+	runJSONInto(t, &templates, "templates", "list")
+	if len(templates) == 0 {
+		t.Error("templates list printed no templates")
+	}
+	if doc := runJSON(t, "templates", "save", "json-test", "--claims", `{"a":"b"}`); doc["name"] != "json-test" {
+		t.Errorf("templates save: %v", doc)
+	}
+	if doc := runJSON(t, "templates", "delete", "json-test"); doc["deleted"] != "json-test" {
+		t.Errorf("templates delete: %v", doc)
+	}
+
+	if walletDir != dir {
+		t.Fatalf("the wallet directory changed to %q", walletDir)
+	}
+}
+
+func TestJSONIsRefusedWithoutASingleResult(t *testing.T) {
+	resetRemoteTestState(t)
+	for _, args := range [][]string{
+		{"completion", "bash"},
+		{"serve"},
+		{"wallet", "serve"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Cleanup(func() {
+				jsonOutput = false
+				resetFlags(rootCmd)
+			})
+			rootCmd.SetArgs(append(args, "--json"))
+			err := rootCmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), "--json does not work with this command") {
+				t.Fatalf("err = %v, want --json refused", err)
+			}
+		})
+	}
+}
+
+func TestRemoteFlowErrorFailsRefusedFlows(t *testing.T) {
+	for _, tc := range []struct {
+		result  map[string]any
+		wantErr bool
+	}{
+		{map[string]any{"status": "submitted", "response": map[string]any{"status_code": float64(200)}}, false},
+		{map[string]any{"status": "completed"}, false},
+		{map[string]any{"status": "deferred"}, false},
+		{map[string]any{"status": "submitted", "response": map[string]any{"status_code": float64(400)}}, true},
+		{map[string]any{"status": "denied"}, true},
+		{map[string]any{"status": "no_match", "error": "access_denied"}, true},
+		{map[string]any{"status": "failed", "error": "invalid_grant"}, true},
+	} {
+		if err := remoteFlowError(tc.result); (err != nil) != tc.wantErr {
+			t.Errorf("%v: err = %v, want an error %v", tc.result, err, tc.wantErr)
+		}
+	}
+}

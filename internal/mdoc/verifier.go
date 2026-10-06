@@ -22,18 +22,19 @@ import (
 	"github.com/veraison/go-cose"
 )
 
+// VerifyResult uses the camelCase keys of the validate --json document.
 type VerifyResult struct {
-	SignatureValid bool
-	Expired        bool
-	NotYetValid    bool
-	Algorithm      string
-	DocType        string
-	ValidFrom      *time.Time
-	ValidUntil     *time.Time
-	Signed         *time.Time
-	Errors         []string
+	SignatureValid bool       `json:"signatureValid"`
+	Expired        bool       `json:"expired"`
+	NotYetValid    bool       `json:"notYetValid"`
+	Algorithm      string     `json:"algorithm,omitempty"`
+	DocType        string     `json:"docType,omitempty"`
+	ValidFrom      *time.Time `json:"validFrom,omitempty"`
+	ValidUntil     *time.Time `json:"validUntil,omitempty"`
+	Signed         *time.Time `json:"signed,omitempty"`
+	Errors         []string   `json:"errors,omitempty"`
 	// Warnings list spec deviations that signature verification accepted.
-	Warnings []string
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 func Verify(doc *Document, pubKey crypto.PublicKey) *VerifyResult {

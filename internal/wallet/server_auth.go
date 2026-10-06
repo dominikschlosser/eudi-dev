@@ -232,10 +232,15 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	s.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
+		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
-	if requiresVP && len(matches) == 0 {
+	// Debug mode lets the user answer with a credential that does not match. An
+	// API submission or auto-accept has no one to pick it.
+	interactive := !s.wallet.AutoAccept && authReq.Source != "api"
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && interactive {
+		s.log("  Result:        no matching credentials, debug mode offers the others")
+	} else if requiresVP && len(matches) == 0 {
 		s.log("  Result:        no matching credentials")
 		s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		s.wallet.NotifyError(WalletError{
@@ -247,13 +252,17 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		// §8.5 access_denied: "The Wallet did not have the requested
 		// Credentials to satisfy the Authorization Request."
 		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
-		s.reportRefusalToVerifier(authReq, errorCode, description)
-		writeJSON(w, http.StatusOK, map[string]any{
+		redirectURI := s.reportRefusalToVerifier(authReq, errorCode, description)
+		if authReq.BrowserRedirect {
+			redirectBrowser(w, redirectURI)
+			return
+		}
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":            "no_match",
 			"error":             "no matching credentials found",
 			"error_code":        errorCode,
 			"error_description": description,
-		})
+		}, redirectURI))
 		return
 	}
 
@@ -325,7 +334,7 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 					matches[i].SelectedKeys = selectedKeys
 					cred, _ := s.wallet.GetCredential(m.CredentialID)
 					matches[i].Claims = filterClaims(cred, selectedKeys)
-					s.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
+					s.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
 				}
 			}
 		}
@@ -525,13 +534,28 @@ func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, 
 	return result, nil
 }
 
-// Send the refusal using the request's response mode (OID4VP 1.0 §5.6). Log delivery
-// failures without changing the refusal.
-func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) {
+// reportRefusalToVerifier sends the refusal in the request's response mode
+// (OpenID4VP 1.0 §5.6) and returns the redirect_uri from the verifier's answer
+// (§8.2). A failed delivery is logged and doesn't change the refusal.
+func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) string {
 	if !canDeliverAuthorizationError(authReq) {
-		return
+		return ""
 	}
-	_, _ = s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+	result, err := s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+	if err != nil {
+		return ""
+	}
+	return result.RedirectURI
+}
+
+// withRedirectURI adds the verifier's redirect_uri to an API response. Without
+// one the field stays out, because a missing redirect_uri means the verifier
+// wants no redirect (OpenID4VP 1.0 §8.2).
+func withRedirectURI(body map[string]any, redirectURI string) map[string]any {
+	if redirectURI != "" {
+		body["redirect_uri"] = redirectURI
+	}
+	return body
 }
 
 func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *AuthorizationRequestParams, status, errorCode, errorDescription string) SubmissionResult {
@@ -544,12 +568,12 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":            status,
 			"error":             errorCode,
 			"error_description": errorDescription,
 			"response":          result,
-		})
+		}, result.RedirectURI))
 	}
 
 	return SubmissionResult{
@@ -612,7 +636,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":   "submitted",
 			"response": result,
 			"vp_token_keys": func() []string {
@@ -621,7 +645,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 				}
 				return prepared.VPResult.QueryIDs()
 			}(),
-		})
+		}, result.RedirectURI))
 	}
 
 	return SubmissionResult{
@@ -759,6 +783,15 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
 	return RequestPayload(reqObj, fallback)
+}
+
+// shortID shortens a credential ID for the console. An ID from a credentials
+// file can have fewer than 8 characters.
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func credTypeLabel(m CredentialMatch) string {

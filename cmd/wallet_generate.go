@@ -39,8 +39,8 @@ func walletGeneratePIDCmd() *cobra.Command {
 		Short: "Generate default EUDI PID credentials (SD-JWT + mdoc) (deprecated)",
 		Long: "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined PID credential templates instead. " +
 			"If PID credentials of the same type already exist, they are replaced. Use --claims to override specific claim values.\n\n" +
-			"--vct selects the PID type and with it the claim set: " + mock.DefaultPIDVCT + " is the country-independent EUDI PID, " +
-			mock.GermanPIDVCT + " the German PID that extends it. Any other value generates the country-independent claim set under that type.",
+			"--vct selects the PID type and with it the claim set: " + mock.DefaultPIDVCT + " is the EUDI PID. " +
+			mock.GermanPIDVCT + ", " + mock.ItalianPIDVCT + " and " + mock.DutchPIDVCT + " are the German, Italian and Dutch PIDs, which extend it. Any other value generates the country-independent claim set under that type.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printGeneratePIDDeprecation(cmd, claimsFlag, vctFlag)
 			if c, err := remoteClientIfConfigured(); err != nil {
@@ -129,7 +129,7 @@ func walletGeneratePIDCmd() *cobra.Command {
 				return fmt.Errorf("saving wallet: %w", err)
 			}
 
-			fmt.Println("Generated default EUDI PID credentials (SD-JWT + mdoc)")
+			printGeneratedPID(vct)
 			warnIssuedEndpointsOffline(store, w)
 			return nil
 		},
@@ -138,7 +138,7 @@ func walletGeneratePIDCmd() *cobra.Command {
 	cmd.Flags().StringVar(&claimsFlag, "claims", "", "Claim overrides as JSON (e.g. '{\"given_name\":\"Max\"}')")
 	cmd.Flags().StringVar(&keyPath, "key", "", "Path to PEM-encoded EC private key for signing (default: auto-generated)")
 	cmd.Flags().StringVar(&vctFlag, "vct", mock.DefaultPIDVCT, "PID type to generate (selects the claim set)")
-	_ = cmd.RegisterFlagCompletionFunc("vct", staticCompletion(mock.DefaultPIDVCT, mock.GermanPIDVCT))
+	_ = cmd.RegisterFlagCompletionFunc("vct", staticCompletion(mock.DefaultPIDVCT, mock.GermanPIDVCT, mock.ItalianPIDVCT, mock.DutchPIDVCT))
 	cmd.Flags().BoolVar(&statusList, "status-list", true, "Embed status list references in generated credentials")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL for status list endpoint (default: http://localhost:8085)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for --base-url")

@@ -90,6 +90,9 @@ type IssueOptions struct {
 	// ignored, so the type registers like an imported foreign credential.
 	SigningKey       *ecdsa.PrivateKey
 	SigningCertChain []*x509.Certificate
+	// ID replaces the random credential ID, so automation can address the
+	// credential by a known name. A batch cannot take one.
+	ID string
 	// Unbound issues the credential without a holder key. An SD-JWT VC then
 	// has no cnf, which SD-JWT VC §3.2.2.2 makes optional. An mdoc has no MSO
 	// deviceKey, which ISO 18013-5 §9.1.2.4 makes mandatory. That malformed
@@ -288,7 +291,15 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		holderPub = &w.HolderKey.PublicKey
 	}
 
+	if opts.ID != "" {
+		if _, exists := w.credentialByExactID(opts.ID); exists {
+			return nil, fmt.Errorf("a credential with ID %q already exists", opts.ID)
+		}
+	}
 	if opts.BatchSize >= 2 {
+		if opts.ID != "" {
+			return nil, fmt.Errorf("a batch cannot take a credential ID because every copy needs its own")
+		}
 		if format == "jwt" {
 			return nil, fmt.Errorf("batch issuance needs holder binding, which jwt_vc_json does not carry")
 		}
@@ -301,6 +312,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		// An override chain is embedded as given, root included, to test
 		// verifier rejection.
 		keepAnchor := opts.SigningKey != nil
+		claims := mock.WithFreshItalianSubject(vct, claims)
 		switch format {
 		case "sdjwt":
 			return mock.GenerateSDJWT(mock.SDJWTConfig{
@@ -367,6 +379,10 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	imported, err := w.ImportCredential(raw)
 	if err != nil {
 		return nil, fmt.Errorf("importing to wallet: %w", err)
+	}
+	if opts.ID != "" {
+		w.renameCredential(imported.ID, opts.ID)
+		imported.ID = opts.ID
 	}
 	applyIssuedDisplay(imported)
 	if registerStatus {

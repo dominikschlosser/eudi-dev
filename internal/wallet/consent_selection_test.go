@@ -115,7 +115,7 @@ func TestValidateConsentSelection(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateConsentSelection(options, tc.picks, tc.setChoices)
+			err := ValidateConsentSelection(options, tc.picks, tc.setChoices, nil)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -129,7 +129,7 @@ func TestValidateConsentSelection(t *testing.T) {
 	}
 
 	t.Run("overrides without options are refused", func(t *testing.T) {
-		if err := ValidateConsentSelection(nil, map[string][]string{"pid": {"x"}}, nil); err == nil {
+		if err := ValidateConsentSelection(nil, map[string][]string{"pid": {"x"}}, nil, nil); err == nil {
 			t.Fatal("expected an error")
 		}
 	})
@@ -147,7 +147,7 @@ func TestValidateConsentSelection(t *testing.T) {
 			},
 		}
 		matches, allOptional := w.EvaluateDCQLWithOptions(query)
-		if err := ValidateConsentSelection(allOptional, nil, []int{-1, -1}); err == nil || !strings.Contains(err.Error(), "at least one") {
+		if err := ValidateConsentSelection(allOptional, nil, []int{-1, -1}, nil); err == nil || !strings.Contains(err.Error(), "at least one") {
 			t.Fatalf("error = %v, want the all-skipped selection refused", err)
 		}
 		got := ApplyConsentSelection(allOptional, matches, ConsentResult{Approved: true, SetChoices: []int{-1, -1}})

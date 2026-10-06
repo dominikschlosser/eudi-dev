@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
 )
 
@@ -93,7 +94,7 @@ attempt then moves on by its interval, as if the poller had made it.`,
 					return err
 				}
 				if len(pending) == 0 {
-					fmt.Println("No deferred credentials.")
+					printResult([]any{}, func() { fmt.Println("No deferred credentials.") })
 					return nil
 				}
 				for _, p := range pending {
@@ -102,14 +103,18 @@ attempt then moves on by its interval, as if the poller had made it.`,
 					}
 				}
 			}
+			// With --json an id argument prints its result. Without one, the
+			// results of every deferred credential print as an array.
+			results := []map[string]any{}
+			var checkErr error
 			for _, id := range ids {
 				result, err := c.CollectDeferred(id)
 				if err != nil {
-					return err
+					checkErr = fmt.Errorf("checking %s: %w", id, err)
+					break
 				}
 				if jsonOutput {
-					data, _ := json.MarshalIndent(result, "", "  ")
-					fmt.Println(string(data))
+					results = append(results, result)
 					continue
 				}
 				switch {
@@ -124,6 +129,17 @@ attempt then moves on by its interval, as if the poller had made it.`,
 					}
 					fmt.Println()
 				}
+			}
+			// Results collected before a failure still print (ADR 0020).
+			if jsonOutput {
+				if len(args) == 1 && len(results) == 1 {
+					output.PrintJSON(results[0])
+				} else if len(args) == 0 {
+					output.PrintJSON(results)
+				}
+			}
+			if checkErr != nil {
+				return checkErr
 			}
 			return nil
 		},

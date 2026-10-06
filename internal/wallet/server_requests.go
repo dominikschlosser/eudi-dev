@@ -173,6 +173,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		// References the credential options selected in the dialog.
 		Picks      map[string]consentPick `json:"picks"`
 		SetChoices []int                  `json:"set_choices"`
+		ClaimSets  map[string]int         `json:"claim_sets"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -199,7 +200,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
 			return
 		}
-		if err := ValidateConsentSelection(pending.CredentialOptions, picks, body.SetChoices); err != nil {
+		if err := ValidateConsentSelection(pending.CredentialOptions, picks, body.SetChoices, body.ClaimSets); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -216,12 +217,13 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.ResultCh <- ConsentResult{
-		Approved:       true,
-		Owner:          requestOwner(r),
-		SelectedClaims: body.SelectedClaims,
-		TxCode:         strings.TrimSpace(body.TxCode),
-		Picks:          picks,
-		SetChoices:     body.SetChoices,
+		Approved:        true,
+		Owner:           requestOwner(r),
+		SelectedClaims:  body.SelectedClaims,
+		TxCode:          strings.TrimSpace(body.TxCode),
+		Picks:           picks,
+		SetChoices:      body.SetChoices,
+		ClaimSetChoices: body.ClaimSets,
 	}
 
 	s.allowSlowResponse(w, config.SlowRequestTimeout)
@@ -268,7 +270,18 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 
 	req.ResultCh <- ConsentResult{Approved: false}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "denied"})
+	// OpenID4VP 1.0 §8.2: the verifier can answer the Authorization Error Response
+	// with a redirect_uri, and the wallet must send the user agent there.
+	s.allowSlowResponse(w, config.SlowRequestTimeout)
+	select {
+	case submission := <-req.SubmissionCh:
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
+			"status": "denied",
+			"error":  submission.Error,
+		}, submission.RedirectURI))
+	case <-time.After(config.SlowRequestTimeout):
+		writeJSON(w, http.StatusOK, map[string]any{"status": "denied"})
+	}
 }
 
 // consentPick holds the credentials picked for one query. The JSON form is a single
