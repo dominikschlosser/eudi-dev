@@ -247,13 +247,17 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		// §8.5 access_denied: "The Wallet did not have the requested
 		// Credentials to satisfy the Authorization Request."
 		errorCode, description := unsatisfiableQueryError(authReq.DCQLQuery)
-		s.reportRefusalToVerifier(authReq, errorCode, description)
-		writeJSON(w, http.StatusOK, map[string]any{
+		redirectURI := s.reportRefusalToVerifier(authReq, errorCode, description)
+		if authReq.BrowserRedirect {
+			redirectBrowser(w, redirectURI)
+			return
+		}
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":            "no_match",
 			"error":             "no matching credentials found",
 			"error_code":        errorCode,
 			"error_description": description,
-		})
+		}, redirectURI))
 		return
 	}
 
@@ -525,13 +529,28 @@ func (s *Server) deliverAuthorizationError(authReq *AuthorizationRequestParams, 
 	return result, nil
 }
 
-// Send the refusal using the request's response mode (OID4VP 1.0 §5.6). Log delivery
-// failures without changing the refusal.
-func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) {
+// reportRefusalToVerifier sends the refusal in the request's response mode
+// (OpenID4VP 1.0 §5.6) and returns the redirect_uri from the verifier's answer
+// (§8.2). A failed delivery is logged and doesn't change the refusal.
+func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, errorCode, errorDescription string) string {
 	if !canDeliverAuthorizationError(authReq) {
-		return
+		return ""
 	}
-	_, _ = s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+	result, err := s.deliverAuthorizationError(authReq, errorCode, errorDescription)
+	if err != nil {
+		return ""
+	}
+	return result.RedirectURI
+}
+
+// withRedirectURI adds the verifier's redirect_uri to an API response. Without
+// one the field stays out, because a missing redirect_uri means the verifier
+// wants no redirect (OpenID4VP 1.0 §8.2).
+func withRedirectURI(body map[string]any, redirectURI string) map[string]any {
+	if redirectURI != "" {
+		body["redirect_uri"] = redirectURI
+	}
+	return body
 }
 
 func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *AuthorizationRequestParams, status, errorCode, errorDescription string) SubmissionResult {
@@ -544,12 +563,12 @@ func (s *Server) submitAuthorizationError(w http.ResponseWriter, authReq *Author
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":            status,
 			"error":             errorCode,
 			"error_description": errorDescription,
 			"response":          result,
-		})
+		}, result.RedirectURI))
 	}
 
 	return SubmissionResult{
@@ -612,7 +631,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, map[string]any{
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
 			"status":   "submitted",
 			"response": result,
 			"vp_token_keys": func() []string {
@@ -621,7 +640,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 				}
 				return prepared.VPResult.QueryIDs()
 			}(),
-		})
+		}, result.RedirectURI))
 	}
 
 	return SubmissionResult{

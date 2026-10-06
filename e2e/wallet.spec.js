@@ -1598,3 +1598,89 @@ for (const scenario of ["different token", "repeated receipt", "failed fetch"]) 
     await expect(page.getByTestId("log-decoder-link")).toHaveCount(2);
   });
 }
+
+// OpenID4VP 1.0 §8.2: the verifier can answer an Authorization Error Response with a
+// redirect_uri, and the wallet must send the user agent there.
+test.describe("Verifier redirect after an error response", () => {
+  let verifier;
+  let verifierURL;
+  let received;
+
+  test.beforeAll(async () => {
+    verifier = http.createServer((req, res) => {
+      if (req.method === "POST") {
+        let body = "";
+        req.on("data", (d) => (body += d));
+        req.on("end", () => {
+          received = new URLSearchParams(body);
+          res.setHeader("Content-Type", "application/json");
+          const reply = req.url === "/response" ? { redirect_uri: `${verifierURL}/continue` } : {};
+          res.end(JSON.stringify(reply));
+        });
+        return;
+      }
+      res.setHeader("Content-Type", "text/html");
+      res.end("<title>verifier</title><p>continued</p>");
+    });
+    await new Promise((resolve) => verifier.listen(0, "127.0.0.1", resolve));
+    verifierURL = `http://127.0.0.1:${verifier.address().port}`;
+  });
+
+  test.afterAll(async () => {
+    await new Promise((resolve) => verifier.close(resolve));
+  });
+
+  test.beforeEach(async () => {
+    received = undefined;
+    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
+    for (const r of Array.isArray(pending.body) ? pending.body : []) {
+      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
+    }
+  });
+
+  const requestFor = (vct, responsePath = "/response") => {
+    const responseURI = `${verifierURL}${responsePath}`;
+    return "openid4vp://authorize?" + new URLSearchParams({
+      client_id: `redirect_uri:${responseURI}`,
+      response_type: "vp_token",
+      response_mode: "direct_post",
+      response_uri: responseURI,
+      nonce: "n",
+      state: "s",
+      dcql_query: JSON.stringify({
+        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: [vct] } }],
+      }),
+    });
+  };
+
+  test("denying in the consent dialog continues at the verifier", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#offer-input").fill(requestFor("urn:eudi:pid:1"));
+    await page.locator("#process-btn").click();
+    await page.locator("#consent-deny").click();
+
+    await page.waitForURL(`${verifierURL}/continue`);
+    expect(received.get("error")).toBe("access_denied");
+  });
+
+  test("denying stays in the wallet when the verifier sends no redirect_uri", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#offer-input").fill(requestFor("urn:eudi:pid:1", "/response-without-redirect"));
+    await page.locator("#process-btn").click();
+    await page.locator("#consent-deny").click();
+
+    await expect(page.locator("#consent-deny")).toBeHidden();
+    await expect.poll(() => received?.get("error")).toBe("access_denied");
+    expect(page.url()).toBe(`${WALLET_URL}/`);
+  });
+
+  test("a request nothing matches continues at the verifier", async ({ page }) => {
+    page.on("dialog", (dialog) => dialog.dismiss());
+    await page.goto(WALLET_URL);
+    await page.locator("#offer-input").fill(requestFor("urn:nobody:holds:this"));
+    await page.locator("#process-btn").click();
+
+    await page.waitForURL(`${verifierURL}/continue`);
+    expect(received.get("error")).toBe("access_denied");
+  });
+});

@@ -268,7 +268,18 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 
 	req.ResultCh <- ConsentResult{Approved: false}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "denied"})
+	// OpenID4VP 1.0 §8.2: the verifier can answer the Authorization Error Response
+	// with a redirect_uri, and the wallet must send the user agent there.
+	s.allowSlowResponse(w, config.SlowRequestTimeout)
+	select {
+	case submission := <-req.SubmissionCh:
+		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
+			"status": "denied",
+			"error":  submission.Error,
+		}, submission.RedirectURI))
+	case <-time.After(config.SlowRequestTimeout):
+		writeJSON(w, http.StatusOK, map[string]any{"status": "denied"})
+	}
 }
 
 // consentPick holds the credentials picked for one query. The JSON form is a single

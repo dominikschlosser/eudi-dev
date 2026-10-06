@@ -480,6 +480,7 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 	case result := <-consentReq.ResultCh:
 		if !result.Approved {
 			fmt.Println("Presentation denied.")
+			consentReq.SubmissionCh <- wallet.SubmissionResult{}
 			return nil, nil, true
 		}
 		if result.SelectedClaims != nil {

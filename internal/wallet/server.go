@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -463,13 +464,20 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.allocateStatusIndex = reloaded.allocateStatusIndex
 }
 
+// Shutdown lets running requests finish for a moment, so the response to the
+// request that ended a one-shot flow (a deny with its redirect_uri) still
+// reaches the browser. Open event streams are then cut.
 func (s *Server) Shutdown() {
 	s.stopDemoReset()
-	if s.httpSrv != nil {
-		s.httpSrv.Close()
-	}
-	if s.issuerSrv != nil {
-		s.issuerSrv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for _, srv := range []*http.Server{s.httpSrv, s.issuerSrv} {
+		if srv == nil {
+			continue
+		}
+		if err := srv.Shutdown(ctx); err != nil {
+			srv.Close()
+		}
 	}
 }
 
