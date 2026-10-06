@@ -108,6 +108,14 @@ The default CMD starts a headless wallet server with preloaded PID credentials. 
 → [OIDF conformance status](docs/conformance.md), [runbook](docs/conformance-run.md), and [results](docs/conformance-results.md)
 → [Examples](docs/examples.md)
 
+### Kubernetes (Helm)
+
+```bash
+helm install my-release oci://ghcr.io/dominikschlosser/charts/eudi-dev
+```
+
+The [eudi-dev Helm chart](https://github.com/dominikschlosser/eudi-dev-helm) deploys the wallet with memory, file or PostgreSQL storage. It can create an Ingress or a Gateway API HTTPRoute and serve the wallet under a path prefix.
+
 ### Java integration tests
 
 [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) starts the wallet in Docker for Java integration tests. Its Java client issues credentials, accepts credential offers and submits presentations.
