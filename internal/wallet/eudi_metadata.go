@@ -558,8 +558,8 @@ func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]Issu
 		"entitlements":    dataset.Entitlements, "provides_attestations": dataset.ProvidesAttestations,
 		"support_uri": issuer, "info_uri": issuer,
 		"supervisory_authority": map[string]any{"email": dataset.SupervisoryAuthority.Email[0]},
-		"policy_id":             []string{"0.4.0.19475.3.1"},
-		"certificate_policy":    "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md",
+		"policy_id":             []string{registrationCertificatePolicy},
+		"certificate_policy":    registrationCertificatePolicyURI,
 		"iat":                   now.Unix(), "exp": now.Add(time.Hour).Unix(),
 		"status": registrationStatusClaim(w.RegistrationStatusListURL(), ownRegistrationStatusIndex),
 	}

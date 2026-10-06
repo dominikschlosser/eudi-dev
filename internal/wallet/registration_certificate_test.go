@@ -102,6 +102,10 @@ func TestACreatedRegistrationCertificatePassesTheWalletsChecks(t *testing.T) {
 	if certs[0]["sub"] != rp.Identifier[0].Identifier || certs[0]["registry_uri"] != rp.RegistryURI {
 		t.Errorf("sub %v, registry_uri %v, want the registration's", certs[0]["sub"], certs[0]["registry_uri"])
 	}
+	// ETSI TS 119 475 V1.2.1 Table 7 and OVR-6.1.3-01.
+	if policies, _ := certs[0]["policy_id"].([]any); len(policies) != 1 || policies[0] != "0.4.0.19475.3.1" || certs[0]["certificate_policy"] == nil {
+		t.Errorf("policy_id %v, certificate_policy %v", certs[0]["policy_id"], certs[0]["certificate_policy"])
+	}
 }
 
 // TS 119 475 V1.2.1 §5.1.1 links the certificates through the access

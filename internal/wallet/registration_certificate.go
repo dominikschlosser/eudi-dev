@@ -70,6 +70,13 @@ type RegistrationCertificateResult struct {
 	VerifierInfo string `json:"verifierInfo"`
 }
 
+// The certificate policy of ETSI TS 119 475 V1.2.1 OVR-6.1.3-01 and the
+// document that describes the registrar's test certificates.
+const (
+	registrationCertificatePolicy    = "0.4.0.19475.3.1"
+	registrationCertificatePolicyURI = "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md"
+)
+
 // errRegistrarSigning marks a failure of the wallet's own signer (HTTP 500).
 var errRegistrarSigning = errors.New("registrar signer")
 
@@ -202,8 +209,11 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 		"iat":         now.Unix(),
 		"exp":         now.Add(validity).Unix(),
 		"credentials": RegisteredCredentials(dcqlCredentials),
-		// ETSI TS 119 475 V1.2.1 Table 7 requires status (GEN-6.2.6.1-04).
-		"status": registrationStatusClaim(firstNonEmpty(req.StatusListURI, base+registrationStatusListPath), req.StatusIndex),
+		// ETSI TS 119 475 V1.2.1 Table 7 lists the policy (OVR-6.1.3-01) and
+		// status (GEN-6.2.6.1-04).
+		"policy_id":          []string{registrationCertificatePolicy},
+		"certificate_policy": registrationCertificatePolicyURI,
+		"status":             registrationStatusClaim(firstNonEmpty(req.StatusListURI, base+registrationStatusListPath), req.StatusIndex),
 	}
 	if purpose := multiLangClaim(req.Purpose, ""); len(purpose) > 0 {
 		claims["purpose"] = purpose
