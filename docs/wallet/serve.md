@@ -32,9 +32,11 @@ The presentation dialog starts with the wallet's automatic credential selection.
 
 If the verifier sets `multiple: true` on a query, all matching credentials are selected. **Edit** can deselect them. At least one stays selected.
 
+In debug mode the dialog also offers the wallet's credentials that do not match a query, so a verifier can be tested with a wrong answer. **Edit** lists them under each query with the reasons (format, type, missing claims). They are never picked automatically. If you pick one, it discloses the requested claims it has. When nothing matches a request from a link, the UI or a DC API call, debug mode opens the dialog, and **Approve** stays disabled until you pick a credential for every query. Auto-accept, API submissions and presentations requested during issuance get no dialog. The wallet answers them with `access_denied`.
+
 When a query lists `claim_sets`, the wallet sends the first set the credential satisfies (OpenID4VP 1.0 §6.4.1). In debug mode the dialog offers every set the credential can answer in a dropdown above the credential. Choosing a set discloses its claims, and the claim checkboxes still apply.
 
-API clients receive the alternatives in `credential_options`. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set), `claim_sets` (query ID to the index of a claim set the credential satisfies, debug mode only) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
+API clients receive the alternatives in `credential_options`. In debug mode each query also lists `non_matching` credentials with their `mismatches`. `unmatched` on a credential set lists the options that only non-matching credentials can answer. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set), `claim_sets` (query ID to the index of a claim set the credential satisfies, debug mode only) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
 
 ![Consent dialog](../assets/wallet-consent-ui.png)
 
@@ -61,6 +63,8 @@ UI controls have stable IDs and data attributes for browser automation. Credenti
 | Set options | `consent-set-<n>-option-<m>`, `consent-set-<n>-none` for optional sets |
 | Query sections | `consent-query-<id>` |
 | Claim set dropdown | `consent-claim-set-<query>` |
+| Non-matching credentials | `consent-show-nonmatching-<query>` toggles the list. While a non-matching credential is picked or none matches, the list stays open under `consent-nonmatching-label-<query>`. Rows carry `data-non-matching="true"`. Reasons are in `consent-mismatch-<query>-<credential>` |
+| Query without a matching credential | `consent-unanswered-<query>` |
 | Candidate rows | `consent-candidate-<query>-<credential>`, with `data-query` and `data-cred` |
 | Activity entries | `data-testid="log-entry"`, with `data-event` and `data-action` |
 | Open or close an activity entry | `data-testid="log-entry-toggle"` |

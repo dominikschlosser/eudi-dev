@@ -1100,6 +1100,58 @@ header h1 {
   background: var(--bg);
 }
 
+.consent-mismatch {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 8px;
+}
+
+.consent-mismatch ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.consent-unanswered {
+  font-size: 12px;
+  line-height: 1.6;
+  border-left: 3px solid var(--yellow);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.mismatch-chip {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--yellow);
+  color: var(--yellow);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: var(--bg-surface);
+  white-space: nowrap;
+}
+
+.consent-nonmatching-toggle {
+  display: block;
+  margin: 8px 0 4px;
+}
+
+.consent-nonmatching-label {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.candidate.nonmatching:not(.selected) {
+  opacity: 0.85;
+}
+
 .consent-claim-set {
   font-size: 12px;
   border-left: 3px solid var(--accent);
@@ -1387,6 +1439,8 @@ header h1 {
 
 .candidate-actions {
   flex-shrink: 0;
+  /* Room for the absolute chip above the Show button. */
+  min-width: 72px;
   align-self: stretch;
   position: relative;
   display: flex;
@@ -1395,10 +1449,23 @@ header h1 {
   justify-content: center;
   gap: 8px;
 }
-.candidate-actions .auto-chip {
+
+.candidate-actions .auto-chip,
+.candidate-actions .mismatch-chip {
   position: absolute;
   top: 0;
   right: 0;
+}
+
+.consent-buttons .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.consent-claims-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 6px 0 2px;
 }
 
 .candidate-decode {
@@ -1892,6 +1959,15 @@ header h1 {
   }
   .trust-items dt {
     margin-top: 6px;
+  }
+  /* Candidate rows share the width with the actions column, so the status pills
+     need the room the thumbnail takes. */
+  .candidate .card-face {
+    display: none;
+  }
+  /* The ID, issuance time and type stay one tap away behind Show. */
+  .candidate .cred-meta {
+    display: none;
   }
 }
 

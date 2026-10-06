@@ -121,7 +121,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
-	if requiresVP && len(matches) == 0 {
+	// Debug mode lets the user answer with a credential that does not match.
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && !reqServer.wallet.AutoAccept {
+		reqServer.log("  Result:        no matching credentials, debug mode offers the others")
+	} else if requiresVP && len(matches) == 0 {
 		reqServer.log("  Result:        no matching credentials")
 		reqServer.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		// §8.5 access_denied: "The Wallet did not have the requested

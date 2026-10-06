@@ -235,7 +235,12 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
-	if requiresVP && len(matches) == 0 {
+	// Debug mode lets the user answer with a credential that does not match. An
+	// API submission or auto-accept has no one to pick it.
+	interactive := !s.wallet.AutoAccept && authReq.Source != "api"
+	if requiresVP && len(matches) == 0 && credentialOptions != nil && interactive {
+		s.log("  Result:        no matching credentials, debug mode offers the others")
+	} else if requiresVP && len(matches) == 0 {
 		s.log("  Result:        no matching credentials")
 		s.wallet.AddLog("presentation", fmt.Sprintf("No matching credentials for %s", authReq.ClientID), false)
 		s.wallet.NotifyError(WalletError{

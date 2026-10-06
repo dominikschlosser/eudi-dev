@@ -34,7 +34,7 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 	}
 	answered := len(options.Sets) == 0
 	for i, set := range options.Sets {
-		choice := 0
+		choice := set.defaultChoice()
 		if i < len(setChoices) {
 			choice = setChoices[i]
 		}
@@ -76,6 +76,13 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 			if findConsentCandidate(query, credID) == nil {
 				return fmt.Errorf("credential %s does not match query %q", credID, qid)
 			}
+		}
+	}
+	// In debug mode a query can have only non-matching credentials. The user
+	// must pick one of them.
+	for _, qid := range activeQueries(options, setChoices) {
+		if query := findConsentQuery(options, qid); query != nil && len(pickedCandidates(query, picks[qid])) == 0 {
+			return fmt.Errorf("no credential matches query %q, pick one to send", qid)
 		}
 	}
 	return validateClaimSetChoices(options, picks, claimSets)
@@ -143,7 +150,7 @@ func selectCredentials(options *ConsentCredentialOptions, matches []CredentialMa
 	seen := make(map[string]bool)
 	if len(options.Sets) > 0 {
 		for i, set := range options.Sets {
-			choice := 0
+			choice := set.defaultChoice()
 			if i < len(result.SetChoices) {
 				choice = result.SetChoices[i]
 			}
@@ -169,7 +176,7 @@ func selectCredentials(options *ConsentCredentialOptions, matches []CredentialMa
 	out := make([]CredentialMatch, 0, len(needed))
 	for _, qid := range needed {
 		query := findConsentQuery(options, qid)
-		if query == nil || len(query.Candidates) == 0 {
+		if query == nil {
 			continue
 		}
 		out = append(out, pickedCandidates(query, result.Picks[qid])...)
@@ -182,19 +189,50 @@ func selectCredentials(options *ConsentCredentialOptions, matches []CredentialMa
 	return out
 }
 
-// pickedCandidates returns the picked candidates in candidate order. Without a
-// valid pick it returns every candidate of a query that sets multiple and the
+// activeQueries lists the queries in the chosen credential_sets options.
+// Without credential_sets every query is active.
+func activeQueries(options *ConsentCredentialOptions, setChoices []int) []string {
+	var ids []string
+	if len(options.Sets) == 0 {
+		for _, query := range options.Queries {
+			ids = append(ids, query.ID)
+		}
+		return ids
+	}
+	for i, set := range options.Sets {
+		choice := set.defaultChoice()
+		if i < len(setChoices) {
+			choice = setChoices[i]
+		}
+		if choice < 0 || choice >= len(set.Options) {
+			continue
+		}
+		for _, qid := range set.Options[choice] {
+			if !slices.Contains(ids, qid) {
+				ids = append(ids, qid)
+			}
+		}
+	}
+	return ids
+}
+
+// pickedCandidates returns the picked credentials, matching ones first. Without a
+// valid pick it returns every candidate of a query with multiple: true, and the
 // first candidate of any other query.
 func pickedCandidates(query *ConsentQueryOptions, credIDs []string) []CredentialMatch {
 	var picked []CredentialMatch
-	for _, c := range query.Candidates {
-		if slices.Contains(credIDs, c.CredentialID) {
-			picked = append(picked, c)
+	for _, list := range [][]CredentialMatch{query.Candidates, query.NonMatching} {
+		for _, c := range list {
+			if slices.Contains(credIDs, c.CredentialID) {
+				picked = append(picked, c)
+			}
 		}
 	}
 	switch {
 	case len(picked) > 0:
 		return picked
+	case len(query.Candidates) == 0:
+		return nil
 	case query.Multiple:
 		return query.Candidates
 	default:
@@ -217,5 +255,20 @@ func findConsentCandidate(query *ConsentQueryOptions, credentialID string) *Cred
 			return &query.Candidates[i]
 		}
 	}
+	for i := range query.NonMatching {
+		if query.NonMatching[i].CredentialID == credentialID {
+			return &query.NonMatching[i]
+		}
+	}
 	return nil
+}
+
+// defaultChoice returns the option sent when the user changes nothing. That is
+// the first option, or none (-1) for an optional set where only non-matching
+// credentials fit.
+func (s ConsentSetOptions) defaultChoice() int {
+	if s.Optional && len(s.Unmatched) == len(s.Options) {
+		return -1
+	}
+	return 0
 }

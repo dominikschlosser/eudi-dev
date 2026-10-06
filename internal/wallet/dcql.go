@@ -60,6 +60,10 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	}
 
 	var matches []CredentialMatch
+	// Debug mode offers credentials that do not match, so verifiers can be tested
+	// with wrong answers. They never become the automatic selection.
+	var nonMatching []CredentialMatch
+	debug := w.ValidationMode == ValidationModeDebug
 
 	for _, cq := range credQueries {
 		cqMap, ok := cq.(map[string]any)
@@ -79,27 +83,43 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				typeLabel = cred.DocType
 			}
 
+			var mismatches []string
 			if !matchesFormat(cred, queryFormat) {
 				skipped[fmt.Sprintf("format %s (want %s)", cred.Format, queryFormat)]++
-				continue
+				mismatches = append(mismatches, fmt.Sprintf("format %s, the query asks for %s", cred.Format, queryFormat))
 			}
 			if !matchesMeta(cred, cqMap) {
 				skipped["meta mismatch"]++
-				continue
+				mismatches = append(mismatches, metaMismatch(cred, cqMap))
 			}
 
 			selection := w.selectClaims(cred, cqMap)
-			if len(selection.missingRequired) > 0 {
-				if w.ValidationMode == ValidationModeDebug && len(selection.selectedKeys) > 0 {
+			if len(mismatches) == 0 && len(selection.missingRequired) > 0 {
+				if debug && len(selection.selectedKeys) > 0 {
 					log.Printf("[DCQL] Warning: query=%s: credential %s (%s) missing required claims %v in debug mode, continuing with selected claims %v",
 						queryID, typeLabel, cred.Format, selection.missingRequired, selection.selectedKeys)
 				} else {
 					skipped[fmt.Sprintf("required claims not found %v", selection.missingRequired)]++
-					continue
+					mismatches = append(mismatches, "lacks "+strings.Join(selection.missingRequired, ", "))
 				}
 			}
-			if !selection.match {
+			if len(mismatches) == 0 && !selection.match {
 				skipped["no requested claims matched"]++
+				mismatches = append(mismatches, "satisfies none of the claim sets")
+			}
+			if len(mismatches) > 0 {
+				if debug {
+					nonMatching = append(nonMatching, CredentialMatch{
+						QueryID:      queryID,
+						CredentialID: cred.ID,
+						Format:       cred.Format,
+						VCT:          cred.VCT,
+						DocType:      cred.DocType,
+						Claims:       filterClaims(cred, selection.selectedKeys),
+						SelectedKeys: selection.selectedKeys,
+						Mismatches:   mismatches,
+					})
+				}
 				continue
 			}
 
@@ -121,7 +141,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 			// §6.4.1: "the Wallet SHOULD return the first option that it can
 			// satisfy". Debug mode lets the user choose another one.
 			var claimSets []ConsentClaimSet
-			if w.ValidationMode == ValidationModeDebug {
+			if debug {
 				if sets := satisfiableClaimSets(cred, cqMap); len(sets) > 1 {
 					claimSets = sets
 				}
@@ -151,6 +171,8 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	// Keep one unused batch copy so consent and presentation treat the batch as one
 	// credential.
 	matches = w.collapseBatchMatches(matches, credentials)
+	nonMatching = w.collapseBatchMatches(nonMatching, credentials)
+	sortMatchesNewestFirst(nonMatching, credentials)
 
 	sortMatchesNewestFirst(matches, credentials)
 
@@ -188,14 +210,14 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 		// return any Credential(s)." Without credential_sets every entry is
 		// non-optional.
 		log.Printf("[DCQL] Result: 0 matches (no credential answers %v, and every credential query is required without credential_sets)", missing)
-		return nil, nil
+		matches = nil
 	}
 
 	log.Printf("[DCQL] Result: %d matches", len(matches))
-	if matches == nil {
+	if matches == nil && len(nonMatching) == 0 {
 		return nil, nil
 	}
-	return matches, buildConsentCredentialOptions(candidates, credSets, multiple, w.PreferredFormat)
+	return matches, buildConsentCredentialOptions(candidates, nonMatching, credQueries, credSets, multiple, w.PreferredFormat)
 }
 
 // multipleQueries returns the ids of the credential queries that set multiple
@@ -214,8 +236,8 @@ func multipleQueries(credQueries []any) map[string]bool {
 
 // Preserve candidate order so the first credential and option remain the automatic
 // selection.
-func buildConsentCredentialOptions(candidates []CredentialMatch, credSets []any, multiple map[string]bool, preferredFormat string) *ConsentCredentialOptions {
-	if len(candidates) == 0 {
+func buildConsentCredentialOptions(candidates, nonMatching []CredentialMatch, credQueries, credSets []any, multiple map[string]bool, preferredFormat string) *ConsentCredentialOptions {
+	if len(candidates) == 0 && len(nonMatching) == 0 {
 		return nil
 	}
 	byQuery := make(map[string][]CredentialMatch)
@@ -226,10 +248,35 @@ func buildConsentCredentialOptions(candidates []CredentialMatch, credSets []any,
 		}
 		byQuery[m.QueryID] = append(byQuery[m.QueryID], m)
 	}
+	nonMatchingByQuery := make(map[string][]CredentialMatch)
+	for _, m := range nonMatching {
+		nonMatchingByQuery[m.QueryID] = append(nonMatchingByQuery[m.QueryID], m)
+	}
+	// Queries that only non-matching credentials answer come last, in request
+	// order.
+	for _, cq := range credQueries {
+		cqMap, _ := cq.(map[string]any)
+		id, _ := cqMap["id"].(string)
+		if _, ok := byQuery[id]; !ok && len(nonMatchingByQuery[id]) > 0 && !slices.Contains(order, id) {
+			order = append(order, id)
+		}
+	}
 
 	options := &ConsentCredentialOptions{}
 	for _, id := range order {
-		options.Queries = append(options.Queries, ConsentQueryOptions{ID: id, Multiple: multiple[id], Candidates: byQuery[id]})
+		options.Queries = append(options.Queries, ConsentQueryOptions{
+			ID:          id,
+			Multiple:    multiple[id],
+			Candidates:  append([]CredentialMatch{}, byQuery[id]...),
+			NonMatching: nonMatchingByQuery[id],
+		})
+	}
+	answerable := make(map[string][]CredentialMatch, len(byQuery)+len(nonMatchingByQuery))
+	for id, list := range byQuery {
+		answerable[id] = list
+	}
+	for id, list := range nonMatchingByQuery {
+		answerable[id] = append(answerable[id], list...)
 	}
 
 	for _, cs := range credSets {
@@ -246,8 +293,20 @@ func buildConsentCredentialOptions(candidates []CredentialMatch, credSets []any,
 			continue
 		}
 		set := ConsentSetOptions{Optional: !required}
-		for _, opt := range orderOptionsByPreferredFormat(rawOptions, byQuery, preferredFormat) {
+		ordered := orderOptionsByPreferredFormat(rawOptions, byQuery, preferredFormat)
+		for _, opt := range ordered {
 			if ids, ok := satisfiableOption(opt, byQuery); ok {
+				set.Options = append(set.Options, ids)
+			}
+		}
+		// Options that only non-matching credentials answer follow the
+		// satisfiable ones, so the automatic choice stays a matching option.
+		for _, opt := range ordered {
+			if _, ok := satisfiableOption(opt, byQuery); ok {
+				continue
+			}
+			if ids, ok := satisfiableOption(opt, answerable); ok {
+				set.Unmatched = append(set.Unmatched, len(set.Options))
 				set.Options = append(set.Options, ids)
 			}
 		}
@@ -569,6 +628,34 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 	}
 
 	return true
+}
+
+// metaMismatch describes how the credential type differs from the types in the
+// query's meta.
+func metaMismatch(cred StoredCredential, cqMap map[string]any) string {
+	meta, _ := cqMap["meta"].(map[string]any)
+	if values, ok := meta["vct_values"].([]any); ok {
+		var want []string
+		for _, v := range values {
+			if s, ok := v.(string); ok {
+				want = append(want, s)
+			}
+		}
+		have := cred.VCT
+		if have == "" {
+			have = cred.DocType
+		}
+		return fmt.Sprintf("type %s, the query asks for %s", have, strings.Join(want, " or "))
+	}
+	docType, ok := meta["doctype_value"].(string)
+	if !ok {
+		return "meta does not match"
+	}
+	have := cred.DocType
+	if have == "" {
+		have = cred.VCT
+	}
+	return fmt.Sprintf("type %s, the query asks for %s", have, docType)
 }
 
 func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claimSelection {

@@ -367,6 +367,8 @@ type CredentialMatch struct {
 	// Strict mode requires all claims. Complete matches take precedence over partial
 	// matches.
 	MissingClaims []string `json:"missing_claims,omitempty"`
+	// Debug mode offers credentials that do not match the query. Mismatches says why.
+	Mismatches []string `json:"mismatches,omitempty"`
 	// Debug mode lists every claim_sets option the credential satisfies when there
 	// is more than one. The first is the automatic selection.
 	ClaimSets []ConsentClaimSet `json:"claim_sets,omitempty"`
@@ -394,6 +396,9 @@ type ConsentSetOptions struct {
 	Options [][]string `json:"options"`
 	// required: false lets the user skip the entire set.
 	Optional bool `json:"optional,omitempty"`
+	// Unmatched lists the options where only non-matching credentials fit (debug
+	// mode).
+	Unmatched []int `json:"unmatched,omitempty"`
 }
 
 type ConsentQueryOptions struct {
@@ -402,6 +407,9 @@ type ConsentQueryOptions struct {
 	// but one.
 	Multiple   bool              `json:"multiple,omitempty"`
 	Candidates []CredentialMatch `json:"candidates"`
+	// Debug mode lists the credentials that do not match the query. The user can
+	// pick them to test how the verifier handles a wrong answer.
+	NonMatching []CredentialMatch `json:"non_matching,omitempty"`
 }
 
 type ConsentResult struct {

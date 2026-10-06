@@ -1382,7 +1382,7 @@ test.describe("Custom verifier request builder", () => {
 
     await page.locator("#consent-selection-done").click();
     await expect(page.locator("#consent-dialog .consent-credential[data-credential-id]")).toHaveCount(1);
-    await expect(page.locator("#consent-selection-row")).toContainText("auto-choice changed");
+    await expect(page.locator("#consent-selection-row")).toContainText("Your selection");
 
     await page.locator("#consent-approve").click();
     await expect(page).toHaveURL(/\/verifier\/\?result=/, { timeout: 45_000 });
