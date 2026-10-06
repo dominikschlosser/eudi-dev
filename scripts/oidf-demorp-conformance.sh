@@ -124,8 +124,8 @@ echo "Starting wallet with the demo issuer and verifier on $DEMO_BASE_URL"
     --port "$PORT" \
     --base-url "$DEMO_BASE_URL" \
     --serve-tls \
-    --demo-verifier-trust-anchor "$SUITE_VP_SIGNING_CA" \
-    --demo-verifier-trust-anchor "$SUITE_MDOC_IACA_ROOT"
+    --demo-verifier-issuer-ca "$SUITE_VP_SIGNING_CA" \
+    --demo-verifier-issuer-ca "$SUITE_MDOC_IACA_ROOT"
 ) >"$WALLET_LOG" 2>&1 &
 WALLET_PID=$!
 

@@ -93,7 +93,7 @@ To serve the wallet under a path prefix on a shared host, include the prefix in 
 
 For a local https origin without an external TLS terminator, add `--serve-tls`. The wallet then also listens on the base URL's port with its own TLS certificate. The plain HTTP port stays open. `--serve-tls` requires an https `--base-url` with an explicit port. The [demo issuer and verifier conformance run](../conformance-run-demorp.md) uses this because the OIDF suite requires https endpoints.
 
-The demo verifier accepts presented credentials whose issuer chains lead to the wallet's own CA. `--demo-verifier-trust-anchor <pem>` (repeatable) adds trust anchors for presentations issued outside this wallet (the OIDF conformance suite signs the credentials it presents under its own CAs).
+The demo verifier accepts presented credentials whose issuer chains lead to the wallet's own CA. `--demo-verifier-issuer-ca <pem>` (repeatable) adds the CAs of issuers outside this wallet (the OIDF conformance suite signs the credentials it presents under its own CAs).
 
 `wallet ca-cert` exports the shared wallet CA for verifier trust stores or CI fixtures. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate.
 
@@ -242,7 +242,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
 | `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip`, `--arf` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
 | `--demo-issuer-client-auth` | `required` | Client authentication the built-in demo issuer's authorization server requires at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also accepts wallets that send no wallet attestation (see [public demo hosting](../public-demo.md)) |
-| `--demo-verifier-trust-anchor` | None | CA certificate PEM file the demo verifier trusts for issuer chains, in addition to the wallet's own CA (repeatable). For presentations issued outside this wallet, such as an OIDF conformance suite run |
+| `--demo-verifier-issuer-ca` | None | PEM file with CA certificates of credential issuers the demo verifier accepts in addition to the wallet's own CA (repeatable). Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run |
 | `--serve-tls`           | `false`  | Serve an https `--base-url` locally with the wallet's own TLS certificate instead of expecting an external TLS terminator. Requires an https base URL with an explicit port. The wallet also keeps listening on the HTTP port |
 | `--demo-reset`          | `1h`     | Schedule for restoring the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | None     | HTML snippet with the operator's legal notice, served at `/imprint` |
