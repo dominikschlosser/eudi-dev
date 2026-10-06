@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 )
 
 func TestGenerateJWT_DefaultClaims(t *testing.T) {

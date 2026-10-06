@@ -28,8 +28,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 type walletLogPrintOptions struct {

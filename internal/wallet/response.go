@@ -23,7 +23,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 )
 
 func directPostForm(payload map[string]any) (url.Values, error) {

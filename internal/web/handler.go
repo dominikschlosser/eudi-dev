@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/httpsec"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 const maxRequestBody = 1 << 20 // 1MB

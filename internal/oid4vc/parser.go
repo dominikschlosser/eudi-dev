@@ -20,8 +20,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jsonutil"
 )
 
 func Parse(raw string) (RequestType, any, error) {

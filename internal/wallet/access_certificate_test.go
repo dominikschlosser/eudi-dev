@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
 func testAccessCSR(t *testing.T, key *ecdsa.PrivateKey) string {

@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
 // deferringIssuer answers HTTP 202 with transaction_id and interval while the

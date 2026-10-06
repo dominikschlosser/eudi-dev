@@ -23,10 +23,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 )
 
 // Keep outcomes longer than the five minute authorization callback timeout so callers

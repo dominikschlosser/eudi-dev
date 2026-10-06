@@ -26,12 +26,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mdoc"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/remote"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/remote"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 )
 
 func docString(m map[string]any, key string) string {

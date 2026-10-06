@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 )
 
 // Include claims so clients can populate issuance forms without another request.

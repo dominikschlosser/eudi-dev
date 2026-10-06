@@ -80,12 +80,12 @@ Download the latest binary for your platform from [Releases](https://github.com/
 ### From source
 
 ```bash
-go install github.com/dominikschlosser/eudi-dev/v2@latest
+go install github.com/dominikschlosser/eudi-dev/v3@latest
 ```
 
 This installs the binary as `eudi-dev` (Go uses the module name). The documentation uses `eudi`. Link it for the shorter name: `ln -s "$(go env GOPATH)/bin/eudi-dev" "$(go env GOPATH)/bin/eudi"`.
 
-The v2 module path is `github.com/dominikschlosser/eudi-dev/v2`. The `/v2` suffix is required for v2 releases. Earlier v2 tags (up to v2.4.2) have an incorrect module path. Install them from release binaries or build them from source.
+The module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major version has its own suffix, so v2 releases install from `github.com/dominikschlosser/eudi-dev/v2`. Earlier v2 tags (up to v2.4.2) have an incorrect module path. Install them from release binaries or build them from source.
 
 ### Build locally
 

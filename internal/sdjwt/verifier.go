@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/jsonutil"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jsonutil"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 )
 
 // VerifyResult uses the camelCase keys of the validate --json document.

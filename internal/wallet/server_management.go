@@ -27,9 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/keys"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
 func (s *Server) handleGetCredential(w http.ResponseWriter, r *http.Request) {

@@ -21,8 +21,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/web"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/web"
 )
 
 func Classify(entry *TrafficEntry) {

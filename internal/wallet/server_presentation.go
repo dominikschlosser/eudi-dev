@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
 // Conformance settings belong to the running wallet and apply to every request. Only

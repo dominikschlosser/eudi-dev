@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
 // WalletRelyingParty is the relying party data model of TS05 v1.5 §2. A relying

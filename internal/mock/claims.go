@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 )
 
 // German and base PIDs use distinct SD-JWT types. In mdoc both share the doctype,

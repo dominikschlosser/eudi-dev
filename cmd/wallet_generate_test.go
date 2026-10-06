@@ -26,10 +26,10 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/sdjwt"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 func TestWalletGeneratePID_SetsIssuerURLForSDJWT(t *testing.T) {
