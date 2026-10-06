@@ -611,3 +611,50 @@ func TestRefreshCredentialNamesTheCredentialTheTokenResponseAllows(t *testing.T)
 		})
 	}
 }
+
+// A renewal requests a credential, so a strict wallet with --arf checks the
+// issuer first and doesn't request it from one without a registration.
+func TestStrictARFRefusesARenewalFromAnUnregisteredIssuer(t *testing.T) {
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = ValidationModeStrict
+	original := generateTestCredential(t, w)
+
+	var serverURL string
+	credentialRequests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer"):
+			_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+		case strings.HasSuffix(r.URL.Path, "/token"):
+			_ = json.NewEncoder(rw).Encode(map[string]any{"access_token": "fresh", "token_type": "Bearer"})
+		case strings.HasSuffix(r.URL.Path, "/credential"):
+			credentialRequests++
+			rw.WriteHeader(http.StatusInternalServerError)
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	imported, err := w.ImportCredential(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+		CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
+	})
+	_, err = w.RefreshCredential(imported.ID)
+	if err == nil || !strings.Contains(err.Error(), "ARF RPRC_22a") {
+		t.Fatalf("RefreshCredential: %v, want the ARF findings", err)
+	}
+	if credentialRequests != 0 {
+		t.Errorf("the wallet requested the credential %d times", credentialRequests)
+	}
+}

@@ -331,8 +331,20 @@ func TestTheRegistrarServesItsPlaceholderPages(t *testing.T) {
 	srv := newTestServer(t, true)
 	for path := range registrarPlaceholderPages {
 		resp := serverRequest(t, srv, http.MethodGet, path, "")
-		if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "test registrar") {
+		if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "eudi-dev test") {
 			t.Errorf("GET %s = %d %q", path, resp.Code, resp.Body.String())
 		}
 	}
+}
+
+// ownProviderIdentifier is the identifier of the wallet's own provider
+// registration: the organizationIdentifier of its access certificate.
+func ownProviderIdentifier(t *testing.T, w *Wallet) string {
+	t.Helper()
+	_, access, err := w.AccessSigningMaterial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier, _, _ := accessCertificateSubject(access[0])
+	return identifier
 }

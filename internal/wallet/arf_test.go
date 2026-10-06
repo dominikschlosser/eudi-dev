@@ -50,11 +50,19 @@ func arfRequest(t *testing.T, registrar *Wallet, checking *Wallet) *Authorizatio
 func registeredVerifier(t *testing.T, registrar *Wallet) (*ecdsa.PrivateKey, []*x509.Certificate, string) {
 	t.Helper()
 	rp := registerTestRelyingParty(t, registrar)
+	key, chain := issueTestAccessCertificate(t, registrar, rp.Identifier[0].Identifier)
+	return key, chain, issueTestRegistrationCertificate(t, registrar, rp).VerifierInfo
+}
+
+// issueTestAccessCertificate creates a key and has the registrar issue an
+// access certificate for it. It returns the key and the chain, leaf first.
+func issueTestAccessCertificate(t *testing.T, registrar *Wallet, identifier string) (*ecdsa.PrivateKey, []*x509.Certificate) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	access, err := registrar.IssueAccessCertificate(AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key)})
+	access, err := registrar.IssueAccessCertificate(AccessCertificateRequest{Identifier: identifier, CSR: testAccessCSR(t, key)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +79,7 @@ func registeredVerifier(t *testing.T, registrar *Wallet) (*ecdsa.PrivateKey, []*
 		}
 		chain = append(chain, cert)
 	}
-	return key, chain, issueTestRegistrationCertificate(t, registrar, rp).VerifierInfo
+	return key, chain
 }
 
 func signedARFRequest(t *testing.T, checking *Wallet, key *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo string) *AuthorizationRequestParams {

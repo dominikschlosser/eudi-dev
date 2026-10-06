@@ -215,6 +215,29 @@ func (c *Client) RegistrarRecords(out any) error {
 	return json.Unmarshal(envelope.Data, out)
 }
 
+// DeleteRelyingParty deletes a registration and revokes its certificates.
+func (c *Client) DeleteRelyingParty(identifier string) error {
+	return c.do(http.MethodDelete, "/api/registrar/wrp/"+url.PathEscape(identifier), nil, nil)
+}
+
+// CatalogAttestations reads the wallet's attestation catalogue with names and
+// credential types.
+func (c *Client) CatalogAttestations(out any) error {
+	return c.do(http.MethodGet, "/api/catalog/attestations", nil, out)
+}
+
+// AddCatalogAttestation adds an attestation to the catalogue and decodes the
+// stored entry into out.
+func (c *Client) AddCatalogAttestation(entry, out any) error {
+	return c.do(http.MethodPost, "/api/catalog/attestations", entry, out)
+}
+
+// DeleteCatalogAttestation deletes an added attestation (EC TS11 v1.0
+// DELETE /schemas/{schemaId}).
+func (c *Client) DeleteCatalogAttestation(id string) error {
+	return c.do(http.MethodDelete, "/api/catalog/schemas/"+url.PathEscape(id), nil, nil)
+}
+
 // AccessCertificate asks the wallet's access certificate authority to sign an
 // access certificate for a CSR and decodes the answer into out.
 func (c *Client) AccessCertificate(req, out any) error {

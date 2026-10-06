@@ -74,7 +74,10 @@ type Wallet struct {
 	RelyingParties []WalletRelyingParty `json:"relying_parties,omitempty"`
 	// RegistrationStatuses are the status list entries of the registration
 	// certificates issued by the registrar.
-	RegistrationStatuses    []RegistrationStatus `json:"registration_statuses,omitempty"`
+	RegistrationStatuses []RegistrationStatus `json:"registration_statuses,omitempty"`
+	// Catalog holds the attestations added to the registrar's catalogue. The
+	// entries of the credential templates are not stored here.
+	Catalog                 []CatalogAttestation `json:"catalog,omitempty"`
 	AutoAccept              bool
 	SessionTranscript       SessionTranscriptMode // "oid4vp" (default) or "iso"
 	PreferredFormat         string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"

@@ -1363,6 +1363,26 @@ header h1 {
   white-space: nowrap;
 }
 .consent-claim-warn { color: var(--yellow); margin-right: 6px; }
+
+.offer-warnings {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--yellow) 8%, transparent);
+  font-size: 11px;
+}
+
+.offer-warnings-title {
+  color: var(--yellow);
+  font-weight: 600;
+}
+
+.offer-warnings ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  overflow-wrap: anywhere;
+}
 /* Show warnings without hover so they remain accessible on touch screens. */
 .consent-claim-hint {
   flex-basis: 100%;
@@ -2123,6 +2143,30 @@ header h1 {
   font-family: var(--font-mono);
   color: var(--text-dim);
   word-break: break-all;
+}
+
+.registrar-catalog-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.registrar-catalog-links a,
+.registrar-use-credentials a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.registrar-catalog-links a:hover,
+.registrar-use-credentials a:hover {
+  text-decoration: underline;
+}
+
+.registrar-catalog-version {
+  white-space: nowrap;
 }
 
 .registrar-use-result textarea {

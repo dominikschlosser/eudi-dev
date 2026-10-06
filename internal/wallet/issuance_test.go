@@ -507,8 +507,8 @@ func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected issuer_info data object, got %T", entry["data"])
 	}
-	if record["registryURI"] != w.IssuerURL+"/api/registrar/wrp" {
-		t.Fatalf("expected registryURI %s, got %v", w.IssuerURL+"/api/registrar/wrp", record["registryURI"])
+	if want := w.IssuerURL + "/api/registrar/wrp/" + ownProviderIdentifier(t, w); record["registryURI"] != want {
+		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
 	provides, ok := record["providesAttestations"].([]any)
 	if !ok || len(provides) != 2 {

@@ -51,6 +51,9 @@ type IssuanceOfferDetails struct {
 	TxCodeDescription string              `json:"tx_code_description,omitempty"`
 	Credentials       []OfferedCredential `json:"credentials,omitempty"`
 	MetadataError     string              `json:"metadata_error,omitempty"`
+	// Warnings are the ARF findings about the issuer (with --arf). The ARF
+	// requires the wallet to warn the user before it requests the credential.
+	Warnings []string `json:"warnings,omitempty"`
 	// OfferURI and ResolveError are set when an offer passed by reference
 	// could not be fetched. The dialog then shows the host and the reason.
 	OfferURI     string `json:"offer_uri,omitempty"`
@@ -77,12 +80,13 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 		}
 	}
 
-	metadata, err := fetchIssuerMetadata(w.HTTPClient(), offer.CredentialIssuer)
+	metadata, signerChain, err := fetchIssuerMetadataDocument(w.HTTPClient(), offer.CredentialIssuer, w.ARFChecks())
 	if err != nil {
 		details.MetadataError = err.Error()
 	} else {
 		details.IssuerName, details.IssuerLogo = issuerDisplay(metadata)
 		details.IssuerLogo = w.embedDisplayImage(details.IssuerLogo, "issuer_logo")
+		details.Warnings = w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs)
 	}
 
 	for _, id := range offer.CredentialConfigurationIDs {

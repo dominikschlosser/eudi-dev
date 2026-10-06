@@ -155,7 +155,7 @@ func (w *Wallet) UpdateRelyingParty(rp WalletRelyingParty, base string) (WalletR
 	// revoked for good.
 	before := w.RelyingParties[i]
 	w.supersedeRegistrationsLocked(func(s RegistrationStatus) bool {
-		return s.Identifier == stored.Identifier && !sameRegistration(before, rp, s.IntendedUse)
+		return s.Identifier == stored.Identifier && !sameCertificateContent(before, rp, statusKey(s))
 	})
 	w.RelyingParties[i] = rp
 	return cloneRelyingParty(rp)
@@ -282,8 +282,8 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 		if len(service.SrvDescription) == 0 {
 			service.SrvDescription = []MultiLangString{{Lang: "en", Content: service.ServiceTradeName}}
 		}
-		if len(service.Entitlements) == 0 {
-			service.Entitlements = []string{serviceProviderEntitlement}
+		if err := normalizeEntitlements(service); err != nil {
+			return err
 		}
 		for j := range service.IntendedUses {
 			if err := normalizeIntendedUse(&service.IntendedUses[j], base, before); err != nil {
@@ -324,6 +324,9 @@ func checkRegistrationSize(rp WalletRelyingParty) error {
 		return err
 	}
 	for _, service := range rp.Services {
+		if err := tooMany("provided attestations per service", len(service.ProvidesAttestations), maxRegistrationItems); err != nil {
+			return err
+		}
 		if err := tooMany("intended uses per service", len(service.IntendedUses), maxRegistrationItems); err != nil {
 			return err
 		}
@@ -374,16 +377,73 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 	return nil
 }
 
-// sameRegistration reports whether intendedUse has the same certificate
+// normalizeEntitlements checks a service's entitlements against what it
+// registers. ETSI TS 119 475 V1.2.1 GEN-5.2.4-03 requires an entitlement from
+// Annex A.2. Table 8 lists provided attestations only for attestation
+// providers, and ARF RPRC_15 requires a provider to list them. A provider that
+// also requests attributes is a service provider too (ARF RPRC_05 note).
+func normalizeEntitlements(service *WalletRelyingPartyService) error {
+	service.Entitlements = dedupeStrings(service.Entitlements)
+	if len(service.Entitlements) == 0 && len(service.ProvidesAttestations) == 0 {
+		service.Entitlements = []string{serviceProviderEntitlement}
+	}
+	provider := isAttestationProvider(*service)
+	switch {
+	case !provider && len(service.ProvidesAttestations) > 0:
+		return fmt.Errorf("service %q lists attestations it issues, so it needs an attestation provider entitlement (PID_Provider, QEAA_Provider, PUB_EAA_Provider or Non_Q_EAA_Provider)", service.ServiceTradeName)
+	case provider && len(service.ProvidesAttestations) == 0:
+		return fmt.Errorf("service %q is an attestation provider, so it needs the attestation types it issues (ARF RPRC_15)", service.ServiceTradeName)
+	case !slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(registeredEntitlements, e) }):
+		return fmt.Errorf("service %q needs an entitlement from ETSI TS 119 475 Annex A.2, such as %s", service.ServiceTradeName, serviceProviderEntitlement)
+	}
+	for _, attestation := range service.ProvidesAttestations {
+		if attestation.Format != "dc+sd-jwt" && attestation.Format != "mso_mdoc" {
+			return fmt.Errorf("attestation format %q is not dc+sd-jwt or mso_mdoc", attestation.Format)
+		}
+		if len(credentialTypes(attestation.Meta)) == 0 {
+			return fmt.Errorf("a %s attestation needs its type in meta (vct_values or doctype_value)", attestation.Format)
+		}
+	}
+	if len(service.IntendedUses) > 0 && !slices.Contains(service.Entitlements, serviceProviderEntitlement) {
+		service.Entitlements = append(service.Entitlements, serviceProviderEntitlement)
+	}
+	return nil
+}
+
+// isAttestationProvider reports whether the service has an entitlement to
+// issue attestations (ETSI TS 119 475 V1.2.1 Table 8).
+func isAttestationProvider(service WalletRelyingPartyService) bool {
+	return slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(providerEntitlements, e) })
+}
+
+// sameCertificateContent reports whether the certificate for key has the same
 // content in before and after.
-func sameRegistration(before, after WalletRelyingParty, intendedUse string) bool {
-	afterService, afterUse, ok := findIntendedUse(after, "", intendedUse)
+func sameCertificateContent(before, after WalletRelyingParty, key certificateKey) bool {
+	if key.intendedUse == "" {
+		afterService, ok := serviceByIdentifier(after, key.service)
+		if !ok || !isAttestationProvider(afterService) {
+			return false
+		}
+		beforeService, _ := serviceByIdentifier(before, key.service)
+		return reflect.DeepEqual(providerContent(before, beforeService), providerContent(after, afterService))
+	}
+	afterService, afterUse, ok := findIntendedUse(after, "", key.intendedUse)
 	if !ok {
 		return false
 	}
-	beforeService, beforeUse, _ := findIntendedUse(before, "", intendedUse)
+	beforeService, beforeUse, _ := findIntendedUse(before, "", key.intendedUse)
 	return reflect.DeepEqual(registrationContent(before, beforeService, beforeUse), registrationContent(after, afterService, afterUse)) &&
 		reflect.DeepEqual(beforeUse.Credentials, afterUse.Credentials)
+}
+
+// serviceByIdentifier finds the service with exactly this identifier. The only
+// service of a relying party may have an empty one.
+func serviceByIdentifier(rp WalletRelyingParty, identifier string) (WalletRelyingPartyService, bool) {
+	i := slices.IndexFunc(rp.Services, func(s WalletRelyingPartyService) bool { return s.ServiceIdentifier == identifier })
+	if i < 0 {
+		return WalletRelyingPartyService{}, false
+	}
+	return rp.Services[i], true
 }
 
 // findIntendedUse returns the service and intended use. An empty service
@@ -430,6 +490,11 @@ func newRegistrarID() string {
 // attestations it provides.
 func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
 	dataset := buildRegistrarDataset(w, base)
+	if _, access, err := w.AccessSigningMaterial(); err == nil {
+		identifier, _, _ := accessCertificateSubject(access[0])
+		dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
+		dataset.RegistryURI = strings.TrimRight(base, "/") + "/api/registrar/wrp/" + identifier
+	}
 	return WalletRelyingParty{
 		Identifier:           dataset.Identifier,
 		LegalPerson:          LegalPerson{LegalName: []string{dataset.TradeName}},

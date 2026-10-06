@@ -35,9 +35,9 @@ func TestWalletRegistrarRegistersAndCertifies(t *testing.T) {
 	}
 	dir := walletDir
 	out := captureStdout(t, func() {
-		rootCmd.SetArgs([]string{"wallet", "registrar", "register", "--name", "Example Shop", "--purpose", "Age check", "--dcql", dcql})
+		rootCmd.SetArgs([]string{"wallet", "registrar", "verifiers", "add", "--name", "Example Shop", "--purpose", "Age check", "--dcql", dcql})
 		if err := rootCmd.Execute(); err != nil {
-			t.Fatalf("wallet registrar register: %v", err)
+			t.Fatalf("wallet registrar verifiers add: %v", err)
 		}
 	})
 	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)
@@ -65,5 +65,80 @@ func TestWalletRegistrarRegistersAndCertifies(t *testing.T) {
 	}
 	if out := registrationCert("--print", "certificate"); strings.Count(out, ".") != 2 || strings.ContainsAny(out, "\n[") {
 		t.Fatalf("output %q, want the bare certificate", out)
+	}
+}
+
+func TestRegistrarRegistersAnIssuer(t *testing.T) {
+	resetRemoteTestState(t)
+	t.Cleanup(func() { resetFlags(rootCmd); rootCmd.SetOut(nil) })
+	dir := walletDir
+	run := func(args ...string) string {
+		t.Helper()
+		resetFlags(rootCmd)
+		walletDir = dir
+		buf := new(bytes.Buffer)
+		rootCmd.SetOut(buf)
+		var err error
+		out := captureStdout(t, func() {
+			rootCmd.SetArgs(append([]string{"wallet", "registrar"}, args...))
+			err = rootCmd.Execute()
+		})
+		if err != nil {
+			t.Fatalf("wallet registrar %v: %v", args, err)
+		}
+		return strings.TrimSpace(out + buf.String())
+	}
+	out := run("issuers", "add", "--name", "Example University", "--service-id", "diplomas", "--attestation", "dc+sd-jwt:urn:example:diploma:1")
+	identifier := regexp.MustCompile(`as (NTR[A-Z]{2}-[0-9A-F]+)`).FindStringSubmatch(out)
+	if identifier == nil || !strings.Contains(out, "Attestation: dc+sd-jwt urn:example:diploma:1") {
+		t.Fatalf("output %q, want the identifier and the attestation", out)
+	}
+
+	// The issuer's only certificate target is its service, so no flag is needed.
+	var issuerInfo []map[string]any
+	if out := run("registration-cert", "--identifier", identifier[1]); json.Unmarshal([]byte(out), &issuerInfo) != nil ||
+		len(issuerInfo) != 2 || issuerInfo[0]["format"] != "registrar_dataset" || issuerInfo[1]["format"] != "registration_cert" {
+		t.Fatalf("output %q, want the issuer_info value", out)
+	}
+	if out := run("registration-cert", "--identifier", identifier[1], "--service-id", "diplomas", "--provider", "--print", "certificate"); strings.Count(out, ".") != 2 {
+		t.Fatalf("output %q, want the bare certificate", out)
+	}
+	if out := run("revoke", "--identifier", identifier[1], "--service-id", "diplomas"); !strings.Contains(out, "Revoked 1 registration certificate") {
+		t.Fatalf("output %q, want the newest certificate revoked", out)
+	}
+	if out := run("issuers"); !strings.Contains(out, identifier[1]) || !strings.Contains(out, "dc+sd-jwt:urn:example:diploma:1") {
+		t.Fatalf("issuers %q, want the registered issuer", out)
+	}
+	if out := run("verifiers"); strings.Contains(out, identifier[1]) {
+		t.Fatalf("verifiers %q lists the issuer", out)
+	}
+	resetFlags(rootCmd)
+	walletDir = dir
+	rootCmd.SetArgs([]string{"wallet", "registrar", "verifiers", "rm", identifier[1]})
+	if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), "is not a registered verifier") {
+		t.Fatalf("verifiers rm of an issuer: %v", err)
+	}
+	if out := run("issuers", "rm", identifier[1]); !strings.Contains(out, "Removed "+identifier[1]) {
+		t.Fatalf("rm %q", out)
+	}
+}
+
+func TestTheIssuerCommandChecksItsFlags(t *testing.T) {
+	resetRemoteTestState(t)
+	t.Cleanup(func() { resetFlags(rootCmd) })
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--name", "X"}, `required flag(s) "attestation" not set`},
+		{[]string{"--name", "X", "--attestation", "diploma"}, "is not format:type"},
+		{[]string{"--name", "X", "--attestation", "ldp_vc:urn:example:x"}, "not dc+sd-jwt or mso_mdoc"},
+		{[]string{"--name", "X", "--attestation", "dc+sd-jwt:urn:example:x", "--entitlement", "provider"}, "--entitlement takes pid, qeaa, pub-eaa or eaa"},
+	} {
+		resetFlags(rootCmd)
+		rootCmd.SetArgs(append([]string{"wallet", "registrar", "issuers", "add"}, tc.args...))
+		if err := rootCmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: got %v, want %q", tc.args, err, tc.want)
+		}
 	}
 }

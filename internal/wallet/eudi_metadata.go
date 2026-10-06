@@ -32,7 +32,9 @@ import (
 
 const (
 	serviceProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+	qeaaProviderEntitlement    = "https://uri.etsi.org/19475/Entitlement/QEAA_Provider"
 	nonQEAAProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider"
+	pubEAAProviderEntitlement  = "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider"
 	pidProviderEntitlement     = "https://uri.etsi.org/19475/Entitlement/PID_Provider"
 	localTrustListType         = "http://uri.etsi.org/19602/LoTEType/local"
 	localIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/Issuance"
@@ -52,6 +54,25 @@ const (
 	walletProviderIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance"
 	walletProviderRevocationServiceType = "http://uri.etsi.org/19602/SvcType/WalletSolution/Revocation"
 )
+
+// registeredEntitlements are the entitlements of ETSI TS 119 475 V1.2.1 Annex
+// A.2.
+var registeredEntitlements = []string{
+	serviceProviderEntitlement,
+	qeaaProviderEntitlement,
+	nonQEAAProviderEntitlement,
+	pubEAAProviderEntitlement,
+	pidProviderEntitlement,
+	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESeal_Provider",
+	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESig_Provider",
+	"https://uri.etsi.org/19475/Entitlement/rQSealCDs_Provider",
+	"https://uri.etsi.org/19475/Entitlement/rQSigCDs_Provider",
+	"https://uri.etsi.org/19475/Entitlement/ESig_ESeal_Creation_Provider",
+}
+
+// providerEntitlements entitle a service to issue attestations, and its
+// registration certificate lists them (ETSI TS 119 475 V1.2.1 GEN-5.2.4-05).
+var providerEntitlements = []string{pidProviderEntitlement, qeaaProviderEntitlement, pubEAAProviderEntitlement, nonQEAAProviderEntitlement}
 
 type IssuedAttestationSpec struct {
 	Format                      string   `json:"format"`
@@ -321,16 +342,13 @@ func applyLocalTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestatio
 }
 
 func isPIDAttestation(spec IssuedAttestationSpec) bool {
-	vct := strings.TrimSpace(spec.VCT)
-	docType := strings.TrimSpace(spec.DocType)
-	switch {
-	case strings.HasPrefix(vct, "urn:eudi:pid:"):
-		return true
-	case strings.HasPrefix(docType, "eu.europa.ec.eudi.pid."):
-		return true
-	default:
-		return false
-	}
+	return isPIDType(spec.VCT) || isPIDType(spec.DocType)
+}
+
+// isPIDType reports whether a vct or doctype names a PID.
+func isPIDType(t string) bool {
+	t = strings.TrimSpace(t)
+	return strings.HasPrefix(t, "urn:eudi:pid:") || strings.HasPrefix(t, "eu.europa.ec.eudi.pid.")
 }
 
 func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
@@ -542,13 +560,12 @@ func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]Issu
 	if err != nil {
 		return nil, err
 	}
-	identifier := access[0].Subject.CommonName
-	for _, attribute := range access[0].Subject.Names {
-		if attribute.Type.String() == "2.5.4.97" {
-			identifier, _ = attribute.Value.(string)
-			break
-		}
-	}
+	identifier, _, _ := accessCertificateSubject(access[0])
+	// ETSI TS 119 472-3 V1.1.1 ISS-MDATA-REG_CERT-4.2.3-10 and -12: the dataset
+	// names the provider by the organizationIdentifier of its certificates and
+	// links to its record at the registrar.
+	dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
+	dataset.RegistryURI = w.RegistrarBase() + "/api/registrar/wrp/" + identifier
 	now := time.Now()
 	claims := map[string]any{
 		"sub": identifier, "sub_ln": access[0].Subject.Organization[0],

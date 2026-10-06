@@ -23,7 +23,7 @@
           <button type="button" class="header-submenu-toggle" id="registrar-menu-toggle" aria-expanded="false" aria-controls="registrar-submenu">Registrar</button>
           <span class="header-submenu" id="registrar-submenu" hidden>
             <a href="#" id="registrar-parties-link">Relying parties</a>
-            <a href="#" id="registrar-register-verifier-link">Register a verifier</a>
+            <a href="#" id="registrar-catalog-link">Attestation catalogue</a>
           </span>
         </span>
         <a href="https://github.com/dominikschlosser/eudi-dev" target="_blank" rel="noopener">GitHub</a>
@@ -298,6 +298,7 @@
       <div class="consent-buttons">
         <button type="button" class="btn" id="registrar-parties-close">Close</button>
         <button type="button" class="btn btn-primary" id="registrar-parties-register">Register a verifier</button>
+        <button type="button" class="btn btn-primary" id="registrar-parties-register-issuer">Register an issuer</button>
       </div>
     </div>
   </div>
@@ -328,6 +329,22 @@
           <input type="text" id="registrar-service-id" class="form-input" value="checkout">
           </div>
 
+          <div class="registrar-section" id="registrar-issuer-section" hidden>
+          <div class="form-section-label" id="registrar-issuer-section-label">Attestation provider</div>
+          <label class="form-label" for="registrar-entitlement">Entitlement</label>
+          <select id="registrar-entitlement" class="form-input">
+            <option value="https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider">Non-qualified EAA provider</option>
+            <option value="https://uri.etsi.org/19475/Entitlement/QEAA_Provider">QEAA provider</option>
+            <option value="https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider">PuB-EAA provider</option>
+            <option value="https://uri.etsi.org/19475/Entitlement/PID_Provider">PID provider</option>
+          </select>
+
+          <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestations it issues</span>
+          <div class="registrar-credentials" id="registrar-attestations" role="group" aria-labelledby="registrar-attestations-label"></div>
+          <button type="button" class="btn btn-sm registrar-add" id="registrar-add-attestation">+ Add attestation</button>
+          </div>
+
+          <div class="registrar-section" id="registrar-use-section">
           <div class="form-section-label" id="registrar-use-section-label">Intended use</div>
           <label class="form-label" for="registrar-purpose">Purpose</label>
           <input type="text" id="registrar-purpose" class="form-input" value="Age check before checkout">
@@ -338,6 +355,7 @@
           <span class="form-label registrar-credentials-label" id="registrar-credentials-label">Credentials and claims to register</span>
           <div class="registrar-credentials" id="registrar-credentials" role="group" aria-labelledby="registrar-credentials-label"></div>
           <button type="button" class="btn btn-sm registrar-add" id="registrar-add-credential">+ Add credential</button>
+          </div>
 
           <label class="form-label" for="registrar-registration-validity">Certificate validity</label>
           <input type="text" id="registrar-registration-validity" class="form-input" value="4320h" placeholder="Go duration, e.g. 4320h" aria-label="Registration certificate validity">
@@ -356,8 +374,10 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             </div>
           </details>
 
+          <div class="registrar-section" id="registrar-dns-section">
           <label class="form-label" for="registrar-dns">DNS names</label>
           <input type="text" id="registrar-dns" class="form-input" value="verifier.example" placeholder="comma separated">
+          </div>
 
           <label class="form-label" for="registrar-access-validity">Certificate validity</label>
           <input type="text" id="registrar-access-validity" class="form-input" value="8760h" placeholder="Go duration, e.g. 8760h" aria-label="Access certificate validity">
@@ -371,10 +391,12 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           </div>
           <code class="registrar-result-value" id="registrar-result-identifier"></code>
           <div id="registrar-access-result">
+          <div id="registrar-client-ids-block">
           <div class="registrar-result-head" id="registrar-client-ids-head">
             <span class="consent-purpose-label" id="registrar-client-ids-label">Client identifiers</span>
           </div>
           <ul class="registrar-client-ids" id="registrar-client-ids"></ul>
+          </div>
           <div class="registrar-result-head" id="registrar-pem-head">
             <label class="consent-purpose-label" for="registrar-pem" id="registrar-pem-label"></label>
             <span id="registrar-pem-actions">
@@ -384,11 +406,21 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           </div>
           <textarea id="registrar-pem" class="form-input form-textarea" readonly></textarea>
           </div>
+          <div id="registrar-verifier-info-block">
           <div class="registrar-result-head" id="registrar-verifier-info-head">
             <label class="consent-purpose-label" for="registrar-verifier-info">verifier_info</label>
             <button type="button" class="btn btn-sm" id="registrar-copy-verifier-info">Copy</button>
           </div>
           <textarea id="registrar-verifier-info" class="form-input form-textarea" readonly></textarea>
+          </div>
+          <div id="registrar-issuer-info-block" hidden>
+          <div class="registrar-result-head" id="registrar-issuer-info-head">
+            <label class="consent-purpose-label" for="registrar-issuer-info">issuer_info</label>
+            <button type="button" class="btn btn-sm" id="registrar-copy-issuer-info">Copy</button>
+          </div>
+          <textarea id="registrar-issuer-info" class="form-input form-textarea" readonly></textarea>
+          <p class="dialog-hint" id="registrar-issuer-info-hint">Put this array in your Credential Issuer Metadata as <code>issuer_info</code>, and sign the metadata with the key of the access certificate.</p>
+          </div>
         </div>
 
         <div class="consent-buttons">
@@ -398,6 +430,69 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
       </form>
     </div>
   </div>
+
+  <div class="consent-overlay" id="registrar-catalog-overlay">
+    <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-catalog-title" id="registrar-catalog-dialog">
+      <div class="consent-title" id="registrar-catalog-title" tabindex="-1">Attestation catalogue</div>
+      <p class="dialog-hint" id="registrar-catalog-hint">Each entry describes an attestation type: its formats and schemas, its rulebook and the trusted list of its issuers. When you register a verifier or an issuer, the type fields suggest these entries.</p>
+      <input type="search" id="registrar-catalog-search" class="form-input registrar-search" placeholder="Search attestations" aria-label="Search attestations" autocomplete="off">
+      <div class="registrar-party-list" id="registrar-catalog-list"></div>
+      <div class="empty-state" id="registrar-catalog-empty" hidden></div>
+
+      <div class="form-error" id="registrar-catalog-error" role="alert"></div>
+      <div class="consent-buttons" id="registrar-catalog-buttons">
+        <button type="button" class="btn" id="registrar-catalog-close">Close</button>
+        <button type="button" class="btn btn-primary" id="registrar-catalog-add">Add attestation</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="consent-overlay" id="registrar-catalog-add-overlay">
+    <div class="consent-dialog registrar-dialog" role="dialog" aria-modal="true" aria-labelledby="registrar-catalog-add-title" id="registrar-catalog-add-dialog">
+      <div class="consent-title" id="registrar-catalog-add-title" tabindex="-1">Add an attestation</div>
+      <p class="dialog-hint" id="registrar-catalog-add-hint">The catalogue assigns the id and serves a schema for each format.</p>
+      <form id="registrar-catalog-form">
+        <div class="form-grid">
+          <label class="form-label" for="registrar-catalog-name">Name</label>
+          <input type="text" id="registrar-catalog-name" class="form-input" value="University diploma">
+
+          <span class="form-label registrar-credentials-label" id="registrar-catalog-formats-label">Format, type and claims</span>
+          <div class="registrar-credentials" id="registrar-catalog-formats" role="group" aria-labelledby="registrar-catalog-formats-label"></div>
+          <button type="button" class="btn btn-sm registrar-add" id="registrar-catalog-add-format">+ Add format</button>
+
+          <label class="form-label" for="registrar-catalog-rulebook">Rulebook</label>
+          <input type="text" id="registrar-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
+
+          <label class="form-label" for="registrar-catalog-los">Level of security</label>
+          <select id="registrar-catalog-los" class="form-input">
+            <option value="iso_18045_basic">Basic</option>
+            <option value="iso_18045_enhanced-basic">Enhanced basic</option>
+            <option value="iso_18045_moderate">Moderate</option>
+            <option value="iso_18045_high">High</option>
+          </select>
+
+          <label class="form-label" for="registrar-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+          <select id="registrar-catalog-binding" class="form-input">
+            <option value="key">Wallet key</option>
+            <option value="claim">Another credential</option>
+            <option value="biometric">Biometrics</option>
+            <option value="none">None</option>
+          </select>
+
+          <label class="form-label" for="registrar-catalog-trust">Trusted list</label>
+          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' trusted list (optional)">
+        </div>
+        <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
+        <div class="consent-buttons">
+          <button type="button" class="btn" id="registrar-catalog-cancel">Close</button>
+          <button type="submit" class="btn btn-primary" id="registrar-catalog-save">Add to catalogue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <datalist id="registrar-types-sdjwt"></datalist>
+  <datalist id="registrar-types-mdoc"></datalist>
 
   <div class="consent-overlay" id="cli-overlay">
     <div class="consent-dialog">

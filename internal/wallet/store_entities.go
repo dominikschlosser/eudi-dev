@@ -45,6 +45,7 @@ const (
 	attestationsSection       = "attestations"
 	registrarSection          = "relying-parties"
 	registrationStatusSection = "registration-status"
+	catalogSection            = "attestation-catalog"
 	settingsSection           = "settings"
 	revisionSection           = "revision"
 	statusCounterEntity       = "status-counter"
@@ -53,8 +54,8 @@ const (
 // Running servers reload only serverSections. They manage deferred issuances in memory
 // and use their own configured URLs.
 var (
-	allSections    = []string{credentialsSection, logSection, statusSection, deferredSection, attestationsSection, registrarSection, registrationStatusSection, settingsSection}
-	serverSections = []string{credentialsSection, logSection, statusSection, attestationsSection, registrarSection, registrationStatusSection}
+	allSections    = []string{credentialsSection, logSection, statusSection, deferredSection, attestationsSection, registrarSection, registrationStatusSection, catalogSection, settingsSection}
+	serverSections = []string{credentialsSection, logSection, statusSection, attestationsSection, registrarSection, registrationStatusSection, catalogSection}
 )
 
 const logTrimEvery = 64
@@ -183,6 +184,8 @@ func (s *WalletStore) loadSections(w *Wallet, sections []string) error {
 			w.RelyingParties = loaded.relyingParties
 		case registrationStatusSection:
 			w.RegistrationStatuses = loaded.registrationStatuses
+		case catalogSection:
+			w.Catalog = loaded.catalog
 		case settingsSection:
 			w.BaseURL = loaded.settings.BaseURL
 			w.IssuerURL = loaded.settings.IssuerURL
@@ -274,6 +277,7 @@ type loadedSections struct {
 	attestations         []IssuedAttestationSpec
 	relyingParties       []WalletRelyingParty
 	registrationStatuses []RegistrationStatus
+	catalog              []CatalogAttestation
 	settings             walletSettings
 }
 
@@ -349,6 +353,11 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 			var status RegistrationStatus
 			if err = json.Unmarshal(data, &status); err == nil {
 				loaded.registrationStatuses = append(loaded.registrationStatuses, status)
+			}
+		case catalogSection:
+			var entry CatalogAttestation
+			if err = json.Unmarshal(data, &entry); err == nil {
+				loaded.catalog = append(loaded.catalog, entry)
 			}
 		case settingsSection:
 			err = json.Unmarshal(data, &loaded.settings)
@@ -588,6 +597,11 @@ func (s *WalletStore) currentEntities(w *Wallet, snapshot stateSnapshot) (map[st
 	}
 	for _, status := range w.RegistrationStatuses {
 		if err := put(s.stateKey(registrationStatusSection, strconv.Itoa(status.Index)), status); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	for _, entry := range w.Catalog {
+		if err := put(s.stateKey(catalogSection, entityName(entry.Schema.ID)), entry); err != nil {
 			return nil, nil, nil, err
 		}
 	}

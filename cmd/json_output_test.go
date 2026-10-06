@@ -143,15 +143,15 @@ func TestJSONOutputIsOneDocument(t *testing.T) {
 	if err := os.WriteFile(csrFile, []byte(testCSR(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	registered := runJSON(t, "wallet", "registrar", "register", "--name", "Shop")
+	registered := runJSON(t, "wallet", "registrar", "issuers", "add", "--name", "Shop", "--attestation", "dc+sd-jwt:urn:example:diploma:1")
 	identifier := registered["identifier"].([]any)[0].(map[string]any)["identifier"].(string)
 	if doc := runJSON(t, "wallet", "registrar", "access-cert", "--csr", csrFile, "--identifier", identifier); !strings.HasPrefix(doc["certificate"].(string), "-----BEGIN CERTIFICATE-----") {
 		t.Errorf("wallet registrar access-cert: %v", doc)
 	}
 	var records []any
-	runJSONInto(t, &records, "wallet", "registrar", "list")
+	runJSONInto(t, &records, "wallet", "registrar", "issuers")
 	if len(records) != 2 {
-		t.Errorf("wallet registrar list printed %d records, want the wallet's and the registration", len(records))
+		t.Errorf("wallet registrar issuers printed %d records, want the wallet's and the registration", len(records))
 	}
 
 	var templates []any

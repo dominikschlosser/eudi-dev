@@ -174,7 +174,7 @@ These endpoints are available on both wallet ports.
 | `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of saved profile trust lists |
 | `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved profile trust list |
 
-Issuer metadata is JSON by default. `Accept: application/jwt` selects metadata signed with the Access Certificate key. Its `issuer_info` includes a Registrar-signed registration certificate and the existing registrar dataset. The registration certificate's status list entry is never revoked.
+Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and a registration certificate signed by the registrar. The registration certificate's status list entry is never revoked.
 
 Trust lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
 
@@ -189,14 +189,18 @@ These endpoints are available on both wallet ports. Like credentials, anyone wit
 | `GET` | `/api/registrar/wrp/{identifier}/services/{serviceidentifier}` | One service of a registration |
 | `GET` | `/api/registrar/wrp/check-intended-use` | Check a registered intended use |
 | `POST` | `/api/registrar/wrp` | Register a relying party |
-| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use changes or is missing, its certificates are revoked |
+| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use or a service changes or is missing, its certificates are revoked |
 | `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
 | `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
-| `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use. Answers `409` if the registration changed in the meantime |
+| `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use (answers `verifierInfo`) or an issuer service (answers `issuerInfo`). Answers `409` if the registration changed in the meantime |
 | `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates |
 | `POST` | `/api/registrar/registration-certificates/status` | Revoke or activate registration certificates |
 | `GET` | `/api/registrar/status-list` | Status list of the registration certificates |
-| `GET` | `/privacy-policy`, `/support`, `/supervisory-authority` | Placeholder pages for the default privacy policy, support and supervisory authority URLs |
+| `GET` | `/api/catalog/schemas` | Catalogue of attestations (EC TS11 v1.0), signed and paged |
+| `GET`, `PUT`, `DELETE` | `/api/catalog/schemas/{id}` | One attestation schema |
+| `GET` | `/api/catalog/schemas/{id}/{format}` | The schema behind a schema URI |
+| `GET`, `POST` | `/api/catalog/attestations` | The catalogue with names and types, and adding to it |
+| `GET` | `/privacy-policy`, `/support`, `/supervisory-authority`, `/rulebook` | Placeholder pages for the default privacy policy, support, supervisory authority and rulebook URLs |
 
 ### One-shot error override
 

@@ -70,6 +70,20 @@ eudi wallet deferred abandon <id>    # stop collecting it
 
 Deferred issuances are saved in the selected storage backend. With file or Postgres storage, collection resumes after a restart. A record is removed when collection succeeds, the issuer returns a final error, the user abandons it, or 24 hours pass. A local `wallet accept` command reports the deferral. Run `wallet serve` to collect the credential.
 
+## ARF checks
+
+With `--arf` the wallet also checks the issuer before it requests a credential, for an offer and for a renewal, as ARF v3.0.0 §6.6.2.2 and §6.6.2.3 describe. It asks for signed metadata first (`Accept: application/jwt, application/json;q=0.5`) and checks that:
+
+- the Credential Issuer Metadata is signed with an access certificate (OpenID4VCI 1.0 §12.2.3, ISSU_22 and ISSU_32), and that certificate chains to a trusted access certificate authority (ISSU_24 for a PID Provider, ISSU_34 for an Attestation Provider)
+- the metadata carries a registration certificate in `issuer_info` (ETSI TS 119 472-3 V1.1.1 §4.2.3), signed by a trusted registrar (ISSU_23c, ISSU_33a), not expired and not revoked (RPRC_22a)
+- the registration certificate names the provider of the access certificate (RPRC_22b)
+- it registers the issuer as a PID Provider for a PID (ISSU_24a), or as a QEAA, PuB-EAA or EAA Provider for other attestations (ISSU_34a)
+- it lists every offered credential type in `provides_attestations` (RPRC_23, ISSU_24b, ISSU_34b)
+
+The consent dialog for the offer lists the findings. In `--mode debug` they are also logged as warnings and issuance goes on. In `--mode strict` the wallet doesn't request the credential. The trust anchors are the same as for verifiers (see [ARF checks](presenting.md#arf-checks)).
+
+The ARF applies the registration certificate checks 24 months after the amended CIR 2024/2982 enters into force. Until then many issuers publish no `issuer_info`, so test them in debug mode. The [registrar](registrar.md#issuers) registers issuers and issues their certificates.
+
 ## Wallet attestation
 
 The wallet supports [OAuth 2.0 Attestation-Based Client Authentication](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/). It sends `OAuth-Client-Attestation` and `OAuth-Client-Attestation-PoP` headers to the PAR, token and Authorization Challenge endpoints.

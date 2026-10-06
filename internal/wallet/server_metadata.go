@@ -157,15 +157,14 @@ func (s *Server) handleJWTVCIssuerMetadata(w http.ResponseWriter, r *http.Reques
 }
 
 // OpenID4VCI 1.0 §12.2.2 requires unsigned JSON metadata and permits signed JWT
-// metadata. Serve the signed form only when Accept requests application/jwt
-// exclusively.
+// metadata. Serve the signed form when Accept prefers application/jwt.
 func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
 	if issuer == "" {
 		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
 		return
 	}
-	if !AcceptsOnlySignedIssuerMetadata(r.Header.Get("Accept")) {
+	if !PrefersSignedIssuerMetadata(r.Header.Get("Accept")) {
 		metadata, err := buildOpenIDCredentialIssuerMetadata(s.wallet, issuer)
 		if err != nil {
 			http.Error(w, "building issuer metadata: "+err.Error(), http.StatusInternalServerError)
@@ -189,21 +188,32 @@ func (s *Server) handleOpenIDCredentialIssuerMetadata(w http.ResponseWriter, r *
 	w.Write([]byte(jwt))
 }
 
-// AcceptsOnlySignedIssuerMetadata preserves unsigned discovery when JSON is accepted
-// as OpenID4VCI 1.0 §12.2.2 requires.
-func AcceptsOnlySignedIssuerMetadata(accept string) bool {
-	wantsJWT := false
+// PrefersSignedIssuerMetadata reports whether Accept ranks application/jwt
+// above application/json. OpenID4VCI 1.0 §12.2.2 recommends answering with the
+// requested content type. With equal preference the issuer answers with the
+// unsigned form, which it must always support.
+func PrefersSignedIssuerMetadata(accept string) bool {
+	jwt, json := 0.0, 0.0
 	for _, entry := range strings.Split(accept, ",") {
-		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(entry, ";")[0]))
+		params := strings.Split(entry, ";")
+		mediaType := strings.ToLower(strings.TrimSpace(params[0]))
+		q := 1.0
+		for _, param := range params[1:] {
+			name, value, _ := strings.Cut(strings.TrimSpace(param), "=")
+			if strings.EqualFold(name, "q") {
+				if parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+					q = parsed
+				}
+			}
+		}
 		switch mediaType {
-		case "":
 		case "application/jwt":
-			wantsJWT = true
-		default:
-			return false
+			jwt = max(jwt, q)
+		case "application/json", "application/*", "*/*":
+			json = max(json, q)
 		}
 	}
-	return wantsJWT
+	return jwt > 0 && jwt > json
 }
 
 // handleIssueRegistrationCertificate signs a registration certificate for a

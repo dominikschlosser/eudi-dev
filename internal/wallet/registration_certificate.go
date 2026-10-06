@@ -19,17 +19,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
 
-// RegistrationCertificateRequest selects the intended use to certify. ETSI TS
-// 119 475 §5.2 has one certificate per intended use, and TS05 v1.5 §2 stores
-// intended uses with the relying party.
+// RegistrationCertificateRequest selects what to certify. A verifier gets one
+// certificate per intended use (ARF RPRC_09). An attestation provider gets one
+// per service (ARF RPRC_13), so the request names the service and no intended
+// use.
 type RegistrationCertificateRequest struct {
 	Identifier            string `json:"identifier"`
 	ServiceIdentifier     string `json:"serviceIdentifier,omitempty"`
-	IntendedUseIdentifier string `json:"intendedUseIdentifier"`
+	IntendedUseIdentifier string `json:"intendedUseIdentifier,omitempty"`
 	// Validity is a Go duration of at most 12 months (TS 119 475 GEN-5.2.4-08).
 	Validity string `json:"validity,omitempty"`
 }
@@ -53,7 +55,10 @@ type RegistrationCertificateContent struct {
 	SupportURI                string
 	SupervisoryAuthorityEmail string
 	SupervisoryAuthorityURI   string
-	Validity                  string
+	// ProvidesAttestations are the attestation types a provider issues (ETSI TS
+	// 119 475 V1.2.1 Table 8).
+	ProvidesAttestations []ProvidedAttestation
+	Validity             string
 	// StatusIndex is the certificate's entry in the registrar's status list.
 	// Zero is the entry of the wallet's own certificates.
 	StatusIndex int
@@ -61,13 +66,15 @@ type RegistrationCertificateContent struct {
 	StatusListURI string
 }
 
-// RegistrationCertificateResult carries the signed certificate and the
-// verifier_info value that presents it (OpenID4VP 1.0 §5.1).
+// RegistrationCertificateResult holds the signed certificate, wrapped in
+// verifier_info for a verifier (OpenID4VP 1.0 §5.1) or in issuer_info for an
+// attestation provider (ETSI TS 119 472-3 V1.1.1 §4.2.3).
 type RegistrationCertificateResult struct {
 	RegistrationCertificate string `json:"registrationCertificate"`
-	// VerifierInfo is the JSON array as a string, ready for a request parameter or
-	// a configuration field.
-	VerifierInfo string `json:"verifierInfo"`
+	// VerifierInfo and IssuerInfo are JSON arrays as strings, ready for a request
+	// parameter or the issuer metadata.
+	VerifierInfo string `json:"verifierInfo,omitempty"`
+	IssuerInfo   string `json:"issuerInfo,omitempty"`
 }
 
 // The certificate policy of ETSI TS 119 475 V1.2.1 OVR-6.1.3-01 and the
@@ -86,39 +93,133 @@ const (
 )
 
 // IssueRegistrationCertificate signs a registration certificate for a
-// registered intended use with the wallet's registrar key.
+// registered intended use, or for a provider service without one, with the
+// wallet's registrar key.
 func (w *Wallet) IssueRegistrationCertificate(req RegistrationCertificateRequest) (*RegistrationCertificateResult, error) {
 	rp, ok := w.RelyingParty(req.Identifier)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
+	}
+	if req.IntendedUseIdentifier == "" {
+		return w.issueProviderCertificate(rp, req)
 	}
 	service, use, ok := findIntendedUse(rp, req.ServiceIdentifier, req.IntendedUseIdentifier)
 	if !ok {
 		return nil, fmt.Errorf("%w: no intended use %q", errRelyingPartyNotFound, req.IntendedUseIdentifier)
 	}
 	content := registrationContent(rp, service, use)
-	content.Validity = req.Validity
 	credentials := make([]map[string]any, 0, len(use.Credentials))
 	for _, c := range use.Credentials {
 		credentials = append(credentials, map[string]any{"format": c.Format, "meta": c.Meta, "claims": c.Claims})
 	}
-	validity, err := registrationValidity(req.Validity)
+	signed, err := w.issueCertificate(rp, certificateKey{intendedUse: use.IntendedUseIdentifier}, content, credentials, req.Validity)
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now()
-	content.StatusListURI = w.RegistrationStatusListURL()
-	content.StatusIndex, err = w.allocateRegistrationStatus(rp, use.IntendedUseIdentifier, now.Add(validity))
+	return &RegistrationCertificateResult{RegistrationCertificate: signed, VerifierInfo: VerifierInfoValue(signed)}, nil
+}
+
+// issueProviderCertificate certifies a provider service and the attestation
+// types it issues (ARF RPRC_13 and RPRC_15).
+func (w *Wallet) issueProviderCertificate(rp WalletRelyingParty, req RegistrationCertificateRequest) (*RegistrationCertificateResult, error) {
+	service, err := providerService(rp, req.ServiceIdentifier)
 	if err != nil {
 		return nil, err
+	}
+	signed, err := w.issueCertificate(rp, certificateKey{service: service.ServiceIdentifier}, providerContent(rp, service), nil, req.Validity)
+	if err != nil {
+		return nil, err
+	}
+	info, err := IssuerInfoValue(registrarDataset(rp, service), signed)
+	if err != nil {
+		return nil, err
+	}
+	return &RegistrationCertificateResult{RegistrationCertificate: signed, IssuerInfo: info}, nil
+}
+
+// providerService returns the provider service a certificate is for. Without a
+// service identifier the relying party must have exactly one.
+func providerService(rp WalletRelyingParty, serviceIdentifier string) (WalletRelyingPartyService, error) {
+	if serviceIdentifier != "" {
+		service, ok := serviceByIdentifier(rp, serviceIdentifier)
+		if !ok {
+			return service, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
+		}
+		if !isAttestationProvider(service) {
+			return service, fmt.Errorf("service %q is not an attestation provider, so its certificates are for intended uses", serviceIdentifier)
+		}
+		return service, nil
+	}
+	providers := slices.DeleteFunc(slices.Clone(rp.Services), func(s WalletRelyingPartyService) bool { return !isAttestationProvider(s) })
+	if len(providers) != 1 {
+		return WalletRelyingPartyService{}, fmt.Errorf("%s has %d attestation provider services and no intended use was given, so name the service or the intended use", rp.Identifier[0].Identifier, len(providers))
+	}
+	return providers[0], nil
+}
+
+// issueCertificate reserves a status entry, signs the certificate and revokes
+// the one it replaces.
+func (w *Wallet) issueCertificate(rp WalletRelyingParty, key certificateKey, content RegistrationCertificateContent, credentials []map[string]any, validityValue string) (string, error) {
+	content.Validity = validityValue
+	validity, err := registrationValidity(validityValue)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now()
+	content.StatusListURI = w.RegistrationStatusListURL()
+	content.StatusIndex, err = w.allocateRegistrationStatus(rp, key, now.Add(validity))
+	if err != nil {
+		return "", err
 	}
 	signed, err := w.signRegistrationCertificate(content, credentials, now)
 	if err != nil {
 		w.releaseRegistrationStatus(content.StatusIndex)
-		return nil, err
+		return "", err
 	}
-	w.replaceRegistrationStatus(content.Identifier, use.IntendedUseIdentifier, content.StatusIndex)
-	return &RegistrationCertificateResult{RegistrationCertificate: signed, VerifierInfo: VerifierInfoValue(signed)}, nil
+	w.replaceRegistrationStatus(content.Identifier, key, content.StatusIndex)
+	return signed, nil
+}
+
+// providerContent returns what a provider certificate for the service contains.
+// A provider certificate has no intended use (ARF RPRC_05). TS05 registers the
+// purpose, the privacy policy and the credentials with an intended use, so the
+// register holds none of them for the certificate (ETSI TS 119 475 V1.2.1
+// GEN-5.2.4-01 fills the certificate from the register).
+func providerContent(rp WalletRelyingParty, service WalletRelyingPartyService) RegistrationCertificateContent {
+	content := registrationContent(rp, service, IntendedUse{})
+	content.Entitlements = service.Entitlements
+	content.ProvidesAttestations = service.ProvidesAttestations
+	return content
+}
+
+// registrarDataset is the registrar_dataset entry of issuer_info (ETSI TS 119
+// 472-3 V1.1.1 §4.2.3). It sits next to the registration certificate.
+func registrarDataset(rp WalletRelyingParty, service WalletRelyingPartyService) RegistrarDataset {
+	return RegistrarDataset{
+		Identifier:           rp.Identifier,
+		TradeName:            service.ServiceTradeName,
+		SupportURI:           service.SupportURI,
+		SrvDescription:       service.SrvDescription,
+		IsPSB:                rp.IsPSB,
+		Entitlements:         service.Entitlements,
+		ProvidesAttestations: service.ProvidesAttestations,
+		SupervisoryAuthority: rp.SupervisoryAuthority,
+		RegistryURI:          rp.RegistryURI,
+		IsIntermediary:       service.IsIntermediary,
+	}
+}
+
+// IssuerInfoValue builds the issuer_info array of ETSI TS 119 472-3 V1.1.1
+// §4.2.3: the registrar dataset and the registration certificate.
+func IssuerInfoValue(dataset RegistrarDataset, registrationCertificate string) (string, error) {
+	encoded, err := json.Marshal([]IssuerInfoEntry{
+		{Format: "registrar_dataset", Data: dataset},
+		{Format: "registration_cert", Data: registrationCertificate},
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding issuer_info: %w", err)
+	}
+	return string(encoded), nil
 }
 
 // registrationContent returns what a certificate for the intended use contains,
@@ -133,11 +234,18 @@ func registrationContent(rp WalletRelyingParty, service WalletRelyingPartyServic
 		Description:               service.SrvDescription,
 		Entitlements:              service.Entitlements,
 		RegistryURI:               rp.RegistryURI,
-		PrivacyPolicy:             use.PrivacyPolicy[0].PolicyURI,
+		PrivacyPolicy:             privacyPolicyURI(use),
 		SupportURI:                firstNonEmpty(service.SupportURI...),
 		SupervisoryAuthorityEmail: firstNonEmpty(rp.SupervisoryAuthority.Email...),
 		SupervisoryAuthorityURI:   firstNonEmpty(rp.SupervisoryAuthority.FormURI...),
 	}
+}
+
+func privacyPolicyURI(use IntendedUse) string {
+	if len(use.PrivacyPolicy) == 0 {
+		return ""
+	}
+	return use.PrivacyPolicy[0].PolicyURI
 }
 
 func (w *Wallet) signRegistrationCertificate(content RegistrationCertificateContent, credentials []map[string]any, now time.Time) (string, error) {
@@ -206,14 +314,21 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 			"email": firstNonEmpty(req.SupervisoryAuthorityEmail, "dpa@eudi-test.dev"),
 			"uri":   firstNonEmpty(req.SupervisoryAuthorityURI, base+"/supervisory-authority"),
 		},
-		"iat":         now.Unix(),
-		"exp":         now.Add(validity).Unix(),
-		"credentials": RegisteredCredentials(dcqlCredentials),
+		"iat": now.Unix(),
+		"exp": now.Add(validity).Unix(),
 		// ETSI TS 119 475 V1.2.1 Table 7 lists the policy (OVR-6.1.3-01) and
 		// status (GEN-6.2.6.1-04).
 		"policy_id":          []string{registrationCertificatePolicy},
 		"certificate_policy": registrationCertificatePolicyURI,
 		"status":             registrationStatusClaim(firstNonEmpty(req.StatusListURI, base+registrationStatusListPath), req.StatusIndex),
+	}
+	if dcqlCredentials != nil {
+		claims["credentials"] = RegisteredCredentials(dcqlCredentials)
+	} else {
+		delete(claims, "privacy_policy")
+	}
+	if len(req.ProvidesAttestations) > 0 {
+		claims["provides_attestations"] = req.ProvidesAttestations
 	}
 	if purpose := multiLangClaim(req.Purpose, ""); len(purpose) > 0 {
 		claims["purpose"] = purpose
