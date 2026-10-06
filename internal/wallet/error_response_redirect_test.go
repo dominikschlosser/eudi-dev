@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -214,5 +215,31 @@ func TestNoMatchBrowserNavigationWithoutAVerifierRedirectLandsOnTheWalletUI(t *t
 	}
 	if got := rec.Header().Get("Location"); got != "/" {
 		t.Fatalf("Location %q, want the wallet UI", got)
+	}
+}
+
+// The override answers only a valid request. An invalid one gets no response
+// at its response_uri (OpenID4VP 1.0 §8.5), and the override waits for the
+// next request.
+func TestNextErrorOverrideSkipsAnInvalidRequest(t *testing.T) {
+	srv := newTestServer(t, true)
+	verifier := newRedirectingVerifier(t, verifierContinueURI)
+	srv.wallet.SetNextError(&NextErrorOverride{Error: "access_denied"})
+
+	valid := presentationAuthorizePath(t, verifier.URL)
+	invalid, err := url.Parse(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := invalid.Query()
+	q.Set("response_mode", "unknown")
+	invalid.RawQuery = q.Encode()
+	if rec := serverRequest(t, srv, "GET", invalid.String(), ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid request answered %d %s, want 400", rec.Code, rec.Body.String())
+	}
+
+	serverRequest(t, srv, "GET", valid, "")
+	if got := verifier.received(t).Get("error"); got != "access_denied" {
+		t.Fatalf("verifier received error %q, want the override on the valid request", got)
 	}
 }

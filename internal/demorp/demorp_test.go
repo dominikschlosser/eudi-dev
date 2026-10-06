@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -2027,8 +2028,9 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 	}
 }
 
-// OpenID4VP 1.0 §5.1 carries registered purposes in verifier_info.
-func TestVerifierRequestCarriesARegistrationCertificate(t *testing.T) {
+// By default the demo verifier's access certificate signs the request, and the
+// request carries no registration certificate.
+func TestVerifierRequestIsSignedWithoutARegistrationCertificate(t *testing.T) {
 	d, w, _ := newDemoRP(t)
 	h := d.VerifierHandler()
 
@@ -2038,44 +2040,85 @@ func TestVerifierRequestCarriesARegistrationCertificate(t *testing.T) {
 		t.Fatalf("parsing wallet_url: %v", err)
 	}
 	payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
-
-	entries, _ := payload["verifier_info"].([]any)
-	if len(entries) != 1 {
-		t.Fatalf("verifier_info = %v, want one attestation", payload["verifier_info"])
+	if _, ok := payload["verifier_info"]; ok {
+		t.Errorf("verifier_info = %v, want none", payload["verifier_info"])
 	}
-	entry, _ := entries[0].(map[string]any)
-	if got, _ := entry["format"].(string); got != "registration_cert" {
-		t.Errorf("format = %q, want registration_cert (ETSI TS 119 472-2)", got)
-	}
-	data, _ := entry["data"].(string)
-	cert, err := parseCompactJWT(data)
+	_, chain, err := w.AccessSigningMaterial()
 	if err != nil {
-		t.Fatalf("parsing registration certificate: %v", err)
+		t.Fatalf("AccessSigningMaterial: %v", err)
 	}
-	if typ, _ := cert.header["typ"].(string); typ != "rc-wrp+jwt" {
-		t.Errorf("typ = %q, want rc-wrp+jwt (ETSI TS 119 475)", typ)
+	if payload["client_id"] != wallet.X509HashClientID(chain[0]) {
+		t.Errorf("client_id = %v, want the x509_hash of the demo verifier's access certificate", payload["client_id"])
 	}
-	// The purpose is localized as {lang, value} entries, like the EUDI
-	// reference certificate.
-	entries2, _ := cert.payload["purpose"].([]any)
-	if len(entries2) != 1 {
-		t.Fatalf("purpose = %v, want one localized entry", cert.payload["purpose"])
-	}
-	localized, _ := entries2[0].(map[string]any)
-	if value, _ := localized["value"].(string); !strings.Contains(value, "identity") {
-		t.Errorf("purpose = %v, want the PID request's purpose", localized)
-	}
+}
 
-	_, chain, err := w.RegistrarSigningMaterial()
+// A verifier registered with the registrar signs with its own key and access
+// certificate and sends its registration certificate (OpenID4VP 1.0 §5.1).
+func TestVerifierRequestCarriesASuppliedIdentity(t *testing.T) {
+	d, w, _ := newDemoRP(t)
+	h := d.VerifierHandler()
+
+	rp, err := w.RegisterRelyingParty(wallet.WalletRelyingParty{
+		TradeName: "Registered Verifier",
+		Services: []wallet.WalletRelyingPartyService{{IntendedUses: []wallet.IntendedUse{{
+			Purpose:     []wallet.MultiLangString{{Lang: "en", Content: "Identity check"}},
+			Credentials: []wallet.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{PIDVCT}}, Claims: []wallet.RegisteredClaim{{Path: []any{"given_name"}}, {Path: []any{"family_name"}}}}},
+		}}}},
+	}, w.RegistrarBase())
 	if err != nil {
-		t.Fatalf("signing chain: %v", err)
+		t.Fatalf("RegisterRelyingParty: %v", err)
 	}
-	leafKey, ok := chain[0].PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("leaf certificate does not hold an EC key")
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !verifyES256(leafKey, cert.signingInput, cert.signature) {
-		t.Error("the registration certificate is not signed by the registrar's signing key")
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifier := rp.Identifier[0].Identifier
+	access, err := w.IssueAccessCertificate(wallet.AccessCertificateRequest{
+		Identifier: identifier,
+		CSR:        string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})),
+	})
+	if err != nil {
+		t.Fatalf("IssueAccessCertificate: %v", err)
+	}
+	registration, err := w.IssueRegistrationCertificate(wallet.RegistrationCertificateRequest{
+		Identifier:            identifier,
+		IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
+	})
+	if err != nil {
+		t.Fatalf("IssueRegistrationCertificate: %v", err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var verifierInfo []any
+	if err := json.Unmarshal([]byte(registration.VerifierInfo), &verifierInfo); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"type":          "pid",
+		"signing_key":   string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})) + access.Chain,
+		"verifier_info": verifierInfo,
+	})
+
+	code, doc := doJSON(t, h, "POST", "/api/requests", string(body), map[string]string{"Content-Type": "application/json"})
+	if code != http.StatusCreated {
+		t.Fatalf("create request: %d %v", code, doc)
+	}
+	walletURL, err := url.Parse(doc["wallet_url"].(string))
+	if err != nil {
+		t.Fatalf("parsing wallet_url: %v", err)
+	}
+	payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
+	if !reflect.DeepEqual(payload["verifier_info"], verifierInfo) {
+		t.Errorf("verifier_info = %v, want the registration certificate", payload["verifier_info"])
+	}
+	if payload["client_id"] != access.ClientIDs[0] {
+		t.Errorf("client_id = %v, want %s", payload["client_id"], access.ClientIDs[0])
 	}
 }
 

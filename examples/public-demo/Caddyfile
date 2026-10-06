@@ -67,6 +67,25 @@ eudi-test.dev {
 			events 2000
 			window 1h
 		}
+		# Registrar changes add relying parties and status list entries.
+		zone registrar_burst {
+			match {
+				method POST PUT DELETE
+				path /api/registrar/*
+			}
+			key {remote_host}
+			events 60
+			window 1m
+		}
+		zone registrar_hour {
+			match {
+				method POST PUT DELETE
+				path /api/registrar/*
+			}
+			key {remote_host}
+			events 600
+			window 1h
+		}
 		# Everything else, including the UI and the stats report.
 		zone site {
 			key {remote_host}

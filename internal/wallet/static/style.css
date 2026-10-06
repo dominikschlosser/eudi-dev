@@ -138,6 +138,60 @@ header h1 {
   text-decoration: underline;
 }
 
+.header-submenu-group {
+  position: relative;
+}
+
+.header-submenu-toggle {
+  font: inherit;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.header-submenu-toggle::after {
+  content: " ▾";
+  font-size: 9px;
+}
+
+.header-submenu-toggle:hover,
+.header-submenu-toggle[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.header-submenu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: -12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 170px;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
+  z-index: 60;
+}
+
+.header-submenu[hidden] {
+  display: none;
+}
+
+.header-submenu a {
+  padding: 6px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.header-submenu a:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -1181,6 +1235,20 @@ header h1 {
   margin-bottom: 2px;
 }
 
+.consent-purpose-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.consent-privacy-policies {
+  display: inline-flex;
+  gap: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .consent-credential {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1781,6 +1849,28 @@ header h1 {
     display: flex;
   }
 
+  /* Mobile: the entries nest below the submenu entry inside the menu. */
+  .header-submenu-toggle {
+    text-align: left;
+  }
+
+  .header-submenu {
+    position: static;
+    margin-top: 10px;
+    padding: 0 0 0 14px;
+    gap: 12px;
+    border: none;
+    border-left: 2px solid var(--border);
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+    min-width: 0;
+  }
+
+  .header-submenu a {
+    padding: 0;
+  }
+
   #pending-banner {
   display: flex;
   align-items: center;
@@ -1899,6 +1989,278 @@ header h1 {
   margin-bottom: 10px;
   background: var(--bg);
 }
+.registrar-filter {
+  display: flex;
+  gap: 14px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.registrar-search {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* Chrome adds an arrow to fields with suggestions, which lists all of them. */
+.registrar-search::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+.registrar-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.registrar-pager[hidden] {
+  display: none;
+}
+
+.registrar-page-info {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.registrar-filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.registrar-party-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.registrar-party {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  min-width: 0;
+}
+
+.registrar-party-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.registrar-party-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.registrar-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.status-role-verifier {
+  background: color-mix(in srgb, var(--cyan) 18%, transparent);
+  color: var(--cyan);
+}
+
+.status-role-issuer {
+  background: color-mix(in srgb, var(--purple) 18%, transparent);
+  color: var(--purple);
+}
+
+.registrar-party-identifier {
+  font-size: 11px;
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.registrar-use {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.registrar-use-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.registrar-use-purpose {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.registrar-party-head .btn,
+.registrar-use-head .btn {
+  white-space: nowrap;
+}
+
+.registrar-party-actions,
+.registrar-use-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.registrar-use-credentials {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  word-break: break-all;
+}
+
+.registrar-use-result textarea {
+  height: 64px;
+  word-break: break-all;
+}
+
+.registrar-help {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.registrar-help summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.registrar-command {
+  position: relative;
+  margin-top: 6px;
+}
+
+.registrar-command .btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.registrar-help pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 64px 6px 8px;
+  margin: 4px 0;
+  overflow-x: auto;
+  user-select: all;
+  color: var(--text);
+}
+
+/* A section keeps its fields in the dialog's grid. */
+.registrar-section {
+  display: contents;
+}
+
+.registrar-section[hidden] {
+  display: none;
+}
+
+.registrar-dialog {
+  max-width: 720px;
+}
+
+.registrar-credentials {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Format, type and Remove share the first line, the claims get the second. */
+.registrar-credential {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.registrar-credential [data-field="format"] { grid-area: 1 / 1; }
+.registrar-credential [data-field="type"] { grid-area: 1 / 2; }
+.registrar-credential [data-field="remove"] { grid-area: 1 / 3; }
+.registrar-credential [data-field="claims"] { grid-area: 2 / 1 / 3 / -1; }
+
+.registrar-dialog .form-input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.registrar-credentials-label {
+  grid-column: 1 / -1;
+}
+
+.registrar-add {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.registrar-client-ids {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+}
+
+.registrar-client-ids code {
+  word-break: break-all;
+}
+
+@media (max-width: 560px) {
+  .registrar-credential {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .registrar-credential [data-field="remove"] { grid-area: 1 / 2; }
+  .registrar-credential [data-field="type"] { grid-area: 2 / 1 / 3 / -1; }
+  .registrar-credential [data-field="claims"] { grid-area: 3 / 1 / 4 / -1; }
+}
+
+.btn.registrar-registered:disabled {
+  background: transparent;
+  color: var(--green);
+  border-color: var(--green);
+  opacity: 1;
+  cursor: default;
+}
+
+.registrar-result {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.registrar-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 4px;
+}
+
+.registrar-result textarea {
+  height: 64px;
+  word-break: break-all;
+}
+
 .trust-section-title {
   font-size: 10px;
   text-transform: uppercase;
@@ -1968,6 +2330,20 @@ header h1 {
   /* The ID, issuance time and type stay one tap away behind Show. */
   .candidate .cred-meta {
     display: none;
+  }
+  /* A fixed layout makes long setting labels and select values wrap inside the
+     dialog. */
+  .conformance-table {
+    table-layout: fixed;
+  }
+  .conformance-table td:first-child {
+    width: 38%;
+  }
+  .conf-input {
+    max-width: 100%;
+  }
+  .conf-toggle {
+    align-items: flex-start;
   }
 }
 

@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -164,6 +165,13 @@ type AuthorizationRequestParams struct {
 	// Browser navigations redirect to the verifier after submission. API calls receive
 	// JSON.
 	BrowserRedirect bool
+	// StatusClient fetches the status lists of registration certificates
+	// (Wallet.RegistrationStatusClient).
+	StatusClient *http.Client
+	// RelyingPartyCAs and RegistrarCAs are the CAs --arf trusts for access
+	// certificates and for registration certificates.
+	RelyingPartyCAs *x509.CertPool
+	RegistrarCAs    *x509.CertPool
 }
 
 type preparedPresentation struct {
@@ -182,15 +190,9 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	authReq.Source = source
 	s.addPresentationRequestLog(authReq, source)
 
-	if override := s.wallet.ConsumeNextError(); override != nil {
-		s.log("  Next-error override consumed: %s", override.Error)
-		s.wallet.AddLog("presentation", fmt.Sprintf("Returned error override: %s", override.Error), false)
-		s.submitAuthorizationError(w, authReq, "error", override.Error, override.ErrorDescription)
-		return
-	}
-
 	mode, requireHAIP, _ := s.wallet.ConformanceSettings()
-	findings, err := ValidateAuthorizationRequest(mode, requireHAIP, authReq)
+	s.wallet.PrepareARFChecks(authReq)
+	findings, err := ValidateAuthorizationRequest(mode, requireHAIP, s.wallet.ARFChecks(), authReq)
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("presentation", err.Error(), false)
@@ -210,6 +212,15 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		})
 		return
 	}
+	// The override answers only a valid request. An invalid one gets no
+	// response at its response_uri (OpenID4VP 1.0 §8.5).
+	if override := s.wallet.ConsumeNextError(); override != nil {
+		s.log("  Next-error override consumed: %s", override.Error)
+		s.wallet.AddLog("presentation", fmt.Sprintf("Returned error override: %s", override.Error), false)
+		s.submitAuthorizationError(w, authReq, "error", override.Error, override.ErrorDescription)
+		return
+	}
+
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
 	}
@@ -288,10 +299,10 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
-		Purposes:     s.wallet.consentPurposes("presentation", authReq),
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
 	consentReq.applyClientAuth(authReq)
 
 	s.wallet.CreateConsentRequest(consentReq)

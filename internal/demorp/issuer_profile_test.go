@@ -117,13 +117,22 @@ func TestIssuerProfileMetadata(t *testing.T) {
 // TS 119 475 V1.2.1 §5.1.1 links registration and access certificates by their identifier.
 func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 	d, w, _ := newDemoRP(t)
+	// The registrar publishes under the issuer URL, which differs from the
+	// base URL without --base-url.
+	w.IssuerURL = "https://localhost:9999"
 	_, chain, err := w.AccessSigningMaterial()
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims := d.registrationCertificateClaims(chain[0], "Demo Verifier", "Identity check", nil)
-	if claims["registry_uri"] != d.baseURL()+"/api/registrar/wrp" {
+	claims, err := d.registrationCertificateClaims(chain[0], "Demo Verifier", "Identity check", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims["registry_uri"] != w.RegistrarBase()+"/api/registrar/wrp" {
 		t.Errorf("registrar URL = %v", claims["registry_uri"])
+	}
+	if uri := claims["status"].(map[string]any)["status_list"].(map[string]any)["uri"]; uri != w.RegistrationStatusListURL() {
+		t.Errorf("status list URI = %v, want %s", uri, w.RegistrationStatusListURL())
 	}
 	var identifier string
 	for _, attribute := range chain[0].Subject.Names {

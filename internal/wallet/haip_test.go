@@ -446,7 +446,7 @@ func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
 		reqObj.Raw = strings.Join(parts, ".")
 		params.RequestObject = reqObj
 
-		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, false, params)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -460,7 +460,7 @@ func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
 		params.ClientID = "x509_hash:" + format.EncodeBase64URL([]byte("not the certificate"))
 		params.RequestObject = reqObj
 
-		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, false, params)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -474,7 +474,7 @@ func TestHAIPEnforcesTheRequestSignature(t *testing.T) {
 		params.RequestOrigin = "https://wallet.example"
 		params.RequestObject = reqObj
 
-		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, params)
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, false, params)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -584,7 +584,7 @@ func TestHAIPContentEncryptionAlgorithmsListing(t *testing.T) {
 		params.RequestObject = reqObj
 		params.ClientMetadata = map[string]any{"encrypted_response_enc_values_supported": listed}
 
-		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, params)
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, false, params)
 		if err != nil {
 			t.Fatalf("listing %v: strict mode refused the request: %v", listed, err)
 		}
@@ -596,7 +596,7 @@ func TestHAIPContentEncryptionAlgorithmsListing(t *testing.T) {
 	params, reqObj := haipCompliantParams(t)
 	params.RequestObject = reqObj
 	params.ClientMetadata = map[string]any{"encrypted_response_enc_values_supported": []any{}}
-	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, true, params); err == nil || !strings.Contains(err.Error(), "lists neither") {
+	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, true, false, params); err == nil || !strings.Contains(err.Error(), "lists neither") {
 		t.Errorf("listing neither algorithm: err = %v, want the request refused", err)
 	}
 }
@@ -662,7 +662,7 @@ func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 	}
 
 	t.Run("strict refuses", func(t *testing.T) {
-		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, violating(t))
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, true, false, violating(t))
 		if err == nil {
 			t.Fatalf("strict mode accepted a profile violation, findings = %v", findings)
 		}
@@ -672,7 +672,7 @@ func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 	})
 
 	t.Run("debug reports and continues", func(t *testing.T) {
-		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, violating(t))
+		findings, err := ValidateAuthorizationRequest(ValidationModeDebug, true, false, violating(t))
 		if err != nil {
 			t.Fatalf("debug mode refused the request: %v", err)
 		}
@@ -682,7 +682,7 @@ func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 	})
 
 	t.Run("without --haip the profile checks do not run at all", func(t *testing.T) {
-		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, violating(t))
+		findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, false, violating(t))
 		if err != nil {
 			t.Fatalf("a request that only breaks the profile was refused without --haip: %v", err)
 		}

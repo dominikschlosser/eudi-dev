@@ -57,27 +57,9 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	}
 	reqServer.addPresentationRequestLog(authReq, "browser_api")
 
-	if override := reqServer.wallet.ConsumeNextError(); override != nil {
-		reqServer.log("  Next-error override consumed: %s", override.Error)
-		result, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
-		if buildErr != nil {
-			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
-			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
-			return
-		}
-		errorDetails := presentationRequestLogDetails(authReq)
-		errorDetails["direction"] = "outbound"
-		errorDetails["source"] = "browser_api"
-		errorDetails["error"] = override.Error
-		addStringDetail(errorDetails, "error_description", override.ErrorDescription)
-		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
-		writeJSON(w, http.StatusOK, result)
-		return
-	}
-
 	dcMode, dcHAIP, _ := reqServer.wallet.ConformanceSettings()
-	findings, err := ValidateAuthorizationRequest(dcMode, dcHAIP, authReq)
+	reqServer.wallet.PrepareARFChecks(authReq)
+	findings, err := ValidateAuthorizationRequest(dcMode, dcHAIP, reqServer.wallet.ARFChecks(), authReq)
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
@@ -94,6 +76,25 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 			"error":             refusalCodeForRequest(authReq, err),
 			"error_description": err.Error(),
 		})
+		return
+	}
+	// The override answers only a valid request (OpenID4VP 1.0 §8.5).
+	if override := reqServer.wallet.ConsumeNextError(); override != nil {
+		reqServer.log("  Next-error override consumed: %s", override.Error)
+		result, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)
+		if buildErr != nil {
+			reqServer.log("  ERROR: Browser error response failed: %v", buildErr)
+			reqServer.wallet.AddLog("presentation", fmt.Sprintf("Browser error response failed: %v", buildErr), false)
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": buildErr.Error()})
+			return
+		}
+		errorDetails := presentationRequestLogDetails(authReq)
+		errorDetails["direction"] = "outbound"
+		errorDetails["source"] = "browser_api"
+		errorDetails["error"] = override.Error
+		addStringDetail(errorDetails, "error_description", override.ErrorDescription)
+		reqServer.wallet.addProtocolLog("presentation", "presentation_error_response", fmt.Sprintf("Returned Browser API error to %s", authReq.ClientID), true, errorDetails)
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	for _, finding := range findings {
@@ -153,10 +154,10 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
-		Purposes:     reqServer.wallet.consentPurposes("presentation", authReq),
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
 	consentReq.applyClientAuth(authReq)
 
 	reqServer.wallet.CreateConsentRequest(consentReq)

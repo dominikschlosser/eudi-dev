@@ -18,6 +18,11 @@ package cmd
 // timestamps differ, but the CLI must be able to read the same fields from both.
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"reflect"
 	"sort"
 	"strings"
@@ -335,7 +340,87 @@ func parityCases() []parityCase {
 			}
 			return strings.HasPrefix(string(pem), "-----BEGIN CERTIFICATE-----")
 		}},
+		{method: "RegisterRelyingParty", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			return []any{rp.TradeName, len(rp.Services[0].IntendedUses), strings.HasPrefix(rp.Identifier[0].Identifier, "NTR")}
+		}},
+		{method: "RegistrarRecords", observe: func(t *testing.T, s walletService) any {
+			registerParityRelyingParty(t, s)
+			records, err := s.RegistrarRecords()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return records[len(records)-1].TradeName
+		}},
+		{method: "RegistrationCertificate", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			result, err := s.RegistrationCertificate(wallet.RegistrationCertificateRequest{
+				Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []bool{strings.Count(result.RegistrationCertificate, ".") == 2, strings.Contains(result.VerifierInfo, result.RegistrationCertificate)}
+		}},
+		{method: "SetRegistrationCertificatesRevoked", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			use := rp.Services[0].IntendedUses[0].IntendedUseIdentifier
+			if _, err := s.RegistrationCertificate(wallet.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use}); err != nil {
+				t.Fatal(err)
+			}
+			revoked, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			activated, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, use, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []int{revoked, again, activated}
+		}},
+		{method: "AccessCertificate", observe: func(t *testing.T, s walletService) any {
+			rp := registerParityRelyingParty(t, s)
+			result, err := s.AccessCertificate(wallet.AccessCertificateRequest{CSR: testCSR(t), Identifier: rp.Identifier[0].Identifier})
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []bool{strings.HasPrefix(result.Certificate, "-----BEGIN CERTIFICATE-----"), strings.HasPrefix(result.ClientIDs[0], "x509_hash:")}
+		}},
 	}
+}
+
+func registerParityRelyingParty(t *testing.T, s walletService) wallet.WalletRelyingParty {
+	t.Helper()
+	rp, err := s.RegisterRelyingParty(wallet.WalletRelyingParty{
+		TradeName: "Parity Shop",
+		Services: []wallet.WalletRelyingPartyService{{IntendedUses: []wallet.IntendedUse{{
+			Purpose:     []wallet.MultiLangString{{Lang: "en", Content: "Parity"}},
+			Credentials: []wallet.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{"urn:eudi:pid:1"}}, Claims: []wallet.RegisteredClaim{{Path: []any{"given_name"}}}}},
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rp
+}
+
+// testCSR is a PKCS#10 request with an empty subject, like the one
+// openssl req -subj "/" creates.
+func testCSR(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))
 }
 
 // Require a parity case for every walletService method so new methods are checked on

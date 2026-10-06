@@ -42,7 +42,7 @@ examples/      Keycloak and web-wallet integration examples
 | `storage` | Blob storage backed by files, memory or Postgres (ADR-0016) |
 | `trustlist` | ETSI TS 119 602 trust list parsing |
 | `validate` | Checks signatures, expiry and revocation |
-| `wallet` | Wallet state (persisted through `storage`), HTTP server, OID4VP and OID4VCI protocol logic |
+| `wallet` | Wallet state (persisted through `storage`), HTTP server, OID4VP and OID4VCI protocol logic, relying party registrar |
 | `web` | Decoder and validator web UI |
 
 ## Flows
@@ -87,6 +87,7 @@ The wallet proves possession of its holder key, receives the credential and impo
 | [0018](docs/adr/0018-postgres-stores-wallet-entities-as-keyed-blobs.md) | Postgres stores wallet entities as keyed blobs |
 | [0019](docs/adr/0019-the-base-url-is-the-public-identity.md) | The base URL is the public identity |
 | [0020](docs/adr/0020-cli-output-can-be-automated.md) | CLI output can be automated |
+| [0021](docs/adr/0021-arf-checks-are-a-separate-profile.md) | ARF checks are a separate profile |
 
 ## Related
 

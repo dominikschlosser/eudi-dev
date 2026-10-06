@@ -129,6 +129,8 @@ func walletAcceptCmd() *cobra.Command {
 		sessionTranscript   string
 		txCode              string
 		haip                bool
+		arf                 bool
+		relyingPartyCAs     []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -156,6 +158,8 @@ request boundaries, so later presentation requests see the new credential.`,
 				sessionTranscript:   sessionTranscript,
 				txCode:              txCode,
 				haip:                haip,
+				arf:                 arf,
+				relyingPartyCAs:     relyingPartyCAs,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -170,6 +174,8 @@ request boundaries, so later presentation requests see the new credential.`,
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mdoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
+	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	return cmd
 }
 
@@ -181,6 +187,8 @@ func walletScanCmd() *cobra.Command {
 		sessionTranscript   string
 		txCode              string
 		haip                bool
+		arf                 bool
+		relyingPartyCAs     []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -235,6 +243,8 @@ func walletScanCmd() *cobra.Command {
 				sessionTranscript:   sessionTranscript,
 				txCode:              txCode,
 				haip:                haip,
+				arf:                 arf,
+				relyingPartyCAs:     relyingPartyCAs,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -250,5 +260,7 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
 	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them. A running wallet server applies its own setting")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
+	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
+	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	return cmd
 }

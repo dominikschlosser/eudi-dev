@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
@@ -167,21 +168,6 @@ func (s *Server) handlePresentationAPI(w http.ResponseWriter, r *http.Request) {
 		Session:          requestOwner(r),
 	}
 
-	// Validate here to return HTTP 400 for fatal errors. handleAuthFlow logs warnings
-	// later, so logging here too would duplicate them.
-	vpMode, vpHAIP, _ := reqServer.wallet.ConformanceSettings()
-	if _, err := ValidateAuthorizationRequest(vpMode, vpHAIP, authReq); err != nil {
-		reqServer.log("  ERROR: %v", err)
-		reqServer.wallet.AddLog("presentation", err.Error(), false)
-		reqServer.wallet.NotifyError(WalletError{
-			Owner:   requestOwner(r),
-			Message: "Authorization request validation failed",
-			Detail:  err.Error(),
-		})
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-
 	if body.Interactive {
 		// Scheme dispatches still require interactive consent even though they use the
 		// API.
@@ -203,6 +189,10 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 
 	src.mu.RLock()
 	verify := src.tlsVerify
+	relyingPartyCAs := src.RelyingPartyCAPEM
+	// The copy answers the registrar's status list in process, so it needs its
+	// own copy of the statuses.
+	registrationStatuses := slices.Clone(src.RegistrationStatuses)
 	src.mu.RUnlock()
 
 	clone := &Wallet{
@@ -212,6 +202,8 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		signers:                 src.signingStore(),
 		CertChain:               append([]*x509.Certificate(nil), src.CertChain...),
 		IssuedAttestations:      append([]IssuedAttestationSpec(nil), src.IssuedAttestations...),
+		RelyingPartyCAPEM:       relyingPartyCAs,
+		RegistrationStatuses:    registrationStatuses,
 		AutoAccept:              src.AutoAccept,
 		SessionTranscript:       src.SessionTranscript,
 		PreferredFormat:         src.PreferredFormat,
@@ -219,6 +211,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		RequireEncryptedRequest: srcEncrypted,
 		RequestEncryptionKey:    src.RequestEncryptionKey,
 		RequireHAIP:             srcHAIP,
+		RequireARF:              src.ARFChecks(),
 		ValidationMode:          srcMode,
 		tlsVerify:               verify,
 		outboundHTTP:            src.HTTPClient(),

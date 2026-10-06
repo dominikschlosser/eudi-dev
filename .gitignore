@@ -15,3 +15,7 @@ runner.log
 wallet.log
 oid4vp-1final-wallet-test-plan-*.zip
 *.test
+
+# Key material from the registrar CSR example.
+*.key
+*.csr

@@ -181,7 +181,25 @@ func GenerateRootCACert(caKey *ecdsa.PrivateKey) (*x509.Certificate, error) {
 	return generateCACert(caKey, 1)
 }
 
+// GenerateNamedCACert creates a self-signed CA certificate that issues end
+// entity certificates only.
+func GenerateNamedCACert(caKey *ecdsa.PrivateKey, commonName string) (*x509.Certificate, error) {
+	return generateNamedCACert(caKey, 0, pkix.Name{
+		CommonName:   commonName,
+		Country:      []string{DefaultCertificateCountry},
+		Organization: []string{"EUDI Dev Test CA"},
+	})
+}
+
 func generateCACert(caKey *ecdsa.PrivateKey, maxPathLen int) (*x509.Certificate, error) {
+	return generateNamedCACert(caKey, maxPathLen, pkix.Name{
+		CommonName:   "OID4VC Dev Wallet CA",
+		Country:      []string{DefaultCertificateCountry},
+		Organization: []string{"EUDI Dev Test CA"},
+	})
+}
+
+func generateNamedCACert(caKey *ecdsa.PrivateKey, maxPathLen int, subject pkix.Name) (*x509.Certificate, error) {
 	serial, err := randomSerialNumber()
 	if err != nil {
 		return nil, err
@@ -197,13 +215,9 @@ func generateCACert(caKey *ecdsa.PrivateKey, maxPathLen int) (*x509.Certificate,
 		return nil, err
 	}
 	template := &x509.Certificate{
-		SerialNumber: serial,
-		SubjectKeyId: subjectKeyID,
-		Subject: pkix.Name{
-			CommonName:   "OID4VC Dev Wallet CA",
-			Country:      []string{DefaultCertificateCountry},
-			Organization: []string{"EUDI Dev Test CA"},
-		},
+		SerialNumber:          serial,
+		SubjectKeyId:          subjectKeyID,
+		Subject:               subject,
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
@@ -258,6 +272,14 @@ type LeafCertOptions struct {
 	DNSNames    []string
 	URIs        []*url.URL
 	IPAddresses []net.IP
+	// OrganizationalUnit names one service of the organization (ARF Reg_33,
+	// ETSI TS 119 411-8 GEN-6.6.1-08). Empty leaves it out.
+	OrganizationalUnit string
+	// OrganizationIdentifier is the subject organizationIdentifier (OID
+	// 2.5.4.97). Empty uses a placeholder for the country.
+	OrganizationIdentifier string
+	// Validity is the leaf's lifetime. Zero is one year.
+	Validity time.Duration
 }
 
 // GenerateLeafCertWithOptions creates a leaf certificate signed by the CA. By default
@@ -274,6 +296,14 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 	organization := opts.Organization
 	if organization == "" {
 		organization = "EUDI Dev Test Provider"
+	}
+	organizationIdentifier := opts.OrganizationIdentifier
+	if organizationIdentifier == "" {
+		organizationIdentifier = "NTR" + country + "-00000000"
+	}
+	validity := opts.Validity
+	if validity <= 0 {
+		validity = 365 * 24 * time.Hour
 	}
 	serialNumber := opts.SerialNumber
 	if serialNumber == nil || serialNumber.Sign() <= 0 {
@@ -297,10 +327,10 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 			CommonName:   commonName,
 			Country:      []string{country},
 			Organization: []string{organization},
-			ExtraNames:   []pkix.AttributeTypeAndValue{{Type: asn1.ObjectIdentifier{2, 5, 4, 97}, Value: "NTR" + country + "-00000000"}},
+			ExtraNames:   []pkix.AttributeTypeAndValue{{Type: asn1.ObjectIdentifier{2, 5, 4, 97}, Value: organizationIdentifier}},
 		},
 		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		NotAfter:              time.Now().Add(validity),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		SubjectKeyId:          subjectKeyID,
 		CRLDistributionPoints: opts.CRLDistributionPoints,
@@ -311,6 +341,9 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 		ExtraExtensions: []pkix.Extension{
 			issuerAltName,
 		},
+	}
+	if opts.OrganizationalUnit != "" {
+		template.Subject.OrganizationalUnit = []string{opts.OrganizationalUnit}
 	}
 	if opts.CertificateAuthority {
 		template.IsCA = true
@@ -348,6 +381,7 @@ func GenerateLeafCertWithOptions(caKey *ecdsa.PrivateKey, caCert *x509.Certifica
 		template.ExtraExtensions = append(template.ExtraExtensions, pkix.Extension{Id: asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 3}, Value: statements})
 	}
 	if opts.Role == AccessCertificate {
+		template.BasicConstraintsValid = true
 		// TS 119 411-8 V1.1.1 §5.3 defines the legal person access policy.
 		policies, err := asn1.Marshal([]certificatePolicy{{
 			ID: asn1.ObjectIdentifier{0, 4, 0, 194118, 1, 2},

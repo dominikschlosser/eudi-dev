@@ -26,7 +26,7 @@ If the offer requires a transaction code and none is given, issuance fails befor
 
 After storing a credential, the wallet calls the issuer's Notification Endpoint if the issuer publishes one. The endpoint is optional (OpenID4VCI 1.0 §11). A rejected call logs a warning and the credential stays in the wallet. The warning quotes the response and compares it with §11.3 (an Authorization Error Response for a rejected token, a 400 for a bad `notification_id`).
 
-The consent dialog for a presentation request also shows the purpose the verifier registered. The wallet reads it from the wallet-relying-party registration certificate (typ `rc-wrp+jwt`, in a `verifier_info` entry of format `registration_cert`) per OpenID4VP 1.0 §5.1. If the certificate signature does not verify against its own x5c leaf, the wallet skips the certificate and logs a warning in the activity log. The built-in demo verifier and demo issuer send a registration certificate with every request.
+The consent dialog for a presentation request also shows the purpose and privacy policy from the verifier's registration certificate (see [what the wallet checks](registrar.md#what-the-wallet-checks)). `--arf` checks the registration certificate (see [ARF checks](presenting.md#arf-checks)).
 
 The presentation dialog starts with the wallet's automatic credential selection. If there are alternatives, **Edit** lets the user choose a credential-set option and a credential for each query. Changes apply immediately. **Done** returns to the summary, and **reset to auto** restores the automatic selection. Claim checkboxes apply to the selected credential. **Deny** and **Approve** apply to the whole presentation. Auto-accept submits the automatic selection without a dialog.
 
@@ -57,6 +57,7 @@ UI controls have stable IDs and data attributes for browser automation. Credenti
 | Credential actions | `show-<id>`, `delete-<id>`, `revoke-<id>`, `status-check-<id>` |
 | Template rows and actions | `template-row-<name>`, `template-edit-<name>`, `template-delete-<name>` |
 | Consent actions | `consent-approve`, `consent-deny` |
+| Registered purpose and privacy policy | `consent-purpose-<n>`, `consent-privacy-policy-<n>` |
 | Consent credential | `consent-credential-<id>` |
 | Claim checkboxes | `data-cred` and `data-claim` |
 | Selection controls | `consent-edit-selection`, `consent-selection-done`, `consent-selection-reset` |
@@ -234,10 +235,12 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--vci-redirect-uri`    | Wallet origin + `/callback` | Redirect URI for OID4VCI authorization code flows |
 | `--vci-version`         | `1.0`    | OpenID4VCI feature level the wallet uses as a client: `1.0` (the published version) or `1.1` (also uses 1.1 draft features the issuer supports). See [OpenID4VCI feature level](issuing.md#openid4vci-feature-level) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled. Strict aborts the flow. Debug reports the violation and continues |
+| `--arf`                 | `false`  | Check the relying party's access and registration certificates in presentation requests against the ARF (see [ARF checks](presenting.md#arf-checks)). With `--mode strict` a finding refuses the request |
+| `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](issuing.md#wallet-attestation)) |
 | `--adhoc-display-images` | `false` | Fetch HTTPS display images on demand instead of storing them. The issuer sees each render. See [display images](#display-images) |
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
-| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
+| `--demo`                | `false`  | Public demo profile: implies `--pid`, `--mode debug`, `--haip`, `--arf` and `--vci-version 1.1` (all overridable), disables process and filesystem endpoints, blocks fetches to internal networks. Browser flows keep the consent dialog, API flows auto-accept (see [public demo hosting](../public-demo.md)) |
 | `--demo-issuer-client-auth` | `required` | Client authentication the built-in demo issuer's authorization server requires at its PAR and token endpoints: `required` (HAIP 1.0 §4.4.1) or `optional`, which also accepts wallets that send no wallet attestation (see [public demo hosting](../public-demo.md)) |
 | `--demo-verifier-trust-anchor` | None | CA certificate PEM file the demo verifier trusts for issuer chains, in addition to the wallet's own CA (repeatable). For presentations issued outside this wallet, such as an OIDF conformance suite run |
 | `--serve-tls`           | `false`  | Serve an https `--base-url` locally with the wallet's own TLS certificate instead of expecting an external TLS terminator. Requires an https base URL with an explicit port. The wallet also keeps listening on the HTTP port |
@@ -264,6 +267,8 @@ credentials:
   - id: partner-ticket
     credential: eyJhbGciOiJFUzI1NiIs...~WyJ...~
 ```
+
+`employee-card` is a user template saved beforehand (see [templates](../templates.md#cli)). `german-pid-sdjwt` is a built-in one.
 
 | Field | Description |
 |-------|-------------|
@@ -348,6 +353,10 @@ On a running wallet server the same export is available as `GET /api/certificate
 | `--out`  | None    | Write the shared wallet CA certificate to a file instead of stdout |
 | `--pem`  | `false` | Output as PEM (the default when no format flag is set) |
 | `--jwks` | `false` | Output as JWKS (public key with `x5c` chain) |
+
+## Registrar
+
+The wallet runs a relying party registrar. It registers relying parties and issues their access and registration certificates. See [registrar](registrar.md).
 
 ## `wallet tls-cert`
 
@@ -447,10 +456,10 @@ A running wallet uses the proxy settings it was started with. `wallet accept` an
 
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet header controls validation mode, HTTPS certificate verification, HAIP, encrypted requests, the [OpenID4VCI feature level](issuing.md#openid4vci-feature-level), and the key attestation's storage claims (see [SECURITY.md](../../SECURITY.md)). HTTPS verification follows the mode default or is set to on or off.
+The **Conformance** panel in the wallet header controls validation mode, HTTPS certificate verification, HAIP, the ARF checks, encrypted requests, the [OpenID4VCI feature level](issuing.md#openid4vci-feature-level), and the key attestation's storage claims (see [SECURITY.md](../../SECURITY.md)). HTTPS verification follows the mode default or is set to on or off.
 
 **Local wallets** can change these settings in the panel or through `PUT /api/config/conformance`. Changes apply to every flow until the process restarts. `DELETE /api/config/conformance` restores startup settings.
 
-**The public demo** shows read-only settings and runs HAIP in debug mode. Violations are warnings and the flow continues. `PUT` and `DELETE /api/config/conformance` return `403`. Run a local wallet to change the settings.
+**The public demo** shows read-only settings and runs the HAIP and ARF checks in debug mode. Violations are warnings and the flow continues. `PUT` and `DELETE /api/config/conformance` return `403`. Run a local wallet to change the settings.
 
 `eudi wallet config` (alias of `wallet info`) reports the active fields for a local or remote wallet.

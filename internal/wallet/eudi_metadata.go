@@ -561,6 +561,7 @@ func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]Issu
 		"policy_id":             []string{"0.4.0.19475.3.1"},
 		"certificate_policy":    "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md",
 		"iat":                   now.Unix(), "exp": now.Add(time.Hour).Unix(),
+		"status": registrationStatusClaim(w.RegistrationStatusListURL(), ownRegistrationStatusIndex),
 	}
 	registration, err := SignRegistrationCertificateJWT(claims, key, chain)
 	if err != nil {
