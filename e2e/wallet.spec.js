@@ -133,6 +133,24 @@ async function waitForPendingRequest() {
   return pending[0].id;
 }
 
+test.describe("Sponsor link outside demo mode", () => {
+  for (const [pagePath, configPath] of [
+    ["/", "/api/config"],
+    ["/issuer/", "/api/config"],
+    ["/verifier/", "/api/config"],
+    ["/decoder/", "/decoder/api/meta"],
+  ]) {
+    test(`is hidden on ${pagePath}`, async ({ page }) => {
+      const configLoaded = page.waitForResponse((r) => new URL(r.url()).pathname === configPath);
+      await page.goto(`${WALLET_URL}${pagePath}`);
+      await (await configLoaded).finished();
+      // The page applies the config one task after the response arrives.
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
+      await expect(page.locator("#sponsor-info")).toBeHidden();
+    });
+  }
+});
+
 test.describe("Wallet Dashboard", () => {
   test("shows wallet title", async ({ page }) => {
     await page.goto(WALLET_URL);

@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 )
 
 func TestTemplateDisplay(t *testing.T) {

@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
 const (

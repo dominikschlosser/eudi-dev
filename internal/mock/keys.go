@@ -33,7 +33,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 )
 
 func SigningCertificateURL(issuer string, cert *x509.Certificate, extension string) string {

@@ -1427,6 +1427,7 @@
         walletLink.textContent = meta.demo ? "Demo wallet" : "Wallet";
         walletLink.hidden = false;
       }
+      document.getElementById("sponsor-info").hidden = !meta.demo;
       if (meta.demo) {
         document.getElementById("demo-note").hidden = false;
       }

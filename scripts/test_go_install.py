@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install a v2 release from a local Go proxy without publishing a tag."""
+"""Install a v3 release from a local Go proxy without publishing a tag."""
 
 import json
 import os
@@ -11,8 +11,8 @@ import zipfile
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    module = "github.com/dominikschlosser/eudi-dev/v2"
-    version = "v2.0.0"
+    module = "github.com/dominikschlosser/eudi-dev/v3"
+    version = "v3.0.0"
     files = subprocess.check_output(
         ["git", "ls-files", "-z"], cwd=root
     ).decode().split("\0")

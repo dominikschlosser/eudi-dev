@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
 // extractJWKThumbprint returns the RFC 7638 SHA-256 thumbprint of the request

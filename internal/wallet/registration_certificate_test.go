@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
 func pidQueryForRegistration() map[string]any {

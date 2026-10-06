@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/storage"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
 type unreachableStore struct {

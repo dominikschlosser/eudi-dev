@@ -30,8 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/publicpath"
-	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/publicpath"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
 func (s *Server) handleTrustList(w http.ResponseWriter, r *http.Request) {

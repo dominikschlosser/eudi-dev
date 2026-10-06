@@ -1,4 +1,4 @@
-module github.com/dominikschlosser/eudi-dev/v2
+module github.com/dominikschlosser/eudi-dev/v3
 
 go 1.26.0
 

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
 // handleRegisterRelyingParty stores a relying party (TS05 v1.5 §3.1, POST /wrp).

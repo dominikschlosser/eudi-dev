@@ -698,6 +698,10 @@ main {
   background: var(--bg-hover);
 }
 
+.sponsor-info[hidden] {
+  display: none;
+}
+
 .sponsor-info {
   display: flex;
   flex-wrap: wrap;

@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 )
 
 func writeCredentialsFile(t *testing.T, content string) string {
