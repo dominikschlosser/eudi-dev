@@ -1864,3 +1864,311 @@ test.describe("Non-matching credentials in debug mode", () => {
     expect(presentedFormats()).toHaveLength(1);
   });
 });
+
+test.describe("ARF checks", () => {
+  test.beforeEach(denyPendingRequests);
+  test.afterEach(async () => {
+    await new Promise((resolve) => {
+      const req = http.request(`${WALLET_URL}/api/config/conformance`, { method: "DELETE" }, (res) => { res.resume(); res.on("end", resolve); });
+      req.end();
+    });
+  });
+
+  test("strict mode with --arf refuses a request without a registration certificate", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#conformance-link").click();
+    await page.locator("#conf-mode-select").selectOption("strict");
+    await page.locator("#conf-arf-input").check();
+    await expect.poll(async () => (await jsonGet(`${WALLET_URL}/api/config`)).body.require_arf).toBe(true);
+
+    const responseURI = "http://127.0.0.1:9/response";
+    const uri = "openid4vp://?" + new URLSearchParams({
+      client_id: `redirect_uri:${responseURI}`,
+      response_type: "vp_token",
+      response_mode: "direct_post",
+      response_uri: responseURI,
+      nonce: "n",
+      state: "s",
+      dcql_query: JSON.stringify({ credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] } }] }),
+    });
+    // The page's session owns the refused request, so its error dialog stays on this page.
+    const { status, body } = await page.evaluate(async (uri) => {
+      const resp = await fetch("/api/presentations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uri }) });
+      return { status: resp.status, body: await resp.json() };
+    }, uri);
+    expect(status).toBe(400);
+    expect(body.error).toBe("invalid_request");
+    expect(body.error_description).toContain("RPRC_19");
+    expect(body.error_description).toContain("RPA_03");
+  });
+});
+
+test.describe("Registrar", () => {
+  test.beforeEach(denyPendingRequests);
+
+  async function openRegisterDialog(page) {
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-register-verifier-link").click();
+    await expect(page.locator("#registrar-overlay")).toBeVisible();
+  }
+
+  function publicKeyOf(dir, file, command) {
+    return execSync(`openssl ${command} -in ${file} -pubout 2>/dev/null`, { cwd: dir }).toString();
+  }
+
+  test("registering a verifier with the defaults issues both certificates", async ({ page }) => {
+    await openRegisterDialog(page);
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-result")).toBeVisible();
+    await expect(page.locator("#registrar-result-identifier")).toHaveText(/^NTRNL-[0-9a-f]{16}$/i);
+    await expect(page.locator("#registrar-client-id-0")).toContainText("x509_hash:");
+    await expect(page.locator("#registrar-client-id-1")).toHaveText("x509_san_dns:verifier.example");
+
+    // The browser creates the key, and the access certificate is issued for it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eudi-registrar-"));
+    await expect(page.locator("#registrar-pem-label")).toHaveText("Signing key and access certificate chain");
+    fs.writeFileSync(path.join(dir, "verifier.pem"), await page.locator("#registrar-pem").inputValue());
+    expect(execSync("openssl x509 -in verifier.pem -noout -pubkey", { cwd: dir }).toString())
+      .toBe(publicKeyOf(dir, "verifier.pem", "pkey"));
+
+    const verifierInfo = JSON.parse(await page.locator("#registrar-verifier-info").inputValue());
+    expect(verifierInfo[0].format).toBe("registration_cert");
+
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Registered");
+    await expect(page.locator("#registrar-submit")).toBeInViewport();
+    await expect(page.locator("#registrar-submit")).toBeDisabled();
+    await page.locator("#registrar-purpose").fill("Another purpose");
+    await expect(page.locator("#registrar-submit")).toHaveText("Register verifier");
+    await expect(page.locator("#registrar-submit")).toBeEnabled();
+  });
+
+  test("the register dialog parses claim paths and mdoc namespaces", async ({ page }) => {
+    await openRegisterDialog(page);
+    await page.locator("#registrar-credential-1-claims").fill("nationalities[*], address.locality");
+    await page.locator("#registrar-add-credential").click();
+    await page.locator("#registrar-credential-2-format").selectOption("mso_mdoc");
+    await page.locator("#registrar-credential-2-type").fill("eu.europa.ec.eudi.pid.1");
+    await page.locator("#registrar-credential-2-claims").fill("given_name, eu.europa.ec.eudi.pid.de.1:birth_name");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-result")).toBeFocused();
+    const identifier = await page.locator("#registrar-result-identifier").textContent();
+    const credentials = await page.evaluate(async (id) => {
+      const resp = await fetch(`api/registrar/wrp/${id}`, { headers: { Accept: "application/json" } });
+      return (await resp.json()).data.services[0].intendedUses[0].credentials;
+    }, identifier);
+    expect(credentials[0].claims).toEqual([{ path: ["nationalities", null] }, { path: ["address", "locality"] }]);
+    expect(credentials[1].claims).toEqual([
+      { path: ["eu.europa.ec.eudi.pid.1", "given_name"] },
+      { path: ["eu.europa.ec.eudi.pid.de.1", "birth_name"] },
+    ]);
+  });
+
+  test("the register dialog marks a missing name and closes with Escape", async ({ page }) => {
+    await openRegisterDialog(page);
+    await page.locator("#registrar-name").fill("");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-error")).toHaveText("The relying party needs a name.");
+    await expect(page.locator("#registrar-name")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#registrar-name")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#registrar-overlay")).toBeHidden();
+    await expect(page.locator("#registrar-menu-toggle")).toBeFocused();
+  });
+
+  test("an own CSR keeps the key outside the wallet", async ({ page }) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "eudi-registrar-"));
+    await openRegisterDialog(page);
+    await page.locator("#registrar-csr-help-toggle").click();
+    execSync(await page.locator("#registrar-csr-command").textContent(), { cwd: dir });
+
+    await page.locator("#registrar-csr").fill(fs.readFileSync(path.join(dir, "verifier.csr"), "utf8"));
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-result")).toBeVisible();
+    await expect(page.locator("#registrar-pem-label")).toHaveText("Access certificate chain");
+    expect(await page.locator("#registrar-pem").inputValue()).not.toContain("PRIVATE KEY");
+    fs.writeFileSync(path.join(dir, "chain.pem"), await page.locator("#registrar-pem").inputValue());
+    expect(execSync("openssl x509 -in chain.pem -noout -pubkey", { cwd: dir }).toString())
+      .toBe(publicKeyOf(dir, "verifier.key", "ec"));
+  });
+
+  test("a registration certificate shows its purpose in the consent dialog", async ({ page }) => {
+    await openRegisterDialog(page);
+    await expect(page.locator("#registrar-credential-1-claims")).toHaveValue("age_equal_or_over.18");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-result")).toBeVisible();
+    const verifierInfo = await page.locator("#registrar-verifier-info").inputValue();
+    await page.locator("#registrar-close").click();
+
+    // An unsigned request carries verifier_info as a parameter (OpenID4VP 1.0 §5.1).
+    const responseURI = "http://127.0.0.1:9/response";
+    const uri = "openid4vp://authorize?" + new URLSearchParams({
+      client_id: `redirect_uri:${responseURI}`,
+      response_type: "vp_token",
+      response_mode: "direct_post",
+      response_uri: responseURI,
+      nonce: "n",
+      state: "s",
+      verifier_info: verifierInfo,
+      dcql_query: JSON.stringify({
+        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["age_equal_or_over", "18"] }] }],
+      }),
+    });
+    jsonPost(`${WALLET_URL}/api/presentations`, { uri, interactive: true }).catch(() => {});
+    await page.goto(`${WALLET_URL}/?request=${await waitForPendingRequest()}`);
+    await expect(page.locator("#consent-purpose-0")).toContainText("Age check before checkout");
+    await page.locator("#consent-deny").click();
+  });
+
+  test("the relying parties list filters by role and deletes a registration", async ({ page }) => {
+    const { status, body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Listed Shop",
+      services: [{ intendedUses: [{
+        purpose: [{ lang: "en", content: "Listed purpose" }],
+        credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
+      }] }],
+    });
+    expect(status).toBe(201);
+    const card = "#registrar-party-" + body.identifier[0].identifier;
+    const use = card + "-use-" + body.services[0].intendedUses[0].intendedUseIdentifier;
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await expect(page.locator(card + "-role-verifier")).toBeVisible();
+    await expect(page.locator(use + "-purpose")).toHaveText("Listed purpose");
+
+    // The wallet's own issuer registration is the only issuer in the register.
+    const provider = await page.evaluate(async () => {
+      const resp = await fetch("api/registrar/wrp?limit=1", { headers: { Accept: "application/json" } });
+      return (await resp.json()).data[0].identifier[0].identifier;
+    });
+    await page.locator("#registrar-filter-issuers").check();
+    await expect(page.locator(card)).toHaveCount(0);
+    await expect(page.locator("#registrar-party-" + provider.replace(/[^A-Za-z0-9_-]/g, "_") + "-role-issuer")).toBeVisible();
+    await page.locator("#registrar-filter-verifiers").check();
+
+    await expect(page.locator(use + "-status")).toHaveText("No certificate");
+    await expect(page.locator(use + "-revoke")).toHaveCount(0);
+    await expect(page.locator(use + "-issue")).toHaveText("Issue certificate");
+    await page.locator(use + "-issue").click();
+    await expect(page.locator(use + "-verifier-info")).toHaveValue(/registration_cert/);
+    await expect(page.locator(use + "-status")).toHaveText("Active");
+    await expect(page.locator(use + "-issue")).toHaveText("Issue new certificate");
+    await page.locator(use + "-revoke").click();
+    await expect(page.locator(use + "-status")).toHaveText("Revoked");
+    await expect(page.locator(use + "-revoke")).toHaveText("Activate");
+    await page.locator(use + "-revoke").click();
+    await expect(page.locator(use + "-status")).toHaveText("Active");
+    await expect(page.locator(use + "-revoke")).toHaveText("Revoke");
+
+    await page.locator(card + "-delete").click();
+    await expect(page.locator(card)).toHaveCount(0);
+    // Focus stays in the dialog, so Escape closes it.
+    await expect(page.locator("#registrar-parties-title")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#registrar-parties-overlay")).toBeHidden();
+  });
+
+  test("a changed intended use shows its certificate revoked for good", async ({ page }) => {
+    const { body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Changing Shop",
+      services: [{ intendedUses: [{
+        purpose: [{ lang: "en", content: "Age check" }],
+        credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["age_equal_or_over", "18"] }] }],
+      }] }],
+    });
+    const identifier = body.identifier[0].identifier;
+    const use = "#registrar-party-" + identifier + "-use-" + body.services[0].intendedUses[0].intendedUseIdentifier;
+    await jsonPost(`${WALLET_URL}/api/registrar/registration-certificates`, { identifier, intendedUseIdentifier: body.services[0].intendedUses[0].intendedUseIdentifier });
+    body.services[0].intendedUses[0].purpose = [{ lang: "en", content: "Marketing" }];
+    await page.goto(WALLET_URL);
+    await page.evaluate(async (rp) => {
+      await fetch("api/registrar/wrp", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rp) });
+    }, body);
+
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await expect(page.locator(use + "-status")).toHaveText("Revoked");
+    await expect(page.locator(use + "-revoke")).toHaveCount(0);
+    await expect(page.locator(use + "-issue")).toHaveText("Issue new certificate");
+    await page.locator(use + "-issue").click();
+    await expect(page.locator(use + "-status")).toHaveText("Active");
+  });
+
+  test("the relying parties list searches as you type and pages", async ({ page }) => {
+    const tag = "Pager" + Date.now();
+    for (let i = 1; i <= 12; i++) {
+      await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+        tradeName: `${tag} Shop ${i}`,
+        services: [{ intendedUses: [{
+          purpose: [{ lang: "en", content: i === 7 ? "Loyalty card check" : "Age check" }],
+          credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
+        }] }],
+      });
+    }
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator("#registrar-search").fill(tag);
+    await expect(page.locator("#registrar-party-list .registrar-party")).toHaveCount(10);
+    await expect(page.locator("#registrar-page-info")).toHaveText("Page 1 of 2 · 12 relying parties");
+    await expect(page.locator("#registrar-page-prev")).toBeDisabled();
+    // The newest registration comes first.
+    await expect(page.locator("#registrar-party-list .registrar-party-name").first()).toHaveText(`${tag} Shop 12`);
+    await page.locator("#registrar-page-next").click();
+    await expect(page.locator("#registrar-party-list .registrar-party")).toHaveCount(2);
+    await expect(page.locator("#registrar-page-next")).toBeDisabled();
+
+    await expect(page.locator(`#registrar-search-suggestions option[value="${tag} Shop 3"]`)).toHaveCount(1);
+    await page.locator("#registrar-search").fill("loyalty card");
+    await expect(page.locator("#registrar-party-list .registrar-party-name")).toHaveText([`${tag} Shop 7`]);
+    await expect(page.locator("#registrar-pager")).toBeHidden();
+    await page.locator("#registrar-search").fill(tag + " nothing");
+    await expect(page.locator("#registrar-party-empty")).toHaveText(`No relying party matches "${tag} nothing".`);
+
+  });
+
+  test("a registered relying party gets a further intended use and certificate", async ({ page }) => {
+    const { body } = await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
+      tradeName: "Growing Shop",
+      services: [{ intendedUses: [{
+        purpose: [{ lang: "en", content: "First purpose" }],
+        credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
+      }] }],
+    });
+    const card = "#registrar-party-" + body.identifier[0].identifier;
+
+    await page.goto(WALLET_URL);
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+    await page.locator(card + "-add-use").click();
+    await expect(page.locator("#registrar-title")).toContainText("Growing Shop");
+    await expect(page.locator("#registrar-name")).toBeHidden();
+    await expect(page.locator("#registrar-csr")).toBeHidden();
+    await page.locator("#registrar-purpose").fill("Second purpose");
+    await page.locator("#registrar-submit").click();
+    await expect(page.locator("#registrar-submit")).toHaveText("✓ Added");
+    await expect(page.locator("#registrar-verifier-info")).toHaveValue(/registration_cert/);
+    await expect(page.locator("#registrar-client-ids")).toBeHidden();
+
+    await page.locator("#registrar-close").click();
+    await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
+    await expect(page.locator(card + " .registrar-use")).toHaveCount(2);
+    await expect(page.locator(card + ' .registrar-use[data-status="active"] .registrar-use-purpose')).toHaveText("Second purpose");
+  });
+
+  test("the registrar submenu works at phone width", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(WALLET_URL);
+    await page.locator("#header-menu-toggle").click();
+    await page.locator("#registrar-menu-toggle").click();
+    await expect(page.locator("#registrar-menu-toggle")).toHaveAttribute("aria-expanded", "true");
+    await page.locator("#registrar-parties-link").click();
+    await expect(page.locator("#registrar-parties-overlay")).toBeVisible();
+    await page.locator("#registrar-parties-register").click();
+    await expect(page.locator("#registrar-overlay")).toBeVisible();
+  });
+
+});

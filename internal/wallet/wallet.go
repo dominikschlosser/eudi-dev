@@ -65,11 +65,16 @@ type NextErrorOverride struct {
 }
 
 type Wallet struct {
-	HolderKey               *ecdsa.PrivateKey
-	IssuerKey               *ecdsa.PrivateKey
-	CAKey                   *ecdsa.PrivateKey
-	CertChain               []*x509.Certificate     // [leaf, CA] certificate chain
-	IssuedAttestations      []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
+	HolderKey          *ecdsa.PrivateKey
+	IssuerKey          *ecdsa.PrivateKey
+	CAKey              *ecdsa.PrivateKey
+	CertChain          []*x509.Certificate     // [leaf, CA] certificate chain
+	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
+	// RelyingParties are the registrations of the wallet's registrar.
+	RelyingParties []WalletRelyingParty `json:"relying_parties,omitempty"`
+	// RegistrationStatuses are the status list entries of the registration
+	// certificates issued by the registrar.
+	RegistrationStatuses    []RegistrationStatus `json:"registration_statuses,omitempty"`
 	AutoAccept              bool
 	SessionTranscript       SessionTranscriptMode // "oid4vp" (default) or "iso"
 	PreferredFormat         string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"
@@ -77,6 +82,12 @@ type Wallet struct {
 	// The wallet advertises this key even when RequireEncryptedRequest is false.
 	RequestEncryptionKey *ecdsa.PrivateKey
 	RequireHAIP          bool
+	// RequireARF checks presentation requests against the ARF registration
+	// rules (--arf).
+	RequireARF bool
+	// RelyingPartyCAPEM holds further CAs that issue relying party access and
+	// registration certificates (--relying-party-ca).
+	RelyingPartyCAPEM []byte
 	// Read runtime changes through KeyAttestationLevelSetting. See
 	// ParseKeyAttestationLevel for supported claims about key storage.
 	KeyAttestationLevel string `json:"-"`
@@ -329,8 +340,10 @@ type ConsentRequest struct {
 	Nonce        string                       `json:"nonce,omitempty"`
 	ResponseURI  string                       `json:"response_uri,omitempty"`
 	DCQLQuery    map[string]any               `json:"dcql_query,omitempty"`
-	// Registered purposes read from verifier_info certificates for the consent dialog.
-	Purposes []string `json:"purposes,omitempty"`
+	// Purposes and privacy policy links from the request's registration
+	// certificates, for the consent dialog.
+	Purposes        []string `json:"purposes,omitempty"`
+	PrivacyPolicies []string `json:"privacy_policies,omitempty"`
 	// Alternatives for the Edit view. MatchedCreds retains the automatic selection.
 	CredentialOptions *ConsentCredentialOptions `json:"credential_options,omitempty"`
 	// Never serialize the owner because another caller could use it to claim the
@@ -958,6 +971,13 @@ func (w *Wallet) HolderKeyPair() *ecdsa.PrivateKey {
 	return w.HolderKey
 }
 
+// ARFChecks reports whether --arf is on.
+func (w *Wallet) ARFChecks() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.RequireARF
+}
+
 // ConformanceSettings reads the three settings under one lock so they are consistent.
 func (w *Wallet) ConformanceSettings() (ValidationMode, bool, bool) {
 	w.mu.RLock()
@@ -1212,6 +1232,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if len(r.Purposes) > 0 {
 		m["purposes"] = r.Purposes
+	}
+	if len(r.PrivacyPolicies) > 0 {
+		m["privacy_policies"] = r.PrivacyPolicies
 	}
 	if r.CredentialOptions != nil {
 		m["credential_options"] = r.CredentialOptions

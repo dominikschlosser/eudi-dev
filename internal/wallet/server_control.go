@@ -178,6 +178,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		"auto_accept":           s.wallet.AutoAccept,
 		"session_transcript":    string(s.wallet.SessionTranscript),
 		"require_haip":          requireHAIP,
+		"require_arf":           s.wallet.ARFChecks(),
 		// Report issuance and presentation settings separately even though they use
 		// the same flag.
 		"require_haip_issuance":     requireHAIP,
@@ -271,6 +272,7 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 		TLSVerify           json.RawMessage `json:"tls_verify,omitempty"`
 		Mode                *string         `json:"mode,omitempty"`
 		HAIP                *bool           `json:"haip,omitempty"`
+		ARF                 *bool           `json:"arf,omitempty"`
 		Encrypted           *bool           `json:"encrypted,omitempty"`
 		VCIVersion          *string         `json:"vci_version,omitempty"`
 		KeyAttestationLevel *string         `json:"key_attestation_level,omitempty"`
@@ -329,6 +331,9 @@ func (s *Server) handleSetConformance(w http.ResponseWriter, r *http.Request) {
 	if body.HAIP != nil {
 		s.wallet.RequireHAIP = *body.HAIP
 	}
+	if body.ARF != nil {
+		s.wallet.RequireARF = *body.ARF
+	}
 	if body.Encrypted != nil {
 		s.wallet.RequireEncryptedRequest = *body.Encrypted
 	}
@@ -346,6 +351,7 @@ func (s *Server) handleResetConformance(w http.ResponseWriter, r *http.Request) 
 	s.wallet.tlsVerify = s.defaultTLSVerify
 	s.wallet.ValidationMode = s.defaultValidationMode
 	s.wallet.RequireHAIP = s.defaultRequireHAIP
+	s.wallet.RequireARF = s.defaultRequireARF
 	s.wallet.RequireEncryptedRequest = s.defaultRequireEncryptedRequest
 	s.wallet.VCIVersion = s.defaultVCIVersion
 	s.wallet.KeyAttestationLevel = s.defaultKeyAttestationLevel
@@ -366,6 +372,7 @@ func (s *Server) writeConformanceConfig(w http.ResponseWriter) {
 		"tls_verify_override":       s.wallet.tlsVerify,
 		"validation_mode":           string(s.wallet.ValidationMode),
 		"require_haip":              s.wallet.RequireHAIP,
+		"require_arf":               s.wallet.RequireARF,
 		"require_encrypted_request": s.wallet.RequireEncryptedRequest,
 		"vci_version":               string(vciVersion),
 		"key_attestation_level":     s.wallet.KeyAttestationLevel,

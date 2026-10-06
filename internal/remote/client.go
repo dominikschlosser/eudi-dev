@@ -78,6 +78,8 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	// The registrar API signs its answers unless the client asks for JSON.
+	req.Header.Set("Accept", "application/json")
 	// The server recognizes older clients that need compatibility handling.
 	req.Header.Set(config.ClientHeader, "eudi-cli/"+version)
 	if c.owner != "" {
@@ -180,6 +182,43 @@ func (c *Client) Issue(req map[string]any) (map[string]any, error) {
 	var out map[string]any
 	err := c.do(http.MethodPost, "/api/issue", req, &out)
 	return out, err
+}
+
+// RegistrationCertificate asks the wallet's registrar to sign a registration
+// certificate for a relying party and decodes the answer into out.
+func (c *Client) RegistrationCertificate(req, out any) error {
+	return c.do(http.MethodPost, "/api/registrar/registration-certificates", req, out)
+}
+
+// RegisterRelyingParty stores a relying party with the wallet's registrar
+// (TS05 v1.5 POST /wrp) and decodes the stored record into out.
+func (c *Client) RegisterRelyingParty(rp, out any) error {
+	return c.do(http.MethodPost, "/api/registrar/wrp", rp, out)
+}
+
+// SetRegistrationCertificateStatus revokes or reactivates the registration
+// certificates of a relying party or one of its intended uses and decodes the
+// count into out.
+func (c *Client) SetRegistrationCertificateStatus(req, out any) error {
+	return c.do(http.MethodPost, "/api/registrar/registration-certificates/status", req, out)
+}
+
+// RegistrarRecords reads every record of the wallet's registrar (TS05 v1.5
+// GET /wrp).
+func (c *Client) RegistrarRecords(out any) error {
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := c.do(http.MethodGet, "/api/registrar/wrp?limit=1000", nil, &envelope); err != nil {
+		return err
+	}
+	return json.Unmarshal(envelope.Data, out)
+}
+
+// AccessCertificate asks the wallet's access certificate authority to sign an
+// access certificate for a CSR and decodes the answer into out.
+func (c *Client) AccessCertificate(req, out any) error {
+	return c.do(http.MethodPost, "/api/registrar/access-certificates", req, out)
 }
 
 func (c *Client) GeneratePID(claims map[string]any, vct string) error {

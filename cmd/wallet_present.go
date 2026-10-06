@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,8 @@ type dispatchOID4Opts struct {
 	sessionTranscript string
 	txCode            string
 	haip              bool
+	arf               bool
+	relyingPartyCAs   []string
 	mode              string
 	// keyAttestationLevel is what a key attestation claims (see
 	// Wallet.KeyAttestationLevel).
@@ -75,6 +78,12 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		}
 		if opts.haip {
 			w.RequireHAIP = true
+		}
+		if opts.arf {
+			w.RequireARF = true
+		}
+		if err := loadRelyingPartyCAs(w, opts.relyingPartyCAs); err != nil {
+			return err
 		}
 		w.KeyAttestationLevel = opts.keyAttestationLevel
 		if err := applySessionTranscriptMode(w, opts.sessionTranscript); err != nil {
@@ -114,7 +123,8 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	responseURI := wallet.GetResponseURI(parsed)
 	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
-	findings, err := wallet.ValidateAuthorizationRequest(w.ValidationMode, w.RequireHAIP, authReq)
+	w.PrepareARFChecks(authReq)
+	findings, err := wallet.ValidateAuthorizationRequest(w.ValidationMode, w.RequireHAIP, w.RequireARF, authReq)
 	if err != nil {
 		return err
 	}
@@ -253,6 +263,10 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 
 	if err := checkRemoteOutboundFlags(); err != nil {
 		return true, err
+	}
+	// A running wallet validates with its own --arf setting and relying party CAs.
+	if opts.arf || len(opts.relyingPartyCAs) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: the wallet running at %s uses its own --arf and --relying-party-ca settings, not these flags\n", baseURL)
 	}
 	payload := runningWalletPresentationPayload(uri, opts)
 
@@ -692,4 +706,21 @@ func followVerifierRedirect(redirectURI string, browserWaiting bool) {
 // 1.0 §13.3, steps 7 to 10). A second navigation can fail.
 func navigatesHere(browserWaiting bool) bool {
 	return !noOpen && !browserWaiting
+}
+
+// loadRelyingPartyCAs reads the PEM files of --relying-party-ca.
+func loadRelyingPartyCAs(w *wallet.Wallet, paths []string) error {
+	var bundle []byte
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading --relying-party-ca: %w", err)
+		}
+		if !x509.NewCertPool().AppendCertsFromPEM(data) {
+			return fmt.Errorf("--relying-party-ca %s holds no PEM certificate", path)
+		}
+		bundle = append(append(bundle, data...), '\n')
+	}
+	w.RelyingPartyCAPEM = bundle
+	return nil
 }

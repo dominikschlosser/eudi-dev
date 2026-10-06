@@ -17,8 +17,10 @@ package wallet
 import (
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/big"
 	"net/http"
@@ -204,69 +206,41 @@ func AcceptsOnlySignedIssuerMetadata(accept string) bool {
 	return wantsJWT
 }
 
-func (s *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) {
-	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
-	if issuer == "" {
-		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
+// handleIssueRegistrationCertificate signs a registration certificate for a
+// registered intended use with the wallet's registrar key.
+func (s *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *http.Request) {
+	var req RegistrationCertificateRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
 		return
 	}
-	if s.wallet.CAKey == nil || len(s.wallet.CertChain) == 0 {
-		http.Error(w, "wallet has no registrar signing material", http.StatusInternalServerError)
-		return
-	}
-	registrarKey, registrarChain, err := s.wallet.RegistrarSigningMaterial()
+	var result *RegistrationCertificateResult
+	var err error
+	s.saveMutation(func() bool {
+		result, err = s.wallet.IssueRegistrationCertificate(req)
+		return err == nil
+	})
 	if err != nil {
-		http.Error(w, "loading registrar signer: "+err.Error(), http.StatusInternalServerError)
+		writeRegistrarError(w, err)
 		return
 	}
-	record := buildRegistrarDataset(s.wallet, issuer)
-	if !matchesRegistrarQuery(record, r) {
-		recordJWT, err := signRegistrarResponseJWT(registrarKey, registrarChain, []RegistrarDataset{})
-		if err != nil {
-			http.Error(w, fmt.Sprintf("signing registrar response: %v", err), http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/jwt")
-		w.Write([]byte(recordJWT))
-		return
-	}
-	recordJWT, err := signRegistrarResponseJWT(registrarKey, registrarChain, []RegistrarDataset{record})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("signing registrar response: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/jwt")
-	w.Write([]byte(recordJWT))
+	writeJSON(w, http.StatusCreated, result)
 }
 
-func (s *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.Request) {
-	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
-	if issuer == "" {
-		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
+// handleIssueAccessCertificate signs an access certificate for the public key of
+// a registered relying party's CSR.
+func (s *Server) handleIssueAccessCertificate(w http.ResponseWriter, r *http.Request) {
+	var req AccessCertificateRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
 		return
 	}
-	if s.wallet.CAKey == nil || len(s.wallet.CertChain) == 0 {
-		http.Error(w, "wallet has no registrar signing material", http.StatusInternalServerError)
-		return
-	}
-	registrarKey, registrarChain, err := s.wallet.RegistrarSigningMaterial()
+	result, err := s.wallet.IssueAccessCertificate(req)
 	if err != nil {
-		http.Error(w, "loading registrar signer: "+err.Error(), http.StatusInternalServerError)
+		writeRegistrarError(w, err)
 		return
 	}
-	record := buildRegistrarDataset(s.wallet, issuer)
-	identifier := strings.TrimSpace(r.PathValue("identifier"))
-	if identifier == "" || !recordHasIdentifier(record, identifier) {
-		http.Error(w, "wallet relying party not found", http.StatusNotFound)
-		return
-	}
-	recordJWT, err := signRegistrarResponseJWT(registrarKey, registrarChain, record)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("signing registrar response: %v", err), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/jwt")
-	w.Write([]byte(recordJWT))
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {
@@ -340,64 +314,4 @@ func (s *Server) handleCRL(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/pkix-crl")
 	w.Write(der)
-}
-
-func matchesRegistrarQuery(record RegistrarDataset, r *http.Request) bool {
-	q := r.URL.Query()
-	if identifier := strings.TrimSpace(q.Get("identifier")); identifier != "" && !recordHasIdentifier(record, identifier) {
-		return false
-	}
-	if entitlement := strings.TrimSpace(q.Get("entitlement")); entitlement != "" {
-		match := false
-		for _, candidate := range record.Entitlements {
-			if candidate == entitlement {
-				match = true
-				break
-			}
-		}
-		if !match {
-			return false
-		}
-	}
-	if provides := strings.TrimSpace(q.Get("providesattestation")); provides != "" && !recordProvidesAttestation(record, provides) {
-		return false
-	}
-	return true
-}
-
-func recordHasIdentifier(record RegistrarDataset, value string) bool {
-	for _, identifier := range record.Identifier {
-		if strings.TrimSpace(identifier.Identifier) == value {
-			return true
-		}
-	}
-	return false
-}
-
-func recordProvidesAttestation(record RegistrarDataset, value string) bool {
-	for _, att := range record.ProvidesAttestations {
-		switch att.Format {
-		case "dc+sd-jwt":
-			raw, ok := att.Meta["vct_values"].([]string)
-			if ok {
-				for _, candidate := range raw {
-					if candidate == value {
-						return true
-					}
-				}
-			}
-			if rawAny, ok := att.Meta["vct_values"].([]any); ok {
-				for _, candidate := range rawAny {
-					if s, ok := candidate.(string); ok && s == value {
-						return true
-					}
-				}
-			}
-		case "mso_mdoc":
-			if candidate, _ := att.Meta["doctype_value"].(string); candidate == value {
-				return true
-			}
-		}
-	}
-	return false
 }

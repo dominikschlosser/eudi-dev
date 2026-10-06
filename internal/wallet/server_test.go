@@ -2066,7 +2066,8 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	}
 }
 
-func TestRegistrarWRPList_FiltersByProvidesAttestation(t *testing.T) {
+// TS05 v1.5 §3.2.2: providedattestation finds the providers of a credential type.
+func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
@@ -2074,30 +2075,24 @@ func TestRegistrarWRPList_FiltersByProvidesAttestation(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	matchResp := serverRequest(t, srv, "GET", "/api/registrar/wrp?providesattestation="+url.QueryEscape(mock.DefaultPIDVCT), "")
-	if matchResp.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", matchResp.Code, matchResp.Body.String())
+	list := func(attestation string) []WalletRelyingParty {
+		t.Helper()
+		resp := serverRequest(t, srv, "GET", "/api/registrar/wrp?providedattestation="+url.QueryEscape(attestation), "")
+		if resp.Code != http.StatusOK || resp.Header().Get("Content-Type") != "application/jwt" {
+			t.Fatalf("got %d %s: %s", resp.Code, resp.Header().Get("Content-Type"), resp.Body.String())
+		}
+		var page struct {
+			Data []WalletRelyingParty `json:"data"`
+		}
+		decodeCompactJWTPayload(t, resp.Body.String(), &page)
+		return page.Data
 	}
-	if ct := matchResp.Header().Get("Content-Type"); ct != "application/jwt" {
-		t.Fatalf("expected registrar application/jwt content type, got %s", ct)
+	matched := list(mock.DefaultPIDVCT)
+	if len(matched) != 1 || matched[0].RegistryURI != w.IssuerURL+"/api/registrar/wrp" {
+		t.Fatalf("matched %+v, want the wallet's provider record", matched)
 	}
-	var matched []map[string]any
-	decodeCompactJWTPayload(t, matchResp.Body.String(), &matched)
-	if len(matched) != 1 {
-		t.Fatalf("expected 1 matching registrar entry, got %d", len(matched))
-	}
-	if matched[0]["registryURI"] != w.IssuerURL+"/api/registrar/wrp" {
-		t.Fatalf("expected matching registryURI, got %v", matched[0]["registryURI"])
-	}
-
-	missResp := serverRequest(t, srv, "GET", "/api/registrar/wrp?providesattestation="+url.QueryEscape("urn:example:unknown"), "")
-	if missResp.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", missResp.Code, missResp.Body.String())
-	}
-	var unmatched []map[string]any
-	decodeCompactJWTPayload(t, missResp.Body.String(), &unmatched)
-	if len(unmatched) != 0 {
-		t.Fatalf("expected no registrar entries for unmatched attestation, got %d", len(unmatched))
+	if unmatched := list("urn:example:unknown"); len(unmatched) != 0 {
+		t.Fatalf("expected no registrar entries for an unknown attestation, got %d", len(unmatched))
 	}
 }
 

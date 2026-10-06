@@ -165,7 +165,7 @@ eudi wallet scan --screen         # QR scan → auto-dispatch
 eudi wallet logs -f               # Follow persisted wallet interactions
 ```
 
-> **Security:** Anyone with network access to the wallet port controls its credentials. Use localhost or an isolated test network and store test data only. The API rejects cross-origin requests. The exception is `/api/dc-api`, which verifier pages call from their own origin. It relies on the reported caller origin and the consent dialog. For public hosting, use the `--demo` profile (see [public demo hosting](docs/public-demo.md)).
+> **Security:** Anyone with network access to the wallet port controls its credentials and registered relying parties. Use localhost or an isolated test network and store test data only. The API rejects cross-origin requests. The exception is `/api/dc-api`, which verifier pages call from their own origin. It relies on the reported caller origin and the consent dialog. For public hosting, use the `--demo` profile (see [public demo hosting](docs/public-demo.md)).
 
 `wallet serve` hosts the UI and protocol endpoints, including issuer metadata, trust lists and status lists. Use `issue ... --wallet --template pid-sdjwt` to add a PID. `wallet ca-cert` and `wallet tls-cert` export certificates for verifier trust stores. Automated tests can do the same through the [HTTP API](docs/wallet/http-api.md).
 
@@ -183,8 +183,10 @@ The main commands:
 - `wallet --tls-verify=true|false` to set HTTPS certificate verification and `--tls-ca dev-ca.pem` to trust a development CA
 - `wallet --https-proxy http://proxy:3128` (or `HTTPS_PROXY`) to send requests to issuers and verifiers through a forward proxy
 - `wallet serve --haip` to check verifiers and issuers against HAIP 1.0
+- `wallet serve --arf` to check verifiers' access and registration certificates against the ARF
+- `wallet registrar` to register relying parties and issue their certificates
 
-`--haip` adds HAIP 1.0 checks. `--mode strict` stops the flow on findings, including HAIP findings. `--mode debug` reports them and continues. See [HAIP enforcement](docs/wallet/presenting.md#haip-10-enforcement).
+`--haip` adds HAIP 1.0 checks and `--arf` adds the ARF relying party checks. `--mode strict` stops the flow on findings, including HAIP and ARF findings. `--mode debug` reports them and continues. See [HAIP enforcement](docs/wallet/presenting.md#haip-10-enforcement) and [ARF checks](docs/wallet/presenting.md#arf-checks).
 
 When a wallet server is running for the selected wallet directory, CLI commands use its API. After `wallet use <url>`, commands and clicked offer or presentation links go to that target. `wallet ps` lists local instances and the active remote target.
 
@@ -193,6 +195,7 @@ When a wallet server is running for the selected wallet directory, CLI commands 
 ![Wallet UI](docs/assets/wallet-ui.png)
 
 → [Full documentation](docs/wallet.md): subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
+→ [Registrar](docs/wallet/registrar.md): register relying parties and issue their access and registration certificates
 → [Public demo hosting](docs/public-demo.md): run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
 → [Flow diagrams](docs/diagrams/README.md): OID4VP / OID4VCI interaction diagrams and parameter checklists
 

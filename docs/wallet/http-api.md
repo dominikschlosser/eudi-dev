@@ -141,6 +141,8 @@ The CA and TLS endpoints mirror `wallet ca-cert` and `wallet tls-cert`. Both ret
 | `GET`  | `/api/certificates/ca?format=jwks`  | Shared wallet CA certificate as JWKS                 | `wallet ca-cert --jwks` |
 | `GET`  | `/api/certificates/tls`         | HTTPS leaf certificate for the wallet's issuer URL (PEM) | `wallet tls-cert` |
 | `GET`  | `/api/certificates/tls?format=jwks` | HTTPS leaf certificate as JWKS                       | `wallet tls-cert --jwks` |
+| `GET` | `/api/certificates/registrar` | Registrar signing certificate (PEM, `?format=jwks` for JWKS) | |
+| `GET` | `/api/certificates/relying-party-access-ca` | Relying party access CA. It signs the access certificates of registered relying parties (PEM, `?format=jwks` for JWKS) | |
 | `GET` | `/api/certificates/ca.der` | Root CA certificate as DER | |
 | `GET` | `/api/certificates/providers/{role}/{country}.der` | Provider CA certificate as DER | |
 | `GET` | `/api/certificates/signers/{sha256}.pem` | Archived signing certificate as PEM | |
@@ -164,8 +166,6 @@ These endpoints are available on both wallet ports.
 | `GET` | `/.well-known/jwt-vc-issuer` | Public credential signing keys |
 | `GET` | `/.well-known/openid-credential-issuer` | Wallet issuer metadata |
 | `GET` | `/.well-known/openid-credential-issuer/issuer` | Demo issuer metadata, when the demo is enabled |
-| `GET` | `/api/registrar/wrp` | Provider registrations |
-| `GET` | `/api/registrar/wrp/{identifier}` | One provider registration |
 | `GET` | `/api/trustlist` | Default signed trust list |
 | `GET` | `/api/trustlists` | Available trust lists and their URLs |
 | `GET` | `/api/trustlists/{id}` | Signed trust list for a profile |
@@ -174,9 +174,29 @@ These endpoints are available on both wallet ports.
 | `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of saved profile trust lists |
 | `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved profile trust list |
 
-Issuer metadata is JSON by default. `Accept: application/jwt` selects metadata signed with the Access Certificate key. Its `issuer_info` includes a Registrar-signed registration certificate and the existing registrar dataset. Provider registration status and revocation are not implemented.
+Issuer metadata is JSON by default. `Accept: application/jwt` selects metadata signed with the Access Certificate key. Its `issuer_info` includes a Registrar-signed registration certificate and the existing registrar dataset. The registration certificate's status list entry is never revoked.
 
 Trust lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
+
+### Registrar
+
+These endpoints are available on both wallet ports. Like credentials, anyone with access to the wallet can register, change and delete relying parties. See [registrar](registrar.md).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/registrar/wrp` | Search relying party registrations (TS05 v1.5) |
+| `GET` | `/api/registrar/wrp/{identifier}` | One registration |
+| `GET` | `/api/registrar/wrp/{identifier}/services/{serviceidentifier}` | One service of a registration |
+| `GET` | `/api/registrar/wrp/check-intended-use` | Check a registered intended use |
+| `POST` | `/api/registrar/wrp` | Register a relying party |
+| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use changes or is missing, its certificates are revoked |
+| `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
+| `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
+| `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use. Answers `409` if the registration changed in the meantime |
+| `GET` | `/api/registrar/registration-certificates` | Status list entries of the issued registration certificates |
+| `POST` | `/api/registrar/registration-certificates/status` | Revoke or activate registration certificates |
+| `GET` | `/api/registrar/status-list` | Status list of the registration certificates |
+| `GET` | `/privacy-policy`, `/support`, `/supervisory-authority` | Placeholder pages for the default privacy policy, support and supervisory authority URLs |
 
 ### One-shot error override
 
@@ -490,11 +510,11 @@ Discovery includes local instances and the active remote target. A responding re
 
 `GET /api/config` reports the instance version, build, serving URLs, wallet settings and credential count. It identifies the [storage backend](../wallet.md#storage-backends) and whether generated keys use a [seed](../wallet.md#seeded-keys).
 
-The response includes `port`, `build_id`, `version`, `storage`, `seeded_keys`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `key_attestation_level`, `tls_verify`, `tls_verify_override`, `validation_mode`, `vci_version`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_encrypted_request`, `force_client_attestation`, `adhoc_display_images`, `tls_listener`, `imprint` and `credential_count`.
+The response includes `port`, `build_id`, `version`, `storage`, `seeded_keys`, `base_url`, `issuer_url`, `status_list_url`, `preferred_format`, `key_attestation_level`, `tls_verify`, `tls_verify_override`, `validation_mode`, `vci_version`, `auto_accept`, `session_transcript`, `require_haip`, `require_haip_issuance`, `require_arf`, `require_encrypted_request`, `force_client_attestation`, `adhoc_display_images`, `tls_listener`, `imprint` and `credential_count`.
 
 Local instances also report `pid`, `wallet_dir` and `templates_dir`. Demo mode hides those fields and adds a `demo` object. `POST /api/shutdown` sends its response before stopping the instance.
 
-`PUT /api/config/conformance` accepts these values for `tls_verify`:
+`PUT /api/config/conformance` takes `mode`, `tls_verify`, `haip`, `arf`, `encrypted`, `vci_version` and `key_attestation_level`. It accepts these values for `tls_verify`:
 
 | Value | HTTPS certificate verification |
 |---|---|

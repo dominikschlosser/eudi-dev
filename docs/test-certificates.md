@@ -36,6 +36,7 @@ OpenID4VCI 1.0 is the baseline, with 1.1 available as an optional draft feature 
 | PID issuance | Credential key, PID provider leaf with QcType `0.4.0.194126.1.1` |
 | Wallet and key attestations | Separate wallet provider key and leaf with QcType `0.4.0.194126.1.2` |
 | Signed issuer metadata and verifier requests | Separate access key and certificate with policy `0.4.0.194118.1.2` |
+| Registered relying parties | Access certificates issued for a CSR, with policy `0.4.0.194118.1.2`, signed by a separate relying party access CA (see [registrar](wallet/registrar.md)) |
 | Registrar responses and registration certificates | Separate registrar key and signing certificate |
 | Credential status | Separate status key and signing certificate |
 | Trust lists | Separate list operator key and signing certificate |
@@ -146,4 +147,4 @@ EUDI Dev uses P-256 keys for all of those roles. Generated data types and names 
 
 The requirements come from the versioned specifications and their regulatory adaptations. The [OpenID Foundation conformance tests](https://openid.net/certification/) cover the selected OpenID4VP, OpenID4VCI and HAIP plans and variants. They do not cover every EUDI requirement. ETSI certificate profiles, trust lists, registration information, PID rulebooks and ISO mdoc requirements must be checked against their own sources.
 
-The toolkit tests protocol exchanges, signatures, certificate structure and generated data. Registration certificates simulate provider registration. Their status and revocation lifecycle is not implemented. Official trust, certified hardware protection and physical presence checks require the corresponding ecosystem services. Configured key attestation assurance values are simulated. See [spec compliance](spec-compliance.md) and [conformance results](conformance-results.md) for implemented checks and remaining protocol limits.
+The toolkit tests protocol exchanges, signatures, certificate structure and generated data. The [registrar](wallet/registrar.md) simulates relying party registration, including revocation through a status list. Official trust, certified hardware protection and physical presence checks require the corresponding ecosystem services. Configured key attestation assurance values are simulated. See [spec compliance](spec-compliance.md) and [conformance results](conformance-results.md) for implemented checks and remaining protocol limits.

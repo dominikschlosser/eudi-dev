@@ -282,6 +282,7 @@ func conformantRegistrationCert() map[string]any {
 		"support_uri":           "https://example/support",
 		"supervisory_authority": map[string]any{"email": "dpa@example"},
 		"iat":                   float64(time.Now().Unix()),
+		"status":                map[string]any{"status_list": map[string]any{"idx": float64(7), "uri": "https://registrar.example/status"}},
 		"credentials": []any{map[string]any{
 			"format": "dc+sd-jwt",
 			"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
@@ -297,7 +298,7 @@ func TestRegistrationCertificateContentFindings(t *testing.T) {
 
 	sparse := map[string]any{"name": "X", "sub": "Y", "iat": float64(time.Now().Unix())}
 	findings := registrationCertificateContentFindings(sparse)
-	for _, want := range []string{"privacy_policy", "srv_description", "entitlements", "support_uri", "supervisory_authority", "credentials"} {
+	for _, want := range []string{"privacy_policy", "srv_description", "entitlements", "support_uri", "supervisory_authority", "credentials", "status"} {
 		if !containsSubstring(findings, want) {
 			t.Errorf("findings %v should name the missing %s", findings, want)
 		}
@@ -368,6 +369,16 @@ func TestOverAskingFindings(t *testing.T) {
 		t.Errorf("an unregistered type should be one finding for the query, got %v", findings)
 	}
 
+	// An entry without a claim list declares no attributes (ETSI TS 119 475
+	// V1.2.1 Annex B.2.9), so every requested claim over-asks.
+	typeOnly := map[string]any{"credentials": []any{map[string]any{
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+	}}}
+	if !containsSubstring(overAskingFindings(typeOnly, asksGivenName), "given_name") {
+		t.Errorf("a type registered without claims should make given_name over-asking, got %v", overAskingFindings(typeOnly, asksGivenName))
+	}
+
 	// A missing credentials list already has a content finding.
 	noCredentials := map[string]any{"name": "X"}
 	if findings := overAskingFindings(noCredentials, asksGivenName); len(findings) != 0 {
@@ -377,29 +388,21 @@ func TestOverAskingFindings(t *testing.T) {
 
 // ARF RPRC_19 requires a registration certificate even though OpenID4VP makes
 // verifier_info optional.
-func TestConsentPurposesWarnsOnMissingRegistrationCertificate(t *testing.T) {
-	w := generateTestWallet(t)
-	authReq := &AuthorizationRequestParams{RequestPayload: map[string]any{"dcql_query": map[string]any{}}}
-	w.consentPurposes("presentation", authReq)
-	found := false
-	for _, entry := range w.GetLog() {
-		if strings.Contains(entry.Detail, "RPRC_19") {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("a request without a registration certificate should log the RPRC_19 warning")
+func TestARFRequiresARegistrationCertificate(t *testing.T) {
+	findings := ARFFindings(&AuthorizationRequestParams{RequestPayload: map[string]any{"dcql_query": map[string]any{}}})
+	if !containsSubstring(findings, "RPRC_19") {
+		t.Errorf("findings %v, want the RPRC_19 finding", findings)
 	}
 }
 
 // Several certificate findings share one activity log entry.
-func TestConsentPurposesSummarizesCertificateFindings(t *testing.T) {
+func TestARFFindingsShareOneLogEntry(t *testing.T) {
 	w := generateTestWallet(t)
 	cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
-	authReq := &AuthorizationRequestParams{
+	findings := ARFFindings(&AuthorizationRequestParams{
 		RequestPayload: verifierInfoPayload(map[string]any{"format": "registration_cert", "data": cert}),
-	}
-	w.consentPurposes("presentation", authReq)
+	})
+	w.warnFindings("presentation", specCitedSummary("The request", findings), findings)
 
 	summaries := 0
 	var details map[string]any
@@ -414,5 +417,54 @@ func TestConsentPurposesSummarizesCertificateFindings(t *testing.T) {
 	}
 	if list, _ := details["findings"].([]string); len(list) < 2 {
 		t.Errorf("the summary should carry the findings list in its details, got %v", details)
+	}
+}
+
+// --arf checks over-asking (ARF RPRC_21). Strict mode refuses it, debug mode
+// warns, and without --arf the wallet does not check it.
+func TestARFChecksOverAsking(t *testing.T) {
+	w := generateTestWallet(t)
+	chain, err := w.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatalf("signing chain: %v", err)
+	}
+	registered := []map[string]any{{
+		"id":     "pid",
+		"format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+		"claims": []any{map[string]any{"path": []any{"given_name"}}},
+	}}
+	cert, err := SignRegistrationCertificateJWT(map[string]any{
+		"sub": "LEIEU-TEST-VERIFIER", "name": "Test Verifier", "iat": time.Now().Unix(),
+		"credentials": RegisteredCredentials(registered),
+	}, w.IssuerKey, chain)
+	if err != nil {
+		t.Fatalf("signing registration certificate: %v", err)
+	}
+	request := func(claim string) *AuthorizationRequestParams {
+		return &AuthorizationRequestParams{
+			ClientID:     "redirect_uri:https://verifier.example/response",
+			ResponseType: "vp_token",
+			ResponseMode: "direct_post",
+			ResponseURI:  "https://verifier.example/response",
+			Nonce:        "n",
+			DCQLQuery: map[string]any{"credentials": []any{map[string]any{
+				"id":     "pid",
+				"format": "dc+sd-jwt",
+				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+				"claims": []any{map[string]any{"path": []any{claim}}},
+			}}},
+			RequestPayload: verifierInfoPayload(map[string]any{"format": "registration_cert", "data": cert}),
+		}
+	}
+
+	if _, err := ValidateAuthorizationRequest(ValidationModeStrict, false, true, request("birthdate")); err == nil || !strings.Contains(err.Error(), "RPRC_21") {
+		t.Errorf("strict mode with --arf: err = %v, want the RPRC_21 refusal", err)
+	}
+	if findings, err := ValidateAuthorizationRequest(ValidationModeDebug, false, true, request("birthdate")); err != nil || !containsSubstring(findings, "RPRC_21") {
+		t.Errorf("debug mode with --arf: findings %v (%v), want the RPRC_21 warning", findings, err)
+	}
+	if findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, false, request("birthdate")); err != nil || containsSubstring(findings, "RPRC") {
+		t.Errorf("strict mode without --arf: findings %v (%v), want no ARF check", findings, err)
 	}
 }

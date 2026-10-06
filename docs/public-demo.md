@@ -1,6 +1,6 @@
 # Hosting a Public Demo
 
-Run a shared public wallet with the `--demo` profile, as at `https://eudi-test.dev`. Visitors can issue, present, decode and delete test credentials. Process controls and host filesystem endpoints are disabled. See [`examples/public-demo/`](../examples/public-demo/) for a deployment example.
+Run a shared public wallet with the `--demo` profile, as at `https://eudi-test.dev`. Visitors can issue, present, decode and delete test credentials, and register and delete relying parties. Process controls and host filesystem endpoints are disabled. See [`examples/public-demo/`](../examples/public-demo/) for a deployment example.
 
 ## Demo profile
 
@@ -28,17 +28,17 @@ Visitor URLs are restricted to public network addresses. The wallet checks resol
 
 ### Validation
 
-Demo mode checks OpenID4VP and issuance against HAIP 1.0. In debug mode, violations appear as warnings in the activity log and the flow continues. The UI shows the active settings under **Conformance**.
+Demo mode checks OpenID4VP and issuance against HAIP 1.0 and runs the [ARF checks](wallet/presenting.md#arf-checks). In debug mode, violations appear as warnings in the activity log and the flow continues. The UI shows the active settings under **Conformance**.
 
 Presentation checks cover request delivery, client identification, response encryption, credential formats and algorithms. Unsigned Digital Credentials API requests use the platform origin to identify the caller. Issuance checks cover the grant, PAR, PKCE, DPoP and client authentication. See [specification support](spec-compliance.md) for individual requirements.
 
-Use `--mode strict` to reject violations or `--haip=false` to disable HAIP checks. Some interoperability advisories remain warnings in strict mode.
+Use `--mode strict` to reject violations, or `--haip=false` and `--arf=false` to turn the checks off. Some interoperability advisories remain warnings in strict mode.
 
 ### Periodic reset
 
 Resets run every hour by default. `--demo-reset` accepts an interval such as `24h`, a daily time such as `00:00`, or a time with a zone such as `"00:00 Europe/Berlin"`. `0` disables resets. Daily schedules follow local time, including daylight saving changes, and retain their schedule across restarts.
 
-A reset removes visitor credentials, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The signing certificate is renewed. The footer shows the reset schedule.
+A reset removes visitor credentials and registered relying parties, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The signing certificate is renewed. The footer shows the reset schedule.
 
 ## Browser hardening
 
@@ -61,7 +61,7 @@ Every response includes these headers:
 
 Every wallet server includes an issuer at `/issuer` and a verifier at `/verifier`. The issuer offers a Demo Event Ticket through pre-authorized and authorization code flows. The verifier requests the ticket or a PID through OpenID4VP.
 
-The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. A registrar-signed registration certificate identifies the same provider. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
+The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. On its page you can instead register it with the wallet's registrar for the credentials and claims you pick, or paste your own key, access certificate and `verifier_info`. A registered verifier sends its registration certificate with each request. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
 
 The verifier page has a PID format toggle. By default, a PID request accepts either an SD-JWT VC or an mdoc, and the wallet presents one it holds. Select a format to test whether the wallet can present it. The ticket is always an SD-JWT VC.
 
@@ -90,18 +90,20 @@ The consent dialog shows these choices.
 
 All four baseline credentials are protected. The UI, the API and the CLI refuse to delete or revoke them. Visitor credentials can be deleted. Removing baseline protection requires direct access to `wallet.json`.
 
-All visitors share credentials and the activity log. Anyone can issue credentials, delete unprotected credentials and read the log. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
+All visitors share credentials, registered relying parties and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
 
 ## Rate limits
 
 The compose example limits requests per client address in Caddy. The wallet only sees the proxy's address, so set rate limits in the proxy. Build Caddy with the supplied `Dockerfile` to include the rate-limit plugin.
 
-Three zones return `429` with `Retry-After` when exceeded:
+Five zones return `429` with `Retry-After` when exceeded:
 
 | Zone | Requests | What it covers |
 |---|---|---|
 | `flows_burst` | 120 per minute | Endpoints that fetch a visitor-supplied URL or add state that persists until the next reset: presentations, offers, issuance, imports, refreshes, deferred collection, demo issuer offers, verification requests |
 | `flows_hour` | 2000 per hour | The same endpoints, to cap a long-running script between resets |
+| `registrar_burst` | 60 per minute | Registrar changes: registrations, certificates and revocations (`POST`, `PUT` and `DELETE` under `/api/registrar/`) |
+| `registrar_hour` | 600 per hour | The same registrar changes |
 | `site` | 1200 per minute | All requests, including the UI and the stats report |
 
 The limits allow interactive use and cap automated traffic. An idle page makes about 14 initial requests, then receives updates through an event stream. Clients behind the same public address share the limit. With another reverse proxy, set equivalent limits there.
@@ -179,7 +181,7 @@ Pin the CA through an out-of-band exchange. It is self-signed and persists acros
 
 Trust lists are grouped by role. The `pid` and `local` lists publish credential signing certificates and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
 
-The issuer metadata endpoints return JSON by default and an access-certificate-signed JWT when the request accepts only `application/jwt`. They include a registrar-signed registration certificate whose identifier, legal name and country match the access certificate. Registration status and revocation are not implemented. See [test certificates](test-certificates.md) for the exact profiles and versions.
+The issuer metadata endpoints return JSON by default and an access-certificate-signed JWT when the request accepts only `application/jwt`. They include a registrar-signed registration certificate whose identifier, legal name and country match the access certificate. The registration certificate's status list entry is never revoked. See [test certificates](test-certificates.md) for the exact profiles and versions.
 
 ## Imprint
 

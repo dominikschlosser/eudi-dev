@@ -13,6 +13,7 @@ Guides for using eudi-dev as a wallet, issuer, verifier and CA, grouped by task.
 - [Presenting from the wallet](wallet/presenting.md): `wallet accept`, `wallet scan`, invoking by URL, HAIP enforcement
 - [Issuing into the wallet](wallet/issuing.md): sign-in, deferred issuance, renewing, VCI feature level, wallet attestation, interactive authorization
 - [Wallet HTTP API](wallet/http-api.md): the full REST API and remote control
+- [Registrar](wallet/registrar.md): register relying parties, issue their certificates, and see what the wallet checks
 
 ## Issuing credentials
 

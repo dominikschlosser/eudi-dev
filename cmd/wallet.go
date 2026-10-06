@@ -94,6 +94,7 @@ func init() {
 	walletCmd.AddCommand(walletUnregisterCmd())
 	walletCmd.AddCommand(walletTrustListCmd())
 	walletCmd.AddCommand(walletCACertCmd())
+	walletCmd.AddCommand(walletRegistrarCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
 	walletCmd.AddCommand(walletInfoCmd())
 	walletCmd.AddCommand(walletPsCmd())

@@ -162,10 +162,11 @@ type createRequestBody struct {
 	// prefixes derive it from the certificate or the response endpoint.
 	ClientID string `json:"client_id"`
 	// SigningKey is an optional PEM bundle with an EC private key and its
-	// certificate chain. Empty uses the demo verifier certificate.
+	// access certificate chain. The chain goes into the request object's x5c.
+	// Empty uses the demo verifier's access certificate.
 	SigningKey string `json:"signing_key"`
-	// VerifierInfo replaces the verifier_info array (OpenID4VP 1.0 §5.1). Empty
-	// uses the demo registration certificate.
+	// VerifierInfo is the verifier_info array (OpenID4VP 1.0 §5.1), such as a
+	// registration certificate. Empty sends none.
 	VerifierInfo []any `json:"verifier_info"`
 }
 
@@ -322,9 +323,9 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	responseURI := base + "/verifier/response/" + req.id
 
 	// HAIP requires x509_hash for signed requests.
-	signingKey, chain, err := d.wallet.AccessSigningMaterial()
-	if err != nil || signingKey == nil || len(chain) == 0 {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no signing certificate available"})
+	signingKey, chain, err := d.requestSigningMaterial(body)
+	if err != nil {
+		writeSigningMaterialError(w, body, err)
 		return
 	}
 	req.clientID = wallet.X509HashClientID(chain[0])
@@ -409,36 +410,36 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		dcql["credential_sets"] = sets
 	}
 
-	purpose := "Admission to the demo event: checking your ticket"
-	if body.Type == "pid" {
-		purpose = "Confirming your identity for the demo"
-	}
-	d.finalizeRequest(w, req, dcql, credentials, responseURI, base, purpose, signingKey, chain, nil)
+	d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, body.VerifierInfo)
 }
 
-// finalizeRequest signs the registration certificate and the request object,
-// stores the request and returns the wallet URL. The wallet consent dialog
-// reads the purpose from the registration certificate (rc-wrp+jwt, ETSI TS
-// 119 475) in verifier_info (OpenID4VP 1.0 §5.1).
-func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, credentials []map[string]any, responseURI, base, purpose string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
-	now := time.Now()
-	if len(verifierInfo) == 0 {
-		registrarKey, registrarChain, err := d.wallet.RegistrarSigningMaterial()
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading registrar signer: " + err.Error()})
-			return
+func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	if strings.TrimSpace(body.SigningKey) == "" {
+		key, chain, err := d.wallet.AccessSigningMaterial()
+		if err == nil && (key == nil || len(chain) == 0) {
+			err = fmt.Errorf("the wallet has no access certificate")
 		}
-		registration, err := wallet.SignRegistrationCertificateJWT(
-			d.registrationCertificateClaims(chain[0], "Demo Verifier", purpose, credentials),
-			registrarKey, registrarChain)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing registration certificate: " + err.Error()})
-			return
-		}
-		verifierInfo = []any{map[string]any{"format": "registration_cert", "data": registration}}
+		return key, chain, err
 	}
+	return parseSigningKeyBundle(body.SigningKey)
+}
 
-	jar, err := wallet.SignRequestObjectJWT(map[string]any{
+// A supplied bundle that does not parse is the client's error. Missing demo
+// material is the server's.
+func writeSigningMaterialError(w http.ResponseWriter, body createRequestBody, err error) {
+	status := http.StatusBadRequest
+	if strings.TrimSpace(body.SigningKey) == "" {
+		status = http.StatusInternalServerError
+	}
+	writeJSON(w, status, map[string]string{"error": "signing material: " + err.Error()})
+}
+
+// finalizeRequest signs the request object, stores the request and returns the
+// wallet URL. A registered verifier's verifier_info carries its registration
+// certificate (rc-wrp+jwt, ETSI TS 119 475, OpenID4VP 1.0 §5.1).
+func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, responseURI, base string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
+	now := time.Now()
+	claims := map[string]any{
 		"iss":             req.clientID,
 		"aud":             "https://self-issued.me/v2",
 		"iat":             now.Unix(),
@@ -451,8 +452,11 @@ func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql 
 		"state":           req.id,
 		"dcql_query":      dcql,
 		"client_metadata": responseEncryptionMetadata(req.encKey),
-		"verifier_info":   verifierInfo,
-	}, signingKey, chain)
+	}
+	if len(verifierInfo) > 0 {
+		claims["verifier_info"] = verifierInfo
+	}
+	jar, err := wallet.SignRequestObjectJWT(claims, signingKey, chain)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "signing request object: " + err.Error()})
 		return
@@ -488,21 +492,16 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a custom request needs at least one credential"})
 		return
 	}
+	signingKey, chain, err := d.requestSigningMaterial(body)
+	if err != nil {
+		writeSigningMaterialError(w, body, err)
+		return
+	}
 	scheme := strings.TrimSpace(body.ClientIDScheme)
 	if scheme == "" {
 		scheme = "x509_hash"
 	}
 	signed := scheme == "x509_hash" || scheme == "x509_san_dns"
-
-	signingKey, chain, err := d.customSigningMaterial(body.SigningKey)
-	if err != nil {
-		status := http.StatusInternalServerError
-		if strings.TrimSpace(body.SigningKey) != "" {
-			status = http.StatusBadRequest
-		}
-		writeJSON(w, status, map[string]string{"error": "signing material: " + err.Error()})
-		return
-	}
 	encKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "generating response encryption key: " + err.Error()})
@@ -584,7 +583,7 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 
 	dcql := map[string]any{"credentials": credentials}
 	if signed {
-		d.finalizeRequest(w, req, dcql, credentials, responseURI, base, "A request built by hand for testing", signingKey, chain, body.VerifierInfo)
+		d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, body.VerifierInfo)
 		return
 	}
 	d.deliverUnsignedRequest(w, req, dcql, responseURI, base)
@@ -664,10 +663,7 @@ func (d *DemoRP) deliverUnsignedRequest(w http.ResponseWriter, req *requestState
 	})
 }
 
-func (d *DemoRP) customSigningMaterial(pemBundle string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	if strings.TrimSpace(pemBundle) == "" {
-		return d.wallet.AccessSigningMaterial()
-	}
+func parseSigningKeyBundle(pemBundle string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	var key *ecdsa.PrivateKey
 	var chain []*x509.Certificate
 	rest := []byte(pemBundle)
@@ -719,55 +715,6 @@ func lastStringComponent(path []any) string {
 		}
 	}
 	return name
-}
-
-// The registration certificate lists the same DCQL claims as the request, so
-// the ARF RPRC_21 over-asking check passes. The payload follows ETSI TS 119
-// 475 §5.2.4.
-func (d *DemoRP) registrationCertificateClaims(accessCertificate *x509.Certificate, name, purpose string, dcqlCredentials []map[string]any) map[string]any {
-	registered := make([]map[string]any, 0, len(dcqlCredentials))
-	for _, c := range dcqlCredentials {
-		registered = append(registered, map[string]any{
-			"format": c["format"],
-			"meta":   c["meta"],
-			"claim":  c["claims"],
-		})
-	}
-	// TS 119 475 V1.2.1 §5.1.1 links registration and access certificates by
-	// their identifier.
-	identifier := accessCertificate.Subject.CommonName
-	for _, attribute := range accessCertificate.Subject.Names {
-		if attribute.Type.String() == "2.5.4.97" {
-			identifier, _ = attribute.Value.(string)
-			break
-		}
-	}
-	country := "EU"
-	if len(accessCertificate.Subject.Country) > 0 {
-		country = accessCertificate.Subject.Country[0]
-	}
-	legalName := name
-	if len(accessCertificate.Subject.Organization) > 0 {
-		legalName = accessCertificate.Subject.Organization[0]
-	}
-	now := time.Now()
-	base := d.baseURL()
-	return map[string]any{
-		"sub":                   identifier,
-		"sub_ln":                legalName,
-		"name":                  name,
-		"country":               country,
-		"registry_uri":          base + "/api/registrar/wrp",
-		"srv_description":       []map[string]any{{"lang": "en", "value": name}},
-		"entitlements":          []string{"https://uri.etsi.org/19475/Entitlement/Service_Provider"},
-		"privacy_policy":        base + "/privacy-policy",
-		"support_uri":           base + "/support",
-		"supervisory_authority": map[string]any{"email": "dpa@eudi-test.dev", "uri": base + "/supervisory-authority"},
-		"iat":                   now.Unix(),
-		"exp":                   now.AddDate(0, 6, 0).Unix(),
-		"purpose":               []map[string]any{{"lang": "en", "value": purpose}},
-		"credentials":           registered,
-	}
 }
 
 // checkPresentationAudience expects the OpenID4VP client ID or the

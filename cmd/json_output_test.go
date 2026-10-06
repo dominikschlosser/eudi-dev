@@ -139,6 +139,21 @@ func TestJSONOutputIsOneDocument(t *testing.T) {
 		t.Errorf("wallet use: %v", doc)
 	}
 
+	csrFile := filepath.Join(t.TempDir(), "verifier.csr")
+	if err := os.WriteFile(csrFile, []byte(testCSR(t)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registered := runJSON(t, "wallet", "registrar", "register", "--name", "Shop")
+	identifier := registered["identifier"].([]any)[0].(map[string]any)["identifier"].(string)
+	if doc := runJSON(t, "wallet", "registrar", "access-cert", "--csr", csrFile, "--identifier", identifier); !strings.HasPrefix(doc["certificate"].(string), "-----BEGIN CERTIFICATE-----") {
+		t.Errorf("wallet registrar access-cert: %v", doc)
+	}
+	var records []any
+	runJSONInto(t, &records, "wallet", "registrar", "list")
+	if len(records) != 2 {
+		t.Errorf("wallet registrar list printed %d records, want the wallet's and the registration", len(records))
+	}
+
 	var templates []any
 	runJSONInto(t, &templates, "templates", "list")
 	if len(templates) == 0 {

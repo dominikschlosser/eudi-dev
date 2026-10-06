@@ -39,7 +39,26 @@ The party that signs and issues a credential. This toolkit is also an issuer. Sa
 
 **Verifier**:
 The party that requests and checks a presentation. Say **demo verifier** for the one this toolkit runs. It is different from validation, where this tool checks a credential offline for the user.
-_Avoid_: Relying party, RP
+_Avoid_: RP
+
+**Relying party**:
+A verifier or issuer registered with a registrar (TS05). In a presentation flow, say verifier.
+_Avoid_: RP, WRP (in prose)
+
+**Registrar**:
+Keeps the register of relying parties for a member state (ARF Topic 27) and issues their access and registration certificates. The wallet includes one.
+
+**Intended use**:
+A purpose a relying party registers, together with the credentials and claims it may request. Each registration certificate covers one intended use.
+
+**Access certificate**:
+Identifies a relying party (ETSI TS 119 411-8). The verifier signs its request objects with the matching key.
+
+**Registration certificate**:
+The signed JWT that lists one intended use (ETSI TS 119 475). A verifier sends it in `verifier_info`.
+
+**Relying party access CA**:
+Signs the access certificates that the wallet's registrar issues to relying parties. It is separate from the wallet CA.
 
 **Instance**:
 A running wallet server registered on this machine. The CLI uses the registration to find and control it. Several instances can serve the same wallet state.

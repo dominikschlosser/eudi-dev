@@ -28,6 +28,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,15 +70,17 @@ type WalletStore struct {
 var walletRuntimeRegistry sync.Map
 
 type walletJSON struct {
-	Credentials        []StoredCredential      `json:"credentials"`
-	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
-	Log                []LogEntry              `json:"log,omitempty"`
-	DeferredIssuances  []DeferredIssuance      `json:"deferred_issuances,omitempty"`
-	StatusEntries      map[string]StatusEntry  `json:"status_entries,omitempty"`
-	StatusListCounter  int                     `json:"status_list_counter,omitempty"`
-	BaseURL            string                  `json:"base_url,omitempty"`
-	IssuerURL          string                  `json:"issuer_url,omitempty"`
-	Port               int                     `json:"port,omitempty"`
+	Credentials          []StoredCredential      `json:"credentials"`
+	IssuedAttestations   []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
+	RelyingParties       []WalletRelyingParty    `json:"relying_parties,omitempty"`
+	RegistrationStatuses []RegistrationStatus    `json:"registration_statuses,omitempty"`
+	Log                  []LogEntry              `json:"log,omitempty"`
+	DeferredIssuances    []DeferredIssuance      `json:"deferred_issuances,omitempty"`
+	StatusEntries        map[string]StatusEntry  `json:"status_entries,omitempty"`
+	StatusListCounter    int                     `json:"status_list_counter,omitempty"`
+	BaseURL              string                  `json:"base_url,omitempty"`
+	IssuerURL            string                  `json:"issuer_url,omitempty"`
+	Port                 int                     `json:"port,omitempty"`
 
 	// Read the old field name so existing deferred issuances can still be collected.
 	// Saves use only the current name.
@@ -418,6 +421,8 @@ func (s *WalletStore) LoadOrCreate() (*Wallet, error) {
 		w.DeferredIssuances = wj.LegacyPendingIssuances
 	}
 	w.IssuedAttestations = dedupeIssuedAttestations(wj.IssuedAttestations)
+	w.RelyingParties = wj.RelyingParties
+	w.RegistrationStatuses = wj.RegistrationStatuses
 	w.Log = s.filterLogEntries(wj.Log)
 	w.StatusEntries = wj.StatusEntries
 	w.StatusListCounter = wj.StatusListCounter
@@ -446,6 +451,8 @@ func (s *WalletStore) Save(w *Wallet) error {
 	creds := s.withStoredAssets(w.GetCredentials())
 	w.mu.RLock()
 	issuedAttestations := dedupeIssuedAttestations(w.IssuedAttestations)
+	relyingParties := slices.Clone(w.RelyingParties)
+	registrationStatuses := slices.Clone(w.RegistrationStatuses)
 	deferredIssuances := append([]DeferredIssuance(nil), w.DeferredIssuances...)
 	logEntries := s.filterLogEntries(w.Log)
 	statusEntries := w.StatusEntries
@@ -454,14 +461,16 @@ func (s *WalletStore) Save(w *Wallet) error {
 	issuerURL := w.IssuerURL
 	w.mu.RUnlock()
 	wj := walletJSON{
-		Credentials:        creds,
-		DeferredIssuances:  deferredIssuances,
-		IssuedAttestations: issuedAttestations,
-		Log:                logEntries,
-		StatusEntries:      statusEntries,
-		StatusListCounter:  statusListCounter,
-		BaseURL:            baseURL,
-		IssuerURL:          issuerURL,
+		Credentials:          creds,
+		DeferredIssuances:    deferredIssuances,
+		IssuedAttestations:   issuedAttestations,
+		RelyingParties:       relyingParties,
+		RegistrationStatuses: registrationStatuses,
+		Log:                  logEntries,
+		StatusEntries:        statusEntries,
+		StatusListCounter:    statusListCounter,
+		BaseURL:              baseURL,
+		IssuerURL:            issuerURL,
 	}
 
 	data, err := json.MarshalIndent(wj, "", "  ")

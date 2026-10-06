@@ -49,6 +49,11 @@ type walletService interface {
 	SaveTemplate(tpl credtemplate.Template) (string, error)
 	DeleteTemplate(name string) error
 	Certificate(kind, certFormat string, opts walletCertOptions) ([]byte, error)
+	RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error)
+	AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error)
+	RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error)
+	RegistrarRecords() ([]wallet.WalletRelyingParty, error)
+	SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error)
 	Config() (map[string]any, error)
 }
 
@@ -151,6 +156,42 @@ func (r *remoteWallet) DeleteTemplate(name string) error { return r.c.DeleteTemp
 
 func (r *remoteWallet) Certificate(kind, certFormat string, _ walletCertOptions) ([]byte, error) {
 	return r.c.Certificate(kind, certFormat)
+}
+
+func (r *remoteWallet) RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error) {
+	var out wallet.WalletRelyingParty
+	err := r.c.RegisterRelyingParty(rp, &out)
+	return out, err
+}
+
+func (r *remoteWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
+	var out []wallet.WalletRelyingParty
+	err := r.c.RegistrarRecords(&out)
+	return out, err
+}
+
+func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error) {
+	var out struct {
+		Changed int `json:"changed"`
+	}
+	err := r.c.SetRegistrationCertificateStatus(map[string]any{"identifier": identifier, "intendedUseIdentifier": intendedUse, "revoked": revoked}, &out)
+	return out.Changed, err
+}
+
+func (r *remoteWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
+	var out wallet.AccessCertificateResult
+	if err := r.c.AccessCertificate(req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (r *remoteWallet) RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error) {
+	var out wallet.RegistrationCertificateResult
+	if err := r.c.RegistrationCertificate(req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func (r *remoteWallet) Config() (map[string]any, error) {
@@ -359,6 +400,67 @@ func (l *localWallet) DeleteTemplate(name string) error {
 	return credtemplate.Delete(loc, name)
 }
 
+func (l *localWallet) RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return wallet.WalletRelyingParty{}, err
+	}
+	stored, err := w.RegisterRelyingParty(rp, w.RegistrarBase())
+	if err != nil {
+		return wallet.WalletRelyingParty{}, err
+	}
+	if err := store.Save(w); err != nil {
+		return wallet.WalletRelyingParty{}, fmt.Errorf("saving wallet: %w", err)
+	}
+	return stored, nil
+}
+
+func (l *localWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	return w.RegistrarRecords(), nil
+}
+
+func (l *localWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	return w.IssueAccessCertificate(req)
+}
+
+func (l *localWallet) RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	result, err := w.IssueRegistrationCertificate(req)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.Save(w); err != nil {
+		return nil, fmt.Errorf("saving wallet: %w", err)
+	}
+	return result, nil
+}
+
+func (l *localWallet) SetRegistrationCertificatesRevoked(identifier, intendedUse string, revoked bool) (int, error) {
+	w, store, err := l.load()
+	if err != nil {
+		return 0, err
+	}
+	changed, err := w.SetRegistrationCertificatesRevoked(identifier, intendedUse, revoked)
+	if err != nil {
+		return 0, err
+	}
+	if err := store.Save(w); err != nil {
+		return 0, fmt.Errorf("saving wallet: %w", err)
+	}
+	return changed, nil
+}
+
 func (l *localWallet) Certificate(kind, certFormat string, opts walletCertOptions) ([]byte, error) {
 	store, err := openStore()
 	if err != nil {
@@ -414,6 +516,7 @@ func (l *localWallet) Config() (map[string]any, error) {
 		"session_transcript":        string(w.SessionTranscript),
 		"require_haip":              w.RequireHAIP,
 		"require_haip_issuance":     w.RequireHAIP,
+		"require_arf":               w.RequireARF,
 		"require_encrypted_request": w.RequireEncryptedRequest,
 		"credential_count":          len(w.GetCredentials()),
 	}, nil

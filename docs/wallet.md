@@ -7,7 +7,7 @@ The wallet has two validation modes. Both run the same checks. They differ in ho
 - `debug` (default) reports each finding and continues processing the request. In DCQL evaluation it keeps a credential match with a warning when some required claim paths are missing but other requested claims match
 - `strict` treats violations as errors and rejects the request
 
-Advisory findings are warnings in both modes. `--haip` is a separate flag that adds HAIP 1.0 checks. See [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement).
+Strict mode covers OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0. Advisory findings are warnings in both modes. Two flags add more checks, and the mode decides what happens to their findings: `--haip` adds the HAIP 1.0 checks (see [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement)), and `--arf` adds the ARF checks of relying party certificates (see [ARF checks](wallet/presenting.md#arf-checks)).
 
 For OpenID Foundation conformance work, see [docs/conformance.md](./conformance.md).
 For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/diagrams](./diagrams/README.md).
@@ -17,6 +17,7 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | Subcommand     | Purpose                                                         |
 |----------------|-----------------------------------------------------------------|
 | `serve`        | Start wallet HTTP server with web UI, OID4VP endpoints, and optional URL scheme handling |
+| `registrar`    | Register relying parties and issue their certificates (see [registrar](wallet/registrar.md)) |
 | `list`         | List stored credentials                                         |
 | `show`         | Show a stored credential by ID (raw or decoded)                 |
 | `import`       | Import a credential from file, stdin, or raw string (SD-JWT, JWT VC, mdoc) |

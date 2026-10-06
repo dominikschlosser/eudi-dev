@@ -37,22 +37,24 @@ import (
 // changed entities and section revisions. Reloads compare revisions and row versions.
 // See ADR-0016 for the layout and ADR-0018 for the design rationale.
 const (
-	stateSection        = "state"
-	credentialsSection  = "credentials"
-	logSection          = "log"
-	statusSection       = "status"
-	deferredSection     = "deferred"
-	attestationsSection = "attestations"
-	settingsSection     = "settings"
-	revisionSection     = "revision"
-	statusCounterEntity = "status-counter"
+	stateSection              = "state"
+	credentialsSection        = "credentials"
+	logSection                = "log"
+	statusSection             = "status"
+	deferredSection           = "deferred"
+	attestationsSection       = "attestations"
+	registrarSection          = "relying-parties"
+	registrationStatusSection = "registration-status"
+	settingsSection           = "settings"
+	revisionSection           = "revision"
+	statusCounterEntity       = "status-counter"
 )
 
 // Running servers reload only serverSections. They manage deferred issuances in memory
 // and use their own configured URLs.
 var (
-	allSections    = []string{credentialsSection, logSection, statusSection, deferredSection, attestationsSection, settingsSection}
-	serverSections = []string{credentialsSection, logSection, statusSection, attestationsSection}
+	allSections    = []string{credentialsSection, logSection, statusSection, deferredSection, attestationsSection, registrarSection, registrationStatusSection, settingsSection}
+	serverSections = []string{credentialsSection, logSection, statusSection, attestationsSection, registrarSection, registrationStatusSection}
 )
 
 const logTrimEvery = 64
@@ -177,6 +179,10 @@ func (s *WalletStore) loadSections(w *Wallet, sections []string) error {
 			w.DeferredIssuances = loaded.deferred
 		case attestationsSection:
 			w.IssuedAttestations = dedupeIssuedAttestations(loaded.attestations)
+		case registrarSection:
+			w.RelyingParties = loaded.relyingParties
+		case registrationStatusSection:
+			w.RegistrationStatuses = loaded.registrationStatuses
 		case settingsSection:
 			w.BaseURL = loaded.settings.BaseURL
 			w.IssuerURL = loaded.settings.IssuerURL
@@ -260,13 +266,15 @@ func (s *WalletStore) sectionStamps(section string) (map[string]storage.Stamp, e
 }
 
 type loadedSections struct {
-	credentials       []StoredCredential
-	log               []LogEntry
-	statusEntries     map[string]StatusEntry
-	statusListCounter int
-	deferred          []DeferredIssuance
-	attestations      []IssuedAttestationSpec
-	settings          walletSettings
+	credentials          []StoredCredential
+	log                  []LogEntry
+	statusEntries        map[string]StatusEntry
+	statusListCounter    int
+	deferred             []DeferredIssuance
+	attestations         []IssuedAttestationSpec
+	relyingParties       []WalletRelyingParty
+	registrationStatuses []RegistrationStatus
+	settings             walletSettings
 }
 
 // Keep held credentials whose stored row has not changed.
@@ -331,6 +339,16 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 			var spec IssuedAttestationSpec
 			if err = json.Unmarshal(data, &spec); err == nil {
 				loaded.attestations = append(loaded.attestations, spec)
+			}
+		case registrarSection:
+			var rp WalletRelyingParty
+			if err = json.Unmarshal(data, &rp); err == nil {
+				loaded.relyingParties = append(loaded.relyingParties, rp)
+			}
+		case registrationStatusSection:
+			var status RegistrationStatus
+			if err = json.Unmarshal(data, &status); err == nil {
+				loaded.registrationStatuses = append(loaded.registrationStatuses, status)
 			}
 		case settingsSection:
 			err = json.Unmarshal(data, &loaded.settings)
@@ -560,6 +578,16 @@ func (s *WalletStore) currentEntities(w *Wallet, snapshot stateSnapshot) (map[st
 	}
 	for _, spec := range dedupeIssuedAttestations(w.IssuedAttestations) {
 		if err := put(s.stateKey(attestationsSection, shortHash(spec.Format+"|"+spec.VCT+"|"+spec.DocType)), spec); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	for _, rp := range w.RelyingParties {
+		if err := put(s.stateKey(registrarSection, entityName(rp.Identifier[0].Identifier)), rp); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	for _, status := range w.RegistrationStatuses {
+		if err := put(s.stateKey(registrationStatusSection, strconv.Itoa(status.Index)), status); err != nil {
 			return nil, nil, nil, err
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -87,6 +88,7 @@ type Server struct {
 	defaultTLSVerify               *bool
 	defaultValidationMode          ValidationMode
 	defaultRequireHAIP             bool
+	defaultRequireARF              bool
 	defaultRequireEncryptedRequest bool
 	defaultVCIVersion              VCIVersion
 	defaultKeyAttestationLevel     string
@@ -102,6 +104,7 @@ func NewServer(w *Wallet, port int, onSave func()) *Server {
 		defaultTLSVerify:               w.tlsVerify,
 		defaultValidationMode:          w.ValidationMode,
 		defaultRequireHAIP:             w.RequireHAIP,
+		defaultRequireARF:              w.RequireARF,
 		defaultRequireEncryptedRequest: w.RequireEncryptedRequest,
 		defaultVCIVersion:              w.VCIFeatureVersion(),
 		defaultKeyAttestationLevel:     w.KeyAttestationLevelSetting(),
@@ -180,6 +183,8 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/certificates/signers/{certificate}", s.handleSigningCertificate)
 	s.routeFunc("GET /api/crl/providers/{role}/{country}", s.handleProviderCRL)
 	s.routeFunc("GET /api/certificates/tls", s.handleTLSCertificate)
+	s.routeFunc("GET /api/certificates/registrar", s.handleRegistrarCertificate)
+	s.routeFunc("GET /api/certificates/relying-party-access-ca", s.handleRelyingPartyAccessCA)
 
 	s.routeFunc("GET /api/requests", s.withFreshStore(s.handleListRequests))
 	s.routeFunc("GET /api/requests/stream", s.withFreshStore(s.handleRequestStream))
@@ -194,7 +199,20 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/trustlists/{id}/history", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/registrar/wrp", s.withFreshStore(s.handleRegistrarWRPList))
+	s.routeFunc("GET /api/registrar/wrp/check-intended-use", s.withFreshStore(s.handleCheckIntendedUse))
 	s.routeFunc("GET /api/registrar/wrp/{identifier}", s.withFreshStore(s.handleRegistrarWRPByIdentifier))
+	s.routeFunc("GET /api/registrar/wrp/{identifier}/services/{serviceidentifier}", s.withFreshStore(s.handleRegistrarWRPService))
+	s.routeFunc("POST /api/registrar/wrp", s.withFreshStore(s.handleRegisterRelyingParty))
+	s.routeFunc("PUT /api/registrar/wrp", s.withFreshStore(s.handleUpdateRelyingParty))
+	s.routeFunc("DELETE /api/registrar/wrp/{identifier}", s.withFreshStore(s.handleDeleteRelyingParty))
+	s.routeFunc("POST /api/registrar/registration-certificates", s.withFreshStore(s.handleIssueRegistrationCertificate))
+	s.routeFunc("GET /api/registrar/registration-certificates", s.withFreshStore(s.handleRegistrationCertificateStatuses))
+	s.routeFunc("POST /api/registrar/registration-certificates/status", s.withFreshStore(s.handleSetRegistrationCertificateStatus))
+	s.routeFunc("GET "+registrationStatusListPath, s.withFreshStore(s.handleRegistrationStatusList))
+	s.routeFunc("POST /api/registrar/access-certificates", s.withFreshStore(s.handleIssueAccessCertificate))
+	for path, page := range registrarPlaceholderPages {
+		s.routeFunc("GET "+path, placeholderPage(page))
+	}
 
 	s.routeFunc("GET /api/statuslist", s.withFreshStore(s.handleStatusList))
 	s.routeFunc("GET /api/crl", s.withFreshStore(s.handleCRL))
@@ -442,6 +460,8 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.signers = reloaded.signers
 	s.wallet.CertChain = append([]*x509.Certificate(nil), reloaded.CertChain...)
 	s.wallet.IssuedAttestations = append([]IssuedAttestationSpec(nil), reloaded.IssuedAttestations...)
+	s.wallet.RelyingParties = slices.Clone(reloaded.RelyingParties)
+	s.wallet.RegistrationStatuses = slices.Clone(reloaded.RegistrationStatuses)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
 	// The poller and issuance flow manage deferred issuances in memory. Reloading them
 	// here could erase a new deferral before it has been saved.

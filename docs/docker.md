@@ -92,7 +92,7 @@ Set `-e EUDI_DEV_LOG_FORMAT=json` to write one JSON record per line for a log co
 | `/api/trustlists/<id>` | GET | ETSI trust list JWT for one trust list profile |
 | `https://<wallet>:8086/.well-known/openid-credential-issuer` | GET | Issuer metadata with registrar data and a registration certificate in `issuer_info`. JSON by default, access-certificate-signed JWT when the request accepts only `application/jwt` |
 | `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs. Exposes the signing key by `kid` and its certificate chain |
-| `/api/registrar/wrp` | GET | Registrar-style signed dataset for provider entitlements and `providesAttestations`. Supports query filters such as `identifier`, `entitlement`, and `providesattestation` |
+| `/api/registrar/wrp` | GET | Searches the registered relying parties (TS05 v1.5). The registrar signs the answer. The wallet's own issuer registration comes first, with its entitlements and `providesAttestations`. Filters include `identifier`, `entitlement` and `providedattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
 | `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
 | `/api/statuslist` | GET | Status List Token on both HTTP and HTTPS. JWT by default, CWT for a client sending `Accept: application/statuslist+cwt` (`--status-list` only controls whether generated credentials reference the list) |

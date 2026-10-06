@@ -19,6 +19,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -363,6 +364,26 @@ func (s *Server) handleTLSCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeCertificateExport(w, r, certPEM)
+}
+
+// handleRegistrarCertificate exports the certificate that signs registration
+// certificates and registrar responses.
+func (s *Server) handleRegistrarCertificate(w http.ResponseWriter, r *http.Request) {
+	_, chain, err := s.wallet.RegistrarSigningMaterial()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading the registrar certificate: " + err.Error()})
+		return
+	}
+	writeCertificateExport(w, r, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: chain[0].Raw}))
+}
+
+func (s *Server) handleRelyingPartyAccessCA(w http.ResponseWriter, r *http.Request) {
+	_, ca, err := s.wallet.RelyingPartyAccessCA()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading the relying party access CA: " + err.Error()})
+		return
+	}
+	writeCertificateExport(w, r, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
 }
 
 func writeCertificateExport(w http.ResponseWriter, r *http.Request, certPEM []byte) {

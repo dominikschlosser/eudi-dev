@@ -153,6 +153,14 @@ func (w *Wallet) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate
 	return w.auxiliarySigningMaterial("access", mock.LeafCertOptions{CommonName: "EUDI Dev Test Access", Role: mock.AccessCertificate})
 }
 
+// RelyingPartyAccessCA issues the access certificates of registered relying
+// parties. It is a separate root, because the wallet CA is the trust anchor for
+// credential issuers and a visitor's CSR must never produce a certificate under
+// it.
+func (w *Wallet) RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, error) {
+	return w.signingStore().selfSignedCA("relying-party-access-ca", "EUDI Dev Test Relying Party Access CA")
+}
+
 func (w *Wallet) RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	return w.auxiliarySigningMaterial("registrar", mock.LeafCertOptions{CommonName: "EUDI Dev Test Registrar", Role: mock.RegistrarCertificate})
 }

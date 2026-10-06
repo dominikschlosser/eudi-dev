@@ -121,6 +121,36 @@ func (s *signingStore) providerCA(rootKey *ecdsa.PrivateKey, root *x509.Certific
 	return key, cert, err
 }
 
+// selfSignedCA loads or creates a self-signed CA with its own key. The
+// certificate is stored, so it stays the same across restarts.
+func (s *signingStore) selfSignedCA(role, commonName string) (*ecdsa.PrivateKey, *x509.Certificate, error) {
+	key, err := s.key(role)
+	if err != nil {
+		return nil, nil, err
+	}
+	at := path.Join(s.prefix, "authorities", role+".pem")
+	for range 2 {
+		data, err := s.backend.Read(at)
+		if err == nil {
+			cert, err := parsePEMCertificate(data, role)
+			return key, cert, err
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, err
+		}
+		cert, err := mock.GenerateNamedCACert(key, commonName)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, err := s.backend.WriteIf(at, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}), 0600, ""); err == nil {
+			return key, cert, nil
+		} else if !errors.Is(err, storage.ErrConflict) {
+			return nil, nil, err
+		}
+	}
+	return nil, nil, fmt.Errorf("storing the %s certificate kept conflicting", role)
+}
+
 func (w *Wallet) signingStore() *signingStore {
 	w.mu.Lock()
 	defer w.mu.Unlock()

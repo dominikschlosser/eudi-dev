@@ -15,6 +15,7 @@
 package demorp
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -442,11 +443,13 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 	if err != nil {
 		return claims
 	}
-	registration, rerr := wallet.SignRegistrationCertificateJWT(
-		d.registrationCertificateClaims(chain[0], "Demo Issuer",
-			"Proving who you are before the ticket is issued",
-			[]map[string]any{sdjwtCred, mdocCred}),
-		registrarKey, registrarChain)
+	registrationClaims, rerr := d.registrationCertificateClaims(chain[0], "Demo Issuer",
+		"Proving who you are before the ticket is issued",
+		[]map[string]any{sdjwtCred, mdocCred})
+	var registration string
+	if rerr == nil {
+		registration, rerr = wallet.SignRegistrationCertificateJWT(registrationClaims, registrarKey, registrarChain)
+	}
 	if rerr == nil {
 		claims["verifier_info"] = []map[string]any{{
 			"format": "registration_cert",
@@ -511,4 +514,13 @@ func presentedHolder(claims map[string]any) string {
 		return name
 	}
 	return demoAccountUsername
+}
+
+// The registration certificate lists the same DCQL claims as the request.
+// That way the request passes the ARF RPRC_21 over-asking check.
+func (d *DemoRP) registrationCertificateClaims(accessCertificate *x509.Certificate, name, purpose string, dcqlCredentials []map[string]any) (map[string]any, error) {
+	// The wallet's registrar signs the certificate, so its status entry lives
+	// on the registrar's status list.
+	return wallet.RegistrationCertificateClaimsFor(d.wallet.RegistrarBase(), wallet.RegistrationCertificateContent{Name: name, Purpose: []wallet.MultiLangString{{Lang: "en", Content: purpose}}},
+		accessCertificate, dcqlCredentials, time.Now())
 }

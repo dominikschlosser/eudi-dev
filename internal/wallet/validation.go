@@ -22,9 +22,10 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v2/internal/oid4vc"
 )
 
-// ValidateAuthorizationRequest adds profile checks when requireHAIP is set. The validation
-// mode decides whether findings stop the flow or become warnings.
-func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP bool, params *AuthorizationRequestParams) ([]string, error) {
+// ValidateAuthorizationRequest adds profile checks when requireHAIP or
+// requireARF is set. The validation mode decides whether findings stop the
+// flow or become warnings.
+func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP, requireARF bool, params *AuthorizationRequestParams) ([]string, error) {
 	if err := validateAuthorizationRequestSyntax(params); err != nil {
 		return nil, fmt.Errorf("authorization request validation failed: %w", err)
 	}
@@ -57,10 +58,10 @@ func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP bool, params 
 		requestOrigin = params.RequestOrigin
 		reqObj = params.RequestObject
 	}
-	return validatePresentationRequestCore(mode, requireHAIP, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
+	return validatePresentationRequestCore(mode, requireHAIP, requireARF, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
 }
 
-func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
+func validatePresentationRequestCore(mode ValidationMode, requireHAIP, requireARF bool, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
 	var findings []string
 
 	if finding := VerifyClientID(clientID, reqObj, responseURI, requestOrigin); finding != "" {
@@ -77,6 +78,9 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP bool, clie
 	if requireHAIP {
 		findings = append(findings, ValidateHAIPCompliance(params, reqObj)...)
 		advisories = HAIPAdvisories(params)
+	}
+	if requireARF {
+		findings = append(findings, ARFFindings(params)...)
 	}
 
 	if mode == ValidationModeStrict && len(findings) > 0 {

@@ -25,6 +25,25 @@
       }
     });
   }
+  // A submenu opens on its entry and closes on a choice, Escape or a click
+  // elsewhere.
+  document.querySelectorAll('.header-submenu-toggle').forEach(toggle => {
+    const submenu = document.getElementById(toggle.getAttribute('aria-controls'));
+    const setOpen = open => {
+      submenu.hidden = !open;
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setOpen(submenu.hidden);
+    });
+    submenu.addEventListener('click', (e) => { if (e.target.tagName === 'A') setOpen(false); });
+    document.addEventListener('click', (e) => { if (!submenu.hidden && !submenu.contains(e.target)) setOpen(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !submenu.hidden) { setOpen(false); toggle.focus(); } });
+    toggle.parentElement.addEventListener('focusout', (e) => {
+      if (!submenu.hidden && !toggle.parentElement.contains(e.relatedTarget)) setOpen(false);
+    });
+  });
 
   const pageParams = new URLSearchParams(window.location.search);
   // Keep the consent owner in sessionStorage for reloads and remove it from shareable
@@ -698,7 +717,7 @@
       const result = await resp.json();
       if (followVerifierRedirect(result)) return;
       if (result.error) {
-        alert('Error: ' + result.error);
+        alert('Error: ' + (result.error_description || result.error));
       } else {
         offerInput.value = '';
         await loadCredentials();
@@ -2151,11 +2170,20 @@
 
       // Verifier purposes come from registration certificates in verifier_info (OpenID4VP
       // 1.0 §5.1).
-      if (!isIssuance && req.purposes) {
-        req.purposes.forEach((text, idx) => {
-          html += '<div class="consent-purpose" id="consent-purpose-' + idx + '">' +
-            '<span class="consent-purpose-label">Purpose</span>' + escHtml(text) + '</div>';
-        });
+      // ARF RPA_10: show the privacy policy with the intended use.
+      const policies = isIssuance ? [] : (req.privacy_policies || []);
+      const policyLinks = '<span class="consent-privacy-policies" id="consent-privacy-policies">' +
+        policies.map((url, idx) => '<a id="consent-privacy-policy-' + idx + '" href="' + escHtml(url) + '" title="' + escHtml(url) +
+          '" target="_blank" rel="noopener noreferrer">' + (policies.length > 1 ? 'Privacy policy ' + (idx + 1) : 'Privacy policy') + ' ↗</a>').join('') +
+        '</span>';
+      const purposes = isIssuance ? [] : (req.purposes || []);
+      purposes.forEach((text, idx) => {
+        html += '<div class="consent-purpose" id="consent-purpose-' + idx + '">' +
+          '<span class="consent-purpose-label consent-purpose-head" id="consent-purpose-' + idx + '-label">Purpose' +
+          (idx === 0 && policies.length > 0 ? policyLinks : '') + '</span>' + escHtml(text) + '</div>';
+      });
+      if (purposes.length === 0 && policies.length > 0) {
+        html += '<div class="consent-purpose" id="consent-privacy-policy-block">' + policyLinks + '</div>';
       }
       return html;
     }
@@ -2665,7 +2693,7 @@
       demoMode = !!(config.demo && config.demo.enabled);
       renderAutoAccept(!!config.auto_accept);
       renderConformance(config);
-      ['conf-mode-select', 'conf-tls-select', 'conf-haip-input', 'conf-encrypted-input', 'conf-vci-version-select', 'conf-key-attestation-select'].forEach((id) => {
+      ['conf-mode-select', 'conf-tls-select', 'conf-haip-input', 'conf-arf-input', 'conf-encrypted-input', 'conf-vci-version-select', 'conf-key-attestation-select'].forEach((id) => {
         const el = document.getElementById(id);
         if (el && !el.dataset.wired) {
           el.dataset.wired = '1';
@@ -2749,13 +2777,14 @@
 
   // Conformance settings apply to the wallet process. Demo mode displays them without
   // allowing changes.
-  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_encrypted_request: false, vci_version: '1.0', key_attestation_level: '' };
+  let conformanceDefaults = { validation_mode: 'debug', require_haip: true, require_arf: false, require_encrypted_request: false, vci_version: '1.0', key_attestation_level: '' };
 
   function effectiveConformance() {
     return {
       mode: conformanceDefaults.validation_mode === 'strict' ? 'strict' : 'debug',
       tls: conformanceDefaults.tls_verify_override == null ? 'auto' : String(conformanceDefaults.tls_verify_override),
       haip: !!conformanceDefaults.require_haip,
+      arf: !!conformanceDefaults.require_arf,
       encrypted: !!conformanceDefaults.require_encrypted_request,
       vciVersion: conformanceDefaults.vci_version === '1.1' ? '1.1' : '1.0',
       keyAttestationLevel: conformanceDefaults.key_attestation_level || '',
@@ -2767,9 +2796,11 @@
     const mode = document.getElementById('conf-mode-select');
     const tls = document.getElementById('conf-tls-select');
     const haip = document.getElementById('conf-haip-input');
+    const arf = document.getElementById('conf-arf-input');
     const enc = document.getElementById('conf-encrypted-input');
     const vci = document.getElementById('conf-vci-version-select');
     const level = document.getElementById('conf-key-attestation-select');
+    if (arf) { arf.checked = eff.arf; arf.disabled = demoMode; }
     if (tls) { tls.value = eff.tls; tls.disabled = demoMode; }
     if (mode) { mode.value = eff.mode === 'strict' ? 'strict' : 'debug'; mode.disabled = demoMode; }
     if (haip) { haip.checked = eff.haip; haip.disabled = demoMode; }
@@ -2782,6 +2813,7 @@
     const mode = document.getElementById('conf-mode-select');
     const tls = document.getElementById('conf-tls-select');
     const haip = document.getElementById('conf-haip-input');
+    const arf = document.getElementById('conf-arf-input');
     const enc = document.getElementById('conf-encrypted-input');
     const vci = document.getElementById('conf-vci-version-select');
     const level = document.getElementById('conf-key-attestation-select');
@@ -2789,6 +2821,7 @@
       mode: mode ? mode.value : undefined,
       tls_verify: !tls || tls.value === 'auto' ? null : tls.value === 'true',
       haip: haip ? haip.checked : undefined,
+      arf: arf ? arf.checked : undefined,
       encrypted: enc ? enc.checked : undefined,
       vci_version: vci ? vci.value : undefined,
       key_attestation_level: level ? level.value : undefined,
@@ -2940,6 +2973,662 @@
   document.getElementById('trust-close').addEventListener('click', () => {
     trustOverlay.classList.remove('active');
   });
+
+  const registrarValue = id => document.getElementById(id).value.trim();
+
+  async function registrarRequest(method, path, body) {
+    const resp = await fetch(path, {
+      method: method,
+      headers: body ? { 'Content-Type': 'application/json', 'Accept': 'application/json' } : { 'Accept': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const result = resp.status === 204 ? {} : await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(result.error || ('HTTP ' + resp.status));
+    return result;
+  }
+
+  function wireCopyButton(button, field) {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(field.value !== undefined ? field.value : field.textContent);
+        button.textContent = 'Copied';
+        setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+      } catch (e) { /* The clipboard API may be unavailable. */ }
+    });
+  }
+
+  // Element IDs contain the registrar identifier, so tests can find a party by
+  // the identifier the API returned.
+  const registrarDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
+
+  function relyingPartyRoles(rp) {
+    const services = rp.services || [];
+    const roles = [];
+    if (services.some(s => (s.intendedUses || []).length > 0)) roles.push('verifier');
+    if (services.some(s => (s.providesAttestations || []).length > 0)) roles.push('issuer');
+    return roles;
+  }
+
+  function registeredCredentialSummary(credential) {
+    const meta = credential.meta || {};
+    const type = meta.doctype_value || (meta.vct_values || [])[0] || credential.format;
+    // Show mdoc claims the way the dialog takes them: element, or
+    // namespace:element.
+    const claims = (credential.claims || []).map(c => {
+      const path = c.path || [];
+      if (credential.format !== 'mso_mdoc' || path.length !== 2) return path.join('.');
+      return path[0] === type ? path[1] : path[0] + ':' + path[1];
+    });
+    return claims.length > 0 ? type + ': ' + claims.join(', ') : type;
+  }
+
+  const registrarPartiesOverlay = document.getElementById('registrar-parties-overlay');
+  const registrarPartyList = document.getElementById('registrar-party-list');
+
+  // Each intended use shows the status of its registration certificates like a
+  // credential card: no certificate yet, active, or revoked on the registrar's
+  // status list.
+  let registrarStatuses = [];
+  const registrarVerifierInfo = {};
+  // A superseded certificate was revoked for good, because its intended use
+  // changed. Only a new certificate helps then.
+  function intendedUseStatus(identifier, intendedUse) {
+    const entries = registrarStatuses.filter(s => s.identifier === identifier && s.intendedUse === intendedUse);
+    if (entries.length === 0) return 'none';
+    const current = entries.filter(s => !s.superseded);
+    if (current.length === 0) return 'outdated';
+    return current.some(s => !s.revoked) ? 'active' : 'revoked';
+  }
+  const USE_STATUS_BADGES = {
+    none: ['status-none ico-circle', 'No certificate', 'The registrar has not issued a registration certificate for this intended use.'],
+    active: ['status-active ico-dot', 'Active', 'Not revoked on the registrar\'s status list.'],
+    revoked: ['status-revoked ico-block', 'Revoked', 'Revoked on the registrar\'s status list.'],
+    outdated: ['status-revoked ico-block', 'Revoked', 'The intended use changed, so its certificate was revoked for good. Issue a new one.'],
+  };
+
+  // The list re-renders after an action and replaces the clicked button. The
+  // next render focuses the element with its ID, or the dialog title when the
+  // action removed it.
+  let registrarFocusID = null;
+  async function registrarAction(button, action) {
+    const error = document.getElementById('registrar-parties-error');
+    error.textContent = '';
+    button.disabled = true;
+    try {
+      await action();
+      registrarFocusID = button.id;
+      await loadRegistrarParties();
+    } catch (e) {
+      registrarFocusID = null;
+      error.textContent = e.message;
+      button.disabled = false;
+      button.focus();
+    }
+  }
+
+  function relyingPartySearchText(rp) {
+    const parts = [rp.tradeName].concat((rp.legalPerson || {}).legalName || [], (rp.identifier || []).map(id => id.identifier));
+    (rp.services || []).forEach(service => {
+      parts.push(service.serviceTradeName);
+      (service.intendedUses || []).forEach(use => {
+        (use.purpose || []).forEach(p => parts.push(p.content));
+        (use.credentials || []).forEach(c => parts.push(registeredCredentialSummary(c)));
+      });
+    });
+    return parts.filter(Boolean).join('\n').toLowerCase();
+  }
+
+  // The register holds at most a few hundred relying parties, so the dialog
+  // loads them once and searches and pages them here. The TS05 search API has
+  // no free-text parameter.
+  const REGISTRAR_PAGE_SIZE = 10;
+  let registrarPage = 0;
+  const registrarSearch = document.getElementById('registrar-search');
+
+  // The first record is the wallet's own registration as a credential
+  // provider. The newest registrations follow it. Each entry keeps its search
+  // text, so typing does not rebuild it.
+  let registrarEntries = [];
+  function registrarEntriesInRole() {
+    const filter = document.querySelector('input[name="registrar-filter"]:checked').value;
+    return registrarEntries.filter(entry => filter === 'all' || relyingPartyRoles(entry.rp).includes(filter));
+  }
+
+  function renderRegistrarSuggestions() {
+    const suggestions = new Set();
+    registrarEntriesInRole().forEach(({ rp }) => {
+      if (rp.tradeName) suggestions.add(rp.tradeName);
+      (rp.identifier || []).forEach(id => suggestions.add(id.identifier));
+    });
+    const datalist = document.getElementById('registrar-search-suggestions');
+    datalist.innerHTML = '';
+    Array.from(suggestions).sort().forEach(value => datalist.appendChild(new Option(value, value)));
+  }
+
+  function renderRegistrarParties() {
+    const filter = document.querySelector('input[name="registrar-filter"]:checked').value;
+    const query = registrarSearch.value.trim().toLowerCase();
+    registrarPartyList.innerHTML = '';
+    const inRole = registrarEntriesInRole();
+    const matching = query ? inRole.filter(entry => entry.text.includes(query)) : inRole;
+    const pages = Math.max(1, Math.ceil(matching.length / REGISTRAR_PAGE_SIZE));
+    registrarPage = Math.min(registrarPage, pages - 1);
+    const shown = matching.slice(registrarPage * REGISTRAR_PAGE_SIZE, (registrarPage + 1) * REGISTRAR_PAGE_SIZE);
+    shown.forEach(({ rp, own }) => {
+      const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
+      const prefix = 'registrar-party-' + registrarDomID(identifier);
+      const card = document.createElement('div');
+      card.className = 'registrar-party';
+      card.id = prefix;
+      card.dataset.identifier = identifier;
+      card.innerHTML =
+        '<div class="registrar-party-head" id="' + prefix + '-head">' +
+          '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
+          (own ? '' : '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
+            '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' +
+            '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
+          '</span>') +
+        '</div>' +
+        '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
+          relyingPartyRoles(rp).map(role =>
+            '<span class="status-badge status-role-' + role + '" id="' + prefix + '-role-' + role + '">' +
+            (role === 'verifier' ? 'Verifier' : 'Issuer') + '</span>').join('') +
+          '<code class="registrar-party-identifier" id="' + prefix + '-identifier">' + escHtml(identifier) + '</code>' +
+        '</div>';
+      (rp.services || []).forEach(service => {
+        (service.intendedUses || []).forEach(use => {
+          const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
+          const status = intendedUseStatus(identifier, use.intendedUseIdentifier);
+          const [badgeClass, badgeText, badgeTitle] = USE_STATUS_BADGES[status];
+          const verifierInfo = registrarVerifierInfo[usePrefix];
+          const row = document.createElement('div');
+          row.className = 'registrar-use';
+          row.id = usePrefix;
+          row.dataset.status = status;
+          row.innerHTML =
+            '<div class="registrar-use-head" id="' + usePrefix + '-head">' +
+              '<span class="registrar-use-purpose" id="' + usePrefix + '-purpose">' + escHtml(((use.purpose || [])[0] || {}).content || use.intendedUseIdentifier) + '</span>' +
+              '<span class="registrar-use-actions" id="' + usePrefix + '-actions">' +
+                '<button type="button" class="btn btn-sm" id="' + usePrefix + '-issue" title="' +
+                  { none: 'Issues a registration certificate for this purpose and these claims.',
+                    active: 'Issues a new certificate and revokes the current one.',
+                    revoked: 'Issues a new certificate. The revoked one stays revoked.',
+                    outdated: 'Issues a certificate for the changed purpose and claims.' }[status] +
+                  '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
+                (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + usePrefix + '-revoke" title="' +
+                  (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+                  '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+              '</span>' +
+            '</div>' +
+            '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
+              '<span class="status-badge ' + badgeClass + '" id="' + usePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
+            '</div>' +
+            '<ul class="registrar-use-credentials" id="' + usePrefix + '-credentials">' +
+              (use.credentials || []).map((c, i) => '<li id="' + usePrefix + '-credential-' + i + '">' + escHtml(registeredCredentialSummary(c)) + '</li>').join('') +
+            '</ul>' +
+            (verifierInfo === undefined ? '' :
+              '<div class="registrar-use-result" id="' + usePrefix + '-result">' +
+                '<div class="registrar-result-head" id="' + usePrefix + '-result-head">' +
+                  '<label class="consent-purpose-label" for="' + usePrefix + '-verifier-info">verifier_info</label>' +
+                  '<button type="button" class="btn btn-sm" id="' + usePrefix + '-copy">Copy</button>' +
+                '</div>' +
+                '<textarea class="form-input form-textarea" id="' + usePrefix + '-verifier-info" readonly></textarea>' +
+              '</div>');
+          if (verifierInfo !== undefined) {
+            const field = row.querySelector('textarea');
+            field.value = verifierInfo;
+            wireCopyButton(row.querySelector('#' + usePrefix + '-copy'), field);
+          }
+          const issue = row.querySelector('#' + usePrefix + '-issue');
+          issue.addEventListener('click', () => registrarAction(issue, async () => {
+            const result = await registrarRequest('POST', 'api/registrar/registration-certificates', {
+              identifier: identifier,
+              serviceIdentifier: service.serviceIdentifier || '',
+              intendedUseIdentifier: use.intendedUseIdentifier,
+            });
+            registrarVerifierInfo[usePrefix] = result.verifierInfo;
+          }));
+          const toggle = row.querySelector('#' + usePrefix + '-revoke');
+          if (toggle) {
+            toggle.addEventListener('click', () => registrarAction(toggle, () => registrarRequest('POST', 'api/registrar/registration-certificates/status', {
+              identifier: identifier,
+              intendedUseIdentifier: use.intendedUseIdentifier,
+              revoked: status !== 'revoked',
+            })));
+          }
+          card.appendChild(row);
+        });
+      });
+      const addUse = card.querySelector('#' + prefix + '-add-use');
+      if (addUse) {
+        addUse.addEventListener('click', () => {
+          registrarPartiesOverlay.classList.remove('active');
+          openRegistrarDialog(rp, true);
+        });
+      }
+      const remove = card.querySelector('#' + prefix + '-delete');
+      if (remove) {
+        remove.addEventListener('click', () =>
+          registrarAction(remove, async () => {
+            await registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(identifier));
+            // A new registration may reuse the identifier.
+            Object.keys(registrarVerifierInfo).filter(key => key.startsWith(prefix + '-use-')).forEach(key => delete registrarVerifierInfo[key]);
+          }));
+      }
+      registrarPartyList.appendChild(card);
+    });
+    const empty = document.getElementById('registrar-party-empty');
+    empty.textContent = query
+      ? 'No relying party matches "' + registrarSearch.value.trim() + '".'
+      : { all: 'No relying parties registered yet.', verifier: 'No verifiers registered yet.', issuer: 'No issuers registered yet.' }[filter] +
+        (filter === 'issuer' ? '' : ' Register a verifier to add one.');
+    empty.hidden = shown.length > 0;
+
+    document.getElementById('registrar-pager').hidden = pages < 2;
+    document.getElementById('registrar-page-info').textContent = 'Page ' + (registrarPage + 1) + ' of ' + pages +
+      ' · ' + matching.length + (matching.length === 1 ? ' relying party' : ' relying parties');
+    const prev = document.getElementById('registrar-page-prev');
+    const next = document.getElementById('registrar-page-next');
+    prev.disabled = registrarPage === 0;
+    next.disabled = registrarPage >= pages - 1;
+    // A disabled button loses the focus, so the other pager button takes it.
+    if (document.activeElement === prev && prev.disabled) next.focus();
+    if (document.activeElement === next && next.disabled) prev.focus();
+    if (registrarFocusID) {
+      (document.getElementById(registrarFocusID) || document.getElementById('registrar-parties-title')).focus();
+      registrarFocusID = null;
+    }
+  }
+
+  // Opening the list while an action reloads it starts two loads. Only the
+  // latest one renders.
+  let registrarLoad = 0;
+  async function loadRegistrarParties() {
+    const error = document.getElementById('registrar-parties-error');
+    const load = ++registrarLoad;
+    try {
+      const [records, statuses] = await Promise.all([
+        registrarRequest('GET', 'api/registrar/wrp?limit=1000'),
+        registrarRequest('GET', 'api/registrar/registration-certificates'),
+      ]);
+      if (load !== registrarLoad) return;
+      const entries = (records.data || []).map((rp, index) => ({ rp: rp, own: index === 0, text: relyingPartySearchText(rp) }));
+      registrarEntries = entries.slice(0, 1).concat(entries.slice(1).reverse());
+      registrarStatuses = statuses || [];
+    } catch (e) {
+      // On an error the list keeps showing the previous result.
+      if (load === registrarLoad) error.textContent = e.message;
+      return;
+    }
+    renderRegistrarSuggestions();
+    renderRegistrarParties();
+  }
+
+  document.querySelectorAll('input[name="registrar-filter"]').forEach(input => {
+    input.addEventListener('change', () => {
+      registrarPage = 0;
+      renderRegistrarSuggestions();
+      renderRegistrarParties();
+    });
+  });
+  registrarSearch.addEventListener('input', () => {
+    registrarPage = 0;
+    renderRegistrarParties();
+  });
+  document.getElementById('registrar-page-prev').addEventListener('click', () => {
+    registrarPage--;
+    renderRegistrarParties();
+  });
+  document.getElementById('registrar-page-next').addEventListener('click', () => {
+    registrarPage++;
+    renderRegistrarParties();
+  });
+  // Closing a registrar dialog returns focus to the menu that opened it.
+  // On a phone the menu is collapsed by then, so its toggle takes the focus.
+  function focusRegistrarOpener() {
+    const toggle = document.getElementById('registrar-menu-toggle');
+    (toggle.offsetParent ? toggle : document.getElementById('header-menu-toggle')).focus();
+  }
+  function openRegistrarParties() {
+    document.getElementById('registrar-parties-error').textContent = '';
+    registrarPartiesOverlay.classList.add('active');
+    document.querySelector('input[name="registrar-filter"]:checked').focus();
+    loadRegistrarParties();
+  }
+  document.getElementById('registrar-parties-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    registrarSearch.value = '';
+    registrarPage = 0;
+    openRegistrarParties();
+  });
+  document.getElementById('registrar-parties-close').addEventListener('click', () => {
+    registrarPartiesOverlay.classList.remove('active');
+    focusRegistrarOpener();
+  });
+  document.getElementById('registrar-parties-register').addEventListener('click', () => {
+    registrarPartiesOverlay.classList.remove('active');
+    openRegistrarDialog(null, true);
+  });
+
+  // The registrar dialogs are modal: Escape closes them and Tab stays inside.
+  function makeModal(overlay, closeButton) {
+    overlay.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeButton.click();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(overlay.querySelectorAll('button, input, select, textarea, a[href], summary'))
+        .filter(el => !el.disabled && el.offsetParent !== null && !(el.type === 'radio' && !el.checked));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+  makeModal(registrarPartiesOverlay, document.getElementById('registrar-parties-close'));
+  makeModal(document.getElementById('registrar-overlay'), document.getElementById('registrar-close'));
+
+  const registrarOverlay = document.getElementById('registrar-overlay');
+  const registrarSubmit = document.getElementById('registrar-submit');
+  // registrarTarget is the relying party that gets a new intended use, or null
+  // when the dialog registers a new verifier.
+  let registrarTarget = null;
+  // registrarFromList is true when the dialog was opened from the relying
+  // parties list, so Close returns there.
+  let registrarFromList = false;
+  function showRegistered(done) {
+    registrarSubmit.classList.toggle('registrar-registered', done);
+    if (registrarTarget) {
+      registrarSubmit.textContent = done ? '\u2713 Added' : 'Add certificate';
+    } else {
+      registrarSubmit.textContent = done ? '\u2713 Registered' : 'Register verifier';
+    }
+    registrarSubmit.disabled = done;
+  }
+  // After an edit the form needs a new registration, so the old result is
+  // hidden.
+  function registrarFormEdited(event) {
+    if (event.target.closest('#registrar-result')) return;
+    event.target.removeAttribute('aria-invalid');
+    showRegistered(false);
+    document.getElementById('registrar-result').hidden = true;
+  }
+  const registrarForm = document.getElementById('registrar-form');
+  registrarForm.addEventListener('input', registrarFormEdited);
+  registrarForm.addEventListener('change', registrarFormEdited);
+  registrarForm.addEventListener('click', (event) => {
+    if (event.target.closest('#registrar-add-credential, [data-field="remove"]')) registrarFormEdited(event);
+  });
+
+  function showRegistrarError(message, field) {
+    const error = document.getElementById('registrar-error');
+    error.textContent = message;
+    if (field) {
+      field.setAttribute('aria-invalid', 'true');
+      field.focus({ preventScroll: true });
+    }
+    error.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  function openRegistrarDialog(target, fromList) {
+    registrarTarget = target || null;
+    registrarFromList = !!fromList;
+    showRegistered(false);
+    registrarForm.querySelectorAll('[aria-invalid]').forEach(field => field.removeAttribute('aria-invalid'));
+    if (registrarTarget) document.getElementById('registrar-purpose').value = '';
+    document.getElementById('registrar-title').textContent = registrarTarget
+      ? 'Add a registration certificate to ' + (registrarTarget.tradeName || registrarTarget.identifier[0].identifier)
+      : 'Register a verifier';
+    document.getElementById('registrar-party-section').hidden = !!registrarTarget;
+    document.getElementById('registrar-access-section').hidden = !!registrarTarget;
+    document.getElementById('registrar-access-result').hidden = !!registrarTarget;
+    document.getElementById('registrar-error').textContent = '';
+    document.getElementById('registrar-result').hidden = true;
+    registrarOverlay.classList.add('active');
+    document.getElementById(registrarTarget ? 'registrar-purpose' : 'registrar-name').focus();
+  }
+  document.getElementById('registrar-register-verifier-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    openRegistrarDialog();
+  });
+  document.getElementById('registrar-close').addEventListener('click', () => {
+    registrarOverlay.classList.remove('active');
+    if (registrarFromList) {
+      openRegistrarParties();
+    } else {
+      focusRegistrarOpener();
+    }
+  });
+
+  // Each row is one credential type with its claims, as in the credentials of
+  // an ETSI TS 119 475 registration certificate.
+  let registrarCredentialCount = 0;
+  const registrarCredentials = document.getElementById('registrar-credentials');
+  function credentialPlaceholders(row) {
+    const mdoc = row.querySelector('select').value === 'mso_mdoc';
+    row.querySelector('[data-field="type"]').placeholder = mdoc ? 'doctype, e.g. eu.europa.ec.eudi.pid.1' : 'vct, e.g. urn:eudi:pid:1';
+    row.querySelector('[data-field="claims"]').placeholder = mdoc
+      ? 'claims, e.g. given_name, eu.europa.ec.eudi.pid.de.1:birth_name'
+      : 'claims, e.g. given_name, address.locality';
+  }
+  function addRegistrarCredential(format, type, claims) {
+    const n = ++registrarCredentialCount;
+    const row = document.createElement('div');
+    row.className = 'registrar-credential';
+    row.id = 'registrar-credential-' + n;
+    row.innerHTML =
+      '<select class="form-input" data-field="format" id="registrar-credential-' + n + '-format" aria-label="Format">' +
+        '<option value="dc+sd-jwt">SD-JWT VC</option><option value="mso_mdoc">mdoc</option></select>' +
+      '<input type="text" class="form-input" data-field="type" id="registrar-credential-' + n + '-type" aria-label="Credential type">' +
+      '<input type="text" class="form-input" data-field="claims" id="registrar-credential-' + n + '-claims" aria-label="Claims, comma separated">' +
+      '<button type="button" class="btn btn-sm" data-field="remove" id="registrar-credential-' + n + '-remove" aria-label="Remove this credential">Remove</button>';
+    row.querySelector('select').value = format;
+    row.querySelector('[data-field="type"]').value = type;
+    row.querySelector('[data-field="claims"]').value = claims;
+    row.querySelector('select').addEventListener('change', () => credentialPlaceholders(row));
+    row.querySelector('button').addEventListener('click', () => row.remove());
+    credentialPlaceholders(row);
+    registrarCredentials.appendChild(row);
+  }
+  addRegistrarCredential('dc+sd-jwt', 'urn:eudi:pid:1', 'age_equal_or_over.18');
+  function firstCredentialTypeField() {
+    const field = registrarCredentials.querySelector('[data-field="type"]');
+    if (field) return field;
+    addRegistrarCredential('dc+sd-jwt', '', '');
+    return registrarCredentials.querySelector('[data-field="type"]');
+  }
+  document.getElementById('registrar-add-credential').addEventListener('click', () => {
+    addRegistrarCredential('dc+sd-jwt', '', '');
+    registrarCredentials.lastElementChild.querySelector('[data-field="type"]').focus();
+  });
+
+  // For mdoc, a claim is the element name in the doctype's namespace, or
+  // namespace:element for another namespace.
+  function registrarCredentialList() {
+    const credentials = [];
+    registrarCredentials.querySelectorAll('.registrar-credential').forEach(row => {
+      const format = row.querySelector('select').value;
+      const type = row.querySelector('[data-field="type"]').value.trim();
+      if (!type) return;
+      const claims = row.querySelector('[data-field="claims"]').value.split(',').map(c => c.trim()).filter(Boolean).map(claim => {
+        if (format !== 'mso_mdoc') return { path: window.eudiParseClaimPath(claim) };
+        const at = claim.lastIndexOf(':');
+        return { path: at > 0 ? [claim.slice(0, at), claim.slice(at + 1)] : [type, claim] };
+      });
+      credentials.push({
+        format: format,
+        meta: format === 'mso_mdoc' ? { doctype_value: type } : { vct_values: [type] },
+        claims: claims,
+      });
+    });
+    return credentials;
+  }
+
+  // Registering issues both certificates in one step. If a certificate fails,
+  // the registration is deleted again, so a retry starts clean.
+  document.getElementById('registrar-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const error = document.getElementById('registrar-error');
+    const submit = document.getElementById('registrar-submit');
+    error.textContent = '';
+    if (registrarTarget) {
+      await addIntendedUse(submit);
+      return;
+    }
+    if (!registrarValue('registrar-name')) {
+      showRegistrarError('The relying party needs a name.', document.getElementById('registrar-name'));
+      return;
+    }
+    const credentials = registrarCredentialList();
+    if (credentials.length === 0) {
+      showRegistrarError('Add at least one credential.', firstCredentialTypeField());
+      return;
+    }
+    const serviceIdentifier = registrarValue('registrar-service-id');
+    const privacyPolicy = registrarValue('registrar-privacy-policy');
+    const supportURI = registrarValue('registrar-support-uri');
+    const identifier = registrarValue('registrar-identifier');
+    const relyingParty = {
+      identifier: identifier ? [{ identifier: identifier }] : [],
+      legalPerson: { legalName: registrarValue('registrar-legal-name') ? [registrarValue('registrar-legal-name')] : [] },
+      country: registrarValue('registrar-country'),
+      tradeName: registrarValue('registrar-name'),
+      services: [{
+        serviceTradeName: registrarValue('registrar-name'),
+        serviceIdentifier: serviceIdentifier,
+        supportURI: supportURI ? [supportURI] : [],
+        intendedUses: [{
+          purpose: registrarValue('registrar-purpose') ? [{ lang: 'en', content: registrarValue('registrar-purpose') }] : [],
+          privacyPolicy: privacyPolicy ? [{ policyURI: privacyPolicy }] : [],
+          credentials: credentials,
+        }],
+      }],
+    };
+    submit.disabled = true;
+    let registered = null;
+    try {
+      let key = '';
+      let csr = registrarValue('registrar-csr');
+      if (!csr) ({ key, csr } = await window.eudiCreateKeyAndCSR());
+      registered = await registrarRequest('POST', 'api/registrar/wrp', relyingParty);
+      const assigned = registered.identifier[0].identifier;
+      const access = await registrarRequest('POST', 'api/registrar/access-certificates', {
+        identifier: assigned,
+        serviceIdentifier: serviceIdentifier,
+        csr: csr,
+        dnsNames: registrarValue('registrar-dns').split(',').map(n => n.trim()).filter(Boolean),
+        validity: registrarValue('registrar-access-validity'),
+      });
+      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
+        identifier: assigned,
+        serviceIdentifier: serviceIdentifier,
+        intendedUseIdentifier: registered.services[0].intendedUses[0].intendedUseIdentifier,
+        validity: registrarValue('registrar-registration-validity'),
+      });
+      document.getElementById('registrar-result-identifier').textContent = assigned;
+      document.getElementById('registrar-client-ids').innerHTML = (access.clientIds || []).map((id, i) =>
+        '<li><code id="registrar-client-id-' + i + '">' + escHtml(id) + '</code></li>').join('');
+      // A key created in the browser exists only in this box. With your own CSR
+      // you already have the key, so you only need the chain.
+      document.getElementById('registrar-pem-label').textContent = key ? 'Signing key and access certificate chain' : 'Access certificate chain';
+      document.getElementById('registrar-pem').value = key + access.chain;
+      document.getElementById('registrar-verifier-info').value = registration.verifierInfo;
+      showRegistrationResult();
+    } catch (e) {
+      showRegistrarError(e.message);
+      if (registered) {
+        registrarRequest('DELETE', 'api/registrar/wrp/' + encodeURIComponent(registered.identifier[0].identifier)).catch(() => {});
+      }
+    } finally {
+      submit.disabled = submit.classList.contains('registrar-registered');
+      // The disabled button dropped the focus while the request ran.
+      if (!submit.disabled && document.activeElement === document.body) submit.focus();
+    }
+  });
+
+  // The dialog scrolls to its end, so the result and the confirmed submit
+  // button below it are both in view.
+  function showRegistrationResult() {
+    showRegistered(true);
+    const box = document.getElementById('registrar-result');
+    box.hidden = false;
+    box.focus({ preventScroll: true });
+    const dialog = document.getElementById('registrar-dialog');
+    dialog.scrollTo({ top: dialog.scrollHeight, behavior: 'smooth' });
+  }
+
+  function intendedUseFromForm() {
+    const privacyPolicy = registrarValue('registrar-privacy-policy');
+    return {
+      purpose: registrarValue('registrar-purpose') ? [{ lang: 'en', content: registrarValue('registrar-purpose') }] : [],
+      privacyPolicy: privacyPolicy ? [{ policyURI: privacyPolicy }] : [],
+      credentials: registrarCredentialList(),
+    };
+  }
+
+  // Each registration certificate covers one intended use, so a new certificate
+  // needs a new intended use. If the certificate fails, the registration is
+  // restored.
+  async function addIntendedUse(submit) {
+    const use = intendedUseFromForm();
+    if (use.credentials.length === 0) {
+      showRegistrarError('Add at least one credential.', firstCredentialTypeField());
+      return;
+    }
+    const before = registrarTarget;
+    const identifier = before.identifier[0].identifier;
+    const known = new Set((before.services || []).flatMap(s => (s.intendedUses || []).map(u => u.intendedUseIdentifier)));
+    const updated = JSON.parse(JSON.stringify(before));
+    updated.services = updated.services && updated.services.length > 0 ? updated.services : [{}];
+    updated.services[0].intendedUses = (updated.services[0].intendedUses || []).concat([use]);
+    submit.disabled = true;
+    let saved = null;
+    try {
+      saved = await registrarRequest('PUT', 'api/registrar/wrp', updated);
+      const service = saved.services[0];
+      const added = (service.intendedUses || []).find(u => !known.has(u.intendedUseIdentifier));
+      const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {
+        identifier: identifier,
+        serviceIdentifier: service.serviceIdentifier || '',
+        intendedUseIdentifier: added.intendedUseIdentifier,
+        validity: registrarValue('registrar-registration-validity'),
+      });
+      registrarTarget = saved;
+      document.getElementById('registrar-result-identifier').textContent = identifier;
+      document.getElementById('registrar-verifier-info').value = registration.verifierInfo;
+      showRegistrationResult();
+    } catch (e) {
+      showRegistrarError(e.message);
+      if (saved) registrarRequest('PUT', 'api/registrar/wrp', before).catch(() => {});
+    } finally {
+      submit.disabled = submit.classList.contains('registrar-registered');
+      // The disabled button dropped the focus while the request ran.
+      if (!submit.disabled && document.activeElement === document.body) submit.focus();
+    }
+  }
+
+  document.getElementById('registrar-download-pem').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([document.getElementById('registrar-pem').value], { type: 'application/x-pem-file' }));
+    link.download = 'verifier.pem';
+    link.click();
+    // Some browsers start the download after click() returns.
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+
+  [
+    ['registrar-copy-pem', 'registrar-pem'],
+    ['registrar-copy-verifier-info', 'registrar-verifier-info'],
+    ['registrar-copy-csr-command', 'registrar-csr-command'],
+  ].forEach(([buttonId, fieldId]) => wireCopyButton(document.getElementById(buttonId), document.getElementById(fieldId)));
 
   const conformanceOverlay = document.getElementById('conformance-overlay');
   document.getElementById('conformance-link').addEventListener('click', (event) => {

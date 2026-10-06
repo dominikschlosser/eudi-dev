@@ -20,12 +20,15 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/validate"
 )
 
@@ -52,6 +55,19 @@ func verifierInfoPurposes(payload map[string]any) (purposes []string, findings [
 // Verify signatures against each certificate's own x5c leaf. This does not establish
 // trust in the signer. See SECURITY.md.
 func verifiedRegistrationCertificates(payload map[string]any) (certs []map[string]any, findings []string) {
+	registrations, findings := verifiedRegistrations(payload)
+	for _, r := range registrations {
+		certs = append(certs, r.claims)
+	}
+	return certs, findings
+}
+
+type verifiedRegistration struct {
+	claims map[string]any
+	chain  []*x509.Certificate
+}
+
+func verifiedRegistrations(payload map[string]any) (registrations []verifiedRegistration, findings []string) {
 	for _, entry := range verifierInfoEntries(payload) {
 		data, _ := entry["data"].(string)
 		if strings.Count(data, ".") != 2 {
@@ -73,41 +89,182 @@ func verifiedRegistrationCertificates(payload map[string]any) (certs []map[strin
 			findings = append(findings, fmt.Sprintf("The registration certificate signature does not verify with its x5c leaf, so its purpose is not shown: %v", err))
 			continue
 		}
-		certs = append(certs, claims)
+		registrations = append(registrations, verifiedRegistration{claims: claims, chain: x5cChain(header)})
 	}
-	return certs, findings
+	return registrations, findings
+}
+
+// x5cChain parses a JOSE x5c header, leaf first. It skips entries that do not
+// parse.
+func x5cChain(header map[string]any) []*x509.Certificate {
+	entries, _ := header["x5c"].([]any)
+	var chain []*x509.Certificate
+	for _, entry := range entries {
+		encoded, _ := entry.(string)
+		der, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			continue
+		}
+		if cert, err := x509.ParseCertificate(der); err == nil {
+			chain = append(chain, cert)
+		}
+	}
+	return chain
+}
+
+// verifyToAnchor verifies the leaf of chain to one of roots, with the rest of
+// chain as intermediates.
+func verifyToAnchor(chain []*x509.Certificate, roots *x509.CertPool) error {
+	if len(chain) == 0 {
+		return errors.New("no certificate")
+	}
+	if roots == nil {
+		return errors.New("no trusted CA")
+	}
+	intermediates := x509.NewCertPool()
+	for _, cert := range chain[1:] {
+		intermediates.AddCert(cert)
+	}
+	_, err := chain[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}})
+	return err
 }
 
 // Unsigned requests carry verifier_info as a parameter. Signed requests use only the
-// Request Object (OID4VP 1.0 §5.10.1). Certificate content checks follow ETSI TS 119
-// 475 and ARF RPRC_19. They stay warnings in every mode because strict mode covers
-// only OpenID4VP and HAIP.
-func (w *Wallet) consentPurposes(scope string, authReq *AuthorizationRequestParams) []string {
-	if authReq == nil {
-		return nil
-	}
+// Request Object (OID4VP 1.0 §5.10.1).
+func requestVerifierInfo(authReq *AuthorizationRequestParams) map[string]any {
 	payload := authReq.RequestPayload
 	if payload == nil && authReq.RequestObject == nil && strings.TrimSpace(authReq.FullParams["verifier_info"]) != "" {
 		payload = map[string]any{"verifier_info": authReq.FullParams["verifier_info"]}
 	}
+	return payload
+}
 
-	certs, findings := verifiedRegistrationCertificates(payload)
-	if len(certs) == 0 {
-		findings = append(findings, "ARF RPRC_19: the request carries no relying party registration certificate (verifier_info entry with typ rc-wrp+jwt), required in every presentation request")
+// registrationStatusFindings checks a registration certificate against its
+// registrar's status list (ARF §6.6.3.3 step 4). An unreadable status is a
+// finding too, because then the wallet can't tell whether the certificate is
+// revoked.
+func registrationStatusFindings(cert map[string]any, client *http.Client) []string {
+	ref := statuslist.ExtractStatusRef(cert)
+	if ref == nil {
+		return nil
 	}
+	name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
+	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client})
+	if err != nil {
+		return []string{fmt.Sprintf("ARF RPRC_17: the status of the registration certificate of %s cannot be checked: %v", name, err)}
+	}
+	if !result.IsValid {
+		return []string{fmt.Sprintf("ARF RPRC_17: the registrar revoked the registration certificate of %s (status %s at index %d of %s)", name, result.StatusName, ref.Idx, ref.URI)}
+	}
+	return nil
+}
 
-	var purposes []string
+// consentRegistration returns the purposes and privacy policy links the consent
+// dialog shows (ARF RPA_10).
+func consentRegistration(authReq *AuthorizationRequestParams) (purposes, privacyPolicies []string) {
+	if authReq == nil {
+		return nil, nil
+	}
+	certs, _ := verifiedRegistrationCertificates(requestVerifierInfo(authReq))
 	for _, cert := range certs {
-		findings = append(findings, registrationCertificateContentFindings(cert)...)
-		findings = append(findings, overAskingFindings(cert, authReq.DCQLQuery)...)
 		for _, purpose := range purposeStrings(cert["purpose"]) {
 			if !containsPurpose(purposes, purpose) {
 				purposes = append(purposes, purpose)
 			}
 		}
+		if policy := stringClaim(cert["privacy_policy"]); isWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
+			privacyPolicies = append(privacyPolicies, policy)
+		}
 	}
-	w.warnFindings(scope, "The relying party registration certificate does not follow the ARF and ETSI TS 119 475", findings)
-	return purposes
+	return purposes, privacyPolicies
+}
+
+// ARFFindings checks how a request authenticates its relying party against
+// the ARF and ETSI TS 119 475. --arf runs them. The ARF leaves refusing to the
+// Wallet Provider (RPA_06a, RPRC_17, RPRC_21), and strict mode refuses.
+func ARFFindings(authReq *AuthorizationRequestParams) []string {
+	if authReq == nil {
+		return nil
+	}
+	registrations, findings := verifiedRegistrations(requestVerifierInfo(authReq))
+	if len(registrations) == 0 {
+		findings = append(findings, "ARF RPRC_19: the request carries no relying party registration certificate (verifier_info entry with typ rc-wrp+jwt), required in every presentation request")
+	}
+	accessChain := requestAccessChain(authReq)
+	if len(accessChain) == 0 {
+		findings = append(findings, "ARF RPA_03: the request is not signed with a relying party access certificate in x5c")
+	} else if err := verifyToAnchor(accessChain, authReq.RelyingPartyCAs); err != nil {
+		findings = append(findings, fmt.Sprintf("ARF RPA_04: the access certificate %q does not verify to a trusted access certificate authority: %v", accessChain[0].Subject.String(), err))
+	}
+	var registered []any
+	for _, r := range registrations {
+		cert := r.claims
+		name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
+		findings = append(findings, registrationCertificateContentFindings(cert)...)
+		registered = append(registered, toAnyList(cert["credentials"])...)
+		if len(accessChain) > 0 {
+			findings = append(findings, registrationBindingFindings(cert, accessChain[0])...)
+		}
+		if err := verifyToAnchor(r.chain, authReq.RegistrarCAs); err != nil {
+			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not verify to a trusted registrar: %v", name, err))
+		}
+		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient)...)
+	}
+	// A request may carry one certificate per intended use. Together they
+	// define what it may request.
+	if len(registrations) > 0 {
+		findings = append(findings, overAskingFindings(map[string]any{"credentials": registered}, authReq.DCQLQuery)...)
+	}
+	return findings
+}
+
+// requestAccessChain returns the request object's x5c chain, leaf first, if the
+// leaf key verifies the signature. A chain whose leaf didn't sign the request
+// proves nothing about the relying party.
+func requestAccessChain(authReq *AuthorizationRequestParams) []*x509.Certificate {
+	reqObj := authReq.RequestObject
+	if reqObj == nil || stringClaim(reqObj.Header["alg"]) == "none" || strings.Count(reqObj.Raw, ".") != 2 {
+		return nil
+	}
+	chain := x5cChain(reqObj.Header)
+	if len(chain) == 0 {
+		return nil
+	}
+	if _, err := jws.Verify(reqObj.Raw, chain[0].PublicKey); err != nil {
+		return nil
+	}
+	return chain
+}
+
+// ARF RPRC_17a links a registration certificate to the access certificate of
+// the request through the relying party identifier. An intermediary's
+// certificate carries it in act.sub (ETSI TS 119 475 GEN-5.2.4-09). Neither
+// certificate has a service identifier, so only the relying party is compared
+// (TS 119 475 V1.2.1).
+func registrationBindingFindings(cert map[string]any, access *x509.Certificate) []string {
+	identifier := stringClaim(cert["sub"])
+	if act, ok := cert["act"].(map[string]any); ok && stringClaim(act["sub"]) != "" {
+		identifier = stringClaim(act["sub"])
+	}
+	accessIdentifier := organizationIdentifier(access)
+	if identifier != "" && identifier == accessIdentifier {
+		return nil
+	}
+	return []string{fmt.Sprintf("ARF RPRC_17a: the registration certificate identifies %q, but the access certificate's organizationIdentifier is %q", identifier, accessIdentifier)}
+}
+
+func organizationIdentifier(cert *x509.Certificate) string {
+	for _, attribute := range cert.Subject.Names {
+		if attribute.Type.String() == "2.5.4.97" {
+			value, _ := attribute.Value.(string)
+			return value
+		}
+	}
+	return ""
+}
+
+func isWebURL(value string) bool {
+	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
 }
 
 // Check required content from ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. Missing
@@ -140,6 +297,9 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 	}
 	if !nonEmptyList(cert["credentials"]) {
 		miss("credentials (the registered attestations and attributes)", "ETSI TS 119 475 GEN-5.2.4-06")
+	}
+	if statuslist.ExtractStatusRef(cert) == nil {
+		miss("status (its entry in the registrar's status list), so the wallet cannot check revocation", "ETSI TS 119 475 V1.2.1 Table 7")
 	}
 	return append(findings, registrationValidityFindings(cert)...)
 }
@@ -209,13 +369,12 @@ func registersCredential(registered []registeredCredential, format string, types
 	return false
 }
 
-// Without a claim list, the entry registers the credential without an attribute
-// restriction (ETSI TS 119 475 §5.2.4 Table 9).
+// An entry without a claim list declares no attributes (ETSI TS 119 475 V1.2.1
+// Annex B.2.9), so ARF RPRC_21 counts every requested claim as over-asking.
 type registeredCredential struct {
-	format          string
-	types           []string
-	paths           [][]any
-	anyClaimAllowed bool
+	format string
+	types  []string
+	paths  [][]any
 }
 
 // An omitted format or type on either side does not restrict matching.
@@ -231,13 +390,7 @@ func registeredCredentials(cert map[string]any) []registeredCredential {
 	for _, entry := range listOfMaps(cert["credentials"]) {
 		format, _ := entry["format"].(string)
 		rc := registeredCredential{format: format, types: credentialTypes(entry["meta"])}
-		claims := listOfMaps(entry["claim"])
-		if len(claims) == 0 {
-			// ETSI TS 119 475 §5.2.4 Table 9 allows omitting specific attributes.
-			// Treat this as registration without an attribute restriction.
-			rc.anyClaimAllowed = true
-		}
-		for _, claim := range claims {
+		for _, claim := range listOfMaps(entry["claim"]) {
 			if path := toAnyList(claim["path"]); len(path) > 0 {
 				rc.paths = append(rc.paths, path)
 			}
@@ -251,9 +404,6 @@ func registeredCovers(registered []registeredCredential, format string, types []
 	for _, rc := range registered {
 		if !rc.matches(format, types) {
 			continue
-		}
-		if rc.anyClaimAllowed {
-			return true
 		}
 		for _, registeredPath := range rc.paths {
 			if pathPrefix(registeredPath, path) {
@@ -373,7 +523,16 @@ func listOfMaps(v any) []map[string]any {
 	return out
 }
 
+// toAnyList also takes []string, which in-memory records hold before a JSON
+// round trip.
 func toAnyList(v any) []any {
+	if strs, ok := v.([]string); ok {
+		list := make([]any, len(strs))
+		for i, s := range strs {
+			list[i] = s
+		}
+		return list
+	}
 	list, _ := v.([]any)
 	return list
 }

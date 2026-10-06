@@ -59,6 +59,8 @@ type walletServeOptions struct {
 	KeyAttestationLevel     string
 	RequireEncryptedRequest bool
 	HAIP                    bool
+	ARF                     bool
+	RelyingPartyCAs         []string
 	VCIVersion              string
 	ClientAttestation       bool
 	AdhocDisplayImages      bool
@@ -73,6 +75,11 @@ type walletServeOptions struct {
 	DemoVerifierTrust       []string
 	LogFormat               string
 }
+
+const (
+	arfFlagUsage            = "Check the relying party's access and registration certificates in presentation requests against the ARF, including over-asking and revocation. With --mode strict a finding refuses the request"
+	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. --arf trusts them in addition to the wallet's own CAs (repeatable)"
+)
 
 func walletServeCmd() *cobra.Command {
 	cmd, _ := walletServeCmdWithOptions()
@@ -110,7 +117,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().IntVar(&opts.Port, "port", config.DefaultWalletPort, "Wallet server port")
 	cmd.Flags().BoolVar(&opts.AutoAccept, "auto-accept", false, "Headless mode: auto-accept presentations and credential offers")
 	cmd.Flags().StringSliceVar(&opts.CredFiles, "credential", nil, "Import credential from file (repeatable)")
-	cmd.Flags().StringVar(&opts.CredentialsFile, "credentials", "", "YAML or JSON file, directory of such files, or '-' for stdin, listing credentials to add on every start (issued from templates or imported)")
+	cmd.Flags().StringVar(&opts.CredentialsFile, "credentials", "", "Credentials to issue or import on every start and after a demo reset: a YAML or JSON file, a directory of such files, or '-' for stdin")
 	cmd.Flags().BoolVar(&opts.PID, "pid", false, "Auto-generate default EUDI PID credentials (SD-JWT + mdoc)")
 	cmd.Flags().StringVar(&opts.KeyPath, "key", "", "Holder private key file (PEM/JWK). Uses the stored key or auto-generates one if omitted")
 	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
@@ -124,13 +131,15 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.KeyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them")
 	cmd.Flags().BoolVar(&opts.RequireEncryptedRequest, "require-encrypted-request", false, "Reject a Verifier's Request Object that is not encrypted (the wallet always sends an encryption key in wallet_metadata, so this only requires the Verifier to use it)")
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
+	cmd.Flags().BoolVar(&opts.ARF, "arf", false, arfFlagUsage)
+	cmd.Flags().StringArrayVar(&opts.RelyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored but the issuer sees each render, while a data URI, template art, and http URLs are still embedded)")
 	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it)")
 	cmd.Flags().StringVar(&opts.DemoIssuerClientAuth, "demo-issuer-client-auth", string(demorp.ClientAuthRequired), "What the demo issuer's authorization server demands at its PAR and token endpoints: 'required' (HAIP 1.0 §4.4.1, the default) or 'optional' (also serves wallets that send no wallet attestation, for testing against them)")
 	cmd.Flags().StringVar(&opts.VCIClientID, "vci-client-id", "", "Client ID the wallet should use for OID4VCI authorization-code flows")
 	cmd.Flags().StringVar(&opts.VCIRedirectURI, "vci-redirect-uri", "", "Redirect URI the wallet should use for OID4VCI authorization-code flows")
-	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
+	cmd.Flags().BoolVar(&opts.Demo, "demo", false, "Public demo profile: implies --pid, --mode debug, --haip, --arf and --vci-version 1.1 (all overridable), disables process/filesystem endpoints, blocks fetches to internal networks")
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVar(&opts.ServeTLS, "serve-tls", false, "Serve an https --base-url locally with the wallet's own TLS certificate instead of expecting an external TLS terminator in front (the HTTP port stays bound as well)")
@@ -196,6 +205,9 @@ func applyDemoProfileDefaults(cmd *cobra.Command, opts *walletServeOptions, w *w
 	}
 	if !cmd.Flags().Changed("haip") {
 		opts.HAIP = true
+	}
+	if !cmd.Flags().Changed("arf") {
+		opts.ARF = true
 	}
 	if !cmd.Flags().Changed("vci-version") {
 		opts.VCIVersion = string(wallet.VCIVersion11)
@@ -464,6 +476,12 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if opts.HAIP {
 		w.RequireHAIP = true
 	}
+	if opts.ARF {
+		w.RequireARF = true
+	}
+	if err := loadRelyingPartyCAs(w, opts.RelyingPartyCAs); err != nil {
+		return err
+	}
 	if opts.AdhocDisplayImages {
 		w.AdhocDisplayImages = true
 	}
@@ -651,6 +669,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if w.RequireHAIP {
 		fmt.Printf("  HAIP:        enforced (presentations: x509_hash, direct_post.jwt, DCQL, JAR, ES256)\n")
 		fmt.Printf("               enforced (issuance needs an https issuer, authorization code offers also PAR, PKCE S256, DPoP and client auth)\n")
+	}
+	if w.RequireARF {
+		fmt.Printf("  ARF:         checked (access and registration certificates, over-asking, revocation)\n")
 	}
 	for _, warning := range servingConfigWarnings(w, opts.Port, opts.Docker) {
 		yellow.Printf("  Warning:     %s\n", warning)

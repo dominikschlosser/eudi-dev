@@ -508,7 +508,8 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 		return nil, err
 	}
 
-	findings, err := ValidateAuthorizationRequest(w.Mode(), w.RequireHAIP, params)
+	w.PrepareARFChecks(params)
+	findings, err := ValidateAuthorizationRequest(w.Mode(), w.RequireHAIP, w.ARFChecks(), params)
 	if err != nil {
 		return nil, fmt.Errorf("openid4vp_request: %w", err)
 	}
@@ -583,10 +584,10 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		ClientID:     asking,
 		Nonce:        authReq.Nonce,
 		DCQLQuery:    authReq.DCQLQuery,
-		Purposes:     w.consentPurposes("issuance", authReq),
 
 		CredentialOptions: credentialOptions,
 	}
+	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
 	consentReq.applyClientAuth(authReq)
 	w.CreateConsentRequest(consentReq)
 
