@@ -26,8 +26,8 @@ import (
 
 func TestPredefinedTemplates(t *testing.T) {
 	predefined := PredefinedTemplates()
-	if len(predefined) != 8 {
-		t.Fatalf("expected 8 pre-defined templates, got %d", len(predefined))
+	if len(predefined) != 9 {
+		t.Fatalf("expected 9 pre-defined templates, got %d", len(predefined))
 	}
 
 	sdjwt, err := Load("pid-sdjwt", FileLocation(t.TempDir()))
@@ -61,8 +61,8 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading pre-defined template: %v", err)
 	}
-	if sdjwt.VCT != mock.GermanPIDVCT {
-		t.Errorf("german-pid-sdjwt vct = %q, want %q", sdjwt.VCT, mock.GermanPIDVCT)
+	if sdjwt.VCT != "urn:eudi:pid:de:1" {
+		t.Errorf("german-pid-sdjwt vct = %q, want %q", sdjwt.VCT, "urn:eudi:pid:de:1")
 	}
 	if len(sdjwt.Claims) != len(mock.SDJWTGermanPIDClaims) {
 		t.Errorf("expected %d claims, got %d", len(mock.SDJWTGermanPIDClaims), len(sdjwt.Claims))
@@ -77,8 +77,8 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	if mdoc.DocType != mock.PIDNamespace {
 		t.Errorf("german-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
-	if _, ok := mdoc.Claims[mock.GermanPIDNamespace+":birth_name"]; !ok {
-		t.Errorf("german-pid-mdoc is missing %s:birth_name", mock.GermanPIDNamespace)
+	if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
+		t.Errorf("german-pid-mdoc is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
 	}
 }
 
@@ -89,8 +89,8 @@ func TestPredefinedItalianPIDTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading pre-defined template: %v", err)
 	}
-	if first.VCT != mock.ItalianPIDVCT {
-		t.Errorf("vct = %q, want %q", first.VCT, mock.ItalianPIDVCT)
+	if first.VCT != "urn:eudi:pid:it:1" {
+		t.Errorf("vct = %q, want %q", first.VCT, "urn:eudi:pid:it:1")
 	}
 	if _, ok := first.Claims["address"]; ok {
 		t.Error("the Italian PID carries an address")
@@ -116,8 +116,8 @@ func TestPredefinedItalianPIDTemplates(t *testing.T) {
 		t.Errorf("italian-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
 	for _, element := range []string{"sub", "verification"} {
-		if _, ok := mdoc.Claims[mock.ItalianPIDNamespace+":"+element]; !ok {
-			t.Errorf("italian-pid-mdoc is missing %s:%s", mock.ItalianPIDNamespace, element)
+		if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.it.1"+":"+element]; !ok {
+			t.Errorf("italian-pid-mdoc is missing %s:%s", "eu.europa.ec.eudi.pid.it.1", element)
 		}
 	}
 }
@@ -127,8 +127,8 @@ func TestPredefinedDutchPIDTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading pre-defined template: %v", err)
 	}
-	if sdjwt.VCT != mock.DutchPIDVCT || sdjwt.Claims["bsn"] != "999991772" {
-		t.Errorf("dutch-pid-sdjwt has vct %q and bsn %v, want %q and the sample BSN", sdjwt.VCT, sdjwt.Claims["bsn"], mock.DutchPIDVCT)
+	if sdjwt.VCT != "urn:eudi:pid:nl:1" || sdjwt.Claims["bsn"] != "999991772" {
+		t.Errorf("dutch-pid-sdjwt has vct %q and bsn %v, want %q and the sample BSN", sdjwt.VCT, sdjwt.Claims["bsn"], "urn:eudi:pid:nl:1")
 	}
 
 	// ARF PID_05 and PID_06: the PID doctype with the Dutch elements in a
@@ -140,8 +140,8 @@ func TestPredefinedDutchPIDTemplates(t *testing.T) {
 	if mdoc.DocType != mock.PIDNamespace {
 		t.Errorf("dutch-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
-	if _, ok := mdoc.Claims[mock.DutchPIDNamespace+":bsn"]; !ok {
-		t.Errorf("dutch-pid-mdoc is missing %s:bsn", mock.DutchPIDNamespace)
+	if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.nl.1"+":bsn"]; !ok {
+		t.Errorf("dutch-pid-mdoc is missing %s:bsn", "eu.europa.ec.eudi.pid.nl.1")
 	}
 }
 
@@ -208,18 +208,43 @@ func TestPIDTemplateNames(t *testing.T) {
 	}{
 		{"", "pid-sdjwt", "pid-mdoc", true},
 		{mock.DefaultPIDVCT, "pid-sdjwt", "pid-mdoc", true},
-		{mock.GermanPIDVCT, "german-pid-sdjwt", "german-pid-mdoc", true},
-		{mock.ItalianPIDVCT, "italian-pid-sdjwt", "italian-pid-mdoc", true},
-		{mock.DutchPIDVCT, "dutch-pid-sdjwt", "dutch-pid-mdoc", true},
+		{"urn:eudi:pid:de:1", "german-pid-sdjwt", "german-pid-mdoc", true},
+		{"urn:eudi:pid:it:1", "italian-pid-sdjwt", "italian-pid-mdoc", true},
+		{"urn:eudi:pid:nl:1", "dutch-pid-sdjwt", "dutch-pid-mdoc", true},
+		{"urn:eudi:pid:fr:1", "french-pid-sdjwt", "french-pid-mdoc", true},
 		// Unknown PID types use the base PID claims with the requested VCT.
 		{"urn:example:custom:1", "pid-sdjwt", "pid-mdoc", false},
 	}
+	dir := t.TempDir()
+	for name, content := range map[string]string{
+		"french-pid-sdjwt": `{"format": "sdjwt", "vct": "urn:eudi:pid:fr:1", "display": {"name": "French PID"}, "claims": {}}`,
+		"french-pid-mdoc":  `{"format": "mdoc", "doctype": "eu.europa.ec.eudi.pid.1", "display": {"name": "French PID"}, "claims": {}}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name+".json"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, tt := range tests {
-		sdjwt, mdoc, known := PIDTemplateNames(tt.vct)
+		sdjwt, mdoc, known := PIDTemplateNames(tt.vct, FileLocation(dir))
 		if sdjwt != tt.sdjwt || mdoc != tt.mdoc || known != tt.known {
 			t.Errorf("PIDTemplateNames(%q) = %q, %q, %t, want %q, %q, %t",
 				tt.vct, sdjwt, mdoc, known, tt.sdjwt, tt.mdoc, tt.known)
 		}
+	}
+}
+
+func TestUniqueClaimsGetANewValueForEveryCredential(t *testing.T) {
+	tpl := &Template{UniqueClaims: []string{"sub", "absent"}}
+	claims := map[string]any{"sub": "sample", "given_name": "Bianca"}
+	first, second := tpl.WithUniqueClaims(claims), tpl.WithUniqueClaims(claims)
+	if first["sub"] == "sample" || first["sub"] == second["sub"] {
+		t.Errorf("sub = %v and %v, want two new values", first["sub"], second["sub"])
+	}
+	if first["given_name"] != "Bianca" || claims["sub"] != "sample" {
+		t.Errorf("other claims or the template claims changed: %v, %v", first, claims)
+	}
+	if _, ok := first["absent"]; ok {
+		t.Error("a unique claim the credential does not carry was added")
 	}
 }
 

@@ -312,7 +312,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		// An override chain is embedded as given, root included, to test
 		// verifier rejection.
 		keepAnchor := opts.SigningKey != nil
-		claims := mock.WithFreshItalianSubject(vct, claims)
+		claims := tpl.WithUniqueClaims(claims)
 		switch format {
 		case "sdjwt":
 			return mock.GenerateSDJWT(mock.SDJWTConfig{
@@ -473,7 +473,7 @@ func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (tpl *credtemplate.Temp
 		return tpl, false, err
 	}
 	if opts.PID && opts.Claims == nil {
-		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT)
+		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT, w.Templates)
 		name := sdName
 		if format, _ := normalizeIssueFormat(opts.Format); format == "mdoc" {
 			name = mdocName

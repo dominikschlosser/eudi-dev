@@ -524,29 +524,24 @@ func printIssuedCredential(raw, id string) {
 // Explicit flags override template defaults. With --pid and no --claims, --vct selects
 // the built-in PID template.
 func resolveIssueTemplate(cmd *cobra.Command, format string) (*credtemplate.Template, error) {
-	var name string
-	// A template named by --template must match the format. The --pid
-	// template is a claim set, so `issue jwt --pid` uses the SD-JWT PID
-	// template and skips the format check.
-	pidTemplate := false
-	switch {
-	case issueTemplate != "":
-		name = issueTemplate
-	case issuePID && issueClaims == "":
-		sdName, mdocName, _ := credtemplate.PIDTemplateNames(issueVCT)
-		if format == "mdoc" {
-			name = mdocName
-		} else {
-			name = sdName
-		}
-		pidTemplate = true
-	default:
+	if issueTemplate == "" && (!issuePID || issueClaims != "") {
 		return nil, nil
 	}
-
 	loc, err := resolveTemplates()
 	if err != nil {
 		return nil, err
+	}
+	// A template named by --template must match the format. The --pid
+	// template is a claim set, so `issue jwt --pid` uses the SD-JWT PID
+	// template and skips the format check.
+	name := issueTemplate
+	pidTemplate := name == ""
+	if pidTemplate {
+		sdName, mdocName, _ := credtemplate.PIDTemplateNames(issueVCT, loc)
+		name = sdName
+		if format == "mdoc" {
+			name = mdocName
+		}
 	}
 	tpl, err := credtemplate.Load(name, loc)
 	if err != nil {

@@ -166,7 +166,7 @@ func TestDemoReset(t *testing.T) {
 	}
 
 	creds := srv.wallet.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(creds) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(creds) != want {
 		t.Fatalf("after reset: %d credentials (before %d), want the %d default PIDs", len(creds), before, want)
 	}
 	for _, c := range creds {
@@ -181,7 +181,7 @@ func TestDemoReset(t *testing.T) {
 	if err := srv.reloadFromStore(); err != nil {
 		t.Fatalf("reload after reset: %v", err)
 	}
-	if got, want := len(srv.wallet.GetCredentials()), 2*len(BaselinePIDVCTs); got != want {
+	if got, want := len(srv.wallet.GetCredentials()), 2*len(BaselinePIDTemplates); got != want {
 		t.Fatalf("after reload: %d credentials, want %d", got, want)
 	}
 }
@@ -268,7 +268,7 @@ func TestProtectedCredentials(t *testing.T) {
 		t.Fatalf("saving baseline: %v", err)
 	}
 	baseline := srv.wallet.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(baseline) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(baseline) != want {
 		t.Fatalf("expected %d baseline credentials, got %d", want, len(baseline))
 	}
 	for _, c := range baseline {
@@ -321,7 +321,7 @@ func TestProtectedCredentials(t *testing.T) {
 			t.Fatalf("DELETE all = %d", rec.Code)
 		}
 		result := decodeJSON(t, rec)
-		want := 2 * len(BaselinePIDVCTs)
+		want := 2 * len(BaselinePIDTemplates)
 		if result["kept_protected"] != float64(want) {
 			t.Errorf("kept_protected = %v, want %d", result["kept_protected"], want)
 		}
@@ -381,7 +381,7 @@ func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
 			protectedSDJWT++
 		}
 	}
-	if want := len(BaselinePIDVCTs); protectedSDJWT != want {
+	if want := len(BaselinePIDTemplates); protectedSDJWT != want {
 		t.Errorf("wallet holds %d protected SD-JWT PIDs, want exactly %d", protectedSDJWT, want)
 	}
 }

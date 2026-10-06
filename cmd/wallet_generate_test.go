@@ -27,7 +27,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -510,7 +509,7 @@ func TestWalletGeneratePID_DeprecationWarningNamesTheGermanTemplates(t *testing.
 	rootCmd.SetErr(errBuf)
 	t.Cleanup(func() { rootCmd.SetErr(nil) })
 
-	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--vct", mock.GermanPIDVCT})
+	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--vct", "urn:eudi:pid:de:1"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("generate-pid: %v", err)
 	}

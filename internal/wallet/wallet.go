@@ -567,9 +567,9 @@ func (w *Wallet) RefreshSigningCertificateIfExpiring(now time.Time) (bool, error
 	return true, nil
 }
 
-// GenerateDefaultCredentials merges claimOverrides with PID template claims. An empty vct
-// uses the EUDI PID. GermanPIDVCT selects the German PID. Other types use the EUDI claim
-// set under the supplied vct.
+// GenerateDefaultCredentials merges claimOverrides with PID template claims. vct selects
+// the PID templates of that type, and an empty vct uses the EUDI PID. A type without
+// templates uses the EUDI claim set under that type.
 func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct string) error {
 	return w.generateDefaultCredentials(claimOverrides, vct, true)
 }
@@ -577,7 +577,7 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 // dropExisting replaces existing defaults of the same type. Baseline generation
 // passes false because it removes its protected credentials itself.
 func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, dropExisting bool) error {
-	sdName, mdocName, _ := credtemplate.PIDTemplateNames(vct)
+	sdName, mdocName, _ := credtemplate.PIDTemplateNames(vct, w.Templates)
 	sdTpl, err := credtemplate.Load(sdName, w.Templates)
 	if err != nil {
 		return fmt.Errorf("loading %s template: %w", sdName, err)
@@ -891,20 +891,25 @@ func (w *Wallet) IsProtected(id string) bool {
 	return false
 }
 
-// BaselinePIDVCTs holds both PIDs to demonstrate type inheritance.
-var BaselinePIDVCTs = []string{mock.DefaultPIDVCT, mock.GermanPIDVCT}
+// BaselinePIDTemplates names the SD-JWT templates of the baseline PIDs. The
+// German PID extends the EUDI PID, so together they show type inheritance.
+var BaselinePIDTemplates = []string{"pid-sdjwt", "german-pid-sdjwt"}
 
 // GenerateProtectedDefaults marks only the newly generated defaults as protected.
 func (w *Wallet) GenerateProtectedDefaults() error {
-	// The old baseline may hold types that are no longer in BaselinePIDVCTs.
+	// The old baseline may hold types that are no longer in the baseline.
 	w.removeProtected()
 
 	existing := make(map[string]bool)
 	for _, c := range w.GetCredentials() {
 		existing[c.ID] = true
 	}
-	for _, vct := range BaselinePIDVCTs {
-		if err := w.generateDefaultCredentials(nil, vct, false); err != nil {
+	for _, name := range BaselinePIDTemplates {
+		tpl, err := credtemplate.Load(name, w.Templates)
+		if err != nil {
+			return fmt.Errorf("loading %s template: %w", name, err)
+		}
+		if err := w.generateDefaultCredentials(nil, tpl.VCT, false); err != nil {
 			return err
 		}
 	}

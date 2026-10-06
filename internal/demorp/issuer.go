@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -37,7 +38,7 @@ import (
 var staticFiles embed.FS
 
 const (
-	TicketVCT = "urn:eudi-test:demo-ticket:1"
+	TicketVCT = credtype.DemoTicketVCT
 
 	ticketConfigurationID = "demo-ticket"
 	preAuthGrant          = "urn:ietf:params:oauth:grant-type:pre-authorized_code"

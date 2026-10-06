@@ -198,7 +198,7 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 			// Rulebook.
 			vct := mock.DefaultPIDVCT
 			if tt.german {
-				vct = mock.GermanPIDVCT
+				vct = "urn:eudi:pid:de:1"
 			}
 			w := generateTestWallet(t)
 			if err := w.GenerateDefaultCredentials(nil, vct); err != nil {
@@ -223,10 +223,10 @@ func TestEvaluateDCQL_ValuesFilterClaims(t *testing.T) {
 // defines the age thresholds.
 func TestEvaluateDCQL_ValuesFilterMDocElements(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
 		t.Fatalf("generating the German PID: %v", err)
 	}
-	ageNamespace := mock.GermanPIDNamespace
+	ageNamespace := "eu.europa.ec.eudi.pid.de.1"
 
 	matching := map[string]any{
 		"credentials": []any{mdocQuery("pid_mdoc", "eu.europa.ec.eudi.pid.1",

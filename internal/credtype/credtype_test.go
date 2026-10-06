@@ -30,7 +30,7 @@ func TestAnswers(t *testing.T) {
 		{"same type", PIDVCT, nil, PIDVCT, true},
 		{
 			"extending type answers for the type it extends",
-			GermanPIDVCT, nil, PIDVCT, true,
+			"urn:eudi:pid:de:1", nil, PIDVCT, true,
 		},
 		{
 			"aka_vcts alone is enough",
@@ -40,10 +40,10 @@ func TestAnswers(t *testing.T) {
 			// Inheritance runs one way. A request for the German PID needs
 			// German attributes, and the general type lacks them.
 			"the extended type does not answer for the extending one",
-			PIDVCT, nil, GermanPIDVCT, false,
+			PIDVCT, nil, "urn:eudi:pid:de:1", false,
 		},
 		{"unrelated type", "urn:example:ticket:1", nil, PIDVCT, false},
-		{"no requested type", GermanPIDVCT, nil, "", false},
+		{"no requested type", "urn:eudi:pid:de:1", nil, "", false},
 		{"no credential type", "", []string{PIDVCT}, PIDVCT, false},
 	}
 	for _, tt := range tests {
@@ -62,19 +62,19 @@ func TestChain(t *testing.T) {
 		aka  []string
 		want []string
 	}{
-		{"own type first", GermanPIDVCT, nil, []string{GermanPIDVCT, PIDVCT}},
+		{"own type first", "urn:eudi:pid:de:1", nil, []string{"urn:eudi:pid:de:1", PIDVCT}},
 		{"no inheritance", "urn:example:ticket:1", nil, []string{"urn:example:ticket:1"}},
 		{"empty type", "", []string{PIDVCT}, nil},
 		{
 			"aka_vcts repeating a known parent",
-			GermanPIDVCT, []string{PIDVCT}, []string{GermanPIDVCT, PIDVCT},
+			"urn:eudi:pid:de:1", []string{PIDVCT}, []string{"urn:eudi:pid:de:1", PIDVCT},
 		},
 		{
 			// A type that lists only its immediate parent in aka_vcts also
 			// answers for that parent's parent.
 			"inheritance continues through aka_vcts",
-			"urn:example:pid:de:regional:1", []string{GermanPIDVCT},
-			[]string{"urn:example:pid:de:regional:1", GermanPIDVCT, PIDVCT},
+			"urn:example:pid:de:regional:1", []string{"urn:eudi:pid:de:1"},
+			[]string{"urn:example:pid:de:regional:1", "urn:eudi:pid:de:1", PIDVCT},
 		},
 	}
 	for _, tt := range tests {
@@ -92,7 +92,7 @@ func TestAkaVCTs(t *testing.T) {
 		claims map[string]any
 		want   []string
 	}{
-		{"absent", map[string]any{"vct": GermanPIDVCT}, nil},
+		{"absent", map[string]any{"vct": "urn:eudi:pid:de:1"}, nil},
 		{
 			"list of types",
 			map[string]any{AkaVCTsClaim: []any{PIDVCT, "urn:example:other:1"}},
@@ -122,7 +122,7 @@ func TestExtends(t *testing.T) {
 		vct    string
 		parent string
 	}{
-		{GermanPIDVCT, PIDVCT},
+		{"urn:eudi:pid:de:1", PIDVCT},
 		{"urn:eudi:pid:fr:1", PIDVCT},
 		{"urn:eudi:pid:es:2", PIDVCT},
 		// PID_06 allows a region code in the mdoc namespace. PID_14
@@ -150,7 +150,7 @@ func TestExtends(t *testing.T) {
 }
 
 func TestAnswers_AnyDomesticPIDType(t *testing.T) {
-	for _, vct := range []string{GermanPIDVCT, "urn:eudi:pid:fr:1", "urn:eudi:pid:nl:1"} {
+	for _, vct := range []string{"urn:eudi:pid:de:1", "urn:eudi:pid:fr:1", "urn:eudi:pid:nl:1"} {
 		if !Answers(vct, nil, PIDVCT) {
 			t.Errorf("%q does not answer a request for %q", vct, PIDVCT)
 		}
@@ -158,7 +158,7 @@ func TestAnswers_AnyDomesticPIDType(t *testing.T) {
 			t.Errorf("%q answered a request for %q, but inheritance runs one way", PIDVCT, vct)
 		}
 	}
-	if Answers(GermanPIDVCT, nil, "urn:eudi:pid:fr:1") {
+	if Answers("urn:eudi:pid:de:1", nil, "urn:eudi:pid:fr:1") {
 		t.Error("the German PID answered a request for the French one")
 	}
 }

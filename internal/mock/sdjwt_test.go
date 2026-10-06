@@ -141,7 +141,7 @@ func TestGenerateSDJWT_GermanPIDCarriesAkaVCTsPlainly(t *testing.T) {
 
 	result, err := GenerateSDJWT(SDJWTConfig{
 		Issuer:    "https://issuer.example",
-		VCT:       GermanPIDVCT,
+		VCT:       "urn:eudi:pid:de:1",
 		ExpiresIn: 24 * time.Hour,
 		Claims:    SDJWTGermanPIDClaims,
 		Key:       key,

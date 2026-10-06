@@ -46,7 +46,7 @@ var templatesCmd = &cobra.Command{
 	Use:   "templates",
 	Short: "Manage credential templates",
 	Long: "Manage credential templates: named, reusable claim sets with per-format defaults. " +
-		"The predefined templates pid-sdjwt, pid-mdoc, german-pid-*, italian-pid-* and dutch-pid-* are built in. User templates are JSON files " +
+		"The predefined PID templates and the demo ticket are built in (see `templates list`). User templates are JSON files " +
 		"in the wallet directory's templates/ subdirectory. Use them with `issue <format> --template <name>`.",
 }
 

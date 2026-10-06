@@ -774,7 +774,7 @@ func TestVerifierAcceptsAnExtendingCredentialType(t *testing.T) {
 	}
 	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
-		VCT:       mock.GermanPIDVCT,
+		VCT:       "urn:eudi:pid:de:1",
 		ExpiresIn: time.Hour,
 		Claims:    mock.SDJWTGermanPIDClaims,
 		Key:       d.wallet.IssuerKey,
@@ -840,7 +840,7 @@ func TestVerifierDomesticPIDRequestAcceptsThatType(t *testing.T) {
 	}
 	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
-		VCT:       mock.GermanPIDVCT,
+		VCT:       "urn:eudi:pid:de:1",
 		ExpiresIn: time.Hour,
 		Claims:    mock.SDJWTGermanPIDClaims,
 		Key:       d.wallet.IssuerKey,
@@ -859,8 +859,8 @@ func TestVerifierDomesticPIDRequestAcceptsThatType(t *testing.T) {
 		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
 	}
 	claims, _ := status["claims"].(map[string]any)
-	if claims["vct"] != mock.GermanPIDVCT {
-		t.Errorf("vct presented = %v, want %v", claims["vct"], mock.GermanPIDVCT)
+	if claims["vct"] != "urn:eudi:pid:de:1" {
+		t.Errorf("vct presented = %v, want %v", claims["vct"], "urn:eudi:pid:de:1")
 	}
 }
 

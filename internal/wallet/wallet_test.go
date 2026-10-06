@@ -901,8 +901,8 @@ func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
 	}
 
 	before := w.GetCredentials()
-	if len(before) != 2*len(BaselinePIDVCTs) {
-		t.Fatalf("expected %d baseline credentials, got %d", 2*len(BaselinePIDVCTs), len(before))
+	if len(before) != 2*len(BaselinePIDTemplates) {
+		t.Fatalf("expected %d baseline credentials, got %d", 2*len(BaselinePIDTemplates), len(before))
 	}
 	ids := make(map[string]bool)
 	for _, c := range before {
@@ -917,7 +917,7 @@ func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
 	}
 
 	after := w.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(after) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(after) != want {
 		t.Errorf("expected the %d protected PIDs and no duplicates, got %d", want, len(after))
 	}
 	for _, c := range after {
@@ -933,7 +933,7 @@ func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
 // The selected PID type determines its required claim set.
 func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
 		t.Fatalf("GenerateDefaultCredentials: %v", err)
 	}
 
@@ -950,8 +950,8 @@ func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	if sdjwt == nil || mdoc == nil {
 		t.Fatal("expected an SD-JWT and an mdoc PID")
 	}
-	if sdjwt.VCT != mock.GermanPIDVCT {
-		t.Errorf("vct = %q, want %q", sdjwt.VCT, mock.GermanPIDVCT)
+	if sdjwt.VCT != "urn:eudi:pid:de:1" {
+		t.Errorf("vct = %q, want %q", sdjwt.VCT, "urn:eudi:pid:de:1")
 	}
 	if _, ok := sdjwt.Claims["source_document_type"]; !ok {
 		t.Error("the German PID was issued without its national claims")
@@ -964,8 +964,8 @@ func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	if mdoc.DocType != mock.PIDNamespace {
 		t.Errorf("doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
-	if _, ok := mdoc.Claims[mock.GermanPIDNamespace+":birth_name"]; !ok {
-		t.Errorf("the German mdoc PID is missing %s:birth_name", mock.GermanPIDNamespace)
+	if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
+		t.Errorf("the German mdoc PID is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
 	}
 }
 
@@ -976,7 +976,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 	if err := w.GenerateDefaultCredentials(nil, mock.DefaultPIDVCT); err != nil {
 		t.Fatalf("generating the country-independent PID: %v", err)
 	}
-	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
 		t.Fatalf("generating the German PID: %v", err)
 	}
 
@@ -987,7 +987,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 			continue
 		}
 		mdocs++
-		if _, ok := c.Claims[mock.GermanPIDNamespace+":birth_name"]; ok {
+		if _, ok := c.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; ok {
 			german = true
 		}
 	}
@@ -998,7 +998,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 		t.Error("the German mdoc PID is missing")
 	}
 
-	if err := w.GenerateDefaultCredentials(nil, mock.GermanPIDVCT); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
 		t.Fatalf("regenerating the German PID: %v", err)
 	}
 	mdocs = 0
@@ -1093,8 +1093,8 @@ func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
 		t.Fatalf("first GenerateProtectedDefaults: %v", err)
 	}
 	first := w.GetCredentials()
-	if len(first) != 2*len(BaselinePIDVCTs) {
-		t.Fatalf("expected %d baseline credentials, got %d", 2*len(BaselinePIDVCTs), len(first))
+	if len(first) != 2*len(BaselinePIDTemplates) {
+		t.Fatalf("expected %d baseline credentials, got %d", 2*len(BaselinePIDTemplates), len(first))
 	}
 	oldIDs := map[string]bool{}
 	for _, c := range first {
@@ -1106,7 +1106,7 @@ func TestGenerateProtectedDefaults_RefreshesOwnBaseline(t *testing.T) {
 	}
 
 	second := w.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(second) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(second) != want {
 		t.Fatalf("expected the baseline to stay at %d credentials, got %d", want, len(second))
 	}
 	for _, c := range second {
@@ -1162,7 +1162,7 @@ func TestGenerateProtectedDefaults_KeepsVisitorCredentialOfBaselineType(t *testi
 	if !foundVisitor {
 		t.Error("the visitor's PID was dropped by the baseline refresh")
 	}
-	if want := 2 * len(BaselinePIDVCTs); protectedCount != want {
+	if want := 2 * len(BaselinePIDTemplates); protectedCount != want {
 		t.Errorf("expected %d protected baseline credentials, got %d", want, protectedCount)
 	}
 }

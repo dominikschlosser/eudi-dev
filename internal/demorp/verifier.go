@@ -43,9 +43,8 @@ import (
 // The German PID extends the base SD-JWT PID type. It answers a request for
 // the base type. A base PID does not answer a request for the German type.
 const (
-	PIDVCT       = credtype.PIDVCT
-	GermanPIDVCT = credtype.GermanPIDVCT
-	PIDDocType   = credtype.PIDDocType
+	PIDVCT     = credtype.PIDVCT
+	PIDDocType = credtype.PIDDocType
 )
 
 type requestState struct {

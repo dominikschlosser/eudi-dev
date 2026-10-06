@@ -38,7 +38,7 @@ func TestIssuerMetadataListsTheTemplates(t *testing.T) {
 	for id, want := range map[string]map[string]string{
 		ticketConfigurationID: {"format": "dc+sd-jwt", "vct": TicketVCT},
 		"pid-sdjwt":           {"format": "dc+sd-jwt", "vct": mock.DefaultPIDVCT},
-		"german-pid-sdjwt":    {"format": "dc+sd-jwt", "vct": mock.GermanPIDVCT},
+		"german-pid-sdjwt":    {"format": "dc+sd-jwt", "vct": "urn:eudi:pid:de:1"},
 		"pid-mdoc":            {"format": "mso_mdoc", "doctype": mock.PIDNamespace},
 		"german-pid-mdoc":     {"format": "mso_mdoc", "doctype": mock.PIDNamespace},
 	} {
@@ -149,7 +149,7 @@ func TestOfferOfTemplatesIssuesThem(t *testing.T) {
 	var sdjwt, mdoc int
 	for _, c := range w.GetCredentials() {
 		switch {
-		case c.Format == "dc+sd-jwt" && c.VCT == mock.GermanPIDVCT:
+		case c.Format == "dc+sd-jwt" && c.VCT == "urn:eudi:pid:de:1":
 			sdjwt++
 		case c.Format == "mso_mdoc" && c.DocType == mock.PIDNamespace && !known[c.ID]:
 			mdoc++
@@ -160,7 +160,7 @@ func TestOfferOfTemplatesIssuesThem(t *testing.T) {
 	}
 	// The wallet fetches the card images from the issuer metadata and keeps them.
 	for _, c := range w.GetCredentials() {
-		if c.Format == "dc+sd-jwt" && c.VCT == mock.GermanPIDVCT && !known[c.ID] {
+		if c.Format == "dc+sd-jwt" && c.VCT == "urn:eudi:pid:de:1" && !known[c.ID] {
 			if c.Display == nil || !strings.HasPrefix(c.Display.LogoURI, "data:image/svg+xml") || !strings.HasPrefix(c.Display.BackgroundURI, "data:image/jpeg") {
 				t.Errorf("issued German PID display %+v, want the flag logo and the specimen image", c.Display)
 			}
