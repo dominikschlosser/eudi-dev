@@ -115,6 +115,24 @@ async function jsonGet(url) {
   });
 }
 
+// Each test starts without pending requests.
+async function denyPendingRequests() {
+  const pending = await jsonGet(`${WALLET_URL}/api/requests`);
+  for (const r of Array.isArray(pending.body) ? pending.body : []) {
+    await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
+  }
+}
+
+async function waitForPendingRequest() {
+  let pending = [];
+  for (let i = 0; i < 50 && pending.length === 0; i++) {
+    pending = (await jsonGet(`${WALLET_URL}/api/requests`)).body;
+    if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
+  }
+  expect(pending.length).toBeGreaterThan(0);
+  return pending[0].id;
+}
+
 test.describe("Wallet Dashboard", () => {
   test("shows wallet title", async ({ page }) => {
     await page.goto(WALLET_URL);
@@ -1682,5 +1700,76 @@ test.describe("Verifier redirect after an error response", () => {
 
     await page.waitForURL(`${verifierURL}/continue`);
     expect(received.get("error")).toBe("access_denied");
+  });
+});
+
+// OpenID4VP 1.0 §6.4.1 lets the verifier list claim_sets in preference order.
+// Debug mode lets the user send another set the credential satisfies.
+test.describe("Claim set choice in the consent dialog", () => {
+  let verifier;
+  let verifierURL;
+  let received;
+
+  test.beforeAll(async () => {
+    verifier = http.createServer((req, res) => {
+      let body = "";
+      req.on("data", (d) => (body += d));
+      req.on("end", () => {
+        received = new URLSearchParams(body);
+        res.setHeader("Content-Type", "application/json");
+        res.end("{}");
+      });
+    });
+    await new Promise((resolve) => verifier.listen(0, "127.0.0.1", resolve));
+    verifierURL = `http://127.0.0.1:${verifier.address().port}`;
+  });
+
+  test.afterAll(async () => {
+    await new Promise((resolve) => verifier.close(resolve));
+  });
+
+  test.beforeEach(async () => {
+    received = undefined;
+    await denyPendingRequests();
+  });
+
+  test("the chosen claim set reaches the verifier", async ({ page }) => {
+    const responseURI = `${verifierURL}/response`;
+    const uri = "openid4vp://authorize?" + new URLSearchParams({
+      client_id: `redirect_uri:${responseURI}`,
+      response_type: "vp_token",
+      response_mode: "direct_post",
+      response_uri: responseURI,
+      nonce: "n",
+      state: "s",
+      dcql_query: JSON.stringify({
+        credentials: [{
+          id: "pid",
+          format: "dc+sd-jwt",
+          meta: { vct_values: ["urn:eudi:pid:1"] },
+          claims: [
+            { id: "a", path: ["given_name"] },
+            { id: "b", path: ["family_name"] },
+            { id: "c", path: ["birthdate"] },
+          ],
+          claim_sets: [["a", "b"], ["a", "c"]],
+        }],
+      }),
+    });
+    jsonPost(`${WALLET_URL}/api/presentations`, { uri, interactive: true }).catch(() => {});
+    await page.goto(`${WALLET_URL}/?request=${await waitForPendingRequest()}`);
+    const picker = page.locator("#consent-claim-set-pid");
+    await expect(picker).toBeVisible();
+    await expect(picker.locator("option")).toHaveText(["auto: given_name, family_name", "given_name, birthdate"]);
+    await picker.selectOption("1");
+    await expect(page.locator('.consent-claim input[data-claim="birthdate"]')).toBeChecked();
+    await page.locator("#consent-approve").click();
+
+    await expect.poll(() => received?.get("vp_token")).toBeTruthy();
+    const presentation = JSON.parse(received.get("vp_token")).pid[0];
+    const disclosed = presentation.split("~").slice(1, -1)
+      .map((d) => JSON.parse(Buffer.from(d, "base64url").toString())[1])
+      .sort();
+    expect(disclosed).toEqual(["birthdate", "given_name"]);
   });
 });

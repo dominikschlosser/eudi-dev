@@ -32,7 +32,9 @@ The presentation dialog starts with the wallet's automatic credential selection.
 
 If the verifier sets `multiple: true` on a query, all matching credentials are selected. **Edit** can deselect them. At least one stays selected.
 
-API clients receive the alternatives in `credential_options`. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
+When a query lists `claim_sets`, the wallet sends the first set the credential satisfies (OpenID4VP 1.0 §6.4.1). In debug mode the dialog offers every set the credential can answer in a dropdown above the credential. Choosing a set discloses its claims, and the claim checkboxes still apply.
+
+API clients receive the alternatives in `credential_options`. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set), `claim_sets` (query ID to the index of a claim set the credential satisfies, debug mode only) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
 
 ![Consent dialog](../assets/wallet-consent-ui.png)
 
@@ -58,6 +60,7 @@ UI controls have stable IDs and data attributes for browser automation. Credenti
 | Selection controls | `consent-edit-selection`, `consent-selection-done`, `consent-selection-reset` |
 | Set options | `consent-set-<n>-option-<m>`, `consent-set-<n>-none` for optional sets |
 | Query sections | `consent-query-<id>` |
+| Claim set dropdown | `consent-claim-set-<query>` |
 | Candidate rows | `consent-candidate-<query>-<credential>`, with `data-query` and `data-cred` |
 | Activity entries | `data-testid="log-entry"`, with `data-event` and `data-action` |
 | Open or close an activity entry | `data-testid="log-entry-toggle"` |

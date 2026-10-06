@@ -173,6 +173,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		// References the credential options selected in the dialog.
 		Picks      map[string]consentPick `json:"picks"`
 		SetChoices []int                  `json:"set_choices"`
+		ClaimSets  map[string]int         `json:"claim_sets"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
@@ -199,7 +200,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "request not found"})
 			return
 		}
-		if err := ValidateConsentSelection(pending.CredentialOptions, picks, body.SetChoices); err != nil {
+		if err := ValidateConsentSelection(pending.CredentialOptions, picks, body.SetChoices, body.ClaimSets); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -216,12 +217,13 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.ResultCh <- ConsentResult{
-		Approved:       true,
-		Owner:          requestOwner(r),
-		SelectedClaims: body.SelectedClaims,
-		TxCode:         strings.TrimSpace(body.TxCode),
-		Picks:          picks,
-		SetChoices:     body.SetChoices,
+		Approved:        true,
+		Owner:           requestOwner(r),
+		SelectedClaims:  body.SelectedClaims,
+		TxCode:          strings.TrimSpace(body.TxCode),
+		Picks:           picks,
+		SetChoices:      body.SetChoices,
+		ClaimSetChoices: body.ClaimSets,
 	}
 
 	s.allowSlowResponse(w, config.SlowRequestTimeout)

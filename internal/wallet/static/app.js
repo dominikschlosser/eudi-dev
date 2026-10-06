@@ -1954,7 +1954,7 @@
 
     const options = !isIssuance && req.credential_options &&
       (req.credential_options.queries || []).length > 0 ? req.credential_options : null;
-    const selection = { editing: false, setChoices: [], picks: {}, claims: {} };
+    const selection = { editing: false, setChoices: [], picks: {}, claims: {}, claimSets: {} };
     let submitting = false;
     // A query that sets multiple presents every candidate unless the user withholds
     // some. Any other query presents its first candidate.
@@ -2012,8 +2012,47 @@
       return '<div class="consent-multiple-note" id="consent-multiple-' + escHtml(qid) + '">' +
         'The verifier accepts several credentials here. Sending ' + sent + ' of ' + q.candidates.length + ' matching credentials.</div>';
     }
+    // Debug mode offers every claim_sets option the picked credentials satisfy. The
+    // first is the automatic choice.
+    function claimSetOptions(qid) {
+      const picked = activeCandidates(qid);
+      return (picked[0].claim_sets || []).filter(set =>
+        picked.every(c => (c.claim_sets || []).some(other => other.index === set.index)));
+    }
+    function chosenClaimSet(mc) {
+      const index = selection.claimSets[mc.query_id];
+      if (index === undefined) return null;
+      return (mc.claim_sets || []).find(set => set.index === index) || null;
+    }
+    // After the picks change, keep a claim set choice only while every picked
+    // credential satisfies it, and disclose its claims on each of them.
+    function syncClaimSetChoice(qid) {
+      const index = selection.claimSets[qid];
+      if (index === undefined) return;
+      if (!claimSetOptions(qid).some(set => set.index === index)) {
+        delete selection.claimSets[qid];
+        return;
+      }
+      activeCandidates(qid).forEach(c => {
+        selection.claims[c.credential_id] = c.claim_sets.find(set => set.index === index).keys.slice();
+      });
+    }
+    function claimSetPicker(qid) {
+      const sets = claimSetOptions(qid);
+      if (sets.length < 2) return '';
+      const current = selection.claimSets[qid] === undefined ? sets[0].index : selection.claimSets[qid];
+      const optionsHtml = sets.map((set, i) =>
+        '<option value="' + set.index + '"' + (set.index === current ? ' selected' : '') + '>' +
+          (i === 0 ? 'auto: ' : '') + escHtml(set.keys.join(', ')) + '</option>').join('');
+      return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
+        '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
+        '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">The verifier prefers its first set. Debug mode lets you send another.</div>' +
+      '</div>';
+    }
     function isAutoSelection() {
-      return selection.setChoices.every(c => c === 0) &&
+      return Object.keys(selection.claimSets).length === 0 &&
+        selection.setChoices.every(c => c === 0) &&
         options.queries.every(q => {
           const auto = defaultPicks(q);
           const picks = selection.picks[q.id];
@@ -2140,10 +2179,13 @@
       };
       const body = credentialCardBody(cred, 'summary-');
       const kept = options ? selection.claims[mc.credential_id] : null;
+      const claimSet = options ? chosenClaimSet(mc) : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
         untrustedAuthorityNote(mc) +
-        claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims) +
+        (claimSet
+          ? claimChecklist(mc.credential_id, claimSet.claims, kept, null, null)
+          : claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims)) +
       '</div>';
     }
 
@@ -2245,7 +2287,11 @@
       const reset = document.getElementById('consent-selection-reset');
       if (reset) reset.addEventListener('click', () => {
         selection.setChoices = (options.sets || []).map(() => 0);
-        options.queries.forEach(q => { selection.picks[q.id] = defaultPicks(q); });
+        selection.claimSets = {};
+        options.queries.forEach(q => {
+          selection.picks[q.id] = defaultPicks(q);
+          q.candidates.forEach(c => { selection.claims[c.credential_id] = Object.keys(c.claims || {}); });
+        });
         renderDialog();
       });
       consentDialog.querySelectorAll('.consent-sets input[type="radio"]').forEach(radio => {
@@ -2264,9 +2310,11 @@
             // A presentation answers the query with at least one credential.
             if (idx >= 0 && picks.length === 1) return;
             if (idx >= 0) picks.splice(idx, 1); else picks.push(el.dataset.cred);
+            syncClaimSetChoice(qid);
             renderDialog();
           } else if (picks[0] !== el.dataset.cred) {
             selection.picks[qid] = [el.dataset.cred];
+            syncClaimSetChoice(qid);
             renderDialog();
           }
         };
@@ -2280,6 +2328,20 @@
       consentDialog.querySelectorAll('.candidate-decode').forEach(link => {
         link.addEventListener('click', e => e.stopPropagation());
         link.addEventListener('keydown', e => e.stopPropagation());
+      });
+      consentDialog.querySelectorAll('.consent-claim-set select').forEach(select => {
+        select.addEventListener('change', () => {
+          const qid = select.dataset.query;
+          const index = Number(select.value);
+          if (index === claimSetOptions(qid)[0].index) delete selection.claimSets[qid];
+          else selection.claimSets[qid] = index;
+          // Changing the claim set discloses all of its claims again.
+          activeCandidates(qid).forEach(c => {
+            const set = (c.claim_sets || []).find(other => other.index === index);
+            if (set) selection.claims[c.credential_id] = set.keys.slice();
+          });
+          renderDialog();
+        });
       });
       if (options) {
         consentDialog.querySelectorAll('.consent-claim input[type="checkbox"]').forEach(cb => {
@@ -2329,6 +2391,7 @@
       }
       activeQueryIds().forEach(qid => {
         html += multipleNote(qid);
+        html += claimSetPicker(qid);
         activeCandidates(qid).forEach(c => { html += credentialCardHtml(c); });
       });
     } else if (!isIssuance && req.matched_credentials && req.matched_credentials.length > 0) {
@@ -2399,6 +2462,11 @@
             approveBody.picks[qid] = queryById(qid).multiple ? ids : ids[0];
           });
           approveBody.set_choices = selection.setChoices.slice();
+          const claimSets = {};
+          activeQueryIds().forEach(qid => {
+            if (selection.claimSets[qid] !== undefined) claimSets[qid] = selection.claimSets[qid];
+          });
+          if (Object.keys(claimSets).length > 0) approveBody.claim_sets = claimSets;
         }
         const resp = await fetch(approveURL(req.id, '/approve'), {
           method: 'POST',

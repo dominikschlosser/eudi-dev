@@ -367,6 +367,17 @@ type CredentialMatch struct {
 	// Strict mode requires all claims. Complete matches take precedence over partial
 	// matches.
 	MissingClaims []string `json:"missing_claims,omitempty"`
+	// Debug mode lists every claim_sets option the credential satisfies when there
+	// is more than one. The first is the automatic selection.
+	ClaimSets []ConsentClaimSet `json:"claim_sets,omitempty"`
+}
+
+// ConsentClaimSet is a claim_sets option that the credential satisfies. Index
+// is its position in the query's claim_sets.
+type ConsentClaimSet struct {
+	Index  int            `json:"index"`
+	Keys   []string       `json:"keys"`
+	Claims map[string]any `json:"claims"`
 }
 
 // ConsentCredentialOptions defaults to the first set option and first candidate for each
@@ -401,6 +412,9 @@ type ConsentResult struct {
 	Picks map[string][]string
 	// -1 skips an optional set. Missing entries retain the wallet's default option.
 	SetChoices []int
+	// The claim_sets index per query. Missing entries retain the first option the
+	// credential satisfies.
+	ClaimSetChoices map[string]int
 	// Presentations requested during issuance go to the browser that approved the
 	// offer.
 	Owner string

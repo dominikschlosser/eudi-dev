@@ -22,11 +22,11 @@ import (
 	"slices"
 )
 
-func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[string][]string, setChoices []int) error {
-	if len(picks) == 0 && len(setChoices) == 0 {
-		return nil
-	}
+func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[string][]string, setChoices []int, claimSets map[string]int) error {
 	if options == nil {
+		if len(picks) == 0 && len(setChoices) == 0 && len(claimSets) == 0 {
+			return nil
+		}
 		return fmt.Errorf("this request offers no credential selection")
 	}
 	if len(setChoices) > len(options.Sets) {
@@ -78,6 +78,32 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 			}
 		}
 	}
+	return validateClaimSetChoices(options, picks, claimSets)
+}
+
+// validateClaimSetChoices checks that every credential answering a query
+// satisfies the claim set chosen for it.
+func validateClaimSetChoices(options *ConsentCredentialOptions, picks map[string][]string, claimSets map[string]int) error {
+	for qid, index := range claimSets {
+		query := findConsentQuery(options, qid)
+		if query == nil {
+			return fmt.Errorf("unknown credential query %q", qid)
+		}
+		for _, c := range pickedCandidates(query, picks[qid]) {
+			if findClaimSet(c, index) == nil {
+				return fmt.Errorf("credential %s does not satisfy claim set %d of query %q", c.CredentialID, index, qid)
+			}
+		}
+	}
+	return nil
+}
+
+func findClaimSet(c CredentialMatch, index int) *ConsentClaimSet {
+	for i := range c.ClaimSets {
+		if c.ClaimSets[i].Index == index {
+			return &c.ClaimSets[i]
+		}
+	}
 	return nil
 }
 
@@ -85,7 +111,29 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 // overrides it returns the automatic selection, so an unchanged consent gives
 // the same result as auto-accept.
 func ApplyConsentSelection(options *ConsentCredentialOptions, matches []CredentialMatch, result ConsentResult) []CredentialMatch {
-	if options == nil || (len(result.Picks) == 0 && len(result.SetChoices) == 0) {
+	if options == nil {
+		return append([]CredentialMatch(nil), matches...)
+	}
+	return applyClaimSetChoices(selectCredentials(options, matches, result), result.ClaimSetChoices)
+}
+
+// applyClaimSetChoices discloses the chosen claim set instead of the first one.
+func applyClaimSetChoices(selected []CredentialMatch, choices map[string]int) []CredentialMatch {
+	for i, m := range selected {
+		index, ok := choices[m.QueryID]
+		if !ok {
+			continue
+		}
+		if set := findClaimSet(m, index); set != nil {
+			selected[i].SelectedKeys = set.Keys
+			selected[i].Claims = set.Claims
+		}
+	}
+	return selected
+}
+
+func selectCredentials(options *ConsentCredentialOptions, matches []CredentialMatch, result ConsentResult) []CredentialMatch {
+	if len(result.Picks) == 0 && len(result.SetChoices) == 0 {
 		// Return a copy. Claims are filtered later while the ConsentRequest can
 		// still be marshalled concurrently.
 		return append([]CredentialMatch(nil), matches...)
@@ -129,7 +177,7 @@ func ApplyConsentSelection(options *ConsentCredentialOptions, matches []Credenti
 	// A presentation carries at least one credential (OpenID4VP 1.0 §8.1),
 	// so a selection that answers nothing keeps the wallet's choice.
 	if len(out) == 0 {
-		return matches
+		return append([]CredentialMatch(nil), matches...)
 	}
 	return out
 }

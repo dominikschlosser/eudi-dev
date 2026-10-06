@@ -203,11 +203,11 @@ func TestApplyConsentSelectionMultiple(t *testing.T) {
 
 	t.Run("validation accepts several credentials and refuses duplicates", func(t *testing.T) {
 		both := []string{candidates[0].CredentialID, candidates[1].CredentialID}
-		if err := ValidateConsentSelection(options, map[string][]string{"pid": both}, nil); err != nil {
+		if err := ValidateConsentSelection(options, map[string][]string{"pid": both}, nil, nil); err != nil {
 			t.Errorf("two candidates refused: %v", err)
 		}
 		twice := []string{candidates[0].CredentialID, candidates[0].CredentialID}
-		if err := ValidateConsentSelection(options, map[string][]string{"pid": twice}, nil); err == nil || !strings.Contains(err.Error(), "picked twice") {
+		if err := ValidateConsentSelection(options, map[string][]string{"pid": twice}, nil, nil); err == nil || !strings.Contains(err.Error(), "picked twice") {
 			t.Errorf("a duplicate pick: error = %v", err)
 		}
 	})

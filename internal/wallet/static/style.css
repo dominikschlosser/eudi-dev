@@ -1100,6 +1100,25 @@ header h1 {
   background: var(--bg);
 }
 
+.consent-claim-set {
+  font-size: 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  background: var(--bg);
+}
+
+.consent-claim-set select {
+  margin-top: 2px;
+}
+
+.consent-claim-set-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .consent-purpose-label {
   display: block;
   font-size: 10px;

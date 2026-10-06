@@ -118,6 +118,15 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				}
 			}
 
+			// §6.4.1: "the Wallet SHOULD return the first option that it can
+			// satisfy". Debug mode lets the user choose another one.
+			var claimSets []ConsentClaimSet
+			if w.ValidationMode == ValidationModeDebug {
+				if sets := satisfiableClaimSets(cred, cqMap); len(sets) > 1 {
+					claimSets = sets
+				}
+			}
+
 			matched++
 			log.Printf("[DCQL]   query=%s: credential %s (%s) matched, selected claims: %v", queryID, typeLabel, cred.Format, selection.selectedKeys)
 			matches = append(matches, CredentialMatch{
@@ -131,6 +140,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				UntrustedAuthority: untrustedAuthority,
 				EmptyArrayClaims:   selection.emptyArrays,
 				MissingClaims:      selection.missingRequired,
+				ClaimSets:          claimSets,
 			})
 		}
 		if matched == 0 {
@@ -582,43 +592,52 @@ func (w *Wallet) selectClaims(cred StoredCredential, cqMap map[string]any) claim
 // claim_sets entries reference claims by their "id" property (string).
 func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []any) []string {
 	claimByID := buildClaimByID(claimsQuery)
-
 	for _, cs := range claimSets {
-		csArr, ok := cs.([]any)
-		if !ok {
-			continue
-		}
-
-		var selected []string
-		satisfiable := true
-
-		for _, ref := range csArr {
-			id, ok := ref.(string)
-			if !ok {
-				satisfiable = false
-				break
-			}
-
-			claimQuery := claimByID[id]
-			if claimQuery == nil {
-				satisfiable = false
-				break
-			}
-
-			selector := claimSelectorFor(cred, claimQuery)
-			if selector == "" {
-				satisfiable = false
-				break
-			}
-			selected = append(selected, selector)
-		}
-
-		if satisfiable && len(selected) > 0 {
+		if selected, ok := claimSetSelectors(cred, claimByID, cs); ok {
 			return selected
 		}
 	}
-
 	return nil
+}
+
+// satisfiableClaimSets lists every claim_sets option the credential can answer, in
+// the verifier's order. Debug mode offers them in the consent dialog.
+func satisfiableClaimSets(cred StoredCredential, cqMap map[string]any) []ConsentClaimSet {
+	claimsQuery, _ := cqMap["claims"].([]any)
+	claimSets, _ := cqMap["claim_sets"].([]any)
+	if len(claimsQuery) == 0 || len(claimSets) == 0 {
+		return nil
+	}
+	claimByID := buildClaimByID(claimsQuery)
+	var out []ConsentClaimSet
+	for i, cs := range claimSets {
+		if selected, ok := claimSetSelectors(cred, claimByID, cs); ok {
+			out = append(out, ConsentClaimSet{Index: i, Keys: selected, Claims: filterClaims(cred, selected)})
+		}
+	}
+	return out
+}
+
+// claimSetSelectors resolves one claim_sets option. ok is false when the credential
+// cannot answer one of its claims.
+func claimSetSelectors(cred StoredCredential, claimByID map[string]map[string]any, claimSet any) ([]string, bool) {
+	ids, ok := claimSet.([]any)
+	if !ok {
+		return nil, false
+	}
+	var selected []string
+	for _, ref := range ids {
+		id, ok := ref.(string)
+		if !ok || claimByID[id] == nil {
+			return nil, false
+		}
+		selector := claimSelectorFor(cred, claimByID[id])
+		if selector == "" {
+			return nil, false
+		}
+		selected = append(selected, selector)
+	}
+	return selected, len(selected) > 0
 }
 
 func buildClaimByID(claimsQuery []any) map[string]map[string]any {
