@@ -5,12 +5,16 @@ Notable changes by release.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.1] - 2026-10-06
 
 ### Fixed
 
-- **HAIP on one-shot accept.** `wallet accept --haip` and `wallet scan --haip` without a running wallet server check credential offers and presentation requests against HAIP 1.0. Before, the flag had no effect on that path. Presentation requests on that path also get the OID4VP 1.0 request checks the wallet server applies, so strict mode rejects the same requests on both, except the DC API `expected_origins` check, since the CLI has no request origin.
-- **HAIP findings in JSON output.** `validate --haip --json` prints the findings as a `haipFindings` object. Before, JSON output left them out. The exit code still depends only on signature, expiry and revocation.
+- **HAIP on one-shot accept.** `wallet accept --haip` and `wallet scan --haip` without a running wallet server check credential offers and presentation requests against HAIP 1.0. Before, the flag had no effect on that path. Presentation requests on that path also get the OID4VP 1.0 request checks the wallet server applies, so strict mode rejects the same requests on both, except the DC API `expected_origins` check, since the CLI has no request origin. Thanks to [Maxime Mansiet](https://github.com/AirKyzzZ) for the contribution (#23).
+- **HAIP findings in JSON output.** `validate --haip --json` prints the findings as a `haipFindings` object. Before, JSON output left them out. The exit code still depends only on signature, expiry and revocation. Thanks to [Maxime Mansiet](https://github.com/AirKyzzZ) for the contribution (#23).
+
+### Documentation
+
+- **polaris-oid4vp in the comparison table.** The README lists the polaris-oid4vp verifier among the related tools. Thanks to [Egor Khaklin](https://github.com/EgorKhaklin) for the contribution (#22).
 
 ## [2.6.0] - 2026-10-04 
 
@@ -66,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mdoc date encoding.** Encode recognized date attributes according to their namespace and name, including nested driving privilege dates. Preserve text claims such as German `raw_eid_birth_date`, even when their values resemble dates.
 - **Credential offer links.** Support the EUDI `eu-eaa-offer://` scheme in the parser, CLI, web UI and macOS URL handler, and use it for demo offers. Help and documentation list all supported offer schemes. Existing offer schemes remain accepted.
 - **Concurrent file writes.** Coordinate conditional writes across processes so servers retain the same generated keys and certificates.
-- **Wallet HTTPS requests.** Strict mode verifies certificates for local endpoints and redirect destinations. Fixes [#21](https://github.com/dominikschlosser/eudi-dev/issues/21).
+- **Wallet HTTPS requests.** Strict mode verifies certificates for local endpoints and redirect destinations. Fixes [#21](https://github.com/dominikschlosser/eudi-dev/issues/21). Thanks to [Egor Khaklin](https://github.com/EgorKhaklin) for the report.
 - **Wallet activity logs.** Show actual requests and responses. Encrypted exchanges are marked and also show plaintext. Useful summaries are expandable, and duplicate fields are removed from the web view. CLI output is unchanged.
 
 ### Changed
@@ -85,12 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ShellCheck clean scripts.** The conformance scripts pass ShellCheck, and `.shellcheckrc` holds its settings. Thanks to [Jan Mederer](https://github.com/jmederer) for the contribution (#20).
 - **OpenID certification in the README.** Added the official certification mark and the certified OpenID4VP 1.0 and OpenID4VCI 1.0 wallet profiles with HAIP 1.0 for eudi-dev v2.3.7.
 - **The demo issuer offers every credential template the wallet knows** beside its ticket, selectable on the issuer page and by `?credential=<id>` on `POST /api/offers`, so it can stand in as the PID provider of a wallet under test.
 
 ### Fixed
 
-- **Go installation for v2 releases.** The module and package imports now use `github.com/dominikschlosser/eudi-dev/v2`, so new v2 tags can be installed with `go install github.com/dominikschlosser/eudi-dev/v2@latest`. Updated install examples and build version injection. Existing tags retain their original module path. Fixes [#19](https://github.com/dominikschlosser/eudi-dev/issues/19).
+- **Go installation for v2 releases.** The module and package imports now use `github.com/dominikschlosser/eudi-dev/v2`, so new v2 tags can be installed with `go install github.com/dominikschlosser/eudi-dev/v2@latest`. Updated install examples and build version injection. Existing tags retain their original module path. Fixes [#19](https://github.com/dominikschlosser/eudi-dev/issues/19). Thanks to [Tobias Wich](https://github.com/sake) for the report.
 - **Status list signing and conformance screenshots.** Includes the certificate and screenshot fixes from 2.3.7-2 and 2.3.7-1.
 - **Security contact links.** The `security.txt` contact and policy URLs point to the GitHub repository without the Go module's `/v2` suffix.
 - **Conformance screenshot retries.** Monitoring stops when a module finishes or is interrupted, even if its screenshot could not be captured or uploaded.
@@ -303,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **External wallet sign-in redirect.** The demo login page permits the request's redirect target in its form CSP. This fixes browser redirects to other origins and custom wallet schemes after sign-in.
-- **Client identity in key proofs.** JWT proofs include `iss` when the access token belongs to an identified client. Anonymous pre-authorized flows still omit it. Thanks to Massimiliano Perrone for the report (#13).
+- **Client identity in key proofs.** JWT proofs include `iss` when the access token belongs to an identified client. Anonymous pre-authorized flows still omit it. Thanks to [Massimiliano Perrone](https://github.com/massx1) for the report (#13).
 - **Offer claim wrapping.** Claim names use the full preview row and long paths wrap at dots.
 - **iOS card flip.** The front face now has a 3D transform so WebKit hides its backface during the flip.
 
@@ -495,6 +500,7 @@ Version 2.0.0 updates credential cards to use issuer names, descriptions, logos 
 
 ### Added
 
+- **Renovate.** Renovate opens pull requests for dependency updates. Thanks to [Jan-Otto Kröpke](https://github.com/jkroepke) for the contribution (#11).
 - **Registered purpose in consent.** The wallet reads registration certificate purposes from `verifier_info`, preferring English. It verifies the signature against the included leaf without establishing trust in the signer.
 - **Auto-accept control.** Local wallet headers show and change the runtime setting. Demo mode displays its fixed value.
 - **Demo registration certificates.** Issuer and verifier presentation requests include certificates naming their purpose.
