@@ -316,7 +316,7 @@ func (w *Wallet) EncryptErrorResponse(errorCode, errorDescription, state string,
 		"error": errorCode,
 	}
 	if errorDescription != "" {
-		payload["error_description"] = errorDescription
+		payload["error_description"] = oid4vc.ErrorDescription(errorDescription)
 	}
 	if state != "" && !isDCAPIResponseMode(params.ResponseMode) {
 		payload["state"] = state

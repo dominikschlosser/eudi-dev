@@ -349,7 +349,7 @@ func buildPlainAuthorizationErrorResponse(errorCode, errorDescription, state str
 		"error": errorCode,
 	}
 	if errorDescription != "" {
-		payload["error_description"] = errorDescription
+		payload["error_description"] = oid4vc.ErrorDescription(errorDescription)
 	}
 	if state != "" {
 		payload["state"] = state

@@ -29,6 +29,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -474,7 +475,7 @@ func pkceMatches(verifier, challenge string) bool {
 }
 
 func oauthError(code, description string) map[string]string {
-	return map[string]string{"error": code, "error_description": description}
+	return map[string]string{"error": code, "error_description": oid4vc.ErrorDescription(description)}
 }
 
 // verifyDPoPProof checks the signature, HTTP method and URL of a DPoP proof
