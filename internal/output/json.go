@@ -17,14 +17,20 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
 func PrintJSON(v any) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(v); err != nil {
+	if err := WriteJSON(os.Stdout, v); err != nil {
 		fmt.Fprintf(os.Stderr, "JSON encoding error: %v\n", err)
 	}
+}
+
+// WriteJSON writes v as indented JSON and keeps HTML characters unescaped.
+func WriteJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	return enc.Encode(v)
 }

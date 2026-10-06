@@ -129,7 +129,7 @@ func walletGeneratePIDCmd() *cobra.Command {
 				return fmt.Errorf("saving wallet: %w", err)
 			}
 
-			fmt.Println("Generated default EUDI PID credentials (SD-JWT + mdoc)")
+			printGeneratedPID(vct)
 			warnIssuedEndpointsOffline(store, w)
 			return nil
 		},

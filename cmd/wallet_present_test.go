@@ -149,3 +149,85 @@ func TestOneShotAcceptAppliesHAIPToOffers(t *testing.T) {
 		})
 	}
 }
+
+func TestOneShotIssuancePrintsOnlyTheResultAsJSON(t *testing.T) {
+	t.Cleanup(func() { jsonOutput = false })
+	jsonOutput = true
+	for _, result := range []*wallet.IssuanceResult{
+		{CredentialID: "c1", Format: "dc+sd-jwt", Issuer: "https://issuer.example", VerificationDetail: "signature valid"},
+		{Issuer: "https://issuer.example", Pending: true, TransactionID: "tx", RetryInterval: "5s"},
+	} {
+		out := captureStdout(t, func() { printIssuanceResult(result) })
+		var doc wallet.IssuanceResult
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("stdout is not one JSON document: %v\n%s", err, out)
+		}
+		if doc.Issuer != result.Issuer || doc.Pending != result.Pending {
+			t.Errorf("printed %+v, want %+v", doc, result)
+		}
+	}
+}
+
+func TestOneShotPresentationPrintsOnlyTheResultAsJSON(t *testing.T) {
+	resetRemoteTestState(t)
+	t.Cleanup(func() {
+		jsonOutput = false
+		resetFlags(rootCmd)
+	})
+	dir := walletDir
+	rootCmd.SetArgs([]string{"wallet", "generate-pid"})
+	if err := rootCmd.Execute(); err != nil {
+		t.Fatalf("wallet generate-pid: %v", err)
+	}
+	resetFlags(rootCmd)
+	walletDir = dir
+
+	var posts atomic.Int32
+	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer verifier.Close()
+	cb := verifier.URL + "/cb"
+	uri := "openid4vp://?client_id=" + url.QueryEscape("redirect_uri:"+cb) +
+		"&response_type=vp_token&response_mode=direct_post&nonce=n-1&response_uri=" + url.QueryEscape(cb) +
+		"&dcql_query=" + url.QueryEscape(`{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["urn:eudi:pid:1"]},"claims":[{"path":["given_name"]}]}]}`)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	jsonOutput = true
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = acceptOID4URI(uri, dispatchOID4Opts{
+			port:         port,
+			portExplicit: true,
+			autoAccept:   true,
+			mode:         string(wallet.ValidationModeDebug),
+		})
+	})
+	if runErr != nil {
+		t.Fatalf("accept: %v", runErr)
+	}
+	if posts.Load() != 1 {
+		t.Fatalf("the verifier got %d responses, want 1", posts.Load())
+	}
+	var doc struct {
+		Status      string   `json:"status"`
+		VPTokenKeys []string `json:"vp_token_keys"`
+		Response    struct {
+			StatusCode int `json:"status_code"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%s", err, out)
+	}
+	if doc.Status != "submitted" || doc.Response.StatusCode != http.StatusOK || len(doc.VPTokenKeys) != 1 {
+		t.Errorf("document %+v, want the running server's submitted document", doc)
+	}
+}

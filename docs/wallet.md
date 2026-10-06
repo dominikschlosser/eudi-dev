@@ -154,12 +154,13 @@ Generated credentials expire in **30 days** by default. Use `--exp` to override 
 
 ## `wallet show <id>`
 
-Shows a stored credential by its ID (as printed by `wallet list`). An unambiguous ID prefix also works. By default it prints only the raw credential string, for piping. `--decoded` prints human-readable output (the `--json` and `-v` global flags apply). Decoded output starts with a validity line because the payload has the expiry only as a Unix timestamp.
+Shows a stored credential by its ID (as printed by `wallet list`). An unambiguous ID prefix also works. By default it prints only the raw credential string, for piping. `--json` prints the stored credential with its metadata. `--decoded` prints human-readable output (the `--json` and `-v` global flags apply). Decoded output starts with a validity line because the payload has the expiry only as a Unix timestamp.
 
 The `VALID` column of `wallet list` shows the same information. It is the time left (`29d`, `5h`, `expired`), or `-` for a credential without an expiry.
 
 ```bash
 eudi wallet show <id>                  # Raw credential string
+eudi wallet show --json <id>           # Stored credential and metadata as JSON
 eudi wallet show --decoded <id>        # Human-readable output
 eudi wallet show --decoded --json <id> # JSON output
 ```

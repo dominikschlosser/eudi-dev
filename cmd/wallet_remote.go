@@ -100,11 +100,15 @@ func walletUseCmd() *cobra.Command {
 			if len(args) == 0 {
 				active := remote.Active()
 				if active == "" {
-					fmt.Println("local")
+					printResult(map[string]any{"target": "local"}, func() { fmt.Println("local") })
 					return nil
 				}
-				fmt.Println(active)
 				identity, ok := instanceIdentityOf(active)
+				doc := map[string]any{"target": active, "reachable": ok}
+				if identity.Version != "" {
+					doc["version"] = identity.Version
+				}
+				printResult(doc, func() { fmt.Println(active) })
 				if !ok {
 					fmt.Fprintln(os.Stderr, "Warning: the remote wallet is not reachable")
 					return nil
@@ -122,6 +126,7 @@ func walletUseCmd() *cobra.Command {
 					return err
 				}
 				fmt.Fprintln(os.Stderr, "Managing the local wallet store again")
+				printResult(map[string]any{"target": "local"}, func() {})
 				return nil
 			}
 
@@ -144,6 +149,11 @@ func walletUseCmd() *cobra.Command {
 			if notice != "" {
 				fmt.Fprintln(os.Stderr, notice)
 			}
+			doc := map[string]any{"target": normalized, "reachable": true}
+			if identity.Version != "" {
+				doc["version"] = identity.Version
+			}
+			printResult(doc, func() {})
 			return nil
 		},
 	}
@@ -376,21 +386,29 @@ func walletKillCmd() *cobra.Command {
 				}
 				targets = []remote.DiscoveredInstance{target}
 			}
+			stopped := []map[string]any{}
 			if len(targets) == 0 {
-				fmt.Println("No running wallet instances found.")
+				printResult(map[string]any{"stopped": stopped}, func() { fmt.Println("No running wallet instances found.") })
 				return nil
 			}
 
 			active := remote.Active()
+			failed := 0
 			for _, inst := range targets {
 				if err := stopInstance(inst); err != nil {
 					fmt.Fprintf(os.Stderr, "Failed to stop %s (pid %d): %v\n", inst.URL, inst.PID, err)
+					failed++
 					continue
 				}
-				fmt.Printf("Stopped %s (pid %d)\n", inst.URL, inst.PID)
+				stopped = append(stopped, map[string]any{"url": inst.URL, "pid": inst.PID})
+				fmt.Fprintf(humanOut(), "Stopped %s (pid %d)\n", inst.URL, inst.PID)
 				if active != "" && active == strings.TrimRight(inst.URL, "/") {
 					fmt.Fprintln(os.Stderr, "Note: this was the active remote wallet. Run `wallet use local` or pick another instance.")
 				}
+			}
+			printResult(map[string]any{"stopped": stopped}, func() {})
+			if failed > 0 {
+				return fmt.Errorf("%d of %d wallet instances did not stop", failed, len(targets))
 			}
 			return nil
 		},

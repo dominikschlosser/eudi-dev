@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 )
 
 var (
@@ -60,6 +61,13 @@ var templatesListCmd = &cobra.Command{
 		templates, err := svc.Templates()
 		if err != nil {
 			return err
+		}
+		if jsonOutput {
+			if templates == nil {
+				templates = []credtemplate.Template{}
+			}
+			output.PrintJSON(templates)
+			return nil
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "NAME\tFORMAT\tTYPE\tCLAIMS\tSOURCE")
@@ -167,6 +175,7 @@ var templatesSaveCmd = &cobra.Command{
 			return err
 		}
 		printTemplateSaved("Saved", tpl.Name, path)
+		printTemplateResult(tpl.Name, path)
 		return nil
 	},
 }
@@ -218,6 +227,7 @@ var templatesImportCmd = &cobra.Command{
 			return err
 		}
 		printTemplateSaved("Imported", tpl.Name, path)
+		printTemplateResult(tpl.Name, path)
 		return nil
 	},
 }
@@ -236,6 +246,7 @@ var templatesDeleteCmd = &cobra.Command{
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Deleted template %q\n", args[0])
+		printResult(map[string]string{"deleted": args[0]}, func() {})
 		return nil
 	},
 }
@@ -272,6 +283,16 @@ func init() {
 }
 
 // Remote wallets return no file path, so only local saves print one.
+// printTemplateResult prints the saved template's name and path with --json.
+// A remote wallet reports no path.
+func printTemplateResult(name, path string) {
+	doc := map[string]string{"name": name}
+	if path != "" {
+		doc["path"] = path
+	}
+	printResult(doc, func() {})
+}
+
 func printTemplateSaved(verb, name, path string) {
 	if path != "" {
 		fmt.Fprintf(os.Stderr, "%s template %q to %s\n", verb, name, path)

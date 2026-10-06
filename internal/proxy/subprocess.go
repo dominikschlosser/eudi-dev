@@ -30,6 +30,7 @@ import (
 type Subprocess struct {
 	cmd     *exec.Cmd
 	scanner *OutputScanner
+	out     io.Writer
 	// The exit error is written before done closes, so every waiter can read it.
 	done chan struct{}
 	err  error
@@ -39,9 +40,9 @@ type Subprocess struct {
 }
 
 // StartSubprocess launches args[0] with args[1:] as a child process. It scans
-// stdout and stderr line by line and forwards them to the terminal with a
-// [service] prefix.
-func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error) {
+// stdout and stderr line by line and forwards them to out with a [service]
+// prefix.
+func StartSubprocess(args []string, scanner *OutputScanner, out io.Writer) (*Subprocess, error) {
 	if len(args) == 0 {
 		return nil, fmt.Errorf("no command specified")
 	}
@@ -66,6 +67,7 @@ func StartSubprocess(args []string, scanner *OutputScanner) (*Subprocess, error)
 	sub := &Subprocess{
 		cmd:     cmd,
 		scanner: scanner,
+		out:     out,
 		done:    make(chan struct{}),
 	}
 
@@ -90,8 +92,8 @@ func (s *Subprocess) scanStream(r io.Reader) {
 		line := scan.Text()
 		s.outputMu.Lock()
 		s.scanner.Scan(line)
-		dim.Printf("[service] ")
-		fmt.Println(line)
+		_, _ = dim.Fprint(s.out, "[service] ")
+		fmt.Fprintln(s.out, line)
 		s.outputMu.Unlock()
 	}
 }

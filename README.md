@@ -345,7 +345,7 @@ The official listings link to the certification submissions and test results. Th
 
 | Flag         | Description              |
 |--------------|--------------------------|
-| `--json`     | Output as JSON           |
+| `--json`     | Print one JSON document on stdout for scripts. Messages go to stderr ([ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)) |
 | `--no-color` | Disable colored output   |
 | `-v`         | Verbose output (x5c chain, device key, digest IDs) |
 

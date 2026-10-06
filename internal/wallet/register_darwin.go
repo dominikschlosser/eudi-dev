@@ -22,7 +22,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v2/internal/config"
 )
@@ -32,10 +31,6 @@ const appBundleName = "EUDI-Dev-Wallet.app"
 // An old bundle left registered in Launch Services would appear as a second handler
 // for the same URL schemes.
 const legacyAppBundleName = "OID4VC-Dev-Wallet.app"
-
-func supportsURLSchemeRegistration() bool {
-	return true
-}
 
 func appBundlePath() string {
 	home, _ := os.UserHomeDir()
@@ -64,10 +59,10 @@ func handlerScriptPath() string {
 
 // RegisterURLSchemes installs an Apple Events handler for macOS scheme URLs. The bundle's
 // AppleScript handles "on open location" and calls the shell script.
-func RegisterURLSchemes(opts RegisterOptions) error {
+func RegisterURLSchemes(opts RegisterOptions) (Registration, error) {
 	binaryPath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("finding executable path: %w", err)
+		return Registration{}, fmt.Errorf("finding executable path: %w", err)
 	}
 	// Keep a package manager's stable symlink such as /opt/homebrew/bin/eudi.
 	// A `brew upgrade` deletes the versioned file it points at.
@@ -75,25 +70,36 @@ func RegisterURLSchemes(opts RegisterOptions) error {
 
 	handlerPath := handlerScriptPath()
 	if err := os.MkdirAll(filepath.Dir(handlerPath), 0755); err != nil {
-		return fmt.Errorf("creating handler directory: %w", err)
+		return Registration{}, fmt.Errorf("creating handler directory: %w", err)
 	}
 
 	handler := handlerScriptSource(binaryPath, opts)
 
 	if err := os.WriteFile(handlerPath, []byte(handler), 0755); err != nil {
-		return fmt.Errorf("writing handler script: %w", err)
+		return Registration{}, fmt.Errorf("writing handler script: %w", err)
 	}
 
 	// osacompile requires the output bundle to be absent.
 	bundlePath := appBundlePath()
 	os.RemoveAll(bundlePath)
 	if err := removeBundle(legacyAppBundlePath()); err != nil {
-		return fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
+		return Registration{}, fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(bundlePath), 0755); err != nil {
-		return fmt.Errorf("creating Applications directory: %w", err)
+		return Registration{}, fmt.Errorf("creating Applications directory: %w", err)
 	}
-	return compileHandlerBundle(handlerPath, bundlePath, binaryPath, opts)
+	if err := compileHandlerBundle(handlerPath, bundlePath, binaryPath, opts); err != nil {
+		return Registration{}, err
+	}
+	return Registration{
+		Registered: true,
+		AppBundle:  bundlePath,
+		Handler:    handlerPath,
+		Binary:     binaryPath,
+		AutoAccept: opts.AutoAccept,
+		ServeArgs:  slices.Clone(opts.ServeArgs),
+		Schemes:    slices.Clone(URLSchemes),
+	}, nil
 }
 
 func compileHandlerBundle(handlerPath, bundlePath, binaryPath string, opts RegisterOptions) error {
@@ -123,23 +129,7 @@ end open location
 	plistPath := filepath.Join(bundlePath, "Contents", "Info.plist")
 	plistBuddy := "/usr/libexec/PlistBuddy"
 
-	plistCmds := [][]string{
-		{"-c", "Add :CFBundleIdentifier string dev.eudi.wallet", plistPath},
-		{"-c", "Add :LSUIElement bool true", plistPath},
-		{"-c", "Add :CFBundleURLTypes array", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0 dict", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0:CFBundleURLName string OID4VP", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes array", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string openid4vp", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes:1 string eudi-openid4vp", plistPath},
-		{"-c", "Add :CFBundleURLTypes:0:CFBundleURLSchemes:2 string haip-vp", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1 dict", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1:CFBundleURLName string OID4VCI", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1:CFBundleURLSchemes array", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1:CFBundleURLSchemes:0 string openid-credential-offer", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1:CFBundleURLSchemes:1 string haip-vci", plistPath},
-		{"-c", "Add :CFBundleURLTypes:1:CFBundleURLSchemes:2 string eu-eaa-offer", plistPath},
-	}
+	plistCmds := plistCommands(plistPath)
 
 	for _, args := range plistCmds {
 		cmd := exec.Command(plistBuddy, args...)
@@ -160,35 +150,48 @@ end open location
 		return fmt.Errorf("lsregister failed: %s: %w", string(out), err)
 	}
 
-	fmt.Printf("Registered URL scheme handlers:\n")
-	fmt.Printf("  App bundle: %s\n", bundlePath)
-	fmt.Printf("  Handler:    %s\n", handlerPath)
-	fmt.Printf("  Binary:     %s\n", binaryPath)
-	fmt.Printf("  Mode:       ")
-	if opts.AutoAccept {
-		fmt.Printf("auto-accept\n")
-	} else {
-		fmt.Printf("interactive UI\n")
-	}
-	if len(opts.ServeArgs) > 0 {
-		fmt.Printf("  Serve args: %s\n", strings.Join(slices.Clone(opts.ServeArgs), " "))
-	}
-	fmt.Printf("  Schemes:    openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://, eu-eaa-offer://\n")
 	return nil
 }
 
-func UnregisterURLSchemes() error {
+func UnregisterURLSchemes() (Unregistration, error) {
 	bundlePath := appBundlePath()
+	_, statErr := os.Stat(bundlePath)
+	installed := statErr == nil
 
 	if err := removeBundle(bundlePath); err != nil {
-		return fmt.Errorf("removing app bundle: %w", err)
+		return Unregistration{}, fmt.Errorf("removing app bundle: %w", err)
 	}
 	if err := removeBundle(legacyAppBundlePath()); err != nil {
-		return fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
+		return Unregistration{}, fmt.Errorf("removing the previous %s: %w", legacyAppBundleName, err)
 	}
 
 	os.Remove(handlerScriptPath())
 
-	fmt.Printf("Unregistered URL scheme handlers and removed %s\n", bundlePath)
-	return nil
+	if !installed {
+		return Unregistration{}, nil
+	}
+	return Unregistration{Unregistered: true, AppBundle: bundlePath}, nil
+}
+
+// plistCommands are the PlistBuddy calls that register the URL schemes.
+func plistCommands(plistPath string) [][]string {
+	cmds := [][]string{
+		{"-c", "Add :CFBundleIdentifier string dev.eudi.wallet", plistPath},
+		{"-c", "Add :LSUIElement bool true", plistPath},
+		{"-c", "Add :CFBundleURLTypes array", plistPath},
+	}
+	for i, urlType := range []struct {
+		name    string
+		schemes []string
+	}{{"OID4VP", presentationURLSchemes}, {"OID4VCI", issuanceURLSchemes}} {
+		key := fmt.Sprintf(":CFBundleURLTypes:%d", i)
+		cmds = append(cmds,
+			[]string{"-c", "Add " + key + " dict", plistPath},
+			[]string{"-c", "Add " + key + ":CFBundleURLName string " + urlType.name, plistPath},
+			[]string{"-c", "Add " + key + ":CFBundleURLSchemes array", plistPath})
+		for j, scheme := range urlType.schemes {
+			cmds = append(cmds, []string{"-c", fmt.Sprintf("Add %s:CFBundleURLSchemes:%d string %s", key, j, scheme), plistPath})
+		}
+	}
+	return cmds
 }

@@ -28,6 +28,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/eudi-dev/v2/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v2/internal/wallet"
 )
 
@@ -92,6 +93,9 @@ func walletLogsCleanCmd() *cobra.Command {
 			if err := svc.ClearLogs(); err != nil {
 				return fmt.Errorf("cleaning wallet logs: %w", err)
 			}
+			if jsonOutput {
+				return output.WriteJSON(cmd.OutOrStdout(), map[string]bool{"cleared": true})
+			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Cleared wallet logs.")
 			return nil
 		},
@@ -114,6 +118,9 @@ func printWalletLogs(w io.Writer, entries []wallet.LogEntry, opts walletLogPrint
 		entries = visible
 	}
 	if opts.JSON {
+		if entries == nil {
+			entries = []wallet.LogEntry{}
+		}
 		data, err := json.MarshalIndent(entries, "", "  ")
 		if err != nil {
 			return fmt.Errorf("marshaling wallet logs: %w", err)

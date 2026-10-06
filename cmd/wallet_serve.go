@@ -100,6 +100,9 @@ Capabilities:
 Use --register to also register OS URL scheme handlers (openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://, eu-eaa-offer://)
 so the wallet automatically receives incoming protocol requests.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := rejectJSON("wallet serve runs until stopped. Use --log-format json for JSON log records"); err != nil {
+				return err
+			}
 			return runWalletServe(cmd, &opts)
 		},
 	}
@@ -658,13 +661,13 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		if err != nil {
 			return fmt.Errorf("serializing wallet serve flags for registration: %w", err)
 		}
-		if err := wallet.RegisterURLSchemes(wallet.RegisterOptions{
+		if reg, err := wallet.RegisterURLSchemes(wallet.RegisterOptions{
 			ListenerPort: opts.Port,
 			AutoAccept:   w.AutoAccept,
 			ServeArgs:    serveArgs,
 		}); err != nil {
 			yellow.Printf("  Register:    skipped (%s)\n", err)
-		} else if wallet.SupportsURLSchemeRegistration() {
+		} else if reg.Registered {
 			fmt.Printf("  Register:    URL scheme handlers registered\n")
 		} else {
 			yellow.Printf("  Register:    not supported on this platform (use 'wallet accept <uri>' for copied links)\n")

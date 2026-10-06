@@ -24,17 +24,18 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v2/internal/jws"
 )
 
+// VerifyResult uses the camelCase keys of the validate --json document.
 type VerifyResult struct {
-	SignatureValid bool
-	Expired        bool
-	NotYetValid    bool
-	Algorithm      string
-	KeyID          string
-	Issuer         string
-	ExpiresAt      *time.Time
-	IssuedAt       *time.Time
-	NotBefore      *time.Time
-	Errors         []string
+	SignatureValid bool       `json:"signatureValid"`
+	Expired        bool       `json:"expired"`
+	NotYetValid    bool       `json:"notYetValid"`
+	Algorithm      string     `json:"algorithm,omitempty"`
+	KeyID          string     `json:"keyId,omitempty"`
+	Issuer         string     `json:"issuer,omitempty"`
+	ExpiresAt      *time.Time `json:"expiresAt,omitempty"`
+	IssuedAt       *time.Time `json:"issuedAt,omitempty"`
+	NotBefore      *time.Time `json:"notBefore,omitempty"`
+	Errors         []string   `json:"errors,omitempty"`
 }
 
 func Verify(token *Token, pubKey crypto.PublicKey) *VerifyResult {

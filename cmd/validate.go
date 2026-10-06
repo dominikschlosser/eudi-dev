@@ -84,6 +84,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		Verbose: verbose,
 	}
 
+	var report jsonReport
+	if opts.JSON {
+		defer func() {
+			if report != nil {
+				output.PrintJSON(report)
+			}
+		}()
+	}
+
 	var pubKeys []crypto.PublicKey
 
 	if keyFile != "" {
@@ -118,14 +127,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("parsing SD-JWT: %w", err)
 		}
-		output.PrintSDJWT(token, opts)
+		if opts.JSON {
+			report = output.BuildSDJWTJSON(token)
+		} else {
+			output.PrintSDJWT(token, opts)
+		}
 
 		if validateHAIP {
-			printHAIPFindings(haipCredentialFindings(token), opts)
+			printHAIPFindings(haipCredentialFindings(token), report)
 		}
 
 		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
-			output.PrintVerifyResultSDJWT(bestResult, opts)
+			report.add("verification", bestResult, func() { output.PrintVerifyResultSDJWT(bestResult, opts) })
 			printLeafSourceNote(source, opts)
 
 			if !bestResult.SignatureValid {
@@ -155,7 +168,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, tlCerts, opts); err != nil {
+			if err := checkStatus(token.ResolvedClaims, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -165,14 +178,18 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("parsing JWT: %w", err)
 		}
-		output.PrintJWT(token, opts)
+		if opts.JSON {
+			report = output.BuildJWTJSON(token)
+		} else {
+			output.PrintJWT(token, opts)
+		}
 
 		if validateHAIP {
-			printHAIPFindings(haipCredentialFindings(token), opts)
+			printHAIPFindings(haipCredentialFindings(token), report)
 		}
 
 		if bestResult, source, err := validate.VerifyJWTSignature(token, pubKeys, tlCerts); bestResult != nil {
-			output.PrintVerifyResultSDJWT(bestResult, opts)
+			report.add("verification", bestResult, func() { output.PrintVerifyResultSDJWT(bestResult, opts) })
 			printLeafSourceNote(source, opts)
 
 			if !bestResult.SignatureValid {
@@ -202,7 +219,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, tlCerts, opts); err != nil {
+			if err := checkStatus(token.ResolvedClaims, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -212,11 +229,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("parsing mdoc: %w", err)
 		}
-		output.PrintMDOC(doc, opts)
+		if opts.JSON {
+			report = output.BuildMDOCJSON(doc)
+		} else {
+			output.PrintMDOC(doc, opts)
+		}
 
 		if validateHAIP {
 			certs, _ := validate.ExtractMDOCX5ChainCertificates(doc)
-			printHAIPFindings(validate.HAIPCredentialChain(certs), opts)
+			printHAIPFindings(validate.HAIPCredentialChain(certs), report)
 		}
 
 		leafKey, _ := validate.ExtractMDOCX5ChainLeafKey(doc)
@@ -226,7 +247,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 				r := mdoc.Verify(doc, key)
 				return r, r.SignatureValid
 			})
-			output.PrintVerifyResultMDOC(bestResult, opts)
+			report.add("verification", bestResult, func() { output.PrintVerifyResultMDOC(bestResult, opts) })
 
 			if !bestResult.SignatureValid {
 				return fmt.Errorf("signature verification failed")
@@ -236,7 +257,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		} else if leafKey != nil {
 			result := mdoc.Verify(doc, leafKey)
-			output.PrintVerifyResultMDOC(result, opts)
+			report.add("verification", result, func() { output.PrintVerifyResultMDOC(result, opts) })
 			printLeafSourceNote(validate.SourceX5CLeaf, opts)
 
 			if !result.SignatureValid {
@@ -264,7 +285,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		// ExtractStatusRef expects {"status": {"status_list": ...}} and
 		// MSO.Status is the inner map.
 		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
-			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, tlCerts, opts); err != nil {
+			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -303,7 +324,7 @@ func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKe
 	return best
 }
 
-func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts output.Options) error {
+func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, report jsonReport) error {
 	ref := statuslist.ExtractStatusRef(claims)
 	if ref == nil {
 		return nil
@@ -325,9 +346,7 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 	if err != nil {
 		return fmt.Errorf("status check: %w", err)
 	}
-	if opts.JSON {
-		output.PrintJSON(result)
-	} else {
+	report.add("status", result, func() {
 		mark := "✗"
 		if result.IsValid {
 			mark = "✓"
@@ -337,7 +356,7 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, opts outpu
 		for _, warning := range result.Warnings {
 			fmt.Printf("  ! Status list: %s\n", warning)
 		}
-	}
+	})
 	if !result.IsValid {
 		return fmt.Errorf("credential status is %s", result.StatusName)
 	}
@@ -364,17 +383,26 @@ func printSkippedSignatureNote(token *sdjwt.Token) {
 
 // HAIP findings are informational here. Only signature, expiry and revocation checks
 // affect the exit code.
-func printHAIPFindings(findings []string, opts output.Options) {
-	if opts.JSON {
-		output.PrintJSON(map[string][]string{"haipFindings": append([]string{}, findings...)})
+func printHAIPFindings(findings []string, report jsonReport) {
+	report.add("haipFindings", append([]string{}, findings...), func() {
+		if len(findings) == 0 {
+			fmt.Println("\n  HAIP 1.0: no findings")
+			return
+		}
+		fmt.Println("\n  HAIP 1.0 findings:")
+		for _, f := range findings {
+			fmt.Printf("    - %s\n", f)
+		}
+	})
+}
+
+// jsonReport collects one validation as a JSON document. It is nil in text mode.
+type jsonReport map[string]any
+
+func (r jsonReport) add(key string, v any, printText func()) {
+	if r == nil {
+		printText()
 		return
 	}
-	if len(findings) == 0 {
-		fmt.Println("\n  HAIP 1.0: no findings")
-		return
-	}
-	fmt.Println("\n  HAIP 1.0 findings:")
-	for _, f := range findings {
-		fmt.Printf("    - %s\n", f)
-	}
+	r[key] = v
 }

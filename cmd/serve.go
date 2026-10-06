@@ -45,6 +45,9 @@ func init() {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	if err := rejectJSON("serve runs until stopped"); err != nil {
+		return err
+	}
 	var credential string
 	if len(args) > 0 {
 		raw, err := format.ReadInput(args[0])

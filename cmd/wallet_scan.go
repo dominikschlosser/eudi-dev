@@ -208,7 +208,7 @@ func walletScanCmd() *cobra.Command {
 				return fmt.Errorf("scanning QR: %w", err)
 			}
 
-			fmt.Printf("Scanned: %s\n\n", content)
+			fmt.Fprintf(humanOut(), "Scanned: %s\n\n", content)
 
 			detected := format.Detect(content)
 
@@ -221,7 +221,9 @@ func walletScanCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Imported %s credential (%s)\n", docString(imported, "format"), docCredLabel(imported))
+				printResult(imported, func() {
+					fmt.Printf("Imported %s credential (%s)\n", docString(imported, "format"), docCredLabel(imported))
+				})
 				warnAboutCredential(imported)
 				return nil
 			}

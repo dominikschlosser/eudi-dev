@@ -125,7 +125,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		srv.SetScanner(scanner)
 
 		var subErr error
-		sub, subErr = proxy.StartSubprocess(args, scanner)
+		sub, subErr = proxy.StartSubprocess(args, scanner, humanOut())
 		if subErr != nil {
 			return fmt.Errorf("starting service: %w", subErr)
 		}
@@ -134,21 +134,21 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	cyan := color.New(color.FgCyan, color.Bold)
 	dim := color.New(color.Faint)
 
-	cyan.Printf("EUDI Dev Proxy %s\n", Version)
-	dim.Println("───────────────────────────────────────")
-	fmt.Printf("  Target:    %s\n", proxyTarget)
-	fmt.Printf("  Proxy:     http://localhost:%d\n", proxyPort)
+	cyan.Fprintf(humanOut(), "EUDI Dev Proxy %s\n", Version)
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
+	fmt.Fprintf(humanOut(), "  Target:    %s\n", proxyTarget)
+	fmt.Fprintf(humanOut(), "  Proxy:     http://localhost:%d\n", proxyPort)
 	if !noDashboard {
-		fmt.Printf("  Dashboard: http://localhost:%d\n", dashboardPort)
+		fmt.Fprintf(humanOut(), "  Dashboard: http://localhost:%d\n", dashboardPort)
 		if dashboardBaseURL != "" {
-			dim.Printf("             %s\n", dashboardBaseURL)
+			dim.Fprintf(humanOut(), "             %s\n", dashboardBaseURL)
 		}
 	}
 	if len(args) > 0 {
-		fmt.Printf("  Service:   %s\n", strings.Join(args, " "))
+		fmt.Fprintf(humanOut(), "  Service:   %s\n", strings.Join(args, " "))
 	}
-	dim.Println("───────────────────────────────────────")
-	fmt.Println()
+	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
+	fmt.Fprintln(humanOut())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -167,7 +167,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		}
 		go func() {
 			if err := dashboardServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Printf("Dashboard error: %v\n", err)
+				fmt.Fprintf(humanOut(), "Dashboard error: %v\n", err)
 			}
 		}()
 	}
@@ -187,16 +187,16 @@ func runProxy(cmd *cobra.Command, args []string) error {
 	if sub != nil {
 		go func() {
 			if err := sub.Wait(); err != nil {
-				fmt.Printf("\nService exited: %v\n", err)
+				fmt.Fprintf(humanOut(), "\nService exited: %v\n", err)
 			} else {
-				fmt.Println("\nService exited")
+				fmt.Fprintln(humanOut(), "\nService exited")
 			}
 		}()
 	}
 
 	go func() {
 		<-sigCh
-		fmt.Println("\nShutting down...")
+		fmt.Fprintln(humanOut(), "\nShutting down...")
 
 		if sub != nil {
 			sub.Stop()
@@ -207,7 +207,7 @@ func runProxy(cmd *cobra.Command, args []string) error {
 		proxyServer.Close()
 
 		<-sigCh
-		fmt.Println("\nForce exit")
+		fmt.Fprintln(humanOut(), "\nForce exit")
 		os.Exit(1)
 	}()
 

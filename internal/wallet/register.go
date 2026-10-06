@@ -14,12 +14,35 @@
 
 package wallet
 
+import "slices"
+
 type RegisterOptions struct {
 	ListenerPort int
 	AutoAccept   bool
 	ServeArgs    []string
 }
 
-func SupportsURLSchemeRegistration() bool {
-	return supportsURLSchemeRegistration()
+// The wallet registers as the OS handler for these URL schemes.
+var (
+	presentationURLSchemes = []string{"openid4vp", "eudi-openid4vp", "haip-vp"}
+	issuanceURLSchemes     = []string{"openid-credential-offer", "haip-vci", "eu-eaa-offer"}
+	URLSchemes             = append(slices.Clone(presentationURLSchemes), issuanceURLSchemes...)
+)
+
+// Registration describes what RegisterURLSchemes set up. Registered is false
+// on a platform without URL scheme registration.
+type Registration struct {
+	Registered bool     `json:"registered"`
+	AppBundle  string   `json:"app_bundle,omitempty"`
+	Handler    string   `json:"handler,omitempty"`
+	Binary     string   `json:"binary,omitempty"`
+	AutoAccept bool     `json:"auto_accept"`
+	ServeArgs  []string `json:"serve_args,omitempty"`
+	Schemes    []string `json:"schemes,omitempty"`
+}
+
+// Unregistration describes what UnregisterURLSchemes removed.
+type Unregistration struct {
+	Unregistered bool   `json:"unregistered"`
+	AppBundle    string `json:"app_bundle,omitempty"`
 }

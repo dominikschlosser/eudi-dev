@@ -86,6 +86,7 @@ The wallet proves possession of its holder key, receives the credential and impo
 | [0017](docs/adr/0017-generated-keys-can-derive-from-a-seed.md) | Generated keys can derive from a seed |
 | [0018](docs/adr/0018-postgres-stores-wallet-entities-as-keyed-blobs.md) | Postgres stores wallet entities as keyed blobs |
 | [0019](docs/adr/0019-the-base-url-is-the-public-identity.md) | The base URL is the public identity |
+| [0020](docs/adr/0020-cli-output-can-be-automated.md) | CLI output can be automated |
 
 ## Related
 
