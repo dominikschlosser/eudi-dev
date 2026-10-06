@@ -441,3 +441,31 @@ func TestDCAPIErrorIsNotEncryptedUnderTheEncryptedResponseMode(t *testing.T) {
 		t.Error("the error object carries an encrypted response")
 	}
 }
+
+// A credentials file allows IDs shorter than the generated ones.
+func TestACredentialWithAShortIDIsPresented(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.ClearCredentials()
+	file, err := ParseCredentialsFile([]byte("credentials:\n  - id: pid\n    template: pid-sdjwt\n"))
+	if err != nil {
+		t.Fatalf("ParseCredentialsFile: %v", err)
+	}
+	if err := srv.wallet.AddFileCredentials(file, false); err != nil {
+		t.Fatalf("AddFileCredentials: %v", err)
+	}
+	verifier := newCaptureVerifier(t)
+	params := unsatisfiableRequest(t, verifier.URL)
+	params.Set("dcql_query", dcqlQueryParam(t, map[string]any{
+		"credentials": []any{map[string]any{
+			"id":     "pid",
+			"format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+		}},
+	}))
+
+	authorizeRequest(t, srv, params)
+
+	if form := verifier.received(t); form.Get("vp_token") == "" {
+		t.Fatalf("verifier received %v, want a vp_token", form)
+	}
+}

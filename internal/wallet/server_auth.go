@@ -232,7 +232,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 
 	s.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
+		s.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
 	if requiresVP && len(matches) == 0 {
@@ -329,7 +329,7 @@ func (s *Server) awaitPresentationConsent(w http.ResponseWriter, authReq *Author
 					matches[i].SelectedKeys = selectedKeys
 					cred, _ := s.wallet.GetCredential(m.CredentialID)
 					matches[i].Claims = filterClaims(cred, selectedKeys)
-					s.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
+					s.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
 				}
 			}
 		}
@@ -778,6 +778,15 @@ func parseAuthParams(values map[string][]string, opts oid4vc.ParseOptions, mode 
 
 func requestPayload(reqObj *oid4vc.RequestObjectJWT, fallback map[string]any) map[string]any {
 	return RequestPayload(reqObj, fallback)
+}
+
+// shortID shortens a credential ID for the console. An ID from a credentials
+// file can have fewer than 8 characters.
+func shortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func credTypeLabel(m CredentialMatch) string {

@@ -203,6 +203,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--port`                | `8085`   | Server port                                      |
 | `--auto-accept`         | `false`  | Auto-approve everything. Without it, only interactive channels (web invocation URLs, scheme dispatches, browser DC-API) show the consent dialog. API submissions (`POST /api/offers`, `/api/presentations`) always auto-accept because the API call counts as consent (opt in per request with `"interactive": true`) |
 | `--credential`          | None     | Import credential from file (repeatable)         |
+| `--credentials`         | None     | Credentials to add on every start, from a YAML or JSON file, a directory of such files, or stdin (`-`). See [startup credentials](#startup-credentials) |
 | `--pid`                 | `false`  | Generate default EUDI PID credentials on start   |
 | `--key`                 | None     | Override holder key (PEM/JWK)                    |
 | `--issuer-key`          | None     | Override issuer key (PEM/JWK)                    |
@@ -236,6 +237,47 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--demo-reset`          | `1h`     | Schedule for restoring the demo baseline: an interval (`24h`), a daily wall-clock time (`00:00`), or one with a timezone (`"00:00 Europe/Berlin"`). `0` disables. Requires `--demo` |
 | `--imprint-file`        | None     | HTML snippet with the operator's legal notice, served at `/imprint` |
 | `-d, --detached`        | `false`  | Run the server as a background process and return once it responds. Output goes to `<wallet-dir>/serve.log`. Stop it with `wallet kill` |
+
+## Startup credentials
+
+`--credentials` adds credentials on every start. It reads a YAML or JSON file, every `.yaml`, `.yml` and `.json` file of a directory (in name order), or stdin with `-`. An entry either issues a credential from a [template](../templates.md) or imports a finished one. A file can mix both.
+
+```yaml
+credentials:
+  - id: employee-alice
+    template: employee-card
+    claims:
+      employee_id: E-2
+      department: Sales
+  - id: erika
+    template: german-pid-sdjwt
+    claims:
+      birthdate: 1970-01-31
+    exp: 2160h
+  - id: partner-ticket
+    credential: eyJhbGciOiJFUzI1NiIs...~WyJ...~
+```
+
+| Field | Description |
+|-------|-------------|
+| `id` | Credential ID in the wallet, the API and the UI selectors. It starts with a letter or digit and holds letters, digits, `.`, `_` and `-`. Unique across all files |
+| `template` | Template name or file path. The fields below override its defaults |
+| `format` | `sdjwt`, `jwt` or `mdoc` (default the template's format) |
+| `claims` | Claims merged over the template's claims |
+| `always_disclosed` | Claims issued without selective disclosure, in addition to the template's list |
+| `omit` | Top-level template claims to leave out |
+| `exp` | Expiry as a Go duration (default the template's `exp`) |
+| `display` | Card appearance, with the fields of the template's `display` |
+| `protected` | `true` keeps visitors from deleting or revoking the credential. Default `true` with `--demo`, `false` otherwise |
+| `credential` | A finished SD-JWT VC, JWT VC or mdoc to import instead of a template |
+
+Every start adds the entries again. Template entries get fresh dates. A credential from an earlier start with the same `id` is replaced, so the wallet holds one copy of each entry. Its revocation status resets with each start.
+
+With `--demo` the startup credentials are part of the baseline, so a demo reset restores them with the default PIDs. For a demo where visitors can delete every credential, set `protected: false` on the entries and turn off the default PIDs:
+
+```bash
+eudi wallet serve --demo --pid=false --credentials demo-credentials.yaml
+```
 
 ## Key attestation claims
 

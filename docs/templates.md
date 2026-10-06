@@ -74,6 +74,8 @@ A template reference (`--template`, `--from`) with a path separator or a `.json`
 
 To share a template, share the file (or the output of `templates show`).
 
+`wallet serve --credentials` issues credentials from templates on every start (see [startup credentials](wallet/serve.md#startup-credentials)).
+
 ## Card appearance (display)
 
 The optional `display` object sets the card appearance of credentials issued from the template (OpenID4VCI 1.0 §12.2.4). The wallet UI renders it on the credential card and in the consent and offer dialogs.

@@ -45,6 +45,7 @@ type walletServeOptions struct {
 	Port                    int
 	AutoAccept              bool
 	CredFiles               []string
+	CredentialsFile         string
 	PID                     bool
 	KeyPath                 string
 	IssuerKey               string
@@ -106,6 +107,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().IntVar(&opts.Port, "port", config.DefaultWalletPort, "Wallet server port")
 	cmd.Flags().BoolVar(&opts.AutoAccept, "auto-accept", false, "Headless mode: auto-accept presentations and credential offers")
 	cmd.Flags().StringSliceVar(&opts.CredFiles, "credential", nil, "Import credential from file (repeatable)")
+	cmd.Flags().StringVar(&opts.CredentialsFile, "credentials", "", "YAML or JSON file, directory of such files, or '-' for stdin, listing credentials to add on every start (issued from templates or imported)")
 	cmd.Flags().BoolVar(&opts.PID, "pid", false, "Auto-generate default EUDI PID credentials (SD-JWT + mdoc)")
 	cmd.Flags().StringVar(&opts.KeyPath, "key", "", "Holder private key file (PEM/JWK). Uses the stored key or auto-generates one if omitted")
 	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
@@ -355,6 +357,10 @@ func demoResetDescription(opts wallet.DemoOptions) string {
 }
 
 func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
+	// The detached process has no stdin.
+	if opts.Detached && opts.CredentialsFile == "-" {
+		return fmt.Errorf("a detached server has no stdin, so it can't read --credentials -")
+	}
 	if opts.Detached {
 		return spawnDetachedServe(cmd, opts.Port, opts.Register, opts.NoRegister)
 	}
@@ -525,20 +531,41 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		))
 	}
 
-	if opts.PID {
-		// In demo mode the generated PIDs are the shared baseline and
-		// must survive whatever visitors do to the wallet.
-		generate := w.GenerateDefaultCredentials
-		if opts.Demo {
-			generate = func(map[string]any, string) error { return w.GenerateProtectedDefaults() }
+	var startupFile *wallet.CredentialsFile
+	if opts.CredentialsFile != "" {
+		startupFile, err = wallet.LoadCredentialsFile(opts.CredentialsFile)
+		if err != nil {
+			return fmt.Errorf("reading the credentials file: %w", err)
 		}
-		if err := generate(nil, ""); err != nil {
-			return fmt.Errorf("generating PID credentials: %w", err)
+	}
+	// baseline adds the startup credentials. A demo reset runs it again. On a
+	// demo, startup credentials are protected unless an entry says otherwise.
+	baseline := func() error {
+		if opts.PID {
+			generate := func() error { return w.GenerateDefaultCredentials(nil, "") }
+			if opts.Demo {
+				generate = w.GenerateProtectedDefaults
+			}
+			if err := generate(); err != nil {
+				return fmt.Errorf("generating PID credentials: %w", err)
+			}
 		}
+		if startupFile != nil {
+			if err := w.AddFileCredentials(startupFile, opts.Demo); err != nil {
+				return fmt.Errorf("adding the credentials of %s: %w", opts.CredentialsFile, err)
+			}
+		}
+		return nil
+	}
+	if err := baseline(); err != nil {
+		return err
+	}
+	if opts.PID || startupFile != nil {
 		if err := store.Save(w); err != nil {
 			return fmt.Errorf("saving wallet: %w", err)
 		}
 	}
+	demoOpts.Baseline = baseline
 
 	for _, path := range opts.CredFiles {
 		if err := w.ImportCredentialFromFile(path); err != nil {

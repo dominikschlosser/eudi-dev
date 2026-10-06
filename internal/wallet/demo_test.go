@@ -604,3 +604,51 @@ func TestProtectedDefaultsFollowTemplateOverrides(t *testing.T) {
 		t.Fatal("no SD-JWT PID was seeded")
 	}
 }
+
+func TestDemoResetRestoresTheStartupCredentials(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
+	srv.wallet.ClearCredentials()
+	srv.SetStore(NewWalletStore(t.TempDir()))
+	srv.onSave = func() {
+		if err := srv.store.Load().Save(srv.wallet); err != nil {
+			t.Errorf("saving wallet: %v", err)
+		}
+	}
+	file, err := ParseCredentialsFile([]byte("credentials:\n  - id: shared-pid\n    template: pid-sdjwt\n  - id: open-pid\n    template: german-pid-sdjwt\n    protected: false\n"))
+	if err != nil {
+		t.Fatalf("ParseCredentialsFile: %v", err)
+	}
+	baseline := func() error { return srv.wallet.AddFileCredentials(file, true) }
+	srv.SetDemo(DemoOptions{ResetInterval: time.Hour, Baseline: baseline})
+	if err := baseline(); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	if err := srv.store.Load().Save(srv.wallet); err != nil {
+		t.Fatalf("saving baseline: %v", err)
+	}
+
+	if w := serverRequest(t, srv, "DELETE", "/api/credentials/shared-pid", ""); w.Code != http.StatusForbidden {
+		t.Errorf("deleting the protected entry = %d, want 403", w.Code)
+	}
+	if w := serverRequest(t, srv, "DELETE", "/api/credentials/open-pid", ""); w.Code != http.StatusNoContent && w.Code != http.StatusOK {
+		t.Fatalf("deleting the unprotected entry = %d %s", w.Code, w.Body.String())
+	}
+	if _, ok := srv.wallet.credentialByExactID("open-pid"); ok {
+		t.Fatal("open-pid survived its deletion")
+	}
+
+	if err := srv.demoReset(); err != nil {
+		t.Fatalf("demoReset: %v", err)
+	}
+	creds := srv.wallet.GetCredentials()
+	if len(creds) != 2 {
+		t.Fatalf("after reset: %d credentials, want the 2 startup credentials and no default PIDs", len(creds))
+	}
+	for id, protected := range map[string]bool{"shared-pid": true, "open-pid": false} {
+		c, ok := srv.wallet.credentialByExactID(id)
+		if !ok || c.Protected != protected {
+			t.Errorf("%s after reset: found %v, protected %v, want protected %v", id, ok, c.Protected, protected)
+		}
+	}
+}

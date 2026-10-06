@@ -825,6 +825,22 @@ func (w *Wallet) RemoveCredential(id string) bool {
 	return removed
 }
 
+// renameCredential moves a credential and its status entry to a new ID. It runs
+// before the credential is first saved.
+func (w *Wallet) renameCredential(oldID, newID string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for i := range w.Credentials {
+		if w.Credentials[i].ID == oldID {
+			w.Credentials[i].ID = newID
+		}
+	}
+	if entry, ok := w.StatusEntries[oldID]; ok {
+		delete(w.StatusEntries, oldID)
+		w.StatusEntries[newID] = entry
+	}
+}
+
 func (w *Wallet) IsProtected(id string) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

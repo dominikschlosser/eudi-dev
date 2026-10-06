@@ -38,8 +38,8 @@ func (s *Server) resolveDisplayImage(uri string) (contentType string, data []byt
 	return dataURIImage(uri)
 }
 
-// Images do not change for a stored credential. Cache them as immutable with a content
-// ETag.
+// A credentials file entry keeps its ID across restarts while its image can
+// change, so the browser revalidates every image with its content ETag.
 func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Request) {
 	cred, ok := s.wallet.GetCredential(r.PathValue("id"))
 	if !ok || cred.Display == nil {
@@ -64,7 +64,7 @@ func (s *Server) handleCredentialDisplayImage(w http.ResponseWriter, r *http.Req
 	sum := sha256.Sum256(data)
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
 	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "no-cache")
 	if r.Header.Get("If-None-Match") == etag {
 		w.WriteHeader(http.StatusNotModified)
 		return

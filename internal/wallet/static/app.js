@@ -296,9 +296,11 @@
     return Math.floor(months / 12) + ' y ago';
   }
 
-  // Short IDs distinguish cards visually. API and CLI lookups use the full ID.
+  // The first 8 characters tell generated IDs apart. A name from a credentials
+  // file stays whole. API and CLI lookups use the full ID.
   function shortCredentialId(id) {
-    return String(id || '').slice(0, 8);
+    const s = String(id || '');
+    return /^[0-9a-f][0-9a-f-]{15,}$/i.test(s) ? s.slice(0, 8) : s;
   }
 
   function credentialInitials(name) {

@@ -118,7 +118,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 
 	reqServer.log("  Matched:       %d credential(s)", len(matches))
 	for _, m := range matches {
-		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), m.CredentialID[:8], len(m.SelectedKeys))
+		reqServer.log("    - %s %s (%s), disclosing %d claims", m.Format, credTypeLabel(m), shortID(m.CredentialID), len(m.SelectedKeys))
 	}
 
 	if requiresVP && len(matches) == 0 {
@@ -192,7 +192,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 					matches[i].SelectedKeys = selectedKeys
 					cred, _ := reqServer.wallet.GetCredential(m.CredentialID)
 					matches[i].Claims = filterClaims(cred, selectedKeys)
-					reqServer.log("    - %s: disclosing %v", m.CredentialID[:8], selectedKeys)
+					reqServer.log("    - %s: disclosing %v", shortID(m.CredentialID), selectedKeys)
 				}
 			}
 		}

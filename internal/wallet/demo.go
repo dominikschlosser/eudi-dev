@@ -36,6 +36,9 @@ type DemoOptions struct {
 	// ResetDaily restores the baseline at a fixed wall-clock time. It takes
 	// precedence over ResetInterval.
 	ResetDaily *DailySchedule
+	// Baseline adds the startup credentials again after a reset. When it is nil,
+	// a reset restores the protected default PIDs.
+	Baseline func() error
 }
 
 type DailySchedule struct {
@@ -251,7 +254,11 @@ func (s *Server) demoReset() error {
 	if err := s.wallet.RefreshSigningCertificate(); err != nil {
 		return err
 	}
-	if err := s.wallet.GenerateProtectedDefaults(); err != nil {
+	baseline := s.wallet.GenerateProtectedDefaults
+	if s.demo.opts.Baseline != nil {
+		baseline = s.demo.opts.Baseline
+	}
+	if err := baseline(); err != nil {
 		return err
 	}
 	if store := s.store.Load(); store != nil {

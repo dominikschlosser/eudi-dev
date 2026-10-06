@@ -157,8 +157,9 @@ func TestIssueCredentialAPIDisplay(t *testing.T) {
 		t.Errorf("Content-Type = %q, want image/png", ct)
 	}
 	etag := img.Header().Get("ETag")
-	if etag == "" || !strings.Contains(img.Header().Get("Cache-Control"), "immutable") {
-		t.Errorf("expected an ETag and an immutable Cache-Control, got etag=%q cache=%q", etag, img.Header().Get("Cache-Control"))
+	// A reused credential ID can carry a new image, so the browser revalidates.
+	if etag == "" || img.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("expected an ETag and Cache-Control no-cache, got etag=%q cache=%q", etag, img.Header().Get("Cache-Control"))
 	}
 	if img.Body.Len() == 0 {
 		t.Error("the display image response is empty")
