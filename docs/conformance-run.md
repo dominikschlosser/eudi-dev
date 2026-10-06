@@ -13,7 +13,7 @@ You need:
 - Maven
 - a local OpenID Foundation conformance suite checkout
 
-The documented suite baseline is `release-v5.2.4`. Use a newer release only when updating the baseline and the [results](./conformance-results.md).
+The documented suite baseline is `release-v5.3.1`. Use a newer release only when updating the baseline and the [results](./conformance-results.md).
 
 ## Start the Local Suite
 
@@ -22,9 +22,11 @@ Build the suite from the baseline checkout:
 ```bash
 cd ../conformance-suite
 git fetch --tags
-git checkout release-v5.2.4
+git checkout release-v5.3.1
 mvn clean package
 ```
+
+Build it with JDK 21. Newer JDKs report warnings, and the suite compiles with `-Werror`.
 
 Run the suite server **on the host** so it can fetch the wallet's `https://localhost:<port+1>` status list. Inside a container, `localhost` would refer to the container and status checks would fail. The `-nodocker` compose file keeps MongoDB and nginx in Docker while the suite server runs on the host.
 
@@ -57,7 +59,7 @@ curl -k https://localhost:8443/api/server
 For the current baseline, the server returns:
 
 ```json
-{"tag":"release-v5.2.4","version":"5.2.4","revision":"ab35a8d"}
+{"tag":"release-v5.3.1","version":"5.3.1","revision":"440eec8"}
 ```
 
 ## Run the Wallet Matrix
@@ -79,7 +81,7 @@ To force the wrapper to use the same checkout as the running local server:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.4 \
+OIDF_SUITE_TAG=release-v5.3.1 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-local-strict \
   scripts/oidf-wallet-conformance.sh
 ```
@@ -92,7 +94,7 @@ Pass the official `run-test-plan.py` selector through the wrapper:
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.4 \
+OIDF_SUITE_TAG=release-v5.3.1 \
 OIDF_RUN_DIR=/tmp/oidf-wallet-conformance-rerun \
   scripts/oidf-wallet-conformance.sh --rerun '1:6,2:6'
 ```

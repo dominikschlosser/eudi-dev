@@ -85,10 +85,11 @@ class DemoScenario:
 
 VCI_ISSUER_MODULE_BATCH = "oid4vci-1_0-issuer-batch-issuance"
 
-# Exclude unsupported signed metadata, key attestation and credential encryption modules.
-# They would skip themselves, which run-test-plan records as failure.
+# Exclude unsupported key attestation and credential encryption modules. They
+# would skip themselves, which run-test-plan records as failure.
 VCI_ISSUER_MODULES = (
     "oid4vci-1_0-issuer-metadata-test",
+    "oid4vci-1_0-issuer-metadata-test-signed",
     "oid4vci-1_0-issuer-happy-flow",
     "oid4vci-1_0-issuer-happy-flow-additional-requests",
     "oid4vci-1_0-issuer-happy-flow-multiple-clients",
@@ -109,28 +110,11 @@ VCI_ISSUER_MODULES = (
 )
 
 
-# Suite release-v5.2.4 continues credential issuance after the expected pre-authorized
-# token rejection and interrupts these modules. They complete under authorization code
-# flows, where rejection happens at PAR.
-VCI_PREAUTH_BROKEN_MODULES = frozenset(
-    {
-        "oid4vci-1_0-issuer-fail-invalid-client-attestation-signature",
-        "oid4vci-1_0-issuer-fail-invalid-client-attestation-pop-signature",
-        "oid4vci-1_0-issuer-fail-client-attestation-exp-in-past",
-        "oid4vci-1_0-issuer-fail-client-attestation-no-sub",
-        "oid4vci-1_0-issuer-fail-client-attestation-pop-wrong-aud",
-        "oid4vci-1_0-issuer-fail-mismatched-client-attestation-pop-key",
-    }
-)
-
-
-def vci_issuer_modules(flow_variant: str, grant: str = "authorization_code") -> tuple[str, ...]:
+def vci_issuer_modules(flow_variant: str) -> tuple[str, ...]:
     """Wallet initiated issuance has no offer requesting a batch, so the demo issues one credential and the batch module skips."""
     modules = VCI_ISSUER_MODULES
     if flow_variant == "wallet_initiated":
         modules = tuple(m for m in modules if m != VCI_ISSUER_MODULE_BATCH)
-    if grant == "pre_authorization_code":
-        modules = tuple(m for m in modules if m not in VCI_PREAUTH_BROKEN_MODULES)
     return modules
 
 
@@ -273,7 +257,7 @@ def demo_scenarios() -> list[DemoScenario]:
                 # refuses the wallet_initiated pairing outright.
                 "vci_authorization_code_flow_variant": "issuer_initiated",
             },
-            modules=vci_issuer_modules("issuer_initiated", "pre_authorization_code"),
+            modules=vci_issuer_modules("issuer_initiated"),
             offer_query="batch=8",
         ),
                 # Run the VCI modules. The appended FAPI2 plans require a fuller authorization
