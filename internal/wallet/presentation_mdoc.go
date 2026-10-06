@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -32,17 +33,23 @@ import (
 // Documents in a shared response receive the same nonce.
 func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []string, params PresentationParams, mdocNonce string, signingKey *ecdsa.PrivateKey) (VPTokenResult, error) {
 	// ISO 18013-5 §9.1.2.4 requires deviceKey in the MSO. Without it, the issuer has
-	// not bound the credential to the key used for DeviceSigned. Debug mode still
-	// builds the response and warns, so the verifier can report the problem. See
+	// not bound the credential to the key used for DeviceSigned. Strict mode refuses
+	// the presentation. Debug mode still builds the response and warns, so the
+	// verifier can report the problem. See
 	// docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md.
 	if !credentialHolderBinding(cred.Raw).Bound {
 		detail := fmt.Sprintf(
-			"mdoc %s names no MSO deviceKey (ISO 18013-5 §9.1.2.4 makes it mandatory), so its DeviceSigned binds to a key the issuer never vouched for and the verifier refuses this presentation.",
+			"mdoc %s has no MSO deviceKey, which ISO 18013-5 §9.1.2.4 requires. The issuer didn't sign the key behind its DeviceSigned, so the verifier will refuse this presentation.",
 			credentialLabel(cred))
-		w.addProtocolWarning("presentation", "mdoc_names_no_device_key", detail, map[string]any{
+		details := map[string]any{
 			"credential_id": cred.ID,
 			"doctype":       cred.DocType,
-		})
+		}
+		if w.Mode() == ValidationModeStrict {
+			w.addProtocolLog("presentation", "mdoc_names_no_device_key", detail, false, details)
+			return VPTokenResult{}, errors.New(detail)
+		}
+		w.addProtocolWarning("presentation", "mdoc_names_no_device_key", detail, details)
 		log.Printf("[VP] WARNING: %s", detail)
 	}
 
