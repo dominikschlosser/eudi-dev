@@ -108,60 +108,6 @@ header h1 {
   background: var(--bg-hover);
 }
 
-.app-footer {
-  flex-shrink: 0;
-  padding: 6px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-surface);
-}
-
-.sponsor-info {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 4px 8px;
-  padding: 3px 0;
-  color: #8b93b8;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.sponsor-info a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.sponsor-info a:hover {
-  text-decoration: underline;
-}
-
-.sponsor-info a:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.sponsor-info svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: #de87ad;
-}
-
-[data-theme="light"] .sponsor-info svg {
-  color: #a63367;
-}
-
-[data-theme="light"] .sponsor-info {
-  color: #6b6f7b;
-}
-
 .entries {
   flex: 1;
   overflow-y: auto;

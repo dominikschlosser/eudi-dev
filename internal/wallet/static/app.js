@@ -2691,6 +2691,7 @@
         document.getElementById('tls-row').hidden = true;
       }
       demoMode = !!(config.demo && config.demo.enabled);
+      document.getElementById('sponsor-info').hidden = !demoMode;
       renderAutoAccept(!!config.auto_accept);
       renderConformance(config);
       ['conf-mode-select', 'conf-tls-select', 'conf-haip-input', 'conf-arf-input', 'conf-encrypted-input', 'conf-vci-version-select', 'conf-key-attestation-select'].forEach((id) => {
