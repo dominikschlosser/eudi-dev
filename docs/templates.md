@@ -86,7 +86,7 @@ To share a template, share the file (or the output of `templates show`).
 
 ## Card appearance (display)
 
-The optional `display` object sets the card appearance of credentials issued from the template (OpenID4VCI 1.0 §12.2.4). The wallet UI renders it on the credential card and in the consent and offer dialogs.
+The optional `display` object sets the card appearance of credentials issued from the template (OpenID4VCI 1.0 §12.2.4). The wallet UI renders it on the credential card and in the consent and offer dialogs. The demo issuer also publishes it in its issuer metadata. It serves built-in and uploaded images itself, at `/issuer/templates/<template>/logo` and `/issuer/templates/<template>/background_image`. The metadata links an `https://` image directly.
 
 | Field | Description |
 |-------|-------------|

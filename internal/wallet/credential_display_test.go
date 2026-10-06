@@ -739,3 +739,28 @@ func TestIssueUnboundBatchRejected(t *testing.T) {
 		t.Fatal("an unbound batch has no distinct keys and must be rejected")
 	}
 }
+
+// ISO 18013-5 §9.1.2.4: an mdoc without MSO deviceKey cannot bind DeviceSigned
+// to an issuer-vouched key. Strict mode refuses it, debug mode warns.
+func TestPresentingAnMdocWithoutDeviceKey(t *testing.T) {
+	for mode, wantErr := range map[ValidationMode]bool{ValidationModeStrict: true, ValidationModeDebug: false} {
+		t.Run(string(mode), func(t *testing.T) {
+			w := generateTestWallet(t)
+			w.ValidationMode = mode
+			noStatus := ""
+			res, err := w.IssueCredential(IssueOptions{Format: "mdoc", DocType: "org.example.bearer", Unbound: true, StatusListURI: &noStatus})
+			if err != nil {
+				t.Fatalf("issuing an unbound mdoc: %v", err)
+			}
+			cred := *res.Credential
+			key, err := w.batchSigningKey(cred)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = w.createMDocPresentation(cred, nil, PresentationParams{ClientID: "x509_hash:abc", Nonce: "n", ResponseURI: "https://verifier.example/response"}, "", key)
+			if (err != nil) != wantErr {
+				t.Fatalf("error %v, want an error: %v", err, wantErr)
+			}
+		})
+	}
+}

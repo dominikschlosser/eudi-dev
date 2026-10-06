@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
 
 func directPostForm(payload map[string]any) (url.Values, error) {
@@ -170,7 +171,7 @@ func BuildFragmentErrorRedirect(redirectURI, state, errorCode, errorDescription 
 	fragment := url.Values{}
 	fragment.Set("error", errorCode)
 	if errorDescription != "" {
-		fragment.Set("error_description", errorDescription)
+		fragment.Set("error_description", oid4vc.ErrorDescription(errorDescription))
 	}
 	if state != "" {
 		fragment.Set("state", state)

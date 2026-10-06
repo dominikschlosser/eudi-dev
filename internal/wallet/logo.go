@@ -14,10 +14,35 @@
 
 package wallet
 
+import (
+	"path"
+	"strings"
+)
+
 func LogoSVG() []byte {
 	data, err := staticFiles.ReadFile("static/logo.svg")
 	if err != nil {
 		return nil
 	}
 	return data
+}
+
+// TemplateImage returns the bytes of a bundled (embedded:<file>) or data URI
+// template image. ok is false for an https image and for anything that is not
+// an image.
+func TemplateImage(ref string) (contentType string, data []byte, ok bool) {
+	ref = strings.TrimSpace(ref)
+	if name, found := strings.CutPrefix(ref, "embedded:"); found {
+		contentType = embeddedImageMIME(name)
+		if !strings.HasPrefix(contentType, "image/") {
+			return "", nil, false
+		}
+		data, err := staticFiles.ReadFile("static/" + path.Base(name))
+		if err != nil {
+			return "", nil, false
+		}
+		return contentType, data, true
+	}
+	data, contentType, ok = decodeImageDataURI(ref)
+	return contentType, data, ok
 }

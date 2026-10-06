@@ -46,6 +46,8 @@ func (w *Wallet) EvaluateDCQL(query map[string]any) []CredentialMatch {
 func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatch, *ConsentCredentialOptions) {
 	credentials := w.GetCredentials()
 	credQueries, _ := query["credentials"].([]any)
+	// The conformance API can change the mode while a query runs.
+	mode := w.Mode()
 
 	log.Printf("[DCQL] Evaluating query: %d credential queries against %d stored credentials", len(credQueries), len(credentials))
 
@@ -53,7 +55,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 		for _, finding := range findings {
 			log.Printf("[DCQL] Warning: %s", finding)
 		}
-		if w.ValidationMode == ValidationModeStrict {
+		if mode == ValidationModeStrict {
 			log.Printf("[DCQL] Result: 0 matches (strict mode treats a malformed query as an error)")
 			return nil, nil
 		}
@@ -63,7 +65,19 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	// Debug mode offers credentials that do not match, so verifiers can be tested
 	// with wrong answers. They never become the automatic selection.
 	var nonMatching []CredentialMatch
-	debug := w.ValidationMode == ValidationModeDebug
+	debug := mode == ValidationModeDebug
+	// Strict mode never presents an mdoc without deviceKey (ISO 18013-5 makes
+	// deviceKeyInfo mandatory), so in strict mode such an mdoc matches no
+	// query.
+	strict := mode == ValidationModeStrict
+
+	// The wallet proves holder binding with a KB-JWT for an SD-JWT VC and with
+	// deviceKey for an mdoc. It presents a jwt_vc_json credential as is, so the
+	// flag doesn't apply to it.
+	bound := make(map[string]bool, len(credentials))
+	for _, cred := range credentials {
+		bound[cred.ID] = (cred.Format != "dc+sd-jwt" && cred.Format != "mso_mdoc") || credentialHolderBinding(cred.Raw).Bound
+	}
 
 	for _, cq := range credQueries {
 		cqMap, ok := cq.(map[string]any)
@@ -91,6 +105,15 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 			if !matchesMeta(cred, cqMap) {
 				skipped["meta mismatch"]++
 				mismatches = append(mismatches, metaMismatch(cred, cqMap))
+			}
+			switch {
+			case bound[cred.ID]:
+			case requiresHolderBinding(cqMap):
+				skipped["no holder binding"]++
+				mismatches = append(mismatches, "has no holder binding, which the query requires")
+			case strict && cred.Format == "mso_mdoc":
+				skipped["no deviceKey"]++
+				mismatches = append(mismatches, "is an mdoc without deviceKey, which strict mode does not present")
 			}
 
 			selection := w.selectClaims(cred, cqMap)
@@ -126,7 +149,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 			untrustedAuthority := false
 			if taList, ok := cqMap["trusted_authorities"].([]any); ok && len(taList) > 0 {
 				if !checkTrustedAuthorities(cred, taList, w.HTTPClient()) {
-					if w.ValidationMode != ValidationModeDebug {
+					if mode != ValidationModeDebug {
 						skipped["not trusted by any trusted_authority"]++
 						continue
 					}
@@ -438,6 +461,13 @@ func DCQLQueryFindings(query map[string]any) []string {
 			}
 		}
 
+		// §6.1: "require_cryptographic_holder_binding: OPTIONAL. A boolean".
+		if b, present := cqMap["require_cryptographic_holder_binding"]; present {
+			if _, ok := b.(bool); !ok {
+				findings = append(findings, fmt.Sprintf("OID4VP 1.0 §6.1: the credential query %q has a require_cryptographic_holder_binding that is not a boolean", label))
+			}
+		}
+
 		// §6.1 makes meta REQUIRED. An empty object places no constraints.
 		meta, present := cqMap["meta"]
 		if !present {
@@ -628,6 +658,14 @@ func matchesMeta(cred StoredCredential, cqMap map[string]any) bool {
 	}
 
 	return true
+}
+
+// requiresHolderBinding reads require_cryptographic_holder_binding, which
+// defaults to true (OpenID4VP 1.0 §6.1). The Verifier then expects a
+// Cryptographic Holder Binding proof, which an unbound credential cannot give.
+func requiresHolderBinding(cqMap map[string]any) bool {
+	required, ok := cqMap["require_cryptographic_holder_binding"].(bool)
+	return !ok || required
 }
 
 // metaMismatch describes how the credential type differs from the types in the

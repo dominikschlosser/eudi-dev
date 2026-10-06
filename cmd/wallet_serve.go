@@ -72,7 +72,7 @@ type walletServeOptions struct {
 	ImprintFile             string
 	Detached                bool
 	ServeTLS                bool
-	DemoVerifierTrust       []string
+	DemoVerifierIssuerCAs   []string
 	LogFormat               string
 }
 
@@ -143,7 +143,9 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVar(&opts.ServeTLS, "serve-tls", false, "Serve an https --base-url locally with the wallet's own TLS certificate instead of expecting an external TLS terminator in front (the HTTP port stays bound as well)")
-	cmd.Flags().StringArrayVar(&opts.DemoVerifierTrust, "demo-verifier-trust-anchor", nil, "CA certificate PEM file the demo verifier accepts issuer chains under, next to the wallet's own CA (repeatable). For presentations issued outside this wallet, such as an OIDF conformance suite run")
+	cmd.Flags().StringArrayVar(&opts.DemoVerifierIssuerCAs, "demo-verifier-issuer-ca", nil, "PEM file with CA certificates of credential issuers the demo verifier accepts in addition to the wallet's own CA (repeatable). Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run")
+	cmd.Flags().StringArrayVar(&opts.DemoVerifierIssuerCAs, "demo-verifier-trust-anchor", nil, "")
+	_ = cmd.Flags().MarkDeprecated("demo-verifier-trust-anchor", "use --demo-verifier-issuer-ca")
 	cmd.Flags().StringVar(&opts.LogFormat, "log-format", os.Getenv(serverlog.EnvVar), "Console output format: 'text' (the default) or 'json' (one JSON record per line on stdout, for log collectors) (default $"+serverlog.EnvVar+")")
 	cmd.Flags().BoolVarP(&opts.Detached, "detached", "d", false, "Run the server as a background process and return once it responds. Output goes to <wallet-dir>/serve.log")
 	return cmd, &opts
@@ -399,9 +401,9 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 			return fmt.Errorf("--serve-tls: %w", err)
 		}
 	}
-	verifierTrustAnchors, err := loadVerifierTrustAnchors(opts.DemoVerifierTrust)
+	verifierTrustAnchors, err := loadVerifierTrustAnchors(opts.DemoVerifierIssuerCAs)
 	if err != nil {
-		return fmt.Errorf("--demo-verifier-trust-anchor: %w", err)
+		return fmt.Errorf("--demo-verifier-issuer-ca: %w", err)
 	}
 	store, err := openStore()
 	if err != nil {

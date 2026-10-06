@@ -145,6 +145,7 @@ func (d *DemoRP) IssuerHandler() http.Handler {
 	mux.HandleFunc("POST /deferred_credential", d.handleDeferredCredential)
 	mux.HandleFunc("GET /.well-known/openid-credential-issuer", d.handleIssuerMetadata)
 	mux.HandleFunc("GET /logo.svg", d.handleLogo)
+	mux.HandleFunc("GET /templates/{id}/{field}", d.handleTemplateImage)
 
 	// The issuer is its own authorization server. The user signs in at
 	// /authorize while the wallet redeems the offer.

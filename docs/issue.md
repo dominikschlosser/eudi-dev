@@ -61,7 +61,7 @@ Flags shared by all three subcommands:
 | `--save-template` | None               | Save the issued claims and settings as a template with this name |
 | `--wallet` | `false`                   | Import the issued credential into the wallet   |
 | `--batch`  | `0`                       | With `--wallet`: issue this many copies with separate holder keys, so the wallet presents an unused one each time |
-| `--unbound` | `false`                  | With `--wallet`: issue without a holder key (a bearer credential with no cnf). The default binds it to the wallet |
+| `--unbound` | `false`                  | With `--wallet`: issue without a holder key (a bearer credential with no cnf). The default binds it to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches it |
 | `--status-list-uri` | None           | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`            | Status list index to embed in credential       |
 
@@ -103,7 +103,7 @@ The JWT subcommand produces a standard JWT with all claims directly in the paylo
 | `--save-template` | None                       | Save the issued claims and settings as a template with this name |
 | `--wallet`    | `false`                        | Import the issued credential into the wallet   |
 | `--batch`     | `0`                            | With `--wallet`: issue this many copies with separate holder keys, so the wallet presents an unused one each time |
-| `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a malformed mdoc for testing verifier rejection). The default binds it to the wallet |
+| `--unbound`   | `false`                        | With `--wallet`: issue without an MSO device key (a malformed mdoc for testing verifier rejection). The default binds it to the wallet. Only a query with `require_cryptographic_holder_binding: false` matches it. Strict mode never presents it |
 | `--status-list-uri` | None                    | Status list URI to embed in credential         |
 | `--status-list-idx` | `0`                     | Status list index to embed in credential       |
 

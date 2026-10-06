@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -964,7 +965,7 @@ func TestEvaluateDCQL_TrustedAuthorities_TrustedIsTheDefault(t *testing.T) {
 
 	untrusted, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer: "https://issuer.example", VCT: mock.DefaultPIDVCT,
-		Claims: mock.SDJWTPIDClaims, Key: w.IssuerKey, CertChain: nil,
+		Claims: mock.SDJWTPIDClaims, Key: w.IssuerKey, CertChain: nil, HolderKey: &w.HolderKey.PublicKey,
 	})
 	if err != nil {
 		t.Fatalf("GenerateSDJWT: %v", err)
@@ -1052,6 +1053,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 		Claims:    mock.SDJWTPIDClaims,
 		Key:       w.IssuerKey,
 		CertChain: nil, // no x5c
+		HolderKey: &w.HolderKey.PublicKey,
 	})
 	if err != nil {
 		t.Fatalf("GenerateSDJWT: %v", err)
@@ -1221,9 +1223,14 @@ func addSDJWTPID(t *testing.T, w *Wallet, id string, iat int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	x, y, err := format.ECPublicCoords(&w.HolderKey.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := map[string]any{"kty": "EC", "crv": "P-256", "x": base64.RawURLEncoding.EncodeToString(x), "y": base64.RawURLEncoding.EncodeToString(y)}
 	raw, err := jws.Sign(
 		map[string]any{"alg": "ES256", "typ": "dc+sd-jwt"},
-		map[string]any{"vct": mock.DefaultPIDVCT, "iat": iat, "given_name": "Ada", "family_name": "Lovelace"},
+		map[string]any{"vct": mock.DefaultPIDVCT, "iat": iat, "given_name": "Ada", "family_name": "Lovelace", "cnf": map[string]any{"jwk": holder}},
 		key,
 	)
 	if err != nil {
@@ -1343,5 +1350,76 @@ func TestEvaluateDCQL_DistinctQueriesEachKeepAMatch(t *testing.T) {
 	}
 	if !seen["pid_sdjwt"] || !seen["pid_mdoc"] {
 		t.Errorf("query ids = %v, want both pid_sdjwt and pid_mdoc", seen)
+	}
+}
+
+// require_cryptographic_holder_binding defaults to true (OpenID4VP 1.0 §6.1),
+// so an unbound credential answers only a query that sets it to false. Debug
+// mode still offers it among the non-matching credentials.
+func TestEvaluateDCQL_HolderBinding(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeDebug
+	noStatus := ""
+	if _, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:bearer", Unbound: true, StatusListURI: &noStatus}); err != nil {
+		t.Fatal(err)
+	}
+	query := sdjwtVCTQuery("urn:example:bearer")
+	_, options := w.EvaluateDCQLWithOptions(query)
+	if matches := w.EvaluateDCQL(query); len(matches) != 0 {
+		t.Errorf("matches %v, want none for a query that requires holder binding", matches)
+	}
+	if nonMatching := options.Queries[0].NonMatching; len(nonMatching) != 1 || !strings.Contains(strings.Join(nonMatching[0].Mismatches, " "), "holder binding") {
+		t.Errorf("non-matching %+v, want the unbound credential with the holder binding reason", nonMatching)
+	}
+
+	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = false
+	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+		t.Errorf("matches %v, want the unbound credential when the query accepts it", matches)
+	}
+}
+
+func TestDCQLHolderBindingFlagMustBeBoolean(t *testing.T) {
+	query := sdjwtVCTQuery("urn:example:bearer")
+	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = "false"
+	if findings := DCQLQueryFindings(query); len(findings) != 1 || !strings.Contains(findings[0], "require_cryptographic_holder_binding that is not a boolean") {
+		t.Fatalf("findings = %v", findings)
+	}
+}
+
+// The wallet presents a jwt_vc_json credential unchanged, so
+// require_cryptographic_holder_binding does not apply to it.
+func TestEvaluateDCQL_HolderBindingOfAJWTCredential(t *testing.T) {
+	w := generateTestWallet(t)
+	jwt, err := signJWT(map[string]any{"alg": "ES256", "typ": "JWT"}, map[string]any{"vct": "urn:test:credential", "given_name": "Erika"}, w.IssuerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.ImportCredential(jwt); err != nil {
+		t.Fatal(err)
+	}
+	query := map[string]any{"credentials": []any{map[string]any{"id": "vc", "format": "jwt_vc_json", "meta": map[string]any{}}}}
+	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+		t.Errorf("matches %v, want the JWT credential", matches)
+	}
+}
+
+// Strict mode refuses to present an mdoc without deviceKey, so it does not
+// match even a query that accepts unbound credentials.
+func TestEvaluateDCQL_UnboundMdocInStrictMode(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	if _, err := w.IssueCredential(IssueOptions{Format: "mdoc", DocType: "org.example.bearer", Unbound: true, StatusListURI: &noStatus}); err != nil {
+		t.Fatal(err)
+	}
+	cq := mdocQuery("bearer", "org.example.bearer")
+	cq["require_cryptographic_holder_binding"] = false
+	query := map[string]any{"credentials": []any{cq}}
+	w.ValidationMode = ValidationModeDebug
+	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
+		t.Fatalf("debug matches %v, want the unbound mdoc", matches)
+	}
+	w.ValidationMode = ValidationModeStrict
+	if matches := w.EvaluateDCQL(query); len(matches) != 0 {
+		t.Errorf("strict matches %v, want none", matches)
 	}
 }

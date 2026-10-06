@@ -16,9 +16,14 @@ package demorp
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/url"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
@@ -130,6 +135,16 @@ func (d *DemoRP) credentialConfigurations(base map[string]any) map[string]any {
 			if tpl.TextColor != "" {
 				display["text_color"] = tpl.TextColor
 			}
+			if uri := d.templateImageURL(cfg.id, "logo", tpl.Logo); uri != "" {
+				logo := map[string]any{"uri": uri}
+				if tpl.LogoAltText != "" {
+					logo["alt_text"] = tpl.LogoAltText
+				}
+				display["logo"] = logo
+			}
+			if uri := d.templateImageURL(cfg.id, "background_image", tpl.BackgroundImage); uri != "" {
+				display["background_image"] = map[string]any{"uri": uri}
+			}
 		}
 		entry["credential_metadata"] = map[string]any{
 			"display": []map[string]any{display},
@@ -138,6 +153,56 @@ func (d *DemoRP) credentialConfigurations(base map[string]any) map[string]any {
 		base[cfg.id] = entry
 	}
 	return base
+}
+
+// templateImageURL is the metadata URL of a template image. The issuer serves
+// bundled images and uploaded ones (data URIs) itself, since a data URI would
+// put the whole image into the metadata. An https image keeps its own URL.
+func (d *DemoRP) templateImageURL(id, field, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
+		return ref
+	}
+	if _, _, ok := wallet.TemplateImage(ref); ok {
+		return d.issuerID() + "/templates/" + url.PathEscape(id) + "/" + field
+	}
+	return ""
+}
+
+// handleTemplateImage serves the logo or background image of a template. The
+// browser checks the ETag on every load, because a template can change.
+func (d *DemoRP) handleTemplateImage(w http.ResponseWriter, r *http.Request) {
+	var ref string
+	for _, cfg := range d.templateConfigurations() {
+		if cfg.id != r.PathValue("id") || cfg.template.Display == nil {
+			continue
+		}
+		switch r.PathValue("field") {
+		case "logo":
+			ref = cfg.template.Display.Logo
+		case "background_image":
+			ref = cfg.template.Display.BackgroundImage
+		}
+	}
+	contentType, data, ok := wallet.TemplateImage(ref)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	// Anyone can upload a template image, and an SVG opened on its own could
+	// run scripts on the wallet's origin.
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(data)
 }
 
 // templateClaimPaths lists the top-level claims of the template. For an mdoc
