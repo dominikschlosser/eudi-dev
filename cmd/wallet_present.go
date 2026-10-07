@@ -594,18 +594,8 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 		fmt.Fprintf(os.Stderr, "warning: saving wallet: %v\n", err)
 	}
 
-	// POST /api/presentations on a running wallet returns the same document.
 	if jsonOutput {
-		vpTokenKeys := []string{}
-		if vpResult != nil && len(vpResult.QueryIDs()) > 0 {
-			vpTokenKeys = vpResult.QueryIDs()
-		}
-		output.PrintJSON(map[string]any{
-			"status":        "submitted",
-			"redirect_uri":  result.RedirectURI,
-			"response":      result,
-			"vp_token_keys": vpTokenKeys,
-		})
+		output.PrintJSON(wallet.SubmittedPresentation(result, vpResult))
 	}
 	return verifierRejection(result)
 }
