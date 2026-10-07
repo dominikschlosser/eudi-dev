@@ -235,11 +235,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			output.PrintMDOC(doc, opts)
 		}
 
-		if validateHAIP {
-			certs, _ := validate.ExtractMDOCX5ChainCertificates(doc)
-			printHAIPFindings(validate.HAIPCredentialChain(certs), report)
-		}
-
 		leafKey, _ := validate.ExtractMDOCX5ChainLeafKey(doc)
 		if len(pubKeys) > 0 {
 			x5cKey, _ := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)

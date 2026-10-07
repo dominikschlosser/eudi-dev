@@ -570,6 +570,16 @@ func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, er
 	return result.RedirectURI
 }
 
+// SubmittedPresentation is the document that POST /api/presentations returns
+// once the response reached the verifier. The CLI prints the same document.
+func SubmittedPresentation(result *DirectPostResult, vp *VPTokenMapResult) map[string]any {
+	keys := []string{}
+	if vp != nil && len(vp.QueryIDs()) > 0 {
+		keys = vp.QueryIDs()
+	}
+	return withRedirectURI(map[string]any{"status": "submitted", "response": result, "vp_token_keys": keys}, result.RedirectURI)
+}
+
 // withRedirectURI adds the verifier's redirect_uri to an API response. Without
 // one the field stays out, because a missing redirect_uri means the verifier
 // wants no redirect (OpenID4VP 1.0 §8.2).
@@ -658,16 +668,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, withRedirectURI(map[string]any{
-			"status":   "submitted",
-			"response": result,
-			"vp_token_keys": func() []string {
-				if prepared.VPResult == nil {
-					return nil
-				}
-				return prepared.VPResult.QueryIDs()
-			}(),
-		}, result.RedirectURI))
+		writeJSON(w, http.StatusOK, SubmittedPresentation(result, prepared.VPResult))
 	}
 
 	return SubmissionResult{

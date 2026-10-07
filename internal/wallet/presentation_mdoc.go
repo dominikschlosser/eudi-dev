@@ -46,8 +46,9 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 			"doctype":       cred.DocType,
 		}
 		if w.Mode() == ValidationModeStrict {
-			w.addProtocolLog("presentation", "mdoc_names_no_device_key", detail, false, details)
-			return VPTokenResult{}, errors.New(detail)
+			refusal := fmt.Sprintf("strict mode does not present mdoc %s without an MSO deviceKey (ISO 18013-5 §9.1.2.4)", credentialLabel(cred))
+			w.addProtocolLog("presentation", "mdoc_names_no_device_key", refusal, false, details)
+			return VPTokenResult{}, errors.New(refusal)
 		}
 		w.addProtocolWarning("presentation", "mdoc_names_no_device_key", detail, details)
 		log.Printf("[VP] WARNING: %s", detail)

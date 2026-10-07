@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -182,45 +183,51 @@ func (w *Wallet) AddFileCredentials(file *CredentialsFile, protectByDefault bool
 	return nil
 }
 
+// addFileCredential issues or imports the entry first, so a failure keeps the
+// copy from an earlier start.
 func (w *Wallet) addFileCredential(entry CredentialsFileEntry) error {
-	w.removeCredentialByExactID(entry.ID)
+	var added string
 	if entry.Credential != "" {
 		imported, err := w.ImportCredential(entry.Credential)
 		if err != nil {
 			return err
 		}
-		w.renameCredential(imported.ID, entry.ID)
-		return nil
+		added = imported.ID
+	} else {
+		var expiresIn time.Duration
+		if entry.Exp != "" {
+			expiresIn, _ = time.ParseDuration(entry.Exp)
+		}
+		result, err := w.IssueCredential(IssueOptions{
+			Template:        entry.Template,
+			Format:          entry.Format,
+			Claims:          entry.Claims,
+			AlwaysDisclosed: entry.AlwaysDisclosed,
+			Omit:            entry.Omit,
+			ExpiresIn:       expiresIn,
+			Display:         entry.Display,
+		})
+		if err != nil {
+			return err
+		}
+		added = result.Credential.ID
 	}
-	var expiresIn time.Duration
-	if entry.Exp != "" {
-		expiresIn, _ = time.ParseDuration(entry.Exp)
-	}
-	_, err := w.IssueCredential(IssueOptions{
-		ID:              entry.ID,
-		Template:        entry.Template,
-		Format:          entry.Format,
-		Claims:          entry.Claims,
-		AlwaysDisclosed: entry.AlwaysDisclosed,
-		Omit:            entry.Omit,
-		ExpiresIn:       expiresIn,
-		Display:         entry.Display,
-	})
-	return err
+	w.replaceCredential(entry.ID, added)
+	return nil
 }
 
-// removeCredentialByExactID removes the copy from an earlier start, even when
-// that start protected it.
-func (w *Wallet) removeCredentialByExactID(id string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	kept := w.Credentials[:0]
-	for _, c := range w.Credentials {
-		if c.ID != id {
-			kept = append(kept, c)
-		}
+// replaceCredential removes the credential with the ID, even a protected one,
+// and gives that ID to the added credential. The removed credential's status
+// entry goes too.
+func (w *Wallet) replaceCredential(id, added string) {
+	if id == added {
+		return
 	}
-	w.Credentials = kept
+	w.mu.Lock()
+	w.Credentials = slices.DeleteFunc(w.Credentials, func(c StoredCredential) bool { return c.ID == id })
+	delete(w.StatusEntries, id)
+	w.mu.Unlock()
+	w.renameCredential(added, id)
 }
 
 func (w *Wallet) setProtected(id string, protected bool) {

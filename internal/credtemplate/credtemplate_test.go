@@ -24,6 +24,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
+// The German PID types come from the predefined templates.
+const (
+	germanPIDVCT       = "urn:eudi:pid:de:1"
+	germanPIDNamespace = "eu.europa.ec.eudi.pid.de.1"
+)
+
 func TestPredefinedTemplates(t *testing.T) {
 	predefined := PredefinedTemplates()
 	if len(predefined) != 9 {
@@ -61,8 +67,8 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading pre-defined template: %v", err)
 	}
-	if sdjwt.VCT != "urn:eudi:pid:de:1" {
-		t.Errorf("german-pid-sdjwt vct = %q, want %q", sdjwt.VCT, "urn:eudi:pid:de:1")
+	if sdjwt.VCT != germanPIDVCT {
+		t.Errorf("german-pid-sdjwt vct = %q, want %q", sdjwt.VCT, germanPIDVCT)
 	}
 	if len(sdjwt.Claims) != len(mock.SDJWTGermanPIDClaims) {
 		t.Errorf("expected %d claims, got %d", len(mock.SDJWTGermanPIDClaims), len(sdjwt.Claims))
@@ -77,8 +83,8 @@ func TestPredefinedGermanPIDTemplates(t *testing.T) {
 	if mdoc.DocType != mock.PIDNamespace {
 		t.Errorf("german-pid-mdoc doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
-	if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
-		t.Errorf("german-pid-mdoc is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
+	if _, ok := mdoc.Claims[germanPIDNamespace+":birth_name"]; !ok {
+		t.Errorf("german-pid-mdoc is missing %s:birth_name", germanPIDNamespace)
 	}
 }
 
@@ -208,7 +214,7 @@ func TestPIDTemplateNames(t *testing.T) {
 	}{
 		{"", "pid-sdjwt", "pid-mdoc", true},
 		{mock.DefaultPIDVCT, "pid-sdjwt", "pid-mdoc", true},
-		{"urn:eudi:pid:de:1", "german-pid-sdjwt", "german-pid-mdoc", true},
+		{germanPIDVCT, "german-pid-sdjwt", "german-pid-mdoc", true},
 		{"urn:eudi:pid:it:1", "italian-pid-sdjwt", "italian-pid-mdoc", true},
 		{"urn:eudi:pid:nl:1", "dutch-pid-sdjwt", "dutch-pid-mdoc", true},
 		{"urn:eudi:pid:fr:1", "french-pid-sdjwt", "french-pid-mdoc", true},

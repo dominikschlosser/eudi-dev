@@ -26,12 +26,12 @@ func TestApplyConsentSelection(t *testing.T) {
 	matches, options := w.EvaluateDCQLWithOptions(setsQuery())
 	alternate := options.Queries[0].Candidates[0]
 	for _, candidate := range options.Queries[0].Candidates {
-		if candidate.VCT == "urn:eudi:pid:de:1" {
+		if candidate.VCT == germanPIDVCT {
 			alternate = candidate
 			break
 		}
 	}
-	if alternate.VCT != "urn:eudi:pid:de:1" {
+	if alternate.VCT != germanPIDVCT {
 		t.Fatal("German PID candidate is missing")
 	}
 
@@ -50,7 +50,7 @@ func TestApplyConsentSelection(t *testing.T) {
 		if len(got) != 1 || got[0].CredentialID != alternate.CredentialID {
 			t.Fatalf("got %+v, want the picked credential", got)
 		}
-		if got[0].VCT != "urn:eudi:pid:de:1" {
+		if got[0].VCT != germanPIDVCT {
 			t.Errorf("picked vct = %q, want the German PID", got[0].VCT)
 		}
 	})

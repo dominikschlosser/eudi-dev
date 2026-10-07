@@ -81,8 +81,7 @@ func ExtractX5CLeafKey(header map[string]any) (crypto.PublicKey, error) {
 }
 
 // X5CCertificates returns the x5c certificates of a JOSE header, leaf first.
-// It returns nothing when the header has none. It is the JOSE counterpart of
-// ExtractMDOCX5ChainCertificates.
+// It returns nothing when the header has none.
 func X5CCertificates(header map[string]any) ([]*x509.Certificate, error) {
 	return parseX5CCerts(header)
 }

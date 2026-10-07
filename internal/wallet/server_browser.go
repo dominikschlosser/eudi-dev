@@ -78,7 +78,8 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		})
 		return
 	}
-	// The override answers only a valid request (OpenID4VP 1.0 §8.5).
+	// The override answers only a valid request. RFC 6749 §4.1.2.1, which
+	// OpenID4VP 1.0 §8.5 applies, sends no error to an invalid client.
 	if override := reqServer.wallet.ConsumeNextError(); override != nil {
 		reqServer.log("  Next-error override consumed: %s", override.Error)
 		result, buildErr := reqServer.buildBrowserAuthorizationErrorResult(authReq, protocol, override.Error, override.ErrorDescription)

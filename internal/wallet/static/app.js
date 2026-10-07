@@ -2259,7 +2259,7 @@
       if (picked.length > 0) return picked;
       return q.candidates.length > 0 ? [q.candidates[0]] : [];
     }
-    function thatDoNotMatch(n) {
+    function nonMatchingLabel(n) {
       return n + ' non-matching';
     }
     // A credential counts once, and only when it matches no query.
@@ -2587,7 +2587,7 @@
               others.length + (others.length === 1 ? ' credential does not match' : ' credentials do not match') + '</div>';
           } else {
             html += '<button type="button" class="link-btn consent-nonmatching-toggle" id="consent-show-nonmatching-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '" aria-expanded="' + open + '">' +
-              (open ? 'Hide ' : 'Show ') + thatDoNotMatch(others.length) + '</button>';
+              (open ? 'Hide ' : 'Show ') + nonMatchingLabel(others.length) + '</button>';
           }
           if (open) others.forEach((c, i) => { html += candidateRowHtml(qid, c, i, multi); });
         }
@@ -2724,10 +2724,10 @@
         html += '<div class="consent-selection-row" id="consent-selection-row">' +
           (unanswered > 0 && isAutoSelection()
             ? unanswered + (unanswered === 1 ? ' query needs' : ' queries need') + ' a pick' +
-              (others > 0 ? ' · ' + thatDoNotMatch(others) : '')
+              (others > 0 ? ' · ' + nonMatchingLabel(others) : '')
             : isAutoSelection()
               ? 'Auto-selected' + (n > 0 ? ' · ' + n + (n === 1 ? ' alternative' : ' alternatives') : '') +
-                (others > 0 ? ' · ' + thatDoNotMatch(others) : '')
+                (others > 0 ? ' · ' + nonMatchingLabel(others) : '')
               : 'Your selection') +
           '<button class="btn" id="consent-edit-selection">Edit</button></div>';
       }

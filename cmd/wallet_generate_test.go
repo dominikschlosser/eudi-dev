@@ -509,7 +509,7 @@ func TestWalletGeneratePID_DeprecationWarningNamesTheGermanTemplates(t *testing.
 	rootCmd.SetErr(errBuf)
 	t.Cleanup(func() { rootCmd.SetErr(nil) })
 
-	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--vct", "urn:eudi:pid:de:1"})
+	rootCmd.SetArgs([]string{"wallet", "generate-pid", "--vct", germanPIDVCT})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("generate-pid: %v", err)
 	}

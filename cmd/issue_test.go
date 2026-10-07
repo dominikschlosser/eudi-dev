@@ -32,6 +32,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
+// The German PID types come from the predefined templates.
+const (
+	germanPIDVCT       = "urn:eudi:pid:de:1"
+	germanPIDNamespace = "eu.europa.ec.eudi.pid.de.1"
+)
+
 func TestOmitClaims_RemovesSpecifiedClaims(t *testing.T) {
 	result := omitClaims(mock.SDJWTPIDClaims, []string{"place_of_birth", "address", "nationalities"})
 
@@ -195,8 +201,8 @@ func TestResolveIssueClaims_PIDWhenFlagged_GermanMDOC(t *testing.T) {
 	if len(claims) != len(mock.MDOCGermanPIDClaims) {
 		t.Errorf("expected %d German mdoc PID claims, got %d", len(mock.MDOCGermanPIDClaims), len(claims))
 	}
-	if _, ok := claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
-		t.Errorf("the German mdoc PID claim set is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
+	if _, ok := claims[germanPIDNamespace+":birth_name"]; !ok {
+		t.Errorf("the German mdoc PID claim set is missing %s:birth_name", germanPIDNamespace)
 	}
 }
 
@@ -918,7 +924,7 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	// ISO/IEC 18013-5 has no inheritance between document types, so the
 	// German PID keeps the doctype of the country-independent one and puts
 	// its national elements in a second namespace.
-	de := "eu.europa.ec.eudi.pid.de.1" + ":"
+	de := germanPIDNamespace + ":"
 	want := map[string]bool{
 		"family_name": true, "given_name": true, "birth_date": true,
 		"expiry_date": true, "place_of_birth": true, "nationality": true,
@@ -952,7 +958,7 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	// reading the country-independent rulebook would find them there.
 	for _, name := range []string{"birth_name", "academic_title", "also_known_as", "age_over_18"} {
 		if _, ok := mock.MDOCGermanPIDClaims[name]; ok {
-			t.Errorf("%q must sit in %s, not in the PID namespace", name, "eu.europa.ec.eudi.pid.de.1")
+			t.Errorf("%q must sit in %s, not in the PID namespace", name, germanPIDNamespace)
 		}
 	}
 

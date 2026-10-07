@@ -269,3 +269,26 @@ func TestFileCredentialsReplaceTheirProtectedCopies(t *testing.T) {
 		t.Error("open is protected, want its own setting")
 	}
 }
+
+// A start that can't issue an entry keeps the copy from an earlier start.
+func TestAFailedEntryKeepsTheCopyOfAnEarlierStart(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example"
+	good, err := LoadCredentialsFile(writeCredentialsFile(t, "credentials:\n  - id: jan\n    template: pid-sdjwt\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AddFileCredentials(good, false); err != nil {
+		t.Fatal(err)
+	}
+	broken, err := LoadCredentialsFile(writeCredentialsFile(t, "credentials:\n  - id: jan\n    template: no-such-template\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AddFileCredentials(broken, false); err == nil {
+		t.Fatal("an unknown template was accepted")
+	}
+	if _, ok := w.credentialByExactID("jan"); !ok {
+		t.Error("the earlier copy is gone")
+	}
+}

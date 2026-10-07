@@ -182,7 +182,7 @@ func TestSaveRenewedCredential_SurvivesConcurrentStoreReload(t *testing.T) {
 	srv.wallet.PutCredential(renewed)
 	srv.applyPersistedWalletState(&Wallet{Credentials: []StoredCredential{stale}})
 
-	srv.saveRenewedCredential(&renewed)
+	srv.saveCredential(&renewed, true)
 
 	got, ok := srv.wallet.GetCredential(renewed.ID)
 	if !ok {

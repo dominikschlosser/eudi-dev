@@ -164,7 +164,7 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint" id="conf-intro">Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.</p>
+      <p class="dialog-hint" id="conf-intro">Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. Strict mode verifies HTTPS certificates and debug mode does not. The HTTPS setting below can change that.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
@@ -554,7 +554,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-builder" value="builder" checked> Builder</label>
             <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-json" value="json"> JSON</label>
           </div>
-          <textarea id="template-editor-json" class="form-input form-textarea template-editor-json" hidden placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}}'></textarea>
+          <textarea id="template-editor-json" aria-label="Template JSON" class="form-input form-textarea template-editor-json" hidden placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}}'></textarea>
         </div>
         <div class="form-grid" id="issue-form-grid">
           <label class="form-label" for="issue-format">Format</label>

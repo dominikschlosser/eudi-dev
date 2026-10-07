@@ -42,6 +42,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
+// The German PID types come from the predefined templates.
+const (
+	germanPIDVCT       = "urn:eudi:pid:de:1"
+	germanPIDNamespace = "eu.europa.ec.eudi.pid.de.1"
+)
+
 func newDemoRP(t *testing.T) (*DemoRP, *wallet.Wallet, *ecdsa.PrivateKey) {
 	t.Helper()
 	holderKey, err := mock.GenerateKey()
@@ -775,7 +781,7 @@ func TestVerifierAcceptsAnExtendingCredentialType(t *testing.T) {
 	}
 	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
-		VCT:       "urn:eudi:pid:de:1",
+		VCT:       germanPIDVCT,
 		ExpiresIn: time.Hour,
 		Claims:    mock.SDJWTGermanPIDClaims,
 		Key:       d.wallet.IssuerKey,
@@ -841,7 +847,7 @@ func TestVerifierDomesticPIDRequestAcceptsThatType(t *testing.T) {
 	}
 	german, err := mock.GenerateSDJWT(mock.SDJWTConfig{
 		Issuer:    d.issuerID(),
-		VCT:       "urn:eudi:pid:de:1",
+		VCT:       germanPIDVCT,
 		ExpiresIn: time.Hour,
 		Claims:    mock.SDJWTGermanPIDClaims,
 		Key:       d.wallet.IssuerKey,
@@ -860,8 +866,8 @@ func TestVerifierDomesticPIDRequestAcceptsThatType(t *testing.T) {
 		t.Fatalf("status = %v, want verified (checks: %v)", status["status"], status["checks"])
 	}
 	claims, _ := status["claims"].(map[string]any)
-	if claims["vct"] != "urn:eudi:pid:de:1" {
-		t.Errorf("vct presented = %v, want %v", claims["vct"], "urn:eudi:pid:de:1")
+	if claims["vct"] != germanPIDVCT {
+		t.Errorf("vct presented = %v, want %v", claims["vct"], germanPIDVCT)
 	}
 }
 
