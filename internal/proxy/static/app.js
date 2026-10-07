@@ -165,7 +165,7 @@
       } else {
         label = "View Credential " + (i + 1) + " in Decoder";
       }
-      var href = "decode/?credential=" + encodeURIComponent(credentials[i]);
+      var href = "decode/#credential=" + encodeURIComponent(credentials[i]);
       html += '<a class="btn credential-link" href="' + escapeHtml(href) + '" target="_blank">' + label + '</a>';
     }
     html += '</div></div>';

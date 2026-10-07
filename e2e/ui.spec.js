@@ -84,6 +84,13 @@ test.describe("Page load", () => {
     await expect(page.locator("#format-badge")).toHaveText("JWT");
     await expect(page.locator(".validity-banner")).toBeVisible();
   });
+
+  // Links put the credential in the fragment, which never reaches a proxy.
+  test("prefill via fragment", async ({ page }) => {
+    await page.goto("/#credential=" + encodeURIComponent(TEST_JWT));
+    await expect(page.locator("#format-badge")).toHaveText("JWT");
+    await expect(page).toHaveURL(/#credential=/);
+  });
 });
 
 test.describe("JWT decoding", () => {

@@ -131,6 +131,7 @@ header h1 {
 .header-links a {
   color: var(--text-dim);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .header-links a:hover {
@@ -144,6 +145,7 @@ header h1 {
 
 .header-submenu-toggle {
   font: inherit;
+  white-space: nowrap;
   color: var(--text-dim);
   background: none;
   border: none;
@@ -786,6 +788,20 @@ header h1 {
 
 .catalog-fields[hidden] {
   display: none;
+}
+
+#issue-form.template-mode .issue-only {
+  display: none;
+}
+
+.template-editor-head {
+  margin-bottom: 12px;
+}
+
+.template-editor-json {
+  width: 100%;
+  min-height: 320px;
+  margin-top: 8px;
 }
 
 .form-label {
@@ -1835,18 +1851,8 @@ header h1 {
   color: var(--red);
 }
 
-@media (max-width: 768px) {
-  body {
-    overflow: auto;
-    height: auto;
-    min-height: 100vh;
-  }
-
-  .main {
-    overflow: visible;
-    flex: none;
-  }
-
+/* The header switches to the menu button before its links would wrap. */
+@media (max-width: 1180px) {
   header {
     flex-wrap: wrap;
     gap: 8px;
@@ -1900,6 +1906,20 @@ header h1 {
   .header-submenu a {
     padding: 0;
   }
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .main {
+    overflow: visible;
+    flex: none;
+  }
+
 
   #pending-banner {
   display: flex;

@@ -104,7 +104,7 @@ func TestProxyLogsLinksDecodeAtTheProxyItRead(t *testing.T) {
 
 	output := runProxyLogs(t, srv.URL)
 
-	if !strings.Contains(output, srv.URL+"/decode?credential=credential-value") {
+	if !strings.Contains(output, srv.URL+"/decode/#credential=credential-value") {
 		t.Errorf("decode link does not point at the proxy that was read:\n%s", output)
 	}
 	if strings.Contains(output, "localhost:9091") {

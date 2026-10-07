@@ -127,7 +127,7 @@ func TestPrintDecodeHintWithoutLabel(t *testing.T) {
 func TestPrintDecodeHintWithDashboardPort(t *testing.T) {
 	output := captureOutput(t, func() { printDecodeHint("cred-value", "vp_token", "http://localhost:9091") })
 
-	if !strings.Contains(output, "http://localhost:9091/decode?credential=cred-value") {
+	if !strings.Contains(output, "http://localhost:9091/decode/#credential=cred-value") {
 		t.Errorf("expected decode URL in output, got %q", output)
 	}
 	if !strings.Contains(output, "vp_token") {
@@ -148,13 +148,13 @@ func TestPrintEntryWithDashboardPortRendersDecodeLinkPerCredential(t *testing.T)
 
 	output := captureOutput(t, func() { PrintEntry(entry, 9091) })
 
-	if strings.Count(output, "http://localhost:9091/decode?credential=") != 2 {
+	if strings.Count(output, "http://localhost:9091/decode/#credential=") != 2 {
 		t.Errorf("expected 2 decode links, got %q", output)
 	}
-	if !strings.Contains(output, "http://localhost:9091/decode?credential=cred-a") {
+	if !strings.Contains(output, "http://localhost:9091/decode/#credential=cred-a") {
 		t.Errorf("expected decode link for cred-a, got %q", output)
 	}
-	if !strings.Contains(output, "http://localhost:9091/decode?credential=cred-b") {
+	if !strings.Contains(output, "http://localhost:9091/decode/#credential=cred-b") {
 		t.Errorf("expected decode link for cred-b, got %q", output)
 	}
 }
@@ -164,7 +164,7 @@ func TestPrintDecodeHintEscapesCredentialQueryParam(t *testing.T) {
 
 	output := captureOutput(t, func() { printDecodeHint(credential, "vp_token", "http://localhost:9091") })
 
-	if !strings.Contains(output, "http://localhost:9091/decode?credential="+url.QueryEscape(credential)) {
+	if !strings.Contains(output, "http://localhost:9091/decode/#credential="+url.QueryEscape(credential)) {
 		t.Errorf("expected escaped decode URL in output, got %q", output)
 	}
 }
@@ -240,10 +240,10 @@ func TestPrintEntryGroupsRequestResponseAndDecodeSections(t *testing.T) {
 	if strings.Index(output, "token_type: DPoP") > strings.Index(output, "access_token: token-value") {
 		t.Fatalf("expected prioritized response field order, got %q", output)
 	}
-	if !strings.Contains(output, "access_token: http://localhost:9091/decode?credential=token-value") {
+	if !strings.Contains(output, "access_token: http://localhost:9091/decode/#credential=token-value") {
 		t.Fatalf("expected working decode URL for access token, got %q", output)
 	}
-	if !strings.Contains(output, "refresh_token: http://localhost:9091/decode?credential=refresh-value") {
+	if !strings.Contains(output, "refresh_token: http://localhost:9091/decode/#credential=refresh-value") {
 		t.Fatalf("expected working decode URL for refresh token, got %q", output)
 	}
 }

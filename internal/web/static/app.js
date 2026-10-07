@@ -74,7 +74,16 @@
     if (walletCredential && walletCredential.credential === text) {
       return window.location.pathname + "?id=" + encodeURIComponent(walletCredential.id);
     }
-    return window.location.pathname + "?credential=" + encodeURIComponent(text);
+    // The fragment never reaches the server, so a proxy's URL length limit
+    // doesn't cut off a long credential or request object.
+    return window.location.pathname + "#credential=" + encodeURIComponent(text);
+  }
+
+  // linkedCredential reads a credential from the fragment or, for older links,
+  // from the query.
+  function linkedCredential() {
+    const fromHash = new URLSearchParams(window.location.hash.slice(1)).get("credential");
+    return fromHash || new URLSearchParams(window.location.search).get("credential") || "";
   }
 
   function applyCredential(text) {
@@ -1356,13 +1365,13 @@
   }
 
   const queryParams = new URLSearchParams(window.location.search);
-  const queryCredential = queryParams.get("credential");
+  const queryCredential = linkedCredential();
   const queryID = queryParams.get("id");
 
   window.addEventListener("popstate", (event) => {
     const credential = event.state && typeof event.state.credential === "string"
       ? event.state.credential
-      : (new URLSearchParams(window.location.search).get("credential") || "");
+      : linkedCredential();
     applyCredential(credential);
   });
 

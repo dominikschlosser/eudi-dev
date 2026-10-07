@@ -333,7 +333,7 @@ func (d *DemoRP) handleCreateOffer(w http.ResponseWriter, r *http.Request) {
 		"id":         offer.id,
 		"offer_uri":  offerURI,
 		"wallet_url": base + "/credential-offer?" + params,
-		"scheme_uri": "eu-eaa-offer://?" + params,
+		"scheme_uri": "openid-credential-offer://?" + params,
 	})
 }
 
