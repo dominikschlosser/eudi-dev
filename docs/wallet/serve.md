@@ -456,7 +456,7 @@ A running wallet uses the proxy settings it was started with. `wallet accept` an
 
 ## Changing the conformance settings
 
-The **Conformance** panel in the wallet header controls validation mode, HTTPS certificate verification, HAIP, the ARF checks, encrypted requests, the [OpenID4VCI feature level](issuing.md#openid4vci-feature-level), and the key attestation's storage claims (see [SECURITY.md](../../SECURITY.md)). HTTPS verification follows the mode default or is set to on or off.
+The **Conformance** panel in the wallet header sets the validation mode, HTTPS certificate verification, the HAIP and ARF checks, whether request objects must be encrypted, the [OpenID4VCI version](issuing.md#openid4vci-feature-level) and the key attestation level (see [SECURITY.md](../../SECURITY.md)). It also shows the mdoc session transcript and the preferred format, which are set at startup.
 
 **Local wallets** can change these settings in the panel or through `PUT /api/config/conformance`. Changes apply to every flow until the process restarts. `DELETE /api/config/conformance` restores startup settings.
 

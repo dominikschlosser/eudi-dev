@@ -198,7 +198,7 @@ test.describe("Demo mode conformance panel", () => {
     await expect(page.locator("#conf-arf-input")).toBeDisabled();
     await expect(page.locator("#conf-encrypted-input")).toBeDisabled();
     await expect(page.locator("#conf-reset")).toBeHidden();
-    await expect(page.locator("#conf-intro")).toContainText("fixed on the public demo");
+    await expect(page.locator("#conf-intro")).toContainText("The public demo runs with fixed settings");
 
     expect(await page.evaluate(() => document.cookie)).not.toContain("eudi_conformance");
     const status = await page.evaluate(async () => {
@@ -1243,8 +1243,8 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conf-haip-input")).toBeChecked();
     await expect(page.locator("#conf-arf-input")).toBeChecked();
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
-    await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
-    await expect(page.locator("#conf-intro")).toContainText("debug mode");
+    await expect(page.locator("#conf-transcript")).toHaveText("OpenID4VP");
+    await expect(page.locator("#conf-intro")).toContainText("Debug mode");
 
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);

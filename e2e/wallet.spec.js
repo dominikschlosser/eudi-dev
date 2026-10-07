@@ -192,7 +192,7 @@ test.describe("Wallet Dashboard", () => {
       await expect.poll(async () => (await tlsConfig()).validation_mode).toBe("debug");
       await page.selectOption("#conf-tls-select", "true");
       await expect.poll(async () => (await tlsConfig()).tls_verify).toBe(true);
-      await page.selectOption("#conf-tls-select", { label: "Follow validation mode" });
+      await page.selectOption("#conf-tls-select", { label: "Depends on the mode" });
       await expect.poll(async () => (await tlsConfig()).tls_verify).toBe(false);
       expect((await tlsConfig()).tls_verify_override).toBeNull();
     } finally {

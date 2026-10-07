@@ -2961,13 +2961,13 @@
       el.classList.toggle('conf-on', state === 'on');
       el.classList.toggle('conf-off', state === 'off');
     };
-    set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
-    set('conf-format', config.preferred_format || 'no preference',
+    set('conf-transcript', config.session_transcript === 'iso' ? 'ISO 18013-7' : 'OpenID4VP', 'neutral');
+    set('conf-format', config.preferred_format || 'None',
       config.preferred_format ? 'neutral' : 'off');
     const intro = document.getElementById('conf-intro');
     if (intro) {
-      const base = 'Debug mode reports failed checks. Strict mode rejects invalid requests. HTTPS verification is on by default in strict mode and off in debug mode. You can override it in either mode.';
-      intro.textContent = demoMode ? base + ' Settings are fixed on the public demo.' : base;
+      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.';
+      intro.textContent = demoMode ? base + ' The public demo runs with fixed settings.' : base;
     }
     const reset = document.getElementById('conf-reset');
     if (reset) reset.hidden = demoMode;

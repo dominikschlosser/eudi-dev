@@ -163,7 +163,7 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint" id="conf-intro">Debug mode reports failed checks. Strict mode rejects invalid requests. HTTPS verification is on by default in strict mode and off in debug mode. You can override it in either mode.</p>
+      <p class="dialog-hint" id="conf-intro">Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
@@ -172,20 +172,20 @@
           </select>
         </td></tr>
         <tr><td>HTTPS certificates</td><td>
-          <select id="conf-tls-select" class="conf-input">
-            <option value="auto">Follow validation mode</option>
-            <option value="true">verify</option>
-            <option value="false">skip verification</option>
+          <select id="conf-tls-select" class="conf-input" title="Verifies the TLS certificates of issuers and verifiers">
+            <option value="auto">Depends on the mode</option>
+            <option value="true">Always verify</option>
+            <option value="false">Never verify</option>
           </select>
         </td></tr>
         <tr><td>HAIP 1.0</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-haip-input"> presentation and issuance</label>
+          <label class="conf-toggle" title="--haip"><input type="checkbox" id="conf-haip-input"> Check presentations and issuance</label>
         </td></tr>
         <tr><td>ARF</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-arf-input"> relying party authentication</label>
+          <label class="conf-toggle" title="Access and registration certificates, revocation, over-asking and the trusted lists of received credentials (--arf)"><input type="checkbox" id="conf-arf-input"> Check verifier and issuer certificates</label>
         </td></tr>
-        <tr><td>Encrypted requests</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> request objects</label>
+        <tr><td>Request objects</td><td>
+          <label class="conf-toggle" title="The wallet always sends an encryption key in wallet_metadata. This makes the verifier use it (--require-encrypted-request)"><input type="checkbox" id="conf-encrypted-input"> Refuse unencrypted request objects</label>
         </td></tr>
         <tr><td>OpenID4VCI</td><td>
           <select id="conf-vci-version-select" class="conf-input">
@@ -193,21 +193,21 @@
             <option value="1.1">1.1 draft</option>
           </select>
         </td></tr>
-        <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
-        <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
-        <tr><td>Key attestation</td><td>
-          <select id="conf-key-attestation-select" class="conf-input">
-            <option value="">claims what the issuer requires</option>
-            <option value="none">claims nothing</option>
-            <option value="iso_18045_high">claims iso_18045_high</option>
-            <option value="iso_18045_moderate">claims iso_18045_moderate</option>
-            <option value="iso_18045_enhanced-basic">claims iso_18045_enhanced-basic</option>
-            <option value="iso_18045_basic">claims iso_18045_basic</option>
+        <tr><td>mdoc session transcript</td><td id="conf-transcript" title="Set at startup with --session-transcript">—</td></tr>
+        <tr><td>Preferred format</td><td id="conf-format" title="Used when credentials in several formats match. Set at startup or with PUT /api/config/preferred-format">—</td></tr>
+        <tr><td>Key attestation level</td><td>
+          <select id="conf-key-attestation-select" class="conf-input" title="Sets key_storage and user_authentication in the key attestation (OpenID4VCI Appendix D.2)">
+            <option value="">Match the issuer's requirements</option>
+            <option value="none">Leave out</option>
+            <option value="iso_18045_high">High (iso_18045_high)</option>
+            <option value="iso_18045_moderate">Moderate (iso_18045_moderate)</option>
+            <option value="iso_18045_enhanced-basic">Enhanced basic (iso_18045_enhanced-basic)</option>
+            <option value="iso_18045_basic">Basic (iso_18045_basic)</option>
           </select>
         </td></tr>
       </table>
       <div class="consent-buttons">
-        <button class="btn" id="conf-reset">Reset to defaults</button>
+        <button class="btn" id="conf-reset">Reset to startup settings</button>
         <button class="btn" id="conformance-close">Close</button>
       </div>
     </div>
