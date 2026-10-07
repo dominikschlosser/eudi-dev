@@ -204,6 +204,10 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if s.wallet.Mode() == ValidationModeStrict && debugOnlySelection(pending.CredentialOptions, picks, body.ClaimSets) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "strict mode sends neither non-matching credentials nor another claim set"})
+			return
+		}
 	}
 
 	req, ok := s.wallet.ResolveRequest(id, "approved")

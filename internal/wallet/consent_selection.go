@@ -90,6 +90,27 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 
 // validateClaimSetChoices checks that every credential answering a query
 // satisfies the claim set chosen for it.
+// debugOnlySelection reports a pick of a non-matching credential or a chosen
+// claim set. Only debug mode offers them, and the wallet may have switched to
+// strict mode while the consent dialog was open.
+func debugOnlySelection(options *ConsentCredentialOptions, picks map[string][]string, claimSets map[string]int) bool {
+	if options == nil {
+		return false
+	}
+	for qid, credIDs := range picks {
+		query := findConsentQuery(options, qid)
+		if query == nil {
+			continue
+		}
+		for _, credID := range credIDs {
+			if slices.ContainsFunc(query.NonMatching, func(m CredentialMatch) bool { return m.CredentialID == credID }) {
+				return true
+			}
+		}
+	}
+	return len(claimSets) > 0
+}
+
 func validateClaimSetChoices(options *ConsentCredentialOptions, picks map[string][]string, claimSets map[string]int) error {
 	for qid, index := range claimSets {
 		query := findConsentQuery(options, qid)

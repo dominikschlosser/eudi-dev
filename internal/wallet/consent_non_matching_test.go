@@ -211,3 +211,32 @@ func TestAnUnchangedConsentSkipsAnOptionalSetNothingMatches(t *testing.T) {
 		t.Fatalf("selection %+v, want only the PID", got)
 	}
 }
+
+// A dialog opened in debug mode offers non-matching credentials. After a
+// switch to strict mode the wallet refuses to send one.
+func TestStrictModeRefusesANonMatchingPickFromAnEarlierDialog(t *testing.T) {
+	srv := newTestServer(t, false)
+	srv.wallet.ValidationMode = ValidationModeDebug
+	verifier := newCaptureVerifier(t)
+	params := unsatisfiableRequest(t, verifier.URL)
+	body, err := json.Marshal(map[string]any{"uri": "openid4vp://authorize?" + params.Encode(), "interactive": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		serverRequest(t, srv, "POST", "/api/presentations", string(body))
+		close(done)
+	}()
+	pending := waitForPendingRequest(t, srv)
+	pick := pending.CredentialOptions.Queries[0].NonMatching[0].CredentialID
+
+	srv.wallet.mu.Lock()
+	srv.wallet.ValidationMode = ValidationModeStrict
+	srv.wallet.mu.Unlock()
+	if approve := serverRequest(t, srv, "POST", "/api/requests/"+pending.ID+"/approve", `{"picks":{"nothing":"`+pick+`"}}`); approve.Code != 400 {
+		t.Errorf("approve: %d %s, want 400", approve.Code, approve.Body.String())
+	}
+	serverRequest(t, srv, "POST", "/api/requests/"+pending.ID+"/deny", "")
+	<-done
+}
