@@ -198,7 +198,7 @@ test.describe("Demo mode conformance panel", () => {
     await expect(page.locator("#conf-arf-input")).toBeDisabled();
     await expect(page.locator("#conf-encrypted-input")).toBeDisabled();
     await expect(page.locator("#conf-reset")).toBeHidden();
-    await expect(page.locator("#conf-intro")).toContainText("fixed on the public demo");
+    await expect(page.locator("#conf-intro")).toContainText("The public demo runs with fixed settings");
 
     expect(await page.evaluate(() => document.cookie)).not.toContain("eudi_conformance");
     const status = await page.evaluate(async () => {
@@ -236,36 +236,14 @@ test.describe("Demo mode consent visibility", () => {
     await page.locator("#consent-deny").click();
   });
 
-  test("a verifier registered with the registrar shows its purpose in the consent dialog", async ({
-    page,
-  }) => {
-    // The verifier page registers through the registrar API and sends the
-    // registration certificate in verifier_info (OpenID4VP 1.0 §5.1).
+  test("the registered demo verifier shows its purpose in the consent dialog", async ({ page }) => {
+    // The demo verifier sends its registration certificate in verifier_info
+    // (OpenID4VP 1.0 §5.1).
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#identity-registrar").click();
-    await page.locator("#identity-purpose").fill("Age check at the venue");
-    // The rows follow the selected request until they are edited.
-    await expect(page.locator("#identity-credential-1-type")).toHaveValue("urn:eudi-test:demo-ticket:1");
+    await expect(page.locator("#identity-registered")).toHaveAttribute("aria-checked", "true");
     await page.locator('#credential-toggle [data-credential="pid"]').click();
-    await expect(page.locator("#identity-credential-1-type")).toHaveValue("urn:eudi:pid:1");
-    await expect(page.locator("#identity-credential-2-format")).toHaveValue("mso_mdoc");
-    await expect(page.locator("#identity-credential-2-claims")).toHaveValue("given_name, family_name");
-    await page.locator("#identity-credential-1-claims").fill("given_name, address.locality");
-    await page.locator('#format-toggle [data-format="sd-jwt"]').click();
-    await expect(page.locator("#identity-credential-2-format")).toHaveValue("mso_mdoc");
-    await page.locator('#format-toggle [data-format="both"]').click();
     await page.locator("#create-request").click();
-    await expect(page.locator("#identity-registered-id")).toHaveText(/^NTR/);
-    const identifier = await page.locator("#identity-registered-id").textContent();
-    const registered = await page.evaluate(async (id) => {
-      const resp = await fetch(`/api/registrar/wrp/${id}`, { headers: { Accept: "application/json" } });
-      return (await resp.json()).data.services[0].intendedUses[0].credentials;
-    }, identifier);
-    expect(registered[0].claims).toEqual([{ path: ["given_name"] }, { path: ["address", "locality"] }]);
-    expect(registered[1].claims).toEqual([
-      { path: ["eu.europa.ec.eudi.pid.1", "given_name"] },
-      { path: ["eu.europa.ec.eudi.pid.1", "family_name"] },
-    ]);
+    await expect(page.locator("#scheme-uri")).toHaveAttribute("href", /^openid4vp:/);
     const schemeURI = await page.locator("#scheme-uri").getAttribute("href");
     submitAsSchemeHandler("/api/presentations", schemeURI);
     await waitForPending(1);
@@ -273,7 +251,7 @@ test.describe("Demo mode consent visibility", () => {
     await page.goto(`${BASE}/?focus=overview`);
     await page.locator("#pending-review").click();
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
-    await expect(page.locator("#consent-purpose-0")).toContainText("Age check at the venue");
+    await expect(page.locator("#consent-purpose-0")).toContainText("Shows how a verifier requests and checks credentials");
     await expect(page.locator("#consent-privacy-policy-0")).toHaveAttribute("href", /\/privacy-policy$/);
     await page.locator("#consent-deny").click();
   });
@@ -1243,8 +1221,8 @@ test.describe("Conformance", () => {
     await expect(page.locator("#conf-haip-input")).toBeChecked();
     await expect(page.locator("#conf-arf-input")).toBeChecked();
     await expect(page.locator("#conf-encrypted-input")).not.toBeChecked();
-    await expect(page.locator("#conf-transcript")).toHaveText("oid4vp");
-    await expect(page.locator("#conf-intro")).toContainText("debug mode");
+    await expect(page.locator("#conf-transcript")).toHaveText("OpenID4VP");
+    await expect(page.locator("#conf-intro")).toContainText("Debug mode");
 
     await page.locator("#conformance-close").click();
     await expect(page.locator("#conformance-overlay")).not.toHaveClass(/active/);
@@ -1254,10 +1232,11 @@ test.describe("Conformance", () => {
 });
 
 test.describe("Demo mode hardening", () => {
-  test("template writes and process control stay disabled", async () => {
+  test("images, predefined templates and process control stay locked", async () => {
     const blocked = [
-      ["PUT", "/api/templates/e2e", { format: "sdjwt" }],
-      ["DELETE", "/api/templates/e2e", null],
+      ["PUT", "/api/templates/pid-sdjwt", { format: "sdjwt", claims: {} }],
+      ["DELETE", "/api/templates/pid-sdjwt", null],
+      ["PUT", "/api/templates/e2e-image", { format: "sdjwt", claims: {}, display: { logo: "data:image/png;base64,iVBORw0KGgo=" } }],
       ["POST", "/api/shutdown", null],
       ["POST", "/api/next-error", { error: "access_denied" }],
       ["PUT", "/api/config/preferred-format", { preferred_format: "dc+sd-jwt" }],
@@ -1278,7 +1257,7 @@ test.describe("Demo mode hardening", () => {
 
   test("the UI hides what demo mode does not offer", async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.locator("#templates-btn")).toBeHidden();
+    await expect(page.locator("#templates-btn")).toBeVisible();
     await expect(page.locator("#tls-cert-pem-link")).toBeHidden();
     await expect(page.locator("#clear-log-btn")).toBeHidden();
     await expect(page.locator("#decoder-link")).toBeVisible();
@@ -1288,6 +1267,28 @@ test.describe("Demo mode hardening", () => {
     await expect(page.locator("#issue-display-name")).toBeVisible();
     await expect(page.locator("#issue-logo")).toBeHidden();
     await expect(page.locator("#issue-bg-image")).toBeHidden();
+    await expect(page.locator("#issue-save-template")).toBeVisible();
+  });
+
+  test("a visitor saves a template and adds it to the catalogue", async ({ page }) => {
+    await page.goto(BASE);
+    await page.locator("#templates-btn").click();
+    await expect(page.locator("#template-delete-pid-sdjwt")).toHaveCount(0);
+    await page.locator("#template-name").fill("e2e-visitor-card");
+    await page.locator("#template-json").fill(JSON.stringify({ format: "sdjwt", vct: "urn:example:e2e-visitor:1", claims: { level: "gold" } }));
+    await page.locator("#template-catalog").check();
+    await page.locator("#template-catalog-name").fill("E2E visitor card");
+    await page.locator("#template-catalog-rulebook").fill("not a url");
+    await page.locator("#template-save").click();
+    await expect(page.locator("#template-error")).toContainText("http or https URL");
+    await page.locator("#template-catalog-rulebook").fill("");
+    await page.locator("#template-save").click();
+    await expect(page.locator("#template-row-e2e-visitor-card")).toBeVisible();
+    await expect(page.locator("#template-delete-e2e-visitor-card")).toBeVisible();
+    const entries = await (await fetch(BASE + "/api/catalog/attestations")).json();
+    expect(entries.map((e) => e.name)).toContain("E2E visitor card");
+    await page.locator("#template-delete-e2e-visitor-card").click();
+    await expect(page.locator("#template-row-e2e-visitor-card")).toHaveCount(0);
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {
@@ -1452,14 +1453,13 @@ test.describe("Custom verifier request builder", () => {
 });
 
 test.describe("Demo verifier identity", () => {
-  test("an unsigned client identifier prefix allows only the demo certificate", async ({ page }) => {
+  test("an unsigned client identifier prefix sends no registration certificate", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#identity-registrar").click();
     await page.locator('#credential-toggle [data-credential="custom"]').click();
     await page.locator('#scheme-toggle [data-scheme="redirect_uri"]').click();
-    await expect(page.locator("#identity-registrar")).toBeDisabled();
+    await expect(page.locator("#identity-registered")).toBeDisabled();
     await expect(page.locator("#identity-own")).toBeDisabled();
-    await expect(page.locator("#identity-demo")).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#identity-unregistered")).toHaveAttribute("aria-checked", "true");
     await expect(page.locator("#identity-hint")).toContainText("the request is unsigned");
   });
 

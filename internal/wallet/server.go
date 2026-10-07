@@ -174,7 +174,7 @@ func (s *Server) setupRoutes() {
 
 	s.routeFunc("GET /api/templates", s.handleListTemplates)
 	s.routeFunc("GET /api/templates/{name}", s.handleGetTemplate)
-	s.routeFunc("PUT /api/templates/{name}", s.handlePutTemplate)
+	s.routeFunc("PUT /api/templates/{name}", s.withFreshStore(s.handlePutTemplate))
 	s.routeFunc("DELETE /api/templates/{name}", s.handleDeleteTemplate)
 
 	s.routeFunc("GET /api/certificates/ca", s.handleCACertificate)

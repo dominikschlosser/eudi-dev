@@ -87,7 +87,7 @@ func TestNationalPIDsAnswerARequestForTheEUDIPID(t *testing.T) {
 func TestEveryItalianPIDCopyHasItsOwnSubject(t *testing.T) {
 	for name, key := range map[string]string{
 		"italian-pid-sdjwt": "sub",
-		"italian-pid-mdoc":  mock.ItalianPIDNamespace + ":sub",
+		"italian-pid-mdoc":  "eu.europa.ec.eudi.pid.it.1" + ":sub",
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := generateTestWallet(t)

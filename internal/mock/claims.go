@@ -18,27 +18,23 @@ package mock
 import (
 	_ "embed"
 	"encoding/base64"
-	"maps"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 )
 
-// German and base PIDs use distinct SD-JWT types. In mdoc both share the doctype,
-// and German attributes use an additional namespace.
 const (
 	DefaultPIDVCT = credtype.PIDVCT
-	GermanPIDVCT  = credtype.GermanPIDVCT
-	ItalianPIDVCT = credtype.ItalianPIDVCT
-	DutchPIDVCT   = credtype.DutchPIDVCT
 	// PIDNamespace is the mdoc namespace of the country-independent EUDI PID.
 	// Every PID uses it as its doctype too.
-	PIDNamespace        = credtype.PIDNamespace
-	GermanPIDNamespace  = credtype.GermanPIDNamespace
-	ItalianPIDNamespace = credtype.ItalianPIDNamespace
-	DutchPIDNamespace   = credtype.DutchPIDNamespace
+	PIDNamespace = credtype.PIDNamespace
+)
+
+// Domestic namespaces of the sample national PIDs (ARF PID_06).
+const (
+	germanPIDNamespace  = "eu.europa.ec.eudi.pid.de.1"
+	italianPIDNamespace = "eu.europa.ec.eudi.pid.it.1"
+	dutchPIDNamespace   = "eu.europa.ec.eudi.pid.nl.1"
 )
 
 // The rulebook requires a portrait. The test identity uses a neutral 120x150
@@ -215,16 +211,16 @@ var MDOCGermanPIDClaims = map[string]any{
 	"issuing_authority":    "DE",
 	"issuing_country":      "DE",
 
-	GermanPIDNamespace + ":birth_name":           "GABLER",
-	GermanPIDNamespace + ":academic_title":       "",
-	GermanPIDNamespace + ":raw_eid_birth_date":   "1964-08-12",
-	GermanPIDNamespace + ":age_over_12":          true,
-	GermanPIDNamespace + ":age_over_14":          true,
-	GermanPIDNamespace + ":age_over_16":          true,
-	GermanPIDNamespace + ":age_over_18":          true,
-	GermanPIDNamespace + ":age_over_21":          true,
-	GermanPIDNamespace + ":age_over_65":          false,
-	GermanPIDNamespace + ":source_document_type": "ID",
+	germanPIDNamespace + ":birth_name":           "GABLER",
+	germanPIDNamespace + ":academic_title":       "",
+	germanPIDNamespace + ":raw_eid_birth_date":   "1964-08-12",
+	germanPIDNamespace + ":age_over_12":          true,
+	germanPIDNamespace + ":age_over_14":          true,
+	germanPIDNamespace + ":age_over_16":          true,
+	germanPIDNamespace + ":age_over_18":          true,
+	germanPIDNamespace + ":age_over_21":          true,
+	germanPIDNamespace + ":age_over_65":          false,
+	germanPIDNamespace + ":source_document_type": "ID",
 }
 
 // SDJWTItalianPIDClaims follows the PID data model of the IT-Wallet Technical
@@ -248,22 +244,6 @@ var SDJWTItalianPIDClaims = map[string]any{
 	"issuing_country":   "IT",
 }
 
-// WithFreshItalianSubject gives an Italian PID its own sub. IT-Wallet 1.4.7
-// §11.1.2.1: "two different Credentials issued MUST NOT use the same sub
-// value". Other claims come back unchanged.
-func WithFreshItalianSubject(vct string, claims map[string]any) map[string]any {
-	key := ItalianPIDNamespace + ":sub"
-	if vct == ItalianPIDVCT {
-		key = "sub"
-	}
-	if _, ok := claims[key]; !ok {
-		return claims
-	}
-	fresh := maps.Clone(claims)
-	fresh[key] = uuid.NewString()
-	return fresh
-}
-
 // ItalianPIDAlwaysDisclosed lists the claims that IT-Wallet 1.4.7 never makes
 // selectively disclosable.
 var ItalianPIDAlwaysDisclosed = []string{"sub", "date_of_expiry", "verification", "issuing_authority", "issuing_country"}
@@ -281,7 +261,7 @@ var MDOCItalianPIDClaims = map[string]any{
 	"issuing_authority": "Ministero dell'Interno",
 	"issuing_country":   "IT",
 
-	ItalianPIDNamespace + ":verification": map[string]any{
+	italianPIDNamespace + ":verification": map[string]any{
 		"trust_framework": "it_cie",
 		"assurance_level": "https://trust-anchor.example.it/loa/high",
 	},
@@ -333,10 +313,10 @@ var MDOCDutchPIDClaims = map[string]any{
 	"issuing_authority":    "Rijksdienst voor Identiteitsgegevens",
 	"issuing_country":      "NL",
 
-	DutchPIDNamespace + ":bsn":           "999991772",
-	DutchPIDNamespace + ":recovery_code": "1234567",
+	dutchPIDNamespace + ":bsn":           "999991772",
+	dutchPIDNamespace + ":recovery_code": "1234567",
 	// The draft lists age_over_18 among its national attributes.
-	DutchPIDNamespace + ":age_over_18": true,
+	dutchPIDNamespace + ":age_over_18": true,
 }
 
 func PIDIssuanceDate() string {

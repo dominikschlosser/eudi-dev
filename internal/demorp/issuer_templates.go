@@ -238,7 +238,7 @@ func (d *DemoRP) signTemplate(cfg templateConfiguration, holderKey *ecdsa.Public
 			expiresIn = parsed
 		}
 	}
-	claims := mock.WithFreshItalianSubject(cfg.vct, credtemplate.MergeClaims(tpl.Claims, granted.holderClaims))
+	claims := tpl.WithUniqueClaims(credtemplate.MergeClaims(tpl.Claims, granted.holderClaims))
 	spec, err := wallet.NormalizeIssuedAttestationSpec(wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType}, "auto")
 	if err != nil {
 		return "", fmt.Errorf("building attestation spec for %s: %w", cfg.id, err)

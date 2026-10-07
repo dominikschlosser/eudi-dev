@@ -973,6 +973,59 @@
     updateAlwaysDisclosedVisibility();
   }
 
+  // catalogSchema reads the TS11 SchemaMeta fields of a form whose inputs are
+  // named <prefix>-catalog-rulebook, -los, -binding and -trust.
+  function catalogSchema(prefix) {
+    const field = (name) => document.getElementById(prefix + '-catalog-' + name);
+    const trust = field('trust').value.trim();
+    return {
+      rulebookURI: field('rulebook').value.trim(),
+      attestationLoS: field('los').value,
+      bindingType: field('binding').value,
+      trustedAuthorities: trust ? [{ frameworkType: 'etsi_tl', value: trust, isLOTE: true }] : [],
+    };
+  }
+
+  // catalogFields drives the "Add the template to the attestation catalogue"
+  // checkbox and its fields in a form. entry() returns the catalogue fields
+  // for the save request, or null when the box is unchecked.
+  function catalogFields(prefix) {
+    const box = document.getElementById(prefix + '-catalog');
+    const fields = document.getElementById(prefix + '-catalog-fields');
+    const field = (name) => document.getElementById(prefix + '-catalog-' + name);
+    box.addEventListener('change', () => { fields.hidden = !box.checked; });
+    return {
+      reset() {
+        box.checked = false;
+        fields.hidden = true;
+        field('name').value = '';
+        field('rulebook').value = '';
+        field('los').value = 'iso_18045_basic';
+        field('binding').value = 'key';
+        field('trust').value = '';
+      },
+      // validate returns the first problem the browser can see. The server
+      // checks the rest and refuses the whole save.
+      validate(defaultName) {
+        if (!box.checked) return '';
+        if (!field('name').value.trim() && !defaultName) return 'The catalogue needs a name for the attestation';
+        for (const name of ['rulebook', 'trust']) {
+          const value = field(name).value.trim();
+          if (value && !/^https?:\/\/\S+$/i.test(value)) {
+            return (name === 'rulebook' ? 'The rulebook' : 'The trusted list') + ' must be an http or https URL';
+          }
+        }
+        return '';
+      },
+      entry(defaultName) {
+        if (!box.checked) return null;
+        return { name: field('name').value.trim() || defaultName, schema: catalogSchema(prefix) };
+      },
+    };
+  }
+  const issueCatalog = catalogFields('issue');
+  const templateCatalog = catalogFields('template');
+
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
     document.getElementById('issue-vct').value = '';
@@ -982,6 +1035,7 @@
     document.getElementById('issue-batch').value = '';
     document.getElementById('issue-binding').value = 'bound';
     document.getElementById('issue-save-template').value = '';
+    issueCatalog.reset();
     document.getElementById('issue-status-list').value = 'auto';
     document.getElementById('issue-status-list-uri').value = '';
     document.getElementById('issue-status-list-uri').hidden = true;
@@ -1125,6 +1179,17 @@
     }
     const saveTemplate = document.getElementById('issue-save-template').value.trim();
     if (saveTemplate) body.save_as_template = saveTemplate;
+    const catalogProblem = issueCatalog.validate(saveTemplate);
+    if (catalogProblem) {
+      issueError.textContent = catalogProblem;
+      return;
+    }
+    const catalog = issueCatalog.entry(saveTemplate);
+    if (catalog && !saveTemplate) {
+      issueError.textContent = 'Enter a template name to add the template to the catalogue';
+      return;
+    }
+    if (catalog) body.catalog = catalog;
     const signingKey = document.getElementById('issue-signing-key').value.trim();
     if (signingKey) body.signing_key = signingKey;
     const signingCert = document.getElementById('issue-signing-cert').value.trim();
@@ -1227,7 +1292,7 @@
       });
       row.appendChild(editBtn);
 
-      if (!tpl.predefined && !demoMode) {
+      if (!tpl.predefined) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm';
@@ -1257,6 +1322,7 @@
   document.getElementById('templates-btn').addEventListener('click', () => {
     templateName.value = '';
     templateJSON.value = '';
+    templateCatalog.reset();
     templateError.textContent = '';
     templatesOverlay.classList.add('active');
     renderTemplatesList();
@@ -1284,6 +1350,14 @@
       templateError.textContent = 'Template name is required';
       return;
     }
+    const defaultName = (doc.display && typeof doc.display.name === 'string' && doc.display.name.trim()) || name;
+    const catalogProblem = templateCatalog.validate(defaultName);
+    if (catalogProblem) {
+      templateError.textContent = catalogProblem;
+      return;
+    }
+    const catalog = templateCatalog.entry(defaultName);
+    if (catalog) doc.catalog = catalog;
     try {
       const resp = await fetch('api/templates/' + encodeURIComponent(name), {
         method: 'PUT',
@@ -1297,6 +1371,7 @@
       }
       templateName.value = '';
       templateJSON.value = '';
+      templateCatalog.reset();
       await renderTemplatesList();
     } catch (e) {
       templateError.textContent = 'Request failed: ' + e.message;
@@ -1893,7 +1968,10 @@
         '<div class="credential-info">' +
           '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
           typeMeta +
-          (cred.description ? '<div class="offer-description">' + linkifyText(cred.description) + '</div>' : '') +
+          (cred.description
+            ? '<div class="offer-description" id="offer-description-' + registrarDomID(cred.id) + '">' + linkifyText(cred.description) + '</div>' +
+              '<button type="button" class="link-btn offer-description-toggle" id="offer-description-' + registrarDomID(cred.id) + '-toggle" aria-expanded="false">More</button>'
+            : '') +
         '</div>' +
       '</div>';
     let claims = '';
@@ -1906,6 +1984,16 @@
     }
     return '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' + card + claims + '</div>';
   }
+
+  // A long issuer description stays at two lines until the user opens it.
+  document.addEventListener('click', (event) => {
+    const toggle = event.target.closest('.offer-description-toggle');
+    if (!toggle) return;
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.previousElementSibling.classList.toggle('offer-description-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? 'Less' : 'More';
+  });
 
   function renderOfferDetails(req) {
     const details = req.offer_details || {};
@@ -1940,7 +2028,7 @@
     // requires the wallet to warn the user before it requests the credential.
     if ((details.warnings || []).length > 0) {
       html += '<div class="offer-warnings" id="offer-arf-warnings" role="alert">' +
-        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet could not verify this issuer\'s registration</div>' +
+        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet found problems with this issuer</div>' +
         '<ul id="offer-arf-warnings-list">' + details.warnings.map((w, i) => '<li id="offer-arf-warning-' + i + '">' + escHtml(w) + '</li>').join('') + '</ul>' +
       '</div>';
     }
@@ -2035,7 +2123,7 @@
       return q.candidates.length > 0 ? [q.candidates[0]] : [];
     }
     function thatDoNotMatch(n) {
-      return n + (n === 1 ? ' that does not match' : ' that do not match');
+      return n + ' non-matching';
     }
     // A credential counts once, and only when it matches no query.
     function nonMatchingCount() {
@@ -2105,7 +2193,7 @@
       return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
         '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
         '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
-        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">The verifier prefers its first set. Debug mode lets you send another.</div>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first claim set that fits. Debug mode lets you pick another.</div>' +
       '</div>';
     }
     function isAutoSelection() {
@@ -2529,6 +2617,10 @@
     '</div>';
 
     consentDialog.innerHTML = html;
+    // The More button only shows for a description longer than two lines.
+    consentDialog.querySelectorAll('.offer-description').forEach(desc => {
+      if (desc.scrollHeight <= desc.clientHeight + 1) desc.nextElementSibling.hidden = true;
+    });
     wireSelectionHandlers();
     if (unansweredQueries().length > 0) {
       const approve = document.getElementById('consent-approve');
@@ -2727,10 +2819,6 @@
           ? 'state resets ' + schedule
           : 'state is shared and never reset automatically';
         note.hidden = false;
-        document.getElementById('issue-save-template').hidden = true;
-        document.querySelector('label[for="issue-save-template"]').hidden = true;
-        document.getElementById('template-form').hidden = true;
-        document.getElementById('templates-btn').hidden = true;
         // Demo mode accepts images from templates and issuer metadata, but rejects visitor
         // image fields.
         document.querySelectorAll('.issue-image-field').forEach((el) => { el.hidden = true; });
@@ -2873,13 +2961,13 @@
       el.classList.toggle('conf-on', state === 'on');
       el.classList.toggle('conf-off', state === 'off');
     };
-    set('conf-transcript', config.session_transcript || 'oid4vp', 'neutral');
-    set('conf-format', config.preferred_format || 'no preference',
+    set('conf-transcript', config.session_transcript === 'iso' ? 'ISO 18013-7' : 'OpenID4VP', 'neutral');
+    set('conf-format', config.preferred_format || 'None',
       config.preferred_format ? 'neutral' : 'off');
     const intro = document.getElementById('conf-intro');
     if (intro) {
-      const base = 'Debug mode reports failed checks. Strict mode rejects invalid requests. HTTPS verification is on by default in strict mode and off in debug mode. You can override it in either mode.';
-      intro.textContent = demoMode ? base + ' Settings are fixed on the public demo.' : base;
+      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.';
+      intro.textContent = demoMode ? base + ' The public demo runs with fixed settings.' : base;
     }
     const reset = document.getElementById('conf-reset');
     if (reset) reset.hidden = demoMode;
@@ -3451,7 +3539,7 @@
   // parties list, so Close returns there.
   let registrarFromList = false;
   // registrarMode is verifier or issuer. A verifier registers an intended use,
-  // an issuer the attestations it issues.
+  // an issuer its attestation types.
   let registrarMode = 'verifier';
   function showRegistered(done) {
     registrarSubmit.classList.toggle('registrar-registered', done);
@@ -3590,7 +3678,7 @@
     registrarCredentials.lastElementChild.querySelector('[data-field="type"]').focus();
   });
 
-  // An issuer lists the attestation types it issues, each a format and a type
+  // Each attestation type of an issuer is a format and a type
   // (ETSI TS 119 475 V1.2.1 Table 8).
   let registrarAttestationCount = 0;
   const registrarAttestations = document.getElementById('registrar-attestations');
@@ -3932,8 +4020,8 @@
           (entry.template ? '' : '<span class="registrar-party-actions"><button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button></span>') +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
-          (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change or delete the credential template to change this entry.">Template</span>' : '') +
-          '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
+          (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change the credential template to change this entry.">Template</span>' : '') +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security level: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
           '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
           '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +
           '<code class="registrar-party-identifier registrar-catalog-version" id="' + prefix + '-version">v' + escHtml(schema.version) + '</code>' +
@@ -4073,19 +4161,13 @@
       });
       credentials.push({ format: format, type: type, claims: claims });
     });
-    const trust = document.getElementById('registrar-catalog-trust').value.trim();
     const save = document.getElementById('registrar-catalog-save');
     save.disabled = true;
     try {
       const added = await registrarRequest('POST', 'api/catalog/attestations', {
         name: document.getElementById('registrar-catalog-name').value.trim(),
         credentials: credentials,
-        schema: {
-          rulebookURI: document.getElementById('registrar-catalog-rulebook').value.trim(),
-          attestationLoS: document.getElementById('registrar-catalog-los').value,
-          bindingType: document.getElementById('registrar-catalog-binding').value,
-          trustedAuthorities: trust ? [{ frameworkType: 'etsi_tl', value: trust, isLOTE: true }] : [],
-        },
+        schema: catalogSchema('registrar'),
       });
       closeCatalogForm();
       await loadCatalogEntries();

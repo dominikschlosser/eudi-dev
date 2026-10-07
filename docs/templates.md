@@ -2,7 +2,7 @@
 
 A credential template gives test credentials a name, type (VCT or doc type) and default claims. It can also set an expiry and claims that are always disclosed. The CLI, HTTP API and wallet UI share the same templates.
 
-The binary includes eight predefined templates:
+The binary includes nine predefined templates:
 
 | Name | Format | Contents |
 |------|--------|----------|
@@ -14,12 +14,13 @@ The binary includes eight predefined templates:
 | `italian-pid-mdoc` | mdoc | Italian PID (`eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.it.1`) |
 | `dutch-pid-sdjwt` | sdjwt | Dutch PID (`urn:eudi:pid:nl:1`), which extends the EUDI PID |
 | `dutch-pid-mdoc` | mdoc | Dutch PID (`eu.europa.ec.eudi.pid.1` plus `eu.europa.ec.eudi.pid.nl.1`) |
+| `demo-ticket` | sdjwt | The demo issuer's event ticket (`urn:eudi-test:demo-ticket:1`) |
 
 The `pid-*` templates follow the attribute tables of the [EUDI PID Rulebook v1.7](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) and use its example identity Jan Wijnand ('t Hart). The `german-pid-*` templates follow the [German PID Rulebook 1.0.0 consultation draft](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) and use the ERIKA MUSTERMANN specimen identity. The display description of each predefined PID links to its rulebook.
 
-The `italian-pid-*` templates follow the PID data model of the [IT-Wallet Technical Specifications 1.4.7](https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html) (§11.2). Their claims match Bianca Rossi, the person on the specimen identity card in their card image. The Italian PID has no address. The wallet always discloses `sub`, `date_of_expiry`, `verification`, `issuing_authority` and `issuing_country`. `sub` is an opaque identifier. Every credential gets its own, including each copy in a batch. The mdoc carries `sub` and `verification` in `eu.europa.ec.eudi.pid.it.1`. The optional `personal_administrative_number` is left out.
+The `italian-pid-*` templates follow the PID data model of the [IT-Wallet Technical Specifications 1.4.7](https://italia.github.io/eid-wallet-it-docs/releases/1.4.7/en/credential-data-model-pid.html) (§11.2). Their claims match Bianca Rossi, the person on the specimen identity card. That card is also their card image. The Italian PID has no address. The wallet always discloses `sub`, `date_of_expiry`, `verification`, `issuing_authority` and `issuing_country`. `sub` is an opaque identifier. The templates list it in `unique_claims`, so every credential gets its own, including each copy in a batch. The mdoc carries `sub` and `verification` in `eu.europa.ec.eudi.pid.it.1`. The optional `personal_administrative_number` is left out.
 
-The `dutch-pid-*` templates follow the [working draft of the Dutch PID](https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json) in the NL Wallet reference implementation. Their claims match Willeke Liselotte De Bruijn, the person on the specimen identity card in their card image. The address, `bsn` and `recovery_code` come from the NL Wallet sample. The draft adds `bsn`, `recovery_code` and `age_over_18` to the EUDI PID. The templates also carry the mandatory EUDI PID attributes, and country values are ISO 3166-1 codes. The `dutch-pid-mdoc` template uses the PID doctype and puts the Dutch attributes in `eu.europa.ec.eudi.pid.nl.1` (ARF PID_04, PID_05 and PID_06). The [NL Wallet mdoc](https://github.com/MinBZK/nl-wallet/blob/8f2a549cc3933e13697bfa98aea23da891380cf6/scripts/devenv/eudi_pid_nl_1_mdoc.json) uses `urn:eudi:pid:nl:1` as doctype and namespace, so a query for that doctype matches nothing here.
+The `dutch-pid-*` templates follow the [working draft of the Dutch PID](https://github.com/MinBZK/nl-wallet/blob/ea1402d2ad96202617bee6771ac1395c73e96322/scripts/devenv/eudi_pid_nl_1.json) in the NL Wallet reference implementation. Their claims match Willeke Liselotte De Bruijn, the person on the specimen identity card. That card is also their card image. The address, `bsn` and `recovery_code` come from the NL Wallet sample. The draft adds `bsn`, `recovery_code` and `age_over_18` to the EUDI PID. The templates also carry the mandatory EUDI PID attributes, and country values are ISO 3166-1 codes. The `dutch-pid-mdoc` template uses the PID doctype and puts the Dutch attributes in `eu.europa.ec.eudi.pid.nl.1` (ARF PID_04, PID_05 and PID_06). The [NL Wallet mdoc](https://github.com/MinBZK/nl-wallet/blob/8f2a549cc3933e13697bfa98aea23da891380cf6/scripts/devenv/eudi_pid_nl_1_mdoc.json) uses `urn:eudi:pid:nl:1` as doctype and namespace, so a query for that doctype matches nothing here.
 
 The German rulebook adds national attributes (`birth_name`, `academic_title`, `source_document_type`, `raw_eid_birth_date`, and the age thresholds in `age_equal_or_over`). The EU rulebook defines attributes that the German eID does not have (`sex`, `document_number`, `personal_administrative_number`, `date_of_issuance`, `birth_family_name`). Some shared attributes differ in encoding. The birth name is `birth_name` in the German PID and `birth_family_name` in the EU PID. The German PID includes the house number in the street address. The EU PID uses a separate `address.house_number`.
 
@@ -34,7 +35,7 @@ Its doctype is `eu.europa.ec.eudi.pid.1`, like every PID. A claim key written as
 
 Regenerating a PID replaces the existing mdoc PID with the same doctype and namespaces. So an override of `german-pid-mdoc` needs at least one `eu.europa.ec.eudi.pid.de.1` element to stay distinguishable from `pid-mdoc`.
 
-`issue ... --pid`, the deprecated `wallet generate-pid` and `POST /api/generate-pid` use these templates. They use the `pid-*` pair by default, and the national pair for `--vct urn:eudi:pid:de:1`, `urn:eudi:pid:it:1` or `urn:eudi:pid:nl:1`. A user template saved under the same name overrides the predefined one everywhere. Deleting the override restores the original.
+`issue ... --pid`, the deprecated `wallet generate-pid` and `POST /api/generate-pid` use these templates. They use the `pid-*` pair by default. With `--vct` they use the SD-JWT template of that type and the mdoc template with the PID doctype and the same display name. A user template for another PID type, such as `urn:eudi:pid:fr:1`, works the same way. A type without templates gets the EUDI PID claims under that type. A user template saved under the same name overrides the predefined one everywhere. Deleting the override restores the original.
 
 ## Template files and storage
 
@@ -75,6 +76,7 @@ All fields except `claims` are optional:
 | `exp` | Default expiry as a Go duration (for example `720h`) |
 | `claims` | The default claim set |
 | `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
+| `unique_claims` | Claims that get a new random value in every credential, for example an opaque subject identifier |
 | `display` | Card appearance for credentials issued from the template (`name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image`). Image fields take a data URI or an http(s) URL. The predefined PID templates set it |
 | `predefined` | Set on predefined templates in listings and exports. Ignored on import |
 
@@ -204,6 +206,16 @@ The wallet server exposes the same template store:
 
 `POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet/http-api.md#issuing-credentials).
 
+## Attestation catalogue
+
+The predefined templates are always in the [attestation catalogue](wallet/registrar.md#attestation-catalogue). User templates are added only on request. To add one, send a `catalog` object next to the template document in `PUT /api/templates/{name}`, or next to `save_as_template` in `POST /api/issue`:
+
+```json
+{"name": "Employee card", "schema": {"rulebookURI": "https://example.com/rulebook", "attestationLoS": "iso_18045_basic", "bindingType": "key", "trustedAuthorities": [{"frameworkType": "etsi_tl", "value": "https://example.com/trusted-list", "isLOTE": true}]}}
+```
+
+The entry gets the template's format, type and claims. An empty name becomes the template's display name or its name. Only an SD-JWT VC template with a `vct` or an mdoc template with a `doctype` can be added. The wallet checks the entry before it saves anything. If the entry is invalid or its name is taken, it saves neither the template nor the entry, and `POST /api/issue` doesn't issue the credential. Deleting the template keeps the entry. Delete the entry in the catalogue.
+
 ```bash
 # Import a template and issue from it
 curl -X PUT http://localhost:8085/api/templates/employee-card \
@@ -220,3 +232,7 @@ curl -X POST http://localhost:8085/api/issue \
 Choose a template in the issue dialog to fill in the form, then edit any values you need. Uncheck a claim's SD checkbox to make it always visible. In JSON mode, use the "Always visible" field. Dotted paths select nested claims. Enter a name in "Save as template" to save the form after successful issuance.
 
 The Templates button opens a manager for listing, editing, importing (paste the JSON), and deleting templates.
+
+Both dialogs have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, rulebook, level of security, holder binding and trusted list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
+
+On a public demo, visitors can save templates too. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images. Images of the bundled templates still work. A demo keeps at most 50 visitor templates, and a reset deletes them.

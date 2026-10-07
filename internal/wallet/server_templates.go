@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
@@ -34,6 +33,12 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	// On a demo the templates it started with are fixed like the built-in ones.
+	if s.demo != nil {
+		for i := range templates {
+			templates[i].Predefined = templates[i].Predefined || s.demo.fixedTemplates[templates[i].Name]
+		}
+	}
 	writeJSON(w, http.StatusOK, templates)
 }
 
@@ -41,7 +46,7 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 // this endpoint a path would allow arbitrary file reads.
 func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+	if !credtemplate.IsBareName(name) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", name)})
 		return
 	}
@@ -54,15 +59,58 @@ func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, tpl)
 }
 
+// templateSaveRequest is a template document. With catalog set, the template
+// also joins the attestation catalogue as an entry of its own.
+type templateSaveRequest struct {
+	credtemplate.Template
+	Catalog *CatalogAttestation `json:"catalog,omitempty"`
+}
+
 // The URL name overrides the name in the document.
 func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
-	var tpl credtemplate.Template
-	if err := json.NewDecoder(r.Body).Decode(&tpl); err != nil {
+	var req templateSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parsing request body: " + err.Error()})
 		return
 	}
+	tpl := req.Template
 	tpl.Name = strings.TrimSpace(r.PathValue("name"))
+	if !credtemplate.IsBareName(tpl.Name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", tpl.Name)})
+		return
+	}
+	if err := s.checkDemoTemplate(tpl); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	var entry CatalogAttestation
+	if req.Catalog != nil {
+		var err error
+		if entry, err = s.wallet.templateCatalogEntry(tpl, *req.Catalog); err != nil {
+			writeCatalogError(w, err)
+			return
+		}
+	}
+	// The entry is added first, because the catalogue can refuse it and a
+	// stored template is hard to take back when it replaced another one.
+	var added CatalogAttestation
+	if req.Catalog != nil {
+		var err error
+		s.saveMutation(func() bool {
+			added, err = s.wallet.AddCatalogAttestation(entry, s.wallet.RegistrarBase())
+			return err == nil
+		})
+		if err != nil {
+			writeCatalogError(w, err)
+			return
+		}
+	}
 	if _, err := credtemplate.Save(s.wallet.Templates, tpl); err != nil {
+		if req.Catalog != nil {
+			s.saveMutation(func() bool {
+				return s.wallet.DeleteCatalogAttestation(added.Schema.ID, s.wallet.RegistrarBase()) == nil
+			})
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -77,6 +125,14 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 // Deleting an override restores the bundled template. Bundled templates themselves
 // cannot be deleted.
 func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
+	if !credtemplate.IsBareName(r.PathValue("name")) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", r.PathValue("name"))})
+		return
+	}
+	if err := s.checkDemoTemplateDelete(r.PathValue("name")); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := credtemplate.Delete(s.wallet.Templates, r.PathValue("name")); err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "not found") {

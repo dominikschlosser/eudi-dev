@@ -12,7 +12,7 @@ Related docs:
 
 ## Current State
 
-The harness targets a local OpenID Foundation conformance suite server by default. The documented baseline is `release-v5.2.4`. When the server exposes `/api/server`, the wrapper checks that its tag matches the runner/templates tag and fails early on a mismatch.
+The harness targets a local OpenID Foundation conformance suite server by default. The documented baseline is `release-v5.3.1`. When the server exposes `/api/server`, the wrapper checks that its tag matches the runner/templates tag and fails early on a mismatch.
 
 Current local status:
 

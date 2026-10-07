@@ -84,7 +84,7 @@ const (
 
 var (
 	errCatalogNotFound = errors.New("attestation not in the catalogue")
-	errCatalogTemplate = errors.New("this entry comes from a credential template, so change or delete the template instead")
+	errCatalogTemplate = errors.New("this entry belongs to a predefined credential template and can't be changed or deleted")
 	errCatalogFull     = errors.New("the catalogue holds the maximum number of attestations")
 	semanticVersion    = regexp.MustCompile(`^\d+\.\d+(\.\d+)?$`)
 
@@ -129,16 +129,77 @@ func (w *Wallet) AddCatalogAttestation(entry CatalogAttestation, base string) (C
 	fromTemplates := w.templateCatalog(base)
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	for _, existing := range append(fromTemplates, w.Catalog...) {
-		if strings.EqualFold(existing.Name, entry.Name) {
-			return CatalogAttestation{}, fmt.Errorf("the catalogue already lists %q", existing.Name)
-		}
-	}
-	if len(w.Catalog) >= maxCatalogEntries {
-		return CatalogAttestation{}, errCatalogFull
+	if err := w.checkNewCatalogEntryLocked(entry, fromTemplates); err != nil {
+		return CatalogAttestation{}, err
 	}
 	w.Catalog = append(w.Catalog, entry)
 	return withSchemaURIs(cloneCatalogAttestation(entry), base), nil
+}
+
+// CheckCatalogAttestation reports whether AddCatalogAttestation would accept
+// entry, without adding it.
+func (w *Wallet) CheckCatalogAttestation(entry CatalogAttestation, base string) error {
+	entry = cloneCatalogAttestation(entry)
+	if err := normalizeCatalogAttestation(&entry, base); err != nil {
+		return err
+	}
+	fromTemplates := w.templateCatalog(base)
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.checkNewCatalogEntryLocked(entry, fromTemplates)
+}
+
+// checkNewCatalogEntryLocked keeps names and types unique. The wallet finds
+// the trusted list of a received credential by its type.
+func (w *Wallet) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
+	for _, existing := range append(fromTemplates, w.Catalog...) {
+		if strings.EqualFold(existing.Name, entry.Name) {
+			return fmt.Errorf("the catalogue already lists %q", existing.Name)
+		}
+		for _, c := range entry.Credentials {
+			if slices.ContainsFunc(existing.Credentials, func(e CatalogCredential) bool { return e.Format == c.Format && e.Type == c.Type }) {
+				return fmt.Errorf("the catalogue already lists %s (%s) under %q", c.Type, c.Format, existing.Name)
+			}
+		}
+	}
+	if len(w.Catalog) >= maxCatalogEntries {
+		return errCatalogFull
+	}
+	return nil
+}
+
+// templateCatalogEntry builds the catalogue entry for template t from the
+// catalogue fields in entry and checks it.
+func (w *Wallet) templateCatalogEntry(t credtemplate.Template, entry CatalogAttestation) (CatalogAttestation, error) {
+	entry, err := TemplateCatalogAttestation(t, entry)
+	if err != nil {
+		return CatalogAttestation{}, err
+	}
+	if err := w.CheckCatalogAttestation(entry, w.RegistrarBase()); err != nil {
+		return CatalogAttestation{}, err
+	}
+	return entry, nil
+}
+
+// TemplateCatalogAttestation completes entry with the format, type and claims
+// of t. An empty name becomes the template's display name or its name.
+func TemplateCatalogAttestation(t credtemplate.Template, entry CatalogAttestation) (CatalogAttestation, error) {
+	if _, err := credtemplate.NormalizeFormat(t.Format); err != nil {
+		return CatalogAttestation{}, err
+	}
+	credential, ok := templateCatalogCredential(t)
+	if !ok {
+		return CatalogAttestation{}, fmt.Errorf("only an SD-JWT VC template with a vct or an mdoc template with a doctype can be added to the catalogue")
+	}
+	entry = cloneCatalogAttestation(entry)
+	entry.Credentials = []CatalogCredential{credential}
+	if strings.TrimSpace(entry.Name) == "" {
+		entry.Name = t.Name
+		if t.Display != nil && t.Display.Name != "" {
+			entry.Name = t.Display.Name
+		}
+	}
+	return entry, nil
 }
 
 // UpdateCatalogSchema replaces the SchemaMeta of an added entry (TS11 v1.0
@@ -267,7 +328,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	return nil
 }
 
-// withSchemaURIs fills in the formats and the schema URIs the wallet serves
+// withSchemaURIs fills in the formats and their schema URIs on the wallet
 // for them.
 func withSchemaURIs(entry CatalogAttestation, base string) CatalogAttestation {
 	entry.Schema.SupportedFormats = nil
@@ -328,11 +389,11 @@ func cloneCatalogAttestation(entry CatalogAttestation) CatalogAttestation {
 // restarts and instances.
 var templateCatalogNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://github.com/dominikschlosser/eudi-dev/catalog"))
 
-// templateCatalog lists the attestations of the credential templates, the
-// predefined ones and the user's. Templates with the same display name are one
-// attestation in two formats. A template without a display name gets its own
-// entry. The last URL in a template description is its rulebook or
-// specification. A PID is issued at assurance level high, so its level of
+// templateCatalog lists the attestations of the predefined credential
+// templates, including a user template that replaces one. Other user templates
+// are added only on request and are then added entries. Templates with the
+// same display name are one attestation in two formats. The last URL in a
+// template description is its rulebook or specification. A PID is issued at assurance level high, so its level of
 // security is iso_18045_high, and it links to the wallet's PID provider list.
 // Other templates get the same defaults as an added attestation.
 func (w *Wallet) templateCatalog(base string) []CatalogAttestation {
@@ -340,9 +401,16 @@ func (w *Wallet) templateCatalog(base string) []CatalogAttestation {
 	if err != nil {
 		templates = credtemplate.PredefinedTemplates()
 	}
+	predefined := map[string]bool{}
+	for _, t := range credtemplate.PredefinedTemplates() {
+		predefined[t.Name] = true
+	}
 	var entries []CatalogAttestation
 	index := map[string]int{}
 	for _, t := range templates {
+		if !predefined[t.Name] {
+			continue
+		}
 		credential, ok := templateCatalogCredential(t)
 		if !ok {
 			continue
@@ -391,6 +459,7 @@ func (w *Wallet) templateCatalog(base string) []CatalogAttestation {
 // the template's namespace, or namespace:element. A template without a type,
 // or in the plain JWT format, has no entry.
 func templateCatalogCredential(t credtemplate.Template) (CatalogCredential, bool) {
+	t.Format, _ = credtemplate.NormalizeFormat(t.Format)
 	switch {
 	case t.Format == "mdoc" && t.DocType != "":
 		c := CatalogCredential{Format: "mso_mdoc", Type: t.DocType}

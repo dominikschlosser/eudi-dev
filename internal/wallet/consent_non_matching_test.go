@@ -78,7 +78,7 @@ func TestANonMatchingCredentialIsSentOnlyWhenPicked(t *testing.T) {
 	if matches != nil {
 		t.Fatalf("matches %+v, want none", matches)
 	}
-	if err := ValidateConsentSelection(options, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "pick one to send") {
+	if err := ValidateConsentSelection(options, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "Pick one to send") {
 		t.Fatalf("approving without a pick: error %v, want one asking for a pick", err)
 	}
 

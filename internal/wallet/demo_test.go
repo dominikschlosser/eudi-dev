@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -45,8 +46,6 @@ func TestDemoBlocksAdminEndpoints(t *testing.T) {
 		method, path, body string
 	}{
 		{"POST", "/api/shutdown", ""},
-		{"PUT", "/api/templates/x", `{"format":"sdjwt"}`},
-		{"DELETE", "/api/templates/x", ""},
 		{"POST", "/api/next-error", `{"error":"access_denied"}`},
 		{"DELETE", "/api/next-error", ""},
 		{"PUT", "/api/config/preferred-format", `{"preferred_format":"dc+sd-jwt"}`},
@@ -77,11 +76,50 @@ func TestDemoAllowsVisitorFlows(t *testing.T) {
 	}
 }
 
-func TestDemoRejectsSaveAsTemplate(t *testing.T) {
-	srv := newDemoTestServer(t)
-	w := serverRequest(t, srv, "POST", "/api/issue", `{"format":"sdjwt","save_as_template":"sneaky"}`)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("POST /api/issue with save_as_template = %d, want 403", w.Code)
+// Visitors can save templates without images. The templates the demo started
+// with stay as they are, and a reset removes the visitors' templates.
+func TestDemoVisitorTemplates(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
+	if _, err := credtemplate.Save(srv.wallet.Templates, credtemplate.Template{Name: "operator-card", Format: "sdjwt", VCT: "urn:example:operator:1", Claims: map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetDemo(DemoOptions{ResetInterval: time.Hour})
+
+	for _, tt := range []struct {
+		method, path, body string
+		want               int
+	}{
+		{"PUT", "/api/templates/visitor-card", `{"format":"sdjwt","vct":"urn:example:visitor:1","claims":{}}`, http.StatusOK},
+		{"PUT", "/api/templates/art-card", `{"format":"sdjwt","vct":"urn:example:art:1","claims":{},"display":{"logo":"embedded:logo.svg"}}`, http.StatusOK},
+		{"PUT", "/api/templates/upload-card", `{"format":"sdjwt","claims":{},"display":{"logo":"data:image/png;base64,AAAA"}}`, http.StatusForbidden},
+		{"PUT", "/api/templates/link-card", `{"format":"sdjwt","claims":{},"display":{"background_image":"https://images.example/card.png"}}`, http.StatusForbidden},
+		{"PUT", "/api/templates/pid-sdjwt", `{"format":"sdjwt","claims":{}}`, http.StatusForbidden},
+		{"PUT", "/api/templates/operator-card", `{"format":"sdjwt","claims":{}}`, http.StatusForbidden},
+		{"DELETE", "/api/templates/operator-card", "", http.StatusForbidden},
+		{"POST", "/api/issue", `{"format":"sdjwt","save_as_template":"issued-card"}`, http.StatusCreated},
+		{"POST", "/api/issue", `{"format":"sdjwt","save_as_template":"german-pid-sdjwt"}`, http.StatusForbidden},
+	} {
+		if w := serverRequest(t, srv, tt.method, tt.path, tt.body); w.Code != tt.want {
+			t.Errorf("%s %s %s = %d, want %d: %s", tt.method, tt.path, tt.body, w.Code, tt.want, w.Body.String())
+		}
+	}
+
+	if err := srv.demoReset(); err != nil {
+		t.Fatal(err)
+	}
+	templates, err := credtemplate.List(srv.wallet.Templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var own []string
+	for _, tpl := range templates {
+		if !tpl.Predefined {
+			own = append(own, tpl.Name)
+		}
+	}
+	if !slices.Equal(own, []string{"operator-card"}) {
+		t.Errorf("templates after the reset: %v, want only the operator's", own)
 	}
 }
 
@@ -166,7 +204,7 @@ func TestDemoReset(t *testing.T) {
 	}
 
 	creds := srv.wallet.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(creds) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(creds) != want {
 		t.Fatalf("after reset: %d credentials (before %d), want the %d default PIDs", len(creds), before, want)
 	}
 	for _, c := range creds {
@@ -181,7 +219,7 @@ func TestDemoReset(t *testing.T) {
 	if err := srv.reloadFromStore(); err != nil {
 		t.Fatalf("reload after reset: %v", err)
 	}
-	if got, want := len(srv.wallet.GetCredentials()), 2*len(BaselinePIDVCTs); got != want {
+	if got, want := len(srv.wallet.GetCredentials()), 2*len(BaselinePIDTemplates); got != want {
 		t.Fatalf("after reload: %d credentials, want %d", got, want)
 	}
 }
@@ -268,7 +306,7 @@ func TestProtectedCredentials(t *testing.T) {
 		t.Fatalf("saving baseline: %v", err)
 	}
 	baseline := srv.wallet.GetCredentials()
-	if want := 2 * len(BaselinePIDVCTs); len(baseline) != want {
+	if want := 2 * len(BaselinePIDTemplates); len(baseline) != want {
 		t.Fatalf("expected %d baseline credentials, got %d", want, len(baseline))
 	}
 	for _, c := range baseline {
@@ -321,7 +359,7 @@ func TestProtectedCredentials(t *testing.T) {
 			t.Fatalf("DELETE all = %d", rec.Code)
 		}
 		result := decodeJSON(t, rec)
-		want := 2 * len(BaselinePIDVCTs)
+		want := 2 * len(BaselinePIDTemplates)
 		if result["kept_protected"] != float64(want) {
 			t.Errorf("kept_protected = %v, want %d", result["kept_protected"], want)
 		}
@@ -381,7 +419,7 @@ func TestGenerateProtectedDefaults_ReplacesABaselineOfAnyType(t *testing.T) {
 			protectedSDJWT++
 		}
 	}
-	if want := len(BaselinePIDVCTs); protectedSDJWT != want {
+	if want := len(BaselinePIDTemplates); protectedSDJWT != want {
 		t.Errorf("wallet holds %d protected SD-JWT PIDs, want exactly %d", protectedSDJWT, want)
 	}
 }
@@ -650,5 +688,20 @@ func TestDemoResetRestoresTheStartupCredentials(t *testing.T) {
 		if !ok || c.Protected != protected {
 			t.Errorf("%s after reset: found %v, protected %v, want protected %v", id, ok, c.Protected, protected)
 		}
+	}
+}
+
+func TestDemoCapsVisitorTemplates(t *testing.T) {
+	srv := newDemoTestServer(t)
+	for i := range maxDemoTemplates {
+		if _, err := credtemplate.Save(srv.wallet.Templates, credtemplate.Template{Name: fmt.Sprintf("visitor-%d", i), Format: "sdjwt", Claims: map[string]any{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if w := serverRequest(t, srv, "PUT", "/api/templates/one-more", `{"format":"sdjwt","claims":{}}`); w.Code != http.StatusForbidden {
+		t.Errorf("template %d = %d, want 403", maxDemoTemplates+1, w.Code)
+	}
+	if w := serverRequest(t, srv, "PUT", "/api/templates/visitor-0", `{"format":"sdjwt","claims":{"a":1}}`); w.Code != http.StatusOK {
+		t.Errorf("replacing a visitor template at the cap = %d, want 200", w.Code)
 	}
 }

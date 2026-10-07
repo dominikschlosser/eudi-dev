@@ -163,51 +163,51 @@
   <div class="consent-overlay" id="conformance-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Conformance</div>
-      <p class="dialog-hint" id="conf-intro">Debug mode reports failed checks. Strict mode rejects invalid requests. HTTPS verification is on by default in strict mode and off in debug mode. You can override it in either mode.</p>
+      <p class="dialog-hint" id="conf-intro">Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.</p>
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
-            <option value="strict">strict</option>
-            <option value="debug">debug</option>
+            <option value="strict">Strict (refuse)</option>
+            <option value="debug">Debug (warn and continue)</option>
           </select>
         </td></tr>
         <tr><td>HTTPS certificates</td><td>
-          <select id="conf-tls-select" class="conf-input">
-            <option value="auto">Follow validation mode</option>
-            <option value="true">verify</option>
-            <option value="false">skip verification</option>
+          <select id="conf-tls-select" class="conf-input" title="Verifies the TLS certificates of issuers and verifiers">
+            <option value="auto">Depends on the mode</option>
+            <option value="true">Always verify</option>
+            <option value="false">Never verify</option>
           </select>
         </td></tr>
         <tr><td>HAIP 1.0</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-haip-input"> presentation and issuance</label>
+          <label class="conf-toggle" title="--haip"><input type="checkbox" id="conf-haip-input"> Check presentations and issuance</label>
         </td></tr>
         <tr><td>ARF</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-arf-input"> relying party authentication</label>
+          <label class="conf-toggle" title="Access and registration certificates, revocation, over-asking and the trusted lists of received credentials (--arf)"><input type="checkbox" id="conf-arf-input"> Check verifier and issuer certificates</label>
         </td></tr>
-        <tr><td>Encrypted requests</td><td>
-          <label class="conf-toggle"><input type="checkbox" id="conf-encrypted-input"> request objects</label>
+        <tr><td>Request objects</td><td>
+          <label class="conf-toggle" title="The wallet always sends an encryption key in wallet_metadata. This makes the verifier use it (--require-encrypted-request)"><input type="checkbox" id="conf-encrypted-input"> Refuse unencrypted request objects</label>
         </td></tr>
-        <tr><td>OpenID4VCI</td><td>
+        <tr><td>OpenID4VCI version</td><td>
           <select id="conf-vci-version-select" class="conf-input">
             <option value="1.0">1.0</option>
-            <option value="1.1">1.1 draft</option>
+            <option value="1.1">1.1 draft (where the issuer supports it)</option>
           </select>
         </td></tr>
-        <tr><td>Session transcript</td><td id="conf-transcript">—</td></tr>
-        <tr><td>Preferred format</td><td id="conf-format">—</td></tr>
-        <tr><td>Key attestation</td><td>
-          <select id="conf-key-attestation-select" class="conf-input">
-            <option value="">claims what the issuer requires</option>
-            <option value="none">claims nothing</option>
-            <option value="iso_18045_high">claims iso_18045_high</option>
-            <option value="iso_18045_moderate">claims iso_18045_moderate</option>
-            <option value="iso_18045_enhanced-basic">claims iso_18045_enhanced-basic</option>
-            <option value="iso_18045_basic">claims iso_18045_basic</option>
+        <tr><td>mdoc session transcript</td><td id="conf-transcript" title="Set at startup with --session-transcript">—</td></tr>
+        <tr><td>Preferred format</td><td id="conf-format" title="Used when credentials in several formats match. Set at startup or with PUT /api/config/preferred-format">—</td></tr>
+        <tr><td>Key attestation level</td><td>
+          <select id="conf-key-attestation-select" class="conf-input" title="Sets key_storage and user_authentication in the key attestation (OpenID4VCI Appendix D.2)">
+            <option value="">Match the issuer's requirements</option>
+            <option value="none">Leave out</option>
+            <option value="iso_18045_high">High (iso_18045_high)</option>
+            <option value="iso_18045_moderate">Moderate (iso_18045_moderate)</option>
+            <option value="iso_18045_enhanced-basic">Enhanced basic (iso_18045_enhanced-basic)</option>
+            <option value="iso_18045_basic">Basic (iso_18045_basic)</option>
           </select>
         </td></tr>
       </table>
       <div class="consent-buttons">
-        <button class="btn" id="conf-reset">Reset to defaults</button>
+        <button class="btn" id="conf-reset">Reset to startup settings</button>
         <button class="btn" id="conformance-close">Close</button>
       </div>
     </div>
@@ -216,7 +216,7 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">Issued credentials, wallet attestations, key attestations and the registrar's signing certificate share this CA. Configure it as a trust anchor.</p>
+      <p class="dialog-hint">This CA signs issued credentials, wallet attestations, key attestations and the registrar certificate. Add it as a trust anchor.</p>
 
       <div class="trust-section">
         <div class="trust-section-title">Trust lists</div>
@@ -258,7 +258,7 @@
               <a id="access-ca-cert-pem-link" href="api/certificates/relying-party-access-ca">PEM</a>
               <a id="access-ca-cert-jwks-link" href="api/certificates/relying-party-access-ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Signs the access certificates of registered relying parties. Trust it for access certificates only, not for credential issuers.</span>
+            <span class="trust-item-hint">Signs the access certificates of registered relying parties. Trust it only for access certificates.</span>
           </dd>
           <dt id="tls-row-label">TLS</dt>
           <dd id="tls-row">
@@ -339,9 +339,9 @@
             <option value="https://uri.etsi.org/19475/Entitlement/PID_Provider">PID provider</option>
           </select>
 
-          <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestations it issues</span>
+          <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestation types</span>
           <div class="registrar-credentials" id="registrar-attestations" role="group" aria-labelledby="registrar-attestations-label"></div>
-          <button type="button" class="btn btn-sm registrar-add" id="registrar-add-attestation">+ Add attestation</button>
+          <button type="button" class="btn btn-sm registrar-add" id="registrar-add-attestation">+ Add attestation type</button>
           </div>
 
           <div class="registrar-section" id="registrar-use-section">
@@ -357,7 +357,7 @@
           <button type="button" class="btn btn-sm registrar-add" id="registrar-add-credential">+ Add credential</button>
           </div>
 
-          <label class="form-label" for="registrar-registration-validity">Certificate validity</label>
+          <label class="form-label" for="registrar-registration-validity">Registration certificate validity</label>
           <input type="text" id="registrar-registration-validity" class="form-input" value="4320h" placeholder="Go duration, e.g. 4320h" aria-label="Registration certificate validity">
 
           <div class="registrar-section" id="registrar-access-section">
@@ -479,8 +479,8 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <option value="none">None</option>
           </select>
 
-          <label class="form-label" for="registrar-catalog-trust">Trusted list</label>
-          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' trusted list (optional)">
+          <label class="form-label" for="registrar-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' list of trusted entities (optional)">
         </div>
         <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
         <div class="consent-buttons">
@@ -642,6 +642,35 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
 
           <label class="form-label" for="issue-save-template">Save as template</label>
           <input type="text" id="issue-save-template" class="form-input" placeholder="Template name (optional)">
+
+          <label class="form-label" for="issue-catalog">Catalogue</label>
+          <label class="conf-toggle"><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
+          <div class="catalog-fields form-grid" id="issue-catalog-fields" hidden>
+            <label class="form-label" for="issue-catalog-name">Attestation name</label>
+            <input type="text" id="issue-catalog-name" class="form-input" placeholder="Name in the catalogue">
+
+            <label class="form-label" for="issue-catalog-rulebook">Rulebook</label>
+            <input type="text" id="issue-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
+
+            <label class="form-label" for="issue-catalog-los">Level of security</label>
+            <select id="issue-catalog-los" class="form-input">
+              <option value="iso_18045_basic">Basic</option>
+              <option value="iso_18045_enhanced-basic">Enhanced basic</option>
+              <option value="iso_18045_moderate">Moderate</option>
+              <option value="iso_18045_high">High</option>
+            </select>
+
+            <label class="form-label" for="issue-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+            <select id="issue-catalog-binding" class="form-input">
+              <option value="key">Wallet key</option>
+              <option value="claim">Another credential</option>
+              <option value="biometric">Biometrics</option>
+              <option value="none">None</option>
+            </select>
+
+            <label class="form-label" for="issue-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+            <input type="text" id="issue-catalog-trust" class="form-input" placeholder="URL of the issuers' list of trusted entities (optional)">
+          </div>
         </div>
         <div class="form-error" id="issue-error"></div>
         <div class="consent-buttons">
@@ -664,6 +693,35 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
 
           <label class="form-label form-label-top" for="template-json">Template JSON</label>
           <textarea id="template-json" class="form-input form-textarea" placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}, "always_disclosed": [...]}'></textarea>
+
+          <label class="form-label" for="template-catalog">Catalogue</label>
+          <label class="conf-toggle"><input type="checkbox" id="template-catalog"> Add the template to the attestation catalogue</label>
+          <div class="catalog-fields form-grid" id="template-catalog-fields" hidden>
+            <label class="form-label" for="template-catalog-name">Attestation name</label>
+            <input type="text" id="template-catalog-name" class="form-input" placeholder="Name in the catalogue">
+
+            <label class="form-label" for="template-catalog-rulebook">Rulebook</label>
+            <input type="text" id="template-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
+
+            <label class="form-label" for="template-catalog-los">Level of security</label>
+            <select id="template-catalog-los" class="form-input">
+              <option value="iso_18045_basic">Basic</option>
+              <option value="iso_18045_enhanced-basic">Enhanced basic</option>
+              <option value="iso_18045_moderate">Moderate</option>
+              <option value="iso_18045_high">High</option>
+            </select>
+
+            <label class="form-label" for="template-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
+            <select id="template-catalog-binding" class="form-input">
+              <option value="key">Wallet key</option>
+              <option value="claim">Another credential</option>
+              <option value="biometric">Biometrics</option>
+              <option value="none">None</option>
+            </select>
+
+            <label class="form-label" for="template-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+            <input type="text" id="template-catalog-trust" class="form-input" placeholder="URL of the issuers' list of trusted entities (optional)">
+          </div>
         </div>
         <div class="form-error" id="template-error"></div>
         <div class="consent-buttons">

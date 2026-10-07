@@ -398,6 +398,9 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
+	if err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer); err != nil {
+		return nil, err
+	}
 	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)

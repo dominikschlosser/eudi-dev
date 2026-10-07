@@ -21,19 +21,99 @@
 
 # Test Wallet and Dev Tools for the EUDI Ecosystem
 
-A web and CLI wallet for testing EUDI issuers and verifiers.
-It also decodes credentials, proxies wallet traffic for debugging and generates DCQL queries from credentials.
+A wallet for testing EUDI issuers and verifiers, in the browser, on the command line and over an HTTP API. It speaks OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0 with SD-JWT VC and mdoc credentials, and it comes with the parts of the ecosystem around a wallet: a registrar, PID templates, a demo issuer and verifier, a decoder and a debug proxy.
 
-> **Try it online:** a shared public demo of the wallet and decoder runs at **<https://eudi-test.dev>**.
+> **Try it online:** a shared public demo runs at **<https://eudi-test.dev>**.
+
+![Wallet UI](docs/assets/wallet-ui.png)
 
 ## Highlights
 
-- **Wallet**: test issuance and presentation from the CLI or browser. Store state in files, memory or Postgres ([wallet](#wallet)).
-- **Proxy**: inspect live OID4VP and OID4VCI traffic ([proxy](#proxy)).
-- **Decoder**: inspect credentials, requests, offers and trust lists in the CLI or browser ([decode](#decode), [serve](#serve)).
-- **Validation**: check signatures, expiry and status, with optional trust lists ([validate](#validate)).
-- **QR scanning**: read credentials and requests from an image or your screen ([decode](#decode)).
-- **DCQL**: generate a query from a credential ([dcql](#dcql)).
+**A wallet for testing your issuer or verifier.** Accept credential offers and answer presentation requests from the web UI, the CLI or the HTTP API. Every exchange shows up in the activity log with its requests and responses. Debug mode reports what an issuer or verifier gets wrong and carries on. Strict mode refuses. → [Wallet](docs/wallet.md), [presenting](docs/wallet/presenting.md), [issuing](docs/wallet/issuing.md)
+
+**HAIP and ARF checks.** `--haip` checks verifiers and issuers against HAIP 1.0. `--arf` checks how they authenticate under the ARF: access and registration certificates, revocation, and whether a verifier asks for more than it registered. → [HAIP](docs/wallet/presenting.md#haip-10-enforcement), [ARF checks for verifiers](docs/wallet/presenting.md#arf-checks) and [for issuers](docs/wallet/issuing.md#arf-checks)
+
+**A registrar and a catalogue of attestations.** Register a verifier or an issuer and get its access certificate and registration certificate (ETSI TS 119 411-8, TS 119 475), ready for `verifier_info` or `issuer_info`. The catalogue lists attestation types (EC TS11). Each type links a schema for each format, a rulebook and optionally a trusted list. → [Registrar](docs/wallet/registrar.md)
+
+**PIDs and credential templates.** The EUDI PID and the German, Italian and Dutch PIDs are built in as SD-JWT VC and mdoc, with sample identities. Templates define your own credentials, and `--credentials` loads them on every start. → [Templates](docs/templates.md), [startup credentials](docs/wallet/serve.md#startup-credentials)
+
+**A demo issuer and verifier.** The wallet also serves an issuer and a verifier, so you can try a flow end to end or test another wallet. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
+
+**Developer tools.** Decode credentials, requests, offers and trust lists, validate signatures and status, scan QR codes, generate DCQL queries, and watch live wallet traffic through a proxy. → [Decode](docs/decode.md), [validate](docs/validate.md), [issue](docs/issue.md), [proxy](docs/proxy.md)
+
+**Runs where your tests run.** A single binary, a Docker image, a Helm chart and a Testcontainers module, with state in files, memory or Postgres. → [Docker](docs/docker.md), [storage](docs/wallet.md#storage-backends), [public demo hosting](docs/public-demo.md)
+
+**OpenID Certified.** The wallet is certified for OpenID4VP 1.0 and OpenID4VCI 1.0 with HAIP 1.0. → [Certification](#openid-certification), [conformance results](docs/conformance-results.md), [spec compliance](docs/spec-compliance.md)
+
+Never use real credentials (see [SECURITY.md](SECURITY.md)).
+
+## Quick start
+
+```bash
+brew install dominikschlosser/tap/eudi-dev
+eudi wallet serve --pid            # wallet UI at http://localhost:8085 with PIDs
+eudi wallet accept 'openid4vp://authorize?...'
+eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
+eudi decode credential.txt
+```
+
+Or with Docker:
+
+```bash
+docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
+```
+
+→ [Examples](docs/examples.md) for end-to-end recipes, and [all documentation](docs/README.md)
+
+## Install
+
+| Method | Command |
+|---|---|
+| Homebrew (macOS and Linux) | `brew install dominikschlosser/tap/eudi-dev` installs `eudi` with shell completion |
+| Binaries | [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases) |
+| Go | `go install github.com/dominikschlosser/eudi-dev/v3@latest` installs `eudi-dev`. The docs use `eudi`, so link it: `ln -s "$(go env GOPATH)/bin/eudi-dev" "$(go env GOPATH)/bin/eudi"` |
+| Docker | `docker pull ghcr.io/dominikschlosser/eudi-dev`. The default command starts a wallet with PIDs and keeps state in memory ([guide](docs/docker.md)) |
+| Kubernetes | `helm install my-release oci://ghcr.io/dominikschlosser/charts/eudi-dev` ([chart](https://github.com/dominikschlosser/eudi-dev-helm)) |
+| Java tests | [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) starts the wallet in Docker and drives it from Java |
+| Source | `git clone https://github.com/dominikschlosser/eudi-dev.git && cd eudi-dev && go build -o eudi .` |
+
+The Go module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major version has its own suffix, so v2 releases install from `github.com/dominikschlosser/eudi-dev/v2`. Earlier v2 tags (up to v2.4.2) have an incorrect module path. Install them from release binaries or build them from source.
+
+## Commands
+
+```
+eudi [--json] [--no-color] [-v] <command> [flags] [input]
+```
+
+| Command | Purpose | Docs |
+|---|---|---|
+| `wallet` | The testing wallet: `serve`, `accept`, `scan`, `list`, `logs` and more | [wallet](docs/wallet.md) |
+| `wallet registrar` | Register `verifiers` and `issuers`, then issue, `revoke` and `activate` their certificates | [registrar](docs/wallet/registrar.md) |
+| `wallet catalog` | List, add and remove attestation types | [catalogue](docs/wallet/registrar.md#attestation-catalogue) |
+| `issue` | Generate SD-JWT, JWT or mdoc test credentials | [issue](docs/issue.md) |
+| `templates` | Manage credential templates | [templates](docs/templates.md) |
+| `decode` | Inspect credentials, OpenID4VCI and OpenID4VP requests, and trust lists | [decode](docs/decode.md) |
+| `validate` | Verify signatures, expiry and revocation status | [validate](docs/validate.md) |
+| `dcql` | Generate a DCQL query from a credential | |
+| `proxy` | Debug proxy for wallet traffic with a live dashboard | [proxy](docs/proxy.md) |
+| `serve` | Decoder web UI | |
+| `completion` | Shell completion (`eudi completion install`) | |
+
+Input is a file path, a URL, a raw credential string or stdin. `--json` prints one JSON document on stdout for scripts, and messages go to stderr ([ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)). `-v` adds detail such as x5c chains, device keys and digest IDs.
+
+> **Security:** Anyone with network access to the wallet port controls its credentials and registered relying parties. Use localhost or an isolated test network and store test data only. For public hosting, use the `--demo` profile (see [public demo hosting](docs/public-demo.md)).
+
+## Supported formats
+
+| Format | Description |
+|--------|-------------|
+| **SD-JWT VC** (`dc+sd-jwt`) | Disclosures, `_sd` resolution, key binding JWT. Signatures: ES256/384/512, RS256/384/512, PS256/384/512 |
+| **mdoc** (`mso_mdoc`) | CBOR IssuerSigned and DeviceResponse, COSE_Sign1 issuerAuth, MSO |
+| **JWT VC** (`jwt_vc_json`) | Plain W3C JWT Verifiable Credentials, presented unchanged |
+| **OpenID4VCI and OpenID4VP** | Credential offers and authorization requests with the schemes `openid-credential-offer://`, `haip-vci://`, `eu-eaa-offer://`, `openid4vp://`, `haip-vp://` and `eudi-openid4vp://` |
+| **ETSI trust lists** | TS 119 602 lists of trusted entities |
+
+[Spec compliance](docs/spec-compliance.md) lists what is implemented for each specification, and the [flow diagrams](docs/diagrams/README.md) show the issuer and verifier interactions.
 
 ## Compared to other EUDI tooling
 
@@ -61,274 +141,6 @@ When to use something else:
 - For proximity flows (BLE, NFC), use Multipaz. eudi-dev implements OID4VP over HTTP.
 - To read a single credential, use a hosted decoder.
 
-Never use real credentials (see [SECURITY.md](SECURITY.md)).
-
-## Install
-
-### Homebrew (macOS and Linux)
-
-```bash
-brew install dominikschlosser/tap/eudi-dev
-```
-
-Installs the `eudi` command with shell completion.
-
-### From GitHub Releases
-
-Download the latest binary for your platform from [Releases](https://github.com/dominikschlosser/eudi-dev/releases).
-
-### From source
-
-```bash
-go install github.com/dominikschlosser/eudi-dev/v3@latest
-```
-
-This installs the binary as `eudi-dev` (Go uses the module name). The documentation uses `eudi`. Link it for the shorter name: `ln -s "$(go env GOPATH)/bin/eudi-dev" "$(go env GOPATH)/bin/eudi"`.
-
-The module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major version has its own suffix, so v2 releases install from `github.com/dominikschlosser/eudi-dev/v2`. Earlier v2 tags (up to v2.4.2) have an incorrect module path. Install them from release binaries or build them from source.
-
-### Build locally
-
-```bash
-git clone https://github.com/dominikschlosser/eudi-dev.git
-cd eudi-dev
-go build -o eudi .
-```
-
-### Docker
-
-```bash
-docker pull ghcr.io/dominikschlosser/eudi-dev:latest
-docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
-```
-
-The default CMD starts a headless wallet server with preloaded PID credentials. State is kept in memory, so the container needs no volume.
-
-→ [Full Docker & verifier testing guide](docs/docker.md)
-→ [OIDF conformance status](docs/conformance.md), [runbook](docs/conformance-run.md), and [results](docs/conformance-results.md)
-→ [Examples](docs/examples.md)
-
-### Kubernetes (Helm)
-
-```bash
-helm install my-release oci://ghcr.io/dominikschlosser/charts/eudi-dev
-```
-
-The [eudi-dev Helm chart](https://github.com/dominikschlosser/eudi-dev-helm) deploys the wallet with memory, file or PostgreSQL storage. It can create an Ingress or a Gateway API HTTPRoute and serve the wallet under a path prefix.
-
-### Java integration tests
-
-[testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) starts the wallet in Docker for Java integration tests. Its Java client issues credentials, accepts credential offers and submits presentations.
-
-## Usage
-
-```
-eudi [--json] [--no-color] [-v] <command> [flags] [input]
-```
-
-Input is a **file path**, **URL**, **raw credential string**, or **stdin**.
-
-Shell completion covers all subcommands, flags, and known values (template names, credential IDs, running wallet instances). Install it for bash, zsh, or fish (detected from `$SHELL`):
-
-```bash
-eudi completion install
-```
-
-### Commands
-
-| Command    | Purpose                                                    |
-|------------|------------------------------------------------------------|
-| `wallet`   | Stateful testing wallet with CLI-driven OID4VP/VCI flows   |
-| `issue`    | Generate test SD-JWT, JWT, or mdoc credentials for development |
-| `proxy`    | Debugging reverse proxy for OID4VP/VCI wallet traffic      |
-| `serve`    | Web UI for decoding and validating credentials in the browser |
-| `decode`   | Detect and inspect credentials, OpenID4VCI/VP requests, and trust lists. Verifies issuer metadata when resolvable |
-| `validate` | Verify signatures, check expiry, and check revocation status |
-| `templates` | Manage credential templates (`list`, `show`, `save`, `import`, `delete`) |
-| `dcql`     | Generate a DCQL query from a credential's claims            |
-| `completion` | Generate or install shell completion (`completion install`) |
-| `version`  | Print version                                               |
-
----
-
-### Wallet
-
-A stateful testing wallet with CLI-driven OID4VP/VCI flows, QR scanning, and OS URL scheme registration. State is stored in files by default. `--storage` selects memory or Postgres.
-
-```bash
-eudi issue sdjwt --wallet --template pid-sdjwt         # Issue a PID into the wallet
-eudi wallet serve                 # Start web UI + OID4VP endpoints
-eudi wallet ca-cert --out wallet-ca-cert.pem
-eudi wallet tls-cert --out wallet-tls-cert.pem
-eudi wallet accept 'openid4vp://authorize?...'
-eudi wallet scan --screen         # QR scan → auto-dispatch
-eudi wallet logs -f               # Follow persisted wallet interactions
-```
-
-> **Security:** Anyone with network access to the wallet port controls its credentials and registered relying parties. Use localhost or an isolated test network and store test data only. The API rejects cross-origin requests. The exception is `/api/dc-api`, which verifier pages call from their own origin. It relies on the reported caller origin and the consent dialog. For public hosting, use the `--demo` profile (see [public demo hosting](docs/public-demo.md)).
-
-`wallet serve` hosts the UI and protocol endpoints, including issuer metadata, trust lists and status lists. Use `issue ... --wallet --template pid-sdjwt` to add a PID. `wallet ca-cert` and `wallet tls-cert` export certificates for verifier trust stores. Automated tests can do the same through the [HTTP API](docs/wallet/http-api.md).
-
-The main commands:
-
-- `wallet serve` to run the wallet
-- `issue ... --wallet` (with `--template` or `--pid`) to preload credentials
-- `wallet ps` to find running wallet servers
-- `wallet use <url>` to select a remote or containerized wallet
-- `wallet kill` to stop a wallet server
-- `wallet trust-list` to get the verifier trust list URL or JWT
-- `wallet logs` to inspect wallet OID4VP/OID4VCI interactions
-- `wallet ca-cert` and `wallet tls-cert` to export certificate material
-- `wallet --mode debug|strict` and `--preferred-format ...` to control runtime behavior
-- `wallet --tls-verify=true|false` to set HTTPS certificate verification and `--tls-ca dev-ca.pem` to trust a development CA
-- `wallet --https-proxy http://proxy:3128` (or `HTTPS_PROXY`) to send requests to issuers and verifiers through a forward proxy
-- `wallet serve --haip` to check verifiers and issuers against HAIP 1.0
-- `wallet serve --arf` to check verifiers' access and registration certificates against the ARF
-- `wallet registrar` to register relying parties and issue their certificates
-
-`--haip` adds HAIP 1.0 checks and `--arf` adds the ARF relying party checks. `--mode strict` stops the flow on findings, including HAIP and ARF findings. `--mode debug` reports them and continues. See [HAIP enforcement](docs/wallet/presenting.md#haip-10-enforcement) and [ARF checks](docs/wallet/presenting.md#arf-checks).
-
-When a wallet server is running for the selected wallet directory, CLI commands use its API. After `wallet use <url>`, commands and clicked offer or presentation links go to that target. `wallet ps` lists local instances and the active remote target.
-
-`/api/trustlists` lists the trust list profiles. Each entry has a relative `path`, so it works with Docker port mappings. The web UI shows these URLs above the certificate downloads.
-
-![Wallet UI](docs/assets/wallet-ui.png)
-
-→ [Full documentation](docs/wallet.md): subcommands, flags, endpoints, logs, trust lists, storage, URL scheme registration
-→ [Registrar](docs/wallet/registrar.md): register relying parties and issue their access and registration certificates
-→ [Public demo hosting](docs/public-demo.md): run a shared internet-facing demo with `--demo` (hardened endpoints, periodic reset, imprint page)
-→ [Flow diagrams](docs/diagrams/README.md): OID4VP / OID4VCI interaction diagrams and parameter checklists
-
----
-
-### Issue
-
-Generate test SD-JWT, JWT, or mdoc credentials for development and testing.
-
-```bash
-eudi issue sdjwt --pid
-eudi issue sdjwt --template employee-card --claims '{"employee_id": "E-42"}'
-eudi issue sdjwt --pid --always-disclosed issuing_country,address.country
-eudi issue jwt --claims '{"name":"Test","age":30}'
-eudi issue mdoc --claims '{"name":"Test"}' --doc-type com.example.test
-eudi issue sdjwt | eudi decode
-```
-
-Credential templates hold reusable claim sets (`templates list|show|save|import|delete`). A template defines the credential type, default claims, and the always disclosed claims. Templates work in the CLI, the HTTP API, and the wallet UI.
-
-→ [Full documentation](docs/issue.md): all flags, round-trip examples
-→ [Credential templates](docs/templates.md): template files, management commands, always disclosed claims
-
----
-
-### Proxy
-
-Intercept and debug OID4VP/VCI traffic between a wallet and a verifier/issuer with a live web dashboard.
-
-```bash
-eudi proxy --target http://localhost:8080
-```
-
-```
-Wallet  <-->  Proxy (:9090)  <-->  Verifier/Issuer (:8080)
-                  |
-            Live dashboard (:9091)
-```
-
-→ [Full documentation](docs/proxy.md): traffic classification, features, flags
-
----
-
-### Serve
-
-Start a local web UI for decoding and validating credentials in the browser.
-
-```bash
-eudi serve
-eudi serve --port 3000
-eudi serve credential.txt
-```
-
-The UI runs at `http://localhost:8080` by default. Paste a credential to decode it, expand its sections and check its signature. A credential passed on the command line fills the input. `--imprint-file` adds a legal notice at `/imprint`.
-
-![Web UI screenshot](docs/assets/web-ui.png)
-
-> **Warning:** The browser sends credentials to the server for decoding. Run it locally, or see [public demo hosting](docs/public-demo.md) for an internet-facing setup.
-
----
-
-### Decode
-
-Auto-detect and decode credentials (SD-JWT, JWT VC, mdoc), OpenID4VCI/VP requests, and ETSI trust lists.
-
-```bash
-eudi decode credential.txt
-eudi decode 'openid4vp://authorize?...'
-eudi decode --screen                    # QR scan from screen
-```
-
-→ [Full documentation](docs/decode.md): auto-detection order, format override, QR scanning, flags
-
----
-
-### Validate
-
-Verify signatures, check expiry, and check revocation status.
-
-```bash
-eudi validate --key issuer-key.pem credential.txt
-eudi validate --trust-list trust-list.jwt credential.txt
-eudi validate credential.txt
-```
-
-→ [Full documentation](docs/validate.md): flags, trust list explanation
-
----
-
-### DCQL
-
-Generate a DCQL (Digital Credentials Query Language) query from a credential's claims. Output is always JSON.
-
-```bash
-eudi dcql credential.txt
-```
-
-**Example output (SD-JWT):**
-
-```json
-{
-  "credentials": [
-    {
-      "id": "urn_eudi_pid_1",
-      "format": "dc+sd-jwt",
-      "meta": { "vct_values": ["urn:eudi:pid:1"] },
-      "claims": [
-        { "path": ["birth_date"] },
-        { "path": ["family_name"] },
-        { "path": ["given_name"] }
-      ]
-    }
-  ]
-}
-```
-
----
-
-## Supported Formats
-
-| Format | Description |
-|--------|-------------|
-| **SD-JWT** (`dc+sd-jwt`) | Header/payload, disclosures, `_sd` resolution, key binding JWT. Signature: ES256/384/512, RS256/384/512, PS256/384/512 |
-| **JWT VC** (`jwt_vc_json`) | Plain JWT Verifiable Credentials (W3C JWT VC format), presented without changes |
-| **mdoc** (`mso_mdoc`) | CBOR IssuerSigned & DeviceResponse (hex/base64url), COSE_Sign1 issuerAuth, MSO |
-| **OpenID4VCI / VP** | Credential offers, authorization requests, URI schemes (`openid-credential-offer://`, `haip-vci://`, `eu-eaa-offer://`, `openid4vp://`, `haip-vp://`, `eudi-openid4vp://`) |
-| **ETSI Trust Lists** | TS 119 602 trust list JWTs with entity names, identifiers, and service types |
-
-## Spec Compliance
-
-[docs/spec-compliance.md](docs/spec-compliance.md) lists the compliance status for OID4VP 1.0, OID4VCI 1.0, HAIP 1.0, SD-JWT (RFC 9901) and SD-JWT VC, mdoc (ISO 18013-5), ETSI trust lists, and Token Status List.
-[docs/diagrams/README.md](docs/diagrams/README.md) shows the issuer and verifier interactions as diagrams.
-
 ## OpenID certification
 
 <a href="https://openid.net/certification/mark/">
@@ -343,14 +155,6 @@ eudi dcql credential.txt
 | [OpenID4VCI 1.0 + HAIP 1.0](https://openid.net/certification/certified-oid4vci-haip-final/) | Wallet-initiated issuance and issuer-initiated issuance with offers by value or reference | 3 September 2026 |
 
 The official listings link to the certification submissions and test results. This repository has its own [conformance results](docs/conformance-results.md) and a [runbook](docs/conformance-run.md). The OpenID Certified mark is a trademark of the OpenID Foundation and is used under its [mark usage terms](https://openid.net/certification/mark/).
-
-## Global Flags
-
-| Flag         | Description              |
-|--------------|--------------------------|
-| `--json`     | Print one JSON document on stdout for scripts. Messages go to stderr ([ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)) |
-| `--no-color` | Disable colored output   |
-| `-v`         | Verbose output (x5c chain, device key, digest IDs) |
 
 ## Notices
 

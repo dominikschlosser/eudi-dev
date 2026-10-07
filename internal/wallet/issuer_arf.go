@@ -169,11 +169,11 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		}
 		switch {
 		case !o.known:
-			findings = append(findings, fmt.Sprintf("%s: the issuer offers configuration %s, which its metadata doesn't describe, so the wallet can't tell its type", rules.attestationType, o.id))
+			findings = append(findings, fmt.Sprintf("%s: the issuer metadata has no configuration %s, so the wallet can't tell the offered type", rules.attestationType, o.id))
 		case len(o.types) == 0:
 			findings = append(findings, fmt.Sprintf("%s: the offered configuration %s names no vct or doctype, so the wallet can't check it against provides_attestations", rules.attestationType, o.id))
 		case !providesType(provided, o.format, o.types):
-			findings = append(findings, fmt.Sprintf("%s: the issuer offers %s, which its registration certificate does not list in provides_attestations", rules.attestationType, credentialTypeName(o.format, o.types)))
+			findings = append(findings, fmt.Sprintf("%s: the issuer's registration certificate does not list %s in provides_attestations", rules.attestationType, credentialTypeName(o.format, o.types)))
 		}
 	}
 	return findings
@@ -221,7 +221,7 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 		miss("entitlements (at least one)", "ETSI TS 119 475 GEN-5.2.4-03")
 	}
 	if !nonEmptyList(cert["provides_attestations"]) {
-		miss("provides_attestations (the attestation types it issues)", "ARF RPRC_15")
+		miss("provides_attestations (its attestation types)", "ARF RPRC_15")
 	}
 	if statuslist.ExtractStatusRef(cert) == nil {
 		miss("status (its entry in the registrar's status list), so the wallet cannot check revocation", "ETSI TS 119 475 V1.2.1 Table 7")
@@ -249,6 +249,12 @@ func (w *Wallet) issuerARFCheck(metadata map[string]any, signerChain []*x509.Cer
 // credential (RPRC_22a, RPRC_22b, RPRC_23, ISSU_24a, ISSU_24b, ISSU_34a,
 // ISSU_34b).
 func (w *Wallet) reportARFIssuanceFindings(issuer string, findings []string) error {
+	return w.reportARFFindings(issuer, findings, "the issuer does not authenticate as the ARF requires")
+}
+
+// reportARFFindings warns in debug mode. In strict mode it returns refusal
+// with the findings.
+func (w *Wallet) reportARFFindings(issuer string, findings []string, refusal string) error {
 	detail := findings[0]
 	if len(findings) > 1 {
 		detail = fmt.Sprintf("%s (%d ARF findings, see details)", findings[0], len(findings))
@@ -259,7 +265,7 @@ func (w *Wallet) reportARFIssuanceFindings(issuer string, findings []string) err
 	}
 	if w.Mode() == ValidationModeStrict {
 		w.addProtocolLog("issuance", "arf_finding", detail, false, details)
-		return fmt.Errorf("the issuer does not authenticate as the ARF requires: %s", strings.Join(findings, ", "))
+		return fmt.Errorf("%s: %s", refusal, strings.Join(findings, ", "))
 	}
 	w.addProtocolWarning("issuance", "arf_finding", detail, details)
 	return nil

@@ -86,7 +86,7 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 	} else {
 		details.IssuerName, details.IssuerLogo = issuerDisplay(metadata)
 		details.IssuerLogo = w.embedDisplayImage(details.IssuerLogo, "issuer_logo")
-		details.Warnings = w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs)
+		details.Warnings = append(w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs), w.catalogueFindings(metadata, offer.CredentialConfigurationIDs)...)
 	}
 
 	for _, id := range offer.CredentialConfigurationIDs {

@@ -1746,8 +1746,8 @@ func TestTrustListAPI_ParseableByTrustlistParser(t *testing.T) {
 	if issuanceSvc.ServiceType != "http://uri.etsi.org/19602/SvcType/PID/Issuance" {
 		t.Errorf("unexpected issuance service type: %s", issuanceSvc.ServiceType)
 	}
-	if len(issuanceSvc.Certificates) != 4 {
-		t.Fatalf("expected NL and DE signing certificates and their CAs, got %d", len(issuanceSvc.Certificates))
+	if len(issuanceSvc.Certificates) != 6 {
+		t.Fatalf("expected the NL, DE and IT signing certificates and their CAs, got %d", len(issuanceSvc.Certificates))
 	}
 	certPub, ok := issuanceSvc.Certificates[0].PublicKey.(*ecdsa.PublicKey)
 	if !ok {

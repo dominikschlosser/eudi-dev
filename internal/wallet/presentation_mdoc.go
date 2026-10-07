@@ -39,7 +39,7 @@ func (w *Wallet) createMDocPresentation(cred StoredCredential, selectedKeys []st
 	// docs/adr/0001-debug-by-default-validation-with-opt-in-strict-mode.md.
 	if !credentialHolderBinding(cred.Raw).Bound {
 		detail := fmt.Sprintf(
-			"mdoc %s has no MSO deviceKey, which ISO 18013-5 §9.1.2.4 requires. The issuer didn't sign the key behind its DeviceSigned, so the verifier will refuse this presentation.",
+			"mdoc %s has no MSO deviceKey, which ISO 18013-5 §9.1.2.4 requires. The issuer signed no device key, so the verifier can't check DeviceSigned and should refuse this presentation.",
 			credentialLabel(cred))
 		details := map[string]any{
 			"credential_id": cred.ID,

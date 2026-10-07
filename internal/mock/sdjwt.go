@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 )
@@ -159,7 +161,7 @@ func GenerateSDJWT(cfg SDJWTConfig) (string, error) {
 		}
 		if len(x5c) > 0 {
 			header["x5c"] = x5c
-			if strings.HasPrefix(cfg.VCT, "urn:eudi:pid:") && !cfg.KeepTrustAnchor {
+			if strings.HasPrefix(cfg.VCT, credtype.PIDVCTPrefix) && !cfg.KeepTrustAnchor {
 				if reference := SigningCertificateURL(cfg.CertificateIssuer, chain[0], "pem"); reference != "" {
 					digest := sha256.Sum256(chain[0].Raw)
 					header["x5u"] = reference

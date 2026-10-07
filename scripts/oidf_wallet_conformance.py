@@ -280,7 +280,7 @@ def vci_authorization_request_type(kind: str, grant: str) -> str:
 
     A pre-authorized flow has no authorization request, so the suite fills in the
     requested credential itself. Under "simple" it injects the scope eudi.pid.1
-    (VCIInjectRequestScopePreAuthorizedCodeFlow in release-v5.2.4), which maps to
+    (VCIInjectRequestScopePreAuthorizedCodeFlow, still in release-v5.3.1), which maps to
     the SD-JWT PID, so an mdoc offer gets an SD-JWT token response. Under "rar" it
     injects the offered credential_configuration_id."""
     if kind == "mdoc" and grant == "pre_authorization_code":
@@ -846,9 +846,8 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     client_id_prefix = variant.get("client_id_prefix", "")
 
     # The module's own @VariantNotApplicableWhen: an unsigned DC API request
-    # carries no client_id to corrupt (OID4VP 1.0 Appendix A.2), and the DC
-    # API plans in this matrix send unsigned requests.
-    if response_mode in {"dc_api", "dc_api.jwt"} and request_method != "request_uri_signed":
+    # carries no client_id to corrupt (OID4VP 1.0 Appendix A.2).
+    if response_mode in {"dc_api", "dc_api.jwt"} and request_method == "request_uri_unsigned":
         modules.remove(VP_FINAL_MODULE_INVALID_CLIENT_ID_PREFIX)
 
     if response_mode in {"direct_post", "dc_api"}:
@@ -858,7 +857,7 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     if response_mode in {"direct_post", "dc_api"}:
         # The alternate module unconditionally replaces the encrypted-response
         # setup, which is absent for the unencrypted response modes. Still
-        # present in release-v5.2.4.
+        # present in release-v5.3.1.
         modules.remove(VP_FINAL_MODULE_ALTERNATE_HAPPY_FLOW)
     if client_id_prefix != "redirect_uri" and response_mode not in {"dc_api", "dc_api.jwt"}:
         modules.remove(VP_FINAL_MODULE_RESPONSE_URI_NOT_CLIENT_ID)

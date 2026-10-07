@@ -354,34 +354,18 @@ func isPIDType(t string) bool {
 func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
 	specs := w.issuedAttestationSpecs()
 	entitlementSet := make([]string, 0)
-	hasPID := false
-	hasIssuer := false
 	for _, spec := range specs {
-		if isPIDAttestation(spec) {
-			hasPID = true
-		}
-		if spec.VCT != "" || spec.DocType != "" {
-			hasIssuer = true
-		}
 		entitlementSet = append(entitlementSet, spec.Entitlements...)
 	}
-	profile := providerRegistrationProfile{Entitlements: dedupeStrings(entitlementSet)}
+	// One trade name for every mix of attestation types, so the registrar and
+	// the issuer metadata name the demo issuer the same way.
+	profile := providerRegistrationProfile{
+		Entitlements: dedupeStrings(entitlementSet),
+		TradeName:    demoIssuerName,
+		Description:  "Demo issuer of the eudi-dev test wallet",
+	}
 	if len(profile.Entitlements) == 0 {
 		profile.Entitlements = []string{serviceProviderEntitlement}
-		profile.TradeName = "EUDI Dev Wallet Service Provider"
-		profile.Description = "Local EUDI wallet service-provider dataset for testing"
-		return profile
-	}
-	switch {
-	case hasPID && hasIssuer && len(profile.Entitlements) > 1:
-		profile.TradeName = "EUDI Dev Wallet Multi-Attestation Provider"
-		profile.Description = "Local EUDI issuer dataset for mixed PID and non-PID attestation testing"
-	case hasPID:
-		profile.TradeName = "EUDI Dev Wallet PID Provider"
-		profile.Description = "Local EUDI PID provider dataset for issuer-authorization testing"
-	default:
-		profile.TradeName = "EUDI Dev Wallet Non-PID Attestation Provider"
-		profile.Description = "Local EUDI non-PID attestation provider dataset for issuer-authorization testing"
 	}
 	return profile
 }

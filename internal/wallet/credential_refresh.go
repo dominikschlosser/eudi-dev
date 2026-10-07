@@ -54,6 +54,12 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("renewing the access token: %w", err)
 	}
+	// The issuer may rotate the refresh token and retire the old one, so the
+	// wallet keeps the new one even when a later step fails.
+	if rotated, _ := tokenResp["refresh_token"].(string); rotated != "" {
+		renewal.RefreshToken = rotated
+		w.rememberRenewal(cred.ID, rotated, renewal)
+	}
 	accessToken, _ := tokenResp["access_token"].(string)
 	if accessToken == "" {
 		return nil, fmt.Errorf("the token response carried no access_token")
@@ -73,6 +79,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 			return nil, err
 		}
 	}
+	w.reportCatalogueFindings(renewal.Issuer, w.catalogueFindings(metadata, []string{renewal.ConfigurationID}))
 
 	cNonce, err := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
 	if err != nil {
@@ -126,10 +133,8 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the renewed credential: %w", err)
 	}
-
-	// The issuer may rotate the refresh token and retire the old one.
-	if rotated, _ := tokenResp["refresh_token"].(string); rotated != "" {
-		renewal.RefreshToken = rotated
+	if err := w.checkReceivedCredentials(credResp, renewal.Issuer); err != nil {
+		return nil, err
 	}
 
 	renewed, err := w.ReplaceCredential(id, raw, &renewal)
@@ -147,6 +152,10 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 func (s *Server) RefreshCredential(id string) (*StoredCredential, error) {
 	renewed, err := s.wallet.RefreshCredential(id)
 	if err != nil {
+		// A failed renewal can still have rotated the refresh token.
+		if cred, ok := s.wallet.GetCredential(id); ok {
+			s.saveRenewedCredential(&cred)
+		}
 		return nil, err
 	}
 	s.log("  Renewed:       %s credential %s", renewed.Format, renewed.ID)

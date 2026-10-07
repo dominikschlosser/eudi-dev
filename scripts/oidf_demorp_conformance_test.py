@@ -78,24 +78,14 @@ class ScenarioPlanArgTests(unittest.TestCase):
     def test_issuer_modules_leave_out_what_the_demo_does_not_offer(self):
         modules = demorp.vci_issuer_modules("issuer_initiated")
         self.assertIn("oid4vci-1_0-issuer-batch-issuance", modules)
-        # The demo serves unsigned metadata, requires no key attestation and
-        # advertises no credential encryption, so these would skip themselves.
-        self.assertNotIn("oid4vci-1_0-issuer-metadata-test-signed", modules)
+        # The demo signs its metadata when asked for application/jwt. It
+        # requires no key attestation and advertises no credential encryption,
+        # so these would skip themselves.
+        self.assertIn("oid4vci-1_0-issuer-metadata-test-signed", modules)
         self.assertNotIn("oid4vci-1_0-issuer-fail-invalid-key-attestation-signature", modules)
         self.assertNotIn("oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm", modules)
         # Without an offer there is no batch to ask for.
         self.assertNotIn("oid4vci-1_0-issuer-batch-issuance", demorp.vci_issuer_modules("wallet_initiated"))
-
-    def test_preauth_leaves_out_the_modules_release_v524_breaks(self):
-        modules = demorp.vci_issuer_modules("issuer_initiated", "pre_authorization_code")
-        for name in demorp.VCI_PREAUTH_BROKEN_MODULES:
-            self.assertNotIn(name, modules)
-        # The refusal happens at PAR under the authorization code flows, where
-        # the same modules complete.
-        self.assertIn(
-            "oid4vci-1_0-issuer-fail-invalid-client-attestation-signature",
-            demorp.vci_issuer_modules("issuer_initiated"),
-        )
 
 
 class ExpectedDemoOutcomeTests(unittest.TestCase):

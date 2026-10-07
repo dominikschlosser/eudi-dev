@@ -195,8 +195,8 @@ func TestResolveIssueClaims_PIDWhenFlagged_GermanMDOC(t *testing.T) {
 	if len(claims) != len(mock.MDOCGermanPIDClaims) {
 		t.Errorf("expected %d German mdoc PID claims, got %d", len(mock.MDOCGermanPIDClaims), len(claims))
 	}
-	if _, ok := claims[credtype.GermanPIDNamespace+":birth_name"]; !ok {
-		t.Errorf("the German mdoc PID claim set is missing %s:birth_name", credtype.GermanPIDNamespace)
+	if _, ok := claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
+		t.Errorf("the German mdoc PID claim set is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
 	}
 }
 
@@ -914,7 +914,7 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	// ISO/IEC 18013-5 has no inheritance between document types, so the
 	// German PID keeps the doctype of the country-independent one and puts
 	// its national elements in a second namespace.
-	de := credtype.GermanPIDNamespace + ":"
+	de := "eu.europa.ec.eudi.pid.de.1" + ":"
 	want := map[string]bool{
 		"family_name": true, "given_name": true, "birth_date": true,
 		"expiry_date": true, "place_of_birth": true, "nationality": true,
@@ -948,7 +948,7 @@ func TestMDOCGermanPIDClaims_HasExpectedFields(t *testing.T) {
 	// reading the country-independent rulebook would find them there.
 	for _, name := range []string{"birth_name", "academic_title", "also_known_as", "age_over_18"} {
 		if _, ok := mock.MDOCGermanPIDClaims[name]; ok {
-			t.Errorf("%q must sit in %s, not in the PID namespace", name, credtype.GermanPIDNamespace)
+			t.Errorf("%q must sit in %s, not in the PID namespace", name, "eu.europa.ec.eudi.pid.de.1")
 		}
 	}
 

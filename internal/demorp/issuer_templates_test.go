@@ -38,7 +38,7 @@ func TestIssuerMetadataListsTheTemplates(t *testing.T) {
 	for id, want := range map[string]map[string]string{
 		ticketConfigurationID: {"format": "dc+sd-jwt", "vct": TicketVCT},
 		"pid-sdjwt":           {"format": "dc+sd-jwt", "vct": mock.DefaultPIDVCT},
-		"german-pid-sdjwt":    {"format": "dc+sd-jwt", "vct": mock.GermanPIDVCT},
+		"german-pid-sdjwt":    {"format": "dc+sd-jwt", "vct": "urn:eudi:pid:de:1"},
 		"pid-mdoc":            {"format": "mso_mdoc", "doctype": mock.PIDNamespace},
 		"german-pid-mdoc":     {"format": "mso_mdoc", "doctype": mock.PIDNamespace},
 	} {
@@ -149,7 +149,7 @@ func TestOfferOfTemplatesIssuesThem(t *testing.T) {
 	var sdjwt, mdoc int
 	for _, c := range w.GetCredentials() {
 		switch {
-		case c.Format == "dc+sd-jwt" && c.VCT == mock.GermanPIDVCT:
+		case c.Format == "dc+sd-jwt" && c.VCT == "urn:eudi:pid:de:1":
 			sdjwt++
 		case c.Format == "mso_mdoc" && c.DocType == mock.PIDNamespace && !known[c.ID]:
 			mdoc++
@@ -160,7 +160,7 @@ func TestOfferOfTemplatesIssuesThem(t *testing.T) {
 	}
 	// The wallet fetches the card images from the issuer metadata and keeps them.
 	for _, c := range w.GetCredentials() {
-		if c.Format == "dc+sd-jwt" && c.VCT == mock.GermanPIDVCT && !known[c.ID] {
+		if c.Format == "dc+sd-jwt" && c.VCT == "urn:eudi:pid:de:1" && !known[c.ID] {
 			if c.Display == nil || !strings.HasPrefix(c.Display.LogoURI, "data:image/svg+xml") || !strings.HasPrefix(c.Display.BackgroundURI, "data:image/jpeg") {
 				t.Errorf("issued German PID display %+v, want the flag logo and the specimen image", c.Display)
 			}
@@ -203,5 +203,50 @@ func TestTheDemoIssuerPassesTheARFChecks(t *testing.T) {
 		if entry.Details["event"] == "arf_finding" {
 			t.Errorf("ARF finding: %s", entry.Detail)
 		}
+	}
+}
+
+// With --arf a strict wallet doesn't store a credential that fails the
+// trusted list of its catalogue entry (ARF ISSU_10, ISSU_11b).
+func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
+	w := newIssuanceWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = wallet.ValidationModeStrict
+	_, ts := serveDemoStack(t, w)
+
+	other := newIssuanceWallet(t)
+	group, ok := wallet.DefaultTrustListGroupForWallet(other)
+	if !ok {
+		t.Fatal("no trusted list")
+	}
+	list, err := wallet.GenerateTrustListJWTForWalletGroup(other, other.IssuerURL, group, "/api/trustlists/"+group.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) { _, _ = rw.Write([]byte(list)) }))
+	t.Cleanup(foreign.Close)
+
+	const vct = "urn:example:badge:1"
+	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{Name: "badge", Format: "sdjwt", VCT: vct, Claims: map[string]any{"level": "gold"}}); err != nil {
+		t.Fatal(err)
+	}
+	isLOTE := true
+	if _, err := w.AddCatalogAttestation(wallet.CatalogAttestation{
+		Name:        "Badge",
+		Credentials: []wallet.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
+		Schema:      wallet.AttestationSchema{TrustedAuthorities: []wallet.TrustAuthority{{FrameworkType: "etsi_tl", Value: foreign.URL, IsLOTE: &isLOTE}}},
+	}, w.RegistrarBase()); err != nil {
+		t.Fatal(err)
+	}
+
+	before := len(w.GetCredentials())
+	created := postJSONTo(t, ts.URL+"/issuer/api/offers?credential=badge", "")
+	schemeURI, _ := created["scheme_uri"].(string)
+	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`)
+	if msg, _ := result["error"].(string); !strings.Contains(msg, "ARF ISSU_08 to ISSU_10") {
+		t.Errorf("result %v, want a refusal citing ISSU_08 to ISSU_10", result)
+	}
+	if got := len(w.GetCredentials()); got != before {
+		t.Errorf("credentials %d, want %d (nothing stored)", got, before)
 	}
 }

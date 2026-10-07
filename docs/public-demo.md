@@ -20,7 +20,7 @@ Browser flows ask for consent. API submissions provide consent directly. Each co
 
 ### Administrative operations
 
-Demo mode returns `403` for shutdown, template writes, error injection, log clearing and changes to format, consent or conformance settings. The issue endpoint also rejects template saving and visitor-supplied images. Template images still apply. Configuration responses omit host paths and the process ID.
+Demo mode returns `403` for shutdown, error injection, log clearing and changes to format, consent or conformance settings. Visitors can save templates. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images, and the issue endpoint rejects images from visitors. Images of the bundled templates still work. A demo keeps at most 50 visitor templates, and a reset deletes them. Configuration responses omit host paths and the process ID.
 
 ### Outbound connections
 
@@ -38,7 +38,7 @@ Use `--mode strict` to reject violations, or `--haip=false` and `--arf=false` to
 
 Resets run every hour by default. `--demo-reset` accepts an interval such as `24h`, a daily time such as `00:00`, or a time with a zone such as `"00:00 Europe/Berlin"`. `0` disables resets. Daily schedules follow local time, including daylight saving changes, and retain their schedule across restarts.
 
-A reset removes visitor credentials and registered relying parties, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The signing certificate is renewed. The footer shows the reset schedule.
+A reset removes visitor credentials and registered relying parties, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed. The footer shows the reset schedule.
 
 ## Browser hardening
 

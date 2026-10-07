@@ -65,6 +65,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `omit`            | array   | Top-level claim names to drop from the claim set (like `--omit`)                             |
 | `always_disclosed`| array   | Claims issued plainly instead of selectively disclosable, with dotted paths for nested claims (sdjwt only, like `--always-disclosed`) |
 | `save_as_template`| string  | Save the resolved issuance parameters as a template with this name after issuing             |
+| `catalog`         | object  | Add the saved template to the attestation catalogue with these fields (`name` and `schema`, see [templates](../templates.md#attestation-catalogue)). Needs `save_as_template` |
 | `vct`             | string  | SD-JWT/JWT VC type (default is the default PID VCT)                                          |
 | `doctype`         | string  | mdoc doc type (default `eu.europa.ec.eudi.pid.1`)                                            |
 | `namespace`       | string  | Default namespace for mdoc claims (default is `doctype`). A claim key of the form `namespace:element` places that element in its own namespace instead |
@@ -118,7 +119,7 @@ The template endpoints use the same storage backend as the `templates` CLI comma
 |----------|-------------|
 | `GET /api/templates` | List all templates (predefined and user), including claims |
 | `GET /api/templates/{name}` | Get one template |
-| `PUT /api/templates/{name}` | Create or replace a user template. The body is a full template document, so this doubles as the import endpoint for shared templates |
+| `PUT /api/templates/{name}` | Create or replace a user template. The body is a full template document, so this doubles as the import endpoint for shared templates. A `catalog` object also adds the template to the attestation catalogue (see [templates](../templates.md#attestation-catalogue)) |
 | `DELETE /api/templates/{name}` | Delete a user template. Deleting an override of a predefined template restores the predefined version |
 
 ```bash
@@ -180,7 +181,7 @@ Trust lists contain service certificates and provider CAs. A separate list opera
 
 ### Registrar
 
-These endpoints are available on both wallet ports. Like credentials, anyone with access to the wallet can register, change and delete relying parties. See [registrar](registrar.md).
+These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. See [registrar](registrar.md).
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -199,7 +200,7 @@ These endpoints are available on both wallet ports. Like credentials, anyone wit
 | `GET` | `/api/catalog/schemas` | Catalogue of attestations (EC TS11 v1.0), signed and paged |
 | `GET`, `PUT`, `DELETE` | `/api/catalog/schemas/{id}` | One attestation schema |
 | `GET` | `/api/catalog/schemas/{id}/{format}` | The schema behind a schema URI |
-| `GET`, `POST` | `/api/catalog/attestations` | The catalogue with names and types, and adding to it |
+| `GET`, `POST` | `/api/catalog/attestations` | List the catalogue with names and types (`GET`) or add an entry (`POST`) |
 | `GET` | `/privacy-policy`, `/support`, `/supervisory-authority`, `/rulebook` | Placeholder pages for the default privacy policy, support, supervisory authority and rulebook URLs |
 
 ### One-shot error override

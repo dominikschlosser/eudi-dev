@@ -31,21 +31,16 @@ package credtype
 
 import "strings"
 
-// Types of the EUDI PID, country-independent and national. ARF PID_04 fixes the
-// mdoc doctype at eu.europa.ec.eudi.pid.1 for every PID, and PID_05 uses it as
-// the namespace of the PID attributes. PID_06 puts national elements in a
-// domestic namespace (eu.europa.ec.eudi.pid.de.1). Only the SD-JWT VC type is
-// national.
+// Types of the EUDI PID. ARF PID_04 fixes the mdoc doctype at
+// eu.europa.ec.eudi.pid.1 for every PID, and PID_05 uses it as the namespace of
+// the PID attributes. PID_14 makes urn:eudi:pid:1 the SD-JWT VC type, and a
+// domestic PID type extends it within the urn:eudi:pid: namespace.
 const (
-	PIDVCT              = "urn:eudi:pid:1"
-	GermanPIDVCT        = "urn:eudi:pid:de:1"
-	ItalianPIDVCT       = "urn:eudi:pid:it:1"
-	DutchPIDVCT         = "urn:eudi:pid:nl:1"
-	PIDDocType          = "eu.europa.ec.eudi.pid.1"
-	PIDNamespace        = PIDDocType
-	GermanPIDNamespace  = "eu.europa.ec.eudi.pid.de.1"
-	ItalianPIDNamespace = "eu.europa.ec.eudi.pid.it.1"
-	DutchPIDNamespace   = "eu.europa.ec.eudi.pid.nl.1"
+	PIDVCT       = "urn:eudi:pid:1"
+	PIDDocType   = "eu.europa.ec.eudi.pid.1"
+	PIDNamespace = PIDDocType
+	// DemoTicketVCT is the type of the demo issuer's event ticket.
+	DemoTicketVCT = "urn:eudi-test:demo-ticket:1"
 )
 
 // AkaVCTsClaim is the SD-JWT VC claim that lists further types of a credential

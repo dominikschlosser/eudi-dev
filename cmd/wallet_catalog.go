@@ -33,8 +33,9 @@ func walletCatalogCmd() *cobra.Command {
 an attestation type: its formats and the schema of each, its rulebook, its level
 of security and the trusted list of its issuers.
 
-Every credential template is in the catalogue, so a template you save shows up
-here too. You can also add other attestation types. When you register a
+Every predefined credential template is in the catalogue. To add a user
+template, tick "Add the template to the attestation catalogue" when you save
+it. You can also add other attestation types. When you register a
 verifier or an issuer in the web UI, the type fields suggest these types.
 
 Without a subcommand, or with list, it lists the catalogue.`,
@@ -175,7 +176,7 @@ func walletCatalogRemoveCmd() *cobra.Command {
 		Use:     "rm <id>",
 		Aliases: []string{"remove", "delete"},
 		Short:   "Remove an attestation type you added",
-		Long:    "Removes an attestation type you added. To remove an entry from a credential template, delete the template.",
+		Long:    "Removes an attestation type you added, including one added with a template. The entries of the predefined templates can't be removed.",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()

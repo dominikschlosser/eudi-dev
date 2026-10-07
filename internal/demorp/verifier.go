@@ -43,9 +43,8 @@ import (
 // The German PID extends the base SD-JWT PID type. It answers a request for
 // the base type. A base PID does not answer a request for the German type.
 const (
-	PIDVCT       = credtype.PIDVCT
-	GermanPIDVCT = credtype.GermanPIDVCT
-	PIDDocType   = credtype.PIDDocType
+	PIDVCT     = credtype.PIDVCT
+	PIDDocType = credtype.PIDDocType
 )
 
 type requestState struct {
@@ -165,9 +164,13 @@ type createRequestBody struct {
 	// access certificate chain. The chain goes into the request object's x5c.
 	// Empty uses the demo verifier's access certificate.
 	SigningKey string `json:"signing_key"`
-	// VerifierInfo is the verifier_info array (OpenID4VP 1.0 §5.1), such as a
-	// registration certificate. Empty sends none.
+	// VerifierInfo is the verifier_info array (OpenID4VP 1.0 §5.1) that goes
+	// with SigningKey. Empty sends none.
 	VerifierInfo []any `json:"verifier_info"`
+	// Identity "unregistered" sends the demo verifier's access certificate
+	// without its registration certificate. Without SigningKey the request
+	// otherwise carries both.
+	Identity string `json:"identity"`
 }
 
 type customCredentialTO struct {
@@ -410,7 +413,12 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		dcql["credential_sets"] = sets
 	}
 
-	d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, body.VerifierInfo)
+	info, err := d.verifierInfo(body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration certificate: " + err.Error()})
+		return
+	}
+	d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, info)
 }
 
 func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
@@ -422,6 +430,16 @@ func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateK
 		return key, chain, err
 	}
 	return parseSigningKeyBundle(body.SigningKey)
+}
+
+// verifierInfo returns the verifier_info of a signed request. The demo
+// verifier is registered with the wallet's registrar, so its own requests
+// carry its registration certificate.
+func (d *DemoRP) verifierInfo(body createRequestBody) ([]any, error) {
+	if strings.TrimSpace(body.SigningKey) != "" || body.Identity == "unregistered" {
+		return body.VerifierInfo, nil
+	}
+	return d.wallet.DemoVerifierInfo()
 }
 
 // A supplied bundle that does not parse is the client's error. Missing demo
@@ -583,7 +601,12 @@ func (d *DemoRP) createCustomRequest(w http.ResponseWriter, body createRequestBo
 
 	dcql := map[string]any{"credentials": credentials}
 	if signed {
-		d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, body.VerifierInfo)
+		info, err := d.verifierInfo(body)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration certificate: " + err.Error()})
+			return
+		}
+		d.finalizeRequest(w, req, dcql, responseURI, base, signingKey, chain, info)
 		return
 	}
 	d.deliverUnsignedRequest(w, req, dcql, responseURI, base)

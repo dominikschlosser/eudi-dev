@@ -119,8 +119,8 @@ func (w *Wallet) IssueRegistrationCertificate(req RegistrationCertificateRequest
 	return &RegistrationCertificateResult{RegistrationCertificate: signed, VerifierInfo: VerifierInfoValue(signed)}, nil
 }
 
-// issueProviderCertificate certifies a provider service and the attestation
-// types it issues (ARF RPRC_13 and RPRC_15).
+// issueProviderCertificate certifies a provider service and its attestation
+// types (ARF RPRC_13 and RPRC_15).
 func (w *Wallet) issueProviderCertificate(rp WalletRelyingParty, req RegistrationCertificateRequest) (*RegistrationCertificateResult, error) {
 	service, err := providerService(rp, req.ServiceIdentifier)
 	if err != nil {
@@ -146,7 +146,7 @@ func providerService(rp WalletRelyingParty, serviceIdentifier string) (WalletRel
 			return service, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
 		}
 		if !isAttestationProvider(service) {
-			return service, fmt.Errorf("service %q is not an attestation provider, so its certificates are for intended uses", serviceIdentifier)
+			return service, fmt.Errorf("service %q is not an attestation provider. Issue its certificates per intended use", serviceIdentifier)
 		}
 		return service, nil
 	}

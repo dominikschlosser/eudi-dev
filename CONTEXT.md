@@ -49,19 +49,19 @@ _Avoid_: RP, WRP (in prose)
 Keeps the register of relying parties for a member state (ARF Topic 27) and issues their access and registration certificates. The wallet includes one.
 
 **Intended use**:
-A purpose a relying party registers, together with the credentials and claims it may request. Each registration certificate covers one intended use.
+A registered purpose of a relying party. It lists which credentials and claims the relying party may request for it. A verifier's registration certificate covers one intended use.
 
 **Access certificate**:
-Identifies a relying party (ETSI TS 119 411-8). The verifier signs its request objects with the matching key.
+Identifies a relying party (ETSI TS 119 411-8). A verifier signs its request objects with the certificate's key. An issuer signs its metadata with that key.
 
 **Registration certificate**:
 A signed JWT from the registrar (ETSI TS 119 475). A verifier's certificate lists one intended use, and the verifier sends it in `verifier_info`. An issuer's certificate lists the attestation types of its service, and the issuer publishes it in `issuer_info`.
 
 **Attestation catalogue**:
-A list of attestation types (EC TS11 catalogue of attestations). Each entry links a schema, a rulebook and a trusted list. Every credential template has an entry.
+A list of attestation types (EC TS11 catalogue of attestations). Each entry links a schema for each format, a rulebook and optionally a trusted list. Every predefined credential template has an entry.
 
 **Relying party access CA**:
-Signs the access certificates that the wallet's registrar issues to relying parties. It is separate from the wallet CA.
+Signs the access certificates from the wallet's registrar. It is separate from the wallet CA.
 
 **Instance**:
 A running wallet server registered on this machine. The CLI uses the registration to find and control it. Several instances can serve the same wallet state.

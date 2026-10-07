@@ -19,9 +19,7 @@ The HAIP issuer plan runs only VCI modules. The demo issuer supports PAR, PKCE S
 
 The wrapper excludes modules for features the demo services lack, because the official runner counts skips as failures.
 
-Excluded issuer checks cover signed metadata, required key attestations and credential encryption. Batch checks run only in scenarios that supply a batch offer. Signed verifier scenarios exclude `request-uri-method-post` because the demo verifier serves requests through GET.
-
-The pre-authorized code scenario also excludes the six client attestation negative modules. Suite release-v5.2.4 breaks them under that grant: after the expected token refusal the module continues into the credential request and the suite aborts it with "Condition called when test status is 'WAITING'. This is a bug in the test module". The same modules complete under both authorization code scenarios, where the refusal happens at the PAR endpoint.
+Excluded issuer checks cover required key attestations and credential encryption. Batch checks run only in scenarios that supply a batch offer. Signed verifier scenarios exclude `request-uri-method-post` because the demo verifier serves requests through GET.
 
 The harness performs the steps the plans expect from a human tester:
 
@@ -40,7 +38,7 @@ Use the prerequisites in [Running OIDF Wallet Conformance](./conformance-run.md)
 
 ```bash
 OIDF_SUITE_DIR="$PWD/../conformance-suite" \
-OIDF_SUITE_TAG=release-v5.2.4 \
+OIDF_SUITE_TAG=release-v5.3.1 \
 OIDF_RUN_DIR=/tmp/oidf-demorp-conformance \
   scripts/oidf-demorp-conformance.sh
 ```
@@ -58,7 +56,7 @@ The `--rerun` selector passes through to the official runner exactly as in the w
 
 The verifier plans require the `request_uri` and the `response_uri` to be https, and the HAIP issuer metadata checks require an https credential issuer. The wrapper starts the wallet with an https base URL and `--serve-tls`, so the wallet serves that origin itself over TLS with its own certificate (the suite skips certificate verification on outbound calls).
 
-The suite signs the credentials it presents to the demo verifier under its own CAs (the `vp-signing` CA from `scripts/certs-keys` for SD-JWT VCs, a built-in mdoc IACA root for mdocs). The wrapper passes both to the wallet as `--demo-verifier-issuer-ca` files, so the demo verifier accepts those chains in addition to the wallet CA. The suite server publishes the IACA root at `/mdoc-iaca-root.pem`. When that endpoint is unavailable, the wrapper extracts the same certificate from the suite source.
+The suite presents credentials signed under its own CAs to the demo verifier (the `vp-signing` CA from `scripts/certs-keys` for SD-JWT VCs, a built-in mdoc IACA root for mdocs). The wrapper passes both to the wallet as `--demo-verifier-issuer-ca` files, so the demo verifier accepts those chains in addition to the wallet CA. The suite server publishes the IACA root at `/mdoc-iaca-root.pem`. When that endpoint is unavailable, the wrapper extracts the same certificate from the suite source.
 
 The generated configs also pass the wallet CA to the suite. The issuer configs set it as `credential.trust_anchor_pem`, so the suite validates the demo ticket's certificate chain. The verifier configs set it as `client.request_object_trust_anchor_pem`, so the suite validates the demo verifier's signed request objects.
 

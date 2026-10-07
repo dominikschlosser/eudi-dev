@@ -4,9 +4,9 @@ eudi-dev runs in CI pipelines and test harnesses as much as in a terminal. Scrip
 
 ## One document on stdout
 
-With `--json`, a command writes exactly one JSON document to stdout and nothing else. Progress, banners, hints and warnings go to stderr. A parser reads all of stdout. A second document or a stray line breaks it just like a wrong field does.
+With `--json`, a command writes exactly one JSON document to stdout and nothing else. Progress, banners, hints and warnings go to stderr. A parser reads all of stdout. A second document or a stray line breaks the parser.
 
-- A command that returns data prints it as an object or an array. An empty result is an empty array (or an object holding one), never a sentence.
+- A command that returns data prints it as an object or an array. An empty result is an empty array (or an object holding one), never a text message.
 - A command that changes something prints an object that says what changed, such as `{"removed": 1, "id": "a1b2"}`.
 - A command whose result is an artifact (a credential, a PEM certificate, a trust list JWT) prints the bare artifact without `--json`, so a script can use it as is. With `--json` it wraps the artifact in an object, such as `{"credential": "..."}`.
 - A command that checks several things (`validate`) collects them in one document.
@@ -17,7 +17,7 @@ A failing command exits non-zero and writes the error to stderr. A command that 
 
 ## Long-running commands
 
-`wallet serve` and `serve` do not take `--json`. They run until stopped, so there is no single result. `wallet serve --log-format json` writes its log as one JSON record per line. `proxy --json` writes one JSON object per line for each OID4VP or OID4VCI exchange it captures (every exchange with `--all-traffic`) and nothing else on stdout. `wallet logs` and `proxy logs` refuse `--json` together with `--follow`. The shell completion commands print a script and do not take `--json`.
+`wallet serve` and `serve` do not take `--json`. They run until stopped, so there is no single result. `wallet serve --log-format json` writes its log as one JSON record per line. `proxy --json` writes one JSON object per line for each captured OID4VP or OID4VCI exchange (every exchange with `--all-traffic`) and nothing else on stdout. `wallet logs` and `proxy logs` refuse `--json` together with `--follow`. The shell completion commands print a script and do not take `--json`.
 
 ## Consequences
 

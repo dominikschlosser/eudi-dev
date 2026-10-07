@@ -39,8 +39,8 @@ func walletGeneratePIDCmd() *cobra.Command {
 		Short: "Generate default EUDI PID credentials (SD-JWT + mdoc) (deprecated)",
 		Long: "Deprecated: generate-pid will be removed in a future release. Issue from the pre-defined PID credential templates instead. " +
 			"If PID credentials of the same type already exist, they are replaced. Use --claims to override specific claim values.\n\n" +
-			"--vct selects the PID type and with it the claim set: " + mock.DefaultPIDVCT + " is the EUDI PID. " +
-			mock.GermanPIDVCT + ", " + mock.ItalianPIDVCT + " and " + mock.DutchPIDVCT + " are the German, Italian and Dutch PIDs, which extend it. Any other value generates the country-independent claim set under that type.",
+			"--vct selects the PID templates of that type and with them the claim set. " + mock.DefaultPIDVCT + " is the EUDI PID. " +
+			"A type without templates gets the claim set of the EUDI PID.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			printGeneratePIDDeprecation(cmd, claimsFlag, vctFlag)
 			if c, err := remoteClientIfConfigured(); err != nil {
@@ -138,7 +138,10 @@ func walletGeneratePIDCmd() *cobra.Command {
 	cmd.Flags().StringVar(&claimsFlag, "claims", "", "Claim overrides as JSON (e.g. '{\"given_name\":\"Max\"}')")
 	cmd.Flags().StringVar(&keyPath, "key", "", "Path to PEM-encoded EC private key for signing (default: auto-generated)")
 	cmd.Flags().StringVar(&vctFlag, "vct", mock.DefaultPIDVCT, "PID type to generate (selects the claim set)")
-	_ = cmd.RegisterFlagCompletionFunc("vct", staticCompletion(mock.DefaultPIDVCT, mock.GermanPIDVCT, mock.ItalianPIDVCT, mock.DutchPIDVCT))
+	_ = cmd.RegisterFlagCompletionFunc("vct", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		loc, _ := resolveTemplates()
+		return credtemplate.PIDTypes(loc), cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().BoolVar(&statusList, "status-list", true, "Embed status list references in generated credentials")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "Base URL for status list endpoint (default: http://localhost:8085)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost for --base-url")
@@ -146,7 +149,8 @@ func walletGeneratePIDCmd() *cobra.Command {
 }
 
 func printGeneratePIDDeprecation(cmd *cobra.Command, claimsFlag, vctFlag string) {
-	sdTemplate, mdocTemplate, known := credtemplate.PIDTemplateNames(vctFlag)
+	loc, _ := resolveTemplates()
+	sdTemplate, mdocTemplate, known := credtemplate.PIDTemplateNames(vctFlag, loc)
 	sdEquiv := binaryName() + " issue sdjwt --wallet --template " + sdTemplate
 	mdocEquiv := binaryName() + " issue mdoc --wallet --template " + mdocTemplate
 	if claimsFlag != "" {

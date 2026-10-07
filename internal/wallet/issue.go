@@ -54,6 +54,9 @@ type IssueOptions struct {
 	// SaveTemplate is the name of a user template that stores the resolved
 	// parameters after a successful issuance.
 	SaveTemplate string
+	// Catalog adds the saved template to the attestation catalogue with these
+	// catalogue fields. It needs SaveTemplate.
+	Catalog *CatalogAttestation
 	// Omit removes top-level claims from the resolved claim set.
 	Omit []string
 	// VCT applies to sdjwt and jwt and defaults to mock.DefaultPIDVCT.
@@ -248,6 +251,37 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		namespace = docType
 	}
 
+	// The template and its catalogue entry are checked before the credential
+	// is issued, so a bad entry stores nothing.
+	var saved *credtemplate.Template
+	var catalogEntry CatalogAttestation
+	if name := strings.TrimSpace(opts.SaveTemplate); name != "" {
+		saved = &credtemplate.Template{
+			Name:            name,
+			Format:          format,
+			Exp:             formatIssueExpiry(expiresIn),
+			Claims:          claims,
+			AlwaysDisclosed: alwaysDisclosed,
+		}
+		switch format {
+		case "mdoc":
+			saved.DocType = docType
+			saved.Namespace = namespace
+		default:
+			saved.VCT = vct
+		}
+		if tpl != nil {
+			saved.UniqueClaims = tpl.UniqueClaims
+		}
+		if opts.Catalog != nil {
+			if catalogEntry, err = w.templateCatalogEntry(*saved, *opts.Catalog); err != nil {
+				return nil, err
+			}
+		}
+	} else if opts.Catalog != nil {
+		return nil, fmt.Errorf("adding to the catalogue needs a template name")
+	}
+
 	statusURI, statusIdx, registerStatus, err := w.resolveIssueStatus(opts.StatusListURI, opts.StatusListIdx)
 	if err != nil {
 		return nil, err
@@ -312,7 +346,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		// An override chain is embedded as given, root included, to test
 		// verifier rejection.
 		keepAnchor := opts.SigningKey != nil
-		claims := mock.WithFreshItalianSubject(vct, claims)
+		claims := tpl.WithUniqueClaims(claims)
 		switch format {
 		case "sdjwt":
 			return mock.GenerateSDJWT(mock.SDJWTConfig{
@@ -440,23 +474,18 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		StatusRegistered: registerStatus,
 	}
 
-	if name := strings.TrimSpace(opts.SaveTemplate); name != "" {
-		saved := credtemplate.Template{
-			Name:            name,
-			Format:          format,
-			Exp:             formatIssueExpiry(expiresIn),
-			Claims:          claims,
-			AlwaysDisclosed: alwaysDisclosed,
+	if saved != nil {
+		var added CatalogAttestation
+		if opts.Catalog != nil {
+			if added, err = w.AddCatalogAttestation(catalogEntry, w.RegistrarBase()); err != nil {
+				return nil, fmt.Errorf("adding the template to the catalogue: %w", err)
+			}
 		}
-		switch format {
-		case "mdoc":
-			saved.DocType = docType
-			saved.Namespace = namespace
-		default:
-			saved.VCT = vct
-		}
-		path, err := credtemplate.Save(w.Templates, saved)
+		path, err := credtemplate.Save(w.Templates, *saved)
 		if err != nil {
+			if opts.Catalog != nil {
+				_ = w.DeleteCatalogAttestation(added.Schema.ID, w.RegistrarBase())
+			}
 			return nil, fmt.Errorf("saving template: %w", err)
 		}
 		result.TemplatePath = path
@@ -473,7 +502,7 @@ func (w *Wallet) resolveIssueTemplate(opts IssueOptions) (tpl *credtemplate.Temp
 		return tpl, false, err
 	}
 	if opts.PID && opts.Claims == nil {
-		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT)
+		sdName, mdocName, _ := credtemplate.PIDTemplateNames(opts.VCT, w.Templates)
 		name := sdName
 		if format, _ := normalizeIssueFormat(opts.Format); format == "mdoc" {
 			name = mdocName

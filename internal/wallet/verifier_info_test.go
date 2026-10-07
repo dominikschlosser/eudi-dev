@@ -264,8 +264,8 @@ func TestVerifierInfoPurposesHidesAnUncheckableCertificate(t *testing.T) {
 	if len(purposes) != 0 {
 		t.Errorf("purposes = %v, want none for a certificate without x5c", purposes)
 	}
-	if len(findings) != 1 || !strings.Contains(findings[0], "cannot be checked") {
-		t.Errorf("findings = %v, want one saying the signature cannot be checked", findings)
+	if len(findings) != 1 || !strings.Contains(findings[0], "no readable x5c certificate") {
+		t.Errorf("findings = %v, want one about the missing x5c certificate", findings)
 	}
 }
 

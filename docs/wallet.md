@@ -7,7 +7,7 @@ The wallet has two validation modes. Both run the same checks. They differ in ho
 - `debug` (default) reports each finding and continues processing the request. In DCQL evaluation it keeps a credential match with a warning when some required claim paths are missing but other requested claims match
 - `strict` treats violations as errors and rejects the request
 
-Strict mode covers OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0. Advisory findings are warnings in both modes. Two flags add more checks, and the mode decides what happens to their findings: `--haip` adds the HAIP 1.0 checks (see [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement)), and `--arf` adds the ARF checks of relying party certificates (see [ARF checks](wallet/presenting.md#arf-checks)).
+Strict mode covers OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0. Advisory findings are warnings in both modes. Two flags add more checks. `--haip` adds the HAIP 1.0 checks (see [HAIP 1.0 enforcement](wallet/presenting.md#haip-10-enforcement)). `--arf` adds the ARF checks of verifier and issuer certificates (see [ARF checks](wallet/presenting.md#arf-checks)). The mode decides what happens to their findings.
 
 For OpenID Foundation conformance work, see [docs/conformance.md](./conformance.md).
 For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/diagrams](./diagrams/README.md).
@@ -155,7 +155,7 @@ Generated credentials expire in **30 days** by default. Use `--exp` to override 
 
 ## `wallet show <id>`
 
-Shows a stored credential by its ID (as printed by `wallet list`). An unambiguous ID prefix also works. By default it prints only the raw credential string, for piping. `--json` prints the stored credential with its metadata. `--decoded` prints human-readable output (the `--json` and `-v` global flags apply). Decoded output starts with a validity line because the payload has the expiry only as a Unix timestamp.
+Shows a stored credential by its ID (as printed by `wallet list`). An unambiguous ID prefix also works. By default it prints only the raw credential string, for piping. `--json` prints the stored credential with its metadata. `--decoded` prints human-readable output (the `--json` and `-v` global flags apply). Decoded output starts with a validity line.
 
 The `VALID` column of `wallet list` shows the same information. It is the time left (`29d`, `5h`, `expired`), or `-` for a credential without an expiry.
 

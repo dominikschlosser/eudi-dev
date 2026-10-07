@@ -22,15 +22,18 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
@@ -57,6 +60,9 @@ type Template struct {
 	// AlwaysDisclosed lists claims that appear in plain text in an SD-JWT payload.
 	// Nested claims use dotted paths such as "address.country".
 	AlwaysDisclosed []string `json:"always_disclosed,omitempty"`
+	// UniqueClaims lists claims that get a new random value for every
+	// credential, such as the opaque subject of IT-Wallet 1.4.7 §11.1.2.1.
+	UniqueClaims []string `json:"unique_claims,omitempty"`
 	// Display sets the OpenID4VCI §12.2.4 appearance of credentials issued from
 	// this template. Image fields of a built-in template use "embedded:<file>".
 	// A user template uses a data URI or an https URL.
@@ -161,11 +167,11 @@ func PredefinedTemplates() []Template {
 		return d
 	}
 	// The Italian PID carries an opaque subject identifier (IT-Wallet 1.4.7 §11.2).
-	// The template shows a sample. The issuer gives every credential its own.
+	const italianSubject = "eu.europa.ec.eudi.pid.it.1:sub"
 	italianSDJWTClaims := mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTItalianPIDClaims))
 	italianSDJWTClaims["sub"] = uuid.NewString()
 	italianMDOCClaims := mock.RefreshPIDDates(deepCopyClaims(mock.MDOCItalianPIDClaims))
-	italianMDOCClaims[mock.ItalianPIDNamespace+":sub"] = uuid.NewString()
+	italianMDOCClaims[italianSubject] = uuid.NewString()
 	return []Template{
 		{
 			Name:        "pid-sdjwt",
@@ -192,7 +198,7 @@ func PredefinedTemplates() []Template {
 			Name:        "german-pid-sdjwt",
 			Description: "German PID (SD-JWT, extends the EUDI PID)",
 			Format:      "sdjwt",
-			VCT:         mock.GermanPIDVCT,
+			VCT:         "urn:eudi:pid:de:1",
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTGermanPIDClaims)),
 			Display:     germanDisplay(),
@@ -213,29 +219,31 @@ func PredefinedTemplates() []Template {
 			Name:            "italian-pid-sdjwt",
 			Description:     "Italian PID (SD-JWT, IT-Wallet 1.4.7)",
 			Format:          "sdjwt",
-			VCT:             mock.ItalianPIDVCT,
+			VCT:             "urn:eudi:pid:it:1",
 			Exp:             "720h",
 			Claims:          italianSDJWTClaims,
 			AlwaysDisclosed: append([]string(nil), mock.ItalianPIDAlwaysDisclosed...),
+			UniqueClaims:    []string{"sub"},
 			Display:         italianDisplay(),
 			Predefined:      true,
 		},
 		{
-			Name:        "italian-pid-mdoc",
-			Description: "Italian PID (mdoc, EUDI PID doctype plus the Italian namespace)",
-			Format:      "mdoc",
-			DocType:     mock.PIDNamespace,
-			Namespace:   mock.PIDNamespace,
-			Exp:         "720h",
-			Claims:      italianMDOCClaims,
-			Display:     italianDisplay(),
-			Predefined:  true,
+			Name:         "italian-pid-mdoc",
+			Description:  "Italian PID (mdoc, EUDI PID doctype plus the Italian namespace)",
+			Format:       "mdoc",
+			DocType:      mock.PIDNamespace,
+			Namespace:    mock.PIDNamespace,
+			Exp:          "720h",
+			Claims:       italianMDOCClaims,
+			UniqueClaims: []string{italianSubject},
+			Display:      italianDisplay(),
+			Predefined:   true,
 		},
 		{
 			Name:        "dutch-pid-sdjwt",
 			Description: "Dutch PID (SD-JWT, NL Wallet working draft)",
 			Format:      "sdjwt",
-			VCT:         mock.DutchPIDVCT,
+			VCT:         "urn:eudi:pid:nl:1",
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTDutchPIDClaims)),
 			Display:     dutchDisplay(),
@@ -252,25 +260,98 @@ func PredefinedTemplates() []Template {
 			Display:     dutchDisplay(),
 			Predefined:  true,
 		},
+		{
+			Name:        "demo-ticket",
+			Description: "Demo Event Ticket (SD-JWT, issued by the demo issuer)",
+			Format:      "sdjwt",
+			VCT:         credtype.DemoTicketVCT,
+			Exp:         "720h",
+			Claims: map[string]any{
+				"event": "EUDI Interop Fest", "tier": "backstage", "seat": "42A",
+				"given_name": "Erika", "family_name": "Mustermann",
+			},
+			Display: &TemplateDisplay{
+				Name:            "Demo Event Ticket",
+				Description:     "A sample event ticket issued by the demo issuer",
+				BackgroundColor: "#0f766e",
+				TextColor:       "#ffffff",
+				Logo:            "embedded:logo.svg",
+				LogoAltText:     "eudi-dev logo",
+			},
+			Predefined: true,
+		},
 	}
 }
 
-// PIDTemplateNames returns the SD-JWT and mdoc template names for the claim set
-// of the PID type vct. ok reports whether that type has pre-defined templates.
-// For an unknown type callers use the country-independent claim set.
-func PIDTemplateNames(vct string) (sdjwt, mdoc string, ok bool) {
-	switch vct {
-	case "", mock.DefaultPIDVCT:
-		return "pid-sdjwt", "pid-mdoc", true
-	case mock.GermanPIDVCT:
-		return "german-pid-sdjwt", "german-pid-mdoc", true
-	case mock.ItalianPIDVCT:
-		return "italian-pid-sdjwt", "italian-pid-mdoc", true
-	case mock.DutchPIDVCT:
-		return "dutch-pid-sdjwt", "dutch-pid-mdoc", true
-	default:
+// PIDTemplateNames returns the SD-JWT and mdoc templates in loc for the PID
+// type vct. The SD-JWT template has that type, and the mdoc template issues the
+// PID doctype under the same display name. ok reports whether such templates
+// exist. For any other type callers use the country-independent claim set.
+func PIDTemplateNames(vct string, loc Location) (sdjwt, mdoc string, ok bool) {
+	if vct == "" {
+		vct = credtype.PIDVCT
+	}
+	templates, err := List(loc)
+	if err != nil {
 		return "pid-sdjwt", "pid-mdoc", false
 	}
+	// A pre-defined template wins over a user template of the same type.
+	templates = append(slices.DeleteFunc(slices.Clone(templates), func(t Template) bool { return !t.Predefined }),
+		slices.DeleteFunc(templates, func(t Template) bool { return t.Predefined })...)
+	var display string
+	for _, t := range templates {
+		if format, _ := NormalizeFormat(t.Format); format == "sdjwt" && t.VCT == vct {
+			sdjwt, display = t.Name, displayName(t)
+			break
+		}
+	}
+	if sdjwt == "" {
+		return "pid-sdjwt", "pid-mdoc", false
+	}
+	for _, t := range templates {
+		if format, _ := NormalizeFormat(t.Format); format == "mdoc" && t.DocType == credtype.PIDDocType && displayName(t) == display {
+			return sdjwt, t.Name, true
+		}
+	}
+	return sdjwt, "pid-mdoc", true
+}
+
+func displayName(t Template) string {
+	if t.Display == nil {
+		return ""
+	}
+	return t.Display.Name
+}
+
+// PIDTypes returns the SD-JWT VC types of the PID templates in loc, the
+// country-independent PID first.
+func PIDTypes(loc Location) []string {
+	templates, err := List(loc)
+	if err != nil {
+		return []string{credtype.PIDVCT}
+	}
+	types := []string{credtype.PIDVCT}
+	for _, t := range templates {
+		if format, _ := NormalizeFormat(t.Format); format == "sdjwt" && strings.HasPrefix(t.VCT, credtype.PIDVCTPrefix) && !slices.Contains(types, t.VCT) {
+			types = append(types, t.VCT)
+		}
+	}
+	return types
+}
+
+// WithUniqueClaims gives every claim in t.UniqueClaims that claims carries a
+// new random value. Other claims come back unchanged.
+func (t *Template) WithUniqueClaims(claims map[string]any) map[string]any {
+	if t == nil || len(t.UniqueClaims) == 0 {
+		return claims
+	}
+	fresh := maps.Clone(claims)
+	for _, name := range t.UniqueClaims {
+		if _, ok := fresh[name]; ok {
+			fresh[name] = uuid.NewString()
+		}
+	}
+	return fresh
 }
 
 // List returns all templates: pre-defined templates plus user templates from
