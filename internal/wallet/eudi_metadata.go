@@ -21,7 +21,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -128,7 +127,15 @@ func (w *Wallet) issuedAttestationSpecs() []IssuedAttestationSpec {
 	return out
 }
 
-func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint string) (IssuedAttestationSpec, error) {
+// UnlistedCategory issues a credential type that no trusted list names, to
+// test how a verifier handles an unanchored issuer. It is not a credential
+// category of the catalogue.
+const UnlistedCategory = "unlisted"
+
+// NormalizeIssuedAttestationSpec trims the spec and resolves its category. A
+// non-empty category replaces the one of the spec. A type without a category
+// and without trusted list fields is an EAA.
+func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, category string) (IssuedAttestationSpec, error) {
 	spec.Format = strings.TrimSpace(spec.Format)
 	spec.VCT = strings.TrimSpace(spec.VCT)
 	spec.DocType = strings.TrimSpace(spec.DocType)
@@ -144,15 +151,13 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 	spec.RevocationServiceName = strings.TrimSpace(spec.RevocationServiceName)
 	spec.Entitlements = dedupeStrings(spec.Entitlements)
 
-	switch trustProfileHint {
-	case "", "auto":
-	case "local":
-		spec.Category = credtemplate.CategoryEAA
-	default:
-		if !slices.Contains(credtemplate.Categories, trustProfileHint) {
-			return IssuedAttestationSpec{}, fmt.Errorf("unsupported trust profile %q", trustProfileHint)
-		}
-		spec.Category = trustProfileHint
+	if category != "" {
+		spec.Category = category
+	}
+	if spec.Category == UnlistedCategory {
+		spec.TrustListType, spec.StatusDeterminationApproach, spec.SchemeTypeCommunityRules, spec.SchemeTerritory = "", "", "", ""
+		spec.EntityName, spec.IssuanceServiceType, spec.RevocationServiceType, spec.IssuanceServiceName, spec.RevocationServiceName = "", "", "", "", ""
+		return spec, nil
 	}
 	if err := credtemplate.CheckCategory(spec.Category); err != nil {
 		return IssuedAttestationSpec{}, err
@@ -167,15 +172,18 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 	case spec.TrustListType == pubEAATrustListType:
 		spec.Category = credtemplate.CategoryPubEAA
 	case spec.TrustListType == localTrustListType && (spec.EntityName == "" || spec.EntityName == "EUDI Dev Wallet Issuer"):
-		// Stored wallets can hold this default local profile without a category.
-		// Such a credential type has no category, so it is on no list.
+		// Wallets of eudi-dev 2 store the default local profile without a
+		// category. It is the EAA list.
 		spec.TrustListType, spec.StatusDeterminationApproach, spec.SchemeTypeCommunityRules, spec.SchemeTerritory = "", "", "", ""
 		spec.EntityName, spec.IssuanceServiceType, spec.RevocationServiceType, spec.IssuanceServiceName, spec.RevocationServiceName = "", "", "", "", ""
+		spec.Category = credtemplate.CategoryEAA
+	case spec.TrustListType == "":
+		spec.Category = credtemplate.CategoryEAA
 	}
 	if spec.Category != "" {
 		spec = applyCategoryDefaults(spec)
 		if len(spec.Entitlements) == 0 {
-			spec.Entitlements = []string{categoryEntitlement(spec.Category)}
+			spec.Entitlements = []string{registrar.CategoryOf(spec.Category).Entitlement}
 		}
 	}
 	if spec.TrustListType != "" {
@@ -277,19 +285,6 @@ func localCategoryProfile(category, label string) trustListProfile {
 		IssuanceServiceName:   label + " Issuance Service",
 		RevocationServiceName: label + " Revocation Service",
 		EntityName:            "EUDI Dev Wallet " + label + " Provider",
-	}
-}
-
-func categoryEntitlement(category string) string {
-	switch category {
-	case credtemplate.CategoryPID:
-		return registrar.PIDProviderEntitlement
-	case credtemplate.CategoryQEAA:
-		return registrar.QEAAProviderEntitlement
-	case credtemplate.CategoryPubEAA:
-		return registrar.PubEAAProviderEntitlement
-	default:
-		return registrar.NonQEAAProviderEntitlement
 	}
 }
 

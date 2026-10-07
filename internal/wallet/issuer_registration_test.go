@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -106,14 +107,11 @@ func TestAnIssuerGetsOneCertificateForItsService(t *testing.T) {
 
 func TestIssuerRegistrationsAreChecked(t *testing.T) {
 	w := generateTestWallet(t)
-	diploma := []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Type: testDiplomaVCT}}
 	for _, tc := range []struct {
 		name    string
 		service registrar.WalletRelyingPartyService
 		want    string
 	}{
-		{"attestations without a provider entitlement", registrar.WalletRelyingPartyService{ProvidesAttestations: diploma}, "needs an attestation provider entitlement"},
-		{"attestations with the service provider entitlement", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.ServiceProviderEntitlement}, ProvidesAttestations: diploma}, "needs an attestation provider entitlement"},
 		{"a provider without attestations", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.PIDProviderEntitlement}}, "RPRC_15"},
 		{"an unknown entitlement only", registrar.WalletRelyingPartyService{Entitlements: []string{"https://example.com/entitled"}}, "Annex A.2"},
 		{"an attestation in another format", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "jwt_vc_json", Type: "x"}}}, "not dc+sd-jwt or mso_mdoc"},
@@ -125,6 +123,33 @@ func TestIssuerRegistrationsAreChecked(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A provider without an entitlement gets the entitlement of each attestation
+// type's category: from the catalogue, else PID for a PID type and EAA for
+// another type.
+func TestAnIssuerGetsTheEntitlementsOfItsCategories(t *testing.T) {
+	w := generateTestWallet(t)
+	entry := diplomaCatalogEntry()
+	entry.Category = "qeaa"
+	if _, err := w.Registrar().AddCatalogAttestation(entry); err != nil {
+		t.Fatal(err)
+	}
+	rp, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{
+		TradeName: "Example Provider",
+		Services: []registrar.WalletRelyingPartyService{{ProvidesAttestations: []registrar.ProvidedAttestation{
+			{Format: "dc+sd-jwt", Type: testDiplomaVCT},
+			{Format: "dc+sd-jwt", Type: "urn:eudi:pid:fr:1"},
+			{Format: "dc+sd-jwt", Type: "urn:example:badge:1"},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{registrar.NonQEAAProviderEntitlement, registrar.PIDProviderEntitlement, registrar.QEAAProviderEntitlement}
+	if got := rp.Services[0].Entitlements; !slices.Equal(got, want) {
+		t.Errorf("entitlements %v, want %v", got, want)
 	}
 }
 

@@ -332,12 +332,9 @@
 
           <div class="registrar-section" id="registrar-issuer-section" hidden>
           <div class="form-section-label" id="registrar-issuer-section-label">Attestation provider</div>
-          <label class="form-label" for="registrar-entitlement">Entitlement</label>
+          <label class="form-label" for="registrar-entitlement" title="The entitlement of an attestation provider (ETSI TS 119 475 Annex A.2)">Entitlement</label>
           <select id="registrar-entitlement" class="form-input">
-            <option value="https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider">Non-qualified EAA provider</option>
-            <option value="https://uri.etsi.org/19475/Entitlement/QEAA_Provider">QEAA provider</option>
-            <option value="https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider">PuB-EAA provider</option>
-            <option value="https://uri.etsi.org/19475/Entitlement/PID_Provider">PID provider</option>
+            <option value="" selected>From the attestation types</option>
           </select>
 
           <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestation types</span>
@@ -462,12 +459,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           <button type="button" class="btn btn-sm registrar-add" id="registrar-catalog-add-format">+ Add format</button>
 
           <label class="form-label" for="registrar-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default.">Category</label>
-          <select id="registrar-catalog-category" class="form-input">
-            <option value="pid">PID</option>
-            <option value="qeaa">QEAA (qualified)</option>
-            <option value="pub-eaa">PuB-EAA (public body)</option>
-            <option value="eaa" selected>EAA</option>
-          </select>
+          <select id="registrar-catalog-category" class="form-input"><option value="eaa" selected>EAA</option></select>
 
           <label class="form-label" for="registrar-catalog-rulebook">Rulebook</label>
           <input type="text" id="registrar-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
@@ -670,12 +662,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <input type="text" id="issue-catalog-name" class="form-input" placeholder="Name in the catalogue">
 
             <label class="form-label" for="issue-catalog-category" title="Credentials of the type are signed under the provider CA of this category. Its trusted list is the default.">Category</label>
-            <select id="issue-catalog-category" class="form-input">
-              <option value="pid">PID</option>
-              <option value="qeaa">QEAA (qualified)</option>
-              <option value="pub-eaa">PuB-EAA (public body)</option>
-              <option value="eaa" selected>EAA</option>
-            </select>
+            <select id="issue-catalog-category" class="form-input"><option value="eaa" selected>EAA</option></select>
 
             <label class="form-label" for="issue-catalog-rulebook">Rulebook</label>
             <input type="text" id="issue-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">

@@ -57,7 +57,7 @@ func (w *Wallet) catalogueFindings(metadata map[string]any, configurations []str
 	}
 	entries := w.Registrar().CatalogAttestations()
 	var findings []string
-	for _, o := range offeredAttestations(metadata, configurations) {
+	for _, o := range offeredAttestations(metadata, configurations, nil) {
 		if !o.known || len(o.types) == 0 {
 			continue
 		}

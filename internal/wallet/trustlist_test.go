@@ -457,7 +457,8 @@ func checkCategoryLists(t *testing.T, w *Wallet) {
 	}{
 		{"a PID template", IssueOptions{Format: "sdjwt", Template: "pid-sdjwt"}, []string{"pid"}},
 		{"a catalogue entry", IssueOptions{Format: "sdjwt", VCT: testDiplomaVCT, Claims: map[string]any{"degree": "MSc"}}, []string{"qeaa"}},
-		{"neither", IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}}, nil},
+		{"neither", IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}}, []string{"eaa"}},
+		{"unlisted", IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:2", Claims: map[string]any{"level": "gold"}, Category: UnlistedCategory}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := w.IssueCredential(tc.opts)

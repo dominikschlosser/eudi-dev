@@ -77,7 +77,7 @@ func TestEveryCopyOfABatchIsChecked(t *testing.T) {
 func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 	const vct = "urn:example:diploma:1"
 	issuer := generateTestWallet(t)
-	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: vct, Claims: map[string]any{"degree": "MSc"}, TrustProfile: credtemplate.CategoryEAA})
+	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: vct, Claims: map[string]any{"degree": "MSc"}, Category: credtemplate.CategoryEAA})
 	if err != nil {
 		t.Fatal(err)
 	}

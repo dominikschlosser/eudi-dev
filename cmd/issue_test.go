@@ -298,7 +298,7 @@ func TestResolveIssueClaims_InvalidJSON(t *testing.T) {
 }
 
 func TestBuildIssueAttestationSpec_CategoryDefaults(t *testing.T) {
-	issueTrustProfile = "eaa"
+	issueCategory = "eaa"
 	issueEntitlements = nil
 	issueTrustListType = ""
 	issueStatusDetermination = ""
@@ -312,7 +312,7 @@ func TestBuildIssueAttestationSpec_CategoryDefaults(t *testing.T) {
 
 	spec := issueTrustSpecFromFlags()
 	spec.Format, spec.VCT = "dc+sd-jwt", "urn:test:employee:1"
-	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueCategory)
 	if err != nil {
 		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestBuildIssueAttestationSpec_CategoryDefaults(t *testing.T) {
 }
 
 func TestBuildIssueAttestationSpec_RespectsExplicitOverrides(t *testing.T) {
-	issueTrustProfile = "local"
+	issueCategory = "eaa"
 	issueEntitlements = []string{"https://uri.etsi.org/19475/Entitlement/Service_Provider"}
 	issueTrustListType = "http://example.com/LoTEType/Custom"
 	issueStatusDetermination = "http://example.com/status"
@@ -339,7 +339,7 @@ func TestBuildIssueAttestationSpec_RespectsExplicitOverrides(t *testing.T) {
 
 	spec := issueTrustSpecFromFlags()
 	spec.Format, spec.DocType = "mso_mdoc", "org.iso.23220.photoid.1"
-	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueTrustProfile)
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, issueCategory)
 	if err != nil {
 		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 	issueToWallet = false
 	issueStatusListURI = ""
 	issueStatusListIdx = 0
-	issueTrustProfile = "auto"
+	issueCategory = ""
 	issueEntitlements = nil
 	issueTrustListType = ""
 	issueStatusDetermination = ""
@@ -478,7 +478,7 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 	issueRevocationServiceName = ""
 	walletDir = ""
 
-	rootCmd.SetArgs([]string{"issue", "--wallet-dir", wDir, "sdjwt", "--wallet", "--vct", "urn:test:employee:1", "--trust-profile", "eaa"})
+	rootCmd.SetArgs([]string{"issue", "--wallet-dir", wDir, "sdjwt", "--wallet", "--vct", "urn:test:employee:1", "--category", "eaa"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("issue sdjwt --wallet: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestIssueSDJWTToWallet_PersistsTrustMetadataFlags(t *testing.T) {
 	issueToWallet = false
 	issueStatusListURI = ""
 	issueStatusListIdx = 0
-	issueTrustProfile = "auto"
+	issueCategory = ""
 	issueEntitlements = nil
 	issueTrustListType = ""
 	issueStatusDetermination = ""

@@ -163,7 +163,7 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 		if entry, ok := catalogueEntryIn(catalogue, format, []string{vct, docType}); ok && category == "" {
 			category = entry.Category
 		}
-		if category == "" {
+		if category == "" || category == UnlistedCategory {
 			return
 		}
 		switch format {
@@ -174,7 +174,7 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 		default:
 			return
 		}
-		entitlements = append(entitlements, categoryEntitlement(category))
+		entitlements = append(entitlements, registrar.CategoryOf(category).Entitlement)
 	}
 	templates, err := credtemplate.List(w.Templates)
 	if err != nil {
