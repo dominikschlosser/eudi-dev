@@ -27,6 +27,12 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 )
 
+// The German PID types come from the predefined templates.
+const (
+	germanPIDVCT       = "urn:eudi:pid:de:1"
+	germanPIDNamespace = "eu.europa.ec.eudi.pid.de.1"
+)
+
 func generateTestWallet(t testing.TB) *Wallet {
 	t.Helper()
 	holderKey, err := mock.GenerateKey()
@@ -933,7 +939,7 @@ func TestGenerateDefaultCredentials_KeepsProtected(t *testing.T) {
 // The selected PID type determines its required claim set.
 func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, germanPIDVCT); err != nil {
 		t.Fatalf("GenerateDefaultCredentials: %v", err)
 	}
 
@@ -950,8 +956,8 @@ func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	if sdjwt == nil || mdoc == nil {
 		t.Fatal("expected an SD-JWT and an mdoc PID")
 	}
-	if sdjwt.VCT != "urn:eudi:pid:de:1" {
-		t.Errorf("vct = %q, want %q", sdjwt.VCT, "urn:eudi:pid:de:1")
+	if sdjwt.VCT != germanPIDVCT {
+		t.Errorf("vct = %q, want %q", sdjwt.VCT, germanPIDVCT)
 	}
 	if _, ok := sdjwt.Claims["source_document_type"]; !ok {
 		t.Error("the German PID was issued without its national claims")
@@ -964,8 +970,8 @@ func TestGenerateDefaultCredentials_VCTSelectsTheClaimSet(t *testing.T) {
 	if mdoc.DocType != mock.PIDNamespace {
 		t.Errorf("doctype = %q, want %q", mdoc.DocType, mock.PIDNamespace)
 	}
-	if _, ok := mdoc.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; !ok {
-		t.Errorf("the German mdoc PID is missing %s:birth_name", "eu.europa.ec.eudi.pid.de.1")
+	if _, ok := mdoc.Claims[germanPIDNamespace+":birth_name"]; !ok {
+		t.Errorf("the German mdoc PID is missing %s:birth_name", germanPIDNamespace)
 	}
 }
 
@@ -976,7 +982,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 	if err := w.GenerateDefaultCredentials(nil, mock.DefaultPIDVCT); err != nil {
 		t.Fatalf("generating the country-independent PID: %v", err)
 	}
-	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, germanPIDVCT); err != nil {
 		t.Fatalf("generating the German PID: %v", err)
 	}
 
@@ -987,7 +993,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 			continue
 		}
 		mdocs++
-		if _, ok := c.Claims["eu.europa.ec.eudi.pid.de.1"+":birth_name"]; ok {
+		if _, ok := c.Claims[germanPIDNamespace+":birth_name"]; ok {
 			german = true
 		}
 	}
@@ -998,7 +1004,7 @@ func TestGenerateDefaultCredentials_KeepsTheOtherPIDTypesMDoc(t *testing.T) {
 		t.Error("the German mdoc PID is missing")
 	}
 
-	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, germanPIDVCT); err != nil {
 		t.Fatalf("regenerating the German PID: %v", err)
 	}
 	mdocs = 0

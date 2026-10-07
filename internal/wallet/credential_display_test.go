@@ -443,7 +443,7 @@ func TestProcessCredentialOffer_CredentialDisplay(t *testing.T) {
 
 func TestGenerateDefaultCredentials_Display(t *testing.T) {
 	w := generateTestWallet(t)
-	for _, vct := range []string{mock.DefaultPIDVCT, "urn:eudi:pid:de:1"} {
+	for _, vct := range []string{mock.DefaultPIDVCT, germanPIDVCT} {
 		if err := w.GenerateDefaultCredentials(nil, vct); err != nil {
 			t.Fatalf("GenerateDefaultCredentials(%s): %v", vct, err)
 		}
@@ -468,7 +468,7 @@ func TestGenerateDefaultCredentials_Display(t *testing.T) {
 	var german, independent *StoredCredential
 	for i := range creds {
 		switch creds[i].VCT {
-		case "urn:eudi:pid:de:1":
+		case germanPIDVCT:
 			german = &creds[i]
 		case mock.DefaultPIDVCT:
 			independent = &creds[i]

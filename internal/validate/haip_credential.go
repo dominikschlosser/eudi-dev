@@ -69,8 +69,8 @@ func HAIPCredentialFindings(header, payload map[string]any) []string {
 // The X.509 certificate signing the request MUST NOT be self-signed."
 //
 // With x5c the issuer is the subject of the end-entity certificate, so SD-JWT
-// VC makes iss optional. §6.1.1 is the IETF SD-JWT VC profile. An mdoc carries
-// its issuer certificate elsewhere.
+// VC makes iss optional. §6.1.1 is the IETF SD-JWT VC profile and has no
+// counterpart for an mdoc.
 func HAIPCredentialChain(chain []*x509.Certificate) []string {
 	if len(chain) == 0 {
 		return []string{"HAIP 1.0 §6.1.1: the credential carries no x5c header, which must hold the issuer's signing certificate and its trust chain"}

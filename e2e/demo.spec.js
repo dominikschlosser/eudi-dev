@@ -1271,28 +1271,30 @@ test.describe("Demo mode hardening", () => {
   });
 
   test("a visitor saves a template and adds it to the catalogue", async ({ page }) => {
+    // Unique names keep a retry clear of the entries of an earlier attempt.
+    const id = "e2e-visitor-" + Date.now();
     await page.goto(BASE);
     await page.locator("#templates-btn").click();
     await expect(page.locator("#template-delete-pid-sdjwt")).toHaveCount(0);
     await page.locator("#template-new").click();
-    await page.locator("#template-editor-name").fill("e2e-visitor-card");
-    await page.locator("#issue-vct").fill("urn:example:e2e-visitor:1");
+    await page.locator("#template-editor-name").fill(id);
+    await page.locator("#issue-vct").fill(`urn:example:${id}:1`);
     await page.locator('#issue-claim-rows input[id^="issue-claim-key-"]').first().fill("level");
     await page.locator('#issue-claim-rows input[id^="issue-claim-value-"]').first().fill("gold");
     await expect(page.locator("#issue-batch")).toBeHidden();
     await page.locator("#issue-catalog").check();
-    await page.locator("#issue-catalog-name").fill("E2E visitor card");
+    await page.locator("#issue-catalog-name").fill(`E2E visitor card ${id}`);
     await page.locator("#issue-catalog-rulebook").fill("not a url");
     await page.locator("#issue-submit").click();
     await expect(page.locator("#issue-error")).toContainText("http or https URL");
     await page.locator("#issue-catalog-rulebook").fill("");
     await page.locator("#issue-submit").click();
-    await expect(page.locator("#template-row-e2e-visitor-card")).toBeVisible();
-    await expect(page.locator("#template-delete-e2e-visitor-card")).toBeVisible();
+    await expect(page.locator(`#template-row-${id}`)).toBeVisible();
+    await expect(page.locator(`#template-delete-${id}`)).toBeVisible();
     const entries = await (await fetch(BASE + "/api/catalog/attestations")).json();
-    expect(entries.map((e) => e.name)).toContain("E2E visitor card");
-    await page.locator("#template-delete-e2e-visitor-card").click();
-    await expect(page.locator("#template-row-e2e-visitor-card")).toHaveCount(0);
+    expect(entries.map((e) => e.name)).toContain(`E2E visitor card ${id}`);
+    await page.locator(`#template-delete-${id}`).click();
+    await expect(page.locator(`#template-row-${id}`)).toHaveCount(0);
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {

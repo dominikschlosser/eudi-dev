@@ -513,10 +513,7 @@ test.describe("Credential Issuing via UI", () => {
       req.on("error", resolve);
       req.end();
     });
-    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
-    for (const r of Array.isArray(pending.body) ? pending.body : []) {
-      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
-    }
+    await denyPendingRequests();
   });
 
   test("issue modal opens empty with the PID template as a choice", async ({
@@ -1181,10 +1178,7 @@ test.describe("Transaction code in the consent dialog", () => {
   };
 
   test.beforeEach(async () => {
-    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
-    for (const r of Array.isArray(pending.body) ? pending.body : []) {
-      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
-    }
+    await denyPendingRequests();
   });
 
   test("dialog asks for the code and blocks an empty approval", async ({
@@ -1200,12 +1194,7 @@ test.describe("Transaction code in the consent dialog", () => {
       interactive: true,
     }).catch(() => {});
 
-    let pending = [];
-    for (let i = 0; i < 50 && pending.length === 0; i++) {
-      pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
-      if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
-    }
-    await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
+    await page.goto(`${WALLET_URL}/?focus=overview&request=${await waitForPendingRequest()}`);
     const input = page.locator("#offer-tx-code-input");
     await expect(input).toBeVisible();
 
@@ -1238,12 +1227,7 @@ test.describe("Transaction code in the consent dialog", () => {
       interactive: true,
     }).catch(() => {});
 
-    let pending = [];
-    for (let i = 0; i < 50 && pending.length === 0; i++) {
-      pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
-      if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
-    }
-    await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
+    await page.goto(`${WALLET_URL}/?focus=overview&request=${await waitForPendingRequest()}`);
     await expect(page.locator("#consent-approve")).toBeVisible();
     await expect(page.locator("#offer-tx-code-input")).toHaveCount(0);
   });
@@ -1689,10 +1673,7 @@ test.describe("Verifier redirect after an error response", () => {
 
   test.beforeEach(async () => {
     received = undefined;
-    const pending = await jsonGet(`${WALLET_URL}/api/requests`);
-    for (const r of Array.isArray(pending.body) ? pending.body : []) {
-      await jsonPost(`${WALLET_URL}/api/requests/${r.id}/deny`, {});
-    }
+    await denyPendingRequests();
   });
 
   const requestFor = (vct, responsePath = "/response") => {
@@ -2223,7 +2204,7 @@ test.describe("Registrar", () => {
       await jsonPost(`${WALLET_URL}/api/registrar/wrp`, {
         tradeName: `${tag} Shop ${i}`,
         services: [{ intendedUses: [{
-          purpose: [{ lang: "en", content: i === 7 ? "Loyalty card check" : "Age check" }],
+          purpose: [{ lang: "en", content: i === 7 ? `${tag} loyalty card check` : "Age check" }],
           credentials: [{ format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["given_name"] }] }],
         }] }],
       });
@@ -2243,7 +2224,7 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-page-next")).toBeDisabled();
 
     await expect(page.locator(`#registrar-search-suggestions option[value="${tag} Shop 3"]`)).toHaveCount(1);
-    await page.locator("#registrar-search").fill("loyalty card");
+    await page.locator("#registrar-search").fill(`${tag} loyalty card`);
     await expect(page.locator("#registrar-party-list .registrar-party-name")).toHaveText([`${tag} Shop 7`]);
     await expect(page.locator("#registrar-pager")).toBeHidden();
     await page.locator("#registrar-search").fill(tag + " nothing");
@@ -2366,6 +2347,12 @@ test.describe("Registrar", () => {
   });
 
   test("the attestation catalogue lists the PID types and adds an attestation", async ({ page }) => {
+    // A retry starts without the entry an earlier attempt added.
+    for (const entry of (await jsonGet(`${WALLET_URL}/api/catalog/attestations`)).body) {
+      if (entry.name.toLowerCase() === "library card") {
+        await fetch(`${WALLET_URL}/api/catalog/schemas/${encodeURIComponent(entry.schema.id)}`, { method: "DELETE" });
+      }
+    }
     await page.goto(WALLET_URL);
     await page.locator("#registrar-menu-toggle").click();
     await page.locator("#registrar-catalog-link").click();

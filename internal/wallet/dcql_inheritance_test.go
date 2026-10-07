@@ -38,7 +38,7 @@ func sdjwtVCTQuery(vct string) map[string]any {
 // A German PID must match the base PID type it extends.
 func TestEvaluateDCQL_ExtendingTypeAnswersForTheTypeItExtends(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.GenerateDefaultCredentials(nil, "urn:eudi:pid:de:1"); err != nil {
+	if err := w.GenerateDefaultCredentials(nil, germanPIDVCT); err != nil {
 		t.Fatalf("generating the German PID: %v", err)
 	}
 	logs := captureTestLogs(t)
@@ -47,8 +47,8 @@ func TestEvaluateDCQL_ExtendingTypeAnswersForTheTypeItExtends(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("expected the German PID to answer, got %d matches", len(matches))
 	}
-	if matches[0].VCT != "urn:eudi:pid:de:1" {
-		t.Errorf("matched vct = %q, want %q", matches[0].VCT, "urn:eudi:pid:de:1")
+	if matches[0].VCT != germanPIDVCT {
+		t.Errorf("matched vct = %q, want %q", matches[0].VCT, germanPIDVCT)
 	}
 	if !strings.Contains(logs.String(), "an extending type answers for the type it extends") {
 		t.Error("the log does not say why a credential of another type matched")
@@ -59,7 +59,7 @@ func TestEvaluateDCQL_ExtendingTypeAnswersForTheTypeItExtends(t *testing.T) {
 func TestEvaluateDCQL_ExtendedTypeDoesNotAnswerForTheExtendingOne(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	if matches := w.EvaluateDCQL(sdjwtVCTQuery("urn:eudi:pid:de:1")); len(matches) != 0 {
+	if matches := w.EvaluateDCQL(sdjwtVCTQuery(germanPIDVCT)); len(matches) != 0 {
 		t.Fatalf("the country-independent PID answered a request for the German type: %d matches", len(matches))
 	}
 }
@@ -75,12 +75,12 @@ func TestEvaluateDCQL_BothPIDTypesHeld(t *testing.T) {
 		t.Fatalf("expected exactly one credential to be presented, got %d", len(matches))
 	}
 
-	german := w.EvaluateDCQL(sdjwtVCTQuery("urn:eudi:pid:de:1"))
+	german := w.EvaluateDCQL(sdjwtVCTQuery(germanPIDVCT))
 	if len(german) != 1 {
 		t.Fatalf("expected the German PID to answer its own type, got %d matches", len(german))
 	}
-	if german[0].VCT != "urn:eudi:pid:de:1" {
-		t.Errorf("matched vct = %q, want %q", german[0].VCT, "urn:eudi:pid:de:1")
+	if german[0].VCT != germanPIDVCT {
+		t.Errorf("matched vct = %q, want %q", german[0].VCT, germanPIDVCT)
 	}
 }
 
@@ -127,7 +127,7 @@ func TestEvaluateDCQL_MDocPIDsShareTheirDoctype(t *testing.T) {
 				"format": "mso_mdoc",
 				"meta":   map[string]any{"doctype_value": mock.PIDNamespace},
 				"claims": []any{
-					map[string]any{"path": []any{"eu.europa.ec.eudi.pid.de.1", "birth_name"}},
+					map[string]any{"path": []any{germanPIDNamespace, "birth_name"}},
 				},
 			},
 		},

@@ -17,33 +17,44 @@
 package wallet
 
 import (
+	"encoding/json"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"testing"
 )
 
+// The commands build a plist in which every scheme sits once under the URL
+// type of its protocol.
 func TestPlistCommandsRegisterEverySchemeUnderItsProtocol(t *testing.T) {
-	var got []string
-	for _, cmd := range plistCommands("Info.plist") {
-		got = append(got, cmd[1])
+	plist := filepath.Join(t.TempDir(), "Info.plist")
+	for _, cmd := range plistCommands(plist) {
+		if out, err := exec.Command("/usr/libexec/PlistBuddy", cmd...).CombinedOutput(); err != nil {
+			t.Fatalf("PlistBuddy %v: %v %s", cmd, err, out)
+		}
 	}
-	want := []string{
-		"Add :CFBundleIdentifier string dev.eudi.wallet",
-		"Add :LSUIElement bool true",
-		"Add :CFBundleURLTypes array",
-		"Add :CFBundleURLTypes:0 dict",
-		"Add :CFBundleURLTypes:0:CFBundleURLName string OID4VP",
-		"Add :CFBundleURLTypes:0:CFBundleURLSchemes array",
-		"Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string openid4vp",
-		"Add :CFBundleURLTypes:0:CFBundleURLSchemes:1 string eudi-openid4vp",
-		"Add :CFBundleURLTypes:0:CFBundleURLSchemes:2 string haip-vp",
-		"Add :CFBundleURLTypes:1 dict",
-		"Add :CFBundleURLTypes:1:CFBundleURLName string OID4VCI",
-		"Add :CFBundleURLTypes:1:CFBundleURLSchemes array",
-		"Add :CFBundleURLTypes:1:CFBundleURLSchemes:0 string openid-credential-offer",
-		"Add :CFBundleURLTypes:1:CFBundleURLSchemes:1 string haip-vci",
-		"Add :CFBundleURLTypes:1:CFBundleURLSchemes:2 string eu-eaa-offer",
+	out, err := exec.Command("plutil", "-convert", "json", "-o", "-", plist).Output()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !slices.Equal(got, want) {
-		t.Errorf("plist commands:\n%v\nwant\n%v", got, want)
+	var info struct {
+		CFBundleURLTypes []struct {
+			CFBundleURLName    string
+			CFBundleURLSchemes []string
+		}
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{"OID4VP": presentationURLSchemes, "OID4VCI": issuanceURLSchemes}
+	var all []string
+	for _, urlType := range info.CFBundleURLTypes {
+		if !slices.Equal(urlType.CFBundleURLSchemes, want[urlType.CFBundleURLName]) {
+			t.Errorf("%s has schemes %v, want %v", urlType.CFBundleURLName, urlType.CFBundleURLSchemes, want[urlType.CFBundleURLName])
+		}
+		all = append(all, urlType.CFBundleURLSchemes...)
+	}
+	if !slices.Equal(all, URLSchemes) {
+		t.Errorf("registered schemes %v, want %v", all, URLSchemes)
 	}
 }

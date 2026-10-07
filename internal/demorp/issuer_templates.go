@@ -157,7 +157,8 @@ func (d *DemoRP) credentialConfigurations(base map[string]any) map[string]any {
 
 // templateImageURL is the metadata URL of a template image. The issuer serves
 // bundled images and uploaded ones (data URIs) itself, since a data URI would
-// put the whole image into the metadata. An https image keeps its own URL.
+// put the whole image into the metadata. An http or https image keeps its own
+// URL.
 func (d *DemoRP) templateImageURL(id, field, ref string) string {
 	ref = strings.TrimSpace(ref)
 	if strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://") {
