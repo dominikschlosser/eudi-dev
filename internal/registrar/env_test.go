@@ -51,20 +51,7 @@ func (e *testEnv) RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certifi
 func (e *testEnv) RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, error) {
 	return e.accessCAKey, e.accessCA, nil
 }
-func (e *testEnv) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return e.accessKey, e.accessChain, nil
-}
 func (e *testEnv) TemplateLocation() credtemplate.Location { return e.templates }
-func (e *testEnv) ProviderDataset(base string) RegistrarDataset {
-	return RegistrarDataset{
-		TradeName:            DemoIssuerName,
-		SupportURI:           []string{base},
-		SrvDescription:       []MultiLangString{{Lang: "en", Content: "Demo issuer of the eudi-dev test wallet"}},
-		Entitlements:         []string{PIDProviderEntitlement},
-		SupervisoryAuthority: SupervisoryAuthority{Name: "Local Test Supervisory Authority", Country: "DE", Email: []string{"dpa@example.invalid"}},
-	}
-}
-
 func generateTestWallet(t testing.TB) *testWallet {
 	t.Helper()
 	key := func() *ecdsa.PrivateKey {
@@ -99,7 +86,7 @@ func generateTestWallet(t testing.TB) *testWallet {
 func (w *testWallet) RegistrarBase() string { return w.env.base }
 
 func (w *testWallet) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.env.AccessSigningMaterial()
+	return w.env.accessKey, w.env.accessChain, nil
 }
 
 const testDiplomaVCT = "urn:example:diploma:1"

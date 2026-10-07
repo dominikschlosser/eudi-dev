@@ -501,7 +501,7 @@ func (l *localWallet) RegistrarRecords() ([]registrar.WalletRelyingParty, error)
 	if err != nil {
 		return nil, err
 	}
-	return w.Registrar().RegistrarRecords(), nil
+	return w.Registrar().RegisteredRelyingParties(), nil
 }
 
 func (l *localWallet) AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error) {

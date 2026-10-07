@@ -28,7 +28,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 )
 
 // AttestationSchema is the SchemaMeta of the catalogue of attestations (EC
@@ -65,6 +64,10 @@ type CatalogAttestation struct {
 	Name        string              `json:"name"`
 	Credentials []CatalogCredential `json:"credentials"`
 	Schema      AttestationSchema   `json:"schema"`
+	// Category is a credtemplate category. The wallet signs the attestation
+	// under the category's provider CA, and an entry without trusted
+	// authorities names the category's trusted list.
+	Category string `json:"category,omitempty"`
 	// Template marks an entry that comes from one of the wallet's credential
 	// templates. It changes with the template, not in the catalogue.
 	Template bool `json:"template,omitempty"`
@@ -104,7 +107,7 @@ func (r *Registrar) CatalogAttestations() []CatalogAttestation {
 	r.mu.RUnlock()
 	sort.SliceStable(added, func(i, j int) bool { return strings.ToLower(added[i].Name) < strings.ToLower(added[j].Name) })
 	for _, entry := range added {
-		entries = append(entries, withSchemaURIs(cloneCatalogAttestation(entry), base))
+		entries = append(entries, completed(cloneCatalogAttestation(entry), base))
 	}
 	return entries
 }
@@ -136,7 +139,7 @@ func (r *Registrar) AddCatalogAttestation(entry CatalogAttestation) (CatalogAtte
 		return CatalogAttestation{}, err
 	}
 	r.state.Catalog = append(r.state.Catalog, entry)
-	return withSchemaURIs(cloneCatalogAttestation(entry), base), nil
+	return completed(cloneCatalogAttestation(entry), base), nil
 }
 
 // CheckCatalogAttestation reports whether AddCatalogAttestation would accept
@@ -197,6 +200,7 @@ func TemplateCatalogAttestation(t credtemplate.Template, entry CatalogAttestatio
 	}
 	entry = cloneCatalogAttestation(entry)
 	entry.Credentials = []CatalogCredential{credential}
+	entry.Category = firstNonEmpty(entry.Category, t.Category, credtemplate.CategoryEAA)
 	if strings.TrimSpace(entry.Name) == "" {
 		entry.Name = t.Name
 		if t.Display != nil && t.Display.Name != "" {
@@ -220,7 +224,7 @@ func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema) (Ca
 	if i < 0 {
 		return CatalogAttestation{}, fmt.Errorf("%w: %s", errCatalogNotFound, id)
 	}
-	stored := withSchemaURIs(cloneCatalogAttestation(r.state.Catalog[i]), base)
+	stored := completed(cloneCatalogAttestation(r.state.Catalog[i]), base)
 	if (schema.SupportedFormats != nil && !slices.Equal(schema.SupportedFormats, stored.Schema.SupportedFormats)) ||
 		(schema.SchemaURIs != nil && !slices.Equal(schema.SchemaURIs, stored.Schema.SchemaURIs)) {
 		return CatalogAttestation{}, fmt.Errorf("supportedFormats and schemaURIs follow from the attestation's credentials and can't be changed")
@@ -235,7 +239,7 @@ func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema) (Ca
 		return CatalogAttestation{}, err
 	}
 	r.state.Catalog[i] = updated
-	return withSchemaURIs(cloneCatalogAttestation(updated), base), nil
+	return completed(cloneCatalogAttestation(updated), base), nil
 }
 
 // DeleteCatalogAttestation removes an added entry.
@@ -265,6 +269,10 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	entry.Name = strings.TrimSpace(entry.Name)
 	if entry.Name == "" {
 		return fmt.Errorf("an attestation needs a name")
+	}
+	entry.Category = firstNonEmpty(entry.Category, credtemplate.CategoryEAA)
+	if err := credtemplate.CheckCategory(entry.Category); err != nil {
+		return err
 	}
 	if len(entry.Credentials) == 0 {
 		return fmt.Errorf("an attestation needs at least one format with its type")
@@ -303,7 +311,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	if !IsWebURL(s.RulebookURI) {
 		return fmt.Errorf("rulebookURI %q is not an http or https URL", s.RulebookURI)
 	}
-	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, "iso_18045_basic")
+	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, categoryLevel(entry.Category))
 	if !slices.Contains(attestationLevels, s.AttestationLoS) {
 		return fmt.Errorf("attestationLoS %q is not one of %s", s.AttestationLoS, strings.Join(attestationLevels, ", "))
 	}
@@ -334,9 +342,15 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	return nil
 }
 
-// withSchemaURIs fills in the formats and their schema URIs on the wallet
-// for them.
-func withSchemaURIs(entry CatalogAttestation, base string) CatalogAttestation {
+// completed fills in what follows from the entry: the formats and their
+// schema URIs on the wallet, and the trusted list of its category unless it
+// names trusted authorities itself.
+func completed(entry CatalogAttestation, base string) CatalogAttestation {
+	entry.Category = firstNonEmpty(entry.Category, credtemplate.CategoryEAA)
+	if len(entry.Schema.TrustedAuthorities) == 0 {
+		isLOTE := true
+		entry.Schema.TrustedAuthorities = []TrustAuthority{{FrameworkType: "etsi_tl", Value: CategoryTrustListURL(base, entry.Category), IsLOTE: &isLOTE}}
+	}
 	entry.Schema.SupportedFormats = nil
 	entry.Schema.SchemaURIs = nil
 	for _, c := range entry.Credentials {
@@ -347,6 +361,21 @@ func withSchemaURIs(entry CatalogAttestation, base string) CatalogAttestation {
 		})
 	}
 	return entry
+}
+
+// CategoryTrustListURL is the wallet's trusted list of a credential category.
+func CategoryTrustListURL(base, category string) string {
+	return base + "/api/trustlists/" + category
+}
+
+// categoryLevel is the default level of security of a category. A PID is
+// issued at assurance level high, and the test wallet treats QEAAs and
+// PuB-EAAs the same way. The level of other EAAs depends on their rulebook.
+func categoryLevel(category string) string {
+	if category == credtemplate.CategoryEAA {
+		return "iso_18045_basic"
+	}
+	return "iso_18045_high"
 }
 
 func catalogSchemaURL(base, id, format string) string {
@@ -399,9 +428,8 @@ var templateCatalogNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://g
 // templates, including a user template that replaces one. Other user templates
 // are added only on request and are then added entries. Templates with the
 // same display name are one attestation in two formats. The last URL in a
-// template description is its rulebook or specification. A PID is issued at assurance level high, so its level of
-// security is iso_18045_high, and it links to the wallet's PID provider list.
-// Other templates get the same defaults as an added attestation.
+// template description is its rulebook or specification. The template's
+// category sets the entry's category and level of security.
 func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
 	templates, err := credtemplate.List(r.env.TemplateLocation())
 	if err != nil {
@@ -432,20 +460,16 @@ func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
 		if !ok {
 			entry := CatalogAttestation{
 				Name:     name,
+				Category: firstNonEmpty(t.Category, credtemplate.CategoryEAA),
 				Template: true,
 				Schema: AttestationSchema{
-					ID:             uuid.NewSHA1(templateCatalogNamespace, []byte(name)).String(),
-					Version:        "1.0.0",
-					RulebookURI:    firstNonEmpty(lastURL(description), base+"/rulebook"),
-					AttestationLoS: "iso_18045_basic",
-					BindingType:    "key",
+					ID:          uuid.NewSHA1(templateCatalogNamespace, []byte(name)).String(),
+					Version:     "1.0.0",
+					RulebookURI: firstNonEmpty(lastURL(description), base+"/rulebook"),
+					BindingType: "key",
 				},
 			}
-			if credtype.IsPIDType(t.VCT) || credtype.IsPIDType(t.DocType) {
-				isLOTE := true
-				entry.Schema.AttestationLoS = "iso_18045_high"
-				entry.Schema.TrustedAuthorities = []TrustAuthority{{FrameworkType: "etsi_tl", Value: base + "/api/trustlists/pid", IsLOTE: &isLOTE}}
-			}
+			entry.Schema.AttestationLoS = categoryLevel(entry.Category)
 			index[name] = len(entries)
 			entries = append(entries, entry)
 			i = len(entries) - 1
@@ -454,7 +478,7 @@ func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
 	}
 	for i := range entries {
 		sort.Slice(entries[i].Credentials, func(a, b int) bool { return entries[i].Credentials[a].Format < entries[i].Credentials[b].Format })
-		entries[i] = withSchemaURIs(entries[i], base)
+		entries[i] = completed(entries[i], base)
 	}
 	sort.SliceStable(entries, func(a, b int) bool { return strings.ToLower(entries[a].Name) < strings.ToLower(entries[b].Name) })
 	return entries

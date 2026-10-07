@@ -97,3 +97,51 @@ func TestRegistrationCertificateRequestsAreChecked(t *testing.T) {
 		})
 	}
 }
+
+// A relying party that shows its certificate on every request keeps one
+// certificate until its registered content changes.
+func TestTheCurrentCertificateLastsUntilTheRegistrationChanges(t *testing.T) {
+	w := generateTestWallet(t)
+	rp := registerTestRelyingParty(t, w)
+	req := RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
+	current := func() string {
+		t.Helper()
+		result, _, err := w.CurrentRegistrationCertificate(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result.RegistrationCertificate
+	}
+	first := current()
+	if again := current(); again != first {
+		t.Error("a second request issued a new certificate")
+	}
+	rp.Services[0].IntendedUses[0].Purpose = []MultiLangString{{Lang: "en", Content: "Ticket check"}}
+	if _, changed, err := w.EnsureRelyingParty(rp); err != nil || !changed {
+		t.Fatalf("EnsureRelyingParty: changed %v, %v", changed, err)
+	}
+	if _, changed, err := w.EnsureRelyingParty(rp); err != nil || changed {
+		t.Fatalf("EnsureRelyingParty with the same content: changed %v, %v", changed, err)
+	}
+	if after := current(); after == first {
+		t.Error("the changed registration kept its old certificate")
+	}
+}
+
+// A revoked certificate is not current, so the next request gets a new one.
+func TestARevokedCertificateIsNotCurrent(t *testing.T) {
+	w := generateTestWallet(t)
+	rp := registerTestRelyingParty(t, w)
+	req := RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
+	first, _, err := w.CurrentRegistrationCertificate(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.SetRegistrationCertificatesRevoked(req.Identifier, RegistrationScope{}, true); err != nil {
+		t.Fatal(err)
+	}
+	second, issued, err := w.CurrentRegistrationCertificate(req)
+	if err != nil || !issued || second.RegistrationCertificate == first.RegistrationCertificate {
+		t.Errorf("after revocation: issued %v (%v), want a new certificate", issued, err)
+	}
+}

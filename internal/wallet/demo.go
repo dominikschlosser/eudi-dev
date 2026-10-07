@@ -276,6 +276,9 @@ func (s *Server) demoReset() error {
 	if err := baseline(); err != nil {
 		return err
 	}
+	if _, err := s.wallet.EnsureDemoRegistrations(); err != nil {
+		return err
+	}
 	if store := s.store.Load(); store != nil {
 		if err := store.Save(s.wallet); err != nil {
 			return err

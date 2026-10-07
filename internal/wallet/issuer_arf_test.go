@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
@@ -170,7 +171,7 @@ func TestARFAcceptsTheWalletsOwnIssuer(t *testing.T) {
 	w.IssuedAttestations = []IssuedAttestationSpec{
 		{Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT},
 		{Format: "mso_mdoc", DocType: mock.PIDNamespace},
-		{Format: "dc+sd-jwt", VCT: testDiplomaVCT},
+		{Format: "dc+sd-jwt", VCT: testDiplomaVCT, Category: credtemplate.CategoryEAA},
 	}
 	metadata, err := buildOpenIDCredentialIssuerMetadata(w, w.IssuerURL)
 	if err != nil {

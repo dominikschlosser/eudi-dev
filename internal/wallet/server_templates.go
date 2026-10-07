@@ -91,6 +91,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 			registrar.WriteCatalogError(w, err)
 			return
 		}
+		tpl.Category = entry.Category
 	}
 	// The entry is added first, because the catalogue can refuse it and a
 	// stored template is hard to take back when it replaced another one.
@@ -114,6 +115,9 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if err := s.syncDemoRegistrations(); err != nil {
+		s.log("  WARNING: updating the demo registrations: %v", err)
 	}
 	saved, err := credtemplate.Load(tpl.Name, s.wallet.Templates)
 	if err != nil {
@@ -141,6 +145,9 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
+	}
+	if err := s.syncDemoRegistrations(); err != nil {
+		s.log("  WARNING: updating the demo registrations: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("name")})
 }

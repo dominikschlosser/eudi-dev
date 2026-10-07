@@ -150,8 +150,8 @@ func TestJSONOutputIsOneDocument(t *testing.T) {
 	}
 	var records []any
 	runJSONInto(t, &records, "wallet", "registrar", "issuers")
-	if len(records) != 2 {
-		t.Errorf("wallet registrar issuers printed %d records, want the wallet's and the registration", len(records))
+	if len(records) != 1 {
+		t.Errorf("wallet registrar issuers printed %d records, want the registration", len(records))
 	}
 
 	var templates []any

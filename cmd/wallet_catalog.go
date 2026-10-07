@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
@@ -57,7 +58,7 @@ func listCatalog(cmd *cobra.Command, args []string) error {
 	}
 	printResult(entries, func() {
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tNAME\tTYPES\tLEVEL OF SECURITY")
+		fmt.Fprintln(tw, "ID\tNAME\tCATEGORY\tTYPES\tLEVEL OF SECURITY")
 		for _, e := range entries {
 			types := make([]string, 0, len(e.Credentials))
 			for _, c := range e.Credentials {
@@ -67,7 +68,7 @@ func listCatalog(cmd *cobra.Command, args []string) error {
 			if e.Template {
 				name += " (template)"
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Schema.ID, name, strings.Join(types, " "), e.Schema.AttestationLoS)
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.Schema.ID, name, e.Category, strings.Join(types, " "), e.Schema.AttestationLoS)
 		}
 		_ = tw.Flush()
 	})
@@ -90,9 +91,14 @@ namespaces for mso_mdoc.
 
 --type takes format:type, once per format. --claim takes format:claim. For
 SD-JWT, separate path segments with dots. An mdoc claim is an element of
-the doctype's namespace, or namespace:element.`,
+the doctype's namespace, or namespace:element.
+
+--category is pid, qeaa, pub-eaa or eaa. The wallet signs credentials of the
+type under the provider CA of that category, and the entry links the
+category's trusted list unless --trusted-list names another.`,
 		Example: `  eudi wallet catalog add --name "University diploma" --type dc+sd-jwt:urn:example:diploma:1 --claim dc+sd-jwt:degree
-  eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --claim mso_mdoc:degree --los moderate --trusted-list https://example.com/lote`,
+  eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --claim mso_mdoc:degree --category qeaa
+  eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --los moderate --trusted-list https://example.com/lote`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			for _, value := range types {
@@ -144,10 +150,12 @@ the doctype's namespace, or namespace:element.`,
 	cmd.Flags().StringVar(&entry.Name, "name", "", "Name of the attestation type (required)")
 	cmd.Flags().StringArrayVar(&types, "type", nil, "Format and type, such as dc+sd-jwt:urn:example:diploma:1 or mso_mdoc:org.example.diploma.1 (repeatable, required)")
 	cmd.Flags().StringArrayVar(&claims, "claim", nil, "Format and claim, such as dc+sd-jwt:address.locality or mso_mdoc:degree (repeatable)")
-	cmd.Flags().StringVar(&los, "los", "", "Level of security: basic, enhanced-basic, moderate or high (default basic)")
+	cmd.Flags().StringVar(&entry.Category, "category", "eaa", "Credential category: pid, qeaa, pub-eaa or eaa")
+	cmd.Flags().StringVar(&los, "los", "", "Level of security: basic, enhanced-basic, moderate or high (default high, and basic for eaa)")
 	cmd.Flags().StringVar(&bindingType, "binding", "", "How the attestation is bound to its holder: key (a key in the wallet), claim (linked to another credential, such as a PID), biometric or none (default key)")
 	cmd.Flags().StringVar(&rulebookURI, "rulebook", "", "URL of the rulebook (default a placeholder page on the wallet)")
-	cmd.Flags().StringVar(&trustedList, "trusted-list", "", "URL of the trusted list of its issuers (ETSI TS 119 602)")
+	cmd.Flags().StringVar(&trustedList, "trusted-list", "", "URL of the trusted list of its issuers (ETSI TS 119 602, default the category's list on the wallet)")
+	_ = cmd.RegisterFlagCompletionFunc("category", staticCompletion(credtemplate.Categories...))
 	_ = cmd.RegisterFlagCompletionFunc("los", staticCompletion("basic", "enhanced-basic", "moderate", "high"))
 	_ = cmd.RegisterFlagCompletionFunc("binding", staticCompletion("key", "claim", "biometric", "none"))
 	_ = cmd.MarkFlagRequired("name")

@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
@@ -60,30 +61,11 @@ type TrustListIndexEntry struct {
 	URL                   string                  `json:"url,omitempty"`
 }
 
-// GenerateTrustListJWT includes the CA as the trust anchor, following ETSI TS 119 602.
-func GenerateTrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certificate) (string, error) {
-	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
-		OperatorName: "EUDI Dev Wallet",
-		Profile: trustListProfile{
-			LoTEType:              localTrustListType,
-			IssuanceServiceType:   localIssuanceServiceType,
-			RevocationServiceType: localRevocationServiceType,
-			IssuanceServiceName:   "Issuance Service",
-			RevocationServiceName: "Revocation Service",
-			EntityName:            "EUDI Dev Wallet Issuer",
-		},
-	})
-}
-
 func GenerateTrustListJWTForWallet(w *Wallet, issuer string) (string, error) {
 	if w == nil || w.CAKey == nil || len(w.CertChain) < 2 {
 		return "", fmt.Errorf("wallet has no CA certificate chain")
 	}
-	group, ok := DefaultTrustListGroupForWallet(w)
-	if !ok {
-		return "", fmt.Errorf("wallet has no trust-list profile")
-	}
-	return GenerateTrustListJWTForWalletGroup(w, issuer, group, "/api/trustlist")
+	return GenerateTrustListJWTForWalletGroup(w, issuer, DefaultTrustListGroupForWallet(w), "/api/trustlist")
 }
 
 func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustListGroup, path string) (string, error) {
@@ -95,7 +77,7 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 	}
 	var issuanceCertificates []string
 	countries := []string{""}
-	if group.Profile.LoTEType == pidTrustListType {
+	if group.Profile.Category == credtemplate.CategoryPID {
 		countries = []string{"NL", "DE", "IT"}
 	}
 	for _, country := range countries {
@@ -141,36 +123,38 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 	})
 }
 
+// TrustListGroupsForWallet lists one trusted list per credential category,
+// the lists of credential types with their own trust profile, and the wallet
+// provider list. Credential types without a category are on no list.
 func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
-	specs := []IssuedAttestationSpec(nil)
-	if w != nil {
-		specs = w.issuedAttestationSpecs()
-	}
-	if len(specs) == 0 {
-		profile := inferWalletTrustListProfile(w)
-		return withWalletProviderGroup([]TrustListGroup{{
-			ID:      trustListGroupID(profile),
-			Profile: profile,
-		}})
-	}
-
-	byKey := make(map[string]*TrustListGroup)
-	for _, spec := range specs {
-		profile := trustListProfileFromSpec(spec)
-		key := trustListProfileKey(profile)
-		group := byKey[key]
-		if group == nil {
-			group = &TrustListGroup{
-				ID:      trustListGroupID(profile),
-				Profile: profile,
-			}
-			byKey[key] = group
+	byID := make(map[string]*TrustListGroup)
+	var groups []*TrustListGroup
+	add := func(profile trustListProfile) *TrustListGroup {
+		id := trustListGroupID(profile)
+		if group := byID[id]; group != nil {
+			return group
 		}
-		group.Specs = append(group.Specs, spec)
+		group := &TrustListGroup{ID: id, Profile: profile}
+		byID[id] = group
+		groups = append(groups, group)
+		return group
 	}
-
-	groups := make([]TrustListGroup, 0, len(byKey)+1)
-	for _, group := range byKey {
+	for _, category := range credtemplate.Categories {
+		add(categoryTrustListProfile(category))
+	}
+	add(walletProviderTrustListProfile())
+	if w != nil {
+		for _, spec := range w.issuedAttestationSpecs() {
+			if spec.TrustListType == "" {
+				continue
+			}
+			profile := trustListProfileFromSpec(spec)
+			group := add(profile)
+			group.Specs = append(group.Specs, spec)
+		}
+	}
+	out := make([]TrustListGroup, 0, len(groups))
+	for _, group := range groups {
 		sort.Slice(group.Specs, func(i, j int) bool {
 			if group.Specs[i].Format != group.Specs[j].Format {
 				return group.Specs[i].Format < group.Specs[j].Format
@@ -180,13 +164,9 @@ func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 			}
 			return group.Specs[i].DocType < group.Specs[j].DocType
 		})
-		groups = append(groups, *group)
+		out = append(out, *group)
 	}
-	groups = withWalletProviderGroup(groups)
-	sort.Slice(groups, func(i, j int) bool {
-		return trustListGroupSortKey(groups[i]) < trustListGroupSortKey(groups[j])
-	})
-	return groups
+	return out
 }
 
 // The wallet provider's CA anchors wallet and key attestations sent to issuers.
@@ -204,37 +184,9 @@ func walletProviderTrustListProfile() trustListProfile {
 	}
 }
 
-// Always publish the wallet provider list, even before credential issuance. It uses
-// the shared CA. Issuers verify wallet attestations against this separate list.
-func withWalletProviderGroup(groups []TrustListGroup) []TrustListGroup {
-	profile := walletProviderTrustListProfile()
-	id := trustListGroupID(profile)
-	for _, group := range groups {
-		if group.ID == id {
-			return groups
-		}
-	}
-	return append(groups, TrustListGroup{ID: id, Profile: profile})
-}
-
-func DefaultTrustListGroupForWallet(w *Wallet) (TrustListGroup, bool) {
-	groups := TrustListGroupsForWallet(w)
-	if len(groups) == 0 {
-		return TrustListGroup{}, false
-	}
-	for _, group := range groups {
-		if group.Profile.LoTEType == pidTrustListType {
-			return group, true
-		}
-	}
-	// The default list describes credentials, so the wallet provider list must never
-	// become the default.
-	for _, group := range groups {
-		if group.Profile.LoTEType != walletProviderTrustListType {
-			return group, true
-		}
-	}
-	return groups[0], true
+// DefaultTrustListGroupForWallet is the PID provider list.
+func DefaultTrustListGroupForWallet(w *Wallet) TrustListGroup {
+	return TrustListGroupsForWallet(w)[0]
 }
 
 func FindTrustListGroupForWallet(w *Wallet, id, vct, docType string) (TrustListGroup, bool) {
@@ -264,19 +216,19 @@ func FindTrustListGroupForWallet(w *Wallet, id, vct, docType string) (TrustListG
 		}
 		return TrustListGroup{}, false
 	}
-	return DefaultTrustListGroupForWallet(w)
+	return DefaultTrustListGroupForWallet(w), true
 }
 
 func BuildTrustListIndexEntries(w *Wallet, issuer string) []TrustListIndexEntry {
 	groups := TrustListGroupsForWallet(w)
-	defaultGroup, hasDefault := DefaultTrustListGroupForWallet(w)
+	defaultGroup := DefaultTrustListGroupForWallet(w)
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	entries := make([]TrustListIndexEntry, 0, len(groups))
 	for _, group := range groups {
 		path := "/api/trustlists/" + group.ID
 		entry := TrustListIndexEntry{
 			ID:                    group.ID,
-			Default:               hasDefault && group.ID == defaultGroup.ID,
+			Default:               group.ID == defaultGroup.ID,
 			Description:           trustListDescription(group),
 			Category:              trustListCategory(group),
 			Path:                  path,
@@ -295,13 +247,19 @@ func BuildTrustListIndexEntries(w *Wallet, issuer string) []TrustListIndexEntry 
 	return entries
 }
 
-// Descriptions distinguish lists used for credentials from the list used for wallet
-// attestations.
 func trustListDescription(group TrustListGroup) string {
 	if group.Profile.LoTEType == walletProviderTrustListType {
 		return "Wallet and key attestations, for issuers"
 	}
-	return "Credentials this wallet issues, for verifiers"
+	if group.ID != group.Profile.Category {
+		return "Credentials with their own trust profile, for verifiers"
+	}
+	return map[string]string{
+		credtemplate.CategoryPID:    "PIDs this wallet issues, for verifiers",
+		credtemplate.CategoryQEAA:   "QEAAs this wallet issues, for verifiers",
+		credtemplate.CategoryPubEAA: "PuB-EAAs this wallet issues, for verifiers",
+		credtemplate.CategoryEAA:    "EAAs this wallet issues, for verifiers",
+	}[group.Profile.Category]
 }
 
 func trustListCategory(group TrustListGroup) string {
@@ -313,6 +271,7 @@ func trustListCategory(group TrustListGroup) string {
 
 func trustListProfileFromSpec(spec IssuedAttestationSpec) trustListProfile {
 	return trustListProfile{
+		Category:                    spec.Category,
 		LoTEType:                    spec.TrustListType,
 		StatusDeterminationApproach: spec.StatusDeterminationApproach,
 		SchemeTypeCommunityRules:    spec.SchemeTypeCommunityRules,
@@ -327,6 +286,7 @@ func trustListProfileFromSpec(spec IssuedAttestationSpec) trustListProfile {
 
 func trustListProfileKey(profile trustListProfile) string {
 	parts := []string{
+		profile.Category,
 		profile.LoTEType,
 		profile.StatusDeterminationApproach,
 		profile.SchemeTypeCommunityRules,
@@ -340,29 +300,63 @@ func trustListProfileKey(profile trustListProfile) string {
 	return strings.Join(parts, "|")
 }
 
+// trustListGroupID names a category's list by the category. A spec that
+// changes its category's defaults gets a list of its own.
 func trustListGroupID(profile trustListProfile) string {
-	switch profile.LoTEType {
-	case pidTrustListType:
-		return "pid"
-	case walletProviderTrustListType:
+	if profile.LoTEType == walletProviderTrustListType {
 		return "wallet-provider"
-	case localTrustListType:
-		return "local"
+	}
+	if profile.Category != "" && profile == categoryTrustListProfile(profile.Category) {
+		return profile.Category
 	}
 	hash := sha256.Sum256([]byte(trustListProfileKey(profile)))
 	return "tl-" + hex.EncodeToString(hash[:4])
 }
 
-func trustListGroupSortKey(group TrustListGroup) string {
-	switch group.Profile.LoTEType {
+// The listed provider is test data. ETSI TS 119 602 V1.1.1 Tables D.2, E.2
+// and H.2 ask for its registration identifier as trade name and for a contact
+// email and phone. A PID or PuB-EAA provider also names its Member State with
+// a URI, and a PuB-EAA provider the law it is established under.
+const (
+	listedProviderName       = "EUDI Dev Test Provider"
+	listedProviderIdentifier = "NTR" + mock.DefaultCertificateCountry + "-00000000"
+	pubEAANotifiedStatus     = "http://uri.etsi.org/19602/PubEAAProvidersList/SvcStatus/notified"
+)
+
+func trustedEntityInformation(opts trustListOptions) map[string]any {
+	tradeName := []map[string]string{{"lang": "en", "value": listedProviderIdentifier}}
+	electronic := []map[string]string{
+		{"lang": "en", "uriValue": firstNonEmpty(opts.Issuer, "https://github.com/dominikschlosser/eudi-dev")},
+		{"lang": "en", "uriValue": "mailto:provider@example.invalid"},
+		{"lang": "en", "uriValue": "tel:+31000000000"},
+	}
+	information := []map[string]string{{"lang": "en", "uriValue": firstNonEmpty(opts.Issuer, "https://github.com/dominikschlosser/eudi-dev")}}
+	country := mock.DefaultCertificateCountry
+	switch opts.Profile.LoTEType {
 	case pidTrustListType:
-		return "0|" + group.ID
-	case walletProviderTrustListType:
-		return "1|" + group.ID
-	case localTrustListType:
-		return "9|" + group.ID
-	default:
-		return "5|" + group.ID
+		information = append(information, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/PIDProvider/" + country})
+	case pubEAATrustListType:
+		tradeName = append(tradeName, map[string]string{"lang": "en", "value": "OJ:" + country + "-eudi-dev-test"})
+		electronic = append(electronic, map[string]string{"lang": "en", "uriValue": "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/" + country})
+	}
+	return map[string]any{
+		"TEName":      []map[string]string{{"lang": "en", "value": listedProviderName}},
+		"TETradeName": tradeName,
+		"TEAddress": map[string]any{
+			"TEPostalAddress":     []map[string]string{{"lang": "en", "StreetAddress": "Test address", "Locality": "Test city", "PostalCode": "0000", "Country": country}},
+			"TEElectronicAddress": electronic,
+		},
+		"TEInformationURI": information,
+	}
+}
+
+func trustListService(serviceType, name string, certificates []string) map[string]any {
+	return map[string]any{
+		"ServiceInformation": map[string]any{
+			"ServiceTypeIdentifier":  serviceType,
+			"ServiceName":            []map[string]string{{"lang": "en", "value": name}},
+			"ServiceDigitalIdentity": map[string]any{"X509Certificates": trustListCertificates(certificates)},
+		},
 	}
 }
 
@@ -421,16 +415,19 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 	if opts.Profile.SchemeTerritory != "" {
 		schemeInfo["SchemeTerritory"] = opts.Profile.SchemeTerritory
 	}
+	path := firstNonEmpty(opts.TrustListPath, "/api/trustlist")
 	if opts.Issuer != "" {
-		path := opts.TrustListPath
-		if path == "" {
-			path = "/api/trustlist"
-		}
 		schemeInfo["SchemeInformationURI"] = []map[string]string{
 			{"lang": "en", "uriValue": "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md"},
 			{"lang": "en", "uriValue": opts.Issuer + path + "/history"},
 		}
 		schemeInfo["DistributionPoints"] = []string{opts.Issuer + path}
+	}
+	// ETSI TS 119 602 V1.1.1 Table D.1 and Table E.1 require a pointer to the
+	// list itself. Table H.1 forbids pointers and fixes the history period.
+	if opts.Profile.LoTEType == pubEAATrustListType {
+		schemeInfo["HistoricalInformationPeriod"] = 65535
+	} else if opts.Issuer != "" {
 		schemeInfo["PointersToOtherLoTE"] = []map[string]any{{
 			"LoTELocation":             opts.Issuer + path,
 			"ServiceDigitalIdentities": []map[string]any{{"X509Certificates": []map[string]string{{"val": certB64}}}},
@@ -438,48 +435,30 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		}}
 	}
 
-	entityInfo := map[string]any{
-		"TEName":      []map[string]string{{"lang": "en", "value": "EUDI Dev Test Provider"}},
-		"TETradeName": []map[string]string{{"lang": "en", "value": opts.Profile.EntityName}},
-		"TEAddress": map[string]any{
-			"TEPostalAddress":     []map[string]string{{"lang": "en", "StreetAddress": "Test address", "Locality": "Test city", "PostalCode": "0000", "Country": "NL"}},
-			"TEElectronicAddress": []map[string]string{{"lang": "en", "uriValue": "https://github.com/dominikschlosser/eudi-dev"}},
-		},
+	issuanceServices := []map[string]any{trustListService(opts.Profile.IssuanceServiceType, opts.Profile.IssuanceServiceName, opts.IssuanceCertificates)}
+	revocationService := trustListService(opts.Profile.RevocationServiceType, opts.Profile.RevocationServiceName, opts.RevocationCertificates)
+	if opts.Profile.LoTEType == pubEAATrustListType {
+		// Table H.3: the certificates of a service relate to one public key, and
+		// every service has a status.
+		issuanceServices = nil
+		for _, certificate := range opts.IssuanceCertificates {
+			issuanceServices = append(issuanceServices, trustListService(opts.Profile.IssuanceServiceType, opts.Profile.IssuanceServiceName, []string{certificate}))
+		}
+		for _, service := range append(issuanceServices, revocationService) {
+			service["ServiceInformation"].(map[string]any)["ServiceStatus"] = pubEAANotifiedStatus
+		}
 	}
-	if opts.Issuer != "" {
-		entityInfo["TEInformationURI"] = []map[string]string{{"lang": "en", "uriValue": opts.Issuer}}
-		entityInfo["TEAddress"].(map[string]any)["TEElectronicAddress"] = []map[string]string{{"lang": "en", "uriValue": opts.Issuer}}
-	}
+	services := make([]map[string]any, 0, len(issuanceServices)+1)
+	services = append(append(services, issuanceServices...), revocationService)
 
 	// ETSI trust lists use a JSON wrapper object.
 	payload := map[string]any{
 		"LoTE": map[string]any{
 			"ListAndSchemeInformation": schemeInfo,
-			"TrustedEntitiesList": []map[string]any{
-				{
-					"TrustedEntityInformation": entityInfo,
-					"TrustedEntityServices": []map[string]any{
-						{
-							"ServiceInformation": map[string]any{
-								"ServiceTypeIdentifier": opts.Profile.IssuanceServiceType,
-								"ServiceName":           []map[string]string{{"lang": "en", "value": opts.Profile.IssuanceServiceName}},
-								"ServiceDigitalIdentity": map[string]any{
-									"X509Certificates": trustListCertificates(opts.IssuanceCertificates),
-								},
-							},
-						},
-						{
-							"ServiceInformation": map[string]any{
-								"ServiceTypeIdentifier": opts.Profile.RevocationServiceType,
-								"ServiceName":           []map[string]string{{"lang": "en", "value": opts.Profile.RevocationServiceName}},
-								"ServiceDigitalIdentity": map[string]any{
-									"X509Certificates": trustListCertificates(opts.RevocationCertificates),
-								},
-							},
-						},
-					},
-				},
-			},
+			"TrustedEntitiesList": []map[string]any{{
+				"TrustedEntityInformation": trustedEntityInformation(opts),
+				"TrustedEntityServices":    services,
+			}},
 		},
 	}
 

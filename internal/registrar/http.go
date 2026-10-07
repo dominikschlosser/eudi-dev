@@ -150,7 +150,12 @@ func decodeRelyingParty(w http.ResponseWriter, r *http.Request) (WalletRelyingPa
 // matching records, paged by limit and cursor.
 func (h *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	matching := slices.DeleteFunc(h.Registrar().RegistrarRecords(), func(rp WalletRelyingParty) bool { return !matchesWRPQuery(rp, q) })
+	matching := slices.DeleteFunc(h.Registrar().RegisteredRelyingParties(), func(rp WalletRelyingParty) bool { return !matchesWRPQuery(rp, q) })
+	if service := strings.TrimSpace(q.Get("serviceidentifier")); service != "" && q.Get("isolateService") == "true" {
+		for i := range matching {
+			matching[i].Services = slices.DeleteFunc(matching[i].Services, func(s WalletRelyingPartyService) bool { return s.ServiceIdentifier != service })
+		}
+	}
 	limit := 20
 	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
 		limit = n
@@ -208,7 +213,7 @@ func (h *Server) handleCheckIntendedUse(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Server) registrarRecord(identifier string) (WalletRelyingParty, bool) {
-	records := h.Registrar().RegistrarRecords()
+	records := h.Registrar().RegisteredRelyingParties()
 	if i := relyingPartyIndex(records, identifier); i >= 0 {
 		return records[i], true
 	}

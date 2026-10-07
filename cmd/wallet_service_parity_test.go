@@ -351,7 +351,13 @@ func parityCases() []parityCase {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return records[len(records)-1].TradeName
+			// A served wallet also lists the demo issuer and verifier.
+			for _, record := range records {
+				if record.TradeName == "Parity Shop" {
+					return true
+				}
+			}
+			return false
 		}},
 		{method: "RegistrationCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)

@@ -27,11 +27,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -1847,8 +1850,10 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 		t.Fatal("expected jwks object in metadata")
 	}
 	keys, ok := jwks["keys"].([]any)
-	if !ok || len(keys) != 1 {
-		t.Fatalf("expected a single JWK, got %v", jwks["keys"])
+	// One key per category list and one for credentials on no list. The PID
+	// key comes first.
+	if !ok || len(keys) != 5 {
+		t.Fatalf("expected five JWKs, got %v", jwks["keys"])
 	}
 	jwk, ok := keys[0].(map[string]any)
 	if !ok {
@@ -1935,8 +1940,8 @@ func TestJWTVCIssuerMetadata_ExposesSigningKeyTrustedByTrustList(t *testing.T) {
 		t.Fatal("expected jwks object in second metadata response")
 	}
 	keys2, ok := jwks2["keys"].([]any)
-	if !ok || len(keys2) != 1 {
-		t.Fatalf("expected a single JWK in second metadata response, got %v", jwks2["keys"])
+	if !ok || len(keys2) != len(keys) {
+		t.Fatalf("expected the same JWKs in the second metadata response, got %v", jwks2["keys"])
 	}
 	jwk2, ok := keys2[0].(map[string]any)
 	if !ok {
@@ -2029,41 +2034,29 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	if want := w.IssuerURL + "/api/registrar/wrp/" + ownProviderIdentifier(t, w); record["registryURI"] != want {
 		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
-	entitlements, ok := record["entitlements"].([]any)
-	if !ok || len(entitlements) != 1 || entitlements[0] != registrar.PIDProviderEntitlement {
-		t.Fatalf("expected PID provider entitlement, got %v", record["entitlements"])
+	// The templates make the demo issuer a PID provider and, for the ticket,
+	// an EAA provider. Its identity check makes it a service provider (ARF
+	// RPRC_05).
+	var dataset registrar.RegistrarDataset
+	if err := json.Unmarshal([]byte(mustJSON(t, record)), &dataset); err != nil {
+		t.Fatal(err)
 	}
-	provides, ok := record["providesAttestations"].([]any)
-	if !ok || len(provides) != 2 {
-		t.Fatalf("expected 2 provided attestation entries, got %v", record["providesAttestations"])
+	var certificate struct {
+		Entitlements []string `json:"entitlements"`
 	}
-
-	var sawVCT, sawDocType bool
-	for _, entry := range provides {
-		att, ok := entry.(map[string]any)
-		if !ok {
-			t.Fatalf("expected providesAttestations object, got %T", entry)
-		}
-		meta, ok := att["meta"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected attestation meta object, got %T", att["meta"])
-		}
-		switch att["format"] {
-		case "dc+sd-jwt":
-			values, ok := meta["vct_values"].([]any)
-			if !ok || len(values) != 1 || values[0] != mock.DefaultPIDVCT {
-				t.Fatalf("expected SD-JWT attestation with VCT %s, got %v", mock.DefaultPIDVCT, meta["vct_values"])
-			}
-			sawVCT = true
-		case "mso_mdoc":
-			if meta["doctype_value"] != "eu.europa.ec.eudi.pid.1" {
-				t.Fatalf("expected mdoc attestation docType, got %v", meta["doctype_value"])
-			}
-			sawDocType = true
+	decodeCompactJWTPayload(t, issuerInfo[1].(map[string]any)["data"].(string), &certificate)
+	if want := []string{registrar.NonQEAAProviderEntitlement, registrar.PIDProviderEntitlement, registrar.ServiceProviderEntitlement}; !slices.Equal(certificate.Entitlements, want) {
+		t.Fatalf("entitlements %v, want %v", certificate.Entitlements, want)
+	}
+	var vcts, docTypes []string
+	for _, att := range dataset.ProvidesAttestations {
+		vcts = append(vcts, att.Type)
+		if att.Format == "mso_mdoc" {
+			docTypes = append(docTypes, att.Type)
 		}
 	}
-	if !sawVCT || !sawDocType {
-		t.Fatalf("expected both SD-JWT and mdoc attestation entries, got %v", record["providesAttestations"])
+	if !slices.Contains(vcts, mock.DefaultPIDVCT) || !slices.Contains(vcts, credtype.DemoTicketVCT) || !slices.Contains(docTypes, mock.PIDNamespace) {
+		t.Fatalf("provided attestations %v, want the PID types and the ticket", dataset.ProvidesAttestations)
 	}
 }
 
@@ -2073,6 +2066,9 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	w.IssuerURL = "https://localhost:8443"
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
+	}
+	if _, err := w.EnsureDemoRegistrations(); err != nil {
+		t.Fatal(err)
 	}
 	srv := NewServer(w, 0, nil)
 
@@ -2090,19 +2086,21 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	}
 	matched := list(mock.DefaultPIDVCT)
 	if len(matched) != 1 || matched[0].Identifier[0].Identifier != ownProviderIdentifier(t, w) {
-		t.Fatalf("matched %+v, want the wallet's provider record", matched)
+		t.Fatalf("matched %+v, want the demo issuer", matched)
 	}
 	if unmatched := list("urn:example:unknown"); len(unmatched) != 0 {
 		t.Fatalf("expected no registrar entries for an unknown attestation, got %d", len(unmatched))
 	}
 }
 
-func TestNonPIDMetadataAndTrustList_DoNotPretendToBePID(t *testing.T) {
+// An EAA type is registered with the EAA entitlement and is on the EAA list,
+// which has the local type and no PID URIs.
+func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"
 	w.IssuedAttestations = []IssuedAttestationSpec{
-		{Format: "dc+sd-jwt", VCT: "urn:test:employee:1"},
-		{Format: "mso_mdoc", DocType: "org.iso.23220.photoid.1"},
+		{Format: "dc+sd-jwt", VCT: "urn:test:employee:1", Category: credtemplate.CategoryEAA},
+		{Format: "mso_mdoc", DocType: "org.iso.23220.photoid.1", Category: credtemplate.CategoryEAA},
 	}
 	srv := NewServer(w, 0, nil)
 
@@ -2110,113 +2108,69 @@ func TestNonPIDMetadataAndTrustList_DoNotPretendToBePID(t *testing.T) {
 	if metaResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", metaResp.Code, metaResp.Body.String())
 	}
-	var metaPayload map[string]any
-	decodeCompactJWTPayload(t, metaResp.Body.String(), &metaPayload)
-	issuerInfo, ok := metaPayload["issuer_info"].([]any)
-	if !ok || len(issuerInfo) != 2 {
-		t.Fatalf("expected two issuer_info entries, got %v", metaPayload["issuer_info"])
+	var metadata struct {
+		IssuerInfo []struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"issuer_info"`
 	}
-	entry, ok := issuerInfo[0].(map[string]any)
-	if !ok {
-		t.Fatalf("expected issuer_info object, got %T", issuerInfo[0])
+	decodeCompactJWTPayload(t, metaResp.Body.String(), &metadata)
+	var dataset registrar.RegistrarDataset
+	var certificate struct {
+		Entitlements []string `json:"entitlements"`
 	}
-	record, ok := entry["data"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected issuer_info data object, got %T", entry["data"])
+	var registration string
+	if len(metadata.IssuerInfo) != 2 || json.Unmarshal(metadata.IssuerInfo[0].Data, &dataset) != nil || json.Unmarshal(metadata.IssuerInfo[1].Data, &registration) != nil {
+		t.Fatalf("issuer_info %s, want the dataset and the certificate", metaResp.Body.String())
 	}
-	entitlements, ok := record["entitlements"].([]any)
-	if !ok || len(entitlements) != 1 || entitlements[0] != registrar.NonQEAAProviderEntitlement {
-		t.Fatalf("expected Non_Q_EAA entitlement, got %v", record["entitlements"])
+	var types []string
+	for _, att := range dataset.ProvidesAttestations {
+		types = append(types, att.Type)
 	}
-	provides, ok := record["providesAttestations"].([]any)
-	if !ok || len(provides) != 2 {
-		t.Fatalf("expected 2 provided attestation entries, got %v", record["providesAttestations"])
-	}
-	var sawCustomVCT, sawCustomDocType bool
-	for _, raw := range provides {
-		att, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("expected provided attestation object, got %T", raw)
-		}
-		meta, ok := att["meta"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected provided attestation meta, got %T", att["meta"])
-		}
-		switch att["format"] {
-		case "dc+sd-jwt":
-			values, ok := meta["vct_values"].([]any)
-			if ok && len(values) == 1 && values[0] == "urn:test:employee:1" {
-				sawCustomVCT = true
-			}
-		case "mso_mdoc":
-			if meta["doctype_value"] == "org.iso.23220.photoid.1" {
-				sawCustomDocType = true
-			}
-		}
-	}
-	if !sawCustomVCT || !sawCustomDocType {
-		t.Fatalf("expected custom non-PID attestation types, got %v", record["providesAttestations"])
+	decodeCompactJWTPayload(t, registration, &certificate)
+	if !slices.Contains(certificate.Entitlements, registrar.NonQEAAProviderEntitlement) || !slices.Contains(types, "urn:test:employee:1") || !slices.Contains(types, "org.iso.23220.photoid.1") {
+		t.Fatalf("dataset %+v, want both types with the EAA entitlement", dataset)
 	}
 
-	trustListResp := serverRequest(t, srv, "GET", "/api/trustlist", "")
+	trustListResp := serverRequest(t, srv, "GET", "/api/trustlist?vct="+url.QueryEscape("urn:test:employee:1"), "")
 	if trustListResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", trustListResp.Code, trustListResp.Body.String())
 	}
-	var trustListPayload map[string]any
-	decodeCompactJWTPayload(t, trustListResp.Body.String(), &trustListPayload)
-	lote, ok := trustListPayload["LoTE"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected top-level LoTE object, got %T", trustListPayload["LoTE"])
+	var list struct {
+		LoTE struct {
+			ListAndSchemeInformation map[string]any `json:"ListAndSchemeInformation"`
+			TrustedEntitiesList      []struct {
+				TrustedEntityServices []struct {
+					ServiceInformation struct {
+						ServiceTypeIdentifier string `json:"ServiceTypeIdentifier"`
+					} `json:"ServiceInformation"`
+				} `json:"TrustedEntityServices"`
+			} `json:"TrustedEntitiesList"`
+		} `json:"LoTE"`
 	}
-	schemeInfo, ok := lote["ListAndSchemeInformation"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected ListAndSchemeInformation object, got %T", lote["ListAndSchemeInformation"])
+	decodeCompactJWTPayload(t, trustListResp.Body.String(), &list)
+	scheme := list.LoTE.ListAndSchemeInformation
+	if scheme["LoTEType"] != localTrustListType || scheme["StatusDeterminationApproach"] != nil {
+		t.Fatalf("scheme %v, want the local type without a status determination approach", scheme)
 	}
-	if schemeInfo["LoTEType"] != localTrustListType {
-		t.Fatalf("expected local trust-list profile for non-PID wallet, got %v", schemeInfo["LoTEType"])
+	if len(list.LoTE.TrustedEntitiesList) != 1 || len(list.LoTE.TrustedEntitiesList[0].TrustedEntityServices) != 2 {
+		t.Fatalf("entities %+v, want one entity with two services", list.LoTE.TrustedEntitiesList)
 	}
-	if _, ok := schemeInfo["StatusDeterminationApproach"]; ok {
-		t.Fatalf("non-PID local trust list must not advertise PID status determination, got %v", schemeInfo["StatusDeterminationApproach"])
-	}
-	entities, ok := lote["TrustedEntitiesList"].([]any)
-	if !ok || len(entities) != 1 {
-		t.Fatalf("expected one trusted entity, got %v", lote["TrustedEntitiesList"])
-	}
-	entity, ok := entities[0].(map[string]any)
-	if !ok {
-		t.Fatalf("expected trusted entity object, got %T", entities[0])
-	}
-	services, ok := entity["TrustedEntityServices"].([]any)
-	if !ok || len(services) != 2 {
-		t.Fatalf("expected 2 trusted services, got %v", entity["TrustedEntityServices"])
-	}
-	gotTypes := make([]string, 0, len(services))
-	for _, raw := range services {
-		service, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("expected service object, got %T", raw)
-		}
-		info, ok := service["ServiceInformation"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected ServiceInformation object, got %T", service["ServiceInformation"])
-		}
-		gotTypes = append(gotTypes, info["ServiceTypeIdentifier"].(string))
-	}
-	if gotTypes[0] != localIssuanceServiceType || gotTypes[1] != localRevocationServiceType {
-		t.Fatalf("expected local issuance/revocation service types, got %v", gotTypes)
+	services := list.LoTE.TrustedEntitiesList[0].TrustedEntityServices
+	if services[0].ServiceInformation.ServiceTypeIdentifier != localIssuanceServiceType || services[1].ServiceInformation.ServiceTypeIdentifier != localRevocationServiceType {
+		t.Fatalf("services %+v, want the local issuance and revocation types", services)
 	}
 }
 
-func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefault(t *testing.T) {
+func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"
-	if err := w.RegisterIssuedAttestation(applyPIDTrustProfileDefaults(IssuedAttestationSpec{
+	if err := w.RegisterIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID,
 		Format: "dc+sd-jwt",
 		VCT:    mock.DefaultPIDVCT,
 	})); err != nil {
 		t.Fatalf("registering PID attestation: %v", err)
 	}
-	if err := w.RegisterIssuedAttestation(applyLocalTrustProfileDefaults(IssuedAttestationSpec{
+	if err := w.RegisterIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryEAA,
 		Format:  "mso_mdoc",
 		DocType: "org.iso.23220.photoid.1",
 		Entitlements: []string{
@@ -2233,10 +2187,10 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 	}
 	index := decodeJSON(t, indexResp)
 	rawLists, ok := index["trust_lists"].([]any)
-	if !ok || len(rawLists) != 3 {
-		t.Fatalf("expected 3 trust-list index entries, got %v", index["trust_lists"])
+	if !ok || len(rawLists) != 5 {
+		t.Fatalf("expected the four category lists and the wallet provider list, got %v", index["trust_lists"])
 	}
-	var sawPIDDefault, sawLocal, sawWalletProvider bool
+	var sawPIDDefault, sawEAA, sawWalletProvider bool
 	for _, raw := range rawLists {
 		entry, ok := raw.(map[string]any)
 		if !ok {
@@ -2258,14 +2212,11 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 				t.Fatalf("expected legacy url alias to match advertised_url, got %v vs %v", entry["url"], entry["advertised_url"])
 			}
 			sawPIDDefault = true
-		case "local":
-			if entry["path"] != "/api/trustlists/local" {
-				t.Fatalf("expected local path, got %v", entry["path"])
+		case "eaa":
+			if entry["advertised_url"] != "https://localhost:8443/api/trustlists/eaa" {
+				t.Fatalf("expected eaa advertised_url, got %v", entry["advertised_url"])
 			}
-			if entry["advertised_url"] != "https://localhost:8443/api/trustlists/local" {
-				t.Fatalf("expected local advertised_url, got %v", entry["advertised_url"])
-			}
-			sawLocal = true
+			sawEAA = true
 		case "wallet-provider":
 			if entry["default"] == true {
 				t.Fatalf("wallet-provider list must never be the default, got %v", entry)
@@ -2279,8 +2230,8 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 			sawWalletProvider = true
 		}
 	}
-	if !sawPIDDefault || !sawLocal || !sawWalletProvider {
-		t.Fatalf("expected pid+local+wallet-provider trust-list entries, got %v", rawLists)
+	if !sawPIDDefault || !sawEAA || !sawWalletProvider {
+		t.Fatalf("expected pid+eaa+wallet-provider trust-list entries, got %v", rawLists)
 	}
 
 	legacyResp := serverRequest(t, srv, "GET", "/api/trustlist", "")
@@ -2313,7 +2264,7 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 		t.Fatalf("expected doctype-selected trust list to return local profile, got %v", selectedScheme["LoTEType"])
 	}
 
-	byIDResp := serverRequest(t, srv, "GET", "/api/trustlists/local", "")
+	byIDResp := serverRequest(t, srv, "GET", "/api/trustlists/eaa", "")
 	if byIDResp.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", byIDResp.Code, byIDResp.Body.String())
 	}
@@ -2325,14 +2276,14 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 	}
 	byIDScheme := byIDLoTE["ListAndSchemeInformation"].(map[string]any)
 	if byIDScheme["LoTEType"] != localTrustListType {
-		t.Fatalf("expected /api/trustlists/local to return local profile, got %v", byIDScheme["LoTEType"])
+		t.Fatalf("expected /api/trustlists/eaa to return local profile, got %v", byIDScheme["LoTEType"])
 	}
 	uris, ok := byIDScheme["SchemeInformationURI"].([]any)
 	if !ok || len(uris) != 2 {
 		t.Fatalf("expected SchemeInformationURI entry, got %v", byIDScheme["SchemeInformationURI"])
 	}
 	uri, ok := uris[1].(map[string]any)
-	if !ok || uri["uriValue"] != "https://localhost:8443/api/trustlists/local/history" {
+	if !ok || uri["uriValue"] != "https://localhost:8443/api/trustlists/eaa/history" {
 		t.Fatalf("expected per-id history URI, got %v", byIDScheme["SchemeInformationURI"])
 	}
 }

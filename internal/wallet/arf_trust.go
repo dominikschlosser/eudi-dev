@@ -164,9 +164,6 @@ func (e registrarEnv) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certif
 	return e.w.AccessSigningMaterial()
 }
 func (e registrarEnv) TemplateLocation() credtemplate.Location { return e.w.Templates }
-func (e registrarEnv) ProviderDataset(base string) registrar.RegistrarDataset {
-	return buildRegistrarDataset(e.w, base)
-}
 
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {

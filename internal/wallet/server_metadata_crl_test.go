@@ -51,17 +51,17 @@ func TestSigningChainCountryFollowsIssuingCountry(t *testing.T) {
 	w := generateTestWallet(t)
 
 	spec := IssuedAttestationSpec{Format: "mso_mdoc", DocType: DefaultMDOCDocType}
-	chain, err := w.SigningCertChainForIssuedCredential(spec, map[string]any{"issuing_country": "DE"})
+	_, chain, err := w.SigningMaterialForIssuedCredential(spec, map[string]any{"issuing_country": "DE"})
 	if err != nil {
-		t.Fatalf("SigningCertChainForIssuedCredential: %v", err)
+		t.Fatalf("SigningMaterialForIssuedCredential: %v", err)
 	}
 	if got := chain[0].Subject.Country; len(got) != 1 || got[0] != "DE" {
 		t.Errorf("leaf subject country = %v, want [DE]", got)
 	}
 
-	chain, err = w.SigningCertChainForIssuedCredential(spec, map[string]any{})
+	_, chain, err = w.SigningMaterialForIssuedCredential(spec, map[string]any{})
 	if err != nil {
-		t.Fatalf("SigningCertChainForIssuedCredential: %v", err)
+		t.Fatalf("SigningMaterialForIssuedCredential: %v", err)
 	}
 	if got := chain[0].Subject.Country; len(got) != 1 || got[0] != "NL" {
 		t.Errorf("leaf subject country without a claim = %v, want the default [NL]", got)

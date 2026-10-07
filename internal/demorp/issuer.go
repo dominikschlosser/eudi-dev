@@ -252,12 +252,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 			},
 		}),
 	}
-	specs := []wallet.IssuedAttestationSpec{{Format: "dc+sd-jwt", VCT: TicketVCT}}
-	for _, cfg := range d.templateConfigurations() {
-		specs = append(specs, wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType})
-	}
-	// The registrar API lives under the wallet base URL.
-	info, err := wallet.IssuerInfo(d.wallet, d.baseURL(), specs)
+	info, err := d.wallet.DemoIssuerInfo()
 	if err != nil {
 		http.Error(w, "building issuer metadata: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -810,13 +805,12 @@ func (o *offerState) configurationIDs() []string {
 	return append([]string(nil), o.configIDs...)
 }
 
-// signTicket signs with a leaf certificate of the ticket trust profile. The
-// wallet trust list publishes the CA and credential type for that profile.
+// signTicket signs under the provider CA of the ticket's category, which the
+// category's trusted list names.
 func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	spec, err := wallet.NormalizeIssuedAttestationSpec(wallet.IssuedAttestationSpec{
-		Format: "dc+sd-jwt",
-		VCT:    TicketVCT,
-	}, "local")
+	spec := wallet.IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: TicketVCT}
+	spec.Category = d.wallet.CredentialCategory(nil, spec)
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")
 	if err != nil {
 		return "", fmt.Errorf("building ticket attestation spec: %w", err)
 	}

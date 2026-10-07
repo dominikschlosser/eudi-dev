@@ -131,6 +131,7 @@ func walletAcceptCmd() *cobra.Command {
 		haip                bool
 		arf                 bool
 		relyingPartyCAs     []string
+		trustListCAs        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -160,6 +161,7 @@ request boundaries, so later presentation requests see the new credential.`,
 				haip:                haip,
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
+				trustListCAs:        trustListCAs,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -176,6 +178,7 @@ request boundaries, so later presentation requests see the new credential.`,
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
 	return cmd
 }
 
@@ -189,6 +192,7 @@ func walletScanCmd() *cobra.Command {
 		haip                bool
 		arf                 bool
 		relyingPartyCAs     []string
+		trustListCAs        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -245,6 +249,7 @@ func walletScanCmd() *cobra.Command {
 				haip:                haip,
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
+				trustListCAs:        trustListCAs,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -262,5 +267,6 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
 	return cmd
 }

@@ -176,7 +176,7 @@ func init() {
 
 	for _, c := range []*cobra.Command{issueSDJWTCmd, issueJWTCmd, issueMDOCCmd} {
 		_ = c.RegisterFlagCompletionFunc("template", completeTemplateNames)
-		_ = c.RegisterFlagCompletionFunc("trust-profile", staticCompletion("auto", "pid", "local"))
+		_ = c.RegisterFlagCompletionFunc("trust-profile", staticCompletion("auto", "pid", "qeaa", "pub-eaa", "eaa"))
 	}
 	_ = issueCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
 	_ = issueCmd.MarkPersistentFlagDirname("wallet-dir")
@@ -827,7 +827,7 @@ func displayImageMIME(path string, data []byte) string {
 }
 
 func addIssueTrustMetadataFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&issueTrustProfile, "trust-profile", "auto", "Trust-list profile for --wallet registration metadata: auto, pid, or local")
+	cmd.Flags().StringVar(&issueTrustProfile, "trust-profile", "auto", "With --wallet: credential category that selects the signer and the trusted list: pid, qeaa, pub-eaa or eaa. auto takes the category of the template or the catalogue entry")
 	cmd.Flags().StringSliceVar(&issueEntitlements, "entitlement", nil, "With --wallet: registrar entitlement URI to persist with the issued credential (repeatable)")
 	cmd.Flags().StringVar(&issueTrustListType, "trust-list-type", "", "With --wallet: trust-list LoTE type to persist with the issued credential")
 	cmd.Flags().StringVar(&issueStatusDetermination, "status-determination-approach", "", "With --wallet: trust-list status determination approach URI to persist with the issued credential")

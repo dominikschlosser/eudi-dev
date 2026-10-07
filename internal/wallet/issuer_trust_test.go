@@ -15,11 +15,13 @@
 package wallet
 
 import (
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
@@ -70,19 +72,17 @@ func TestEveryCopyOfABatchIsChecked(t *testing.T) {
 }
 
 // An attestation entry can link any list of trusted entities. The wallet
-// fetches it (ARF ISSU_08 to ISSU_10).
+// fetches it and checks that a trusted list operator signed it (ARF ISSU_10,
+// PPNot_05).
 func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 	const vct = "urn:example:diploma:1"
 	issuer := generateTestWallet(t)
-	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: vct, Claims: map[string]any{"degree": "MSc"}})
+	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: vct, Claims: map[string]any{"degree": "MSc"}, TrustProfile: credtemplate.CategoryEAA})
 	if err != nil {
 		t.Fatal(err)
 	}
 	serveList := func(w *Wallet) string {
-		group, ok := DefaultTrustListGroupForWallet(w)
-		if !ok {
-			t.Fatal("no trusted list for the attestation")
-		}
+		group, _ := FindTrustListGroupForWallet(w, credtemplate.CategoryEAA, "", "")
 		list, err := GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -91,17 +91,23 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 		t.Cleanup(srv.Close)
 		return srv.URL
 	}
+	other := generateTestWallet(t)
 	isLOTE := true
 	for _, tc := range []struct {
 		name, list string
-		want       bool
+		operator   *Wallet
+		want       string
 	}{
-		{"the issuer's list", serveList(issuer), false},
-		{"another wallet's list", serveList(generateTestWallet(t)), true},
+		{"the issuer's list", serveList(issuer), issuer, ""},
+		{"a list of an unknown operator", serveList(issuer), nil, "does not chain to a trusted list operator"},
+		{"another wallet's list", serveList(other), other, "does not validate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := generateTestWallet(t)
 			w.RequireARF = true
+			if tc.operator != nil {
+				w.TrustListCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: tc.operator.TrustAnchorCertificate().Raw})
+			}
 			if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
 				Name:        "Diploma",
 				Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
@@ -110,19 +116,47 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 				t.Fatal(err)
 			}
 			findings := w.trustAnchorFindings(receivedCredential(result.Raw))
-			if got := len(findings) == 1 && strings.HasPrefix(findings[0], "ARF ISSU_08 to ISSU_10: "); got != tc.want {
-				t.Errorf("findings %v", findings)
+			if tc.want == "" && len(findings) != 0 || tc.want != "" && (len(findings) != 1 || !strings.Contains(findings[0], tc.want)) {
+				t.Errorf("findings %v, want %q", findings, tc.want)
 			}
 		})
 	}
 }
 
-// ISSU_10 applies only when the wallet has the issuer's trust anchors.
+// A PID needs the list of its providers (ARF ISSU_07). A catalogue entry that
+// names no readable list is a finding.
+func TestAPIDNeedsAReadableList(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	w.RequireARF = true
+	if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
+		Name:        "Other PID",
+		Category:    credtemplate.CategoryPID,
+		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:example:pid:1"}},
+		Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "aki", Value: "s9tIpPmhxdiuNkHMEWNpYim8S8Y"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pid := StoredCredential{Format: "dc+sd-jwt", VCT: "urn:example:pid:1", Raw: "not checked"}
+	if findings := w.trustAnchorFindings(pid); len(findings) != 1 || !strings.HasPrefix(findings[0], "ARF ISSU_07: ") {
+		t.Errorf("findings %v, want ISSU_07", findings)
+	}
+}
+
+// ISSU_10 applies only when the wallet has the issuer's trust anchors. An
+// entry that names no list of trusted entities isn't checked.
 func TestAnAttestationWithoutATrustedListIsNotChecked(t *testing.T) {
 	w := generateTestWallet(t)
 	w.RequireARF = true
-	ticket := StoredCredential{Format: "dc+sd-jwt", VCT: credtype.DemoTicketVCT, Raw: "not checked"}
-	if got := w.trustAnchorFindings(ticket); len(got) != 0 {
+	const vct = "urn:example:diploma:1"
+	if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
+		Name:        "Diploma",
+		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
+		Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "aki", Value: "s9tIpPmhxdiuNkHMEWNpYim8S8Y"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	diploma := StoredCredential{Format: "dc+sd-jwt", VCT: vct, Raw: "not checked"}
+	if got := w.trustAnchorFindings(diploma); len(got) != 0 {
 		t.Errorf("findings %v", got)
 	}
 }

@@ -60,7 +60,7 @@ func (s *Server) handleSigningCertificate(w http.ResponseWriter, r *http.Request
 
 func (s *Server) providerCAForRequest(r *http.Request) (*ecdsa.PrivateKey, *x509.Certificate, error) {
 	role := r.PathValue("role")
-	if role != "pid" && role != "wallet" && role != "local" {
+	if !isProviderRole(role) {
 		return nil, nil, fmt.Errorf("unknown provider role")
 	}
 	country := strings.TrimSuffix(r.PathValue("country"), ".der")

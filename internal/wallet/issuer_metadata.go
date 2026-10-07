@@ -84,27 +84,42 @@ func parseIssuerHost(raw string) string {
 	return u.Hostname()
 }
 
-func buildIssuerSigningJWK(w *Wallet, exp time.Time) map[string]any {
-	if w == nil || w.IssuerKey == nil {
-		return nil
+// issuerSigningJWKs lists the signing key of every credential trust list and
+// of the credentials on no list, each with its certificate chain.
+func issuerSigningJWKs(w *Wallet, exp time.Time) []any {
+	profiles := []trustListProfile{}
+	for _, group := range TrustListGroupsForWallet(w) {
+		if group.Profile.LoTEType != walletProviderTrustListType {
+			profiles = append(profiles, group.Profile)
+		}
 	}
-	jwk := mock.SigningJWKMap(&w.IssuerKey.PublicKey)
-	if !exp.IsZero() {
-		jwk["exp"] = exp.Unix()
-	}
-	chain := w.CertChain
-	if derived, err := w.DefaultSigningCertChain(); err == nil && len(derived) > 0 {
-		chain = derived
-	}
-	chain = mock.WithoutSelfSignedTrustAnchor(chain)
-	if len(chain) > 0 {
-		x5c := make([]string, 0, len(chain))
-		for _, cert := range chain {
+	profiles = append(profiles, trustListProfile{})
+	seen := map[string]bool{}
+	var keys []any
+	for _, profile := range profiles {
+		key, chain, err := w.signingMaterialForProfile(profile, "")
+		if err != nil {
+			continue
+		}
+		jwk := mock.SigningJWKMap(&key.PublicKey)
+		kid, _ := jwk["kid"].(string)
+		if seen[kid] {
+			continue
+		}
+		seen[kid] = true
+		if !exp.IsZero() {
+			jwk["exp"] = exp.Unix()
+		}
+		var x5c []string
+		for _, cert := range mock.WithoutSelfSignedTrustAnchor(chain) {
 			x5c = append(x5c, base64.StdEncoding.EncodeToString(cert.Raw))
 		}
-		jwk["x5c"] = x5c
+		if len(x5c) > 0 {
+			jwk["x5c"] = x5c
+		}
+		keys = append(keys, jwk)
 	}
-	return jwk
+	return keys
 }
 
 func generateIssuerTLSCertificate(serverName string, caKey *ecdsa.PrivateKey, caCert *x509.Certificate) (tls.Certificate, error) {

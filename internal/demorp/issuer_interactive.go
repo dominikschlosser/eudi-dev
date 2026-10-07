@@ -15,7 +15,6 @@
 package demorp
 
 import (
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,7 +23,6 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -437,25 +435,11 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 		return claims
 	}
 
-	// The registration certificate (rc-wrp+jwt) goes in verifier_info
-	// (OpenID4VP 1.0 §5.1). It registers the same credential queries as the
-	// request, so the wallet over-asking check of ARF RPRC_21 passes.
-	registrarKey, registrarChain, err := d.wallet.RegistrarSigningMaterial()
-	if err != nil {
-		return claims
-	}
-	registrationClaims, rerr := d.registrationCertificateClaims(chain[0], "Demo Issuer",
-		"Proving who you are before the ticket is issued",
-		[]map[string]any{sdjwtCred, mdocCred})
-	var registration string
-	if rerr == nil {
-		registration, rerr = registrar.SignRegistrationCertificateJWT(registrationClaims, registrarKey, registrarChain)
-	}
-	if rerr == nil {
-		claims["verifier_info"] = []map[string]any{{
-			"format": "registration_cert",
-			"data":   registration,
-		}}
+	// The registration certificate of the identity check goes in
+	// verifier_info (OpenID4VP 1.0 §5.1). Its intended use registers the claims
+	// the request asks for (ARF RPRC_21).
+	if info, err := d.wallet.DemoIdentityCheckVerifierInfo(); err == nil {
+		claims["verifier_info"] = info
 	}
 
 	// The x509_hash client ID binds the request to its signing certificate.
@@ -515,13 +499,4 @@ func presentedHolder(claims map[string]any) string {
 		return name
 	}
 	return demoAccountUsername
-}
-
-// The registration certificate lists the same DCQL claims as the request.
-// That way the request passes the ARF RPRC_21 over-asking check.
-func (d *DemoRP) registrationCertificateClaims(accessCertificate *x509.Certificate, name, purpose string, dcqlCredentials []map[string]any) (map[string]any, error) {
-	// The wallet's registrar signs the certificate, so its status entry lives
-	// on the registrar's status list.
-	return registrar.RegistrationCertificateClaimsFor(d.wallet.RegistrarBase(), registrar.RegistrationCertificateContent{Name: name, Purpose: []registrar.MultiLangString{{Lang: "en", Content: purpose}}},
-		accessCertificate, dcqlCredentials, time.Now())
 }

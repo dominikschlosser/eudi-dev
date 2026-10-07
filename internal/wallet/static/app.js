@@ -989,6 +989,18 @@
     };
   }
 
+  // A category sets the default level of security. Only EAAs default to basic.
+  const categoryLevel = (category) => category === 'eaa' ? 'iso_18045_basic' : 'iso_18045_high';
+  function linkCategoryLevel(prefix) {
+    const category = document.getElementById(prefix + '-catalog-category');
+    category.addEventListener('change', () => {
+      document.getElementById(prefix + '-catalog-los').value = categoryLevel(category.value);
+    });
+  }
+  // The trusted list field stays empty when the entry names its category's
+  // list, so the list follows the category.
+  const ownCategoryList = (trust, category) => trust && trust.value.endsWith('trustlists/' + category);
+
   // catalogFields drives the "Add the template to the attestation catalogue"
   // checkbox and its fields in a form. entry() returns the catalogue fields
   // for the save request, or null when the box is unchecked.
@@ -1002,6 +1014,7 @@
         box.checked = false;
         fields.hidden = true;
         field('name').value = '';
+        field('category').value = 'eaa';
         field('rulebook').value = '';
         field('los').value = 'iso_18045_basic';
         field('binding').value = 'key';
@@ -1025,19 +1038,21 @@
         fields.hidden = false;
         const schema = entry.schema || {};
         field('name').value = entry.name || '';
+        field('category').value = entry.category || 'eaa';
         field('rulebook').value = schema.rulebookURI || '';
-        field('los').value = schema.attestationLoS || 'iso_18045_basic';
+        field('los').value = schema.attestationLoS || categoryLevel(field('category').value);
         field('binding').value = schema.bindingType || 'key';
         const trust = (schema.trustedAuthorities || [])[0];
-        field('trust').value = trust ? trust.value : '';
+        field('trust').value = trust && !ownCategoryList(trust, entry.category) ? trust.value : '';
       },
       entry(defaultName) {
         if (!box.checked) return null;
-        return { name: field('name').value.trim() || defaultName, schema: catalogSchema(prefix) };
+        return { name: field('name').value.trim() || defaultName, category: field('category').value, schema: catalogSchema(prefix) };
       },
     };
   }
   const issueCatalog = catalogFields('issue');
+  linkCategoryLevel('issue');
 
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
@@ -3135,47 +3150,44 @@
         list.appendChild(term);
 
         const detail = document.createElement('dd');
-        groups.get(category)
-          .slice()
-          .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
-          .forEach(entry => {
-            const url = entry.advertised_url || entry.url ||
-              (entry.path ? window.location.origin + entry.path : '');
-            if (!url) return;
-            const links = document.createElement('span');
-            links.className = 'trust-links';
-            const link = document.createElement('a');
-            link.href = url;
-            link.textContent = entry.id || 'trust list';
-            link.title = url;
-            links.appendChild(link);
-            if (entry.entityName) {
-              const name = document.createElement('span');
-              name.className = 'trust-list-name';
-              name.textContent = entry.entityName;
-              links.appendChild(name);
-            }
-            const copy = document.createElement('button');
-            copy.type = 'button';
-            copy.className = 'copy-btn';
-            copy.textContent = '\u29C9';
-            copy.title = 'Copy trust list URL';
-            copy.addEventListener('click', async () => {
-              try {
-                await navigator.clipboard.writeText(url);
-                copy.textContent = '\u2713';
-                setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
-              } catch (e) { /* The clipboard API may be unavailable. */ }
-            });
-            links.appendChild(copy);
-            detail.appendChild(links);
-            if (entry.description) {
-              const desc = document.createElement('span');
-              desc.className = 'trust-item-hint';
-              desc.textContent = entry.description;
-              detail.appendChild(desc);
-            }
+        groups.get(category).forEach(entry => {
+          const url = entry.advertised_url || entry.url ||
+            (entry.path ? window.location.origin + entry.path : '');
+          if (!url) return;
+          const links = document.createElement('span');
+          links.className = 'trust-links';
+          const link = document.createElement('a');
+          link.href = url;
+          link.textContent = entry.id || 'trust list';
+          link.title = url;
+          links.appendChild(link);
+          if (entry.entityName) {
+            const name = document.createElement('span');
+            name.className = 'trust-list-name';
+            name.textContent = entry.entityName;
+            links.appendChild(name);
+          }
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'copy-btn';
+          copy.textContent = '\u29C9';
+          copy.title = 'Copy trust list URL';
+          copy.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              copy.textContent = '\u2713';
+              setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
+            } catch (e) { /* The clipboard API may be unavailable. */ }
           });
+          links.appendChild(copy);
+          detail.appendChild(links);
+          if (entry.description) {
+            const desc = document.createElement('span');
+            desc.className = 'trust-item-hint';
+            desc.textContent = entry.description;
+            detail.appendChild(desc);
+          }
+        });
         list.appendChild(detail);
       });
       row.appendChild(list);
@@ -3372,9 +3384,8 @@
   let registrarPage = 0;
   const registrarSearch = document.getElementById('registrar-search');
 
-  // The first record is the wallet's own registration as a credential
-  // provider. The newest registrations follow it. Each entry keeps its search
-  // text, so typing does not rebuild it.
+  // The newest registrations come first. Each entry keeps its search text, so
+  // typing does not rebuild it.
   let registrarEntries = [];
   function registrarEntriesInRole() {
     const filter = document.querySelector('input[name="registrar-filter"]:checked').value;
@@ -3392,40 +3403,32 @@
     Array.from(suggestions).sort().forEach(value => datalist.appendChild(new Option(value, value)));
   }
 
-  // The wallet's own issuer presents its certificate in its metadata, so it
-  // has no actions here.
-  function providerRow(identifier, prefix, service, own) {
+  function providerRow(identifier, prefix, service) {
     const servicePrefix = prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default');
-    const status = own ? 'own' : providerStatus(identifier, service.serviceIdentifier || '');
+    const status = providerStatus(identifier, service.serviceIdentifier || '');
     const issuerInfo = registrarVerifierInfo[servicePrefix];
     const entitlements = (service.entitlements || []).map(e => ENTITLEMENT_LABELS[e]).filter(Boolean);
     const row = document.createElement('div');
     row.className = 'registrar-use';
     row.id = servicePrefix;
     row.dataset.status = status;
-    let badge = '';
-    let actions = '';
-    if (!own) {
-      const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
-      badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
-      actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
-        '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
-          (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
-          '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
-        (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
-          (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
-          '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-      '</span>';
-    }
+    const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
+    const badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
+    const actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
+      '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
+        (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
+        '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
+      (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
+        (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+        '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+    '</span>';
     row.innerHTML =
       '<div class="registrar-use-head" id="' + servicePrefix + '-head">' +
         '<span class="registrar-use-purpose" id="' + servicePrefix + '-entitlement">' + escHtml(entitlements.join(', ') || 'Attestation provider') + '</span>' +
         actions +
       '</div>' +
-      (badge ? '<div class="cred-pills registrar-pills" id="' + servicePrefix + '-pills">' + badge + '</div>' : '') +
-      '<ul class="registrar-use-credentials" id="' + servicePrefix + '-attestations">' +
-        (service.providesAttestations || []).map((a, i) => '<li id="' + servicePrefix + '-attestation-' + i + '">' + escHtml(registeredCredentialSummary(a)) + '</li>').join('') +
-      '</ul>' +
+      '<div class="cred-pills registrar-pills" id="' + servicePrefix + '-pills">' + badge + '</div>' +
+      registeredCredentialList(service.providesAttestations || [], servicePrefix + '-attestations', servicePrefix + '-attestation') +
       (issuerInfo === undefined ? '' :
         '<div class="registrar-use-result" id="' + servicePrefix + '-result">' +
           '<div class="registrar-result-head" id="' + servicePrefix + '-result-head">' +
@@ -3469,7 +3472,7 @@
     const pages = Math.max(1, Math.ceil(matching.length / REGISTRAR_PAGE_SIZE));
     registrarPage = Math.min(registrarPage, pages - 1);
     const shown = matching.slice(registrarPage * REGISTRAR_PAGE_SIZE, (registrarPage + 1) * REGISTRAR_PAGE_SIZE);
-    shown.forEach(({ rp, own }) => {
+    shown.forEach(({ rp }) => {
       const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
       const prefix = 'registrar-party-' + registrarDomID(identifier);
       const card = document.createElement('div');
@@ -3479,10 +3482,10 @@
       card.innerHTML =
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
-          (own ? '' : '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
+          '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
             (relyingPartyRoles(rp).includes('verifier') ? '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' : '') +
             '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
-          '</span>') +
+          '</span>' +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           relyingPartyRoles(rp).map(role =>
@@ -3492,7 +3495,7 @@
         '</div>';
       (rp.services || []).forEach(service => {
         if ((service.providesAttestations || []).length > 0) {
-          card.appendChild(providerRow(identifier, prefix, service, own));
+          card.appendChild(providerRow(identifier, prefix, service));
         }
         (service.intendedUses || []).forEach(use => {
           const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
@@ -3608,8 +3611,7 @@
         registrarRequest('GET', 'api/registrar/registration-certificates'),
       ]);
       if (load !== registrarLoad) return;
-      const entries = (records.data || []).map((rp, index) => ({ rp: rp, own: index === 0, text: relyingPartySearchText(rp) }));
-      registrarEntries = entries.slice(0, 1).concat(entries.slice(1).reverse());
+      registrarEntries = (records.data || []).map(rp => ({ rp: rp, text: relyingPartySearchText(rp) })).reverse();
       registrarStatuses = statuses || [];
     } catch (e) {
       // On an error the list keeps showing the previous result.
@@ -4165,6 +4167,7 @@
     loadCatalogEntries().catch(() => { /* The fields work without suggestions. */ });
   }
 
+  const CATEGORY_LABELS = { pid: 'PID', qeaa: 'QEAA', 'pub-eaa': 'PuB-EAA', eaa: 'EAA' };
   const LOS_LABELS = { 'iso_18045_high': 'High', 'iso_18045_moderate': 'Moderate', 'iso_18045_enhanced-basic': 'Enhanced basic', 'iso_18045_basic': 'Basic' };
   // TS11 bindingType: how an attestation is bound to its holder.
   const BINDING_LABELS = { key: 'Bound to a wallet key', claim: 'Linked to another credential', biometric: 'Bound to biometrics', none: 'Not bound to the holder' };
@@ -4195,6 +4198,7 @@
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change the credential template to change this entry.">Template</span>' : '') +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-category" title="Credential category. It selects the signer and the trusted list.">' + escHtml(CATEGORY_LABELS[entry.category] || entry.category) + '</span>' +
           '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security level: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
           '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
           '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +
@@ -4231,7 +4235,7 @@
       catalogList.appendChild(card);
     });
     const empty = document.getElementById('registrar-catalog-empty');
-    empty.textContent = 'No attestation matches "' + catalogSearch.value.trim() + '".';
+    empty.textContent = query ? 'No attestation matches "' + catalogSearch.value.trim() + '".' : 'The catalogue has no attestations yet.';
     empty.hidden = matching.length > 0;
   }
 
@@ -4259,6 +4263,7 @@
   makeModal(catalogOverlay, document.getElementById('registrar-catalog-close'));
 
   const catalogForm = document.getElementById('registrar-catalog-form');
+  linkCategoryLevel('registrar');
   const catalogAddOverlay = document.getElementById('registrar-catalog-add-overlay');
   // The dialog opens with an example filled in. Names are unique, so the
   // example name gets a number when the catalogue already has it.
@@ -4269,6 +4274,7 @@
     document.getElementById('registrar-catalog-name').value = name;
     catalogFormats.innerHTML = '';
     addCatalogFormat('dc+sd-jwt', 'urn:example:diploma:1', 'degree, graduation_date');
+    document.getElementById('registrar-catalog-category').value = 'eaa';
     document.getElementById('registrar-catalog-rulebook').value = '';
     document.getElementById('registrar-catalog-los').value = 'iso_18045_basic';
     document.getElementById('registrar-catalog-binding').value = 'key';
@@ -4340,6 +4346,7 @@
     try {
       const added = await registrarRequest('POST', 'api/catalog/attestations', {
         name: document.getElementById('registrar-catalog-name').value.trim(),
+        category: document.getElementById('registrar-catalog-category').value,
         credentials: credentials,
         schema: catalogSchema('registrar'),
       });

@@ -21,11 +21,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
@@ -42,6 +43,13 @@ const (
 	pidIssuanceServiceType     = "http://uri.etsi.org/19602/SvcType/PID/Issuance"
 	pidRevocationServiceType   = "http://uri.etsi.org/19602/SvcType/PID/Revocation"
 
+	// ETSI TS 119 602 V1.1.1 Annex H.
+	pubEAATrustListType         = "http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList"
+	pubEAAStatusDetermination   = "http://uri.etsi.org/19602/PubEAAProvidersList/StatusDetn/EU"
+	pubEAASchemeCommunityRules  = "http://uri.etsi.org/19602/PubEAAProvidersList/schemerules/EU"
+	pubEAAIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/PubEAA/Issuance"
+	pubEAARevocationServiceType = "http://uri.etsi.org/19602/SvcType/PubEAA/Revocation"
+
 	// An issuer that checks a wallet or key attestation looks for a Wallet
 	// Provider list. The wallet publishes one next to its credential lists.
 	// The URIs come from ETSI TS 119 602.
@@ -53,9 +61,12 @@ const (
 )
 
 type IssuedAttestationSpec struct {
-	Format                      string   `json:"format"`
-	VCT                         string   `json:"vct,omitempty"`
-	DocType                     string   `json:"doctype,omitempty"`
+	Format  string `json:"format"`
+	VCT     string `json:"vct,omitempty"`
+	DocType string `json:"doctype,omitempty"`
+	// Category is a credtemplate category. It selects the trusted list. A
+	// spec without a category and without a trust list type is on no list.
+	Category                    string   `json:"category,omitempty"`
 	Entitlements                []string `json:"entitlements,omitempty"`
 	TrustListType               string   `json:"trust_list_type,omitempty"`
 	StatusDeterminationApproach string   `json:"status_determination_approach,omitempty"`
@@ -68,13 +79,8 @@ type IssuedAttestationSpec struct {
 	RevocationServiceName       string   `json:"revocation_service_name,omitempty"`
 }
 
-type providerRegistrationProfile struct {
-	Entitlements []string
-	TradeName    string
-	Description  string
-}
-
 type trustListProfile struct {
+	Category                    string
 	LoTEType                    string
 	StatusDeterminationApproach string
 	SchemeTypeCommunityRules    string
@@ -90,14 +96,14 @@ func (w *Wallet) issuedAttestationSpecs() []IssuedAttestationSpec {
 	if w == nil {
 		return nil
 	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	if len(w.IssuedAttestations) > 0 {
 		return dedupeIssuedAttestations(w.IssuedAttestations)
 	}
 
 	seen := make(map[string]bool)
 	out := make([]IssuedAttestationSpec, 0)
-	w.mu.RLock()
-	defer w.mu.RUnlock()
 	for _, cred := range w.Credentials {
 		spec := IssuedAttestationSpec{Format: cred.Format, VCT: cred.VCT, DocType: cred.DocType}
 		switch cred.Format {
@@ -126,6 +132,7 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 	spec.Format = strings.TrimSpace(spec.Format)
 	spec.VCT = strings.TrimSpace(spec.VCT)
 	spec.DocType = strings.TrimSpace(spec.DocType)
+	spec.Category = strings.TrimSpace(spec.Category)
 	spec.TrustListType = strings.TrimSpace(spec.TrustListType)
 	spec.StatusDeterminationApproach = strings.TrimSpace(spec.StatusDeterminationApproach)
 	spec.SchemeTypeCommunityRules = strings.TrimSpace(spec.SchemeTypeCommunityRules)
@@ -139,38 +146,42 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 
 	switch trustProfileHint {
 	case "", "auto":
-	case "pid":
-		spec = applyPIDTrustProfileDefaults(spec)
 	case "local":
-		spec = applyLocalTrustProfileDefaults(spec)
+		spec.Category = credtemplate.CategoryEAA
 	default:
-		return IssuedAttestationSpec{}, fmt.Errorf("unsupported trust profile %q", trustProfileHint)
+		if !slices.Contains(credtemplate.Categories, trustProfileHint) {
+			return IssuedAttestationSpec{}, fmt.Errorf("unsupported trust profile %q", trustProfileHint)
+		}
+		spec.Category = trustProfileHint
 	}
-
-	if len(spec.Entitlements) == 0 {
-		if isPIDAttestation(spec) || spec.TrustListType == pidTrustListType {
-			spec.Entitlements = []string{registrar.PIDProviderEntitlement}
-		} else if spec.VCT != "" || spec.DocType != "" {
-			spec.Entitlements = []string{registrar.NonQEAAProviderEntitlement}
-		} else {
-			spec.Entitlements = []string{registrar.ServiceProviderEntitlement}
+	if err := credtemplate.CheckCategory(spec.Category); err != nil {
+		return IssuedAttestationSpec{}, err
+	}
+	if spec.TrustListType == walletProviderTrustListType {
+		return IssuedAttestationSpec{}, fmt.Errorf("the wallet provider list holds wallet and key attestations, not credentials")
+	}
+	switch {
+	case spec.Category != "":
+	case spec.TrustListType == pidTrustListType:
+		spec.Category = credtemplate.CategoryPID
+	case spec.TrustListType == pubEAATrustListType:
+		spec.Category = credtemplate.CategoryPubEAA
+	case spec.TrustListType == localTrustListType && (spec.EntityName == "" || spec.EntityName == "EUDI Dev Wallet Issuer"):
+		// Stored wallets can hold this default local profile without a category.
+		// Such a credential type has no category, so it is on no list.
+		spec.TrustListType, spec.StatusDeterminationApproach, spec.SchemeTypeCommunityRules, spec.SchemeTerritory = "", "", "", ""
+		spec.EntityName, spec.IssuanceServiceType, spec.RevocationServiceType, spec.IssuanceServiceName, spec.RevocationServiceName = "", "", "", "", ""
+	}
+	if spec.Category != "" {
+		spec = applyCategoryDefaults(spec)
+		if len(spec.Entitlements) == 0 {
+			spec.Entitlements = []string{categoryEntitlement(spec.Category)}
 		}
 	}
-	if spec.TrustListType == "" {
-		if isPIDAttestation(spec) {
-			spec = applyPIDTrustProfileDefaults(spec)
-		} else {
-			spec = applyLocalTrustProfileDefaults(spec)
-		}
-	}
-	if spec.EntityName == "" {
-		spec.EntityName = "EUDI Dev Wallet Issuer"
-	}
-	if spec.IssuanceServiceName == "" {
-		spec.IssuanceServiceName = "Issuance Service"
-	}
-	if spec.RevocationServiceName == "" {
-		spec.RevocationServiceName = "Revocation Service"
+	if spec.TrustListType != "" {
+		spec.EntityName = firstNonEmpty(spec.EntityName, "EUDI Dev Wallet Issuer")
+		spec.IssuanceServiceName = firstNonEmpty(spec.IssuanceServiceName, "Issuance Service")
+		spec.RevocationServiceName = firstNonEmpty(spec.RevocationServiceName, "Revocation Service")
 	}
 	return spec, nil
 }
@@ -218,123 +229,84 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func applyPIDTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
-	if spec.TrustListType == "" {
-		spec.TrustListType = pidTrustListType
-	}
-	if spec.StatusDeterminationApproach == "" {
-		spec.StatusDeterminationApproach = pidStatusDetermination
-	}
-	if spec.SchemeTypeCommunityRules == "" {
-		spec.SchemeTypeCommunityRules = pidSchemeCommunityRules
-	}
-	if spec.SchemeTerritory == "" {
-		spec.SchemeTerritory = "EU"
-	}
-	if spec.EntityName == "" {
-		spec.EntityName = "EUDI Dev Wallet PID Provider"
-	}
-	if spec.IssuanceServiceType == "" {
-		spec.IssuanceServiceType = pidIssuanceServiceType
-	}
-	if spec.RevocationServiceType == "" {
-		spec.RevocationServiceType = pidRevocationServiceType
-	}
-	if spec.IssuanceServiceName == "" {
-		spec.IssuanceServiceName = "PID Issuance Service"
-	}
-	if spec.RevocationServiceName == "" {
-		spec.RevocationServiceName = "PID Revocation Service"
-	}
-	return spec
-}
-
-func applyLocalTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
-	if spec.TrustListType == "" {
-		spec.TrustListType = localTrustListType
-	}
-	if spec.EntityName == "" {
-		spec.EntityName = "EUDI Dev Wallet Issuer"
-	}
-	if spec.IssuanceServiceType == "" {
-		spec.IssuanceServiceType = localIssuanceServiceType
-	}
-	if spec.RevocationServiceType == "" {
-		spec.RevocationServiceType = localRevocationServiceType
-	}
-	if spec.IssuanceServiceName == "" {
-		spec.IssuanceServiceName = "Issuance Service"
-	}
-	if spec.RevocationServiceName == "" {
-		spec.RevocationServiceName = "Revocation Service"
-	}
-	return spec
-}
-
-func isPIDAttestation(spec IssuedAttestationSpec) bool {
-	return credtype.IsPIDType(spec.VCT) || credtype.IsPIDType(spec.DocType)
-}
-
-func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
-	specs := w.issuedAttestationSpecs()
-	entitlementSet := make([]string, 0)
-	for _, spec := range specs {
-		entitlementSet = append(entitlementSet, spec.Entitlements...)
-	}
-	// One trade name for every mix of attestation types, so the registrar and
-	// the issuer metadata name the demo issuer the same way.
-	profile := providerRegistrationProfile{
-		Entitlements: dedupeStrings(entitlementSet),
-		TradeName:    registrar.DemoIssuerName,
-		Description:  "Demo issuer of the eudi-dev test wallet",
-	}
-	if len(profile.Entitlements) == 0 {
-		profile.Entitlements = []string{registrar.ServiceProviderEntitlement}
-	}
-	return profile
-}
-
-func inferWalletTrustListProfile(w *Wallet) trustListProfile {
-	specs := w.issuedAttestationSpecs()
-	if len(specs) > 0 {
-		first := specs[0]
-		sameProfile := true
-		for _, spec := range specs[1:] {
-			if spec.TrustListType != first.TrustListType ||
-				spec.StatusDeterminationApproach != first.StatusDeterminationApproach ||
-				spec.SchemeTypeCommunityRules != first.SchemeTypeCommunityRules ||
-				spec.SchemeTerritory != first.SchemeTerritory ||
-				spec.EntityName != first.EntityName ||
-				spec.IssuanceServiceType != first.IssuanceServiceType ||
-				spec.RevocationServiceType != first.RevocationServiceType ||
-				spec.IssuanceServiceName != first.IssuanceServiceName ||
-				spec.RevocationServiceName != first.RevocationServiceName {
-				sameProfile = false
-				break
-			}
+// categoryTrustListProfile is the trusted list of a credential category. ETSI
+// TS 119 602 V1.1.1 defines list types for PID providers (Annex D) and PuB-EAA
+// providers (Annex H). QEAA providers are on TS 119 612 trusted lists, and other
+// EAA providers have no list type, so both use the local type.
+func categoryTrustListProfile(category string) trustListProfile {
+	switch category {
+	case credtemplate.CategoryPID:
+		return trustListProfile{
+			Category:                    category,
+			LoTEType:                    pidTrustListType,
+			StatusDeterminationApproach: pidStatusDetermination,
+			SchemeTypeCommunityRules:    pidSchemeCommunityRules,
+			SchemeTerritory:             "EU",
+			IssuanceServiceType:         pidIssuanceServiceType,
+			RevocationServiceType:       pidRevocationServiceType,
+			IssuanceServiceName:         "PID Issuance Service",
+			RevocationServiceName:       "PID Revocation Service",
+			EntityName:                  "EUDI Dev Wallet PID Provider",
 		}
-		if sameProfile {
-			return trustListProfile{
-				LoTEType:                    first.TrustListType,
-				StatusDeterminationApproach: first.StatusDeterminationApproach,
-				SchemeTypeCommunityRules:    first.SchemeTypeCommunityRules,
-				SchemeTerritory:             first.SchemeTerritory,
-				IssuanceServiceType:         first.IssuanceServiceType,
-				RevocationServiceType:       first.RevocationServiceType,
-				IssuanceServiceName:         first.IssuanceServiceName,
-				RevocationServiceName:       first.RevocationServiceName,
-				EntityName:                  first.EntityName,
-			}
+	case credtemplate.CategoryPubEAA:
+		return trustListProfile{
+			Category:                    category,
+			LoTEType:                    pubEAATrustListType,
+			StatusDeterminationApproach: pubEAAStatusDetermination,
+			SchemeTypeCommunityRules:    pubEAASchemeCommunityRules,
+			SchemeTerritory:             "EU",
+			IssuanceServiceType:         pubEAAIssuanceServiceType,
+			RevocationServiceType:       pubEAARevocationServiceType,
+			IssuanceServiceName:         "PuB-EAA Issuance Service",
+			RevocationServiceName:       "PuB-EAA Revocation Service",
+			EntityName:                  "EUDI Dev Wallet PuB-EAA Provider",
 		}
+	case credtemplate.CategoryQEAA:
+		return localCategoryProfile(category, "QEAA")
+	default:
+		return localCategoryProfile(credtemplate.CategoryEAA, "EAA")
 	}
+}
+
+func localCategoryProfile(category, label string) trustListProfile {
 	return trustListProfile{
+		Category:              category,
 		LoTEType:              localTrustListType,
 		IssuanceServiceType:   localIssuanceServiceType,
 		RevocationServiceType: localRevocationServiceType,
-		IssuanceServiceName:   "Issuance Service",
-		RevocationServiceName: "Revocation Service",
-		EntityName:            "EUDI Dev Wallet Issuer",
+		IssuanceServiceName:   label + " Issuance Service",
+		RevocationServiceName: label + " Revocation Service",
+		EntityName:            "EUDI Dev Wallet " + label + " Provider",
 	}
+}
+
+func categoryEntitlement(category string) string {
+	switch category {
+	case credtemplate.CategoryPID:
+		return registrar.PIDProviderEntitlement
+	case credtemplate.CategoryQEAA:
+		return registrar.QEAAProviderEntitlement
+	case credtemplate.CategoryPubEAA:
+		return registrar.PubEAAProviderEntitlement
+	default:
+		return registrar.NonQEAAProviderEntitlement
+	}
+}
+
+// applyCategoryDefaults fills the trust list fields the spec leaves empty
+// from its category's list.
+func applyCategoryDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
+	p := categoryTrustListProfile(spec.Category)
+	spec.TrustListType = firstNonEmpty(spec.TrustListType, p.LoTEType)
+	spec.StatusDeterminationApproach = firstNonEmpty(spec.StatusDeterminationApproach, p.StatusDeterminationApproach)
+	spec.SchemeTypeCommunityRules = firstNonEmpty(spec.SchemeTypeCommunityRules, p.SchemeTypeCommunityRules)
+	spec.SchemeTerritory = firstNonEmpty(spec.SchemeTerritory, p.SchemeTerritory)
+	spec.EntityName = firstNonEmpty(spec.EntityName, p.EntityName)
+	spec.IssuanceServiceType = firstNonEmpty(spec.IssuanceServiceType, p.IssuanceServiceType)
+	spec.RevocationServiceType = firstNonEmpty(spec.RevocationServiceType, p.RevocationServiceType)
+	spec.IssuanceServiceName = firstNonEmpty(spec.IssuanceServiceName, p.IssuanceServiceName)
+	spec.RevocationServiceName = firstNonEmpty(spec.RevocationServiceName, p.RevocationServiceName)
+	return spec
 }
 
 func sanitizeMetadataID(s string) string {
@@ -349,29 +321,6 @@ func sanitizeMetadataID(s string) string {
 		return "credential"
 	}
 	return s
-}
-
-func buildProvidedAttestation(spec IssuedAttestationSpec) (registrar.ProvidedAttestation, bool) {
-	switch spec.Format {
-	case "dc+sd-jwt":
-		if strings.TrimSpace(spec.VCT) == "" {
-			return registrar.ProvidedAttestation{}, false
-		}
-		return registrar.ProvidedAttestation{
-			Format: spec.Format,
-			Type:   spec.VCT,
-		}, true
-	case "mso_mdoc":
-		if strings.TrimSpace(spec.DocType) == "" {
-			return registrar.ProvidedAttestation{}, false
-		}
-		return registrar.ProvidedAttestation{
-			Format: spec.Format,
-			Type:   spec.DocType,
-		}, true
-	default:
-		return registrar.ProvidedAttestation{}, false
-	}
 }
 
 func buildCredentialConfiguration(spec IssuedAttestationSpec) (string, map[string]any, bool) {
@@ -415,54 +364,6 @@ func buildCredentialConfiguration(spec IssuedAttestationSpec) (string, map[strin
 	}
 }
 
-func buildProviderIdentifier(issuer string) []registrar.Identifier {
-	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	if issuer == "" {
-		return []registrar.Identifier{{Identifier: "urn:oid4vc-dev:wallet:issuer", Type: "uri"}}
-	}
-	return []registrar.Identifier{{Identifier: issuer, Type: "uri"}}
-}
-
-func buildRegistrarDataset(w *Wallet, issuer string) registrar.RegistrarDataset {
-	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	registryURI := issuer + "/api/registrar/wrp"
-	profile := inferProviderRegistrationProfile(w)
-	provides := make([]registrar.ProvidedAttestation, 0)
-	for _, spec := range w.issuedAttestationSpecs() {
-		if att, ok := buildProvidedAttestation(spec); ok {
-			provides = append(provides, att)
-		}
-	}
-	if len(profile.Entitlements) == 1 && profile.Entitlements[0] == registrar.ServiceProviderEntitlement {
-		provides = nil
-	}
-	return registrar.RegistrarDataset{
-		Identifier: buildProviderIdentifier(issuer),
-		TradeName:  profile.TradeName,
-		SupportURI: []string{issuer},
-		SrvDescription: []registrar.MultiLangString{
-			{Lang: "en", Content: profile.Description},
-		},
-		IsPSB:                false,
-		Entitlements:         profile.Entitlements,
-		ProvidesAttestations: provides,
-		SupervisoryAuthority: registrar.SupervisoryAuthority{
-			Name:    "Local Test Supervisory Authority",
-			Country: "DE",
-			Email:   []string{"dpa@example.invalid"},
-		},
-		RegistryURI:    registryURI,
-		IsIntermediary: false,
-	}
-}
-
-// IssuerInfo returns the issuer_info entries. They include the registration
-// certificate that CIR (EU) 2026/1731 Annex XI requires.
-func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]registrar.IssuerInfoEntry, error) {
-	dataset := buildRegistrarDataset(&Wallet{IssuedAttestations: specs}, issuer)
-	return w.Registrar().ProviderIssuerInfo(issuer, dataset)
-}
-
 func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]any, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	configs := make(map[string]any)
@@ -474,7 +375,7 @@ func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]a
 		configs[id] = cfg
 	}
 
-	info, err := IssuerInfo(w, issuer, w.issuedAttestationSpecs())
+	info, err := w.DemoIssuerInfo()
 	if err != nil {
 		return nil, err
 	}

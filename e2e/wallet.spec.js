@@ -1033,6 +1033,8 @@ test.describe("Credential Issuing via UI", () => {
     }
     const categories = page.locator("#trust-list-links .trust-items dt");
     await expect(categories).toHaveText(["Credential providers", "Wallet providers"]);
+    const credentialGroup = page.locator("#trust-list-links .trust-items dd").nth(0);
+    await expect(credentialGroup.locator(".trust-links a")).toHaveText(["pid", "qeaa", "pub-eaa", "eaa"]);
     const walletGroup = page.locator("#trust-list-links .trust-items dd").nth(1);
     await expect(walletGroup.locator(".trust-links a")).toHaveText(["wallet-provider"]);
     const names = page.locator("#trust-list-links .trust-list-name");
@@ -2078,23 +2080,29 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-credential-1-claims")).toHaveValue("age_equal_or_over.18");
     await page.locator("#registrar-submit").click();
     await expect(page.locator("#registrar-result")).toBeVisible();
-    const verifierInfo = await page.locator("#registrar-verifier-info").inputValue();
+    const verifierInfo = JSON.parse(await page.locator("#registrar-verifier-info").inputValue());
+    const clientID = await page.locator("#registrar-client-id-0").textContent();
+    const pem = await page.locator("#registrar-pem").inputValue();
     await page.locator("#registrar-close").click();
 
-    // An unsigned request carries verifier_info as a parameter (OpenID4VP 1.0 §5.1).
+    // The wallet shows the purpose of a registration certificate bound to the
+    // access certificate that signs the request (ARF RPRC_17a).
+    const key = pem.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----/)[0];
+    const x5c = [...pem.matchAll(/-----BEGIN CERTIFICATE-----([\s\S]+?)-----END CERTIFICATE-----/g)].map((m) => m[1].replace(/\s/g, ""));
     const responseURI = "http://127.0.0.1:9/response";
-    const uri = "openid4vp://authorize?" + new URLSearchParams({
-      client_id: `redirect_uri:${responseURI}`,
+    const b64 = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    const input = b64({ alg: "ES256", typ: "oauth-authz-req+jwt", x5c }) + "." + b64({
+      client_id: clientID,
       response_type: "vp_token",
       response_mode: "direct_post",
       response_uri: responseURI,
       nonce: "n",
       state: "s",
       verifier_info: verifierInfo,
-      dcql_query: JSON.stringify({
-        credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["age_equal_or_over", "18"] }] }],
-      }),
+      dcql_query: { credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["age_equal_or_over", "18"] }] }] },
     });
+    const signature = require("crypto").sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" }).toString("base64url");
+    const uri = "openid4vp://authorize?" + new URLSearchParams({ client_id: clientID, request: input + "." + signature });
     jsonPost(`${WALLET_URL}/api/presentations`, { uri, interactive: true }).catch(() => {});
     await page.goto(`${WALLET_URL}/?request=${await waitForPendingRequest()}`);
     await expect(page.locator("#consent-purpose-0")).toContainText("Age check before checkout");
@@ -2119,9 +2127,9 @@ test.describe("Registrar", () => {
     await expect(page.locator(card + "-role-verifier")).toBeVisible();
     await expect(page.locator(use + "-purpose")).toHaveText("Listed purpose");
 
-    // The wallet's own issuer registration is the only issuer in the register.
+    // The demo issuer is an issuer in the register.
     const provider = await page.evaluate(async () => {
-      const resp = await fetch("api/registrar/wrp?limit=1", { headers: { Accept: "application/json" } });
+      const resp = await fetch("api/registrar/wrp?tradename=EUDI%20Dev%20Demo%20Issuer", { headers: { Accept: "application/json" } });
       return (await resp.json()).data[0].identifier[0].identifier;
     });
     await page.locator("#registrar-filter-issuers").check();
@@ -2175,6 +2183,38 @@ test.describe("Registrar", () => {
     await expect(page.locator(use + "-issue")).toHaveText("Issue new certificate");
     await page.locator(use + "-issue").click();
     await expect(page.locator(use + "-status")).toHaveText("Active");
+  });
+
+  test("the demo issuer and verifier get new certificates like any registration", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    const identifierOf = (name) => page.evaluate(async (name) => {
+      const resp = await fetch("api/registrar/wrp?tradename=" + encodeURIComponent(name), { headers: { Accept: "application/json" } });
+      return (await resp.json()).data[0].identifier[0].identifier;
+    }, name);
+    const domID = (id) => id.replace(/[^A-Za-z0-9_-]/g, "_");
+    const issuer = "#registrar-party-" + domID(await identifierOf("EUDI Dev Demo Issuer")) + "-service-issuance";
+    const verifier = "#registrar-party-" + domID(await identifierOf("EUDI Dev Demo Verifier")) + "-use-demo-requests";
+    await page.locator("#registrar-menu-toggle").click();
+    await page.locator("#registrar-parties-link").click();
+
+    await page.locator("#registrar-search").fill("EUDI Dev Demo Issuer");
+    await expect(page.locator(issuer + "-status")).toHaveText("Active");
+    await page.locator(issuer + "-issue").click();
+    await expect(page.locator(issuer + "-issuer-info")).toHaveValue(/registration_cert/);
+
+    await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
+    await expect(page.locator(verifier + "-status")).toHaveText("Active");
+    // A long credential list shows three credentials, and each opens its claims.
+    const credentials = page.locator(verifier + "-credentials > li:not([hidden])");
+    await expect(credentials).toHaveCount(4);
+    await expect(page.locator(verifier + "-credential-0-claims")).toBeHidden();
+    await page.locator(verifier + "-credential-0 summary").click();
+    await expect(page.locator(verifier + "-credential-0-claims")).toContainText("given_name");
+    await page.locator(verifier + "-credentials-more").click();
+    await expect(page.locator(verifier + "-credentials-more")).toHaveCount(0);
+    await page.locator(verifier + "-issue").click();
+    await expect(page.locator(verifier + "-verifier-info")).toHaveValue(/registration_cert/);
+    await expect(page.locator(verifier + "-status")).toHaveText("Active");
   });
 
   test("the relying parties list searches as you type and pages", async ({ page }) => {
@@ -2347,7 +2387,8 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
     const card = page.locator(".registrar-party", { hasText: "Library card" });
     await expect(card.locator("[id$='-los']")).toHaveText("Security level: Moderate");
-    await expect(card.locator("[id$='-trust']")).toHaveText("No trusted list");
+    await expect(card.locator("[id$='-category']")).toHaveText("EAA");
+    await expect(card.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/eaa$/);
 
     // The schema link serves SD-JWT VC Type Metadata with the claims.
     const schemaURL = await card.locator("[id$='-schema-0']").getAttribute("href");

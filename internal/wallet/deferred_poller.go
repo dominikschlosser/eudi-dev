@@ -40,10 +40,26 @@ func (s *Server) backgroundTasks() []backgroundTask {
 		{name: "deferred credentials", every: backgroundTick, run: s.collectDueDeferredCredentials},
 		{name: "credential renewal", every: renewalCheckInterval, run: s.renewExpiringCredentials},
 		{name: "signing certificate", every: certificateCheckInterval, run: s.renewSigningCertificate},
+		{name: "demo registrations", every: certificateCheckInterval, run: func(time.Time) error { return s.syncDemoRegistrations() }},
 	}
 }
 
+// syncDemoRegistrations keeps the demo issuer and verifier registered for the
+// wallet's templates with a current certificate, and saves a change.
+func (s *Server) syncDemoRegistrations() error {
+	var err error
+	s.saveMutation(func() bool {
+		var changed bool
+		changed, err = s.wallet.EnsureDemoRegistrations()
+		return changed
+	})
+	return err
+}
+
 func (s *Server) StartBackgroundTasks() func() {
+	if err := s.syncDemoRegistrations(); err != nil {
+		s.log("  WARNING: registering the demo issuer and verifier: %v", err)
+	}
 	done := make(chan struct{})
 	tasks := s.backgroundTasks()
 	state := make([]taskState, len(tasks))

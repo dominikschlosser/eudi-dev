@@ -31,9 +31,6 @@ const (
 	// restart with memory storage has lost track of the used ones. The list
 	// compresses to a few hundred bytes.
 	registrationStatusListSize = 1 << 17
-	// Index 0 belongs to the wallet's own registration certificates, which the
-	// registrar never revokes.
-	ownRegistrationStatusIndex = 0
 )
 
 var (
@@ -58,6 +55,8 @@ type RegistrationStatus struct {
 	// Expires is when the certificate expires (Unix time). An expired
 	// certificate needs no status, so its entry is freed.
 	Expires int64 `json:"expires,omitempty"`
+	// Certificate is the signed registration certificate.
+	Certificate string `json:"certificate,omitempty"`
 }
 
 // RegistrationScope selects registration certificates: those of an intended
@@ -125,10 +124,13 @@ func (r *Registrar) allocateRegistrationStatus(rp WalletRelyingParty, key certif
 // provider service has one valid certificate at a time. Entries are appended in
 // issue order, so when two certificates are issued at once, the later one stays
 // valid.
-func (r *Registrar) replaceRegistrationStatus(identifier string, key certificateKey, index int) {
+func (r *Registrar) replaceRegistrationStatus(identifier string, key certificateKey, index int, certificate string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	newest := slices.IndexFunc(r.state.RegistrationStatuses, func(s RegistrationStatus) bool { return s.Index == index })
+	if newest >= 0 {
+		r.state.RegistrationStatuses[newest].Certificate = certificate
+	}
 	for i := range newest {
 		s := &r.state.RegistrationStatuses[i]
 		if s.Identifier == identifier && key.matches(*s) {

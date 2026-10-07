@@ -239,12 +239,14 @@ func (d *DemoRP) signTemplate(cfg templateConfiguration, holderKey *ecdsa.Public
 		}
 	}
 	claims := tpl.WithUniqueClaims(credtemplate.MergeClaims(tpl.Claims, granted.holderClaims))
-	spec, err := wallet.NormalizeIssuedAttestationSpec(wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType}, "auto")
+	spec := wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType}
+	spec.Category = d.wallet.CredentialCategory(&tpl, spec)
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")
 	if err != nil {
 		return "", fmt.Errorf("building attestation spec for %s: %w", cfg.id, err)
 	}
 	_ = d.wallet.RegisterIssuedAttestation(spec)
-	signingKey, chain, err := d.wallet.SigningMaterialForIssuedAttestation(spec)
+	signingKey, chain, err := d.wallet.SigningMaterialForIssuedCredential(spec, claims)
 	if err != nil {
 		return "", fmt.Errorf("building signing certificate chain for %s: %w", cfg.id, err)
 	}

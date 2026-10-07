@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
@@ -14,19 +15,19 @@ import (
 func TestSigningCertificatesRemainStable(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://issuer.example"
-	spec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
-	first, err := w.SigningCertChainForIssuedCredential(spec, map[string]any{"issuing_country": "NL"})
+	spec := applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID, Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
+	_, first, err := w.SigningMaterialForIssuedCredential(spec, map[string]any{"issuing_country": "NL"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := w.SigningCertChainForIssuedCredential(spec, map[string]any{"issuing_country": "NL"})
+	_, second, err := w.SigningMaterialForIssuedCredential(spec, map[string]any{"issuing_country": "NL"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(first[0].Raw, second[0].Raw) {
 		t.Error("repeated issuance replaced the signing certificate")
 	}
-	german, err := w.SigningCertChainForIssuedCredential(spec, map[string]any{"issuing_country": "DE"})
+	_, german, err := w.SigningMaterialForIssuedCredential(spec, map[string]any{"issuing_country": "DE"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +51,12 @@ func TestSigningCertificatesRemainStable(t *testing.T) {
 func TestSigningCertificatesIdentifyProviderRoles(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://issuer.example"
-	pid := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
+	pid := applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID, Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
 	pidChain, err := w.SigningCertChainForIssuedAttestation(pid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	walletChain, err := w.SigningCertChainForProfile(walletProviderTrustListProfile())
+	_, walletChain, err := w.WalletProviderSigningMaterial()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +119,7 @@ func TestSigningCertificatesIdentifyProviderRoles(t *testing.T) {
 func TestSigningCertificatesSurviveReload(t *testing.T) {
 	backend := storage.NewMemory()
 	dir := t.TempDir()
-	spec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
+	spec := applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID, Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT})
 	w, err := NewWalletStoreOn(dir, backend).LoadOrCreate()
 	if err != nil {
 		t.Fatal(err)

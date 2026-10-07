@@ -23,9 +23,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
@@ -60,6 +62,55 @@ func TestRegistrationsAreStored(t *testing.T) {
 			}
 			if again, err := store.LoadOrCreate(); err != nil || len(again.Registrar().RegisteredRelyingParties()) != 0 {
 				t.Fatalf("registrations after delete %+v (%v), want none", again.Registrar().RegisteredRelyingParties(), err)
+			}
+		})
+	}
+}
+
+// Storage keeps the order of registrations and certificates. The registrar
+// reuses the stored current certificate after a reload.
+func TestRegistrarOrderAndCertificatesSurviveAReload(t *testing.T) {
+	for name, open := range map[string]func(t *testing.T) *WalletStore{
+		"file":   func(t *testing.T) *WalletStore { return NewWalletStore(t.TempDir()) },
+		"entity": func(t *testing.T) *WalletStore { store, _ := entityStore(t); return store },
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := open(t)
+			w, err := store.LoadOrCreate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var identifiers []string
+			for range 12 {
+				identifiers = append(identifiers, registerTestRelyingParty(t, w).Identifier[0].Identifier)
+			}
+			rp, _ := w.Registrar().RelyingParty(identifiers[0])
+			req := registrar.RegistrationCertificateRequest{Identifier: identifiers[0], IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
+			var current string
+			for range 12 {
+				result, err := w.Registrar().IssueRegistrationCertificate(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				current = result.RegistrationCertificate
+			}
+			if err := store.Save(w); err != nil {
+				t.Fatal(err)
+			}
+			reloaded, err := store.LoadOrCreate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var order []string
+			for _, party := range reloaded.Registrar().RegisteredRelyingParties() {
+				order = append(order, party.Identifier[0].Identifier)
+			}
+			if !slices.Equal(order, identifiers) {
+				t.Errorf("registrations reloaded in the order %v, want %v", order, identifiers)
+			}
+			result, issued, err := reloaded.Registrar().CurrentRegistrationCertificate(req)
+			if err != nil || issued || result.RegistrationCertificate != current {
+				t.Errorf("current certificate after the reload is not the newest stored one (%v)", err)
 			}
 		})
 	}
@@ -109,6 +160,9 @@ func registrarJSON(t *testing.T, srv *Server, method, path, body string) *httpte
 // certificates.
 func TestTheRegistrarAPI(t *testing.T) {
 	srv := newTestServer(t, true)
+	if _, err := srv.wallet.EnsureDemoRegistrations(); err != nil {
+		t.Fatal(err)
+	}
 	created := registrarJSON(t, srv, "POST", "/api/registrar/wrp", `{"tradeName":"Example Shop","services":[{"serviceIdentifier":"web","intendedUses":[{"purpose":[{"lang":"en","content":"Age check"}],"credentials":[{"format":"dc+sd-jwt","meta":{"vct_values":["`+mock.DefaultPIDVCT+`"]},"claims":[{"path":["given_name"]}]}]}]}]}`)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("POST /wrp: %d %s", created.Code, created.Body.String())
@@ -138,12 +192,22 @@ func TestTheRegistrarAPI(t *testing.T) {
 			t.Fatalf("page %+v (%v), want the one matching registration", page, err)
 		}
 	})
-	t.Run("the wallet's own record lists first", func(t *testing.T) {
+	t.Run("the demo issuer and verifier are ordinary records", func(t *testing.T) {
 		var page struct {
 			Data []registrar.WalletRelyingParty
 		}
-		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp", "").Body.Bytes(), &page); err != nil || len(page.Data) != 2 || len(page.Data[0].Services[0].Entitlements) == 0 {
-			t.Fatalf("records %+v (%v), want the provider record and the registration", page.Data, err)
+		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp", "").Body.Bytes(), &page); err != nil || len(page.Data) != 3 {
+			t.Fatalf("records %+v (%v), want the demo issuer, the demo verifier and the registration", page.Data, err)
+		}
+		issuer, verifier := page.Data[0], page.Data[1]
+		if issuer.TradeName != DemoIssuerName || len(issuer.Services) != 1 || len(issuer.Services[0].ProvidesAttestations) == 0 || len(issuer.Services[0].IntendedUses) != 1 {
+			t.Errorf("demo issuer %+v, want one provider service with the identity check", issuer)
+		}
+		if verifier.TradeName != demoVerifierName || len(verifier.Services) != 1 || len(verifier.Services[0].IntendedUses) != 1 || len(verifier.Services[0].ProvidesAttestations) != 0 {
+			t.Errorf("demo verifier %+v, want one service with one intended use", verifier)
+		}
+		if issuer.Identifier[0].Identifier == verifier.Identifier[0].Identifier {
+			t.Errorf("both records have the identifier %s", issuer.Identifier[0].Identifier)
 		}
 	})
 	t.Run("one service", func(t *testing.T) {
@@ -241,11 +305,11 @@ func TestTheRegistrarAPI(t *testing.T) {
 				NextCursor  string `json:"next_cursor"`
 			} `json:"pagination"`
 		}
-		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp?limit=1", "").Body.Bytes(), &first); err != nil ||
-			len(first.Data) != 1 || !first.Pagination.HasNextPage || first.Pagination.NextCursor != "1" {
-			t.Fatalf("first page %+v (%v), want one record and a cursor", first, err)
+		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp?limit=2", "").Body.Bytes(), &first); err != nil ||
+			len(first.Data) != 2 || !first.Pagination.HasNextPage || first.Pagination.NextCursor != "2" {
+			t.Fatalf("first page %+v (%v), want two records and a cursor", first, err)
 		}
-		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp?limit=1&cursor=1", "").Body.Bytes(), &second); err != nil ||
+		if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp?limit=2&cursor=2", "").Body.Bytes(), &second); err != nil ||
 			len(second.Data) != 1 || second.Pagination.HasNextPage || second.Data[0].Identifier[0].Identifier != id {
 			t.Fatalf("second page %+v (%v), want the registration and no next page", second, err)
 		}
@@ -267,5 +331,26 @@ func TestTheRegistrarServesItsPlaceholderPages(t *testing.T) {
 		if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "eudi-dev test") {
 			t.Errorf("GET %s = %d %q", path, resp.Code, resp.Body.String())
 		}
+	}
+}
+
+// The demo registrations change only when the templates do.
+func TestTheDemoRegistrationsFollowTheTemplates(t *testing.T) {
+	w := generateTestWallet(t)
+	if changed, err := w.EnsureDemoRegistrations(); err != nil || !changed {
+		t.Fatalf("first run: changed %v, %v", changed, err)
+	}
+	if changed, err := w.EnsureDemoRegistrations(); err != nil || changed {
+		t.Fatalf("second run: changed %v, %v", changed, err)
+	}
+	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{Name: "badge", Format: "sdjwt", VCT: "urn:example:badge:1", Category: credtemplate.CategoryPubEAA}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := w.EnsureDemoRegistrations(); err != nil || !changed {
+		t.Fatalf("after a new template: changed %v, %v", changed, err)
+	}
+	issuer, _ := w.Registrar().RelyingParty(ownProviderIdentifier(t, w))
+	if !slices.Contains(issuer.Services[0].Entitlements, registrar.PubEAAProviderEntitlement) {
+		t.Errorf("entitlements %v, want the PuB-EAA provider", issuer.Services[0].Entitlements)
 	}
 }

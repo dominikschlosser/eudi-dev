@@ -48,6 +48,7 @@ type dispatchOID4Opts struct {
 	haip              bool
 	arf               bool
 	relyingPartyCAs   []string
+	trustListCAs      []string
 	mode              string
 	// keyAttestationLevel is what a key attestation claims (see
 	// Wallet.KeyAttestationLevel).
@@ -79,10 +80,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if opts.haip {
 			w.RequireHAIP = true
 		}
-		if opts.arf {
-			w.RequireARF = true
-		}
-		if err := loadRelyingPartyCAs(w, opts.relyingPartyCAs); err != nil {
+		if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
 			return err
 		}
 		w.KeyAttestationLevel = opts.keyAttestationLevel
@@ -265,8 +263,8 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 		return true, err
 	}
 	// A running wallet validates with its own --arf setting and relying party CAs.
-	if opts.arf || len(opts.relyingPartyCAs) > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: the wallet running at %s uses its own --arf and --relying-party-ca settings, not these flags\n", baseURL)
+	if opts.arf || len(opts.relyingPartyCAs) > 0 || len(opts.trustListCAs) > 0 {
+		fmt.Fprintf(os.Stderr, "Warning: the wallet running at %s uses its own --arf, --relying-party-ca and --trust-list-ca settings, not these flags\n", baseURL)
 	}
 	payload := runningWalletPresentationPayload(uri, opts)
 
@@ -647,8 +645,14 @@ func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 		return err
 	}
 	w.KeyAttestationLevel = opts.keyAttestationLevel
+	if err := applyValidationMode(w, opts.mode); err != nil {
+		return err
+	}
 	if opts.haip {
 		w.RequireHAIP = true
+	}
+	if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
+		return err
 	}
 
 	result, err := w.ProcessCredentialOfferWithOptions(uri, wallet.OfferOptions{TxCode: opts.txCode, ResolvedOffer: opts.resolvedOffer})
@@ -708,19 +712,32 @@ func navigatesHere(browserWaiting bool) bool {
 	return !noOpen && !browserWaiting
 }
 
-// loadRelyingPartyCAs reads the PEM files of --relying-party-ca.
-func loadRelyingPartyCAs(w *wallet.Wallet, paths []string) error {
+// applyARFOptions turns on --arf and loads the PEM files of
+// --relying-party-ca and --trust-list-ca.
+func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs []string) error {
+	if arf {
+		w.RequireARF = true
+	}
+	var err error
+	if w.RelyingPartyCAPEM, err = loadPEMCertificates("relying-party-ca", relyingPartyCAs); err != nil {
+		return err
+	}
+	w.TrustListCAPEM, err = loadPEMCertificates("trust-list-ca", trustListCAs)
+	return err
+}
+
+// loadPEMCertificates reads the PEM files of a CA flag into one bundle.
+func loadPEMCertificates(flag string, paths []string) ([]byte, error) {
 	var bundle []byte
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("reading --relying-party-ca: %w", err)
+			return nil, fmt.Errorf("reading --%s: %w", flag, err)
 		}
 		if !x509.NewCertPool().AppendCertsFromPEM(data) {
-			return fmt.Errorf("--relying-party-ca %s holds no PEM certificate", path)
+			return nil, fmt.Errorf("--%s %s holds no PEM certificate", flag, path)
 		}
 		bundle = append(append(bundle, data...), '\n')
 	}
-	w.RelyingPartyCAPEM = bundle
-	return nil
+	return bundle, nil
 }

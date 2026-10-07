@@ -128,6 +128,7 @@ func NewServer(w *Wallet, port int, onSave func()) *Server {
 	s.mux = http.NewServeMux()
 	s.routeRoots = map[string]bool{}
 	s.setupRoutes()
+	w.saveRegistrarChange = s.saveMutation
 	// Read logFunc lazily because SetLogger may run after NewServer.
 	s.parseOpts = oid4vc.ParseOptions{
 		FetchRequestURI: MakeFetchRequestURI(w, func(format string, args ...any) {
@@ -199,7 +200,14 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/trustlist/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
-	registrarAPI := &registrar.Server{Registrar: func() *registrar.Registrar { return s.wallet.Registrar() }, Mutate: s.saveMutation}
+	// The demo registrations follow the catalogue, and a deleted one comes
+	// back, so every registrar change updates them.
+	registrarAPI := &registrar.Server{Registrar: func() *registrar.Registrar { return s.wallet.Registrar() }, Mutate: func(change func() bool) {
+		s.saveMutation(change)
+		if err := s.syncDemoRegistrations(); err != nil {
+			s.log("  WARNING: updating the demo registrations: %v", err)
+		}
+	}}
 	for pattern, handler := range registrarAPI.Routes() {
 		s.routeFunc(pattern, s.withFreshStore(handler))
 	}

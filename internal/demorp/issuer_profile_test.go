@@ -115,9 +115,11 @@ func TestIssuerProfileMetadata(t *testing.T) {
 	}
 }
 
-// TS 119 475 V1.2.1 §5.1.1 links registration and access certificates by their identifier.
+// The identity check of the demo issuer carries the registration certificate
+// of its intended use. It names the subject of the access certificate (ETSI
+// TS 119 475 V1.2.1 §5.1.1) and its trade name (ARF RPRC_06).
 func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
-	d, w, _ := newDemoRP(t)
+	_, w, _ := newDemoRP(t)
 	// The registrar publishes under the issuer URL, which differs from the
 	// base URL without --base-url.
 	w.IssuerURL = "https://localhost:9999"
@@ -125,15 +127,24 @@ func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, err := d.registrationCertificateClaims(chain[0], "Demo Verifier", "Identity check", nil)
+	info, err := w.DemoIdentityCheckVerifierInfo()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims["registry_uri"] != w.RegistrarBase()+"/api/registrar/wrp" {
-		t.Errorf("registrar URL = %v", claims["registry_uri"])
+	certificate := info[0].(map[string]any)["data"].(string)
+	payload, err := base64.RawURLEncoding.DecodeString(strings.Split(certificate, ".")[1])
+	if err != nil {
+		t.Fatal(err)
 	}
-	if uri := claims["status"].(map[string]any)["status_list"].(map[string]any)["uri"]; uri != w.Registrar().RegistrationStatusListURL() {
-		t.Errorf("status list URI = %v, want %s", uri, w.Registrar().RegistrationStatusListURL())
+	var claims struct {
+		Sub, Country, Name string
+		RegistryURI        string `json:"registry_uri"`
+		Status             struct {
+			StatusList struct{ URI string } `json:"status_list"`
+		}
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		t.Fatal(err)
 	}
 	var identifier string
 	for _, attribute := range chain[0].Subject.Names {
@@ -141,7 +152,10 @@ func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 			identifier, _ = attribute.Value.(string)
 		}
 	}
-	if claims["sub"] != identifier || claims["sub_ln"] != chain[0].Subject.Organization[0] || claims["country"] != chain[0].Subject.Country[0] {
-		t.Fatalf("registered identity = %v, want the access certificate subject", claims)
+	if claims.Sub != identifier || claims.Country != chain[0].Subject.Country[0] || claims.Name != chain[0].Subject.CommonName {
+		t.Errorf("registered identity %+v, want the access certificate subject %v", claims, chain[0].Subject)
+	}
+	if claims.RegistryURI != w.RegistrarBase()+"/api/registrar/wrp/"+identifier || claims.Status.StatusList.URI != w.Registrar().RegistrationStatusListURL() {
+		t.Errorf("registry URI %q and status list %q, want the wallet's registrar", claims.RegistryURI, claims.Status.StatusList.URI)
 	}
 }

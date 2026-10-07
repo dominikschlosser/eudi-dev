@@ -141,16 +141,14 @@ func (s *Server) handleJWTVCIssuerMetadata(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "wallet issuer URL is not configured", http.StatusNotFound)
 		return
 	}
-	jwk := buildIssuerSigningJWK(s.wallet, s.signingKeyExpiry())
-	if jwk == nil {
+	keys := issuerSigningJWKs(s.wallet, s.signingKeyExpiry())
+	if len(keys) == 0 {
 		http.Error(w, "wallet has no issuer signing key", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issuer": issuer,
-		"jwks": map[string]any{
-			"keys": []any{jwk},
-		},
+		"jwks":   map[string]any{"keys": keys},
 	})
 }
 

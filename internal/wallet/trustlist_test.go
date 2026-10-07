@@ -17,15 +17,36 @@ package wallet
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/x509"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
+
+// GenerateTrustListJWT signs a list of the local profile with the CA as its
+// trust anchor.
+func GenerateTrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certificate) (string, error) {
+	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
+		OperatorName: "EUDI Dev Wallet",
+		Profile: trustListProfile{
+			LoTEType:              localTrustListType,
+			IssuanceServiceType:   localIssuanceServiceType,
+			RevocationServiceType: localRevocationServiceType,
+			IssuanceServiceName:   "Issuance Service",
+			RevocationServiceName: "Revocation Service",
+			EntityName:            "EUDI Dev Wallet Issuer",
+		},
+	})
+}
 
 func TestGenerateTrustListJWT_ValidSignature(t *testing.T) {
 	caKey, err := mock.GenerateKey()
@@ -190,13 +211,13 @@ func TestGenerateTrustListJWTForWallet_PIDProfileMatchesETSIShape(t *testing.T) 
 
 func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.RegisterIssuedAttestation(applyPIDTrustProfileDefaults(IssuedAttestationSpec{
+	if err := w.RegisterIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID,
 		Format: "dc+sd-jwt",
 		VCT:    mock.DefaultPIDVCT,
 	})); err != nil {
 		t.Fatalf("registering PID attestation: %v", err)
 	}
-	if err := w.RegisterIssuedAttestation(applyLocalTrustProfileDefaults(IssuedAttestationSpec{
+	if err := w.RegisterIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryEAA,
 		Format:  "mso_mdoc",
 		DocType: "org.iso.23220.photoid.1",
 		Entitlements: []string{
@@ -207,23 +228,18 @@ func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 	}
 
 	groups := TrustListGroupsForWallet(w)
-	if len(groups) != 3 {
-		t.Fatalf("expected 3 trust-list groups, got %d", len(groups))
+	var ids []string
+	for _, group := range groups {
+		ids = append(ids, group.ID)
 	}
-	if groups[0].ID != "pid" {
-		t.Fatalf("expected pid group first, got %s", groups[0].ID)
+	if want := []string{"pid", "qeaa", "pub-eaa", "eaa", "wallet-provider"}; !slices.Equal(ids, want) {
+		t.Fatalf("groups %v, want %v", ids, want)
 	}
-	if groups[1].ID != "wallet-provider" {
-		t.Fatalf("expected wallet-provider group second, got %s", groups[1].ID)
-	}
-	if groups[2].ID != "local" {
-		t.Fatalf("expected local group third, got %s", groups[2].ID)
+	if len(groups[3].Specs) != 1 || groups[3].Specs[0].DocType != "org.iso.23220.photoid.1" {
+		t.Fatalf("eaa group lists %+v, want the photo ID", groups[3].Specs)
 	}
 
-	defaultGroup, ok := DefaultTrustListGroupForWallet(w)
-	if !ok {
-		t.Fatal("expected default trust-list group")
-	}
+	defaultGroup := DefaultTrustListGroupForWallet(w)
 	if defaultGroup.ID != "pid" {
 		t.Fatalf("expected default group pid, got %s", defaultGroup.ID)
 	}
@@ -245,10 +261,7 @@ func TestWalletProviderTrustList_UsesDistinctSignerAndIsNeverDefault(t *testing.
 		t.Fatalf("expected wallet solution issuance service type, got %s", group.Profile.IssuanceServiceType)
 	}
 
-	defaultGroup, ok := DefaultTrustListGroupForWallet(w)
-	if !ok {
-		t.Fatal("expected a default trust-list group")
-	}
+	defaultGroup := DefaultTrustListGroupForWallet(w)
 	if defaultGroup.ID == "wallet-provider" {
 		t.Fatal("wallet-provider list must never be the default trust list")
 	}
@@ -308,7 +321,7 @@ func trustListAnchorCert(t *testing.T, jwt string) string {
 
 func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *testing.T) {
 	w := generateTestWallet(t)
-	if err := w.RegisterIssuedAttestation(applyPIDTrustProfileDefaults(IssuedAttestationSpec{
+	if err := w.RegisterIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID,
 		Format: "dc+sd-jwt",
 		VCT:    mock.DefaultPIDVCT,
 	})); err != nil {
@@ -316,8 +329,8 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 
 	entries := BuildTrustListIndexEntries(w, "")
-	if len(entries) != 2 {
-		t.Fatalf("expected two trust-list entries, got %d", len(entries))
+	if len(entries) != 5 {
+		t.Fatalf("expected five trust-list entries, got %d", len(entries))
 	}
 	if entries[0].Path != "/api/trustlists/pid" {
 		t.Fatalf("expected pid path, got %s", entries[0].Path)
@@ -330,8 +343,8 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 
 	entries = BuildTrustListIndexEntries(w, "https://wallet.example:8443")
-	if len(entries) != 2 {
-		t.Fatalf("expected two trust-list entries, got %d", len(entries))
+	if len(entries) != 5 {
+		t.Fatalf("expected five trust-list entries, got %d", len(entries))
 	}
 	if entries[0].AdvertisedURL != "https://wallet.example:8443/api/trustlists/pid" {
 		t.Fatalf("expected advertised_url, got %s", entries[0].AdvertisedURL)
@@ -341,44 +354,27 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 }
 
-func TestSigningCertChainForProfile_UsesSharedCAWithDistinctLeafs(t *testing.T) {
+// Each category signs with its own key under its own provider CA. The PID
+// signer keeps the wallet's issuer key.
+func TestEachCategorySignsWithItsOwnKey(t *testing.T) {
 	w := generateTestWallet(t)
-	pidSpec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{
-		Format: "dc+sd-jwt",
-		VCT:    mock.DefaultPIDVCT,
-	})
-	localSpec := applyLocalTrustProfileDefaults(IssuedAttestationSpec{
-		Format:  "mso_mdoc",
-		DocType: "org.iso.23220.photoid.1",
-	})
-
-	pidChain, err := w.SigningCertChainForIssuedAttestation(pidSpec)
+	pid, err := w.SigningCertChainForIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryPID, Format: "dc+sd-jwt", VCT: mock.DefaultPIDVCT}))
 	if err != nil {
-		t.Fatalf("SigningCertChainForIssuedAttestation(pid): %v", err)
+		t.Fatal(err)
 	}
-	localChain, err := w.SigningCertChainForIssuedAttestation(localSpec)
+	eaa, err := w.SigningCertChainForIssuedAttestation(applyCategoryDefaults(IssuedAttestationSpec{Category: credtemplate.CategoryEAA, Format: "mso_mdoc", DocType: "org.iso.23220.photoid.1"}))
 	if err != nil {
-		t.Fatalf("SigningCertChainForIssuedAttestation(local): %v", err)
+		t.Fatal(err)
 	}
-	if len(pidChain) != 3 || len(localChain) != 3 {
-		t.Fatalf("expected leaf, intermediate and root chains, got pid=%d local=%d", len(pidChain), len(localChain))
+	if len(pid) != 3 || len(eaa) != 3 || !bytes.Equal(pid[2].Raw, eaa[2].Raw) {
+		t.Fatalf("chains of %d and %d certificates, want leaf, provider CA and the shared root", len(pid), len(eaa))
 	}
-	if bytes.Equal(pidChain[0].Raw, localChain[0].Raw) {
-		t.Fatal("expected distinct leaf certificates for pid and local profiles")
+	if pid[1].Subject.CommonName == eaa[1].Subject.CommonName {
+		t.Errorf("both categories use the provider CA %s", pid[1].Subject.CommonName)
 	}
-	if !bytes.Equal(pidChain[2].Raw, localChain[2].Raw) {
-		t.Fatal("expected pid and local profiles to share the same CA certificate")
-	}
-	pidPub, ok := pidChain[0].PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("expected ECDSA public key for pid leaf")
-	}
-	localPub, ok := localChain[0].PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("expected ECDSA public key for local leaf")
-	}
-	if !pidPub.Equal(localPub) || !pidPub.Equal(&w.IssuerKey.PublicKey) {
-		t.Fatal("expected profile-specific leaf certificates to share the wallet issuer public key")
+	pidKey, eaaKey := pid[0].PublicKey.(*ecdsa.PublicKey), eaa[0].PublicKey.(*ecdsa.PublicKey)
+	if !pidKey.Equal(&w.IssuerKey.PublicKey) || eaaKey.Equal(pidKey) {
+		t.Error("want the issuer key for PIDs and another key for EAAs")
 	}
 }
 
@@ -396,5 +392,81 @@ func TestGenerateTrustListJWT_WrongKeyVerification(t *testing.T) {
 	result := sdjwt.Verify(token, &otherKey.PublicKey)
 	if result.SignatureValid {
 		t.Error("expected invalid signature with wrong key")
+	}
+}
+
+// A credential is on the list of its category. The category comes from the
+// template or the catalogue entry, and a credential without either is on no
+// list.
+func TestACredentialIsOnTheListOfItsCategory(t *testing.T) {
+	t.Run("generated root", func(t *testing.T) { checkCategoryLists(t, generateTestWallet(t)) })
+	// A root with path length zero signs the leaves directly.
+	t.Run("root with path length zero", func(t *testing.T) {
+		w := generateTestWallet(t)
+		caKey, _ := mock.GenerateKey()
+		ca, err := mock.GenerateCACert(caKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.SetCertificateAuthority(caKey, ca); err != nil {
+			t.Fatal(err)
+		}
+		checkCategoryLists(t, w)
+	})
+}
+
+func checkCategoryLists(t *testing.T, w *Wallet) {
+	w.IssuerURL = "https://wallet.example"
+	entry := diplomaCatalogEntry()
+	entry.Category = credtemplate.CategoryQEAA
+	if _, err := w.Registrar().AddCatalogAttestation(entry); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(raw string) []string {
+		t.Helper()
+		token, err := sdjwt.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var lists []string
+		for _, category := range credtemplate.Categories {
+			group, _ := FindTrustListGroupForWallet(w, category, "", "")
+			jwt, err := GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+category)
+			if err != nil {
+				t.Fatal(err)
+			}
+			list, err := trustlist.Parse(jwt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			certificates := list.Entities[0].Services[0].Certificates
+			_, chainErr := validate.ExtractAndValidateX5C(token.Header, certificates)
+			signedByListedKey := slices.ContainsFunc(certificates, func(c trustlist.CertInfo) bool {
+				return sdjwt.Verify(token, c.PublicKey).SignatureValid
+			})
+			if chainErr == nil || signedByListedKey {
+				lists = append(lists, category)
+			}
+		}
+		return lists
+	}
+	for _, tc := range []struct {
+		name string
+		opts IssueOptions
+		want []string
+	}{
+		{"a PID template", IssueOptions{Format: "sdjwt", Template: "pid-sdjwt"}, []string{"pid"}},
+		{"a catalogue entry", IssueOptions{Format: "sdjwt", VCT: testDiplomaVCT, Claims: map[string]any{"degree": "MSc"}}, []string{"qeaa"}},
+		{"neither", IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := w.IssueCredential(tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := listed(result.Raw); !slices.Equal(got, tc.want) {
+				t.Errorf("on the lists %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
