@@ -96,7 +96,7 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 	var issuanceCertificates []string
 	countries := []string{""}
 	if group.Profile.LoTEType == pidTrustListType {
-		countries = []string{"NL", "DE"}
+		countries = []string{"NL", "DE", "IT"}
 	}
 	for _, country := range countries {
 		_, chain, err := w.signingMaterialForProfile(group.Profile, country)

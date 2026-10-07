@@ -103,7 +103,7 @@ func TestARFChecksHowAnIssuerAuthenticates(t *testing.T) {
 		{"an unregistered attestation type", func() []string {
 			metadata, chain := signedTestIssuerMetadata(t, eaaKey, eaaChain, "dc+sd-jwt", "urn:example:other", eaaInfo)
 			return arfIssuerFindings(w, metadata, chain)
-		}, "ARF RPRC_23 and ISSU_34b: the issuer offers urn:example:other"},
+		}, "ARF RPRC_23 and ISSU_34b: the issuer's registration certificate does not list urn:example:other"},
 		{"a PID from an EAA provider", func() []string {
 			metadata, chain := signedTestIssuerMetadata(t, eaaKey, eaaChain, "dc+sd-jwt", mock.DefaultPIDVCT, eaaInfo)
 			return arfIssuerFindings(w, metadata, chain)
@@ -221,7 +221,7 @@ func TestARFChecksOfferedTypesStrictly(t *testing.T) {
 		t.Errorf("offer without a type: %q", got)
 	}
 	w.RequireARF = true
-	if got := strings.Join(w.issuerARFCheck(metadata, signer, []string{"missing"}), "\n"); !strings.Contains(got, "configuration missing, which its metadata doesn't describe") {
+	if got := strings.Join(w.issuerARFCheck(metadata, signer, []string{"missing"}), "\n"); !strings.Contains(got, "has no configuration missing") {
 		t.Errorf("unknown configuration: %q", got)
 	}
 	if providesType([]registeredCredential{{format: "dc+sd-jwt"}}, "dc+sd-jwt", []string{testDiplomaVCT}) {

@@ -479,8 +479,8 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <option value="none">None</option>
           </select>
 
-          <label class="form-label" for="registrar-catalog-trust">Trusted list</label>
-          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' trusted list (optional)">
+          <label class="form-label" for="registrar-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
+          <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="URL of the issuers' list of trusted entities (optional)">
         </div>
         <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
         <div class="consent-buttons">

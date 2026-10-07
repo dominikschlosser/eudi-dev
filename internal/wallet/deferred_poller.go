@@ -222,6 +222,9 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the issuer answered without a usable credential: %v", err))
 	}
+	if err := s.wallet.checkReceivedCredentials(credResp, pending.Issuer); err != nil {
+		return s.abandonDeferred(pending, err.Error())
+	}
 	imported, err := s.wallet.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the credential could not be imported: %v", err))

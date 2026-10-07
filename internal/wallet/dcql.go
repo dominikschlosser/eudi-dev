@@ -15,6 +15,7 @@
 package wallet
 
 import (
+	"crypto"
 	"crypto/x509"
 	"fmt"
 	"log"
@@ -1557,6 +1558,18 @@ func extractMDOCX5Chain(doc *mdoc.Document) ([]*x509.Certificate, error) {
 }
 
 func checkETSITrustList(cred StoredCredential, trustListURL string, clients ...*http.Client) bool {
+	anchors, err := fetchTrustListCertificates(trustListURL, clients...)
+	if err == nil {
+		_, err = credentialChainKey(cred, anchors)
+	}
+	if err != nil {
+		log.Printf("[DCQL]   trusted_authorities: %v", err)
+		return false
+	}
+	return true
+}
+
+func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([]trustlist.CertInfo, error) {
 	tlRaw, err := format.FetchURL(trustListURL, clients...)
 	// A verifier in Docker reaches the host as host.docker.internal. The wallet
 	// on the host reaches the same server as localhost.
@@ -1566,51 +1579,51 @@ func checkETSITrustList(cred StoredCredential, trustListURL string, clients ...*
 		tlRaw, err = format.FetchURL(fallbackURL, clients...)
 	}
 	if err != nil {
-		log.Printf("[DCQL]   trusted_authorities: failed to fetch trust list %s: %v", trustListURL, err)
-		return false
+		return nil, fmt.Errorf("failed to fetch trust list %s: %w", trustListURL, err)
 	}
+	return parseTrustListAnchors(tlRaw)
+}
 
+func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
 	tl, err := trustlist.Parse(tlRaw)
 	if err != nil {
-		log.Printf("[DCQL]   trusted_authorities: failed to parse trust list: %v", err)
-		return false
+		return nil, fmt.Errorf("failed to parse trust list: %w", err)
 	}
-
-	tlCerts := trustlist.ExtractPublicKeys(tl)
-	if len(tlCerts) == 0 {
-		log.Printf("[DCQL]   trusted_authorities: trust list contains no certificates")
-		return false
+	certs := trustlist.ExtractPublicKeys(tl)
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("trust list contains no certificates")
 	}
+	return certs, nil
+}
 
+// credentialChainKey checks that the issuer certificate chain of cred (x5c of
+// an SD-JWT, x5chain of an mdoc) ends in one of the anchors. It returns the
+// key of the chain's leaf.
+func credentialChainKey(cred StoredCredential, anchors []trustlist.CertInfo) (crypto.PublicKey, error) {
+	var key crypto.PublicKey
+	var err error
 	switch cred.Format {
 	case "dc+sd-jwt":
-		token, err := sdjwt.ParseLenient(cred.Raw)
-		if err != nil {
-			log.Printf("[DCQL]   trusted_authorities: failed to parse SD-JWT: %v", err)
-			return false
+		token, parseErr := sdjwt.ParseLenient(cred.Raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse SD-JWT: %w", parseErr)
 		}
-		key, err := validate.ExtractAndValidateX5C(token.Header, tlCerts)
-		if err != nil {
-			log.Printf("[DCQL]   trusted_authorities: x5c chain validation failed: %v", err)
-			return false
+		if key, err = validate.ExtractAndValidateX5C(token.Header, anchors); err != nil {
+			return nil, fmt.Errorf("x5c chain validation failed: %w", err)
 		}
-		return key != nil
-
 	case "mso_mdoc":
-		doc, err := mdoc.Parse(cred.Raw)
-		if err != nil {
-			log.Printf("[DCQL]   trusted_authorities: failed to parse mdoc: %v", err)
-			return false
+		doc, parseErr := mdoc.Parse(cred.Raw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("failed to parse mdoc: %w", parseErr)
 		}
-		key, err := validate.ExtractAndValidateMDOCX5Chain(doc, tlCerts)
-		if err != nil {
-			log.Printf("[DCQL]   trusted_authorities: x5chain validation failed: %v", err)
-			return false
+		if key, err = validate.ExtractAndValidateMDOCX5Chain(doc, anchors); err != nil {
+			return nil, fmt.Errorf("x5chain validation failed: %w", err)
 		}
-		return key != nil
-
 	default:
-		log.Printf("[DCQL]   trusted_authorities: unsupported credential format %q for chain validation", cred.Format)
-		return false
+		return nil, fmt.Errorf("unsupported credential format %q for chain validation", cred.Format)
 	}
+	if key == nil {
+		return nil, fmt.Errorf("the credential carries no certificate chain")
+	}
+	return key, nil
 }

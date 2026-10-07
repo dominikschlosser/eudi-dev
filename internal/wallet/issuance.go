@@ -295,6 +295,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 			return nil, err
 		}
 	}
+	w.reportCatalogueFindings(offer.CredentialIssuer, w.catalogueFindings(metadata, offer.CredentialConfigurationIDs))
 
 	if offer.Grants.PreAuthorizedCode == "" {
 		if w.Mode() == ValidationModeStrict {
@@ -485,6 +486,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		}
 	}
 
+	if err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer); err != nil {
+		return nil, err
+	}
 	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
@@ -650,15 +654,6 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 		path = strings.TrimSuffix(path, "/")
 	}
 	return fmt.Sprintf("%s://%s/.well-known/%s%s", parsed.Scheme, parsed.Host, wellKnownType, path), nil
-}
-
-// parseIssuerMetadataResponse decodes a Credential Issuer Metadata response in
-// either form §12.2.2 allows. issuer is the Credential Issuer Identifier the
-// metadata URL was built from. The signature check and the identity check both
-// use it.
-func parseIssuerMetadataResponse(body []byte, contentType, issuer string) (map[string]any, error) {
-	metadata, _, err := parseIssuerMetadataDocument(body, contentType, issuer)
-	return metadata, err
 }
 
 // parseIssuerMetadataDocument also returns the certificate chain that signed

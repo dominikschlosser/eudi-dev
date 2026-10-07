@@ -82,6 +82,10 @@ With `--arf` the wallet also checks the issuer before it requests a credential, 
 
 The consent dialog for the offer lists the findings. In `--mode debug` they are also logged as warnings and issuance goes on. In `--mode strict` the wallet doesn't request the credential. The trust anchors are the same as for verifiers (see [ARF checks](presenting.md#arf-checks)).
 
+When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). If the entry links a trusted list, the credential's certificate chain (`x5c` or `x5chain`) must end in a certificate on that list, and the signature must verify. ARF ISSU_07 asks this for a PID, and ISSU_08 to ISSU_10 for other attestations. The PID entries link the wallet's own PID provider list, so a PID from another wallet's CA fails. An entry without a trusted list is not checked, because ISSU_10 applies only when the wallet has the issuer's trust anchors. In `--mode debug` a failure is a warning. In `--mode strict` the wallet doesn't store the credential (ISSU_11b). Every copy of a batch, renewals and deferred credentials get the same check.
+
+If an offered type has no catalogue entry, the consent dialog and the log show a warning. No specification requires this check, so the warning never stops issuance, not even in strict mode.
+
 The ARF applies the registration certificate checks 24 months after the amended CIR 2024/2982 enters into force. Until then many issuers publish no `issuer_info`, so test them in debug mode. The [registrar](registrar.md#issuers) registers issuers and issues their certificates.
 
 ## Wallet attestation
