@@ -18,6 +18,7 @@
         <a href="#" id="how-to-use-link">How to use</a>
         <a href="#" id="get-cli-link">Get the CLI</a>
         <a href="#" id="conformance-link">Conformance</a>
+        <a href="#" id="templates-link">Templates</a>
         <a href="#" id="trust-link">Trust &amp; certificates</a>
         <span class="header-submenu-group" id="registrar-menu">
           <button type="button" class="header-submenu-toggle" id="registrar-menu-toggle" aria-expanded="false" aria-controls="registrar-submenu">Registrar</button>
@@ -533,10 +534,21 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
 
   <div class="consent-overlay" id="issue-overlay">
     <div class="consent-dialog">
-      <div class="consent-title">Issue Credential</div>
-      <p class="dialog-hint">Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.</p>
+      <div class="consent-title" id="issue-title">Issue Credential</div>
+      <p class="dialog-hint" id="issue-hint">Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.</p>
       <form id="issue-form">
-        <div class="form-grid">
+        <div class="template-editor-head" id="template-editor-head" hidden>
+          <div class="form-grid">
+            <label class="form-label" for="template-editor-name">Template name</label>
+            <input type="text" id="template-editor-name" class="form-input" placeholder="e.g. employee-card">
+          </div>
+          <div class="claims-mode">
+            <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-builder" value="builder" checked> Builder</label>
+            <label class="form-checkbox"><input type="radio" name="template-editor-mode" id="template-editor-mode-json" value="json"> JSON</label>
+          </div>
+          <textarea id="template-editor-json" class="form-input form-textarea template-editor-json" hidden placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}}'></textarea>
+        </div>
+        <div class="form-grid" id="issue-form-grid">
           <label class="form-label" for="issue-format">Format</label>
           <select id="issue-format" class="form-input">
             <option value="sdjwt" selected>SD-JWT</option>
@@ -569,8 +581,8 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           <label class="form-label" for="issue-always-disclosed" hidden>Always visible</label>
           <input type="text" id="issue-always-disclosed" class="form-input" hidden placeholder="Claims issued without selective disclosure, e.g. issuing_country, address.country">
 
-          <label class="form-label" for="issue-status-list">Status list</label>
-          <div class="status-list-editor">
+          <label class="form-label issue-only" for="issue-status-list">Status list</label>
+          <div class="status-list-editor issue-only">
             <select id="issue-status-list" class="form-input">
               <option value="auto" id="issue-status-list-auto" selected>Wallet status list</option>
               <option value="none">No status list</option>
@@ -583,14 +595,14 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           <label class="form-label" for="issue-exp">Expires in</label>
           <input type="text" id="issue-exp" class="form-input" placeholder="Duration, e.g. 720h or 24h (default: 720h)">
 
-          <label class="form-label" for="issue-nbf">Not before</label>
-          <input type="text" id="issue-nbf" class="form-input" placeholder="RFC3339 or relative duration, e.g. -1h">
+          <label class="form-label issue-only" for="issue-nbf">Not before</label>
+          <input type="text" id="issue-nbf" class="form-input issue-only" placeholder="RFC3339 or relative duration, e.g. -1h">
 
-          <label class="form-label" for="issue-batch" data-formats="sdjwt mdoc">Copies</label>
-          <input type="number" id="issue-batch" class="form-input" data-formats="sdjwt mdoc" min="1" placeholder="1 (a batch of N presents an unused copy each time)">
+          <label class="form-label issue-only" for="issue-batch" data-formats="sdjwt mdoc">Copies</label>
+          <input type="number" id="issue-batch" class="form-input issue-only" data-formats="sdjwt mdoc" min="1" placeholder="1 (a batch of N presents an unused copy each time)">
 
-          <label class="form-label" for="issue-binding" data-formats="sdjwt mdoc">Holder binding</label>
-          <select id="issue-binding" class="form-input" data-formats="sdjwt mdoc">
+          <label class="form-label issue-only" for="issue-binding" data-formats="sdjwt mdoc">Holder binding</label>
+          <select id="issue-binding" class="form-input issue-only" data-formats="sdjwt mdoc">
             <option value="bound" selected>Bound to this wallet</option>
             <option value="unbound">Unbound (bearer, no cnf)</option>
           </select>
@@ -632,16 +644,16 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
             <input type="file" id="issue-bg-image-file" accept="image/*" class="form-file" aria-label="Upload a background image">
           </div>
 
-          <div class="form-section-label issue-signing-field">Signing (optional)</div>
+          <div class="form-section-label issue-signing-field issue-only">Signing (optional)</div>
 
-          <label class="form-label form-label-top issue-signing-field" for="issue-signing-key">Signing key</label>
-          <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field" placeholder="PEM or JWK private key. Default: the wallet issuer key"></textarea>
+          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-key">Signing key</label>
+          <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM or JWK private key. Default: the wallet issuer key"></textarea>
 
-          <label class="form-label form-label-top issue-signing-field" for="issue-signing-cert">Certificate chain</label>
-          <textarea id="issue-signing-cert" class="form-input form-textarea issue-signing-field" placeholder="PEM certificates, leaf first. Embedded as the credential's x5c"></textarea>
+          <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-cert">Certificate chain</label>
+          <textarea id="issue-signing-cert" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM certificates, leaf first. Embedded as the credential's x5c"></textarea>
 
-          <label class="form-label" for="issue-save-template">Save as template</label>
-          <input type="text" id="issue-save-template" class="form-input" placeholder="Template name (optional)">
+          <label class="form-label issue-only" for="issue-save-template">Save as template</label>
+          <input type="text" id="issue-save-template" class="form-input issue-only" placeholder="Template name (optional)">
 
           <label class="form-label" for="issue-catalog">Catalogue</label>
           <label class="conf-toggle"><input type="checkbox" id="issue-catalog"> Add the template to the attestation catalogue</label>
@@ -684,51 +696,13 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   <div class="consent-overlay" id="templates-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Credential Templates</div>
-      <p class="dialog-hint">Import a reusable claim set as JSON. Saving an existing name replaces that template.</p>
+      <p class="dialog-hint">Templates are reusable claim sets for issuing credentials. Saving an existing name replaces that template.</p>
       <div id="templates-list" class="templates-list"></div>
-      <form id="template-form">
-        <div class="form-grid">
-          <label class="form-label" for="template-name">Name</label>
-          <input type="text" id="template-name" class="form-input" placeholder="e.g. employee-card">
-
-          <label class="form-label form-label-top" for="template-json">Template JSON</label>
-          <textarea id="template-json" class="form-input form-textarea" placeholder='{"format": "sdjwt", "vct": "urn:example:...", "claims": {...}, "always_disclosed": [...]}'></textarea>
-
-          <label class="form-label" for="template-catalog">Catalogue</label>
-          <label class="conf-toggle"><input type="checkbox" id="template-catalog"> Add the template to the attestation catalogue</label>
-          <div class="catalog-fields form-grid" id="template-catalog-fields" hidden>
-            <label class="form-label" for="template-catalog-name">Attestation name</label>
-            <input type="text" id="template-catalog-name" class="form-input" placeholder="Name in the catalogue">
-
-            <label class="form-label" for="template-catalog-rulebook">Rulebook</label>
-            <input type="text" id="template-catalog-rulebook" class="form-input" placeholder="Leave empty for a placeholder page">
-
-            <label class="form-label" for="template-catalog-los">Level of security</label>
-            <select id="template-catalog-los" class="form-input">
-              <option value="iso_18045_basic">Basic</option>
-              <option value="iso_18045_enhanced-basic">Enhanced basic</option>
-              <option value="iso_18045_moderate">Moderate</option>
-              <option value="iso_18045_high">High</option>
-            </select>
-
-            <label class="form-label" for="template-catalog-binding" title="How the attestation is bound to its holder (TS11 bindingType)">Holder binding</label>
-            <select id="template-catalog-binding" class="form-input">
-              <option value="key">Wallet key</option>
-              <option value="claim">Another credential</option>
-              <option value="biometric">Biometrics</option>
-              <option value="none">None</option>
-            </select>
-
-            <label class="form-label" for="template-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
-            <input type="text" id="template-catalog-trust" class="form-input" placeholder="URL of the issuers' list of trusted entities (optional)">
-          </div>
-        </div>
-        <div class="form-error" id="template-error"></div>
-        <div class="consent-buttons">
-          <button type="button" class="btn" id="template-close">Close</button>
-          <button type="submit" class="btn btn-primary" id="template-save">Save Template</button>
-        </div>
-      </form>
+      <div class="form-error" id="template-error"></div>
+      <div class="consent-buttons">
+        <button type="button" class="btn" id="template-close">Close</button>
+        <button type="button" class="btn btn-primary" id="template-new">New template</button>
+      </div>
     </div>
   </div>
 

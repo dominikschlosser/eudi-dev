@@ -760,6 +760,19 @@ test.describe("Credential Issuing via UI", () => {
     await expect(card).toHaveCount(0);
   });
 
+  test("the header opens the templates, also from the phone menu", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.locator("#templates-link").click();
+    await expect(page.locator("#templates-overlay")).toHaveClass(/active/);
+    await page.locator("#template-close").click();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator("#header-menu-toggle").click();
+    await page.locator("#templates-link").click();
+    await expect(page.locator("#templates-overlay")).toHaveClass(/active/);
+    await expect(page.locator("#header-links")).not.toHaveClass(/open/);
+  });
+
   test("manages templates and issues from one with a non-disclosable claim", async ({
     page,
   }) => {
@@ -771,8 +784,11 @@ test.describe("Credential Issuing via UI", () => {
       page.locator(".template-row-name", { hasText: "german-pid-sdjwt" })
     ).toBeVisible();
 
-    await page.locator("#template-name").fill("e2e-employee");
-    await page.locator("#template-json").fill(
+    await page.locator("#template-new").click();
+    await expect(page.locator("#issue-title")).toHaveText("New template");
+    await page.locator("#template-editor-name").fill("e2e-employee");
+    await page.locator("#template-editor-mode-json").check();
+    await page.locator("#template-editor-json").fill(
       JSON.stringify({
         format: "sdjwt",
         vct: "urn:example:e2e-employee",
@@ -780,7 +796,10 @@ test.describe("Credential Issuing via UI", () => {
         always_disclosed: ["department"],
       })
     );
-    await page.locator("#template-save").click();
+    // Back in the builder, the fields show the JSON.
+    await page.locator("#template-editor-mode-builder").check();
+    await expect(page.locator("#issue-vct")).toHaveValue("urn:example:e2e-employee");
+    await page.locator("#issue-submit").click();
     await expect(
       page.locator(".template-row-name", { hasText: "e2e-employee" })
     ).toBeVisible();

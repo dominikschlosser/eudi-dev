@@ -910,7 +910,10 @@
   // values preserve user edits.
   function applyIssueTemplate(name) {
     const tpl = (templatesCache || []).find(t => t.name === name);
-    if (!tpl) return;
+    if (tpl) applyTemplateToForm(tpl);
+  }
+
+  function applyTemplateToForm(tpl) {
     const display = tpl.display || {};
     issueDisplayTemplate = (display.logo || display.background_image) ? tpl.name : '';
     if (tpl.format) issueFormat.value = tpl.format;
@@ -1017,6 +1020,17 @@
         }
         return '';
       },
+      fill(entry) {
+        box.checked = true;
+        fields.hidden = false;
+        const schema = entry.schema || {};
+        field('name').value = entry.name || '';
+        field('rulebook').value = schema.rulebookURI || '';
+        field('los').value = schema.attestationLoS || 'iso_18045_basic';
+        field('binding').value = schema.bindingType || 'key';
+        const trust = (schema.trustedAuthorities || [])[0];
+        field('trust').value = trust ? trust.value : '';
+      },
       entry(defaultName) {
         if (!box.checked) return null;
         return { name: field('name').value.trim() || defaultName, schema: catalogSchema(prefix) };
@@ -1024,7 +1038,6 @@
     };
   }
   const issueCatalog = catalogFields('issue');
-  const templateCatalog = catalogFields('template');
 
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
@@ -1071,6 +1084,7 @@
   }
 
   issueBtn.addEventListener('click', () => {
+    setTemplateMode(null);
     issueForm.reset();
     resetIssueFields();
     issueOverlay.classList.add('active');
@@ -1106,6 +1120,10 @@
 
   document.getElementById('issue-cancel').addEventListener('click', () => {
     issueOverlay.classList.remove('active');
+    if (templateEditor) {
+      setTemplateMode(null);
+      templatesOverlay.classList.add('active');
+    }
   });
 
   function bindColorPicker(pickerId, textId) {
@@ -1135,6 +1153,10 @@
   issueForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     issueError.textContent = '';
+    if (templateEditor) {
+      await saveTemplateFromEditor();
+      return;
+    }
 
     const body = { format: issueFormat.value };
     if (document.getElementById('issue-claims-mode-json').checked) {
@@ -1242,16 +1264,162 @@
 
   const templatesOverlay = document.getElementById('templates-overlay');
   const templatesList = document.getElementById('templates-list');
-  const templateForm = document.getElementById('template-form');
   const templateError = document.getElementById('template-error');
-  const templateName = document.getElementById('template-name');
-  const templateJSON = document.getElementById('template-json');
+  const templateEditorHead = document.getElementById('template-editor-head');
+  const templateEditorName = document.getElementById('template-editor-name');
+  const templateEditorJSON = document.getElementById('template-editor-json');
+  const issueFormGrid = document.getElementById('issue-form-grid');
 
-  function templateEditorFields(tpl) {
-    const doc = Object.assign({}, tpl);
+  // templateEditor is set while the issue dialog edits a template. source is the
+  // template the editor started from. Its fields that the builder doesn't show
+  // stay in the saved template.
+  let templateEditor = null;
+
+  function setTemplateMode(editor) {
+    templateEditor = editor;
+    const on = editor !== null;
+    issueForm.classList.toggle('template-mode', on);
+    templateEditorHead.hidden = !on;
+    document.getElementById('issue-title').textContent = on ? (editor.source ? 'Edit template' : 'New template') : 'Issue Credential';
+    document.getElementById('issue-hint').textContent = on
+      ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for fields the builder doesn't show."
+      : "Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.";
+    issueSubmit.textContent = on ? 'Save template' : 'Issue';
+    document.getElementById('template-editor-mode-builder').checked = true;
+    templateEditorJSON.hidden = true;
+    issueFormGrid.hidden = false;
+  }
+
+  function openTemplateEditor(tpl) {
+    issueForm.reset();
+    resetIssueFields();
+    setTemplateMode({ source: tpl || null });
+    templateEditorName.value = tpl ? tpl.name : '';
+    if (tpl) applyTemplateToForm(tpl);
+    templatesOverlay.classList.remove('active');
+    issueOverlay.classList.add('active');
+    fillIssueTemplateSelect();
+    templateEditorName.focus();
+  }
+
+  // templateFromBuilder reads the template from the builder fields.
+  function templateFromBuilder() {
+    const source = (templateEditor && templateEditor.source) || {};
+    const doc = Object.assign({}, source);
     delete doc.name;
     delete doc.predefined;
+    doc.format = issueFormat.value;
+    delete doc.vct;
+    delete doc.doctype;
+    const type = document.getElementById(doc.format === 'mdoc' ? 'issue-doctype' : 'issue-vct').value.trim();
+    if (type) doc[doc.format === 'mdoc' ? 'doctype' : 'vct'] = type;
+    const exp = document.getElementById('issue-exp').value.trim();
+    if (exp) doc.exp = exp; else delete doc.exp;
+    if (document.getElementById('issue-claims-mode-json').checked) {
+      doc.claims = JSON.parse(issueClaimsTextarea.value.trim() || '{}');
+    } else {
+      syncAlwaysDisclosedFromRows();
+      doc.claims = builderClaims();
+    }
+    const always = doc.format === 'sdjwt' ? alwaysDisclosedList() : [];
+    if (always.length > 0) doc.always_disclosed = always; else delete doc.always_disclosed;
+    const display = {};
+    const field = (id) => document.getElementById(id).value.trim();
+    const fields = {
+      name: 'issue-display-name', description: 'issue-display-description',
+      background_color: 'issue-bg-color', text_color: 'issue-text-color',
+      logo: 'issue-logo', logo_alt_text: 'issue-logo-alt', background_image: 'issue-bg-image',
+    };
+    for (const [key, id] of Object.entries(fields)) {
+      if (field(id)) display[key] = field(id);
+    }
+    // The form leaves template images out. They stay unless the user sets new ones.
+    const sourceDisplay = source.display || {};
+    for (const key of ['logo', 'logo_alt_text', 'background_image']) {
+      if (!display[key] && sourceDisplay[key]) display[key] = sourceDisplay[key];
+    }
+    if (Object.keys(display).length > 0) doc.display = display; else delete doc.display;
+    const defaultName = display.name || templateEditorName.value.trim();
+    const catalog = issueCatalog.entry(defaultName);
+    if (catalog) doc.catalog = catalog; else delete doc.catalog;
     return doc;
+  }
+
+  function templateFromJSON() {
+    const doc = JSON.parse(templateEditorJSON.value);
+    if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
+      throw new Error('expected a JSON object');
+    }
+    return doc;
+  }
+
+  function updateTemplateEditorMode() {
+    const json = document.getElementById('template-editor-mode-json').checked;
+    issueError.textContent = '';
+    try {
+      if (json) {
+        templateEditorJSON.value = JSON.stringify(templateFromBuilder(), null, 2);
+      } else {
+        const doc = templateFromJSON();
+        templateEditor.source = Object.assign({}, doc, { name: templateEditorName.value.trim() });
+        applyTemplateToForm(doc);
+        issueCatalog.reset();
+        if (doc.catalog) issueCatalog.fill(doc.catalog);
+      }
+    } catch (e) {
+      issueError.textContent = 'Template must be valid JSON: ' + e.message;
+      document.getElementById(json ? 'template-editor-mode-builder' : 'template-editor-mode-json').checked = true;
+      return;
+    }
+    templateEditorJSON.hidden = !json;
+    issueFormGrid.hidden = json;
+  }
+  document.getElementById('template-editor-mode-builder').addEventListener('change', updateTemplateEditorMode);
+  document.getElementById('template-editor-mode-json').addEventListener('change', updateTemplateEditorMode);
+
+  async function saveTemplateFromEditor() {
+    const name = templateEditorName.value.trim();
+    if (!name) {
+      issueError.textContent = 'Template name is required';
+      templateEditorName.focus();
+      return;
+    }
+    let doc;
+    try {
+      doc = document.getElementById('template-editor-mode-json').checked ? templateFromJSON() : templateFromBuilder();
+    } catch (e) {
+      issueError.textContent = 'Template must be valid JSON: ' + e.message;
+      return;
+    }
+    if (!document.getElementById('template-editor-mode-json').checked) {
+      const problem = issueCatalog.validate((doc.display && doc.display.name) || name);
+      if (problem) {
+        issueError.textContent = problem;
+        return;
+      }
+    }
+    issueSubmit.disabled = true;
+    try {
+      const resp = await fetch('api/templates/' + encodeURIComponent(name), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(doc)
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        issueError.textContent = result.error || ('HTTP ' + resp.status);
+        return;
+      }
+      templatesCache = null;
+      setTemplateMode(null);
+      issueOverlay.classList.remove('active');
+      templatesOverlay.classList.add('active');
+      await renderTemplatesList();
+    } catch (e) {
+      issueError.textContent = 'Request failed: ' + e.message;
+    } finally {
+      issueSubmit.disabled = false;
+    }
   }
 
   async function renderTemplatesList() {
@@ -1285,11 +1453,7 @@
       editBtn.className = 'btn btn-sm';
       editBtn.id = 'template-edit-' + tpl.name;
       editBtn.textContent = 'Edit';
-      editBtn.addEventListener('click', () => {
-        templateName.value = tpl.name;
-        templateJSON.value = JSON.stringify(templateEditorFields(tpl), null, 2);
-        templateError.textContent = '';
-      });
+      editBtn.addEventListener('click', () => openTemplateEditor(tpl));
       row.appendChild(editBtn);
 
       if (!tpl.predefined) {
@@ -1319,63 +1483,21 @@
     });
   }
 
-  document.getElementById('templates-btn').addEventListener('click', () => {
-    templateName.value = '';
-    templateJSON.value = '';
-    templateCatalog.reset();
+  function openTemplates() {
     templateError.textContent = '';
     templatesOverlay.classList.add('active');
     renderTemplatesList();
+  }
+  document.getElementById('templates-btn').addEventListener('click', openTemplates);
+  document.getElementById('templates-link').addEventListener('click', (event) => {
+    event.preventDefault();
+    openTemplates();
   });
+
+  document.getElementById('template-new').addEventListener('click', () => openTemplateEditor(null));
 
   document.getElementById('template-close').addEventListener('click', () => {
     templatesOverlay.classList.remove('active');
-  });
-
-  templateForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    templateError.textContent = '';
-    let doc;
-    try {
-      doc = JSON.parse(templateJSON.value);
-      if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
-        throw new Error('expected a JSON object');
-      }
-    } catch (e) {
-      templateError.textContent = 'Template must be valid JSON: ' + e.message;
-      return;
-    }
-    const name = templateName.value.trim() || (typeof doc.name === 'string' ? doc.name.trim() : '');
-    if (!name) {
-      templateError.textContent = 'Template name is required';
-      return;
-    }
-    const defaultName = (doc.display && typeof doc.display.name === 'string' && doc.display.name.trim()) || name;
-    const catalogProblem = templateCatalog.validate(defaultName);
-    if (catalogProblem) {
-      templateError.textContent = catalogProblem;
-      return;
-    }
-    const catalog = templateCatalog.entry(defaultName);
-    if (catalog) doc.catalog = catalog;
-    try {
-      const resp = await fetch('api/templates/' + encodeURIComponent(name), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(doc)
-      });
-      const result = await resp.json();
-      if (!resp.ok) {
-        templateError.textContent = result.error || ('HTTP ' + resp.status);
-        return;
-      }
-      templateName.value = '';
-      templateJSON.value = '';
-      templateCatalog.reset();
-      await renderTemplatesList();
-    } catch (e) {
-      templateError.textContent = 'Request failed: ' + e.message;
-    }
   });
 
   async function loadLog() {

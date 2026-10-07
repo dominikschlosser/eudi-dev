@@ -231,8 +231,8 @@ curl -X POST http://localhost:8085/api/issue \
 
 Choose a template in the issue dialog to fill in the form, then edit any values you need. Uncheck a claim's SD checkbox to make it always visible. In JSON mode, use the "Always visible" field. Dotted paths select nested claims. Enter a name in "Save as template" to save the form after successful issuance.
 
-The Templates button opens a manager for listing, editing, importing (paste the JSON), and deleting templates.
+**Templates** in the header and the Templates button list the templates. On a phone the header link is under **Menu**. **New template** and **Edit** open the template editor. It has the fields of the issue dialog that a template stores: format, type, claims, expiry and card appearance. A switch at the top changes between the builder and the template JSON, so you can paste a template to import it or set fields the builder doesn't show, such as `unique_claims`. Fields the builder doesn't show stay in the template when you edit it. **Delete** removes a user template.
 
-Both dialogs have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, rulebook, level of security, holder binding and trusted list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
+The template editor and "Save as template" in the issue dialog have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, rulebook, level of security, holder binding and trusted list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
 
 On a public demo, visitors can save templates too. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images. Images of the bundled templates still work. A demo keeps at most 50 visitor templates, and a reset deletes them.
