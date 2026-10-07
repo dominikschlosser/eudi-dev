@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
@@ -80,27 +81,44 @@ func (w *Wallet) PrepareARFChecks(params *AuthorizationRequestParams) {
 // RPA_04). The wallet CA signs the demo verifier's access certificate, and the
 // relying party access CA signs the ones from the registrar.
 // --relying-party-ca adds others.
-func (w *Wallet) RelyingPartyCAs() *x509.CertPool {
-	pool := w.RegistrarCAs()
+func (w *Wallet) RelyingPartyCAs() []*x509.Certificate {
+	cas := w.RegistrarCAs()
 	if _, accessCA, err := w.RelyingPartyAccessCA(); err == nil {
-		pool.AddCert(accessCA)
+		cas = append(cas, accessCA)
 	}
-	return pool
+	return cas
 }
 
 // RegistrarCAs are the CAs --arf trusts for registration certificates (ARF
 // RPRC_02a). The wallet CA signs the registrar's certificate. The relying
 // party access CA is not one of them, because it signs any visitor's CSR.
 // --relying-party-ca adds others.
-func (w *Wallet) RegistrarCAs() *x509.CertPool {
-	pool := x509.NewCertPool()
+func (w *Wallet) RegistrarCAs() []*x509.Certificate {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
+	var cas []*x509.Certificate
 	if len(w.CertChain) > 0 {
-		pool.AddCert(w.CertChain[len(w.CertChain)-1])
+		cas = append(cas, w.CertChain[len(w.CertChain)-1])
 	}
-	pool.AppendCertsFromPEM(w.RelyingPartyCAPEM)
-	return pool
+	if configured, err := keys.ParseCertificatesPEM(w.RelyingPartyCAPEM); err == nil {
+		cas = append(cas, configured...)
+	}
+	return cas
+}
+
+// TrustListCAs are the CAs --arf trusts for the signer of a trusted list. The
+// wallet CA signs the wallet's own lists. --trust-list-ca adds others.
+func (w *Wallet) TrustListCAs() []*x509.Certificate {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	var cas []*x509.Certificate
+	if len(w.CertChain) > 0 {
+		cas = append(cas, w.CertChain[len(w.CertChain)-1])
+	}
+	if configured, err := keys.ParseCertificatesPEM(w.TrustListCAPEM); err == nil {
+		cas = append(cas, configured...)
+	}
+	return cas
 }
 
 // sameURL compares scheme, host with its default port, and path. Host and

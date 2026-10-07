@@ -170,8 +170,8 @@ type AuthorizationRequestParams struct {
 	StatusClient *http.Client
 	// RelyingPartyCAs and RegistrarCAs are the CAs --arf trusts for access
 	// certificates and for registration certificates.
-	RelyingPartyCAs *x509.CertPool
-	RegistrarCAs    *x509.CertPool
+	RelyingPartyCAs []*x509.Certificate
+	RegistrarCAs    []*x509.Certificate
 }
 
 type preparedPresentation struct {
@@ -193,6 +193,17 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 	mode, requireHAIP, _ := s.wallet.ConformanceSettings()
 	s.wallet.PrepareARFChecks(authReq)
 	findings, err := ValidateAuthorizationRequest(mode, requireHAIP, s.wallet.ARFChecks(), authReq)
+	var refusal *ARFRefusal
+	if errors.As(err, &refusal) {
+		s.log("  REFUSED: %v", err)
+		s.wallet.AddLog("presentation", err.Error(), false)
+		s.wallet.NotifyError(WalletError{Owner: authReq.Session, Message: "The request does not meet the ARF registration rules", Detail: err.Error()})
+		s.triggerUIRequest("")
+		// The description names the findings, so the verifier under test sees
+		// which rule its request breaks.
+		s.submitAuthorizationError(w, authReq, "refused", errorCodeAccessDenied, "The request does not meet the ARF registration rules: "+strings.Join(refusal.Findings, ", "))
+		return
+	}
 	if err != nil {
 		s.log("  ERROR: %v", err)
 		s.wallet.AddLog("presentation", err.Error(), false)

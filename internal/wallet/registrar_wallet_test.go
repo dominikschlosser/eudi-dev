@@ -70,31 +70,27 @@ func TestRegistrationsAreStored(t *testing.T) {
 // registry, for example on memory storage after a restart.
 func TestIssuedCertificatesWorkWithoutTheRegistry(t *testing.T) {
 	reg := generateTestWallet(t)
-	rp := registerTestRelyingParty(t, reg)
-	result := issueTestRegistrationCertificate(t, reg, rp)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
 
 	fresh := generateTestWallet(t)
 	if len(fresh.Registrar().RegisteredRelyingParties()) != 0 {
 		t.Fatal("the fresh wallet has registrations")
 	}
-	request := func(claim string) *AuthorizationRequestParams {
-		return &AuthorizationRequestParams{
-			DCQLQuery: map[string]any{"credentials": []any{map[string]any{
-				"id": "pid", "format": "dc+sd-jwt",
-				"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
-				"claims": []any{map[string]any{"path": []any{claim}}},
-			}}},
-			FullParams: map[string]string{"verifier_info": result.VerifierInfo},
-		}
+	query := func(claim string) map[string]any {
+		return map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt",
+			"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+			"claims": []any{map[string]any{"path": []any{claim}}},
+		}}}
 	}
-	certs, _ := verifiedRegistrationCertificates(map[string]any{"verifier_info": result.VerifierInfo})
-	if findings := overAskingFindings(certs[0], request("given_name").DCQLQuery); len(findings) != 0 {
+	certs, _ := verifiedRegistrationCertificates(map[string]any{"verifier_info": verifierInfo})
+	if findings := overAskingFindings(certs[0], query("given_name")); len(findings) != 0 {
 		t.Errorf("a registered claim: %v", findings)
 	}
-	if findings := overAskingFindings(certs[0], request("birthdate").DCQLQuery); len(findings) != 1 {
+	if findings := overAskingFindings(certs[0], query("birthdate")); len(findings) != 1 {
 		t.Errorf("an unregistered claim: %v, want one finding", findings)
 	}
-	if purposes, _ := consentRegistration(request("given_name")); len(purposes) != 1 || purposes[0] != "Age check" {
+	if purposes, _ := consentRegistration(signedARFRequest(t, fresh, key, chain, verifierInfo)); len(purposes) != 1 || purposes[0] != "Age check" {
 		t.Errorf("purposes %v, want Age check", purposes)
 	}
 }

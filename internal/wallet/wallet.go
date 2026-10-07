@@ -87,6 +87,9 @@ type Wallet struct {
 	// RelyingPartyCAPEM holds further CAs that issue relying party access and
 	// registration certificates (--relying-party-ca).
 	RelyingPartyCAPEM []byte
+	// TrustListCAPEM holds further CAs of trusted list operators
+	// (--trust-list-ca). --arf checks a fetched trusted list against them.
+	TrustListCAPEM []byte
 	// Read runtime changes through KeyAttestationLevelSetting. See
 	// ParseKeyAttestationLevel for supported claims about key storage.
 	KeyAttestationLevel string `json:"-"`

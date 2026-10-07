@@ -84,7 +84,7 @@ func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	certs, _ := verifiedRegistrationCertificates(map[string]any{"verifier_info": issueTestRegistrationCertificate(t, w, rp).VerifierInfo})
-	if got := registrationBindingFindings(certs[0], accessCert); len(got) != 0 {
+	if got := registrationBindingFindings(certs[0], accessCert, "ARF RPRC_17a"); len(got) != 0 {
 		t.Errorf("findings %v for the relying party's own access certificate, want none", got)
 	}
 
@@ -92,13 +92,13 @@ func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := registrationBindingFindings(certs[0], demoChain[0]); len(got) != 1 || !strings.Contains(got[0], "RPRC_17a") {
+	if got := registrationBindingFindings(certs[0], demoChain[0], "ARF RPRC_17a"); len(got) != 1 || !strings.Contains(got[0], "RPRC_17a") {
 		t.Errorf("findings %v for another relying party's access certificate, want the RPRC_17a warning", got)
 	}
 	// An intermediary's certificate names the relying party in act.sub (ETSI
 	// TS 119 475 GEN-5.2.4-09).
 	intermediary := map[string]any{"sub": "LEIXG-INTERMEDIARY", "act": map[string]any{"sub": rp.Identifier[0].Identifier}}
-	if got := registrationBindingFindings(intermediary, accessCert); len(got) != 0 {
+	if got := registrationBindingFindings(intermediary, accessCert, "ARF RPRC_17a"); len(got) != 0 {
 		t.Errorf("findings %v for an intermediary acting for the relying party, want none", got)
 	}
 }
@@ -107,11 +107,8 @@ func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 func TestTheConsentDialogLinksThePrivacyPolicy(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://wallet.example"
-	rp := registerTestRelyingParty(t, w)
-	result := issueTestRegistrationCertificate(t, w, rp)
-	purposes, policies := consentRegistration(&AuthorizationRequestParams{
-		RequestPayload: map[string]any{"verifier_info": result.VerifierInfo},
-	})
+	key, chain, verifierInfo := registeredVerifier(t, w)
+	purposes, policies := consentRegistration(signedARFRequest(t, w, key, chain, verifierInfo))
 	if len(purposes) != 1 || len(policies) != 1 || policies[0] != "https://wallet.example/privacy-policy" {
 		t.Errorf("purposes %v, privacy policies %v, want the registered purpose and policy", purposes, policies)
 	}

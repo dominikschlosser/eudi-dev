@@ -109,3 +109,15 @@ func testAccessCSR(t *testing.T, key *ecdsa.PrivateKey) string {
 	}
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))
 }
+
+// verifiedRegistrationCertificates returns the claims of the registration
+// certificates in verifier_info whose signature verifies, and the problems of
+// the others.
+func verifiedRegistrationCertificates(payload map[string]any) ([]map[string]any, []string) {
+	registrations, problems := verifyRegistrationEntries(infoEntries(payload, "verifier_info"))
+	certs := make([]map[string]any, 0, len(registrations))
+	for _, r := range registrations {
+		certs = append(certs, r.claims)
+	}
+	return certs, problems
+}

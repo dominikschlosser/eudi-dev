@@ -28,11 +28,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
@@ -295,5 +297,72 @@ func TestARFRefusesARegistrationSignedWithAnAccessCertificate(t *testing.T) {
 	}
 	if findings := ARFFindings(arfRequest(t, w, w)); containsSubstring(findings, "RPRC_02a") {
 		t.Errorf("findings %v, want the registrar's own certificate trusted", findings)
+	}
+}
+
+// A request carries a single registration certificate for its intended use
+// (ARF RPRC_19).
+func TestARFRefusesSeveralRegistrationCertificates(t *testing.T) {
+	reg := generateTestWallet(t)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
+	var entries []any
+	if err := json.Unmarshal([]byte(verifierInfo), &entries); err != nil {
+		t.Fatal(err)
+	}
+	twice, _ := json.Marshal(append(entries, entries...))
+	findings := ARFFindings(signedARFRequest(t, reg, key, chain, string(twice)))
+	if !slices.ContainsFunc(findings, func(f string) bool { return strings.HasPrefix(f, "ARF RPRC_19: the request carries 2") }) {
+		t.Errorf("findings %v, want RPRC_19 for two certificates", findings)
+	}
+}
+
+// ETSI TS 119 475 V1.2.1 Annex B.2.9 requires format and meta, so an entry
+// without them registers nothing (ARF RPRC_21).
+func TestARegisteredEntryWithoutFormatOrTypeRegistersNothing(t *testing.T) {
+	query := map[string]any{"credentials": []any{map[string]any{
+		"id": "pid", "format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+		"claims": []any{map[string]any{"path": []any{"given_name"}}},
+	}}}
+	for name, entry := range map[string]map[string]any{
+		"no format": {"meta": map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, "claim": []any{map[string]any{"path": []any{"given_name"}}}},
+		"no type":   {"format": "dc+sd-jwt", "claim": []any{map[string]any{"path": []any{"given_name"}}}},
+	} {
+		cert := map[string]any{"credentials": []any{entry}}
+		if findings := overAskingFindings(cert, query); len(findings) != 1 {
+			t.Errorf("%s: findings %v, want the PID as over-asking", name, findings)
+		}
+	}
+}
+
+// A relying party that authenticated with a trusted access certificate gets
+// access_denied when strict --arf refuses its request (RFC 6749 §4.1.2.1).
+func TestStrictARFAnswersAnAuthenticatedVerifierWithAccessDenied(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.RequireARF = true
+	srv.wallet.ValidationMode = ValidationModeStrict
+	key, chain, verifierInfo := registeredVerifier(t, srv.wallet)
+	verifier := newCaptureVerifier(t)
+	var info []any
+	if err := json.Unmarshal([]byte(verifierInfo), &info); err != nil {
+		t.Fatal(err)
+	}
+	clientID := X509HashClientID(chain[0])
+	requestObject, err := SignRequestObjectJWT(map[string]any{
+		"client_id": clientID, "response_type": "vp_token", "response_mode": "direct_post",
+		"response_uri": verifier.URL, "nonce": "n", "state": "s", "verifier_info": info,
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"birthdate"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "openid4vp://authorize?" + url.Values{"client_id": {clientID}, "request": {requestObject}}.Encode()
+	body, _ := json.Marshal(map[string]string{"uri": uri})
+	serverRequest(t, srv, http.MethodPost, "/api/presentations", string(body))
+	if form := verifier.received(t); form.Get("error") != "access_denied" || form.Get("state") != "s" || !strings.Contains(form.Get("error_description"), "RPRC_21") {
+		t.Errorf("the verifier received %v, want access_denied naming RPRC_21", form)
 	}
 }

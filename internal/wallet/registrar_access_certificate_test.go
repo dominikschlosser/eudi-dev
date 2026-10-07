@@ -98,7 +98,15 @@ func TestAccessCertificatesDoNotChainToTheWalletCA(t *testing.T) {
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: walletCA, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err == nil {
 		t.Error("an access certificate chains to the wallet CA, which anchors credential issuers")
 	}
-	if _, err := leaf.Verify(x509.VerifyOptions{Roots: w.RelyingPartyCAs(), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+	if _, err := leaf.Verify(x509.VerifyOptions{Roots: certPool(w.RelyingPartyCAs()), KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
 		t.Errorf("an access certificate does not verify to the relying party CAs: %v", err)
 	}
+}
+
+func certPool(certs []*x509.Certificate) *x509.CertPool {
+	pool := x509.NewCertPool()
+	for _, cert := range certs {
+		pool.AddCert(cert)
+	}
+	return pool
 }

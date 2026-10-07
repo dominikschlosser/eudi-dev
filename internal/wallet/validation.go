@@ -61,6 +61,18 @@ func ValidateAuthorizationRequest(mode ValidationMode, requireHAIP, requireARF b
 	return validatePresentationRequestCore(mode, requireHAIP, requireARF, clientID, reqObj, responseURI, requestOrigin, params, reqPayload)
 }
 
+// ARFRefusal is a strict refusal on ARF findings alone. The relying party
+// signed the request with a trusted access certificate, so its client
+// identifier is valid and the wallet answers it with access_denied (RFC 6749
+// §4.1.2.1, which OpenID4VP 1.0 §8.5 applies).
+type ARFRefusal struct {
+	Findings []string
+}
+
+func (e *ARFRefusal) Error() string {
+	return "authorization request validation failed: " + strings.Join(e.Findings, ", ")
+}
+
 func validatePresentationRequestCore(mode ValidationMode, requireHAIP, requireARF bool, clientID string, reqObj *oid4vc.RequestObjectJWT, responseURI string, requestOrigin string, params *AuthorizationRequestParams, payload map[string]any) ([]string, error) {
 	var findings []string
 
@@ -79,10 +91,15 @@ func validatePresentationRequestCore(mode ValidationMode, requireHAIP, requireAR
 		findings = append(findings, ValidateHAIPCompliance(params, reqObj)...)
 		advisories = HAIPAdvisories(params)
 	}
+	var arfFindings []string
 	if requireARF {
-		findings = append(findings, ARFFindings(params)...)
+		arfFindings = ARFFindings(params)
 	}
 
+	if mode == ValidationModeStrict && len(findings) == 0 && len(arfFindings) > 0 && relyingPartyAuthenticated(params) {
+		return nil, &ARFRefusal{Findings: arfFindings}
+	}
+	findings = append(findings, arfFindings...)
 	if mode == ValidationModeStrict && len(findings) > 0 {
 		return nil, fmt.Errorf("authorization request validation failed: %s", strings.Join(findings, ", "))
 	}
