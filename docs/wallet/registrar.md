@@ -139,15 +139,15 @@ The wallet does not check these:
 
 ![Demo verifier identity](../assets/verifier-identity.png)
 
-On the demo verifier page you choose how the verifier identifies itself:
+The demo issuer and the demo verifier share the wallet's access certificate, so the registrar lists them as one relying party, **EUDI Dev Demo**, with two services. **EUDI Dev Demo Issuer** has the provider entitlements and the attestation types of the templates. **EUDI Dev Demo Verifier** has one intended use. It registers the top-level claims of every predefined template, so the demo requests ask only for registered claims. Their registration certificates use the entry of the wallet's own certificates in the status list, which the registrar never revokes.
 
-- **Demo certificate** (default): the request is signed with the demo verifier's access certificate. It has no registration certificate, so `--arf` reports RPRC_19.
-- **Registrar certificates**: the first request registers the verifier through the registrar API. The browser creates the key and sends it to the demo verifier with each request, so the demo verifier can sign. The privacy policy is the registrar's placeholder page. The credential rows match the selected request until you edit them. If you change the name, the purpose or the rows, the next request registers again.
+The demo issuer signs its metadata with the access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
+
+- **Registered** (default): the request is signed with the access certificate and carries the registration certificate in `verifier_info`. It passes the `--arf` checks. A custom request for a claim that no template has gets an over-asking finding (RPRC_21).
+- **Not registered**: the request is signed with the access certificate and has no `verifier_info`, so `--arf` reports RPRC_19.
 - **Own certificates**: you paste a PEM bundle with your key and access certificate chain, and optionally a `verifier_info` value.
 
-The identity buttons are `identity-demo`, `identity-registrar` and `identity-own`. The registration fields are `identity-name`, `identity-purpose` and the rows `identity-credential-<n>-format`, `-type`, `-claims` and `-remove`, with `identity-add-credential`. `identity-registered-id` shows the assigned identifier. In **Own certificates** mode you paste into `signing-key` and `verifier-info`.
-
-The demo issuer signs its metadata with the wallet's access certificate and publishes a registration certificate from this registrar in `issuer_info`. It passes the `--arf` checks.
+The identity buttons are `identity-registered`, `identity-unregistered` and `identity-own`. In **Own certificates** mode you paste into `signing-key` and `verifier-info`. The request API takes `"identity": "unregistered"` for the second option.
 
 ## Attestation catalogue
 

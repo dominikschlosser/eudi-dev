@@ -81,22 +81,6 @@
     .btn.icon { padding: 4px 9px; color: var(--red); border-color: var(--border); }
     .claims-label { font-size: 11px; color: var(--text-dim); margin: 8px 0 4px; }
     .identity-panel { margin-bottom: 12px; }
-    .identity-label { min-width: 64px; }
-    .identity-input { flex: 1; min-width: 160px; font: inherit; font-size: 11px; background: var(--bg);
-      color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; }
-    #identity-registered-id { font-size: 11px; word-break: break-all; }
-    #identity-add-credential { margin-bottom: 10px; }
-    /* Format, type and remove share the first line, the claims get the second. */
-    .reg-cred { display: grid; grid-template-columns: 116px minmax(0, 1fr) auto; gap: 6px; align-items: center;
-      border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
-    .reg-cred .reg-claims { grid-column: 1 / -1; }
-    @media (max-width: 480px) {
-      .reg-cred { grid-template-columns: minmax(0, 1fr) auto; }
-      .reg-cred .reg-type { grid-column: 1 / -1; grid-row: 2; }
-      .reg-cred .reg-claims { grid-row: 3; }
-    }
-    .reg-cred select, .reg-cred input { font: inherit; font-size: 11px; background: var(--bg); color: var(--text);
-      border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; min-width: 0; }
     textarea { width: 100%; min-height: 68px; margin-bottom: 6px; resize: vertical; white-space: pre; }
     .sponsor-info {
       display: flex;
@@ -222,29 +206,12 @@
     <div class="format-row">
       <span class="format-label">Verifier identity</span>
       <div class="toggle" id="identity-toggle" role="radiogroup" aria-label="Verifier identity">
-        <button type="button" class="toggle-option selected" id="identity-demo" data-identity="demo" role="radio" aria-checked="true">Demo certificate</button>
-        <button type="button" class="toggle-option" id="identity-registrar" data-identity="registrar" role="radio" aria-checked="false">Registrar certificates</button>
+        <button type="button" class="toggle-option selected" id="identity-registered" data-identity="registered" role="radio" aria-checked="true">Registered</button>
+        <button type="button" class="toggle-option" id="identity-unregistered" data-identity="unregistered" role="radio" aria-checked="false">Not registered</button>
         <button type="button" class="toggle-option" id="identity-own" data-identity="own" role="radio" aria-checked="false">Own certificates</button>
       </div>
     </div>
     <p class="format-hint" id="identity-hint"></p>
-    <div class="identity-panel" id="identity-registrar-panel" hidden>
-      <div class="format-row" id="identity-name-row">
-        <label class="format-label identity-label" for="identity-name">Name</label>
-        <input type="text" id="identity-name" class="identity-input" value="Demo Verifier">
-      </div>
-      <div class="format-row" id="identity-purpose-row">
-        <label class="format-label identity-label" for="identity-purpose">Purpose</label>
-        <input type="text" id="identity-purpose" class="identity-input" value="Demo presentation">
-      </div>
-      <div class="claims-label" id="identity-credentials-label">Credentials and claims to register</div>
-      <div id="identity-credentials" role="group" aria-labelledby="identity-credentials-label"></div>
-      <button type="button" class="btn small" id="identity-add-credential">+ Add credential</button>
-      <div class="format-row" id="identity-registered" hidden>
-        <span class="format-label identity-label" id="identity-registered-label">Registered</span>
-        <code id="identity-registered-id"></code>
-      </div>
-    </div>
     <div class="identity-panel" id="identity-own-panel" hidden>
       <label class="label" for="signing-key" id="signing-key-label">Signing key and access certificate chain (PEM)</label>
       <textarea id="signing-key" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----&#10;…&#10;-----BEGIN CERTIFICATE-----&#10;…"></textarea>
@@ -283,7 +250,6 @@
     </footer>
     <div class="disclaimer">Unofficial, independent open source project. Not affiliated with or endorsed by the European Commission or the European Union.</div>
   </div>
-  <script src="../csr.js"></script>
   <script src="../claim-path.js"></script>
   <script src="verifier.js"></script>
 </body>

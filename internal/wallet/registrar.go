@@ -485,21 +485,24 @@ func newRegistrarID() string {
 	return hex.EncodeToString(b)
 }
 
-// providerRelyingParty is the wallet's own registration as a credential
-// provider, in the TS05 v1.5 shape. Issuers look up its entitlements and the
-// attestations it provides.
+// providerRelyingParty is the wallet's own registration in the TS05 v1.5
+// shape: the demo issuer with its entitlements and attestation types, and the
+// demo verifier with its intended use.
 func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
 	dataset := buildRegistrarDataset(w, base)
+	legalName, country := demoRelyingPartyName, dataset.SupervisoryAuthority.Country
 	if _, access, err := w.AccessSigningMaterial(); err == nil {
-		identifier, _, _ := accessCertificateSubject(access[0])
+		identifier, certLegalName, certCountry := accessCertificateSubject(access[0])
+		legalName = firstNonEmpty(certLegalName, legalName)
+		country = firstNonEmpty(certCountry, country)
 		dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
 		dataset.RegistryURI = strings.TrimRight(base, "/") + "/api/registrar/wrp/" + identifier
 	}
 	return WalletRelyingParty{
 		Identifier:           dataset.Identifier,
-		LegalPerson:          LegalPerson{LegalName: []string{dataset.TradeName}},
-		Country:              dataset.SupervisoryAuthority.Country,
-		TradeName:            dataset.TradeName,
+		LegalPerson:          LegalPerson{LegalName: []string{legalName}},
+		Country:              country,
+		TradeName:            demoRelyingPartyName,
 		IsPSB:                dataset.IsPSB,
 		SupervisoryAuthority: dataset.SupervisoryAuthority,
 		RegistryURI:          dataset.RegistryURI,
@@ -510,7 +513,7 @@ func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
 			Entitlements:         dataset.Entitlements,
 			ProvidesAttestations: dataset.ProvidesAttestations,
 			IsIntermediary:       dataset.IsIntermediary,
-		}},
+		}, w.demoVerifierService(strings.TrimRight(base, "/"))},
 	}
 }
 

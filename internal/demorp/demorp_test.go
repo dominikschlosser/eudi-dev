@@ -2030,25 +2030,69 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 
 // By default the demo verifier's access certificate signs the request, and the
 // request carries no registration certificate.
-func TestVerifierRequestIsSignedWithoutARegistrationCertificate(t *testing.T) {
+// The demo verifier is registered with the wallet's registrar. Its requests
+// carry its access certificate and, unless the identity is "unregistered", its
+// registration certificate.
+func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 	d, w, _ := newDemoRP(t)
 	h := d.VerifierHandler()
-
-	_, doc := doJSON(t, h, "POST", "/api/requests", `{"type":"pid"}`, map[string]string{"Content-Type": "application/json"})
-	walletURL, err := url.Parse(doc["wallet_url"].(string))
-	if err != nil {
-		t.Fatalf("parsing wallet_url: %v", err)
-	}
-	payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
-	if _, ok := payload["verifier_info"]; ok {
-		t.Errorf("verifier_info = %v, want none", payload["verifier_info"])
-	}
 	_, chain, err := w.AccessSigningMaterial()
 	if err != nil {
 		t.Fatalf("AccessSigningMaterial: %v", err)
 	}
-	if payload["client_id"] != wallet.X509HashClientID(chain[0]) {
-		t.Errorf("client_id = %v, want the x509_hash of the demo verifier's access certificate", payload["client_id"])
+	for _, tc := range []struct {
+		body             string
+		wantVerifierInfo bool
+	}{
+		{`{"type":"pid"}`, true},
+		{`{"type":"pid","identity":"unregistered"}`, false},
+	} {
+		_, doc := doJSON(t, h, "POST", "/api/requests", tc.body, map[string]string{"Content-Type": "application/json"})
+		walletURL, err := url.Parse(doc["wallet_url"].(string))
+		if err != nil {
+			t.Fatalf("parsing wallet_url: %v", err)
+		}
+		payload := fetchRequestObject(t, h, walletURL.Query().Get("request_uri"))
+		if _, ok := payload["verifier_info"]; ok != tc.wantVerifierInfo {
+			t.Errorf("%s: verifier_info present = %t, want %t", tc.body, ok, tc.wantVerifierInfo)
+		}
+		if payload["client_id"] != wallet.X509HashClientID(chain[0]) {
+			t.Errorf("%s: client_id = %v, want the x509_hash of the demo verifier's access certificate", tc.body, payload["client_id"])
+		}
+	}
+}
+
+// A strict wallet with --arf accepts the demo verifier's preset requests, so
+// its intended use registers every claim they ask for (ARF RPRC_21).
+func TestAStrictARFWalletAcceptsTheDemoVerifier(t *testing.T) {
+	w := newIssuanceWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = wallet.ValidationModeStrict
+	if err := w.GenerateProtectedDefaults(); err != nil {
+		t.Fatalf("generating PIDs: %v", err)
+	}
+	_, ts := serveDemoStack(t, w)
+	for _, tc := range []struct {
+		body     string
+		verified bool
+	}{
+		{`{"type":"pid"}`, true},
+		{`{"type":"pid","vct":"urn:eudi:pid:de:1"}`, true},
+		{`{"type":"pid","format":"mdoc"}`, true},
+		// ARF RPRC_19: without a registration certificate the wallet refuses.
+		{`{"type":"pid","identity":"unregistered"}`, false},
+	} {
+		created := postJSONTo(t, ts.URL+"/verifier/api/requests", tc.body)
+		id, _ := created["id"].(string)
+		resp, err := ts.Client().Get(created["wallet_url"].(string))
+		if err != nil {
+			t.Fatalf("%s: driving the request: %v", tc.body, err)
+		}
+		resp.Body.Close()
+		status := getJSONFrom(t, ts.URL+"/verifier/api/requests/"+id)
+		if verified := status["status"] == "verified"; verified != tc.verified {
+			t.Errorf("%s: status = %v, verified want %t (error: %v)", tc.body, status["status"], tc.verified, status["error"])
+		}
 	}
 }
 

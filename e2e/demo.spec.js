@@ -236,36 +236,14 @@ test.describe("Demo mode consent visibility", () => {
     await page.locator("#consent-deny").click();
   });
 
-  test("a verifier registered with the registrar shows its purpose in the consent dialog", async ({
-    page,
-  }) => {
-    // The verifier page registers through the registrar API and sends the
-    // registration certificate in verifier_info (OpenID4VP 1.0 §5.1).
+  test("the registered demo verifier shows its purpose in the consent dialog", async ({ page }) => {
+    // The demo verifier sends its registration certificate in verifier_info
+    // (OpenID4VP 1.0 §5.1).
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#identity-registrar").click();
-    await page.locator("#identity-purpose").fill("Age check at the venue");
-    // The rows follow the selected request until they are edited.
-    await expect(page.locator("#identity-credential-1-type")).toHaveValue("urn:eudi-test:demo-ticket:1");
+    await expect(page.locator("#identity-registered")).toHaveAttribute("aria-checked", "true");
     await page.locator('#credential-toggle [data-credential="pid"]').click();
-    await expect(page.locator("#identity-credential-1-type")).toHaveValue("urn:eudi:pid:1");
-    await expect(page.locator("#identity-credential-2-format")).toHaveValue("mso_mdoc");
-    await expect(page.locator("#identity-credential-2-claims")).toHaveValue("given_name, family_name");
-    await page.locator("#identity-credential-1-claims").fill("given_name, address.locality");
-    await page.locator('#format-toggle [data-format="sd-jwt"]').click();
-    await expect(page.locator("#identity-credential-2-format")).toHaveValue("mso_mdoc");
-    await page.locator('#format-toggle [data-format="both"]').click();
     await page.locator("#create-request").click();
-    await expect(page.locator("#identity-registered-id")).toHaveText(/^NTR/);
-    const identifier = await page.locator("#identity-registered-id").textContent();
-    const registered = await page.evaluate(async (id) => {
-      const resp = await fetch(`/api/registrar/wrp/${id}`, { headers: { Accept: "application/json" } });
-      return (await resp.json()).data.services[0].intendedUses[0].credentials;
-    }, identifier);
-    expect(registered[0].claims).toEqual([{ path: ["given_name"] }, { path: ["address", "locality"] }]);
-    expect(registered[1].claims).toEqual([
-      { path: ["eu.europa.ec.eudi.pid.1", "given_name"] },
-      { path: ["eu.europa.ec.eudi.pid.1", "family_name"] },
-    ]);
+    await expect(page.locator("#scheme-uri")).toHaveAttribute("href", /^openid4vp:/);
     const schemeURI = await page.locator("#scheme-uri").getAttribute("href");
     submitAsSchemeHandler("/api/presentations", schemeURI);
     await waitForPending(1);
@@ -273,7 +251,7 @@ test.describe("Demo mode consent visibility", () => {
     await page.goto(`${BASE}/?focus=overview`);
     await page.locator("#pending-review").click();
     await expect(page.locator("#consent-overlay")).toHaveClass(/active/);
-    await expect(page.locator("#consent-purpose-0")).toContainText("Age check at the venue");
+    await expect(page.locator("#consent-purpose-0")).toContainText("Shows how a verifier requests and checks credentials");
     await expect(page.locator("#consent-privacy-policy-0")).toHaveAttribute("href", /\/privacy-policy$/);
     await page.locator("#consent-deny").click();
   });
@@ -1475,14 +1453,13 @@ test.describe("Custom verifier request builder", () => {
 });
 
 test.describe("Demo verifier identity", () => {
-  test("an unsigned client identifier prefix allows only the demo certificate", async ({ page }) => {
+  test("an unsigned client identifier prefix sends no registration certificate", async ({ page }) => {
     await page.goto(`${BASE}/verifier/`);
-    await page.locator("#identity-registrar").click();
     await page.locator('#credential-toggle [data-credential="custom"]').click();
     await page.locator('#scheme-toggle [data-scheme="redirect_uri"]').click();
-    await expect(page.locator("#identity-registrar")).toBeDisabled();
+    await expect(page.locator("#identity-registered")).toBeDisabled();
     await expect(page.locator("#identity-own")).toBeDisabled();
-    await expect(page.locator("#identity-demo")).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#identity-unregistered")).toHaveAttribute("aria-checked", "true");
     await expect(page.locator("#identity-hint")).toContainText("the request is unsigned");
   });
 
