@@ -989,6 +989,18 @@
     };
   }
 
+  // A category sets the default level of security. Only EAAs default to basic.
+  const categoryLevel = (category) => category === 'eaa' ? 'iso_18045_basic' : 'iso_18045_high';
+  function linkCategoryLevel(prefix) {
+    const category = document.getElementById(prefix + '-catalog-category');
+    category.addEventListener('change', () => {
+      document.getElementById(prefix + '-catalog-los').value = categoryLevel(category.value);
+    });
+  }
+  // The trusted list field stays empty when the entry names its category's
+  // list, so the list follows the category.
+  const ownCategoryList = (trust, category) => trust && trust.value.endsWith('trustlists/' + category);
+
   // catalogFields drives the "Add the template to the attestation catalogue"
   // checkbox and its fields in a form. entry() returns the catalogue fields
   // for the save request, or null when the box is unchecked.
@@ -1002,6 +1014,7 @@
         box.checked = false;
         fields.hidden = true;
         field('name').value = '';
+        field('category').value = 'eaa';
         field('rulebook').value = '';
         field('los').value = 'iso_18045_basic';
         field('binding').value = 'key';
@@ -1025,19 +1038,21 @@
         fields.hidden = false;
         const schema = entry.schema || {};
         field('name').value = entry.name || '';
+        field('category').value = entry.category || 'eaa';
         field('rulebook').value = schema.rulebookURI || '';
-        field('los').value = schema.attestationLoS || 'iso_18045_basic';
+        field('los').value = schema.attestationLoS || categoryLevel(field('category').value);
         field('binding').value = schema.bindingType || 'key';
         const trust = (schema.trustedAuthorities || [])[0];
-        field('trust').value = trust ? trust.value : '';
+        field('trust').value = trust && !ownCategoryList(trust, entry.category) ? trust.value : '';
       },
       entry(defaultName) {
         if (!box.checked) return null;
-        return { name: field('name').value.trim() || defaultName, schema: catalogSchema(prefix) };
+        return { name: field('name').value.trim() || defaultName, category: field('category').value, schema: catalogSchema(prefix) };
       },
     };
   }
   const issueCatalog = catalogFields('issue');
+  linkCategoryLevel('issue');
 
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
@@ -3135,47 +3150,44 @@
         list.appendChild(term);
 
         const detail = document.createElement('dd');
-        groups.get(category)
-          .slice()
-          .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
-          .forEach(entry => {
-            const url = entry.advertised_url || entry.url ||
-              (entry.path ? window.location.origin + entry.path : '');
-            if (!url) return;
-            const links = document.createElement('span');
-            links.className = 'trust-links';
-            const link = document.createElement('a');
-            link.href = url;
-            link.textContent = entry.id || 'trust list';
-            link.title = url;
-            links.appendChild(link);
-            if (entry.entityName) {
-              const name = document.createElement('span');
-              name.className = 'trust-list-name';
-              name.textContent = entry.entityName;
-              links.appendChild(name);
-            }
-            const copy = document.createElement('button');
-            copy.type = 'button';
-            copy.className = 'copy-btn';
-            copy.textContent = '\u29C9';
-            copy.title = 'Copy trust list URL';
-            copy.addEventListener('click', async () => {
-              try {
-                await navigator.clipboard.writeText(url);
-                copy.textContent = '\u2713';
-                setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
-              } catch (e) { /* The clipboard API may be unavailable. */ }
-            });
-            links.appendChild(copy);
-            detail.appendChild(links);
-            if (entry.description) {
-              const desc = document.createElement('span');
-              desc.className = 'trust-item-hint';
-              desc.textContent = entry.description;
-              detail.appendChild(desc);
-            }
+        groups.get(category).forEach(entry => {
+          const url = entry.advertised_url || entry.url ||
+            (entry.path ? window.location.origin + entry.path : '');
+          if (!url) return;
+          const links = document.createElement('span');
+          links.className = 'trust-links';
+          const link = document.createElement('a');
+          link.href = url;
+          link.textContent = entry.id || 'trust list';
+          link.title = url;
+          links.appendChild(link);
+          if (entry.entityName) {
+            const name = document.createElement('span');
+            name.className = 'trust-list-name';
+            name.textContent = entry.entityName;
+            links.appendChild(name);
+          }
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'copy-btn';
+          copy.textContent = '\u29C9';
+          copy.title = 'Copy trust list URL';
+          copy.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              copy.textContent = '\u2713';
+              setTimeout(() => { copy.textContent = '\u29C9'; }, 1200);
+            } catch (e) { /* The clipboard API may be unavailable. */ }
           });
+          links.appendChild(copy);
+          detail.appendChild(links);
+          if (entry.description) {
+            const desc = document.createElement('span');
+            desc.className = 'trust-item-hint';
+            desc.textContent = entry.description;
+            detail.appendChild(desc);
+          }
+        });
         list.appendChild(detail);
       });
       row.appendChild(list);
@@ -4165,6 +4177,7 @@
     loadCatalogEntries().catch(() => { /* The fields work without suggestions. */ });
   }
 
+  const CATEGORY_LABELS = { pid: 'PID', qeaa: 'QEAA', 'pub-eaa': 'PuB-EAA', eaa: 'EAA' };
   const LOS_LABELS = { 'iso_18045_high': 'High', 'iso_18045_moderate': 'Moderate', 'iso_18045_enhanced-basic': 'Enhanced basic', 'iso_18045_basic': 'Basic' };
   // TS11 bindingType: how an attestation is bound to its holder.
   const BINDING_LABELS = { key: 'Bound to a wallet key', claim: 'Linked to another credential', biometric: 'Bound to biometrics', none: 'Not bound to the holder' };
@@ -4195,6 +4208,7 @@
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change the credential template to change this entry.">Template</span>' : '') +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-category" title="Credential category. It selects the signer and the trusted list.">' + escHtml(CATEGORY_LABELS[entry.category] || entry.category) + '</span>' +
           '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security level: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
           '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
           '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +
@@ -4231,7 +4245,7 @@
       catalogList.appendChild(card);
     });
     const empty = document.getElementById('registrar-catalog-empty');
-    empty.textContent = 'No attestation matches "' + catalogSearch.value.trim() + '".';
+    empty.textContent = query ? 'No attestation matches "' + catalogSearch.value.trim() + '".' : 'The catalogue has no attestations yet.';
     empty.hidden = matching.length > 0;
   }
 
@@ -4259,6 +4273,7 @@
   makeModal(catalogOverlay, document.getElementById('registrar-catalog-close'));
 
   const catalogForm = document.getElementById('registrar-catalog-form');
+  linkCategoryLevel('registrar');
   const catalogAddOverlay = document.getElementById('registrar-catalog-add-overlay');
   // The dialog opens with an example filled in. Names are unique, so the
   // example name gets a number when the catalogue already has it.
@@ -4269,6 +4284,7 @@
     document.getElementById('registrar-catalog-name').value = name;
     catalogFormats.innerHTML = '';
     addCatalogFormat('dc+sd-jwt', 'urn:example:diploma:1', 'degree, graduation_date');
+    document.getElementById('registrar-catalog-category').value = 'eaa';
     document.getElementById('registrar-catalog-rulebook').value = '';
     document.getElementById('registrar-catalog-los').value = 'iso_18045_basic';
     document.getElementById('registrar-catalog-binding').value = 'key';
@@ -4340,6 +4356,7 @@
     try {
       const added = await registrarRequest('POST', 'api/catalog/attestations', {
         name: document.getElementById('registrar-catalog-name').value.trim(),
+        category: document.getElementById('registrar-catalog-category').value,
         credentials: credentials,
         schema: catalogSchema('registrar'),
       });

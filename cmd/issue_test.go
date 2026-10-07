@@ -291,8 +291,8 @@ func TestResolveIssueClaims_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestBuildIssueAttestationSpec_AutoNonPIDDefaults(t *testing.T) {
-	issueTrustProfile = "auto"
+func TestBuildIssueAttestationSpec_CategoryDefaults(t *testing.T) {
+	issueTrustProfile = "eaa"
 	issueEntitlements = nil
 	issueTrustListType = ""
 	issueStatusDetermination = ""
@@ -310,8 +310,8 @@ func TestBuildIssueAttestationSpec_AutoNonPIDDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
-	if spec.TrustListType != "http://uri.etsi.org/19602/LoTEType/local" {
-		t.Fatalf("expected local trust-list type, got %s", spec.TrustListType)
+	if spec.Category != "eaa" || spec.TrustListType != "http://uri.etsi.org/19602/LoTEType/local" {
+		t.Fatalf("category %q and trust-list type %q, want eaa and the local type", spec.Category, spec.TrustListType)
 	}
 	if len(spec.Entitlements) != 1 || spec.Entitlements[0] != "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider" {
 		t.Fatalf("expected Non_Q_EAA entitlement, got %v", spec.Entitlements)
@@ -472,7 +472,7 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 	issueRevocationServiceName = ""
 	walletDir = ""
 
-	rootCmd.SetArgs([]string{"issue", "--wallet-dir", wDir, "sdjwt", "--wallet", "--vct", "urn:test:employee:1"})
+	rootCmd.SetArgs([]string{"issue", "--wallet-dir", wDir, "sdjwt", "--wallet", "--vct", "urn:test:employee:1", "--trust-profile", "eaa"})
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("issue sdjwt --wallet: %v", err)
 	}
@@ -509,9 +509,13 @@ func TestIssueSDJWTToWallet_UsesWalletIssuerContext(t *testing.T) {
 		t.Fatalf("expected status list uri %s/api/statuslist, got %v", wantIssuer, got)
 	}
 
-	tlJWT, err := wallet.GenerateTrustListJWTForWallet(w, w.IssuerURL)
+	group, ok := wallet.FindTrustListGroupForWallet(w, "eaa", "", "")
+	if !ok {
+		t.Fatal("no eaa trust list")
+	}
+	tlJWT, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/eaa")
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWTForWallet: %v", err)
+		t.Fatalf("GenerateTrustListJWTForWalletGroup: %v", err)
 	}
 	tl, err := trustlist.Parse(tlJWT)
 	if err != nil {

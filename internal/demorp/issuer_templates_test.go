@@ -216,10 +216,7 @@ func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 	_, ts := serveDemoStack(t, w)
 
 	other := newIssuanceWallet(t)
-	group, ok := wallet.DefaultTrustListGroupForWallet(other)
-	if !ok {
-		t.Fatal("no trusted list")
-	}
+	group := wallet.DefaultTrustListGroupForWallet(other)
 	list, err := wallet.GenerateTrustListJWTForWalletGroup(other, other.IssuerURL, group, "/api/trustlists/"+group.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -244,8 +241,8 @@ func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 	created := postJSONTo(t, ts.URL+"/issuer/api/offers?credential=badge", "")
 	schemeURI, _ := created["scheme_uri"].(string)
 	result := postJSONTo(t, ts.URL+"/api/offers", `{"uri":`+jsonString(schemeURI)+`}`)
-	if msg, _ := result["error"].(string); !strings.Contains(msg, "ARF ISSU_08 to ISSU_10") {
-		t.Errorf("result %v, want a refusal citing ISSU_08 to ISSU_10", result)
+	if msg, _ := result["error"].(string); !strings.Contains(msg, "ARF ISSU_10") {
+		t.Errorf("result %v, want a refusal citing ISSU_10", result)
 	}
 	if got := len(w.GetCredentials()); got != before {
 		t.Errorf("credentials %d, want %d (nothing stored)", got, before)

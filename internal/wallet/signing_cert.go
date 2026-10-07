@@ -20,37 +20,32 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// SigningCertChainForIssuedAttestation uses a distinct leaf per profile under the shared
-// CA.
+// SigningCertChainForIssuedAttestation is the signer chain of the type's trust
+// profile.
 func (w *Wallet) SigningCertChainForIssuedAttestation(spec IssuedAttestationSpec) ([]*x509.Certificate, error) {
-	return w.SigningCertChainForProfile(trustListProfileFromSpec(spec))
+	_, chain, err := w.signingMaterialForProfile(trustListProfileFromSpec(spec), "")
+	return chain, err
 }
 
-// SigningCertChainForIssuedCredential matches the signer's countryName to issuing_country
-// as ISO/IEC 18013-5 Table B.3 requires.
-func (w *Wallet) SigningCertChainForIssuedCredential(spec IssuedAttestationSpec, claims map[string]any) ([]*x509.Certificate, error) {
-	_, chain, err := w.signingMaterialForProfile(trustListProfileFromSpec(spec), IssuingCountryFromClaims(claims))
-	return chain, err
+// SigningMaterialForIssuedCredential returns the signing key and chain of the
+// type's trust profile. The signer's countryName matches issuing_country, as
+// ISO/IEC 18013-5 Table B.3 requires.
+func (w *Wallet) SigningMaterialForIssuedCredential(spec IssuedAttestationSpec, claims map[string]any) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	return w.signingMaterialForProfile(trustListProfileFromSpec(spec), IssuingCountryFromClaims(claims))
 }
 
 // SigningMaterialForIssuedAttestation reads the key and chain together so a reset
 // cannot pair values from before and after it.
 func (w *Wallet) SigningMaterialForIssuedAttestation(spec IssuedAttestationSpec) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	return w.signingMaterialForProfile(trustListProfileFromSpec(spec), "")
-}
-
-func (w *Wallet) SigningCertChainForGroup(group TrustListGroup) ([]*x509.Certificate, error) {
-	return w.SigningCertChainForProfile(group.Profile)
-}
-
-func (w *Wallet) SigningCertChainForProfile(profile trustListProfile) ([]*x509.Certificate, error) {
-	_, chain, err := w.signingMaterialForProfile(profile, "")
-	return chain, err
 }
 
 func IssuingCountryFromClaims(claims map[string]any) string {
@@ -84,22 +79,20 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country str
 		Country:               country,
 		CRLDistributionPoints: crlDistributionPoints(w.IssuerURL),
 	}
-	switch profile.LoTEType {
-	case pidTrustListType:
+	role := providerRole(profile)
+	switch {
+	case profile.Category == credtemplate.CategoryPID:
 		opts.Role = mock.PIDProviderCertificate
-	case walletProviderTrustListType:
+	case role == string(mock.WalletProviderCertificate):
 		opts.Role = mock.WalletProviderCertificate
+	}
+	if role != credtemplate.CategoryPID {
 		var err error
-		issuerKey, err = w.signingStore().key("wallet-provider")
-		if err != nil {
+		if issuerKey, err = w.signingStore().key(signingKeyName(role)); err != nil {
 			return nil, nil, err
 		}
 	}
 	opts.IssuingCertificateURL = issuingCertificateURLs(w.IssuerURL)
-	role := string(opts.Role)
-	if role == "" {
-		role = "local"
-	}
 	parentKey, parent, err := w.signingStore().providerCA(caKey, caCert, w.IssuerURL, role, country)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating provider CA: %w", err)
@@ -125,6 +118,37 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country str
 		certs = append(certs, caCert)
 	}
 	return issuerKey, certs, nil
+}
+
+// providerRole names the provider CA and signing key of a trust profile. A
+// category's list, every custom list and the wallet provider list each have
+// their own, so a list anchors only the credentials signed for it. A PID
+// signer uses the wallet's issuer key.
+func providerRole(profile trustListProfile) string {
+	switch {
+	case profile.LoTEType == walletProviderTrustListType:
+		return string(mock.WalletProviderCertificate)
+	case profile.LoTEType == "":
+		return unlistedRole
+	}
+	return trustListGroupID(profile)
+}
+
+const unlistedRole = "unlisted"
+
+var customRolePattern = regexp.MustCompile(`^tl-[0-9a-f]{8}$`)
+
+// isProviderRole accepts the roles that providerRole returns.
+func isProviderRole(role string) bool {
+	return slices.Contains(credtemplate.Categories, role) || role == unlistedRole ||
+		role == string(mock.WalletProviderCertificate) || customRolePattern.MatchString(role)
+}
+
+func signingKeyName(role string) string {
+	if role == string(mock.WalletProviderCertificate) {
+		return "wallet-provider"
+	}
+	return "issuer-" + role
 }
 
 // ISO/IEC 18013-5 Table B.3 requires a CRL distribution point URI in document signer
@@ -244,21 +268,7 @@ func (w *Wallet) StatusListSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certifi
 // DefaultSigningMaterial reads the key and chain together. A reload or reset between
 // two separate reads could return a key that does not match the chain.
 func (w *Wallet) DefaultSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	group, ok := DefaultTrustListGroupForWallet(w)
-	if !ok {
-		if w == nil {
-			return nil, nil, fmt.Errorf("wallet has no signing certificate chain")
-		}
-		w.mu.RLock()
-		issuerKey := w.IssuerKey
-		chain := append([]*x509.Certificate(nil), w.CertChain...)
-		w.mu.RUnlock()
-		if len(chain) == 0 {
-			return nil, nil, fmt.Errorf("wallet has no signing certificate chain")
-		}
-		return issuerKey, chain, nil
-	}
-	return w.signingMaterialForProfile(group.Profile, "")
+	return w.signingMaterialForProfile(DefaultTrustListGroupForWallet(w).Profile, "")
 }
 
 // SD-JWT VC draft-08 and earlier require the issuer identifier in the signing
@@ -284,13 +294,8 @@ func issuerSubjectAltNames(issuerURL string) (dnsNames []string, ips []net.IP, u
 }
 
 func signingLeafCommonName(profile trustListProfile) string {
-	label := strings.TrimSpace(profile.EntityName)
-	if label == "" {
-		label = "EUDI Dev Wallet Issuer"
+	if profile.LoTEType == "" {
+		return "EUDI Dev Wallet Issuer"
 	}
-	id := trustListGroupID(profile)
-	if id == "" {
-		return label
-	}
-	return label + " (" + id + ")"
+	return firstNonEmpty(profile.EntityName, "EUDI Dev Wallet Issuer") + " (" + trustListGroupID(profile) + ")"
 }

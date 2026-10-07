@@ -111,9 +111,6 @@ func TestWalletStore_SaveAndLoad(t *testing.T) {
 	if len(w2.IssuedAttestations) != 1 {
 		t.Fatalf("expected 1 issued-attestation entry after reload, got %d", len(w2.IssuedAttestations))
 	}
-	if w2.IssuedAttestations[0].TrustListType != localTrustListType {
-		t.Fatalf("expected persisted local trust-list type, got %s", w2.IssuedAttestations[0].TrustListType)
-	}
 }
 
 func TestWalletStore_Save_ConcurrentWritersLeaveValidFile(t *testing.T) {

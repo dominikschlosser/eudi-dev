@@ -1033,6 +1033,8 @@ test.describe("Credential Issuing via UI", () => {
     }
     const categories = page.locator("#trust-list-links .trust-items dt");
     await expect(categories).toHaveText(["Credential providers", "Wallet providers"]);
+    const credentialGroup = page.locator("#trust-list-links .trust-items dd").nth(0);
+    await expect(credentialGroup.locator(".trust-links a")).toHaveText(["pid", "qeaa", "pub-eaa", "eaa"]);
     const walletGroup = page.locator("#trust-list-links .trust-items dd").nth(1);
     await expect(walletGroup.locator(".trust-links a")).toHaveText(["wallet-provider"]);
     const names = page.locator("#trust-list-links .trust-list-name");
@@ -2347,7 +2349,8 @@ test.describe("Registrar", () => {
     await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
     const card = page.locator(".registrar-party", { hasText: "Library card" });
     await expect(card.locator("[id$='-los']")).toHaveText("Security level: Moderate");
-    await expect(card.locator("[id$='-trust']")).toHaveText("No trusted list");
+    await expect(card.locator("[id$='-category']")).toHaveText("EAA");
+    await expect(card.locator("[id$='-trust']")).toHaveAttribute("href", /\/api\/trustlists\/eaa$/);
 
     // The schema link serves SD-JWT VC Type Metadata with the claims.
     const schemaURL = await card.locator("[id$='-schema-0']").getAttribute("href");

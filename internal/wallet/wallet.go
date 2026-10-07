@@ -600,7 +600,6 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		mdocNamespace = mdocDocType
 	}
 	log.Printf("[Wallet] Generating default PID credentials: vct=%s overrides=%d", vct, len(claimOverrides))
-	issuerKey := w.IssuerKey
 	issuer := strings.TrimRight(w.IssuerURL, "/")
 	if issuer == "" {
 		issuer = "https://issuer.example"
@@ -624,8 +623,13 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 	if w.HolderKey != nil {
 		holderPubKey = &w.HolderKey.PublicKey
 	}
-	pidSpec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: vct})
-	pidChain, err := w.SigningCertChainForIssuedAttestation(pidSpec)
+	pidSpec := applyCategoryDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: vct, Category: credtemplate.CategoryPID})
+	sdKey, sdChain, err := w.SigningMaterialForIssuedCredential(pidSpec, sdClaims)
+	if err != nil {
+		return fmt.Errorf("building PID signing certificate chain: %w", err)
+	}
+	mdocSpec := applyCategoryDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType, Category: credtemplate.CategoryPID})
+	mdocKey, mdocChain, err := w.SigningMaterialForIssuedCredential(mdocSpec, mdocClaims)
 	if err != nil {
 		return fmt.Errorf("building PID signing certificate chain: %w", err)
 	}
@@ -636,9 +640,9 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		VCT:               vct,
 		ExpiresIn:         30 * 24 * time.Hour,
 		Claims:            sdClaims,
-		Key:               issuerKey,
+		Key:               sdKey,
 		HolderKey:         holderPubKey,
-		CertChain:         pidChain,
+		CertChain:         sdChain,
 		AlwaysDisclosed:   sdTpl.AlwaysDisclosed,
 	}
 
@@ -675,10 +679,10 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		// German PID additions use a second namespace. Claim keys encode it as
 		// namespace:element.
 		NamespaceClaims: mdocNamespaces,
-		Key:             issuerKey,
+		Key:             mdocKey,
 		HolderKey:       holderPubKey,
 		ExpiresIn:       30 * 24 * time.Hour,
-		CertChain:       pidChain,
+		CertChain:       mdocChain,
 	}
 
 	if statusListURL != "" {
@@ -705,10 +709,11 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 		}
 	}
 
-	mdocSpec := applyPIDTrustProfileDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType})
 	if dropExisting {
 		// Replacing defaults also replaces the wallet's registered issuance profiles.
+		w.mu.Lock()
 		w.IssuedAttestations = []IssuedAttestationSpec{pidSpec, mdocSpec}
+		w.mu.Unlock()
 		return nil
 	}
 	// Baseline generation runs once per PID type, so registrations accumulate.

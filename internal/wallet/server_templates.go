@@ -91,6 +91,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 			registrar.WriteCatalogError(w, err)
 			return
 		}
+		tpl.Category = entry.Category
 	}
 	// The entry is added first, because the catalogue can refuse it and a
 	// stored template is hard to take back when it replaced another one.

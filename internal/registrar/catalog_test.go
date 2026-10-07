@@ -158,6 +158,7 @@ func TestCatalogueEntriesAreChecked(t *testing.T) {
 		{"a script rulebook", func(e *CatalogAttestation) { e.Schema.RulebookURI = "javascript:alert(1)" }, "not an http or https URL"},
 		{"a script trusted list", func(e *CatalogAttestation) { e.Schema.TrustedAuthorities[0].Value = "javascript:alert(1)" }, "not an http or https URL"},
 		{"the name of a template entry", func(e *CatalogAttestation) { e.Name = "eudi pid" }, "already lists"},
+		{"an unknown category", func(e *CatalogAttestation) { e.Category = "eea" }, "not one of"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := diplomaCatalogEntry()
@@ -166,6 +167,29 @@ func TestCatalogueEntriesAreChecked(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// An entry without trusted authorities links its category's list on the
+// wallet, and the category sets the default level of security.
+func TestTheCategoryNamesTheTrustedList(t *testing.T) {
+	w := generateTestWallet(t)
+	for category, level := range map[string]string{"": "iso_18045_basic", "qeaa": "iso_18045_high", "pub-eaa": "iso_18045_high"} {
+		entry := diplomaCatalogEntry()
+		entry.Name += " " + category
+		entry.Credentials = entry.Credentials[:1]
+		entry.Credentials[0].Type += category
+		entry.Category = category
+		entry.Schema = AttestationSchema{}
+		added, err := w.AddCatalogAttestation(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := firstNonEmpty(category, "eaa")
+		s := added.Schema
+		if added.Category != want || s.AttestationLoS != level || len(s.TrustedAuthorities) != 1 || s.TrustedAuthorities[0].Value != "https://wallet.example/api/trustlists/"+want {
+			t.Errorf("category %q: %s with %s and %+v", category, added.Category, s.AttestationLoS, s.TrustedAuthorities)
+		}
 	}
 }
 

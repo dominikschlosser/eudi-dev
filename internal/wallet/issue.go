@@ -75,7 +75,8 @@ type IssueOptions struct {
 	// the next free index on the wallet's list.
 	StatusListURI *string
 	StatusListIdx *int
-	// TrustProfile is "", "auto", "pid" or "local".
+	// TrustProfile is a credtemplate category, or "" and "auto" for the
+	// category of the template or the catalogue entry. "local" is eaa.
 	TrustProfile string
 	// Trust is registration metadata stored with the issued credential type.
 	// Its Format, VCT and DocType are replaced by the resolved values.
@@ -278,6 +279,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 			if catalogEntry, err = w.Registrar().TemplateCatalogEntry(*saved, *opts.Catalog); err != nil {
 				return nil, err
 			}
+			saved.Category = catalogEntry.Category
 		}
 	} else if opts.Catalog != nil {
 		return nil, fmt.Errorf("adding to the catalogue needs a template name")
@@ -297,23 +299,21 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	case "mdoc":
 		spec.Format, spec.VCT, spec.DocType = "mso_mdoc", "", docType
 	}
+	if saved != nil && saved.Category != "" {
+		spec.Category = firstNonEmpty(spec.Category, saved.Category)
+	}
+	spec.Category = firstNonEmpty(spec.Category, w.CredentialCategory(tpl, spec))
 	spec, err = NormalizeIssuedAttestationSpec(spec, opts.TrustProfile)
 	if err != nil {
 		return nil, err
 	}
-	signingKey := w.IssuerKey
-	var certChain []*x509.Certificate
-	if opts.SigningKey != nil {
-		signingKey = opts.SigningKey
-		certChain = opts.SigningCertChain
+	signingKey, certChain := opts.SigningKey, opts.SigningCertChain
+	if signingKey != nil {
 		if err := w.judgeSigningChainAnchor(format, certChain); err != nil {
 			return nil, err
 		}
-	} else {
-		certChain, err = w.SigningCertChainForIssuedCredential(spec, claims)
-		if err != nil {
-			return nil, err
-		}
+	} else if signingKey, certChain, err = w.SigningMaterialForIssuedCredential(spec, claims); err != nil {
+		return nil, err
 	}
 
 	issuer := strings.TrimRight(strings.TrimSpace(w.IssuerURL), "/")
@@ -493,6 +493,19 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	}
 
 	return result, nil
+}
+
+// CredentialCategory is the category of the template, or else of the
+// catalogue entry for the credential type. Without either the type is on no
+// trusted list.
+func (w *Wallet) CredentialCategory(tpl *credtemplate.Template, spec IssuedAttestationSpec) string {
+	if tpl != nil && tpl.Category != "" {
+		return tpl.Category
+	}
+	if entry, ok := w.catalogueEntryFor(spec.Format, []string{firstNonEmpty(spec.VCT, spec.DocType)}); ok {
+		return entry.Category
+	}
+	return ""
 }
 
 // resolveIssueTemplate reports pidTemplate for a PID template chosen through

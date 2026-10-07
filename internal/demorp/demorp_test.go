@@ -182,10 +182,10 @@ func TestIssuerPreAuthFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing leaf certificate: %v", err)
 	}
-	// The ticket is signed under the local trust profile of its attestation
-	// spec. The leaf therefore identifies the issuer of that profile.
-	if !strings.HasPrefix(leaf.Subject.CommonName, "EUDI Dev Wallet Issuer") {
-		t.Errorf("ticket leaf names %q, want the local trust profile issuer", leaf.Subject.CommonName)
+	// The ticket template is an EAA, so the ticket is signed under the EAA
+	// provider CA.
+	if leaf.Subject.CommonName != "EUDI Dev Wallet EAA Provider (eaa)" {
+		t.Errorf("ticket leaf names %q, want the EAA provider", leaf.Subject.CommonName)
 	}
 	var registered bool
 	for _, spec := range d.wallet.IssuedAttestations {

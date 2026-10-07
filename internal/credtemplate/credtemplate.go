@@ -60,6 +60,10 @@ type Template struct {
 	// AlwaysDisclosed lists claims that appear in plain text in an SD-JWT payload.
 	// Nested claims use dotted paths such as "address.country".
 	AlwaysDisclosed []string `json:"always_disclosed,omitempty"`
+	// Category is the kind of attestation: pid, qeaa, pub-eaa or eaa (ARF
+	// ISSU_07 to ISSU_10). Credentials of a category are signed under its
+	// provider CA, which the category's trusted list names.
+	Category string `json:"category,omitempty"`
 	// UniqueClaims lists claims that get a new random value for every
 	// credential, such as the opaque subject of IT-Wallet 1.4.7 §11.1.2.1.
 	UniqueClaims []string `json:"unique_claims,omitempty"`
@@ -109,6 +113,25 @@ func (l Location) String() string {
 
 func (l Location) key(name string) string {
 	return path.Join(l.Prefix, name)
+}
+
+// Credential categories. Each has its own trusted list.
+const (
+	CategoryPID    = "pid"
+	CategoryQEAA   = "qeaa"
+	CategoryPubEAA = "pub-eaa"
+	CategoryEAA    = "eaa"
+)
+
+// Categories lists the credential categories in the order the UI shows them.
+var Categories = []string{CategoryPID, CategoryQEAA, CategoryPubEAA, CategoryEAA}
+
+// CheckCategory accepts an empty category or one of Categories.
+func CheckCategory(category string) error {
+	if category == "" || slices.Contains(Categories, category) {
+		return nil
+	}
+	return fmt.Errorf("category %q is not one of %s", category, strings.Join(Categories, ", "))
 }
 
 // NormalizeFormat maps format aliases to "sdjwt", "jwt", or "mdoc". An empty
@@ -181,6 +204,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTPIDClaims)),
 			Display:     eudiPIDDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -192,6 +216,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCPIDClaims)),
 			Display:     eudiPIDDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -202,6 +227,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTGermanPIDClaims)),
 			Display:     germanDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -213,6 +239,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCGermanPIDClaims)),
 			Display:     germanDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -225,6 +252,7 @@ func PredefinedTemplates() []Template {
 			AlwaysDisclosed: append([]string(nil), mock.ItalianPIDAlwaysDisclosed...),
 			UniqueClaims:    []string{"sub"},
 			Display:         italianDisplay(),
+			Category:        CategoryPID,
 			Predefined:      true,
 		},
 		{
@@ -237,6 +265,7 @@ func PredefinedTemplates() []Template {
 			Claims:       italianMDOCClaims,
 			UniqueClaims: []string{italianSubject},
 			Display:      italianDisplay(),
+			Category:     CategoryPID,
 			Predefined:   true,
 		},
 		{
@@ -247,6 +276,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.SDJWTDutchPIDClaims)),
 			Display:     dutchDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -258,6 +288,7 @@ func PredefinedTemplates() []Template {
 			Exp:         "720h",
 			Claims:      mock.RefreshPIDDates(deepCopyClaims(mock.MDOCDutchPIDClaims)),
 			Display:     dutchDisplay(),
+			Category:    CategoryPID,
 			Predefined:  true,
 		},
 		{
@@ -278,6 +309,7 @@ func PredefinedTemplates() []Template {
 				Logo:            "embedded:logo.svg",
 				LogoAltText:     "eudi-dev logo",
 			},
+			Category:   CategoryEAA,
 			Predefined: true,
 		},
 	}
@@ -433,6 +465,9 @@ func Save(loc Location, t Template) (string, error) {
 		return "", fmt.Errorf("invalid template name %q", name)
 	}
 	if _, err := NormalizeFormat(t.Format); err != nil {
+		return "", err
+	}
+	if err := CheckCategory(t.Category); err != nil {
 		return "", err
 	}
 	loc = loc.orDefault()

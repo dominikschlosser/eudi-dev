@@ -810,13 +810,12 @@ func (o *offerState) configurationIDs() []string {
 	return append([]string(nil), o.configIDs...)
 }
 
-// signTicket signs with a leaf certificate of the ticket trust profile. The
-// wallet trust list publishes the CA and credential type for that profile.
+// signTicket signs under the provider CA of the ticket's category, which the
+// category's trusted list names.
 func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	spec, err := wallet.NormalizeIssuedAttestationSpec(wallet.IssuedAttestationSpec{
-		Format: "dc+sd-jwt",
-		VCT:    TicketVCT,
-	}, "local")
+	spec := wallet.IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: TicketVCT}
+	spec.Category = d.wallet.CredentialCategory(nil, spec)
+	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")
 	if err != nil {
 		return "", fmt.Errorf("building ticket attestation spec: %w", err)
 	}

@@ -15,16 +15,21 @@
 package wallet
 
 import (
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
 	"strings"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
 
 // catalogueEntryFor returns the catalogue entry that lists format with one of
@@ -72,10 +77,11 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trust anchors of its catalogue entry. ARF ISSU_07 has the wallet use the
-// PID Provider LoTE, ISSU_08 and ISSU_09 the lists of QEAA and PuB-EAA
-// Providers. ISSU_10 asks for the check whenever the wallet has the anchors, so
-// an entry without an etsi_tl trusted list is not checked.
+// the trust anchors of its catalogue entry. The entry's category names the
+// rule. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a PID, QEAA
+// or PuB-EAA with the list of its providers, so an entry without a readable
+// list is a finding. ISSU_10 asks for the check of an EAA only when the wallet
+// has the anchors.
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
@@ -85,9 +91,13 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !ok {
 		return nil
 	}
-	rule := "ARF ISSU_08 to ISSU_10"
-	if slices.ContainsFunc(types, credtype.IsPIDType) {
-		rule = "ARF ISSU_07"
+	rule := map[string]string{
+		credtemplate.CategoryPID:    "ARF ISSU_07",
+		credtemplate.CategoryQEAA:   "ARF ISSU_08",
+		credtemplate.CategoryPubEAA: "ARF ISSU_09",
+	}[entry.Category]
+	if rule == "" {
+		rule = "ARF ISSU_10"
 	}
 	var problems []string
 	for _, authority := range entry.Schema.TrustedAuthorities {
@@ -102,7 +112,10 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 		problems = append(problems, fmt.Sprintf("%s (%v)", authority.Value, err))
 	}
 	if len(problems) == 0 {
-		return nil
+		if rule == "ARF ISSU_10" {
+			return nil
+		}
+		return []string{fmt.Sprintf("%s: the catalogue entry %q names no list of trusted entities (ETSI TS 119 602) the wallet can read, so it cannot validate the received %s", rule, entry.Name, credentialLabel(cred))}
 	}
 	return []string{fmt.Sprintf("%s: the signature of the received %s does not validate with the trusted lists of its catalogue entry %q: %s", rule, credentialLabel(cred), entry.Name, strings.Join(problems, ", "))}
 }
@@ -151,7 +164,36 @@ func (w *Wallet) trustListAnchors(url string) ([]trustlist.CertInfo, error) {
 		}
 		return parseTrustListAnchors(jwt)
 	}
-	return fetchTrustListCertificates(url, w.HTTPClient())
+	raw, err := format.FetchURL(url, w.HTTPClient())
+	if err != nil {
+		return nil, fmt.Errorf("fetching the trusted list: %w", err)
+	}
+	if err := verifyTrustListSigner(raw, w.TrustListCAs()); err != nil {
+		return nil, err
+	}
+	return parseTrustListAnchors(raw)
+}
+
+// verifyTrustListSigner checks the JAdES signature of a trusted list (ETSI TS
+// 119 602 V1.1.1 Annexes D.4, E.4 and H.4) and that its signer chains to a
+// trusted list operator. The ARF has the wallet accept the provider trust
+// anchors because of the list's signature (PPNot_05, TLPub_05, TLPub_07).
+func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
+	header, _, err := decodeCompactJWT(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("reading the trusted list: %w", err)
+	}
+	chain, err := validate.X5CCertificates(header)
+	if err != nil || len(chain) == 0 {
+		return errors.New("the trusted list has no x5c signer certificate")
+	}
+	if _, err := jws.Verify(strings.TrimSpace(raw), chain[0].PublicKey); err != nil {
+		return errors.New("the trusted list's signature does not verify")
+	}
+	if err := verifyToAnchor(chain, operators); err != nil {
+		return fmt.Errorf("the trusted list's signer does not chain to a trusted list operator: %w", err)
+	}
+	return nil
 }
 
 // checkReceivedCredentials runs the trust anchor check on every credential of

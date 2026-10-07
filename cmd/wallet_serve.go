@@ -61,6 +61,7 @@ type walletServeOptions struct {
 	HAIP                    bool
 	ARF                     bool
 	RelyingPartyCAs         []string
+	TrustListCAs            []string
 	VCIVersion              string
 	ClientAttestation       bool
 	AdhocDisplayImages      bool
@@ -79,6 +80,7 @@ type walletServeOptions struct {
 const (
 	arfFlagUsage            = "Check the access and registration certificates of verifiers and issuers against the ARF, including over-asking and revocation. With --mode strict the wallet refuses the request or the offer on any finding"
 	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. --arf trusts them in addition to the wallet's own CAs (repeatable)"
+	trustListCAFlagUsage    = "PEM file with CA certificates of trusted list operators. --arf trusts a fetched trusted list signed under them, in addition to the wallet's own CA (repeatable)"
 )
 
 func walletServeCmd() *cobra.Command {
@@ -133,6 +135,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.ClientAttestation, "client-attestation", false, "Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise attest_jwt_client_auth (advertising it is only a SHOULD)")
 	cmd.Flags().BoolVar(&opts.ARF, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&opts.RelyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
+	cmd.Flags().StringArrayVar(&opts.TrustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored but the issuer sees each render, while a data URI, template art, and http URLs are still embedded)")
 	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it)")
@@ -478,10 +481,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if opts.HAIP {
 		w.RequireHAIP = true
 	}
-	if opts.ARF {
-		w.RequireARF = true
-	}
-	if err := loadRelyingPartyCAs(w, opts.RelyingPartyCAs); err != nil {
+	if err := applyARFOptions(w, opts.ARF, opts.RelyingPartyCAs, opts.TrustListCAs); err != nil {
 		return err
 	}
 	if opts.AdhocDisplayImages {

@@ -495,23 +495,22 @@ func walletTrustListCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "trust-list",
-		Short: "Print the trust list JWT for this wallet (or just the URL)",
-		Long: `Generates and prints the ETSI trust list JWT containing service certificates and provider CAs.
+		Short: "Print a trusted list of this wallet (or just its URL)",
+		Long: `Prints a list of trusted entities (ETSI TS 119 602) of this wallet as a signed JWT.
 The output can be piped to a file or used directly with --trust-list in the validate command.
 
-Without selection flags, this prints the same legacy PID-first trust list as /api/trustlist.
-Use --id, --vct, or --doctype to select a specific trust-list profile.
-Use --list to see which profiles this wallet serves.
-Use --url to print only the trust list URL for a running wallet server instead.
-
-Every profile carries the same certificate, the wallet's own CA. They differ in
-what they declare it to be, so pick the one matching what is being verified.`,
+The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa) and
+one for wallet providers. Each list names its providers with their certificates.
+Without selection flags, this prints the PID provider list, like /api/trustlist.
+Use --id, --vct, or --doctype to select another list.
+Use --list to see the lists this wallet serves.
+Use --url to print only the list URL of a running wallet server.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if id != "" && (vct != "" || docType != "") {
 				return fmt.Errorf("--id cannot be combined with --vct or --doctype")
 			}
 			if list && (id != "" || vct != "" || docType != "" || urlOnly) {
-				return fmt.Errorf("--list prints every profile, so it takes no selection flags")
+				return fmt.Errorf("--list prints every list, so it takes no selection flags")
 			}
 			return nil
 		},
@@ -561,7 +560,7 @@ what they declare it to be, so pick the one matching what is being verified.`,
 			}
 			group, ok := wallet.FindTrustListGroupForWallet(w, id, vct, docType)
 			if !ok {
-				return fmt.Errorf("wallet has no matching trust-list profile")
+				return fmt.Errorf("wallet has no matching trusted list")
 			}
 			path := "/api/trustlist"
 			if id != "" {
@@ -578,10 +577,10 @@ what they declare it to be, so pick the one matching what is being verified.`,
 	}
 
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
-	cmd.Flags().BoolVar(&list, "list", false, "List the trust list profiles this wallet serves instead of printing one")
+	cmd.Flags().BoolVar(&list, "list", false, "List the trusted lists this wallet serves instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
-	cmd.Flags().StringVar(&id, "id", "", "Trust-list profile ID to print, for example 'pid', 'wallet-provider' or 'local'")
+	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa' or 'wallet-provider'")
 	cmd.Flags().StringVar(&vct, "vct", "", "Select the trust list covering this SD-JWT VCT")
 	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trust list covering this mdoc docType")
 	return cmd
@@ -844,7 +843,7 @@ func printTrustListIndex(client *remote.Client) error {
 	}
 
 	if len(entries) == 0 {
-		fmt.Println("No trust list profiles.")
+		fmt.Println("No trusted lists.")
 		return nil
 	}
 

@@ -64,8 +64,10 @@ func (s *signingStore) profileCertificates(leaf, root *x509.Certificate) ([]stri
 			continue
 		}
 		published = append(published, base64.StdEncoding.EncodeToString(cert.Raw))
+		// The root anchors every role. A root with path length zero signs the
+		// leaves directly, so the list then names only the leaves.
 		for _, parent := range certificates {
-			if parent.IsCA && cert.CheckSignatureFrom(parent) == nil {
+			if parent.IsCA && !parent.Equal(root) && cert.CheckSignatureFrom(parent) == nil {
 				published = append(published, base64.StdEncoding.EncodeToString(parent.Raw))
 				break
 			}
