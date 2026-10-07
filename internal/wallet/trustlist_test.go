@@ -23,6 +23,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 )
 
@@ -199,7 +200,7 @@ func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 		Format:  "mso_mdoc",
 		DocType: "org.iso.23220.photoid.1",
 		Entitlements: []string{
-			nonQEAAProviderEntitlement,
+			registrar.NonQEAAProviderEntitlement,
 		},
 	})); err != nil {
 		t.Fatalf("registering local attestation: %v", err)

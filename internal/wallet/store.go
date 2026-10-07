@@ -36,6 +36,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
@@ -70,18 +71,18 @@ type WalletStore struct {
 var walletRuntimeRegistry sync.Map
 
 type walletJSON struct {
-	Credentials          []StoredCredential      `json:"credentials"`
-	IssuedAttestations   []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
-	RelyingParties       []WalletRelyingParty    `json:"relying_parties,omitempty"`
-	RegistrationStatuses []RegistrationStatus    `json:"registration_statuses,omitempty"`
-	Catalog              []CatalogAttestation    `json:"catalog,omitempty"`
-	Log                  []LogEntry              `json:"log,omitempty"`
-	DeferredIssuances    []DeferredIssuance      `json:"deferred_issuances,omitempty"`
-	StatusEntries        map[string]StatusEntry  `json:"status_entries,omitempty"`
-	StatusListCounter    int                     `json:"status_list_counter,omitempty"`
-	BaseURL              string                  `json:"base_url,omitempty"`
-	IssuerURL            string                  `json:"issuer_url,omitempty"`
-	Port                 int                     `json:"port,omitempty"`
+	Credentials          []StoredCredential             `json:"credentials"`
+	IssuedAttestations   []IssuedAttestationSpec        `json:"issued_attestations,omitempty"`
+	RelyingParties       []registrar.WalletRelyingParty `json:"relying_parties,omitempty"`
+	RegistrationStatuses []registrar.RegistrationStatus `json:"registration_statuses,omitempty"`
+	Catalog              []registrar.CatalogAttestation `json:"catalog,omitempty"`
+	Log                  []LogEntry                     `json:"log,omitempty"`
+	DeferredIssuances    []DeferredIssuance             `json:"deferred_issuances,omitempty"`
+	StatusEntries        map[string]StatusEntry         `json:"status_entries,omitempty"`
+	StatusListCounter    int                            `json:"status_list_counter,omitempty"`
+	BaseURL              string                         `json:"base_url,omitempty"`
+	IssuerURL            string                         `json:"issuer_url,omitempty"`
+	Port                 int                            `json:"port,omitempty"`
 
 	// Read the old field name so existing deferred issuances can still be collected.
 	// Saves use only the current name.

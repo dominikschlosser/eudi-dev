@@ -29,6 +29,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
@@ -134,18 +135,18 @@ type IssueAPIRequest struct {
 	AlwaysDisclosed []string       `json:"always_disclosed"`
 	SaveAsTemplate  string         `json:"save_as_template"`
 	// Catalog adds the saved template to the attestation catalogue.
-	Catalog       *CatalogAttestation   `json:"catalog,omitempty"`
-	VCT           string                `json:"vct"`
-	DocType       string                `json:"doctype"`
-	Namespace     string                `json:"namespace"`
-	Exp           string                `json:"exp"`
-	NBF           string                `json:"nbf"`
-	StatusListURI *string               `json:"status_list_uri"`
-	StatusListIdx *int                  `json:"status_list_idx"`
-	TrustProfile  string                `json:"trust_profile"`
-	Trust         IssuedAttestationSpec `json:"trust"`
-	Display       *IssueDisplay         `json:"display"`
-	Batch         int                   `json:"batch"`
+	Catalog       *registrar.CatalogAttestation `json:"catalog,omitempty"`
+	VCT           string                        `json:"vct"`
+	DocType       string                        `json:"doctype"`
+	Namespace     string                        `json:"namespace"`
+	Exp           string                        `json:"exp"`
+	NBF           string                        `json:"nbf"`
+	StatusListURI *string                       `json:"status_list_uri"`
+	StatusListIdx *int                          `json:"status_list_idx"`
+	TrustProfile  string                        `json:"trust_profile"`
+	Trust         IssuedAttestationSpec         `json:"trust"`
+	Display       *IssueDisplay                 `json:"display"`
+	Batch         int                           `json:"batch"`
 	// Identifies the template containing display images that could not be included in
 	// the form fields.
 	DisplayTemplate string `json:"display_template"`

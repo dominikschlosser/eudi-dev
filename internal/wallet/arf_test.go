@@ -34,35 +34,36 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
 // arfRequest returns a request signed with an access certificate from the
 // registrar. The request carries the relying party's registration certificate.
-func arfRequest(t *testing.T, registrar *Wallet, checking *Wallet) *AuthorizationRequestParams {
+func arfRequest(t *testing.T, reg *Wallet, checking *Wallet) *AuthorizationRequestParams {
 	t.Helper()
-	key, chain, verifierInfo := registeredVerifier(t, registrar)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
 	return signedARFRequest(t, checking, key, chain, verifierInfo)
 }
 
 // registeredVerifier registers a relying party with the registrar and returns
 // its key, its access certificate chain and its verifier_info.
-func registeredVerifier(t *testing.T, registrar *Wallet) (*ecdsa.PrivateKey, []*x509.Certificate, string) {
+func registeredVerifier(t *testing.T, reg *Wallet) (*ecdsa.PrivateKey, []*x509.Certificate, string) {
 	t.Helper()
-	rp := registerTestRelyingParty(t, registrar)
-	key, chain := issueTestAccessCertificate(t, registrar, rp.Identifier[0].Identifier)
-	return key, chain, issueTestRegistrationCertificate(t, registrar, rp).VerifierInfo
+	rp := registerTestRelyingParty(t, reg)
+	key, chain := issueTestAccessCertificate(t, reg, rp.Identifier[0].Identifier)
+	return key, chain, issueTestRegistrationCertificate(t, reg, rp).VerifierInfo
 }
 
 // issueTestAccessCertificate creates a key and has the registrar issue an
 // access certificate for it. It returns the key and the chain, leaf first.
-func issueTestAccessCertificate(t *testing.T, registrar *Wallet, identifier string) (*ecdsa.PrivateKey, []*x509.Certificate) {
+func issueTestAccessCertificate(t *testing.T, w *Wallet, identifier string) (*ecdsa.PrivateKey, []*x509.Certificate) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	access, err := registrar.IssueAccessCertificate(AccessCertificateRequest{Identifier: identifier, CSR: testAccessCSR(t, key)})
+	access, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{Identifier: identifier, CSR: testAccessCSR(t, key)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,18 +202,18 @@ func TestARFRequiresAnAccessCertificate(t *testing.T) {
 // A presentation request fetches each registration certificate's status list
 // only once, because another party may serve the list.
 func TestAPresentationRequestReadsTheStatusListOnce(t *testing.T) {
-	registrar := newTestServer(t, true)
+	reg := newTestServer(t, true)
 	var fetches atomic.Int32
-	registrarHandler := registrar.Handler()
+	registrarHandler := reg.Handler()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == registrationStatusListPath {
+		if r.URL.Path == registrar.RegistrationStatusListPath {
 			fetches.Add(1)
 		}
 		registrarHandler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
-	registrar.wallet.IssuerURL = ts.URL
-	key, chain, verifierInfo := registeredVerifier(t, registrar.wallet)
+	reg.wallet.IssuerURL = ts.URL
+	key, chain, verifierInfo := registeredVerifier(t, reg.wallet)
 
 	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{})
@@ -284,11 +285,11 @@ func TestARFRefusesARegistrationSignedWithAnAccessCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload["purpose"] = []map[string]any{{"lang": "en", "value": "Anything at all"}}
-	forged, err := SignRegistrationCertificateJWT(payload, key, chain)
+	forged, err := registrar.SignRegistrationCertificateJWT(payload, key, chain)
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := signedARFRequest(t, w, key, chain, VerifierInfoValue(forged))
+	params := signedARFRequest(t, w, key, chain, registrar.VerifierInfoValue(forged))
 	if findings := ARFFindings(params); !containsSubstring(findings, "RPRC_02a") {
 		t.Errorf("findings %v, want RPRC_02a for a registration certificate signed with an access certificate", findings)
 	}

@@ -22,6 +22,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
@@ -48,14 +50,14 @@ type issuerRules struct {
 var (
 	pidProviderRules = issuerRules{
 		access: "ARF ISSU_24", registrar: "ARF ISSU_23c", entitlement: "ARF ISSU_24a", attestationType: "ARF RPRC_23 and ISSU_24b",
-		entitled: func(e []string) bool { return slices.Contains(e, pidProviderEntitlement) },
+		entitled: func(e []string) bool { return slices.Contains(e, registrar.PIDProviderEntitlement) },
 		kind:     "PID Provider",
 	}
 	attestationProviderRules = issuerRules{
 		access: "ARF ISSU_34", registrar: "ARF ISSU_33a", entitlement: "ARF ISSU_34a", attestationType: "ARF RPRC_23 and ISSU_34b",
 		entitled: func(e []string) bool {
 			return slices.ContainsFunc(e, func(v string) bool {
-				return v == qeaaProviderEntitlement || v == pubEAAProviderEntitlement || v == nonQEAAProviderEntitlement
+				return v == registrar.QEAAProviderEntitlement || v == registrar.PubEAAProviderEntitlement || v == registrar.NonQEAAProviderEntitlement
 			})
 		},
 		kind: "QEAA Provider, PuB-EAA Provider or EAA Provider",
@@ -71,7 +73,7 @@ type offeredAttestation struct {
 }
 
 func (o offeredAttestation) rules() issuerRules {
-	if slices.ContainsFunc(o.types, isPIDType) {
+	if slices.ContainsFunc(o.types, credtype.IsPIDType) {
 		return pidProviderRules
 	}
 	return attestationProviderRules
@@ -194,7 +196,7 @@ func providedAttestationsOf(cert map[string]any) []registeredCredential {
 	var out []registeredCredential
 	for _, entry := range listOfMaps(cert["provides_attestations"]) {
 		format, _ := entry["format"].(string)
-		out = append(out, registeredCredential{format: format, types: credentialTypes(entry["meta"])})
+		out = append(out, registeredCredential{format: format, types: registrar.CredentialTypes(entry["meta"])})
 	}
 	return out
 }

@@ -34,6 +34,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
@@ -2029,7 +2030,7 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
 	entitlements, ok := record["entitlements"].([]any)
-	if !ok || len(entitlements) != 1 || entitlements[0] != pidProviderEntitlement {
+	if !ok || len(entitlements) != 1 || entitlements[0] != registrar.PIDProviderEntitlement {
 		t.Fatalf("expected PID provider entitlement, got %v", record["entitlements"])
 	}
 	provides, ok := record["providesAttestations"].([]any)
@@ -2075,14 +2076,14 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	}
 	srv := NewServer(w, 0, nil)
 
-	list := func(attestation string) []WalletRelyingParty {
+	list := func(attestation string) []registrar.WalletRelyingParty {
 		t.Helper()
 		resp := serverRequest(t, srv, "GET", "/api/registrar/wrp?providedattestation="+url.QueryEscape(attestation), "")
 		if resp.Code != http.StatusOK || resp.Header().Get("Content-Type") != "application/jwt" {
 			t.Fatalf("got %d %s: %s", resp.Code, resp.Header().Get("Content-Type"), resp.Body.String())
 		}
 		var page struct {
-			Data []WalletRelyingParty `json:"data"`
+			Data []registrar.WalletRelyingParty `json:"data"`
 		}
 		decodeCompactJWTPayload(t, resp.Body.String(), &page)
 		return page.Data
@@ -2124,7 +2125,7 @@ func TestNonPIDMetadataAndTrustList_DoNotPretendToBePID(t *testing.T) {
 		t.Fatalf("expected issuer_info data object, got %T", entry["data"])
 	}
 	entitlements, ok := record["entitlements"].([]any)
-	if !ok || len(entitlements) != 1 || entitlements[0] != nonQEAAProviderEntitlement {
+	if !ok || len(entitlements) != 1 || entitlements[0] != registrar.NonQEAAProviderEntitlement {
 		t.Fatalf("expected Non_Q_EAA entitlement, got %v", record["entitlements"])
 	}
 	provides, ok := record["providesAttestations"].([]any)
@@ -2219,7 +2220,7 @@ func TestTrustListsAPI_MixedProfilesExposeMultipleTrustListsAndKeepLegacyPIDDefa
 		Format:  "mso_mdoc",
 		DocType: "org.iso.23220.photoid.1",
 		Entitlements: []string{
-			nonQEAAProviderEntitlement,
+			registrar.NonQEAAProviderEntitlement,
 		},
 	})); err != nil {
 		t.Fatalf("registering local attestation: %v", err)

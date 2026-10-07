@@ -17,10 +17,8 @@ package wallet
 import (
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"math/big"
 	"net/http"
@@ -214,43 +212,6 @@ func PrefersSignedIssuerMetadata(accept string) bool {
 		}
 	}
 	return jwt > 0 && jwt > json
-}
-
-// handleIssueRegistrationCertificate signs a registration certificate for a
-// registered intended use with the wallet's registrar key.
-func (s *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *http.Request) {
-	var req RegistrationCertificateRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
-		return
-	}
-	var result *RegistrationCertificateResult
-	var err error
-	s.saveMutation(func() bool {
-		result, err = s.wallet.IssueRegistrationCertificate(req)
-		return err == nil
-	})
-	if err != nil {
-		writeRegistrarError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, result)
-}
-
-// handleIssueAccessCertificate signs an access certificate for the public key of
-// a registered relying party's CSR.
-func (s *Server) handleIssueAccessCertificate(w http.ResponseWriter, r *http.Request) {
-	var req AccessCertificateRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
-		return
-	}
-	result, err := s.wallet.IssueAccessCertificate(req)
-	if err != nil {
-		writeRegistrarError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleStatusList(w http.ResponseWriter, r *http.Request) {

@@ -34,6 +34,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/publicpath"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
@@ -198,27 +199,9 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/trustlist/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlists/{id}/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
-	s.routeFunc("GET /api/registrar/wrp", s.withFreshStore(s.handleRegistrarWRPList))
-	s.routeFunc("GET /api/registrar/wrp/check-intended-use", s.withFreshStore(s.handleCheckIntendedUse))
-	s.routeFunc("GET /api/registrar/wrp/{identifier}", s.withFreshStore(s.handleRegistrarWRPByIdentifier))
-	s.routeFunc("GET /api/registrar/wrp/{identifier}/services/{serviceidentifier}", s.withFreshStore(s.handleRegistrarWRPService))
-	s.routeFunc("POST /api/registrar/wrp", s.withFreshStore(s.handleRegisterRelyingParty))
-	s.routeFunc("PUT /api/registrar/wrp", s.withFreshStore(s.handleUpdateRelyingParty))
-	s.routeFunc("DELETE /api/registrar/wrp/{identifier}", s.withFreshStore(s.handleDeleteRelyingParty))
-	s.routeFunc("POST /api/registrar/registration-certificates", s.withFreshStore(s.handleIssueRegistrationCertificate))
-	s.routeFunc("GET /api/registrar/registration-certificates", s.withFreshStore(s.handleRegistrationCertificateStatuses))
-	s.routeFunc("POST /api/registrar/registration-certificates/status", s.withFreshStore(s.handleSetRegistrationCertificateStatus))
-	s.routeFunc("GET "+registrationStatusListPath, s.withFreshStore(s.handleRegistrationStatusList))
-	s.routeFunc("POST /api/registrar/access-certificates", s.withFreshStore(s.handleIssueAccessCertificate))
-	s.routeFunc("GET "+catalogSchemaPath, s.withFreshStore(s.handleCatalogSchemas))
-	s.routeFunc("GET "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleCatalogSchema))
-	s.routeFunc("PUT "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleUpdateCatalogSchema))
-	s.routeFunc("DELETE "+catalogSchemaPath+"/{id}", s.withFreshStore(s.handleDeleteCatalogSchema))
-	s.routeFunc("GET "+catalogSchemaPath+"/{id}/{format}", s.withFreshStore(s.handleCatalogFormatSchema))
-	s.routeFunc("GET /api/catalog/attestations", s.withFreshStore(s.handleCatalogAttestations))
-	s.routeFunc("POST /api/catalog/attestations", s.withFreshStore(s.handleAddCatalogAttestation))
-	for path, page := range registrarPlaceholderPages {
-		s.routeFunc("GET "+path, placeholderPage(page))
+	registrarAPI := &registrar.Server{Registrar: func() *registrar.Registrar { return s.wallet.Registrar() }, Mutate: s.saveMutation}
+	for pattern, handler := range registrarAPI.Routes() {
+		s.routeFunc(pattern, s.withFreshStore(handler))
 	}
 
 	s.routeFunc("GET /api/statuslist", s.withFreshStore(s.handleStatusList))

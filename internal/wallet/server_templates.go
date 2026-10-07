@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 // Include claims so clients can populate issuance forms without another request.
@@ -63,7 +64,7 @@ func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 // also joins the attestation catalogue as an entry of its own.
 type templateSaveRequest struct {
 	credtemplate.Template
-	Catalog *CatalogAttestation `json:"catalog,omitempty"`
+	Catalog *registrar.CatalogAttestation `json:"catalog,omitempty"`
 }
 
 // The URL name overrides the name in the document.
@@ -83,32 +84,32 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
 		return
 	}
-	var entry CatalogAttestation
+	var entry registrar.CatalogAttestation
 	if req.Catalog != nil {
 		var err error
-		if entry, err = s.wallet.templateCatalogEntry(tpl, *req.Catalog); err != nil {
-			writeCatalogError(w, err)
+		if entry, err = s.wallet.Registrar().TemplateCatalogEntry(tpl, *req.Catalog); err != nil {
+			registrar.WriteCatalogError(w, err)
 			return
 		}
 	}
 	// The entry is added first, because the catalogue can refuse it and a
 	// stored template is hard to take back when it replaced another one.
-	var added CatalogAttestation
+	var added registrar.CatalogAttestation
 	if req.Catalog != nil {
 		var err error
 		s.saveMutation(func() bool {
-			added, err = s.wallet.AddCatalogAttestation(entry, s.wallet.RegistrarBase())
+			added, err = s.wallet.Registrar().AddCatalogAttestation(entry, s.wallet.RegistrarBase())
 			return err == nil
 		})
 		if err != nil {
-			writeCatalogError(w, err)
+			registrar.WriteCatalogError(w, err)
 			return
 		}
 	}
 	if _, err := credtemplate.Save(s.wallet.Templates, tpl); err != nil {
 		if req.Catalog != nil {
 			s.saveMutation(func() bool {
-				return s.wallet.DeleteCatalogAttestation(added.Schema.ID, s.wallet.RegistrarBase()) == nil
+				return s.wallet.Registrar().DeleteCatalogAttestation(added.Schema.ID, s.wallet.RegistrarBase()) == nil
 			})
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

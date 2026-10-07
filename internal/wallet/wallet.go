@@ -35,6 +35,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
@@ -70,14 +71,9 @@ type Wallet struct {
 	CAKey              *ecdsa.PrivateKey
 	CertChain          []*x509.Certificate     // [leaf, CA] certificate chain
 	IssuedAttestations []IssuedAttestationSpec `json:"issued_attestations,omitempty"`
-	// RelyingParties are the registrations of the wallet's registrar.
-	RelyingParties []WalletRelyingParty `json:"relying_parties,omitempty"`
-	// RegistrationStatuses are the status list entries of the registration
-	// certificates issued by the registrar.
-	RegistrationStatuses []RegistrationStatus `json:"registration_statuses,omitempty"`
-	// Catalog holds the attestations added to the registrar's catalogue. The
-	// entries of the credential templates are not stored here.
-	Catalog                 []CatalogAttestation `json:"catalog,omitempty"`
+	// The registrar's registrations, status entries and catalogue are saved
+	// with the wallet.
+	registrar.State
 	AutoAccept              bool
 	SessionTranscript       SessionTranscriptMode // "oid4vp" (default) or "iso"
 	PreferredFormat         string                // "" (no preference), "dc+sd-jwt", or "mso_mdoc"

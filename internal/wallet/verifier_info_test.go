@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func signTestRegistrationCertificate(t *testing.T, w *Wallet, purpose any) string {
@@ -41,7 +42,7 @@ func signTestRegistrationCertificate(t *testing.T, w *Wallet, purpose any) strin
 	if purpose != nil {
 		claims["purpose"] = purpose
 	}
-	raw, err := SignRegistrationCertificateJWT(claims, w.IssuerKey, chain)
+	raw, err := registrar.SignRegistrationCertificateJWT(claims, w.IssuerKey, chain)
 	if err != nil {
 		t.Fatalf("signing registration certificate: %v", err)
 	}
@@ -251,7 +252,7 @@ func TestPlainParameterRequestShowsThePurpose(t *testing.T) {
 // hidden.
 func TestVerifierInfoPurposesHidesAnUncheckableCertificate(t *testing.T) {
 	w := generateTestWallet(t)
-	cert, err := SignRegistrationCertificateJWT(map[string]any{
+	cert, err := registrar.SignRegistrationCertificateJWT(map[string]any{
 		"sub":     "LEIEU-TEST-VERIFIER",
 		"purpose": "Checking your ticket",
 	}, w.IssuerKey, nil)
@@ -434,9 +435,9 @@ func TestARFChecksOverAsking(t *testing.T) {
 		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
 		"claims": []any{map[string]any{"path": []any{"given_name"}}},
 	}}
-	cert, err := SignRegistrationCertificateJWT(map[string]any{
+	cert, err := registrar.SignRegistrationCertificateJWT(map[string]any{
 		"sub": "LEIEU-TEST-VERIFIER", "name": "Test Verifier", "iat": time.Now().Unix(),
-		"credentials": RegisteredCredentials(registered),
+		"credentials": registrar.RegisteredCredentials(registered),
 	}, w.IssuerKey, chain)
 	if err != nil {
 		t.Fatalf("signing registration certificate: %v", err)

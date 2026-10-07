@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wallet
+package registrar
 
 import (
 	"encoding/json"
@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 )
 
 // AttestationSchema is the SchemaMeta of the catalogue of attestations (EC
@@ -95,11 +96,11 @@ var (
 
 // CatalogAttestations lists the entries of the credential templates followed
 // by the added ones. base is the URL the schema URIs point to.
-func (w *Wallet) CatalogAttestations(base string) []CatalogAttestation {
-	entries := w.templateCatalog(base)
-	w.mu.RLock()
-	added := slices.Clone(w.Catalog)
-	w.mu.RUnlock()
+func (r *Registrar) CatalogAttestations(base string) []CatalogAttestation {
+	entries := r.templateCatalog(base)
+	r.mu.RLock()
+	added := slices.Clone(r.state.Catalog)
+	r.mu.RUnlock()
 	sort.SliceStable(added, func(i, j int) bool { return strings.ToLower(added[i].Name) < strings.ToLower(added[j].Name) })
 	for _, entry := range added {
 		entries = append(entries, withSchemaURIs(cloneCatalogAttestation(entry), base))
@@ -108,8 +109,8 @@ func (w *Wallet) CatalogAttestations(base string) []CatalogAttestation {
 }
 
 // CatalogAttestation returns the entry with the schema id.
-func (w *Wallet) CatalogAttestation(id, base string) (CatalogAttestation, bool) {
-	for _, entry := range w.CatalogAttestations(base) {
+func (r *Registrar) CatalogAttestation(id, base string) (CatalogAttestation, bool) {
+	for _, entry := range r.CatalogAttestations(base) {
 		if entry.Schema.ID == id {
 			return entry, true
 		}
@@ -119,40 +120,40 @@ func (w *Wallet) CatalogAttestation(id, base string) (CatalogAttestation, bool) 
 
 // AddCatalogAttestation stores a new entry. The catalogue assigns its id and
 // its schema URIs (TS11 v1.0 §5.2.3).
-func (w *Wallet) AddCatalogAttestation(entry CatalogAttestation, base string) (CatalogAttestation, error) {
+func (r *Registrar) AddCatalogAttestation(entry CatalogAttestation, base string) (CatalogAttestation, error) {
 	entry = cloneCatalogAttestation(entry)
 	entry.Template = false
 	entry.Schema.ID = uuid.NewString()
 	if err := normalizeCatalogAttestation(&entry, base); err != nil {
 		return CatalogAttestation{}, err
 	}
-	fromTemplates := w.templateCatalog(base)
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if err := w.checkNewCatalogEntryLocked(entry, fromTemplates); err != nil {
+	fromTemplates := r.templateCatalog(base)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.checkNewCatalogEntryLocked(entry, fromTemplates); err != nil {
 		return CatalogAttestation{}, err
 	}
-	w.Catalog = append(w.Catalog, entry)
+	r.state.Catalog = append(r.state.Catalog, entry)
 	return withSchemaURIs(cloneCatalogAttestation(entry), base), nil
 }
 
 // CheckCatalogAttestation reports whether AddCatalogAttestation would accept
 // entry, without adding it.
-func (w *Wallet) CheckCatalogAttestation(entry CatalogAttestation, base string) error {
+func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation, base string) error {
 	entry = cloneCatalogAttestation(entry)
 	if err := normalizeCatalogAttestation(&entry, base); err != nil {
 		return err
 	}
-	fromTemplates := w.templateCatalog(base)
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	return w.checkNewCatalogEntryLocked(entry, fromTemplates)
+	fromTemplates := r.templateCatalog(base)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.checkNewCatalogEntryLocked(entry, fromTemplates)
 }
 
 // checkNewCatalogEntryLocked keeps names and types unique. The wallet finds
 // the trusted list of a received credential by its type.
-func (w *Wallet) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
-	for _, existing := range append(fromTemplates, w.Catalog...) {
+func (r *Registrar) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTemplates []CatalogAttestation) error {
+	for _, existing := range append(fromTemplates, r.state.Catalog...) {
 		if strings.EqualFold(existing.Name, entry.Name) {
 			return fmt.Errorf("the catalogue already lists %q", existing.Name)
 		}
@@ -162,20 +163,20 @@ func (w *Wallet) checkNewCatalogEntryLocked(entry CatalogAttestation, fromTempla
 			}
 		}
 	}
-	if len(w.Catalog) >= maxCatalogEntries {
+	if len(r.state.Catalog) >= maxCatalogEntries {
 		return errCatalogFull
 	}
 	return nil
 }
 
-// templateCatalogEntry builds the catalogue entry for template t from the
+// TemplateCatalogEntry builds the catalogue entry for template t from the
 // catalogue fields in entry and checks it.
-func (w *Wallet) templateCatalogEntry(t credtemplate.Template, entry CatalogAttestation) (CatalogAttestation, error) {
+func (r *Registrar) TemplateCatalogEntry(t credtemplate.Template, entry CatalogAttestation) (CatalogAttestation, error) {
 	entry, err := TemplateCatalogAttestation(t, entry)
 	if err != nil {
 		return CatalogAttestation{}, err
 	}
-	if err := w.CheckCatalogAttestation(entry, w.RegistrarBase()); err != nil {
+	if err := r.CheckCatalogAttestation(entry, r.env.RegistrarBase()); err != nil {
 		return CatalogAttestation{}, err
 	}
 	return entry, nil
@@ -205,17 +206,17 @@ func TemplateCatalogAttestation(t credtemplate.Template, entry CatalogAttestatio
 // UpdateCatalogSchema replaces the SchemaMeta of an added entry (TS11 v1.0
 // §5.3.2). The formats and schema URIs follow from the entry's credentials,
 // so an update can't change them.
-func (w *Wallet) UpdateCatalogSchema(id string, schema AttestationSchema, base string) (CatalogAttestation, error) {
-	if w.isTemplateCatalogID(id, base) {
+func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema, base string) (CatalogAttestation, error) {
+	if r.isTemplateCatalogID(id, base) {
 		return CatalogAttestation{}, errCatalogTemplate
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	i := slices.IndexFunc(w.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := slices.IndexFunc(r.state.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id })
 	if i < 0 {
 		return CatalogAttestation{}, fmt.Errorf("%w: %s", errCatalogNotFound, id)
 	}
-	stored := withSchemaURIs(cloneCatalogAttestation(w.Catalog[i]), base)
+	stored := withSchemaURIs(cloneCatalogAttestation(r.state.Catalog[i]), base)
 	if (schema.SupportedFormats != nil && !slices.Equal(schema.SupportedFormats, stored.Schema.SupportedFormats)) ||
 		(schema.SchemaURIs != nil && !slices.Equal(schema.SchemaURIs, stored.Schema.SchemaURIs)) {
 		return CatalogAttestation{}, fmt.Errorf("supportedFormats and schemaURIs follow from the attestation's credentials and can't be changed")
@@ -223,33 +224,33 @@ func (w *Wallet) UpdateCatalogSchema(id string, schema AttestationSchema, base s
 	if schema.ID != "" && schema.ID != id {
 		return CatalogAttestation{}, fmt.Errorf("the id in the body is %q, not %q", schema.ID, id)
 	}
-	updated := cloneCatalogAttestation(w.Catalog[i])
+	updated := cloneCatalogAttestation(r.state.Catalog[i])
 	schema.ID = id
 	updated.Schema = schema
 	if err := normalizeCatalogAttestation(&updated, base); err != nil {
 		return CatalogAttestation{}, err
 	}
-	w.Catalog[i] = updated
+	r.state.Catalog[i] = updated
 	return withSchemaURIs(cloneCatalogAttestation(updated), base), nil
 }
 
 // DeleteCatalogAttestation removes an added entry.
-func (w *Wallet) DeleteCatalogAttestation(id, base string) error {
-	if w.isTemplateCatalogID(id, base) {
+func (r *Registrar) DeleteCatalogAttestation(id, base string) error {
+	if r.isTemplateCatalogID(id, base) {
 		return errCatalogTemplate
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	i := slices.IndexFunc(w.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id })
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := slices.IndexFunc(r.state.Catalog, func(e CatalogAttestation) bool { return e.Schema.ID == id })
 	if i < 0 {
 		return fmt.Errorf("%w: %s", errCatalogNotFound, id)
 	}
-	w.Catalog = slices.Delete(w.Catalog, i, i+1)
+	r.state.Catalog = slices.Delete(r.state.Catalog, i, i+1)
 	return nil
 }
 
-func (w *Wallet) isTemplateCatalogID(id, base string) bool {
-	return slices.ContainsFunc(w.templateCatalog(base), func(e CatalogAttestation) bool { return e.Schema.ID == id })
+func (r *Registrar) isTemplateCatalogID(id, base string) bool {
+	return slices.ContainsFunc(r.templateCatalog(base), func(e CatalogAttestation) bool { return e.Schema.ID == id })
 }
 
 // normalizeCatalogAttestation checks an entry against the TS11 v1.0 §4.3 data
@@ -294,7 +295,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 		return fmt.Errorf("version %q does not follow semantic versioning (TS11 v1.0 §4.5.1)", s.Version)
 	}
 	s.RulebookURI = firstNonEmpty(s.RulebookURI, base+"/rulebook")
-	if !isWebURL(s.RulebookURI) {
+	if !IsWebURL(s.RulebookURI) {
 		return fmt.Errorf("rulebookURI %q is not an http or https URL", s.RulebookURI)
 	}
 	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, "iso_18045_basic")
@@ -320,7 +321,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 		}
 		// An aki value is a key identifier. The other two name a list or an
 		// entity by URI, and the UI links them.
-		if a.FrameworkType != "aki" && !isWebURL(a.Value) {
+		if a.FrameworkType != "aki" && !IsWebURL(a.Value) {
 			return fmt.Errorf("the %s value %q is not an http or https URL", a.FrameworkType, a.Value)
 		}
 	}
@@ -396,8 +397,8 @@ var templateCatalogNamespace = uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://g
 // template description is its rulebook or specification. A PID is issued at assurance level high, so its level of
 // security is iso_18045_high, and it links to the wallet's PID provider list.
 // Other templates get the same defaults as an added attestation.
-func (w *Wallet) templateCatalog(base string) []CatalogAttestation {
-	templates, err := credtemplate.List(w.Templates)
+func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
+	templates, err := credtemplate.List(r.env.TemplateLocation())
 	if err != nil {
 		templates = credtemplate.PredefinedTemplates()
 	}
@@ -435,7 +436,7 @@ func (w *Wallet) templateCatalog(base string) []CatalogAttestation {
 					BindingType:    "key",
 				},
 			}
-			if isPIDType(t.VCT) || isPIDType(t.DocType) {
+			if credtype.IsPIDType(t.VCT) || credtype.IsPIDType(t.DocType) {
 				isLOTE := true
 				entry.Schema.AttestationLoS = "iso_18045_high"
 				entry.Schema.TrustedAuthorities = []TrustAuthority{{FrameworkType: "etsi_tl", Value: base + "/api/trustlists/pid", IsLOTE: &isLOTE}}

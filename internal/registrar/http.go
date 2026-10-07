@@ -1,0 +1,529 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package registrar
+
+import (
+	"crypto/ecdsa"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
+)
+
+// Server answers the registrar API. The wallet server routes requests here and
+// passes what it owns: the registrar of the current state and how to save a
+// change.
+type Server struct {
+	// Registrar returns the registrar of the wallet's current state.
+	Registrar func() *Registrar
+	// Mutate runs change and saves the wallet when change reports a change.
+	Mutate func(change func() bool)
+}
+
+// Routes are the registrar API's patterns and handlers.
+func (h *Server) Routes() map[string]http.HandlerFunc {
+	routes := map[string]http.HandlerFunc{
+		"GET /api/registrar/wrp":                                           h.handleRegistrarWRPList,
+		"GET /api/registrar/wrp/check-intended-use":                        h.handleCheckIntendedUse,
+		"GET /api/registrar/wrp/{identifier}":                              h.handleRegistrarWRPByIdentifier,
+		"GET /api/registrar/wrp/{identifier}/services/{serviceidentifier}": h.handleRegistrarWRPService,
+		"POST /api/registrar/wrp":                                          h.handleRegisterRelyingParty,
+		"PUT /api/registrar/wrp":                                           h.handleUpdateRelyingParty,
+		"DELETE /api/registrar/wrp/{identifier}":                           h.handleDeleteRelyingParty,
+		"POST /api/registrar/registration-certificates":                    h.handleIssueRegistrationCertificate,
+		"GET /api/registrar/registration-certificates":                     h.handleRegistrationCertificateStatuses,
+		"POST /api/registrar/registration-certificates/status":             h.handleSetRegistrationCertificateStatus,
+		"GET " + RegistrationStatusListPath:                                h.handleRegistrationStatusList,
+		"POST /api/registrar/access-certificates":                          h.handleIssueAccessCertificate,
+		"GET " + catalogSchemaPath:                                         h.handleCatalogSchemas,
+		"GET " + catalogSchemaPath + "/{id}":                               h.handleCatalogSchema,
+		"PUT " + catalogSchemaPath + "/{id}":                               h.handleUpdateCatalogSchema,
+		"DELETE " + catalogSchemaPath + "/{id}":                            h.handleDeleteCatalogSchema,
+		"GET " + catalogSchemaPath + "/{id}/{format}":                      h.handleCatalogFormatSchema,
+		"GET /api/catalog/attestations":                                    h.handleCatalogAttestations,
+		"POST /api/catalog/attestations":                                   h.handleAddCatalogAttestation,
+	}
+	for path, page := range registrarPlaceholderPages {
+		routes["GET "+path] = placeholderPage(page)
+	}
+	return routes
+}
+
+func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(data)
+}
+
+func signRegistrarResponseJWT(signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate, payload any) (string, error) {
+	header := map[string]any{"alg": "ES256", "typ": "JWT"}
+	if x5c := x5cChain(signerCerts); len(x5c) > 0 {
+		header["x5c"] = x5c
+	}
+	return jws.Sign(header, payload, signingKey)
+}
+
+// handleRegisterRelyingParty stores a relying party (TS05 v1.5 §3.1, POST /wrp).
+func (h *Server) handleRegisterRelyingParty(w http.ResponseWriter, r *http.Request) {
+	rp, ok := decodeRelyingParty(w, r)
+	if !ok {
+		return
+	}
+	var stored WalletRelyingParty
+	var err error
+	h.Mutate(func() bool {
+		stored, err = h.Registrar().RegisterRelyingParty(rp, h.Registrar().env.RegistrarBase())
+		return err == nil
+	})
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, stored)
+}
+
+// handleUpdateRelyingParty replaces a registration (TS05 v1.5 §3.1, PUT /wrp).
+func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request) {
+	rp, ok := decodeRelyingParty(w, r)
+	if !ok {
+		return
+	}
+	var stored WalletRelyingParty
+	var err error
+	h.Mutate(func() bool {
+		stored, err = h.Registrar().UpdateRelyingParty(rp, h.Registrar().env.RegistrarBase())
+		return err == nil
+	})
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stored)
+}
+
+func (h *Server) handleDeleteRelyingParty(w http.ResponseWriter, r *http.Request) {
+	var err error
+	h.Mutate(func() bool {
+		err = h.Registrar().DeleteRelyingParty(r.PathValue("identifier"))
+		return err == nil
+	})
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeRelyingParty(w http.ResponseWriter, r *http.Request) (WalletRelyingParty, bool) {
+	var rp WalletRelyingParty
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&rp); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid relying party: " + err.Error()})
+		return rp, false
+	}
+	return rp, true
+}
+
+// handleRegistrarWRPList answers the TS05 v1.5 §3.2 search (GET /wrp) with the
+// matching records, paged by limit and cursor.
+func (h *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	matching := slices.DeleteFunc(h.Registrar().RegistrarRecords(), func(rp WalletRelyingParty) bool { return !matchesWRPQuery(rp, q) })
+	limit := 20
+	if n, err := strconv.Atoi(q.Get("limit")); err == nil && n > 0 {
+		limit = n
+	}
+	offset, _ := strconv.Atoi(q.Get("cursor"))
+	offset = max(0, min(offset, len(matching)))
+	end := offset + min(limit, len(matching)-offset)
+	pagination := map[string]any{"has_next_page": end < len(matching)}
+	if end < len(matching) {
+		pagination["next_cursor"] = strconv.Itoa(end)
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": matching[offset:end], "pagination": pagination})
+}
+
+func (h *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.Request) {
+	rp, ok := h.registrarRecord(r.PathValue("identifier"))
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "relying party not registered"})
+		return
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": rp})
+}
+
+// handleRegistrarWRPService narrows a record to one service (TS05 v1.5 §3.2.3).
+func (h *Server) handleRegistrarWRPService(w http.ResponseWriter, r *http.Request) {
+	rp, ok := h.registrarRecord(r.PathValue("identifier"))
+	if ok {
+		rp.Services = slices.DeleteFunc(slices.Clone(rp.Services), func(service WalletRelyingPartyService) bool {
+			return service.ServiceIdentifier != r.PathValue("serviceidentifier")
+		})
+	}
+	if !ok || len(rp.Services) == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "wallet relying party service not found"})
+		return
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": rp})
+}
+
+// handleCheckIntendedUse answers whether a relying party registered an intended
+// use for a credential and claim (TS05 v1.5 §3.2.4).
+func (h *Server) handleCheckIntendedUse(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	rp, ok := h.registrarRecord(q.Get("identifier"))
+	registered := false
+	details := "the relying party is not registered"
+	if ok {
+		registered, details = checkIntendedUse(rp, q)
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{"isRegistered": registered, "details": details}})
+}
+
+func (h *Server) registrarRecord(identifier string) (WalletRelyingParty, bool) {
+	records := h.Registrar().RegistrarRecords()
+	if i := relyingPartyIndex(records, identifier); i >= 0 {
+		return records[i], true
+	}
+	return WalletRelyingParty{}, false
+}
+
+// writeRegistrarResponse adds iss and iat and signs the payload, as TS05 v1.5
+// §3.2 requires. If the Accept header asks for application/json but not
+// application/jwt, the payload is sent unsigned.
+func (h *Server) writeRegistrarResponse(w http.ResponseWriter, r *http.Request, payload map[string]any) {
+	payload["iss"] = h.Registrar().env.RegistrarBase()
+	payload["iat"] = time.Now().Unix()
+	if accept := r.Header.Get("Accept"); strings.Contains(accept, "application/json") && !strings.Contains(accept, "application/jwt") {
+		writeJSON(w, http.StatusOK, payload)
+		return
+	}
+	key, chain, err := h.Registrar().env.RegistrarSigningMaterial()
+	if err != nil {
+		http.Error(w, "loading registrar signer: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	signed, err := signRegistrarResponseJWT(key, chain, payload)
+	if err != nil {
+		http.Error(w, "signing registrar response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/jwt")
+	_, _ = w.Write([]byte(signed))
+}
+
+// handleSetRegistrationCertificateStatus revokes or activates the
+// registration certificates of an intended use, of a service, or of the whole
+// relying party.
+func (h *Server) handleSetRegistrationCertificateStatus(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Identifier string `json:"identifier"`
+		RegistrationScope
+		Revoked bool `json:"revoked"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	var changed int
+	var err error
+	h.Mutate(func() bool {
+		changed, err = h.Registrar().SetRegistrationCertificatesRevoked(req.Identifier, req.RegistrationScope, req.Revoked)
+		return err == nil
+	})
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"changed": changed})
+}
+
+func (h *Server) handleRegistrationCertificateStatuses(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.Registrar().RegistrationCertificateStatuses(r.URL.Query().Get("identifier")))
+}
+
+// handleRegistrationStatusList serves the status list of the registration
+// certificates as a Token Status List (ETSI TS 119 475 V1.2.1 §6.2.6.1),
+// signed by the registrar key.
+func (h *Server) handleRegistrationStatusList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	token, err := h.Registrar().RegistrationStatusListToken()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", statuslist.MediaTypeJWT)
+	_, _ = w.Write([]byte(token))
+}
+
+// registrarPlaceholderPages serve the default URLs the registrar assigns when
+// a registration or a catalogue entry names none. That way the links in
+// registration certificates, in the consent dialog and in the catalogue work.
+var registrarPlaceholderPages = map[string]string{
+	"/privacy-policy":        "This page stands in for the privacy policy of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
+	"/support":               "This page stands in for the support page of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
+	"/supervisory-authority": "This page stands in for the supervisory authority contact of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
+	"/rulebook":              "This page stands in for the rulebook of an attestation in the eudi-dev test catalogue. An attestation added with its own rulebook URL links that one instead.",
+}
+
+func placeholderPage(text string) http.HandlerFunc {
+	body := "<!doctype html><meta charset=\"utf-8\"><title>Test registrar placeholder</title><p>" + text + "</p>"
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(body))
+	}
+}
+
+func writeRegistrarError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, errRelyingPartyNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, errRelyingPartyExists), errors.Is(err, errRegistrarFull), errors.Is(err, errRegistrationStatusFull), errors.Is(err, errRegistrationChanged):
+		status = http.StatusConflict
+	case errors.Is(err, errRegistrarSigning):
+		status = http.StatusInternalServerError
+	}
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// handleCatalogSchemas answers GET /schemas of the catalogue of attestations
+// API (EC TS11 v1.0 §5.3.1) with a signed, paginated list of SchemaMeta
+// objects.
+func (h *Server) handleCatalogSchemas(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var matching []AttestationSchema
+	for _, entry := range h.Registrar().CatalogAttestations(h.Registrar().env.RegistrarBase()) {
+		if matchesSchemaQuery(entry.Schema, q) {
+			matching = append(matching, entry.Schema)
+		}
+	}
+	limit, offset := 20, 0
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be a positive integer"})
+			return
+		}
+		limit = min(n, maxCatalogEntries)
+	}
+	if v := q.Get("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "offset must be a non-negative integer"})
+			return
+		}
+		offset = n
+	}
+	start := min(offset, len(matching))
+	end := start + min(limit, len(matching)-start)
+	page := matching[start:end]
+	if page == nil {
+		page = []AttestationSchema{}
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{
+		"total": len(matching), "limit": limit, "offset": offset, "data": page,
+	}})
+}
+
+// matchesSchemaQuery applies the filters of TS11 v1.0 §5.3.1. supportedFormats
+// takes a comma separated list, as the OpenAPI form style without explode
+// does.
+func matchesSchemaQuery(schema AttestationSchema, q map[string][]string) bool {
+	get := func(name string) string {
+		if values := q[name]; len(values) > 0 {
+			return strings.TrimSpace(values[0])
+		}
+		return ""
+	}
+	if v := get("id"); v != "" && v != schema.ID {
+		return false
+	}
+	if v := get("supportedFormats"); v != "" {
+		for _, format := range strings.Split(v, ",") {
+			if !slices.Contains(schema.SupportedFormats, strings.TrimSpace(format)) {
+				return false
+			}
+		}
+	}
+	if v := get("attestationLoS"); v != "" && v != schema.AttestationLoS {
+		return false
+	}
+	if v := get("bindingType"); v != "" && v != schema.BindingType {
+		return false
+	}
+	if v := get("trustedAuthoritiesFrameworkType"); v != "" && !slices.ContainsFunc(schema.TrustedAuthorities, func(a TrustAuthority) bool { return a.FrameworkType == v }) {
+		return false
+	}
+	if v := get("trustedAuthoritiesValue"); v != "" && !slices.ContainsFunc(schema.TrustedAuthorities, func(a TrustAuthority) bool { return a.Value == v }) {
+		return false
+	}
+	if v := get("schemaUri"); v != "" && !slices.ContainsFunc(schema.SchemaURIs, func(u SchemaURI) bool { return u.URI == v }) {
+		return false
+	}
+	if v := get("rulebookUri"); v != "" && v != schema.RulebookURI {
+		return false
+	}
+	return true
+}
+
+// handleCatalogSchema answers GET /schemas/{schemaId} (TS11 v1.0 §5.3.1).
+func (h *Server) handleCatalogSchema(w http.ResponseWriter, r *http.Request) {
+	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "attestation schema not found"})
+		return
+	}
+	h.writeRegistrarResponse(w, r, map[string]any{"data": entry.Schema})
+}
+
+// handleCatalogFormatSchema serves the format-specific schema a schema URI
+// points to (TS11 v1.0 §4.3.4).
+func (h *Server) handleCatalogFormatSchema(w http.ResponseWriter, r *http.Request) {
+	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+	var schema map[string]any
+	if ok {
+		schema, ok = entry.FormatSchema(r.PathValue("format"))
+	}
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "attestation schema not found"})
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	writeJSON(w, http.StatusOK, schema)
+}
+
+// handleUpdateCatalogSchema replaces a SchemaMeta (TS11 v1.0 §5.3.2).
+func (h *Server) handleUpdateCatalogSchema(w http.ResponseWriter, r *http.Request) {
+	var schema AttestationSchema
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&schema); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid attestation schema: " + err.Error()})
+		return
+	}
+	var updated CatalogAttestation
+	var err error
+	h.Mutate(func() bool {
+		updated, err = h.Registrar().UpdateCatalogSchema(r.PathValue("id"), schema, h.Registrar().env.RegistrarBase())
+		return err == nil
+	})
+	if err != nil {
+		WriteCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated.Schema)
+}
+
+// handleDeleteCatalogSchema deletes an attestation schema (TS11 v1.0 §5.3.3).
+func (h *Server) handleDeleteCatalogSchema(w http.ResponseWriter, r *http.Request) {
+	var err error
+	h.Mutate(func() bool {
+		err = h.Registrar().DeleteCatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+		return err == nil
+	})
+	if err != nil {
+		WriteCatalogError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCatalogAttestations lists the catalogue with the names and credential
+// types the UI shows. TS11 has no such method, because its SchemaMeta leaves
+// them to the format-specific schemas.
+func (h *Server) handleCatalogAttestations(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, h.Registrar().CatalogAttestations(h.Registrar().env.RegistrarBase()))
+}
+
+// handleAddCatalogAttestation adds an attestation. TS11 v1.0 leaves
+// registration to the European Commission's process (§4.5), so this method
+// is the test catalogue's own.
+func (h *Server) handleAddCatalogAttestation(w http.ResponseWriter, r *http.Request) {
+	var entry CatalogAttestation
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&entry); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid attestation: " + err.Error()})
+		return
+	}
+	var stored CatalogAttestation
+	var err error
+	h.Mutate(func() bool {
+		stored, err = h.Registrar().AddCatalogAttestation(entry, h.Registrar().env.RegistrarBase())
+		return err == nil
+	})
+	if err != nil {
+		WriteCatalogError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, stored)
+}
+
+// WriteCatalogError answers a catalogue error with its HTTP status.
+func WriteCatalogError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	switch {
+	case errors.Is(err, errCatalogNotFound):
+		status = http.StatusNotFound
+	case errors.Is(err, errCatalogTemplate):
+		status = http.StatusForbidden
+	case errors.Is(err, errCatalogFull):
+		status = http.StatusConflict
+	}
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// handleIssueRegistrationCertificate signs a registration certificate for a
+// registered intended use with the wallet's registrar key.
+func (h *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *http.Request) {
+	var req RegistrationCertificateRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	var result *RegistrationCertificateResult
+	var err error
+	h.Mutate(func() bool {
+		result, err = h.Registrar().IssueRegistrationCertificate(req)
+		return err == nil
+	})
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+// handleIssueAccessCertificate signs an access certificate for the public key of
+// a registered relying party's CSR.
+func (h *Server) handleIssueAccessCertificate(w http.ResponseWriter, r *http.Request) {
+	var req AccessCertificateRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	result, err := h.Registrar().IssueAccessCertificate(req)
+	if err != nil {
+		writeRegistrarError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}

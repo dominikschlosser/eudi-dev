@@ -128,3 +128,10 @@ func AkaVCTs(claims map[string]any) []string {
 	}
 	return types
 }
+
+// IsPIDType reports whether a vct or doctype names a PID (ARF PID_04 and
+// PID_14).
+func IsPIDType(t string) bool {
+	t = strings.TrimSpace(t)
+	return strings.HasPrefix(t, PIDVCTPrefix) || strings.HasPrefix(t, "eu.europa.ec.eudi.pid.")
+}

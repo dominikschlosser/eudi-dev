@@ -15,8 +15,6 @@
 package wallet
 
 import (
-	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -28,13 +26,13 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
 
 // ETSI TS 119 475 identifies registration certificates by rc-wrp+jwt. Select by this
 // typ even though the verifier_info format is registration_cert (ETSI TS 119 472-2).
-const registrationCertificateTyp = "rc-wrp+jwt"
 
 // Read registered purposes from verifier_info for the consent dialog (OpenID4VP 1.0
 // §5.1). Only rc-wrp+jwt certificates whose signature verifies against their own x5c
@@ -88,7 +86,7 @@ func verifyRegistrationEntries(entries []map[string]any) (registrations []verifi
 		if err != nil {
 			continue
 		}
-		if typ, _ := header["typ"].(string); typ != registrationCertificateTyp {
+		if typ, _ := header["typ"].(string); typ != registrar.RegistrationCertificateTyp {
 			continue
 		}
 		key, err := validate.ExtractX5CLeafKey(header)
@@ -187,7 +185,7 @@ func consentRegistration(authReq *AuthorizationRequestParams) (purposes, privacy
 				purposes = append(purposes, purpose)
 			}
 		}
-		if policy := stringClaim(cert["privacy_policy"]); isWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
+		if policy := stringClaim(cert["privacy_policy"]); registrar.IsWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
 			privacyPolicies = append(privacyPolicies, policy)
 		}
 	}
@@ -282,10 +280,6 @@ func organizationIdentifier(cert *x509.Certificate) string {
 	return ""
 }
 
-func isWebURL(value string) bool {
-	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
-}
-
 // Check required content from ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. Missing
 // fields produce warnings.
 func registrationCertificateContentFindings(cert map[string]any) []string {
@@ -365,7 +359,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	}
 	for _, cq := range listOfMaps(dcql["credentials"]) {
 		format, _ := cq["format"].(string)
-		types := credentialTypes(cq["meta"])
+		types := registrar.CredentialTypes(cq["meta"])
 		if !registersCredential(registered, format, types) {
 			overAsk(credentialTypeName(format, types))
 			continue
@@ -412,7 +406,7 @@ func registeredCredentials(cert map[string]any) []registeredCredential {
 	var out []registeredCredential
 	for _, entry := range listOfMaps(cert["credentials"]) {
 		format, _ := entry["format"].(string)
-		rc := registeredCredential{format: format, types: credentialTypes(entry["meta"])}
+		rc := registeredCredential{format: format, types: registrar.CredentialTypes(entry["meta"])}
 		for _, claim := range listOfMaps(entry["claim"]) {
 			if path := toAnyList(claim["path"]); len(path) > 0 {
 				rc.paths = append(rc.paths, path)
@@ -464,24 +458,6 @@ func pathPrefix(registered, requested []any) bool {
 		}
 	}
 	return true
-}
-
-// SD-JWT VC uses vct_values. mdoc uses doctype_value.
-func credentialTypes(meta any) []string {
-	m, ok := meta.(map[string]any)
-	if !ok {
-		return nil
-	}
-	var types []string
-	for _, v := range toAnyList(m["vct_values"]) {
-		if s, ok := v.(string); ok {
-			types = append(types, s)
-		}
-	}
-	if s, ok := m["doctype_value"].(string); ok && s != "" {
-		types = append(types, s)
-	}
-	return types
 }
 
 func describeClaim(format string, types []string, path []any) string {
@@ -558,23 +534,6 @@ func toAnyList(v any) []any {
 	}
 	list, _ := v.([]any)
 	return list
-}
-
-// SignRegistrationCertificateJWT includes the leaf in x5c so wallets can verify the
-// registered purpose.
-func SignRegistrationCertificateJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
-	header := map[string]any{
-		"alg": "ES256",
-		"typ": registrationCertificateTyp,
-	}
-	if x5c := buildJWSX5C(signerCerts); len(x5c) > 0 {
-		header["x5c"] = x5c
-		digest := sha256.Sum256(signerCerts[0].Raw)
-		header["x5t#S256"] = base64.RawURLEncoding.EncodeToString(digest[:])
-	}
-	// TS 119 475 V1.2.1 §5.2.1 requires JAdES B-B. TS 119 182-1 V1.2.1 §5.1.11 requires iat after July 2025.
-	header["iat"] = time.Now().Unix()
-	return signJSONWebSignature(claims, signingKey, header)
 }
 
 // infoEntries reads a verifier_info or issuer_info array. Plain request
@@ -676,10 +635,4 @@ func decodeCompactJWT(compact string) (header, payload map[string]any, err error
 		return nil, nil, fmt.Errorf("parsing JWT payload: %w", err)
 	}
 	return header, payload, nil
-}
-
-// CredentialTypes returns the types in a DCQL meta object: vct_values for SD-JWT
-// VC and doctype_value for mdoc.
-func CredentialTypes(meta any) []string {
-	return credentialTypes(meta)
 }

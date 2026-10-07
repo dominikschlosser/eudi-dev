@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
@@ -275,9 +276,9 @@ type loadedSections struct {
 	statusListCounter    int
 	deferred             []DeferredIssuance
 	attestations         []IssuedAttestationSpec
-	relyingParties       []WalletRelyingParty
-	registrationStatuses []RegistrationStatus
-	catalog              []CatalogAttestation
+	relyingParties       []registrar.WalletRelyingParty
+	registrationStatuses []registrar.RegistrationStatus
+	catalog              []registrar.CatalogAttestation
 	settings             walletSettings
 }
 
@@ -345,17 +346,17 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 				loaded.attestations = append(loaded.attestations, spec)
 			}
 		case registrarSection:
-			var rp WalletRelyingParty
+			var rp registrar.WalletRelyingParty
 			if err = json.Unmarshal(data, &rp); err == nil {
 				loaded.relyingParties = append(loaded.relyingParties, rp)
 			}
 		case registrationStatusSection:
-			var status RegistrationStatus
+			var status registrar.RegistrationStatus
 			if err = json.Unmarshal(data, &status); err == nil {
 				loaded.registrationStatuses = append(loaded.registrationStatuses, status)
 			}
 		case catalogSection:
-			var entry CatalogAttestation
+			var entry registrar.CatalogAttestation
 			if err = json.Unmarshal(data, &entry); err == nil {
 				loaded.catalog = append(loaded.catalog, entry)
 			}

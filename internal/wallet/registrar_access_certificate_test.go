@@ -26,16 +26,8 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
-
-func testAccessCSR(t *testing.T, key *ecdsa.PrivateKey) string {
-	t.Helper()
-	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der}))
-}
 
 // A verifier signs its request object with the key behind the CSR. The wallet
 // accepts the issued certificate for the x509_hash client identifier.
@@ -46,7 +38,7 @@ func TestAnAccessCertificateFromACSRSignsARequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := w.IssueAccessCertificate(AccessCertificateRequest{
+	result, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{
 		Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key), DNSNames: []string{"shop.example"},
 	})
 	if err != nil {
@@ -57,7 +49,7 @@ func TestAnAccessCertificateFromACSRSignsARequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identifier, legalName, country := accessCertificateSubject(leaf)
+	identifier, legalName, country := registrar.AccessCertificateSubject(leaf)
 	if identifier != rp.Identifier[0].Identifier || legalName != "Example Shop" || country != rp.Country || leaf.Subject.CommonName != "Example Shop" {
 		t.Errorf("subject %v, want the registration's identifier, names and country", leaf.Subject)
 	}
@@ -83,43 +75,6 @@ func TestAnAccessCertificateFromACSRSignsARequest(t *testing.T) {
 	}
 }
 
-func TestAccessCertificateRequestsTheRegistrarRefuses(t *testing.T) {
-	w := generateTestWallet(t)
-	id := registerTestRelyingParty(t, w).Identifier[0].Identifier
-	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	p384Key, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	for _, tc := range []struct {
-		name string
-		req  AccessCertificateRequest
-		want string
-	}{
-		{"unregistered", AccessCertificateRequest{Identifier: "LEIXG-1", CSR: testAccessCSR(t, key)}, "not registered"},
-		{"no CSR", AccessCertificateRequest{Identifier: id}, "not a PEM certificate request"},
-		{"P-384 key", AccessCertificateRequest{Identifier: id, CSR: testAccessCSR(t, p384Key)}, "not a P-256 key"},
-		{"long validity", AccessCertificateRequest{Identifier: id, CSR: testAccessCSR(t, key), Validity: "9000h"}, "at most"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if _, err := w.IssueAccessCertificate(tc.req); err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("err = %v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func TestAccessCertificateDNSNamesAreChecked(t *testing.T) {
-	w := generateTestWallet(t)
-	rp := registerTestRelyingParty(t, w)
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"*.shop.example", "shop example", "-shop.example"} {
-		if _, err := w.IssueAccessCertificate(AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key), DNSNames: []string{name}}); err == nil || !strings.Contains(err.Error(), "not a DNS name") {
-			t.Errorf("%q: error %v, want a DNS name error", name, err)
-		}
-	}
-}
-
 // The registrar signs anyone's CSR, so access certificates have a separate CA.
 // No credential issuer chain leads to it.
 func TestAccessCertificatesDoNotChainToTheWalletCA(t *testing.T) {
@@ -129,7 +84,7 @@ func TestAccessCertificatesDoNotChainToTheWalletCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := w.IssueAccessCertificate(AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key)})
+	result, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key)})
 	if err != nil {
 		t.Fatal(err)
 	}

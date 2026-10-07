@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wallet
+package registrar
 
 import (
 	"crypto/ecdsa"
@@ -69,8 +69,8 @@ var organizationIdentifierPattern = regexp.MustCompile(`^(LEI|NTR|VAT|EOR|EXC)[A
 
 // IssueAccessCertificate signs an access certificate for the public key of a
 // CSR.
-func (w *Wallet) IssueAccessCertificate(req AccessCertificateRequest) (*AccessCertificateResult, error) {
-	rp, ok := w.RelyingParty(req.Identifier)
+func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*AccessCertificateResult, error) {
+	rp, ok := r.RelyingParty(req.Identifier)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
 	}
@@ -106,7 +106,7 @@ func (w *Wallet) IssueAccessCertificate(req AccessCertificateRequest) (*AccessCe
 		}
 	}
 
-	caKey, ca, err := w.RelyingPartyAccessCA()
+	caKey, ca, err := r.env.RelyingPartyAccessCA()
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading the relying party access CA: %w", errRegistrarSigning, err)
 	}

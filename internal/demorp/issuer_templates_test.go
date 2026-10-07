@@ -23,6 +23,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -231,10 +232,10 @@ func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 		t.Fatal(err)
 	}
 	isLOTE := true
-	if _, err := w.AddCatalogAttestation(wallet.CatalogAttestation{
+	if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
 		Name:        "Badge",
-		Credentials: []wallet.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
-		Schema:      wallet.AttestationSchema{TrustedAuthorities: []wallet.TrustAuthority{{FrameworkType: "etsi_tl", Value: foreign.URL, IsLOTE: &isLOTE}}},
+		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
+		Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: foreign.URL, IsLOTE: &isLOTE}}},
 	}, w.RegistrarBase()); err != nil {
 		t.Fatal(err)
 	}

@@ -132,8 +132,8 @@ func TestDemoRegistrationMatchesAccessCertificate(t *testing.T) {
 	if claims["registry_uri"] != w.RegistrarBase()+"/api/registrar/wrp" {
 		t.Errorf("registrar URL = %v", claims["registry_uri"])
 	}
-	if uri := claims["status"].(map[string]any)["status_list"].(map[string]any)["uri"]; uri != w.RegistrationStatusListURL() {
-		t.Errorf("status list URI = %v, want %s", uri, w.RegistrationStatusListURL())
+	if uri := claims["status"].(map[string]any)["status_list"].(map[string]any)["uri"]; uri != w.Registrar().RegistrationStatusListURL() {
+		t.Errorf("status list URI = %v, want %s", uri, w.Registrar().RegistrationStatusListURL())
 	}
 	var identifier string
 	for _, attribute := range chain[0].Subject.Names {

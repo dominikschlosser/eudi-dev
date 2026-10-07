@@ -23,6 +23,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 // Conformance settings belong to the running wallet and apply to every request. Only
@@ -203,7 +204,7 @@ func cloneWalletForPresentation(src *Wallet, opts presentationRequestOptions) (*
 		CertChain:               append([]*x509.Certificate(nil), src.CertChain...),
 		IssuedAttestations:      append([]IssuedAttestationSpec(nil), src.IssuedAttestations...),
 		RelyingPartyCAPEM:       relyingPartyCAs,
-		RegistrationStatuses:    registrationStatuses,
+		State:                   registrar.State{RegistrationStatuses: registrationStatuses},
 		AutoAccept:              src.AutoAccept,
 		SessionTranscript:       src.SessionTranscript,
 		PreferredFormat:         src.PreferredFormat,

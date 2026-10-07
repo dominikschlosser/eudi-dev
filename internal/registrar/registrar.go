@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wallet
+package registrar
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -25,10 +27,49 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
+
+// State is what the registrar stores: the registrations, the status list
+// entries of their certificates and the added catalogue entries. The wallet
+// embeds it, so it is saved with the wallet.
+type State struct {
+	// RelyingParties are the registrations of the wallet's registrar.
+	RelyingParties []WalletRelyingParty `json:"relying_parties,omitempty"`
+	// RegistrationStatuses are the status list entries of the registration
+	// certificates.
+	RegistrationStatuses []RegistrationStatus `json:"registration_statuses,omitempty"`
+	// Catalog holds the attestations added to the registrar's catalogue. The
+	// templates add their own entries.
+	Catalog []CatalogAttestation `json:"catalog,omitempty"`
+}
+
+// Env is what the registrar uses from the wallet it runs in.
+type Env interface {
+	// RegistrarBase is the base URL of the registrar's default contact URLs and
+	// registry URIs.
+	RegistrarBase() string
+	RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error)
+	RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, error)
+	AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error)
+	TemplateLocation() credtemplate.Location
+	ProviderDataset(base string) RegistrarDataset
+}
+
+// Registrar works on a State under the lock of the wallet that stores it.
+type Registrar struct {
+	mu    *sync.RWMutex
+	state *State
+	env   Env
+}
+
+func New(mu *sync.RWMutex, state *State, env Env) *Registrar {
+	return &Registrar{mu: mu, state: state, env: env}
+}
 
 // WalletRelyingParty is the relying party data model of TS05 v1.5 §2. A relying
 // party offers services, and each service has intended uses that list the
@@ -100,7 +141,7 @@ var (
 // RegisterRelyingParty stores a new relying party. If the request leaves them
 // out, the registrar assigns the identifier and the intended use identifiers,
 // and sets the contact URLs under base.
-func (w *Wallet) RegisterRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
+func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
 	rp, err := cloneRelyingParty(rp)
 	if err != nil {
 		return WalletRelyingParty{}, err
@@ -108,23 +149,23 @@ func (w *Wallet) RegisterRelyingParty(rp WalletRelyingParty, base string) (Walle
 	if err := normalizeRelyingParty(&rp, base, nil); err != nil {
 		return WalletRelyingParty{}, err
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if len(w.RelyingParties) >= maxRelyingParties {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.state.RelyingParties) >= maxRelyingParties {
 		return WalletRelyingParty{}, errRegistrarFull
 	}
 	for _, id := range rp.Identifier {
-		if relyingPartyIndex(w.RelyingParties, id.Identifier) >= 0 {
+		if relyingPartyIndex(r.state.RelyingParties, id.Identifier) >= 0 {
 			return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyExists, id.Identifier)
 		}
 	}
-	w.RelyingParties = append(w.RelyingParties, rp)
+	r.state.RelyingParties = append(r.state.RelyingParties, rp)
 	return cloneRelyingParty(rp)
 }
 
 // UpdateRelyingParty replaces the registration with the same identifier. New
 // intended uses get identifiers, and existing ones keep theirs.
-func (w *Wallet) UpdateRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
+func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
 	rp, err := cloneRelyingParty(rp)
 	if err != nil {
 		return WalletRelyingParty{}, err
@@ -132,63 +173,63 @@ func (w *Wallet) UpdateRelyingParty(rp WalletRelyingParty, base string) (WalletR
 	if len(rp.Identifier) == 0 || strings.TrimSpace(rp.Identifier[0].Identifier) == "" {
 		return WalletRelyingParty{}, fmt.Errorf("an update needs the identifier of the registered relying party")
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	i := relyingPartyIndex(w.RelyingParties, rp.Identifier[0].Identifier)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := relyingPartyIndex(r.state.RelyingParties, rp.Identifier[0].Identifier)
 	if i < 0 {
 		return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyNotFound, rp.Identifier[0].Identifier)
 	}
 	// The first identifier never changes, because the issued certificates and
 	// their status entries contain it.
-	stored := w.RelyingParties[i].Identifier[0]
+	stored := r.state.RelyingParties[i].Identifier[0]
 	rp.Identifier = append([]Identifier{stored}, slices.DeleteFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == stored.Identifier })...)
 	for _, id := range rp.Identifier[1:] {
-		if j := relyingPartyIndex(w.RelyingParties, id.Identifier); j >= 0 && j != i {
+		if j := relyingPartyIndex(r.state.RelyingParties, id.Identifier); j >= 0 && j != i {
 			return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyExists, id.Identifier)
 		}
 	}
-	if err := normalizeRelyingParty(&rp, base, &w.RelyingParties[i]); err != nil {
+	if err := normalizeRelyingParty(&rp, base, &r.state.RelyingParties[i]); err != nil {
 		return WalletRelyingParty{}, err
 	}
 	// A certificate certifies the content of its intended use. When an update
 	// changes that content or drops the intended use, its certificates are
 	// revoked for good.
-	before := w.RelyingParties[i]
-	w.supersedeRegistrationsLocked(func(s RegistrationStatus) bool {
+	before := r.state.RelyingParties[i]
+	r.supersedeRegistrationsLocked(func(s RegistrationStatus) bool {
 		return s.Identifier == stored.Identifier && !sameCertificateContent(before, rp, statusKey(s))
 	})
-	w.RelyingParties[i] = rp
+	r.state.RelyingParties[i] = rp
 	return cloneRelyingParty(rp)
 }
 
-func (w *Wallet) DeleteRelyingParty(identifier string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	i := relyingPartyIndex(w.RelyingParties, identifier)
+func (r *Registrar) DeleteRelyingParty(identifier string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := relyingPartyIndex(r.state.RelyingParties, identifier)
 	if i < 0 {
 		return fmt.Errorf("%w: %s", errRelyingPartyNotFound, identifier)
 	}
-	deleted := w.RelyingParties[i].Identifier[0].Identifier
-	w.supersedeRegistrationsLocked(func(s RegistrationStatus) bool { return s.Identifier == deleted })
-	w.RelyingParties = slices.Delete(w.RelyingParties, i, i+1)
+	deleted := r.state.RelyingParties[i].Identifier[0].Identifier
+	r.supersedeRegistrationsLocked(func(s RegistrationStatus) bool { return s.Identifier == deleted })
+	r.state.RelyingParties = slices.Delete(r.state.RelyingParties, i, i+1)
 	return nil
 }
 
-func (w *Wallet) RelyingParty(identifier string) (WalletRelyingParty, bool) {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	if i := relyingPartyIndex(w.RelyingParties, identifier); i >= 0 {
-		rp, err := cloneRelyingParty(w.RelyingParties[i])
+func (r *Registrar) RelyingParty(identifier string) (WalletRelyingParty, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if i := relyingPartyIndex(r.state.RelyingParties, identifier); i >= 0 {
+		rp, err := cloneRelyingParty(r.state.RelyingParties[i])
 		return rp, err == nil
 	}
 	return WalletRelyingParty{}, false
 }
 
-func (w *Wallet) RegisteredRelyingParties() []WalletRelyingParty {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	parties := make([]WalletRelyingParty, 0, len(w.RelyingParties))
-	for _, stored := range w.RelyingParties {
+func (r *Registrar) RegisteredRelyingParties() []WalletRelyingParty {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	parties := make([]WalletRelyingParty, 0, len(r.state.RelyingParties))
+	for _, stored := range r.state.RelyingParties {
 		if rp, err := cloneRelyingParty(stored); err == nil {
 			parties = append(parties, rp)
 		}
@@ -214,8 +255,8 @@ func cloneRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
 
 // RegistrarRecords are the wallet's own provider registration followed by the
 // registered relying parties, as the registrar API lists them.
-func (w *Wallet) RegistrarRecords() []WalletRelyingParty {
-	return append([]WalletRelyingParty{providerRelyingParty(w, w.RegistrarBase())}, w.RegisteredRelyingParties()...)
+func (r *Registrar) RegistrarRecords() []WalletRelyingParty {
+	return append([]WalletRelyingParty{r.providerRelyingParty(r.env.RegistrarBase())}, r.RegisteredRelyingParties()...)
 }
 
 func relyingPartyIndex(parties []WalletRelyingParty, identifier string) int {
@@ -352,12 +393,12 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 		if credential.Format != "dc+sd-jwt" && credential.Format != "mso_mdoc" {
 			return fmt.Errorf("credential format %q is not dc+sd-jwt or mso_mdoc", credential.Format)
 		}
-		if len(credentialTypes(credential.Meta)) == 0 {
+		if len(CredentialTypes(credential.Meta)) == 0 {
 			return fmt.Errorf("a %s credential needs its type in meta (vct_values or doctype_value)", credential.Format)
 		}
 		// TS05 v1.5 §2.4.5: a credential always lists the attributes it asks for.
 		if !slices.ContainsFunc(credential.Claims, func(c RegisteredClaim) bool { return len(c.Path) > 0 }) {
-			return fmt.Errorf("the %s credential %s needs at least one claim", credential.Format, strings.Join(credentialTypes(credential.Meta), ", "))
+			return fmt.Errorf("the %s credential %s needs at least one claim", credential.Format, strings.Join(CredentialTypes(credential.Meta), ", "))
 		}
 	}
 	use.CreatedAt = time.Now().UTC().Format(time.DateOnly)
@@ -385,7 +426,7 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 func normalizeEntitlements(service *WalletRelyingPartyService) error {
 	service.Entitlements = dedupeStrings(service.Entitlements)
 	if len(service.Entitlements) == 0 && len(service.ProvidesAttestations) == 0 {
-		service.Entitlements = []string{serviceProviderEntitlement}
+		service.Entitlements = []string{ServiceProviderEntitlement}
 	}
 	provider := isAttestationProvider(*service)
 	switch {
@@ -394,18 +435,18 @@ func normalizeEntitlements(service *WalletRelyingPartyService) error {
 	case provider && len(service.ProvidesAttestations) == 0:
 		return fmt.Errorf("service %q is an attestation provider, so it has to list its attestation types (ARF RPRC_15)", service.ServiceTradeName)
 	case !slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(registeredEntitlements, e) }):
-		return fmt.Errorf("service %q needs an entitlement from ETSI TS 119 475 Annex A.2, such as %s", service.ServiceTradeName, serviceProviderEntitlement)
+		return fmt.Errorf("service %q needs an entitlement from ETSI TS 119 475 Annex A.2, such as %s", service.ServiceTradeName, ServiceProviderEntitlement)
 	}
 	for _, attestation := range service.ProvidesAttestations {
 		if attestation.Format != "dc+sd-jwt" && attestation.Format != "mso_mdoc" {
 			return fmt.Errorf("attestation format %q is not dc+sd-jwt or mso_mdoc", attestation.Format)
 		}
-		if len(credentialTypes(attestation.Meta)) == 0 {
+		if len(CredentialTypes(attestation.Meta)) == 0 {
 			return fmt.Errorf("a %s attestation needs its type in meta (vct_values or doctype_value)", attestation.Format)
 		}
 	}
-	if len(service.IntendedUses) > 0 && !slices.Contains(service.Entitlements, serviceProviderEntitlement) {
-		service.Entitlements = append(service.Entitlements, serviceProviderEntitlement)
+	if len(service.IntendedUses) > 0 && !slices.Contains(service.Entitlements, ServiceProviderEntitlement) {
+		service.Entitlements = append(service.Entitlements, ServiceProviderEntitlement)
 	}
 	return nil
 }
@@ -425,7 +466,7 @@ func sameCertificateContent(before, after WalletRelyingParty, key certificateKey
 			return false
 		}
 		beforeService, _ := serviceByIdentifier(before, key.service)
-		return reflect.DeepEqual(providerContent(before, beforeService), providerContent(after, afterService))
+		return reflect.DeepEqual(ProviderCertificateContent(before, beforeService), ProviderCertificateContent(after, afterService))
 	}
 	afterService, afterUse, ok := findIntendedUse(after, "", key.intendedUse)
 	if !ok {
@@ -488,11 +529,11 @@ func newRegistrarID() string {
 // providerRelyingParty is the wallet's own registration in the TS05 v1.5
 // shape: the demo issuer with its entitlements and attestation types, and the
 // demo verifier with its intended use.
-func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
-	dataset := buildRegistrarDataset(w, base)
+func (r *Registrar) providerRelyingParty(base string) WalletRelyingParty {
+	dataset := r.env.ProviderDataset(base)
 	legalName, country := demoRelyingPartyName, dataset.SupervisoryAuthority.Country
-	if _, access, err := w.AccessSigningMaterial(); err == nil {
-		identifier, certLegalName, certCountry := accessCertificateSubject(access[0])
+	if _, access, err := r.env.AccessSigningMaterial(); err == nil {
+		identifier, certLegalName, certCountry := AccessCertificateSubject(access[0])
 		legalName = firstNonEmpty(certLegalName, legalName)
 		country = firstNonEmpty(certCountry, country)
 		dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
@@ -513,7 +554,7 @@ func providerRelyingParty(w *Wallet, base string) WalletRelyingParty {
 			Entitlements:         dataset.Entitlements,
 			ProvidesAttestations: dataset.ProvidesAttestations,
 			IsIntermediary:       dataset.IsIntermediary,
-		}, w.demoVerifierService(strings.TrimRight(base, "/"))},
+		}, r.demoVerifierService(strings.TrimRight(base, "/"))},
 	}
 }
 
@@ -546,13 +587,13 @@ func matchesWRPQuery(rp WalletRelyingParty, q url.Values) bool {
 		}) &&
 		has("providedattestation", func(v string) bool {
 			return anyService(func(s WalletRelyingPartyService) bool {
-				return slices.ContainsFunc(s.ProvidesAttestations, func(a ProvidedAttestation) bool { return slices.Contains(credentialTypes(a.Meta), v) })
+				return slices.ContainsFunc(s.ProvidesAttestations, func(a ProvidedAttestation) bool { return slices.Contains(CredentialTypes(a.Meta), v) })
 			})
 		}) &&
 		has("intendeduseidentifier", func(v string) bool { return anyUse(func(u IntendedUse) bool { return u.IntendedUseIdentifier == v }) }) &&
 		has("credentialformat", func(v string) bool { return anyCredential(func(c RegisteredCredential) bool { return c.Format == v }) }) &&
 		has("credentialmeta", func(v string) bool {
-			return anyCredential(func(c RegisteredCredential) bool { return slices.Contains(credentialTypes(c.Meta), v) })
+			return anyCredential(func(c RegisteredCredential) bool { return slices.Contains(CredentialTypes(c.Meta), v) })
 		})
 }
 
@@ -568,7 +609,7 @@ func checkIntendedUse(rp WalletRelyingParty, q url.Values) (bool, string) {
 	}
 	format, meta, claimPath := strings.TrimSpace(q.Get("credentialformat")), strings.TrimSpace(q.Get("credentialmeta")), strings.TrimSpace(q.Get("claimpath"))
 	for _, credential := range use.Credentials {
-		if (format != "" && credential.Format != format) || (meta != "" && !slices.Contains(credentialTypes(credential.Meta), meta)) {
+		if (format != "" && credential.Format != format) || (meta != "" && !slices.Contains(CredentialTypes(credential.Meta), meta)) {
 			continue
 		}
 		if claimPath == "" {

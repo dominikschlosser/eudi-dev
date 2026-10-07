@@ -36,6 +36,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -2102,11 +2103,11 @@ func TestVerifierRequestCarriesASuppliedIdentity(t *testing.T) {
 	d, w, _ := newDemoRP(t)
 	h := d.VerifierHandler()
 
-	rp, err := w.RegisterRelyingParty(wallet.WalletRelyingParty{
+	rp, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{
 		TradeName: "Registered Verifier",
-		Services: []wallet.WalletRelyingPartyService{{IntendedUses: []wallet.IntendedUse{{
-			Purpose:     []wallet.MultiLangString{{Lang: "en", Content: "Identity check"}},
-			Credentials: []wallet.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{PIDVCT}}, Claims: []wallet.RegisteredClaim{{Path: []any{"given_name"}}, {Path: []any{"family_name"}}}}},
+		Services: []registrar.WalletRelyingPartyService{{IntendedUses: []registrar.IntendedUse{{
+			Purpose:     []registrar.MultiLangString{{Lang: "en", Content: "Identity check"}},
+			Credentials: []registrar.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{PIDVCT}}, Claims: []registrar.RegisteredClaim{{Path: []any{"given_name"}}, {Path: []any{"family_name"}}}}},
 		}}}},
 	}, w.RegistrarBase())
 	if err != nil {
@@ -2121,14 +2122,14 @@ func TestVerifierRequestCarriesASuppliedIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	identifier := rp.Identifier[0].Identifier
-	access, err := w.IssueAccessCertificate(wallet.AccessCertificateRequest{
+	access, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{
 		Identifier: identifier,
 		CSR:        string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})),
 	})
 	if err != nil {
 		t.Fatalf("IssueAccessCertificate: %v", err)
 	}
-	registration, err := w.IssueRegistrationCertificate(wallet.RegistrationCertificateRequest{
+	registration, err := w.Registrar().IssueRegistrationCertificate(registrar.RegistrationCertificateRequest{
 		Identifier:            identifier,
 		IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
 	})

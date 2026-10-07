@@ -23,52 +23,9 @@ import (
 	"encoding/pem"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
-
-func pidQueryForRegistration() map[string]any {
-	return map[string]any{"credentials": []any{map[string]any{
-		"id":     "pid",
-		"format": "dc+sd-jwt",
-		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
-		"claims": []any{map[string]any{"path": []any{"given_name"}}},
-	}}}
-}
-
-// registerTestRelyingParty registers a relying party whose intended use asks
-// for the PID's given_name.
-func registerTestRelyingParty(t *testing.T, w *Wallet) WalletRelyingParty {
-	t.Helper()
-	rp, err := w.RegisterRelyingParty(WalletRelyingParty{
-		TradeName: "Example Shop",
-		Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{{
-			Purpose: []MultiLangString{{Lang: "en", Content: "Age check"}},
-			Credentials: []RegisteredCredential{{
-				Format: "dc+sd-jwt",
-				Meta:   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
-				Claims: []RegisteredClaim{{Path: []any{"given_name"}}},
-			}},
-		}}}},
-	}, w.RegistrarBase())
-	if err != nil {
-		t.Fatalf("RegisterRelyingParty: %v", err)
-	}
-	return rp
-}
-
-func issueTestRegistrationCertificate(t *testing.T, w *Wallet, rp WalletRelyingParty) *RegistrationCertificateResult {
-	t.Helper()
-	result, err := w.IssueRegistrationCertificate(RegistrationCertificateRequest{
-		Identifier:            rp.Identifier[0].Identifier,
-		IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
-	})
-	if err != nil {
-		t.Fatalf("IssueRegistrationCertificate: %v", err)
-	}
-	return result
-}
 
 // A registration certificate created by the wallet passes the wallet's own
 // ETSI TS 119 475 content checks and the ARF RPRC_21 over-asking check for the
@@ -108,49 +65,6 @@ func TestACreatedRegistrationCertificatePassesTheWalletsChecks(t *testing.T) {
 	}
 }
 
-// TS 119 475 V1.2.1 §5.1.1 links the certificates through the access
-// certificate's organizationIdentifier.
-func TestTheAccessCertificateFillsTheRelyingPartyFields(t *testing.T) {
-	w := generateTestWallet(t)
-	_, chain, err := w.AccessSigningMaterial()
-	if err != nil {
-		t.Fatalf("AccessSigningMaterial: %v", err)
-	}
-	access := chain[0]
-	claims, err := RegistrationCertificateClaimsFor("https://wallet.example", RegistrationCertificateContent{Name: "Example Shop"}, access, nil, time.Now())
-	if err != nil {
-		t.Fatalf("RegistrationCertificateClaimsFor: %v", err)
-	}
-	identifier, legalName, country := accessCertificateSubject(access)
-	if claims["sub"] != identifier || claims["sub_ln"] != legalName || claims["country"] != country {
-		t.Errorf("sub %v, sub_ln %v, country %v, want %q, %q and %q from the access certificate",
-			claims["sub"], claims["sub_ln"], claims["country"], identifier, legalName, country)
-	}
-}
-
-func TestRegistrationCertificateRequestsAreChecked(t *testing.T) {
-	w := generateTestWallet(t)
-	rp := registerTestRelyingParty(t, w)
-	use := rp.Services[0].IntendedUses[0].IntendedUseIdentifier
-	for _, tc := range []struct {
-		name string
-		req  RegistrationCertificateRequest
-		want string
-	}{
-		{"unknown relying party", RegistrationCertificateRequest{Identifier: "LEIXG-1", IntendedUseIdentifier: use}, "not registered"},
-		{"unknown intended use", RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: "x"}, "no intended use"},
-		{"over 12 months", RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use, Validity: "9000h"}, "exceeds the 12 months"},
-		{"bad validity", RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use, Validity: "soon"}, "not a positive Go duration"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := w.IssueRegistrationCertificate(tc.req)
-			if err == nil || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error %v, want one containing %q", err, tc.want)
-			}
-		})
-	}
-}
-
 // ARF RPRC_17a: the registration certificate names the relying party of the
 // access certificate that signs the request.
 func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
@@ -160,7 +74,7 @@ func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	access, err := w.IssueAccessCertificate(AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key)})
+	access, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: testAccessCSR(t, key)})
 	if err != nil {
 		t.Fatalf("IssueAccessCertificate: %v", err)
 	}
