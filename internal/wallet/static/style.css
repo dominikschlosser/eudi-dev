@@ -2536,4 +2536,16 @@ header h1 {
   line-height: 1.5;
   color: var(--text-dim);
   margin-top: 4px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.offer-description.offer-description-open {
+  display: block;
+}
+
+.offer-description-toggle {
+  font-size: 11px;
 }

@@ -1968,7 +1968,10 @@
         '<div class="credential-info">' +
           '<div class="credential-type cred-hdr">' + rowBadge + nameHtml + '</div>' +
           typeMeta +
-          (cred.description ? '<div class="offer-description">' + linkifyText(cred.description) + '</div>' : '') +
+          (cred.description
+            ? '<div class="offer-description" id="offer-description-' + registrarDomID(cred.id) + '">' + linkifyText(cred.description) + '</div>' +
+              '<button type="button" class="link-btn offer-description-toggle" id="offer-description-' + registrarDomID(cred.id) + '-toggle" aria-expanded="false">More</button>'
+            : '') +
         '</div>' +
       '</div>';
     let claims = '';
@@ -1981,6 +1984,16 @@
     }
     return '<div class="consent-credential" data-config-id="' + escHtml(cred.id) + '">' + card + claims + '</div>';
   }
+
+  // A long issuer description stays at two lines until the user opens it.
+  document.addEventListener('click', (event) => {
+    const toggle = event.target.closest('.offer-description-toggle');
+    if (!toggle) return;
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.previousElementSibling.classList.toggle('offer-description-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.textContent = open ? 'Less' : 'More';
+  });
 
   function renderOfferDetails(req) {
     const details = req.offer_details || {};
@@ -2604,6 +2617,10 @@
     '</div>';
 
     consentDialog.innerHTML = html;
+    // The More button only shows for a description longer than two lines.
+    consentDialog.querySelectorAll('.offer-description').forEach(desc => {
+      if (desc.scrollHeight <= desc.clientHeight + 1) desc.nextElementSibling.hidden = true;
+    });
     wireSelectionHandlers();
     if (unansweredQueries().length > 0) {
       const approve = document.getElementById('consent-approve');
