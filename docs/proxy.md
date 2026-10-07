@@ -140,7 +140,7 @@ The proxy also scans the subprocess's stdout for JWT and SD-JWT credentials and 
 
 ```
   → eudi decode 'eyJhbGci...'  (vp_token)
-  → http://localhost:9091/decode?credential=eyJhbGci...
+  → http://localhost:9091/decode/#credential=eyJhbGci...
 ```
 
 ## Debugging tips

@@ -62,7 +62,7 @@ function renderPresentationLink(presentation) {
     return;
   }
   const link = document.getElementById("presentation-link");
-  link.href = "../decoder/?credential=" + encodeURIComponent(presentation);
+  link.href = "../decoder/#credential=" + encodeURIComponent(presentation);
   box.hidden = false;
   label.hidden = false;
 }

@@ -1376,7 +1376,7 @@ test("activity starts collapsed and opens the sent presentation in the decoder",
   await expect(entry).not.toContainText("NOT DISCLOSED");
   await expect(entry.getByText("Presented credentials", { exact: true })).toHaveCount(0);
   await expect(entry.locator('[data-testid="log-decoder-link"][data-query-id="pid"][data-token-index="0"]'))
-    .toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=presented-token");
+    .toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=presented-token");
 });
 
 for (const event of ["presentation_response", "interactive_authorization_presentation"]) {
@@ -1412,7 +1412,7 @@ for (const event of ["presentation_response", "interactive_authorization_present
       ["mdl", 0, third, "mdoc-presentation"],
     ]) {
       const link = entry.locator(`[data-testid="log-decoder-link"][data-query-id="${queryID}"][data-token-index="${tokenIndex}"]`);
-      await expect(link).toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=" + encodeURIComponent(token));
+      await expect(link).toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=" + encodeURIComponent(token));
       const popupPromise = page.waitForEvent("popup");
       await link.click();
       const decoder = await popupPromise;
@@ -1523,7 +1523,7 @@ test("import activity keeps credential context and links to its original token",
   await expect(entry).not.toContainText("decoded-claim");
   await expect(entry.locator(".log-payload > pre")).toHaveText(jwt);
   await expect(entry.getByTestId("log-decoder-link"))
-    .toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=" + encodeURIComponent(jwt));
+    .toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=" + encodeURIComponent(jwt));
 });
 
 for (const shape of ["encrypted JSON", "JSON", "object", "legacy details", "deferred JSON", "encrypted deferred JSON"]) {
@@ -1555,7 +1555,7 @@ for (const shape of ["encrypted JSON", "JSON", "object", "legacy details", "defe
     else await expect(responseEntry.locator(".log-payload > pre")).toHaveText(JSON.stringify(response, null, 2));
     for (const [index, token] of tokens.entries()) {
       const link = responseEntry.locator(`[data-testid="log-decoder-link"][data-credential-index="${index}"]`);
-      await expect(link).toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=" + encodeURIComponent(token));
+      await expect(link).toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=" + encodeURIComponent(token));
       const popupPromise = page.waitForEvent("popup");
       await link.click();
       const decoder = await popupPromise;
@@ -1569,7 +1569,7 @@ for (const shape of ["encrypted JSON", "JSON", "object", "legacy details", "defe
     await imported.getByTestId("log-entry-toggle").click();
     await expect(imported.locator(".log-payload-label")).toHaveText("Credential");
     await expect(imported.getByTestId("log-decoder-link")).toHaveCount(1);
-    await expect(imported.getByTestId("log-decoder-link")).toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=" + encodeURIComponent(tokens[2]));
+    await expect(imported.getByTestId("log-decoder-link")).toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=" + encodeURIComponent(tokens[2]));
   });
 }
 
@@ -1631,7 +1631,7 @@ test("fetched request objects appear once with HTTP context and a decoder link",
   await expect(entry.getByText("https://origin.example", { exact: true })).toBeVisible();
   await expect(entry.locator(".log-payload > pre")).toHaveText("encrypted-request-object");
   await expect(entry.getByTestId("log-decoder-link"))
-    .toHaveJSProperty("href", WALLET_URL + "/decoder/?credential=" + jwt);
+    .toHaveJSProperty("href", WALLET_URL + "/decoder/#credential=" + jwt);
   await entry.getByTestId("log-payload-toggle").click();
   await expect(entry.locator(".log-payload > pre")).toHaveText(jwt);
   await expect(entry).not.toContainText("decoded-nonce");

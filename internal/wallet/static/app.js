@@ -1775,7 +1775,7 @@
 
   function renderLogDecoderLink(value, label = 'Open in decoder', attributes = {}) {
     const data = Object.entries(attributes).map(([key, val]) => ' data-' + key + '="' + escHtml(String(val)) + '"').join('');
-    return '<a class="btn log-decoder-link" data-testid="log-decoder-link"' + data + ' href="decoder/?credential=' + encodeURIComponent(value) +
+    return '<a class="btn log-decoder-link" data-testid="log-decoder-link"' + data + ' href="decoder/#credential=' + encodeURIComponent(value) +
       '" target="_blank" rel="noopener">' + escHtml(label) + '</a>';
   }
 

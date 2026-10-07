@@ -378,7 +378,7 @@ func printDecodeHint(credential, label, decodeBase string) {
 	prefix := strings.Repeat("  ", 2)
 
 	if decodeBase != "" {
-		decodeURL := fmt.Sprintf("%s/decode?credential=%s", strings.TrimRight(decodeBase, "/"), url.QueryEscape(credential))
+		decodeURL := fmt.Sprintf("%s/decode/#credential=%s", strings.TrimRight(decodeBase, "/"), url.QueryEscape(credential))
 		dimColor.Printf("%s┌ ", prefix)
 		if label != "" {
 			dimColor.Printf("%s: ", label)
