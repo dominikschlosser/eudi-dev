@@ -244,7 +244,7 @@ func ProviderCertificateContent(rp WalletRelyingParty, service WalletRelyingPart
 func RegistrarDatasetFor(rp WalletRelyingParty, service WalletRelyingPartyService) RegistrarDataset {
 	return RegistrarDataset{
 		Identifier:           rp.Identifier,
-		SrvDescription:       service.SrvDescription,
+		SrvDescription:       service.SrvDescription.Strings(),
 		RegistryURI:          rp.RegistryURI,
 		ProvidesAttestations: service.ProvidesAttestations,
 	}
@@ -272,7 +272,7 @@ func registrationContent(rp WalletRelyingParty, service WalletRelyingPartyServic
 		Identifier:            rp.Identifier[0].Identifier,
 		LegalName:             rp.LegalPerson.LegalName[0],
 		Country:               rp.Country,
-		Description:           service.SrvDescription,
+		Description:           service.SrvDescription.Strings(),
 		Entitlements:          service.Entitlements,
 		RegistryURI:           rp.RegistryURI,
 		PrivacyPolicy:         privacyPolicyURI(use),
@@ -349,12 +349,14 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 		return nil, err
 	}
 	claims := map[string]any{
-		"sub":                   identifier,
-		"sub_ln":                firstNonEmpty(legalName, name),
-		"name":                  name,
-		"country":               firstNonEmpty(country, "EU"),
-		"registry_uri":          firstNonEmpty(req.RegistryURI, base+"/api/registrar/wrp"),
-		"srv_description":       multiLangClaim(req.Description, name),
+		"sub":          identifier,
+		"sub_ln":       firstNonEmpty(legalName, name),
+		"name":         name,
+		"country":      firstNonEmpty(country, "EU"),
+		"registry_uri": firstNonEmpty(req.RegistryURI, base+"/api/registrar/wrp"),
+		// TS05 v1.5 §2.4.1 and the example of ETSI TS 119 475 V1.2.1 Annex C
+		// nest the descriptions in an array of arrays.
+		"srv_description":       []any{multiLangClaim(req.Description, name)},
 		"entitlements":          entitlementsOrDefault(req.Entitlements),
 		"privacy_policy":        firstNonEmpty(req.PrivacyPolicy, base+"/privacy-policy"),
 		"support_uri":           firstNonEmpty(req.SupportURI, base+"/support"),

@@ -201,7 +201,7 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 	rp := w.demoRelyingParty(access[0], registrar.WalletRelyingPartyService{
 		ServiceTradeName:     DemoIssuerName,
 		ServiceIdentifier:    demoIssuerServiceID,
-		SrvDescription:       []registrar.MultiLangString{{Lang: "en", Content: "Demo issuer of the eudi-dev test wallet"}},
+		SrvDescription:       registrar.ServiceDescription{{{Lang: "en", Content: "Demo issuer of the eudi-dev test wallet"}}},
 		Entitlements:         sortedUnique(entitlements),
 		ProvidesAttestations: provides,
 		IntendedUses: []registrar.IntendedUse{{
@@ -244,7 +244,7 @@ func (w *Wallet) demoVerifierRegistration() (registrar.WalletRelyingParty, regis
 	rp := w.demoRelyingParty(access[0], registrar.WalletRelyingPartyService{
 		ServiceTradeName:  demoVerifierName,
 		ServiceIdentifier: demoVerifierServiceID,
-		SrvDescription:    []registrar.MultiLangString{{Lang: "en", Content: "Demo verifier of the eudi-dev test wallet"}},
+		SrvDescription:    registrar.ServiceDescription{{{Lang: "en", Content: "Demo verifier of the eudi-dev test wallet"}}},
 		IntendedUses: []registrar.IntendedUse{{
 			IntendedUseIdentifier: demoVerifierIntendedUseID,
 			Purpose:               []registrar.MultiLangString{{Lang: "en", Content: "Shows how a verifier requests and checks credentials"}},

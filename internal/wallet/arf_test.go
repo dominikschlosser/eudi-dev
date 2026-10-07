@@ -324,13 +324,20 @@ func TestARegisteredEntryWithoutFormatOrTypeRegistersNothing(t *testing.T) {
 		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
 		"claims": []any{map[string]any{"path": []any{"given_name"}}},
 	}}}
-	for name, entry := range map[string]map[string]any{
-		"no format": {"meta": map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, "claim": []any{map[string]any{"path": []any{"given_name"}}}},
-		"no type":   {"format": "dc+sd-jwt", "claim": []any{map[string]any{"path": []any{"given_name"}}}},
+	// A registration certificate lists the claims of an entry under "claim"
+	// (ETSI TS 119 475 V1.2.1 Annex B.2.9).
+	claims := []any{map[string]any{"path": []any{"given_name"}}}
+	for name, tc := range map[string]struct {
+		entry    map[string]any
+		findings int
+	}{
+		"format and type": {map[string]any{"format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, "claim": claims}, 0},
+		"no format":       {map[string]any{"meta": map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, "claim": claims}, 1},
+		"no type":         {map[string]any{"format": "dc+sd-jwt", "claim": claims}, 1},
 	} {
-		cert := map[string]any{"credentials": []any{entry}}
-		if findings := overAskingFindings(cert, query); len(findings) != 1 {
-			t.Errorf("%s: findings %v, want the PID as over-asking", name, findings)
+		cert := map[string]any{"credentials": []any{tc.entry}}
+		if findings := overAskingFindings(cert, query); len(findings) != tc.findings {
+			t.Errorf("%s: findings %v, want %d", name, findings, tc.findings)
 		}
 	}
 }

@@ -222,9 +222,10 @@ Run registration-cert to get its registration certificate.`,
 		},
 	}
 	party.add(cmd)
-	cmd.Flags().StringVar(&purpose, "purpose", "", "Purpose of the intended use (shown in the consent dialog)")
+	cmd.Flags().StringVar(&purpose, "purpose", "", "Purpose of the intended use (shown in the consent dialog, required)")
 	cmd.Flags().StringVar(&dcqlIn, "dcql", "", "DCQL query with the credentials and claims to register (file, JSON or '-' for stdin, required)")
 	cmd.Flags().StringVar(&privacy, "privacy-policy", "", "Privacy policy URL of the intended use (default a placeholder page on the wallet)")
+	_ = cmd.MarkFlagRequired("purpose")
 	_ = cmd.MarkFlagRequired("dcql")
 	_ = cmd.MarkFlagFilename("dcql", "json")
 	return cmd

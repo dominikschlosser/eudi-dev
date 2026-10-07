@@ -95,7 +95,7 @@ type WalletRelyingPartyService struct {
 	ServiceTradeName     string                `json:"serviceTradeName"`
 	ServiceIdentifier    string                `json:"serviceIdentifier,omitempty"`
 	SupportURI           string                `json:"supportURI,omitempty"`
-	SrvDescription       []MultiLangString     `json:"srvDescription,omitempty"`
+	SrvDescription       ServiceDescription    `json:"srvDescription,omitempty"`
 	Entitlements         []string              `json:"entitlements"`
 	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations,omitempty"`
 	IsIntermediary       bool                  `json:"isIntermediary"`
@@ -366,7 +366,7 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 		service.ServiceTradeName = firstNonEmpty(service.ServiceTradeName, rp.TradeName)
 		service.SupportURI = firstNonEmpty(service.SupportURI, base+"/support")
 		if len(service.SrvDescription) == 0 {
-			service.SrvDescription = []MultiLangString{{Lang: "en", Content: service.ServiceTradeName}}
+			service.SrvDescription = ServiceDescription{{{Lang: "en", Content: service.ServiceTradeName}}}
 		}
 		if err := normalizeEntitlements(service); err != nil {
 			return err
