@@ -588,7 +588,7 @@ test.describe("Demo issuer authorization choice", () => {
       grant: "authorization_code",
       authorization: "presentation",
     });
-    expect(uri).toContain("eu-eaa-offer://");
+    expect(uri).toContain("openid-credential-offer://");
 
     const redeemed = await postJSON("/api/offers", { uri });
     expect(redeemed.status, JSON.stringify(redeemed.body)).toBe(200);
