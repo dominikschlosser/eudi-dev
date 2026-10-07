@@ -52,10 +52,21 @@ type SupervisoryAuthority struct {
 	FormURI []string `json:"formURI,omitempty"`
 }
 
-// ProvidedAttestation describes an issued attestation type in TS5 terms.
+// ProvidedAttestation is an attestation type a provider issues (TS05 v1.5
+// §2.4.8): its format and its vct or doctype.
 type ProvidedAttestation struct {
-	Format string         `json:"format"`
-	Meta   map[string]any `json:"meta"`
+	Format string `json:"format"`
+	Type   string `json:"type"`
+}
+
+// certificateClaim is the provides_attestations entry of a registration
+// certificate, which ETSI TS 119 475 V1.2.1 Table 8 shapes like a DCQL
+// credential query.
+func (a ProvidedAttestation) certificateClaim() map[string]any {
+	if a.Format == "mso_mdoc" {
+		return map[string]any{"format": a.Format, "meta": map[string]any{"doctype_value": a.Type}}
+	}
+	return map[string]any{"format": a.Format, "meta": map[string]any{"vct_values": []string{a.Type}}}
 }
 
 // RegistrarDataset is the minimal subset of registrar data needed for

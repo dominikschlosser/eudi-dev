@@ -71,7 +71,7 @@ func TestAnUpdateKeepsRegisteredIntendedUses(t *testing.T) {
 
 func TestRegistrationsAreChecked(t *testing.T) {
 	use := func(id string) IntendedUse {
-		return IntendedUse{IntendedUseIdentifier: id, Credentials: []RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, Claims: []RegisteredClaim{{Path: []any{"given_name"}}}}}}
+		return IntendedUse{IntendedUseIdentifier: id, Purpose: []MultiLangString{{Lang: "en", Content: "Age check"}}, Credentials: []RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, Claims: []RegisteredClaim{{Path: []any{"given_name"}}}}}}
 	}
 	for _, tc := range []struct {
 		name string
@@ -80,7 +80,11 @@ func TestRegistrationsAreChecked(t *testing.T) {
 	}{
 		{"country name", WalletRelyingParty{TradeName: "Shop", Country: "Germany"}, "two-letter country code"},
 		{"too many services", WalletRelyingParty{TradeName: "Shop", Services: make([]WalletRelyingPartyService, 21)}, "at most 20 services"},
+		{"intended use without purpose", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{{
+			Credentials: use("").Credentials,
+		}}}}}, "needs a purpose"},
 		{"credential without claims", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{{
+			Purpose:     use("").Purpose,
 			Credentials: []RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}}},
 		}}}}}, "needs at least one claim"},
 		{"identifier with a space", WalletRelyingParty{TradeName: "Shop", Identifier: []Identifier{{Identifier: "LEIXG-12 34"}}}, "not an organizationIdentifier"},

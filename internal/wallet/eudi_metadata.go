@@ -359,7 +359,7 @@ func buildProvidedAttestation(spec IssuedAttestationSpec) (registrar.ProvidedAtt
 		}
 		return registrar.ProvidedAttestation{
 			Format: spec.Format,
-			Meta:   map[string]any{"vct_values": []string{spec.VCT}},
+			Type:   spec.VCT,
 		}, true
 	case "mso_mdoc":
 		if strings.TrimSpace(spec.DocType) == "" {
@@ -367,7 +367,7 @@ func buildProvidedAttestation(spec IssuedAttestationSpec) (registrar.ProvidedAtt
 		}
 		return registrar.ProvidedAttestation{
 			Format: spec.Format,
-			Meta:   map[string]any{"doctype_value": spec.DocType},
+			Type:   spec.DocType,
 		}, true
 	default:
 		return registrar.ProvidedAttestation{}, false

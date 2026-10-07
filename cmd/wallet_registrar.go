@@ -71,9 +71,7 @@ func (f *partyFlags) register(service registrar.WalletRelyingPartyService) (regi
 		rp.LegalPerson.LegalName = []string{f.legalName}
 	}
 	service.ServiceIdentifier = f.serviceID
-	if f.supportURI != "" {
-		service.SupportURI = []string{f.supportURI}
-	}
+	service.SupportURI = f.supportURI
 	rp.Services = []registrar.WalletRelyingPartyService{service}
 	svc, err := managedWallet()
 	if err != nil {
@@ -114,7 +112,7 @@ func walletPartiesCmd(role string) *cobra.Command {
 					for _, service := range rp.Services {
 						if isIssuer {
 							for _, a := range service.ProvidesAttestations {
-								items = append(items, a.Format+":"+strings.Join(registrar.CredentialTypes(a.Meta), ","))
+								items = append(items, a.Format+":"+a.Type)
 							}
 							continue
 						}
@@ -140,11 +138,9 @@ func hasRole(rp registrar.WalletRelyingParty, role string) bool {
 		if role == "issuers" {
 			return len(s.ProvidesAttestations) > 0
 		}
-		return len(s.IntendedUses) > 0 || slices.Contains(s.Entitlements, entitlementServiceProvider)
+		return len(s.IntendedUses) > 0 || slices.Contains(s.Entitlements, registrar.ServiceProviderEntitlement)
 	})
 }
-
-const entitlementServiceProvider = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
 
 // listSubcommand runs the parent's listing as "list", like wallet list and
 // templates list.
@@ -267,7 +263,7 @@ issuer_info value for your issuer metadata.`,
 			printResult(stored, func() {
 				fmt.Printf("Registered %s as %s\n", stored.TradeName, stored.Identifier[0].Identifier)
 				for _, attestation := range stored.Services[0].ProvidesAttestations {
-					fmt.Printf("Attestation: %s %s\n", attestation.Format, strings.Join(registrar.CredentialTypes(attestation.Meta), ", "))
+					fmt.Printf("Attestation: %s %s\n", attestation.Format, attestation.Type)
 				}
 			})
 			return nil
@@ -284,10 +280,10 @@ issuer_info value for your issuer metadata.`,
 // entitlementNames are the provider entitlements of ETSI TS 119 475 V1.2.1
 // Annex A.2 that --entitlement takes.
 var entitlementNames = map[string]string{
-	"pid":     "https://uri.etsi.org/19475/Entitlement/PID_Provider",
-	"qeaa":    "https://uri.etsi.org/19475/Entitlement/QEAA_Provider",
-	"pub-eaa": "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider",
-	"eaa":     "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider",
+	"pid":     registrar.PIDProviderEntitlement,
+	"qeaa":    registrar.QEAAProviderEntitlement,
+	"pub-eaa": registrar.PubEAAProviderEntitlement,
+	"eaa":     registrar.NonQEAAProviderEntitlement,
 }
 
 // providedAttestations parses format:type values. The type of an SD-JWT VC is
@@ -300,14 +296,10 @@ func providedAttestations(values []string) ([]registrar.ProvidedAttestation, err
 		if !ok || typ == "" {
 			return nil, fmt.Errorf("--attestation %q is not format:type, such as dc+sd-jwt:urn:eudi:pid:1", value)
 		}
-		switch format {
-		case "dc+sd-jwt":
-			attestations = append(attestations, registrar.ProvidedAttestation{Format: format, Meta: map[string]any{"vct_values": []string{typ}}})
-		case "mso_mdoc":
-			attestations = append(attestations, registrar.ProvidedAttestation{Format: format, Meta: map[string]any{"doctype_value": typ}})
-		default:
+		if format != "dc+sd-jwt" && format != "mso_mdoc" {
 			return nil, fmt.Errorf("--attestation %q has format %q, not dc+sd-jwt or mso_mdoc", value, format)
 		}
+		attestations = append(attestations, registrar.ProvidedAttestation{Format: format, Type: typ})
 	}
 	return attestations, nil
 }

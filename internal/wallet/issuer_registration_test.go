@@ -30,7 +30,7 @@ const testDiplomaVCT = "urn:example:diploma:1"
 func registerTestIssuer(t *testing.T, w *Wallet, entitlement string, provides ...registrar.ProvidedAttestation) registrar.WalletRelyingParty {
 	t.Helper()
 	if len(provides) == 0 {
-		provides = []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{testDiplomaVCT}}}}
+		provides = []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Type: testDiplomaVCT}}
 	}
 	rp, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{
 		TradeName: "Example University",
@@ -99,14 +99,14 @@ func TestAnIssuerGetsOneCertificateForItsService(t *testing.T) {
 	if policies, _ := cert["policy_id"].([]any); len(policies) != 1 || policies[0] != "0.4.0.19475.3.1" {
 		t.Errorf("policy_id %v", cert["policy_id"])
 	}
-	if provided := providedAttestationsOf(cert); len(provided) != 1 || !provided[0].matches("dc+sd-jwt", []string{testDiplomaVCT}) {
+	if provided := providedAttestationsOf(cert); len(provided) != 1 || !providesType(provided, "dc+sd-jwt", []string{testDiplomaVCT}) {
 		t.Errorf("provides_attestations %v", cert["provides_attestations"])
 	}
 }
 
 func TestIssuerRegistrationsAreChecked(t *testing.T) {
 	w := generateTestWallet(t)
-	diploma := []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{testDiplomaVCT}}}}
+	diploma := []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Type: testDiplomaVCT}}
 	for _, tc := range []struct {
 		name    string
 		service registrar.WalletRelyingPartyService
@@ -116,8 +116,8 @@ func TestIssuerRegistrationsAreChecked(t *testing.T) {
 		{"attestations with the service provider entitlement", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.ServiceProviderEntitlement}, ProvidesAttestations: diploma}, "needs an attestation provider entitlement"},
 		{"a provider without attestations", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.PIDProviderEntitlement}}, "RPRC_15"},
 		{"an unknown entitlement only", registrar.WalletRelyingPartyService{Entitlements: []string{"https://example.com/entitled"}}, "Annex A.2"},
-		{"an attestation in another format", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "jwt_vc_json", Meta: map[string]any{"vct_values": []string{"x"}}}}}, "not dc+sd-jwt or mso_mdoc"},
-		{"an attestation without a type", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "mso_mdoc", Meta: map[string]any{}}}}, "needs its type"},
+		{"an attestation in another format", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "jwt_vc_json", Type: "x"}}}, "not dc+sd-jwt or mso_mdoc"},
+		{"an attestation without a type", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "mso_mdoc"}}}, "needs its type"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{TradeName: "Example", Services: []registrar.WalletRelyingPartyService{tc.service}})
@@ -136,8 +136,8 @@ func TestAProviderWithAnIntendedUseIsAServiceProviderToo(t *testing.T) {
 		TradeName: "Example University",
 		Services: []registrar.WalletRelyingPartyService{{
 			Entitlements:         []string{registrar.NonQEAAProviderEntitlement},
-			ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{testDiplomaVCT}}}},
-			IntendedUses: []registrar.IntendedUse{{Credentials: []registrar.RegisteredCredential{{
+			ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "dc+sd-jwt", Type: testDiplomaVCT}},
+			IntendedUses: []registrar.IntendedUse{{Purpose: []registrar.MultiLangString{{Lang: "en", Content: "Identity check"}}, Credentials: []registrar.RegisteredCredential{{
 				Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}, Claims: []registrar.RegisteredClaim{{Path: []any{"family_name"}}},
 			}}}},
 		}},
@@ -201,7 +201,7 @@ func TestProviderCertificatesFollowTheRegistration(t *testing.T) {
 
 	// An update that adds an attestation type changes the certificate content,
 	// so the certificate is revoked for good.
-	rp.Services[0].ProvidesAttestations = append(rp.Services[0].ProvidesAttestations, registrar.ProvidedAttestation{Format: "mso_mdoc", Meta: map[string]any{"doctype_value": "org.example.diploma.1"}})
+	rp.Services[0].ProvidesAttestations = append(rp.Services[0].ProvidesAttestations, registrar.ProvidedAttestation{Format: "mso_mdoc", Type: "org.example.diploma.1"})
 	if _, err := w.Registrar().UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}

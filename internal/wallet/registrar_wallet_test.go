@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -170,6 +171,47 @@ func TestTheRegistrarAPI(t *testing.T) {
 			}
 		}
 	})
+	t.Run("check intended use without the intended use identifier", func(t *testing.T) {
+		for query, want := range map[string]bool{
+			"identifier=" + id + "&claimpath=given_name":                     true,
+			"credentialmeta=" + mock.DefaultPIDVCT + "&claimpath=given_name": true,
+			"identifier=" + id + "&claimpath=birthdate":                      false,
+		} {
+			var page struct {
+				Data struct {
+					IsRegistered bool `json:"isRegistered"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp/check-intended-use?"+query, "").Body.Bytes(), &page); err != nil || page.Data.IsRegistered != want {
+				t.Errorf("%s: isRegistered %v, want %v", query, page.Data.IsRegistered, want)
+			}
+		}
+		if rec := registrarJSON(t, srv, "GET", "/api/registrar/wrp/check-intended-use?identifier=LEIXG-1", ""); rec.Code != http.StatusNotFound {
+			t.Errorf("an unregistered relying party: %d, want 404", rec.Code)
+		}
+	})
+	t.Run("filters", func(t *testing.T) {
+		count := func(query string) int {
+			var page struct {
+				Data []registrar.WalletRelyingParty
+			}
+			if err := json.Unmarshal(registrarJSON(t, srv, "GET", "/api/registrar/wrp?"+query, "").Body.Bytes(), &page); err != nil {
+				t.Fatal(err)
+			}
+			return len(page.Data)
+		}
+		for query, want := range map[string]int{
+			"tradename=Example&policy=" + url.QueryEscape("https://issuer.example/privacy-policy"): 1,
+			"tradename=Example&isintermediary=false":                                               1,
+			"tradename=Example&isintermediary=true":                                                0,
+			"tradename=Example&usesintermediary=web":                                               0,
+			"tradename=Example&claimpath=given_name":                                               1,
+		} {
+			if got := count(query); got != want {
+				t.Errorf("%s: %d records, want %d", query, got, want)
+			}
+		}
+	})
 	t.Run("certificates", func(t *testing.T) {
 		key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		csr, _ := json.Marshal(testAccessCSR(t, key))
@@ -187,8 +229,10 @@ func TestTheRegistrarAPI(t *testing.T) {
 		rp.TradeName = "Example Store"
 		body, _ := json.Marshal(rp)
 		rec := registrarJSON(t, srv, "PUT", "/api/registrar/wrp", string(body))
-		var updated registrar.WalletRelyingParty
-		if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil || rec.Code != http.StatusOK ||
+		var page struct{ Data registrar.WalletRelyingParty }
+		err := json.Unmarshal(rec.Body.Bytes(), &page)
+		updated := page.Data
+		if err != nil || rec.Code != http.StatusOK ||
 			updated.TradeName != "Example Store" || updated.Services[0].IntendedUses[0].IntendedUseIdentifier != use {
 			t.Fatalf("PUT: %d %s, want the new name and the kept intended use", rec.Code, rec.Body.String())
 		}

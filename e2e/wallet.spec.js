@@ -2270,7 +2270,7 @@ test.describe("Registrar", () => {
     // ETSI TS 119 472-3 §4.2.3: the registrar dataset and the registration certificate.
     const issuerInfo = JSON.parse(await page.locator("#registrar-issuer-info").inputValue());
     expect(issuerInfo.map((e) => e.format)).toEqual(["registrar_dataset", "registration_cert"]);
-    expect(issuerInfo[0].data.providesAttestations).toEqual([{ format: "dc+sd-jwt", meta: { vct_values: ["urn:example:diploma:1"] } }]);
+    expect(issuerInfo[0].data.providesAttestations).toEqual([{ format: "dc+sd-jwt", type: "urn:example:diploma:1" }]);
 
     // The verifier dialog gets its own fields and defaults back.
     await page.locator("#registrar-close").click();
@@ -2295,7 +2295,7 @@ test.describe("Registrar", () => {
       services: [{
         serviceIdentifier: "diplomas",
         entitlements: ["https://uri.etsi.org/19475/Entitlement/QEAA_Provider"],
-        providesAttestations: [{ format: "mso_mdoc", meta: { doctype_value: "org.example.diploma.1" } }],
+        providesAttestations: [{ format: "mso_mdoc", type: "org.example.diploma.1" }],
       }],
     });
     expect(status).toBe(201);
@@ -2309,7 +2309,8 @@ test.describe("Registrar", () => {
     await expect(page.locator(card + "-role-issuer")).toBeVisible();
     await expect(page.locator(card + "-add-use")).toHaveCount(0);
     await expect(page.locator(service + "-entitlement")).toHaveText("QEAA provider");
-    await expect(page.locator(service + "-attestation-0")).toHaveText("org.example.diploma.1");
+    await expect(page.locator(service + "-attestation-0 .registrar-credential-type")).toHaveText("org.example.diploma.1");
+    await expect(page.locator(service + "-attestation-0 .registrar-credential-meta")).toHaveText("mso_mdoc");
     await expect(page.locator(service + "-status")).toHaveText("No certificate");
 
     await page.locator(service + "-issue").click();

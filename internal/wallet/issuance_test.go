@@ -510,9 +510,12 @@ func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 	if want := w.IssuerURL + "/api/registrar/wrp/" + ownProviderIdentifier(t, w); record["registryURI"] != want {
 		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
-	provides, ok := record["providesAttestations"].([]any)
-	if !ok || len(provides) != 2 {
-		t.Fatalf("expected 2 providesAttestations entries, got %v", record["providesAttestations"])
+	provided := map[string]bool{}
+	for _, entry := range record["providesAttestations"].([]any) {
+		provided[entry.(map[string]any)["type"].(string)] = true
+	}
+	if !provided[mock.DefaultPIDVCT] || !provided[mock.PIDNamespace] {
+		t.Fatalf("providesAttestations %v, want the PID types", record["providesAttestations"])
 	}
 }
 

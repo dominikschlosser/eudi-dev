@@ -63,8 +63,8 @@ func (h *Server) Routes() map[string]http.HandlerFunc {
 		"GET /api/catalog/attestations":                                    h.handleCatalogAttestations,
 		"POST /api/catalog/attestations":                                   h.handleAddCatalogAttestation,
 	}
-	for path, page := range registrarPlaceholderPages {
-		routes["GET "+path] = placeholderPage(page)
+	for path, page := range placeholderPages {
+		routes["GET "+path] = page.handler()
 	}
 	return routes
 }
@@ -104,7 +104,8 @@ func (h *Server) handleRegisterRelyingParty(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, stored)
 }
 
-// handleUpdateRelyingParty replaces a registration (TS05 v1.5 §3.1, PUT /wrp).
+// handleUpdateRelyingParty replaces a registration (TS05 v1.5 §3.1, PUT /wrp)
+// and answers with the signed record, as the TS05 v1.5 OpenAPI defines.
 func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request) {
 	rp, ok := decodeRelyingParty(w, r)
 	if !ok {
@@ -120,7 +121,7 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 		writeRegistrarError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, stored)
+	h.writeRegistrarResponse(w, r, map[string]any{"data": stored})
 }
 
 func (h *Server) handleDeleteRelyingParty(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +174,7 @@ func (h *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.R
 	h.writeRegistrarResponse(w, r, map[string]any{"data": rp})
 }
 
-// handleRegistrarWRPService narrows a record to one service (TS05 v1.5 §3.2.3).
+// handleRegistrarWRPService narrows a record to one service (TS05 v1.5 §3.2.2).
 func (h *Server) handleRegistrarWRPService(w http.ResponseWriter, r *http.Request) {
 	rp, ok := h.registrarRecord(r.PathValue("identifier"))
 	if ok {
@@ -189,16 +190,21 @@ func (h *Server) handleRegistrarWRPService(w http.ResponseWriter, r *http.Reques
 }
 
 // handleCheckIntendedUse answers whether a relying party registered an intended
-// use for a credential and claim (TS05 v1.5 §3.2.4).
+// use for a credential and claim (TS05 v1.5 §3.2.2). Every parameter is
+// optional. Without identifier it searches all registrations.
 func (h *Server) handleCheckIntendedUse(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	rp, ok := h.registrarRecord(q.Get("identifier"))
-	registered := false
-	details := "the relying party is not registered"
-	if ok {
-		registered, details = checkIntendedUse(rp, q)
+	parties := h.Registrar().RegisteredRelyingParties()
+	if identifier := strings.TrimSpace(q.Get("identifier")); identifier != "" {
+		rp, ok := h.registrarRecord(identifier)
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "relying party not registered"})
+			return
+		}
+		parties = []WalletRelyingParty{rp}
 	}
-	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{"isRegistered": registered, "details": details}})
+	registered := slices.ContainsFunc(parties, func(rp WalletRelyingParty) bool { return registersIntendedUse(rp, q) })
+	h.writeRegistrarResponse(w, r, map[string]any{"data": map[string]any{"isRegistered": registered}})
 }
 
 func (h *Server) registrarRecord(identifier string) (WalletRelyingParty, bool) {
@@ -275,24 +281,6 @@ func (h *Server) handleRegistrationStatusList(w http.ResponseWriter, r *http.Req
 	}
 	w.Header().Set("Content-Type", statuslist.MediaTypeJWT)
 	_, _ = w.Write([]byte(token))
-}
-
-// registrarPlaceholderPages serve the default URLs the registrar assigns when
-// a registration or a catalogue entry names none. That way the links in
-// registration certificates, in the consent dialog and in the catalogue work.
-var registrarPlaceholderPages = map[string]string{
-	"/privacy-policy":        "This page stands in for the privacy policy of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
-	"/support":               "This page stands in for the support page of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
-	"/supervisory-authority": "This page stands in for the supervisory authority contact of a relying party registered with the eudi-dev test  A relying party that registers its own URL links that one instead.",
-	"/rulebook":              "This page stands in for the rulebook of an attestation in the eudi-dev test catalogue. An attestation added with its own rulebook URL links that one instead.",
-}
-
-func placeholderPage(text string) http.HandlerFunc {
-	body := "<!doctype html><meta charset=\"utf-8\"><title>Test registrar placeholder</title><p>" + text + "</p>"
-	return func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(body))
-	}
 }
 
 func writeRegistrarError(w http.ResponseWriter, err error) {

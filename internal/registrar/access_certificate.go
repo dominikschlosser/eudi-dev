@@ -100,10 +100,8 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 		validity = parsed
 	}
 	var uris []*url.URL
-	for _, raw := range service.SupportURI {
-		if u, err := url.Parse(raw); err == nil && u.Scheme != "" {
-			uris = append(uris, u)
-		}
+	if u, err := url.Parse(service.SupportURI); err == nil && u.Scheme != "" {
+		uris = append(uris, u)
 	}
 
 	caKey, ca, err := r.env.RelyingPartyAccessCA()

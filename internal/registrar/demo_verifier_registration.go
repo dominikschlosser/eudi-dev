@@ -50,7 +50,7 @@ func (r *Registrar) demoVerifierService(base string) WalletRelyingPartyService {
 	}
 	return WalletRelyingPartyService{
 		ServiceTradeName: demoVerifierName,
-		SupportURI:       []string{base + "/support"},
+		SupportURI:       base + "/support",
 		SrvDescription:   []MultiLangString{{Lang: "en", Content: "Demo verifier of the eudi-dev test wallet"}},
 		Entitlements:     []string{ServiceProviderEntitlement},
 		IntendedUses: []IntendedUse{{

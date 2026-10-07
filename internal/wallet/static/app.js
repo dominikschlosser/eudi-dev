@@ -3231,17 +3231,62 @@
     return roles;
   }
 
-  function registeredCredentialSummary(credential) {
+  // A provided attestation names its type, and a registered credential names it
+  // in its DCQL meta.
+  function registeredCredentialType(credential) {
     const meta = credential.meta || {};
-    const type = meta.doctype_value || (meta.vct_values || [])[0] || credential.format;
+    return credential.type || meta.doctype_value || (meta.vct_values || [])[0] || credential.format;
+  }
+
+  function registeredClaims(credential) {
+    const type = registeredCredentialType(credential);
     // Show mdoc claims the way the dialog takes them: element, or
     // namespace:element.
-    const claims = (credential.claims || []).map(c => {
+    return (credential.claims || []).map(c => {
       const path = c.path || [];
       if (credential.format !== 'mso_mdoc' || path.length !== 2) return path.join('.');
       return path[0] === type ? path[1] : path[0] + ':' + path[1];
     });
+  }
+
+  function registeredCredentialSummary(credential) {
+    const type = registeredCredentialType(credential);
+    const claims = registeredClaims(credential);
     return claims.length > 0 ? type + ': ' + claims.join(', ') : type;
+  }
+
+  // A registered credential is one line: its type, its format and how many
+  // claims it registers. The claims open on click, so a verifier that
+  // registers many credentials stays short.
+  function registeredCredentialItem(credential, id) {
+    const type = registeredCredentialType(credential);
+    const claims = registeredClaims(credential).join(', ');
+    const count = (credential.claims || []).length;
+    const head = '<span class="registrar-credential-type">' + escHtml(type) + '</span>' +
+      '<span class="registrar-credential-meta">' + escHtml(credential.format || '') +
+      (count > 0 ? ' · ' + count + (count === 1 ? ' claim' : ' claims') : '') + '</span>';
+    if (count === 0) return '<li id="' + id + '">' + head + '</li>';
+    return '<li id="' + id + '"><details><summary>' + head + '</summary>' +
+      '<div class="registrar-credential-claims" id="' + id + '-claims">' + escHtml(claims) + '</div></details></li>';
+  }
+
+  // A list of more than four credentials shows three and a button for the rest.
+  function registeredCredentialList(credentials, listID, itemID) {
+    const items = credentials.map((c, i) => registeredCredentialItem(c, itemID + '-' + i));
+    const collapsed = items.length > 4;
+    return '<ul class="registrar-use-credentials" id="' + listID + '">' +
+      items.map((item, i) => collapsed && i >= 3 ? item.replace('<li ', '<li hidden ') : item).join('') +
+      (collapsed ? '<li><button type="button" class="link-btn registrar-credentials-more" id="' + listID + '-more">Show ' + (items.length - 3) + ' more</button></li>' : '') +
+      '</ul>';
+  }
+
+  function wireCredentialList(container) {
+    container.querySelectorAll('.registrar-credentials-more').forEach(button => {
+      button.addEventListener('click', () => {
+        button.closest('ul').querySelectorAll('li[hidden]').forEach(li => { li.hidden = false; });
+        button.parentElement.remove();
+      });
+    });
   }
 
   const registrarPartiesOverlay = document.getElementById('registrar-parties-overlay');
@@ -3476,9 +3521,7 @@
             '<div class="cred-pills registrar-pills" id="' + usePrefix + '-pills">' +
               '<span class="status-badge ' + badgeClass + '" id="' + usePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>' +
             '</div>' +
-            '<ul class="registrar-use-credentials" id="' + usePrefix + '-credentials">' +
-              (use.credentials || []).map((c, i) => '<li id="' + usePrefix + '-credential-' + i + '">' + escHtml(registeredCredentialSummary(c)) + '</li>').join('') +
-            '</ul>' +
+            registeredCredentialList(use.credentials || [], usePrefix + '-credentials', usePrefix + '-credential') +
             (verifierInfo === undefined ? '' :
               '<div class="registrar-use-result" id="' + usePrefix + '-result">' +
                 '<div class="registrar-result-head" id="' + usePrefix + '-result-head">' +
@@ -3528,6 +3571,7 @@
             Object.keys(registrarVerifierInfo).filter(key => key.startsWith(prefix + '-use-') || key.startsWith(prefix + '-service-')).forEach(key => delete registrarVerifierInfo[key]);
           }));
       }
+      wireCredentialList(card);
       registrarPartyList.appendChild(card);
     });
     const empty = document.getElementById('registrar-party-empty');
@@ -3832,7 +3876,7 @@
       const format = row.querySelector('select').value;
       const type = row.querySelector('[data-field="type"]').value.trim();
       if (!type) return;
-      attestations.push({ format: format, meta: format === 'mso_mdoc' ? { doctype_value: type } : { vct_values: [type] } });
+      attestations.push({ format: format, type: type });
     });
     return attestations;
   }
@@ -3878,6 +3922,10 @@
       showRegistrarError('The relying party needs a name.', document.getElementById('registrar-name'));
       return;
     }
+    if (!registrarValue('registrar-purpose')) {
+      showRegistrarError('The intended use needs a purpose.', document.getElementById('registrar-purpose'));
+      return;
+    }
     const credentials = registrarCredentialList();
     if (credentials.length === 0) {
       showRegistrarError('Add at least one credential.', firstCredentialTypeField());
@@ -3895,7 +3943,7 @@
       services: [{
         serviceTradeName: registrarValue('registrar-name'),
         serviceIdentifier: serviceIdentifier,
-        supportURI: supportURI ? [supportURI] : [],
+        supportURI: supportURI,
         intendedUses: [{
           purpose: registrarValue('registrar-purpose') ? [{ lang: 'en', content: registrarValue('registrar-purpose') }] : [],
           privacyPolicy: privacyPolicy ? [{ policyURI: privacyPolicy }] : [],
@@ -3974,7 +4022,7 @@
       services: [{
         serviceTradeName: registrarValue('registrar-name'),
         serviceIdentifier: serviceIdentifier,
-        supportURI: supportURI ? [supportURI] : [],
+        supportURI: supportURI,
         entitlements: [document.getElementById('registrar-entitlement').value],
         providesAttestations: attestations,
       }],
@@ -4039,6 +4087,10 @@
   // restored.
   async function addIntendedUse(submit) {
     const use = intendedUseFromForm();
+    if (use.purpose.length === 0) {
+      showRegistrarError('The intended use needs a purpose.', document.getElementById('registrar-purpose'));
+      return;
+    }
     if (use.credentials.length === 0) {
       showRegistrarError('Add at least one credential.', firstCredentialTypeField());
       return;
@@ -4052,7 +4104,7 @@
     submit.disabled = true;
     let saved = null;
     try {
-      saved = await registrarRequest('PUT', 'api/registrar/wrp', updated);
+      saved = (await registrarRequest('PUT', 'api/registrar/wrp', updated)).data;
       const service = saved.services[0];
       const added = (service.intendedUses || []).find(u => !known.has(u.intendedUseIdentifier));
       const registration = await registrarRequest('POST', 'api/registrar/registration-certificates', {

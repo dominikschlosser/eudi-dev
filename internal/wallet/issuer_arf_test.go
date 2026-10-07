@@ -85,7 +85,7 @@ func TestARFChecksHowAnIssuerAuthenticates(t *testing.T) {
 	eaa := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	eaaKey, eaaChain := issueTestAccessCertificate(t, w, eaa.Identifier[0].Identifier)
 	eaaInfo := issueTestIssuerInfo(t, w, eaa).IssuerInfo
-	pidProvider := registerTestIssuer(t, w, registrar.PIDProviderEntitlement, registrar.ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}})
+	pidProvider := registerTestIssuer(t, w, registrar.PIDProviderEntitlement, registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: mock.DefaultPIDVCT})
 	pidInfo := issueTestIssuerInfo(t, w, pidProvider).IssuerInfo
 
 	for _, tc := range []struct {
@@ -238,8 +238,8 @@ func TestARFChecksOfferedTypesStrictly(t *testing.T) {
 func TestARFChecksEachKindInAMixedOffer(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestIssuer(t, w, registrar.PIDProviderEntitlement,
-		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}},
-		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{testDiplomaVCT}}})
+		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: mock.DefaultPIDVCT},
+		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: testDiplomaVCT})
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
 	metadata, signer := signedTestIssuerMetadata(t, key, chain, "dc+sd-jwt", mock.DefaultPIDVCT, issueTestIssuerInfo(t, w, rp).IssuerInfo)
 	supported := metadata["credential_configurations_supported"].(map[string]any)

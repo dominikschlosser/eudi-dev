@@ -26,6 +26,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -95,7 +96,7 @@ type LegalPerson struct {
 type WalletRelyingPartyService struct {
 	ServiceTradeName     string                `json:"serviceTradeName"`
 	ServiceIdentifier    string                `json:"serviceIdentifier,omitempty"`
-	SupportURI           []string              `json:"supportURI,omitempty"`
+	SupportURI           string                `json:"supportURI,omitempty"`
 	SrvDescription       []MultiLangString     `json:"srvDescription,omitempty"`
 	Entitlements         []string              `json:"entitlements"`
 	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations,omitempty"`
@@ -114,8 +115,30 @@ type IntendedUse struct {
 
 type Policy struct {
 	PolicyURI string `json:"policyURI"`
-	Type      string `json:"type,omitempty"`
+	Type      string `json:"type"`
 }
+
+// privacyPolicyType is the policy type of a privacy policy (ETSI TS 119 475
+// V1.2.1 Annex B.2.8).
+const privacyPolicyType = "http://data.europa.eu/eudi/policy/privacy-policy"
+
+// normalizeSupervisoryAuthority fills in a test authority with a contact when
+// the registration names none. TS05 v1.5 §2.4.7 makes name and country
+// mandatory and expects at least one contact.
+func normalizeSupervisoryAuthority(a *SupervisoryAuthority, country, base string) error {
+	if len(a.Email) == 0 && len(a.Phone) == 0 && len(a.FormURI) == 0 {
+		a.Email = []string{testSupervisoryAuthorityEmail}
+		a.FormURI = []string{base + "/supervisory-authority"}
+	}
+	a.Name = firstNonEmpty(a.Name, "Test Supervisory Authority")
+	a.Country = strings.ToUpper(firstNonEmpty(a.Country, country))
+	if !countryCodePattern.MatchString(a.Country) {
+		return fmt.Errorf("supervisory authority country %q is not a two-letter country code", a.Country)
+	}
+	return nil
+}
+
+const testSupervisoryAuthorityEmail = "dpa@eudi-test.dev"
 
 // RegisteredCredential has the DCQL shape: meta holds vct_values or
 // doctype_value.
@@ -301,8 +324,8 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 	if len(rp.LegalPerson.LegalName) == 0 || strings.TrimSpace(rp.LegalPerson.LegalName[0]) == "" {
 		rp.LegalPerson.LegalName = []string{rp.TradeName}
 	}
-	if rp.SupervisoryAuthority.Name == "" {
-		rp.SupervisoryAuthority = SupervisoryAuthority{Name: "Test Supervisory Authority", Country: rp.Country, Email: []string{"dpa@eudi-test.dev"}}
+	if err := normalizeSupervisoryAuthority(&rp.SupervisoryAuthority, rp.Country, base); err != nil {
+		return err
 	}
 	rp.RegistryURI = base + "/api/registrar/wrp/" + identifier
 	if len(rp.Services) == 0 {
@@ -319,9 +342,7 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 		}
 		services[service.ServiceIdentifier] = true
 		service.ServiceTradeName = firstNonEmpty(service.ServiceTradeName, rp.TradeName)
-		if len(service.SupportURI) == 0 {
-			service.SupportURI = []string{base + "/support"}
-		}
+		service.SupportURI = firstNonEmpty(service.SupportURI, base+"/support")
 		if len(service.SrvDescription) == 0 {
 			service.SrvDescription = []MultiLangString{{Lang: "en", Content: service.ServiceTradeName}}
 		}
@@ -388,6 +409,11 @@ func checkRegistrationSize(rp WalletRelyingParty) error {
 }
 
 func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingParty) error {
+	// TS05 v1.5 §2.4.4 and ETSI TS 119 475 V1.2.1 Annex B.2.7 make purpose
+	// [1..*].
+	if !slices.ContainsFunc(use.Purpose, func(p MultiLangString) bool { return strings.TrimSpace(p.Content) != "" }) {
+		return fmt.Errorf("an intended use needs a purpose")
+	}
 	if len(use.Credentials) == 0 {
 		return fmt.Errorf("an intended use needs at least one credential")
 	}
@@ -417,6 +443,9 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 	if len(use.PrivacyPolicy) == 0 {
 		use.PrivacyPolicy = []Policy{{PolicyURI: base + "/privacy-policy"}}
 	}
+	for i := range use.PrivacyPolicy {
+		use.PrivacyPolicy[i].Type = firstNonEmpty(use.PrivacyPolicy[i].Type, privacyPolicyType)
+	}
 	return nil
 }
 
@@ -439,12 +468,14 @@ func normalizeEntitlements(service *WalletRelyingPartyService) error {
 	case !slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(registeredEntitlements, e) }):
 		return fmt.Errorf("service %q needs an entitlement from ETSI TS 119 475 Annex A.2, such as %s", service.ServiceTradeName, ServiceProviderEntitlement)
 	}
-	for _, attestation := range service.ProvidesAttestations {
+	for i := range service.ProvidesAttestations {
+		attestation := &service.ProvidesAttestations[i]
+		attestation.Type = strings.TrimSpace(attestation.Type)
 		if attestation.Format != "dc+sd-jwt" && attestation.Format != "mso_mdoc" {
 			return fmt.Errorf("attestation format %q is not dc+sd-jwt or mso_mdoc", attestation.Format)
 		}
-		if len(CredentialTypes(attestation.Meta)) == 0 {
-			return fmt.Errorf("a %s attestation needs its type in meta (vct_values or doctype_value)", attestation.Format)
+		if attestation.Type == "" {
+			return fmt.Errorf("a %s attestation needs its type (vct or doctype)", attestation.Format)
 		}
 	}
 	if len(service.IntendedUses) > 0 && !slices.Contains(service.Entitlements, ServiceProviderEntitlement) {
@@ -551,7 +582,7 @@ func (r *Registrar) providerRelyingParty(base string) WalletRelyingParty {
 		RegistryURI:          dataset.RegistryURI,
 		Services: []WalletRelyingPartyService{{
 			ServiceTradeName:     dataset.TradeName,
-			SupportURI:           dataset.SupportURI,
+			SupportURI:           firstNonEmpty(dataset.SupportURI...),
 			SrvDescription:       dataset.SrvDescription,
 			Entitlements:         dataset.Entitlements,
 			ProvidesAttestations: dataset.ProvidesAttestations,
@@ -589,41 +620,56 @@ func matchesWRPQuery(rp WalletRelyingParty, q url.Values) bool {
 		}) &&
 		has("providedattestation", func(v string) bool {
 			return anyService(func(s WalletRelyingPartyService) bool {
-				return slices.ContainsFunc(s.ProvidesAttestations, func(a ProvidedAttestation) bool { return slices.Contains(CredentialTypes(a.Meta), v) })
+				return slices.ContainsFunc(s.ProvidesAttestations, func(a ProvidedAttestation) bool { return a.Type == v })
 			})
 		}) &&
 		has("intendeduseidentifier", func(v string) bool { return anyUse(func(u IntendedUse) bool { return u.IntendedUseIdentifier == v }) }) &&
 		has("credentialformat", func(v string) bool { return anyCredential(func(c RegisteredCredential) bool { return c.Format == v }) }) &&
 		has("credentialmeta", func(v string) bool {
 			return anyCredential(func(c RegisteredCredential) bool { return slices.Contains(CredentialTypes(c.Meta), v) })
-		})
+		}) &&
+		has("claimpath", func(v string) bool {
+			return anyCredential(func(c RegisteredCredential) bool {
+				return slices.ContainsFunc(c.Claims, func(claim RegisteredClaim) bool { return pathString(claim.Path) == v })
+			})
+		}) &&
+		has("policy", func(v string) bool {
+			return anyUse(func(u IntendedUse) bool {
+				return slices.ContainsFunc(u.PrivacyPolicy, func(p Policy) bool { return p.PolicyURI == v })
+			})
+		}) &&
+		has("isintermediary", func(v string) bool {
+			want, err := strconv.ParseBool(v)
+			return err == nil && anyService(func(s WalletRelyingPartyService) bool { return s.IsIntermediary == want })
+		}) &&
+		// This registrar records no intermediaries a service relies on, so a
+		// usesintermediary filter matches nothing.
+		has("usesintermediary", func(string) bool { return false })
 }
 
-// checkIntendedUse answers whether the relying party registered an intended
-// use, and with credentialmeta and claimpath, whether that use covers the
-// credential type and claim (TS05 v1.5 §3.2.4). claimpath separates path
-// components with dots.
-func checkIntendedUse(rp WalletRelyingParty, q url.Values) (bool, string) {
-	useID := strings.TrimSpace(q.Get("intendeduseidentifier"))
-	_, use, ok := findIntendedUse(rp, strings.TrimSpace(q.Get("serviceidentifier")), useID)
-	if !ok {
-		return false, "no intended use " + useID
+// registersIntendedUse reports whether one intended use of the relying party
+// matches every given check-intended-use parameter (TS05 v1.5 §3.2.2).
+// claimpath separates path components with dots.
+func registersIntendedUse(rp WalletRelyingParty, q url.Values) bool {
+	param := func(name string) string { return strings.TrimSpace(q.Get(name)) }
+	service, useID, format, meta, claimPath, policy := param("serviceidentifier"), param("intendeduseidentifier"), param("credentialformat"), param("credentialmeta"), param("claimpath"), param("policyurl")
+	credentialMatches := func(c RegisteredCredential) bool {
+		return (format == "" || c.Format == format) && (meta == "" || slices.Contains(CredentialTypes(c.Meta), meta)) &&
+			(claimPath == "" || slices.ContainsFunc(c.Claims, func(claim RegisteredClaim) bool { return pathString(claim.Path) == claimPath }))
 	}
-	format, meta, claimPath := strings.TrimSpace(q.Get("credentialformat")), strings.TrimSpace(q.Get("credentialmeta")), strings.TrimSpace(q.Get("claimpath"))
-	for _, credential := range use.Credentials {
-		if (format != "" && credential.Format != format) || (meta != "" && !slices.Contains(CredentialTypes(credential.Meta), meta)) {
+	for _, s := range rp.Services {
+		if service != "" && s.ServiceIdentifier != service {
 			continue
 		}
-		if claimPath == "" {
-			return true, "registered"
-		}
-		for _, claim := range credential.Claims {
-			if pathString(claim.Path) == claimPath {
-				return true, "registered"
+		for _, use := range s.IntendedUses {
+			if (useID == "" || use.IntendedUseIdentifier == useID) &&
+				(policy == "" || slices.ContainsFunc(use.PrivacyPolicy, func(p Policy) bool { return p.PolicyURI == policy })) &&
+				slices.ContainsFunc(use.Credentials, credentialMatches) {
+				return true
 			}
 		}
 	}
-	return false, "the intended use does not register this credential or claim"
+	return false
 }
 
 func pathString(path []any) string {

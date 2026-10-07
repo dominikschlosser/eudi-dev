@@ -26,6 +26,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
@@ -51,16 +53,18 @@ type RegistrationCertificateContent struct {
 	// Identifier is the registered legal entity identifier (sub, ARF RPRC_07).
 	// TS 119 475 §5.1.1 links it to the organizationIdentifier of the access
 	// certificate.
-	Identifier                string
-	LegalName                 string
-	Country                   string
-	Description               []MultiLangString
-	Entitlements              []string
-	RegistryURI               string
-	PrivacyPolicy             string
-	SupportURI                string
-	SupervisoryAuthorityEmail string
-	SupervisoryAuthorityURI   string
+	Identifier           string
+	LegalName            string
+	Country              string
+	Description          []MultiLangString
+	Entitlements         []string
+	RegistryURI          string
+	PrivacyPolicy        string
+	SupportURI           string
+	SupervisoryAuthority SupervisoryAuthority
+	// IntendedUseIdentifier is the registered intended use (ETSI TS 119 475
+	// V1.2.1 Table 9).
+	IntendedUseIdentifier string
 	// ProvidesAttestations are the attestation types a provider issues (ETSI TS
 	// 119 475 V1.2.1 Table 8).
 	ProvidesAttestations []ProvidedAttestation
@@ -204,7 +208,7 @@ func RegistrarDatasetFor(rp WalletRelyingParty, service WalletRelyingPartyServic
 	return RegistrarDataset{
 		Identifier:           rp.Identifier,
 		TradeName:            service.ServiceTradeName,
-		SupportURI:           service.SupportURI,
+		SupportURI:           []string{service.SupportURI},
 		SrvDescription:       service.SrvDescription,
 		IsPSB:                rp.IsPSB,
 		Entitlements:         service.Entitlements,
@@ -232,19 +236,32 @@ func IssuerInfoValue(dataset RegistrarDataset, registrationCertificate string) (
 // apart from the credentials.
 func registrationContent(rp WalletRelyingParty, service WalletRelyingPartyService, use IntendedUse) RegistrationCertificateContent {
 	return RegistrationCertificateContent{
-		Name:                      service.ServiceTradeName,
-		Purpose:                   use.Purpose,
-		Identifier:                rp.Identifier[0].Identifier,
-		LegalName:                 rp.LegalPerson.LegalName[0],
-		Country:                   rp.Country,
-		Description:               service.SrvDescription,
-		Entitlements:              service.Entitlements,
-		RegistryURI:               rp.RegistryURI,
-		PrivacyPolicy:             privacyPolicyURI(use),
-		SupportURI:                firstNonEmpty(service.SupportURI...),
-		SupervisoryAuthorityEmail: firstNonEmpty(rp.SupervisoryAuthority.Email...),
-		SupervisoryAuthorityURI:   firstNonEmpty(rp.SupervisoryAuthority.FormURI...),
+		Name:                  service.ServiceTradeName,
+		Purpose:               use.Purpose,
+		Identifier:            rp.Identifier[0].Identifier,
+		LegalName:             rp.LegalPerson.LegalName[0],
+		Country:               rp.Country,
+		Description:           service.SrvDescription,
+		Entitlements:          service.Entitlements,
+		RegistryURI:           rp.RegistryURI,
+		PrivacyPolicy:         privacyPolicyURI(use),
+		SupportURI:            service.SupportURI,
+		SupervisoryAuthority:  rp.SupervisoryAuthority,
+		IntendedUseIdentifier: use.IntendedUseIdentifier,
 	}
+}
+
+// supervisoryAuthorityClaim carries the authority's contacts in the subfields
+// of ETSI TS 119 475 V1.2.1 Table 7, and its name and country, which ARF
+// RPRC_12 requires as well.
+func supervisoryAuthorityClaim(a SupervisoryAuthority) map[string]any {
+	claim := map[string]any{"name": a.Name, "country": a.Country}
+	for field, values := range map[string][]string{"email": a.Email, "phone": a.Phone, "uri": a.FormURI} {
+		if len(values) > 0 {
+			claim[field] = values[0]
+		}
+	}
+	return claim
 }
 
 func privacyPolicyURI(use IntendedUse) string {
@@ -301,19 +318,19 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 		return nil, err
 	}
 	claims := map[string]any{
-		"sub":             identifier,
-		"sub_ln":          firstNonEmpty(legalName, name),
-		"name":            name,
-		"country":         firstNonEmpty(country, "EU"),
-		"registry_uri":    firstNonEmpty(req.RegistryURI, base+"/api/registrar/wrp"),
-		"srv_description": multiLangClaim(req.Description, name),
-		"entitlements":    entitlementsOrDefault(req.Entitlements),
-		"privacy_policy":  firstNonEmpty(req.PrivacyPolicy, base+"/privacy-policy"),
-		"support_uri":     firstNonEmpty(req.SupportURI, base+"/support"),
-		"supervisory_authority": map[string]any{
-			"email": firstNonEmpty(req.SupervisoryAuthorityEmail, "dpa@eudi-test.dev"),
-			"uri":   firstNonEmpty(req.SupervisoryAuthorityURI, base+"/supervisory-authority"),
-		},
+		"sub":                   identifier,
+		"sub_ln":                firstNonEmpty(legalName, name),
+		"name":                  name,
+		"country":               firstNonEmpty(country, "EU"),
+		"registry_uri":          firstNonEmpty(req.RegistryURI, base+"/api/registrar/wrp"),
+		"srv_description":       multiLangClaim(req.Description, name),
+		"entitlements":          entitlementsOrDefault(req.Entitlements),
+		"privacy_policy":        firstNonEmpty(req.PrivacyPolicy, base+"/privacy-policy"),
+		"support_uri":           firstNonEmpty(req.SupportURI, base+"/support"),
+		"supervisory_authority": supervisoryAuthorityClaim(req.SupervisoryAuthority),
+		// ETSI TS 119 475 V1.2.1 GEN-6.2.6.1-03 asks for a unique identifier
+		// of the certificate, which a JWT carries as jti (RFC 7519 §4.1.7).
+		"jti": uuid.NewString(),
 		"iat": now.Unix(),
 		"exp": now.Add(validity).Unix(),
 		// ETSI TS 119 475 V1.2.1 Table 7 lists the policy (OVR-6.1.3-01) and
@@ -328,7 +345,14 @@ func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateCo
 		delete(claims, "privacy_policy")
 	}
 	if len(req.ProvidesAttestations) > 0 {
-		claims["provides_attestations"] = req.ProvidesAttestations
+		provided := make([]map[string]any, 0, len(req.ProvidesAttestations))
+		for _, a := range req.ProvidesAttestations {
+			provided = append(provided, a.certificateClaim())
+		}
+		claims["provides_attestations"] = provided
+	}
+	if req.IntendedUseIdentifier != "" {
+		claims["intended_use_id"] = req.IntendedUseIdentifier
 	}
 	if purpose := multiLangClaim(req.Purpose, ""); len(purpose) > 0 {
 		claims["purpose"] = purpose
@@ -435,6 +459,9 @@ func SignRegistrationCertificateJWT(claims map[string]any, signingKey *ecdsa.Pri
 	}
 	// TS 119 475 V1.2.1 §5.2.1 requires JAdES B-B. TS 119 182-1 V1.2.1 §5.1.11 requires iat after July 2025.
 	header["iat"] = time.Now().Unix()
+	if iat, ok := claims["iat"]; ok {
+		header["iat"] = iat
+	}
 	return jws.Sign(header, claims, signingKey)
 }
 
