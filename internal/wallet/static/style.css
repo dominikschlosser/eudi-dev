@@ -778,6 +778,16 @@ header h1 {
   align-items: center;
 }
 
+.catalog-fields {
+  grid-column: 1 / -1;
+  padding: 8px 0 4px 12px;
+  border-left: 2px solid var(--border, #ddd);
+}
+
+.catalog-fields[hidden] {
+  display: none;
+}
+
 .form-label {
   font-size: 11px;
   color: var(--text-dim);

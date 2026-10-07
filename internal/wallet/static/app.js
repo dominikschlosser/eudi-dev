@@ -973,6 +973,59 @@
     updateAlwaysDisclosedVisibility();
   }
 
+  // catalogSchema reads the TS11 SchemaMeta fields of a form whose inputs are
+  // named <prefix>-catalog-rulebook, -los, -binding and -trust.
+  function catalogSchema(prefix) {
+    const field = (name) => document.getElementById(prefix + '-catalog-' + name);
+    const trust = field('trust').value.trim();
+    return {
+      rulebookURI: field('rulebook').value.trim(),
+      attestationLoS: field('los').value,
+      bindingType: field('binding').value,
+      trustedAuthorities: trust ? [{ frameworkType: 'etsi_tl', value: trust, isLOTE: true }] : [],
+    };
+  }
+
+  // catalogFields drives the "Add the template to the attestation catalogue"
+  // checkbox and its fields in a form. entry() returns the catalogue fields
+  // for the save request, or null when the box is unchecked.
+  function catalogFields(prefix) {
+    const box = document.getElementById(prefix + '-catalog');
+    const fields = document.getElementById(prefix + '-catalog-fields');
+    const field = (name) => document.getElementById(prefix + '-catalog-' + name);
+    box.addEventListener('change', () => { fields.hidden = !box.checked; });
+    return {
+      reset() {
+        box.checked = false;
+        fields.hidden = true;
+        field('name').value = '';
+        field('rulebook').value = '';
+        field('los').value = 'iso_18045_basic';
+        field('binding').value = 'key';
+        field('trust').value = '';
+      },
+      // validate returns the first problem the browser can see. The server
+      // checks the rest and refuses the whole save.
+      validate(defaultName) {
+        if (!box.checked) return '';
+        if (!field('name').value.trim() && !defaultName) return 'The catalogue needs a name for the attestation';
+        for (const name of ['rulebook', 'trust']) {
+          const value = field(name).value.trim();
+          if (value && !/^https?:\/\/\S+$/i.test(value)) {
+            return (name === 'rulebook' ? 'The rulebook' : 'The trusted list') + ' must be an http or https URL';
+          }
+        }
+        return '';
+      },
+      entry(defaultName) {
+        if (!box.checked) return null;
+        return { name: field('name').value.trim() || defaultName, schema: catalogSchema(prefix) };
+      },
+    };
+  }
+  const issueCatalog = catalogFields('issue');
+  const templateCatalog = catalogFields('template');
+
   // Reset other fields when the format changes because their values may not apply.
   function resetIssueFields() {
     document.getElementById('issue-vct').value = '';
@@ -982,6 +1035,7 @@
     document.getElementById('issue-batch').value = '';
     document.getElementById('issue-binding').value = 'bound';
     document.getElementById('issue-save-template').value = '';
+    issueCatalog.reset();
     document.getElementById('issue-status-list').value = 'auto';
     document.getElementById('issue-status-list-uri').value = '';
     document.getElementById('issue-status-list-uri').hidden = true;
@@ -1125,6 +1179,17 @@
     }
     const saveTemplate = document.getElementById('issue-save-template').value.trim();
     if (saveTemplate) body.save_as_template = saveTemplate;
+    const catalogProblem = issueCatalog.validate(saveTemplate);
+    if (catalogProblem) {
+      issueError.textContent = catalogProblem;
+      return;
+    }
+    const catalog = issueCatalog.entry(saveTemplate);
+    if (catalog && !saveTemplate) {
+      issueError.textContent = 'Enter a template name to add the template to the catalogue';
+      return;
+    }
+    if (catalog) body.catalog = catalog;
     const signingKey = document.getElementById('issue-signing-key').value.trim();
     if (signingKey) body.signing_key = signingKey;
     const signingCert = document.getElementById('issue-signing-cert').value.trim();
@@ -1227,7 +1292,7 @@
       });
       row.appendChild(editBtn);
 
-      if (!tpl.predefined && !demoMode) {
+      if (!tpl.predefined) {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'btn btn-sm';
@@ -1257,6 +1322,7 @@
   document.getElementById('templates-btn').addEventListener('click', () => {
     templateName.value = '';
     templateJSON.value = '';
+    templateCatalog.reset();
     templateError.textContent = '';
     templatesOverlay.classList.add('active');
     renderTemplatesList();
@@ -1284,6 +1350,14 @@
       templateError.textContent = 'Template name is required';
       return;
     }
+    const defaultName = (doc.display && typeof doc.display.name === 'string' && doc.display.name.trim()) || name;
+    const catalogProblem = templateCatalog.validate(defaultName);
+    if (catalogProblem) {
+      templateError.textContent = catalogProblem;
+      return;
+    }
+    const catalog = templateCatalog.entry(defaultName);
+    if (catalog) doc.catalog = catalog;
     try {
       const resp = await fetch('api/templates/' + encodeURIComponent(name), {
         method: 'PUT',
@@ -1297,6 +1371,7 @@
       }
       templateName.value = '';
       templateJSON.value = '';
+      templateCatalog.reset();
       await renderTemplatesList();
     } catch (e) {
       templateError.textContent = 'Request failed: ' + e.message;
@@ -2727,10 +2802,6 @@
           ? 'state resets ' + schedule
           : 'state is shared and never reset automatically';
         note.hidden = false;
-        document.getElementById('issue-save-template').hidden = true;
-        document.querySelector('label[for="issue-save-template"]').hidden = true;
-        document.getElementById('template-form').hidden = true;
-        document.getElementById('templates-btn').hidden = true;
         // Demo mode accepts images from templates and issuer metadata, but rejects visitor
         // image fields.
         document.querySelectorAll('.issue-image-field').forEach((el) => { el.hidden = true; });
@@ -4073,19 +4144,13 @@
       });
       credentials.push({ format: format, type: type, claims: claims });
     });
-    const trust = document.getElementById('registrar-catalog-trust').value.trim();
     const save = document.getElementById('registrar-catalog-save');
     save.disabled = true;
     try {
       const added = await registrarRequest('POST', 'api/catalog/attestations', {
         name: document.getElementById('registrar-catalog-name').value.trim(),
         credentials: credentials,
-        schema: {
-          rulebookURI: document.getElementById('registrar-catalog-rulebook').value.trim(),
-          attestationLoS: document.getElementById('registrar-catalog-los').value,
-          bindingType: document.getElementById('registrar-catalog-binding').value,
-          trustedAuthorities: trust ? [{ frameworkType: 'etsi_tl', value: trust, isLOTE: true }] : [],
-        },
+        schema: catalogSchema('registrar'),
       });
       closeCatalogForm();
       await loadCatalogEntries();

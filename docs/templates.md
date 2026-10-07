@@ -206,6 +206,16 @@ The wallet server exposes the same template store:
 
 `POST /api/issue` accepts `template`, `always_disclosed`, and `save_as_template` fields. See the [wallet HTTP API](wallet/http-api.md#issuing-credentials).
 
+## Attestation catalogue
+
+The predefined templates are always in the [attestation catalogue](wallet/registrar.md#attestation-catalogue). User templates are added only on request. To add one, send a `catalog` object next to the template document in `PUT /api/templates/{name}`, or next to `save_as_template` in `POST /api/issue`:
+
+```json
+{"name": "Employee card", "schema": {"rulebookURI": "https://example.com/rulebook", "attestationLoS": "iso_18045_basic", "bindingType": "key", "trustedAuthorities": [{"frameworkType": "etsi_tl", "value": "https://example.com/trusted-list", "isLOTE": true}]}}
+```
+
+The entry gets the template's format, type and claims. An empty name becomes the template's display name or its name. Only an SD-JWT VC template with a `vct` or an mdoc template with a `doctype` can be added. The wallet checks the entry before it saves anything. If the entry is invalid or its name is taken, it saves neither the template nor the entry, and `POST /api/issue` doesn't issue the credential. Deleting the template keeps the entry. Delete the entry in the catalogue.
+
 ```bash
 # Import a template and issue from it
 curl -X PUT http://localhost:8085/api/templates/employee-card \
@@ -222,3 +232,7 @@ curl -X POST http://localhost:8085/api/issue \
 Choose a template in the issue dialog to fill in the form, then edit any values you need. Uncheck a claim's SD checkbox to make it always visible. In JSON mode, use the "Always visible" field. Dotted paths select nested claims. Enter a name in "Save as template" to save the form after successful issuance.
 
 The Templates button opens a manager for listing, editing, importing (paste the JSON), and deleting templates.
+
+Both dialogs have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, rulebook, level of security, holder binding and trusted list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
+
+On a public demo, visitors can save templates too. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images. Images of the bundled templates still work. A demo keeps at most 50 visitor templates, and a reset deletes them.

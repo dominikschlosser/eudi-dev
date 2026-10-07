@@ -151,7 +151,9 @@ The demo issuer signs its metadata with the wallet's access certificate and publ
 
 The registrar keeps a catalogue of attestation types, like the catalogue of attestations in EC TS11 v1.0 (§4.3 and §5). Each entry describes one attestation type: its formats with the schema of each, its rulebook, its level of security, how it is bound to its holder and the trusted list of its issuers.
 
-Every credential template is in the catalogue. Templates with the same display name share one entry, so the EUDI PID has its SD-JWT VC and its mdoc type in one entry. The rulebook is the last URL in the template's description. A PID has the level of security `iso_18045_high` and links the wallet's PID provider list. Other templates get the defaults below. A template entry changes with its template. To change or remove it, change or delete the template.
+Every predefined credential template is in the catalogue. Templates with the same display name share one entry, so the EUDI PID has its SD-JWT VC and its mdoc type in one entry. The rulebook is the last URL in the template's description. A PID has the level of security `iso_18045_high` and links the wallet's PID provider list. The demo ticket gets the defaults below. These entries can't be changed or deleted.
+
+To add a user template, tick "Add the template to the attestation catalogue" when you save it (see [templates](../templates.md#attestation-catalogue)). You can delete that entry like any type you added.
 
 You can add other attestation types and delete them again. An added type needs a unique name and at least one format with its `vct` or doctype. Without a rulebook URL it links a placeholder page at `<issuer URL>/rulebook`. The level of security defaults to `iso_18045_basic`, and the holder binding to `key`. Rulebooks and trusted lists are http or https URLs. A demo reset deletes the added types.
 
@@ -165,6 +167,19 @@ The wallet serves the schema behind each schema URI:
 - for `mso_mdoc`, the doctype with its namespaces and element identifiers. TS11 asks for the DocType format of ISO 23220-2 here, and eudi-dev has not checked this document against it.
 
 **Attestation catalogue** in the registrar menu lists the entries. **Add attestation** opens a dialog for a new type. When you register a verifier or an issuer, the type fields suggest the catalogue's types.
+
+What each field changes:
+
+| Field | Effect |
+|-------|--------|
+| Name | Shown in the catalogue and in the type suggestions |
+| Formats and types | Suggested when you register a verifier or an issuer. With `--arf` the wallet warns when an issuer offers a type without an entry. It also uses the type to find the trusted list for a received credential |
+| Claims | Listed in the served schema (template entries only) |
+| Trusted list (LoTE) | With `--arf` a received credential of this type must chain to a certificate on the list (ARF ISSU_07 to ISSU_10, see [issuing](issuing.md#arf-checks)). The wallet reads ETSI TS 119 602 lists of trusted entities only |
+| Rulebook | Published in the `SchemaMeta` only |
+| Level of security | Published in the `SchemaMeta` only |
+| Holder binding | Published in the `SchemaMeta` only. The wallet binds every credential to a key, whatever the entry says |
+| Version | Published in the `SchemaMeta` only |
 
 TS11 leaves adding entries to the Commission's registration process (§4.5), so `POST /api/catalog/attestations` is this catalogue's own method. The TS11 methods work on the `SchemaMeta` of an entry.
 

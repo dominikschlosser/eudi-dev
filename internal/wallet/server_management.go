@@ -126,24 +126,26 @@ func (s *Server) handleDeleteAllCredentials(w http.ResponseWriter, r *http.Reque
 // IssueAPIRequest is shared by HTTP and local CLI issuance so issue --wallet behaves
 // consistently.
 type IssueAPIRequest struct {
-	Format          string                `json:"format"`
-	Template        string                `json:"template"`
-	Claims          map[string]any        `json:"claims"`
-	PID             bool                  `json:"pid"`
-	Omit            []string              `json:"omit"`
-	AlwaysDisclosed []string              `json:"always_disclosed"`
-	SaveAsTemplate  string                `json:"save_as_template"`
-	VCT             string                `json:"vct"`
-	DocType         string                `json:"doctype"`
-	Namespace       string                `json:"namespace"`
-	Exp             string                `json:"exp"`
-	NBF             string                `json:"nbf"`
-	StatusListURI   *string               `json:"status_list_uri"`
-	StatusListIdx   *int                  `json:"status_list_idx"`
-	TrustProfile    string                `json:"trust_profile"`
-	Trust           IssuedAttestationSpec `json:"trust"`
-	Display         *IssueDisplay         `json:"display"`
-	Batch           int                   `json:"batch"`
+	Format          string         `json:"format"`
+	Template        string         `json:"template"`
+	Claims          map[string]any `json:"claims"`
+	PID             bool           `json:"pid"`
+	Omit            []string       `json:"omit"`
+	AlwaysDisclosed []string       `json:"always_disclosed"`
+	SaveAsTemplate  string         `json:"save_as_template"`
+	// Catalog adds the saved template to the attestation catalogue.
+	Catalog       *CatalogAttestation   `json:"catalog,omitempty"`
+	VCT           string                `json:"vct"`
+	DocType       string                `json:"doctype"`
+	Namespace     string                `json:"namespace"`
+	Exp           string                `json:"exp"`
+	NBF           string                `json:"nbf"`
+	StatusListURI *string               `json:"status_list_uri"`
+	StatusListIdx *int                  `json:"status_list_idx"`
+	TrustProfile  string                `json:"trust_profile"`
+	Trust         IssuedAttestationSpec `json:"trust"`
+	Display       *IssueDisplay         `json:"display"`
+	Batch         int                   `json:"batch"`
 	// Identifies the template containing display images that could not be included in
 	// the form fields.
 	DisplayTemplate string `json:"display_template"`
@@ -164,6 +166,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		Omit:            req.Omit,
 		AlwaysDisclosed: req.AlwaysDisclosed,
 		SaveTemplate:    req.SaveAsTemplate,
+		Catalog:         req.Catalog,
 		VCT:             req.VCT,
 		DocType:         req.DocType,
 		Namespace:       req.Namespace,
@@ -227,11 +230,15 @@ func (s *Server) handleIssueCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.demo != nil && strings.TrimSpace(req.SaveAsTemplate) != "" {
-		// Template writes are disabled in demo mode. Without this check the
-		// issue endpoint would bypass the blocked PUT /api/templates route.
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "saving templates is disabled in public demo mode"})
-		return
+	if name := strings.TrimSpace(req.SaveAsTemplate); name != "" {
+		if !credtemplate.IsBareName(name) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid template name %q", name)})
+			return
+		}
+		if err := s.checkDemoTemplate(credtemplate.Template{Name: name}); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	if name := req.DisplayTemplate; name != "" && !credtemplate.IsBareName(name) {

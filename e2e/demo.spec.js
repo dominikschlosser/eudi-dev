@@ -1254,10 +1254,11 @@ test.describe("Conformance", () => {
 });
 
 test.describe("Demo mode hardening", () => {
-  test("template writes and process control stay disabled", async () => {
+  test("images, predefined templates and process control stay locked", async () => {
     const blocked = [
-      ["PUT", "/api/templates/e2e", { format: "sdjwt" }],
-      ["DELETE", "/api/templates/e2e", null],
+      ["PUT", "/api/templates/pid-sdjwt", { format: "sdjwt", claims: {} }],
+      ["DELETE", "/api/templates/pid-sdjwt", null],
+      ["PUT", "/api/templates/e2e-image", { format: "sdjwt", claims: {}, display: { logo: "data:image/png;base64,iVBORw0KGgo=" } }],
       ["POST", "/api/shutdown", null],
       ["POST", "/api/next-error", { error: "access_denied" }],
       ["PUT", "/api/config/preferred-format", { preferred_format: "dc+sd-jwt" }],
@@ -1278,7 +1279,7 @@ test.describe("Demo mode hardening", () => {
 
   test("the UI hides what demo mode does not offer", async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.locator("#templates-btn")).toBeHidden();
+    await expect(page.locator("#templates-btn")).toBeVisible();
     await expect(page.locator("#tls-cert-pem-link")).toBeHidden();
     await expect(page.locator("#clear-log-btn")).toBeHidden();
     await expect(page.locator("#decoder-link")).toBeVisible();
@@ -1288,6 +1289,28 @@ test.describe("Demo mode hardening", () => {
     await expect(page.locator("#issue-display-name")).toBeVisible();
     await expect(page.locator("#issue-logo")).toBeHidden();
     await expect(page.locator("#issue-bg-image")).toBeHidden();
+    await expect(page.locator("#issue-save-template")).toBeVisible();
+  });
+
+  test("a visitor saves a template and adds it to the catalogue", async ({ page }) => {
+    await page.goto(BASE);
+    await page.locator("#templates-btn").click();
+    await expect(page.locator("#template-delete-pid-sdjwt")).toHaveCount(0);
+    await page.locator("#template-name").fill("e2e-visitor-card");
+    await page.locator("#template-json").fill(JSON.stringify({ format: "sdjwt", vct: "urn:example:e2e-visitor:1", claims: { level: "gold" } }));
+    await page.locator("#template-catalog").check();
+    await page.locator("#template-catalog-name").fill("E2E visitor card");
+    await page.locator("#template-catalog-rulebook").fill("not a url");
+    await page.locator("#template-save").click();
+    await expect(page.locator("#template-error")).toContainText("http or https URL");
+    await page.locator("#template-catalog-rulebook").fill("");
+    await page.locator("#template-save").click();
+    await expect(page.locator("#template-row-e2e-visitor-card")).toBeVisible();
+    await expect(page.locator("#template-delete-e2e-visitor-card")).toBeVisible();
+    const entries = await (await fetch(BASE + "/api/catalog/attestations")).json();
+    expect(entries.map((e) => e.name)).toContain("E2E visitor card");
+    await page.locator("#template-delete-e2e-visitor-card").click();
+    await expect(page.locator("#template-row-e2e-visitor-card")).toHaveCount(0);
   });
 
   test("the decoder links back to the wallet it is mounted on", async ({ page }) => {

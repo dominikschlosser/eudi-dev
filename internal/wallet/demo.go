@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/publicpath"
 )
@@ -89,16 +90,26 @@ func ParseDailySchedule(value string) (*DailySchedule, error) {
 }
 
 type demoState struct {
-	opts      DemoOptions
-	mu        sync.Mutex
-	nextReset time.Time
-	stop      chan struct{}
-	stopOnce  sync.Once
+	opts DemoOptions
+	// fixedTemplates names the templates the demo started with. Visitors can't
+	// change them, and a reset keeps them.
+	fixedTemplates map[string]bool
+	mu             sync.Mutex
+	nextReset      time.Time
+	stop           chan struct{}
+	stopOnce       sync.Once
 }
 
 // SetDemo enables the public-demo profile. Call before ListenAndServe.
 func (s *Server) SetDemo(opts DemoOptions) {
-	s.demo = &demoState{opts: opts}
+	s.demo = &demoState{opts: opts, fixedTemplates: map[string]bool{}}
+	templates, err := credtemplate.List(s.wallet.Templates)
+	if err != nil {
+		templates = credtemplate.PredefinedTemplates()
+	}
+	for _, t := range templates {
+		s.demo.fixedTemplates[t.Name] = true
+	}
 }
 
 func (s *Server) DemoEnabled() bool {
@@ -140,14 +151,12 @@ func (s *Server) guardAPI(next http.Handler) http.Handler {
 }
 
 // demoBlockedRoute reports whether the endpoint is closed to anonymous demo
-// visitors. That covers process control, writes to the server's filesystem and
-// changes that affect all visitors.
+// visitors. That covers process control and changes to settings that affect
+// all visitors.
 func demoBlockedRoute(r *http.Request) bool {
 	p := r.URL.Path
 	switch {
 	case r.Method == http.MethodPost && p == "/api/shutdown":
-		return true
-	case (r.Method == http.MethodPut || r.Method == http.MethodDelete) && strings.HasPrefix(p, "/api/templates/"):
 		return true
 	case (r.Method == http.MethodPost || r.Method == http.MethodDelete) && p == "/api/next-error":
 		return true
@@ -252,6 +261,9 @@ func (s *Server) demoReset() error {
 		return err
 	}
 	s.wallet.ResetToBaseline()
+	if err := s.deleteVisitorTemplates(); err != nil {
+		return err
+	}
 	// Re-issue the signing leaf from the same CA. Leaves are valid for a year
 	// and the CA stays pinnable.
 	if err := s.wallet.RefreshSigningCertificate(); err != nil {
@@ -296,4 +308,67 @@ func (s *Server) demoConfig() map[string]any {
 	}
 	s.demo.mu.Unlock()
 	return cfg
+}
+
+const maxDemoTemplates = 50
+
+// checkDemoTemplate applies the demo limits to a template a visitor saves.
+// Visitors share the templates the demo started with, so they can't replace
+// them. A template image can only be the art of a built-in template, because
+// visitors can't upload images.
+func (s *Server) checkDemoTemplate(t credtemplate.Template) error {
+	if s.demo == nil {
+		return nil
+	}
+	name := strings.TrimSpace(t.Name)
+	if s.demo.fixedTemplates[name] {
+		return fmt.Errorf("%q is a predefined template, and the public demo can't change it. Save your version under another name", name)
+	}
+	if d := t.Display; d != nil {
+		for _, image := range []string{d.Logo, d.BackgroundImage} {
+			if image != "" && !strings.HasPrefix(image, "embedded:") {
+				return fmt.Errorf("the public demo doesn't accept template images. Remove the logo and background image or keep the ones of a predefined template")
+			}
+		}
+	}
+	templates, err := credtemplate.List(s.wallet.Templates)
+	if err != nil {
+		return err
+	}
+	var own int
+	for _, existing := range templates {
+		if !s.demo.fixedTemplates[existing.Name] && existing.Name != name {
+			own++
+		}
+	}
+	if own >= maxDemoTemplates {
+		return fmt.Errorf("the public demo holds at most %d templates. Delete one first", maxDemoTemplates)
+	}
+	return nil
+}
+
+// checkDemoTemplateDelete keeps visitors from deleting the templates the
+// demo started with.
+func (s *Server) checkDemoTemplateDelete(name string) error {
+	if s.demo != nil && s.demo.fixedTemplates[strings.TrimSpace(name)] {
+		return fmt.Errorf("%q is a predefined template, and the public demo can't delete it", name)
+	}
+	return nil
+}
+
+// deleteVisitorTemplates removes the templates visitors saved.
+func (s *Server) deleteVisitorTemplates() error {
+	templates, err := credtemplate.List(s.wallet.Templates)
+	if err != nil {
+		return err
+	}
+	for _, t := range templates {
+		if s.demo.fixedTemplates[t.Name] {
+			continue
+		}
+		if err := credtemplate.Delete(s.wallet.Templates, t.Name); err != nil {
+			return err
+		}
+	}
+	return nil
 }

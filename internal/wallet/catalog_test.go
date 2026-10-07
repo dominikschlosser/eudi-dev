@@ -279,37 +279,99 @@ func mustJSON(t *testing.T, v any) string {
 	return string(encoded)
 }
 
-// A saved credential template is in the catalogue. Deleting the template
-// removes it.
-func TestASavedTemplateIsInTheCatalogue(t *testing.T) {
-	w := generateTestWallet(t)
-	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{
-		Name: "library-card", Format: "sdjwt", VCT: "urn:example:library:1",
-		Claims:  map[string]any{"member_id": "42", "address": map[string]any{"locality": "Utrecht"}},
-		Display: &credtemplate.TemplateDisplay{Name: "Library card", Description: "Rulebook: https://library.example/rulebook"},
-	}); err != nil {
-		t.Fatal(err)
+// A user template joins the catalogue only when it is saved with catalogue
+// fields. Bad fields store neither the template nor the entry.
+func TestASavedTemplateJoinsTheCatalogueOnRequest(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
+	names := func() []string {
+		var out []string
+		for _, e := range srv.wallet.CatalogAttestations(srv.wallet.RegistrarBase()) {
+			out = append(out, e.Name)
+		}
+		return out
 	}
-	entries := w.CatalogAttestations("https://wallet.example")
+	template := `"format":"sdjwt","vct":"urn:example:library:1","claims":{"member_id":"42","address":{"locality":"Utrecht"}}`
+
+	if w := serverRequest(t, srv, "PUT", "/api/templates/plain-card", `{`+template+`}`); w.Code != http.StatusOK {
+		t.Fatalf("plain save: %d %s", w.Code, w.Body.String())
+	}
+	if slices.Contains(names(), "plain-card") {
+		t.Error("a template saved without catalogue fields is in the catalogue")
+	}
+
+	for _, bad := range []string{
+		`{"name":"Library card","schema":{"rulebookURI":"javascript:alert(1)"}}`,
+		`{"name":"EUDI PID"}`,
+		`{"name":"Library card","schema":{"attestationLoS":"iso_18045_extreme"}}`,
+	} {
+		if w := serverRequest(t, srv, "PUT", "/api/templates/library-card", `{`+template+`,"catalog":`+bad+`}`); w.Code < 400 {
+			t.Errorf("catalog %s: %d, want an error", bad, w.Code)
+		}
+	}
+	if _, err := credtemplate.Load("library-card", srv.wallet.Templates); err == nil {
+		t.Error("a template with bad catalogue fields was saved")
+	}
+	if w := serverRequest(t, srv, "PUT", "/api/templates/untyped", `{"format":"sdjwt","claims":{},"catalog":{"name":"Untyped"}}`); w.Code < 400 {
+		t.Errorf("a template without a vct joined the catalogue: %d", w.Code)
+	}
+
+	body := `{` + template + `,"catalog":{"name":"Library card","schema":{"rulebookURI":"https://library.example/rulebook","attestationLoS":"iso_18045_moderate"}}}`
+	if w := serverRequest(t, srv, "PUT", "/api/templates/library-card", body); w.Code != http.StatusOK {
+		t.Fatalf("save with catalogue fields: %d %s", w.Code, w.Body.String())
+	}
+	entries := srv.wallet.CatalogAttestations(srv.wallet.RegistrarBase())
 	i := slices.IndexFunc(entries, func(e CatalogAttestation) bool { return e.Name == "Library card" })
 	if i < 0 {
-		t.Fatal("the saved template is not in the catalogue")
+		t.Fatalf("the template is not in the catalogue: %v", names())
 	}
 	card := entries[i]
 	want := [][]any{{"address"}, {"address", "locality"}, {"member_id"}}
-	if !card.Template || card.Credentials[0].Type != "urn:example:library:1" || !reflect.DeepEqual(card.Credentials[0].Claims, want) {
+	if card.Template || card.Credentials[0].Type != "urn:example:library:1" || !reflect.DeepEqual(card.Credentials[0].Claims, want) {
 		t.Errorf("entry %+v", card)
 	}
-	if card.Schema.RulebookURI != "https://library.example/rulebook" || card.Schema.AttestationLoS != "iso_18045_basic" || len(card.Schema.TrustedAuthorities) != 0 {
-		t.Errorf("schema %+v, want the template's rulebook and the defaults of an attestation that is not a PID", card.Schema)
+	if card.Schema.RulebookURI != "https://library.example/rulebook" || card.Schema.AttestationLoS != "iso_18045_moderate" {
+		t.Errorf("schema %+v", card.Schema)
 	}
-	if err := w.DeleteCatalogAttestation(card.Schema.ID, "https://wallet.example"); err == nil || !strings.Contains(err.Error(), "credential template") {
-		t.Errorf("deleting a template entry: %v", err)
+
+	issue := `{"format":"sdjwt","vct":"urn:example:badge:1","claims":{"level":"gold"},"save_as_template":"badge","catalog":{"name":"Badge"}}`
+	if w := serverRequest(t, srv, "POST", "/api/issue", issue); w.Code != http.StatusCreated {
+		t.Fatalf("issue with catalogue fields: %d %s", w.Code, w.Body.String())
 	}
-	if err := credtemplate.Delete(w.Templates, "library-card"); err != nil {
+	if !slices.Contains(names(), "Badge") {
+		t.Errorf("the issued template is not in the catalogue: %v", names())
+	}
+	before := len(srv.wallet.GetCredentials())
+	issue = `{"format":"sdjwt","vct":"urn:example:badge:2","claims":{},"save_as_template":"badge-2","catalog":{"name":"Badge"}}`
+	if w := serverRequest(t, srv, "POST", "/api/issue", issue); w.Code < 400 {
+		t.Errorf("a duplicate catalogue name was accepted: %d", w.Code)
+	}
+	if len(srv.wallet.GetCredentials()) != before {
+		t.Error("the credential was issued although its catalogue entry was refused")
+	}
+}
+
+// The wallet finds the trusted list of a received credential by its type, so
+// a type has one entry.
+func TestACatalogueTypeHasOneEntry(t *testing.T) {
+	w := generateTestWallet(t)
+	_, err := w.AddCatalogAttestation(CatalogAttestation{Name: "Other PID", Credentials: []CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:eudi:pid:1"}}}, "https://wallet.example")
+	if err == nil || !strings.Contains(err.Error(), "EUDI PID") {
+		t.Errorf("a second entry for the PID type: %v", err)
+	}
+}
+
+// A template format may be written as an alias.
+func TestAPredefinedOverrideWithAFormatAliasStaysInTheCatalogue(t *testing.T) {
+	w := generateTestWallet(t)
+	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{
+		Name: "pid-sdjwt", Format: "dc+sd-jwt", VCT: "urn:eudi:pid:1", Claims: map[string]any{"given_name": "Erika"},
+		Display: &credtemplate.TemplateDisplay{Name: "EUDI PID"},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := w.CatalogAttestation(card.Schema.ID, "https://wallet.example"); ok {
-		t.Error("the entry stayed after the template was deleted")
+	entry, ok := w.catalogueEntryFor("dc+sd-jwt", []string{"urn:eudi:pid:1"})
+	if !ok || entry.Name != "EUDI PID" {
+		t.Errorf("entry %+v, want the EUDI PID", entry)
 	}
 }
