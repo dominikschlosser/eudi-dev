@@ -558,17 +558,18 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 
 // Restore the renewed credential while holding the reload lock, including its rotated
 // refresh token.
-func (s *Server) saveRenewedCredential(renewed *StoredCredential) {
-	if renewed == nil {
+// saveCredential restores the credential while holding the reload lock and
+// saves it. A renewed credential starts with status 0, so newStatus registers
+// its status entry again, which a reload may have removed or reverted.
+func (s *Server) saveCredential(cred *StoredCredential, newStatus bool) {
+	if cred == nil {
 		s.triggerSave()
 		return
 	}
 	s.storeSyncMu.Lock()
-	s.wallet.PutCredential(*renewed)
-	// A reload may have removed or reverted the status entry. The renewed credential
-	// starts with status 0.
-	if ref := CredentialStatusRef(*renewed); ref != nil && ref.URI == strings.TrimSpace(s.wallet.StatusListURL()) {
-		s.wallet.RegisterStatusEntry(renewed.ID, ref.Idx)
+	s.wallet.PutCredential(*cred)
+	if ref := CredentialStatusRef(*cred); newStatus && ref != nil && ref.URI == strings.TrimSpace(s.wallet.StatusListURL()) {
+		s.wallet.RegisterStatusEntry(cred.ID, ref.Idx)
 	}
 	if s.onSave != nil {
 		s.onSave()

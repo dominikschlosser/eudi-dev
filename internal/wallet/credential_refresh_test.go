@@ -658,3 +658,34 @@ func TestStrictARFRefusesARenewalFromAnUnregisteredIssuer(t *testing.T) {
 		t.Errorf("the wallet requested the credential %d times", credentialRequests)
 	}
 }
+
+// A failed renewal keeps the credential's status. A revoked credential stays
+// revoked.
+func TestAFailedRenewalKeepsTheStatus(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example"
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := result.Credential.ID
+	if _, ok := w.SetCredentialStatus(id, 1); !ok {
+		t.Fatal("the credential has no status entry")
+	}
+	w.rememberRenewal(id, "refresh-1", CredentialRenewal{Issuer: srv.URL, TokenEndpoint: srv.URL + "/token", CredentialEndpoint: srv.URL + "/credential"})
+
+	if _, err := NewServer(w, 0, nil).RefreshCredential(id); err == nil {
+		t.Fatal("a refused renewal reported success")
+	}
+	if entry, _ := w.StatusEntryFor(id); entry.Status != 1 {
+		t.Errorf("status %d after the failed renewal, want 1", entry.Status)
+	}
+}
