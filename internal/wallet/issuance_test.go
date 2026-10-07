@@ -18,6 +18,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -810,5 +811,31 @@ func TestCreateProofJWT_IssMatchesClientID(t *testing.T) {
 	}
 	if _, present := decodeJWTPart(t, anonymous, 1)["iss"]; present {
 		t.Error("proof carries an iss claim when the flow named no client")
+	}
+}
+
+// OpenID4VCI 1.0 §12.2.3 requires iat in signed metadata. Metadata whose exp
+// has passed is not used.
+func TestParseIssuerMetadataResponse_RequiresIatAndRejectsExpiredMetadata(t *testing.T) {
+	w := generateTestWallet(t)
+	w.IssuerURL = "https://issuer.example:8443"
+	trustSignedIssuerMetadataFrom(t, w)
+	chain, err := w.DefaultSigningCertChain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, times := range map[string]map[string]any{
+		"no iat":  {},
+		"expired": {"iat": time.Now().Add(-2 * time.Hour).Unix(), "exp": time.Now().Add(-time.Hour).Unix()},
+	} {
+		payload := map[string]any{"credential_issuer": w.IssuerURL, "credential_endpoint": w.IssuerURL + "/credential", "sub": w.IssuerURL}
+		maps.Copy(payload, times)
+		raw, err := signJSONWebSignature(payload, w.IssuerKey, map[string]any{"alg": "ES256", "typ": signedIssuerMetadataTyp, "x5c": buildJWSX5C(chain)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+			t.Errorf("%s: the signed metadata was accepted", name)
+		}
 	}
 }

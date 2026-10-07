@@ -743,7 +743,8 @@ const signedIssuerMetadataTyp = "openidvci-issuer-metadata+jwt"
 
 // verifySignedIssuerMetadata checks signed Credential Issuer Metadata against
 // §12.2.3: typ openidvci-issuer-metadata+jwt, an asymmetric alg, a sub
-// matching the Credential Issuer Identifier, and the signature.
+// matching the Credential Issuer Identifier, an iat, an exp that has not
+// passed, and the signature.
 //
 // §12.2.3 also asks the wallet to "establish trust in the signer" and leaves
 // the mechanism out of scope. The wallet tries to build an x5c chain to a
@@ -763,6 +764,12 @@ func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 	sub, _ := token.Payload["sub"].(string)
 	if sub != issuer {
 		return fmt.Errorf("signed issuer metadata sub %q does not match the credential issuer identifier %q", sub, issuer)
+	}
+	if _, ok := token.Payload["iat"].(float64); !ok {
+		return fmt.Errorf("signed issuer metadata has no iat")
+	}
+	if exp, ok := token.Payload["exp"].(float64); ok && time.Unix(int64(exp), 0).Before(time.Now()) {
+		return fmt.Errorf("signed issuer metadata expired at %s", time.Unix(int64(exp), 0).UTC().Format(time.RFC3339))
 	}
 
 	certs, err := signedIssuerMetadataChain(token)
