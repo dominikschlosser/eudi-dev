@@ -2109,7 +2109,7 @@ func TestVerifierRequestCarriesASuppliedIdentity(t *testing.T) {
 			Purpose:     []registrar.MultiLangString{{Lang: "en", Content: "Identity check"}},
 			Credentials: []registrar.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{PIDVCT}}, Claims: []registrar.RegisteredClaim{{Path: []any{"given_name"}}, {Path: []any{"family_name"}}}}},
 		}}}},
-	}, w.RegistrarBase())
+	})
 	if err != nil {
 		t.Fatalf("RegisterRelyingParty: %v", err)
 	}

@@ -94,7 +94,7 @@ func (h *Server) handleRegisterRelyingParty(w http.ResponseWriter, r *http.Reque
 	var stored WalletRelyingParty
 	var err error
 	h.Mutate(func() bool {
-		stored, err = h.Registrar().RegisterRelyingParty(rp, h.Registrar().env.RegistrarBase())
+		stored, err = h.Registrar().RegisterRelyingParty(rp)
 		return err == nil
 	})
 	if err != nil {
@@ -113,7 +113,7 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 	var stored WalletRelyingParty
 	var err error
 	h.Mutate(func() bool {
-		stored, err = h.Registrar().UpdateRelyingParty(rp, h.Registrar().env.RegistrarBase())
+		stored, err = h.Registrar().UpdateRelyingParty(rp)
 		return err == nil
 	})
 	if err != nil {
@@ -314,7 +314,7 @@ func writeRegistrarError(w http.ResponseWriter, err error) {
 func (h *Server) handleCatalogSchemas(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var matching []AttestationSchema
-	for _, entry := range h.Registrar().CatalogAttestations(h.Registrar().env.RegistrarBase()) {
+	for _, entry := range h.Registrar().CatalogAttestations() {
 		if matchesSchemaQuery(entry.Schema, q) {
 			matching = append(matching, entry.Schema)
 		}
@@ -390,7 +390,7 @@ func matchesSchemaQuery(schema AttestationSchema, q map[string][]string) bool {
 
 // handleCatalogSchema answers GET /schemas/{schemaId} (TS11 v1.0 §5.3.1).
 func (h *Server) handleCatalogSchema(w http.ResponseWriter, r *http.Request) {
-	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"))
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "attestation schema not found"})
 		return
@@ -401,7 +401,7 @@ func (h *Server) handleCatalogSchema(w http.ResponseWriter, r *http.Request) {
 // handleCatalogFormatSchema serves the format-specific schema a schema URI
 // points to (TS11 v1.0 §4.3.4).
 func (h *Server) handleCatalogFormatSchema(w http.ResponseWriter, r *http.Request) {
-	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"))
 	var schema map[string]any
 	if ok {
 		schema, ok = entry.FormatSchema(r.PathValue("format"))
@@ -424,7 +424,7 @@ func (h *Server) handleUpdateCatalogSchema(w http.ResponseWriter, r *http.Reques
 	var updated CatalogAttestation
 	var err error
 	h.Mutate(func() bool {
-		updated, err = h.Registrar().UpdateCatalogSchema(r.PathValue("id"), schema, h.Registrar().env.RegistrarBase())
+		updated, err = h.Registrar().UpdateCatalogSchema(r.PathValue("id"), schema)
 		return err == nil
 	})
 	if err != nil {
@@ -438,7 +438,7 @@ func (h *Server) handleUpdateCatalogSchema(w http.ResponseWriter, r *http.Reques
 func (h *Server) handleDeleteCatalogSchema(w http.ResponseWriter, r *http.Request) {
 	var err error
 	h.Mutate(func() bool {
-		err = h.Registrar().DeleteCatalogAttestation(r.PathValue("id"), h.Registrar().env.RegistrarBase())
+		err = h.Registrar().DeleteCatalogAttestation(r.PathValue("id"))
 		return err == nil
 	})
 	if err != nil {
@@ -452,7 +452,7 @@ func (h *Server) handleDeleteCatalogSchema(w http.ResponseWriter, r *http.Reques
 // types the UI shows. TS11 has no such method, because its SchemaMeta leaves
 // them to the format-specific schemas.
 func (h *Server) handleCatalogAttestations(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.Registrar().CatalogAttestations(h.Registrar().env.RegistrarBase()))
+	writeJSON(w, http.StatusOK, h.Registrar().CatalogAttestations())
 }
 
 // handleAddCatalogAttestation adds an attestation. TS11 v1.0 leaves
@@ -467,7 +467,7 @@ func (h *Server) handleAddCatalogAttestation(w http.ResponseWriter, r *http.Requ
 	var stored CatalogAttestation
 	var err error
 	h.Mutate(func() bool {
-		stored, err = h.Registrar().AddCatalogAttestation(entry, h.Registrar().env.RegistrarBase())
+		stored, err = h.Registrar().AddCatalogAttestation(entry)
 		return err == nil
 	})
 	if err != nil {

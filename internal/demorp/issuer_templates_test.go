@@ -236,7 +236,7 @@ func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 		Name:        "Badge",
 		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
 		Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: foreign.URL, IsLOTE: &isLOTE}}},
-	}, w.RegistrarBase()); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

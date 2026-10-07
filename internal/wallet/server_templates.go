@@ -98,7 +98,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 	if req.Catalog != nil {
 		var err error
 		s.saveMutation(func() bool {
-			added, err = s.wallet.Registrar().AddCatalogAttestation(entry, s.wallet.RegistrarBase())
+			added, err = s.wallet.Registrar().AddCatalogAttestation(entry)
 			return err == nil
 		})
 		if err != nil {
@@ -109,7 +109,7 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 	if _, err := credtemplate.Save(s.wallet.Templates, tpl); err != nil {
 		if req.Catalog != nil {
 			s.saveMutation(func() bool {
-				return s.wallet.Registrar().DeleteCatalogAttestation(added.Schema.ID, s.wallet.RegistrarBase()) == nil
+				return s.wallet.Registrar().DeleteCatalogAttestation(added.Schema.ID) == nil
 			})
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

@@ -41,7 +41,7 @@ func diplomaCatalogEntry() CatalogAttestation {
 
 func TestTheCatalogueListsThePIDTemplates(t *testing.T) {
 	w := generateTestWallet(t)
-	entries := w.CatalogAttestations("https://wallet.example")
+	entries := w.CatalogAttestations()
 	i := slices.IndexFunc(entries, func(e CatalogAttestation) bool { return e.Name == "EUDI PID" })
 	if i < 0 {
 		t.Fatalf("no EUDI PID entry in %d entries", len(entries))
@@ -63,7 +63,9 @@ func TestTheCatalogueListsThePIDTemplates(t *testing.T) {
 		t.Errorf("formats %v, schema URIs %+v", s.SupportedFormats, s.SchemaURIs)
 	}
 	// The ids stay the same on every instance.
-	if again := generateTestWallet(t).CatalogAttestations("https://other.example"); again[i].Schema.ID != s.ID {
+	other := generateTestWallet(t)
+	other.env.base = "https://other.example"
+	if again := other.CatalogAttestations(); again[i].Schema.ID != s.ID {
 		t.Errorf("template entry id changed: %s, then %s", s.ID, again[i].Schema.ID)
 	}
 }
@@ -72,7 +74,7 @@ func TestTheCatalogueListsThePIDTemplates(t *testing.T) {
 // schema (EC TS11 v1.0 Annex A.2, additionalProperties false).
 func TestCatalogueSchemasFollowTheTS11DataModel(t *testing.T) {
 	w := generateTestWallet(t)
-	for _, entry := range w.CatalogAttestations("https://wallet.example") {
+	for _, entry := range w.CatalogAttestations() {
 		encoded, err := json.Marshal(entry.Schema)
 		if err != nil {
 			t.Fatal(err)
@@ -97,7 +99,7 @@ func TestCatalogueSchemasFollowTheTS11DataModel(t *testing.T) {
 
 func TestAddingToTheCatalogue(t *testing.T) {
 	w := generateTestWallet(t)
-	added, err := w.AddCatalogAttestation(diplomaCatalogEntry(), "https://wallet.example")
+	added, err := w.AddCatalogAttestation(diplomaCatalogEntry())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,22 +117,22 @@ func TestAddingToTheCatalogue(t *testing.T) {
 
 	updated := added.Schema
 	updated.Version = "1.1.0"
-	if got, err := w.UpdateCatalogSchema(added.Schema.ID, updated, "https://wallet.example"); err != nil || got.Schema.Version != "1.1.0" {
+	if got, err := w.UpdateCatalogSchema(added.Schema.ID, updated); err != nil || got.Schema.Version != "1.1.0" {
 		t.Fatalf("update: %v %+v", err, got.Schema)
 	}
 	updated.SchemaURIs = []SchemaURI{{FormatIdentifier: "dc+sd-jwt", URI: "https://elsewhere.example/schema"}}
-	if _, err := w.UpdateCatalogSchema(added.Schema.ID, updated, "https://wallet.example"); err == nil {
+	if _, err := w.UpdateCatalogSchema(added.Schema.ID, updated); err == nil {
 		t.Error("an update changed the schema URIs")
 	}
 
-	fromTemplate := w.CatalogAttestations("https://wallet.example")[0].Schema.ID
-	if err := w.DeleteCatalogAttestation(fromTemplate, "https://wallet.example"); err == nil {
+	fromTemplate := w.CatalogAttestations()[0].Schema.ID
+	if err := w.DeleteCatalogAttestation(fromTemplate); err == nil {
 		t.Error("an entry of a template was deleted")
 	}
-	if err := w.DeleteCatalogAttestation(added.Schema.ID, "https://wallet.example"); err != nil {
+	if err := w.DeleteCatalogAttestation(added.Schema.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := w.CatalogAttestation(added.Schema.ID, "https://wallet.example"); ok {
+	if _, ok := w.CatalogAttestation(added.Schema.ID); ok {
 		t.Error("the deleted entry is still listed")
 	}
 }
@@ -160,7 +162,7 @@ func TestCatalogueEntriesAreChecked(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			entry := diplomaCatalogEntry()
 			tc.change(&entry)
-			if _, err := w.AddCatalogAttestation(entry, "https://wallet.example"); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := w.AddCatalogAttestation(entry); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
@@ -171,7 +173,7 @@ func TestCatalogueEntriesAreChecked(t *testing.T) {
 // a type has one entry.
 func TestACatalogueTypeHasOneEntry(t *testing.T) {
 	w := generateTestWallet(t)
-	_, err := w.AddCatalogAttestation(CatalogAttestation{Name: "Other PID", Credentials: []CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:eudi:pid:1"}}}, "https://wallet.example")
+	_, err := w.AddCatalogAttestation(CatalogAttestation{Name: "Other PID", Credentials: []CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:eudi:pid:1"}}})
 	if err == nil || !strings.Contains(err.Error(), "EUDI PID") {
 		t.Errorf("a second entry for the PID type: %v", err)
 	}

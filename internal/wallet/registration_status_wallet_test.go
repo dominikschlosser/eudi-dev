@@ -65,7 +65,7 @@ func TestRevokingARegistrationCertificate(t *testing.T) {
 		},
 		"update without the intended use": func(t *testing.T, w *Wallet, rp registrar.WalletRelyingParty) {
 			rp.Services[0].IntendedUses[0].IntendedUseIdentifier = ""
-			if _, err := w.Registrar().UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+			if _, err := w.Registrar().UpdateRelyingParty(rp); err != nil {
 				t.Fatal(err)
 			}
 		},

@@ -478,14 +478,14 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	if saved != nil {
 		var added registrar.CatalogAttestation
 		if opts.Catalog != nil {
-			if added, err = w.Registrar().AddCatalogAttestation(catalogEntry, w.RegistrarBase()); err != nil {
+			if added, err = w.Registrar().AddCatalogAttestation(catalogEntry); err != nil {
 				return nil, fmt.Errorf("adding the template to the catalogue: %w", err)
 			}
 		}
 		path, err := credtemplate.Save(w.Templates, *saved)
 		if err != nil {
 			if opts.Catalog != nil {
-				_ = w.Registrar().DeleteCatalogAttestation(added.Schema.ID, w.RegistrarBase())
+				_ = w.Registrar().DeleteCatalogAttestation(added.Schema.ID)
 			}
 			return nil, fmt.Errorf("saving template: %w", err)
 		}

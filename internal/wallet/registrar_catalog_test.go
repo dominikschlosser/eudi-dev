@@ -82,7 +82,7 @@ func TestTheCatalogueAPI(t *testing.T) {
 	if put := serverRequest(t, srv, "PUT", "/api/catalog/schemas/"+added.Schema.ID, mustJSON(t, updated)); put.Code != http.StatusOK || !strings.Contains(put.Body.String(), `"version":"2.0.0"`) {
 		t.Fatalf("PUT: %d %s", put.Code, put.Body.String())
 	}
-	fromTemplate := srv.wallet.Registrar().CatalogAttestations(srv.wallet.RegistrarBase())[0].Schema.ID
+	fromTemplate := srv.wallet.Registrar().CatalogAttestations()[0].Schema.ID
 	if del := serverRequest(t, srv, "DELETE", "/api/catalog/schemas/"+fromTemplate, ""); del.Code != http.StatusForbidden {
 		t.Errorf("DELETE of a template entry: %d", del.Code)
 	}
@@ -105,7 +105,7 @@ func TestTheCatalogueIsStored(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := w.Registrar().AddCatalogAttestation(diplomaCatalogEntry(), "https://wallet.example"); err != nil {
+			if _, err := w.Registrar().AddCatalogAttestation(diplomaCatalogEntry()); err != nil {
 				t.Fatal(err)
 			}
 			if err := store.Save(w); err != nil {
@@ -133,7 +133,7 @@ func TestASavedTemplateJoinsTheCatalogueOnRequest(t *testing.T) {
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
 	names := func() []string {
 		var out []string
-		for _, e := range srv.wallet.Registrar().CatalogAttestations(srv.wallet.RegistrarBase()) {
+		for _, e := range srv.wallet.Registrar().CatalogAttestations() {
 			out = append(out, e.Name)
 		}
 		return out
@@ -167,7 +167,7 @@ func TestASavedTemplateJoinsTheCatalogueOnRequest(t *testing.T) {
 	if w := serverRequest(t, srv, "PUT", "/api/templates/library-card", body); w.Code != http.StatusOK {
 		t.Fatalf("save with catalogue fields: %d %s", w.Code, w.Body.String())
 	}
-	entries := srv.wallet.Registrar().CatalogAttestations(srv.wallet.RegistrarBase())
+	entries := srv.wallet.Registrar().CatalogAttestations()
 	i := slices.IndexFunc(entries, func(e registrar.CatalogAttestation) bool { return e.Name == "Library card" })
 	if i < 0 {
 		t.Fatalf("the template is not in the catalogue: %v", names())

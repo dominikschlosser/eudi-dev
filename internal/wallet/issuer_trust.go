@@ -30,7 +30,7 @@ import (
 // catalogueEntryFor returns the catalogue entry that lists format with one of
 // the types.
 func (w *Wallet) catalogueEntryFor(format string, types []string) (registrar.CatalogAttestation, bool) {
-	return catalogueEntryIn(w.Registrar().CatalogAttestations(w.RegistrarBase()), format, types)
+	return catalogueEntryIn(w.Registrar().CatalogAttestations(), format, types)
 }
 
 func catalogueEntryIn(entries []registrar.CatalogAttestation, format string, types []string) (registrar.CatalogAttestation, bool) {
@@ -50,7 +50,7 @@ func (w *Wallet) catalogueFindings(metadata map[string]any, configurations []str
 	if !w.ARFChecks() {
 		return nil
 	}
-	entries := w.Registrar().CatalogAttestations(w.RegistrarBase())
+	entries := w.Registrar().CatalogAttestations()
 	var findings []string
 	for _, o := range offeredAttestations(metadata, configurations) {
 		if !o.known || len(o.types) == 0 {

@@ -39,7 +39,7 @@ func registerTestIssuer(t *testing.T, w *Wallet, entitlement string, provides ..
 			Entitlements:         []string{entitlement},
 			ProvidesAttestations: provides,
 		}},
-	}, w.RegistrarBase())
+	})
 	if err != nil {
 		t.Fatalf("RegisterRelyingParty: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestIssuerRegistrationsAreChecked(t *testing.T) {
 		{"an attestation without a type", registrar.WalletRelyingPartyService{Entitlements: []string{registrar.NonQEAAProviderEntitlement}, ProvidesAttestations: []registrar.ProvidedAttestation{{Format: "mso_mdoc", Meta: map[string]any{}}}}, "needs its type"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{TradeName: "Example", Services: []registrar.WalletRelyingPartyService{tc.service}}, w.RegistrarBase())
+			_, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{TradeName: "Example", Services: []registrar.WalletRelyingPartyService{tc.service}})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
@@ -141,7 +141,7 @@ func TestAProviderWithAnIntendedUseIsAServiceProviderToo(t *testing.T) {
 				Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}, Claims: []registrar.RegisteredClaim{{Path: []any{"family_name"}}},
 			}}}},
 		}},
-	}, w.RegistrarBase())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestProviderCertificatesFollowTheRegistration(t *testing.T) {
 	// An update that adds an attestation type changes the certificate content,
 	// so the certificate is revoked for good.
 	rp.Services[0].ProvidesAttestations = append(rp.Services[0].ProvidesAttestations, registrar.ProvidedAttestation{Format: "mso_mdoc", Meta: map[string]any{"doctype_value": "org.example.diploma.1"}})
-	if _, err := w.Registrar().UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.Registrar().UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	if got := registrationStatusFindings(second, ts.Client()); len(got) != 1 {

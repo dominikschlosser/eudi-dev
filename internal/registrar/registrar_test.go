@@ -36,7 +36,7 @@ func TestTheRegistrarAssignsWhatARegistrationLeavesOut(t *testing.T) {
 	if use.IntendedUseIdentifier == "" || use.CreatedAt == "" || len(use.PrivacyPolicy) == 0 {
 		t.Errorf("intended use %+v, want an identifier, a date and a privacy policy", use)
 	}
-	if _, err := w.RegisterRelyingParty(rp, w.RegistrarBase()); err == nil || !strings.Contains(err.Error(), "already registered") {
+	if _, err := w.RegisterRelyingParty(rp); err == nil || !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("registering the same identifier again: %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestAnUpdateKeepsRegisteredIntendedUses(t *testing.T) {
 	}
 	rp.Services[0].IntendedUses = append(rp.Services[0].IntendedUses, added)
 
-	updated, err := w.UpdateRelyingParty(rp, w.RegistrarBase())
+	updated, err := w.UpdateRelyingParty(rp)
 	if err != nil {
 		t.Fatalf("UpdateRelyingParty: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestAnUpdateKeepsRegisteredIntendedUses(t *testing.T) {
 	if err := w.DeleteRelyingParty(rp.Identifier[0].Identifier); err != nil {
 		t.Fatalf("DeleteRelyingParty: %v", err)
 	}
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err == nil || !strings.Contains(err.Error(), "not registered") {
+	if _, err := w.UpdateRelyingParty(rp); err == nil || !strings.Contains(err.Error(), "not registered") {
 		t.Errorf("updating a deleted registration: %v", err)
 	}
 }
@@ -88,7 +88,7 @@ func TestRegistrationsAreChecked(t *testing.T) {
 		{"intended use twice", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{use("a"), use("a")}}}}, "registered twice"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := generateTestWallet(t).RegisterRelyingParty(tc.rp, "https://wallet.example")
+			_, err := generateTestWallet(t).RegisterRelyingParty(tc.rp)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error %v, want one containing %q", err, tc.want)
 			}
@@ -104,7 +104,7 @@ func TestARegistrationCannotTakeAnotherPartysIdentifier(t *testing.T) {
 	_, err := w.RegisterRelyingParty(WalletRelyingParty{
 		TradeName:  "Other Shop",
 		Identifier: []Identifier{{Identifier: "NTRNL-OTHER"}, {Identifier: taken}},
-	}, w.RegistrarBase())
+	})
 	if err == nil || !strings.Contains(err.Error(), "already registered") {
 		t.Errorf("error %v, want the identifier taken", err)
 	}
@@ -117,11 +117,11 @@ func TestAnUpdateThroughASecondaryIdentifierKeepsThePrimary(t *testing.T) {
 	rp := registerTestRelyingParty(t, w)
 	primary := rp.Identifier[0]
 	rp.Identifier = append(rp.Identifier, Identifier{Type: "http://data.europa.eu/eudi/id/EUID", Identifier: "DEHRB.12345"})
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	rp.Identifier = []Identifier{rp.Identifier[1]}
-	updated, err := w.UpdateRelyingParty(rp, w.RegistrarBase())
+	updated, err := w.UpdateRelyingParty(rp)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -106,7 +106,7 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 				Name:        "Diploma",
 				Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
 				Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: tc.list, IsLOTE: &isLOTE}}},
-			}, w.RegistrarBase()); err != nil {
+			}); err != nil {
 				t.Fatal(err)
 			}
 			findings := w.trustAnchorFindings(receivedCredential(result.Raw))

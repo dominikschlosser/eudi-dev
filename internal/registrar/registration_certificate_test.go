@@ -36,7 +36,7 @@ func registerTestRelyingParty(t *testing.T, w *testWallet) WalletRelyingParty {
 				Claims: []RegisteredClaim{{Path: []any{"given_name"}}},
 			}},
 		}}}},
-	}, w.RegistrarBase())
+	})
 	if err != nil {
 		t.Fatalf("RegisterRelyingParty: %v", err)
 	}

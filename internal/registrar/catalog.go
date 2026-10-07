@@ -96,7 +96,8 @@ var (
 
 // CatalogAttestations lists the entries of the credential templates followed
 // by the added ones. base is the URL the schema URIs point to.
-func (r *Registrar) CatalogAttestations(base string) []CatalogAttestation {
+func (r *Registrar) CatalogAttestations() []CatalogAttestation {
+	base := r.env.RegistrarBase()
 	entries := r.templateCatalog(base)
 	r.mu.RLock()
 	added := slices.Clone(r.state.Catalog)
@@ -109,8 +110,8 @@ func (r *Registrar) CatalogAttestations(base string) []CatalogAttestation {
 }
 
 // CatalogAttestation returns the entry with the schema id.
-func (r *Registrar) CatalogAttestation(id, base string) (CatalogAttestation, bool) {
-	for _, entry := range r.CatalogAttestations(base) {
+func (r *Registrar) CatalogAttestation(id string) (CatalogAttestation, bool) {
+	for _, entry := range r.CatalogAttestations() {
 		if entry.Schema.ID == id {
 			return entry, true
 		}
@@ -120,7 +121,8 @@ func (r *Registrar) CatalogAttestation(id, base string) (CatalogAttestation, boo
 
 // AddCatalogAttestation stores a new entry. The catalogue assigns its id and
 // its schema URIs (TS11 v1.0 §5.2.3).
-func (r *Registrar) AddCatalogAttestation(entry CatalogAttestation, base string) (CatalogAttestation, error) {
+func (r *Registrar) AddCatalogAttestation(entry CatalogAttestation) (CatalogAttestation, error) {
+	base := r.env.RegistrarBase()
 	entry = cloneCatalogAttestation(entry)
 	entry.Template = false
 	entry.Schema.ID = uuid.NewString()
@@ -139,7 +141,8 @@ func (r *Registrar) AddCatalogAttestation(entry CatalogAttestation, base string)
 
 // CheckCatalogAttestation reports whether AddCatalogAttestation would accept
 // entry, without adding it.
-func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation, base string) error {
+func (r *Registrar) CheckCatalogAttestation(entry CatalogAttestation) error {
+	base := r.env.RegistrarBase()
 	entry = cloneCatalogAttestation(entry)
 	if err := normalizeCatalogAttestation(&entry, base); err != nil {
 		return err
@@ -176,7 +179,7 @@ func (r *Registrar) TemplateCatalogEntry(t credtemplate.Template, entry CatalogA
 	if err != nil {
 		return CatalogAttestation{}, err
 	}
-	if err := r.CheckCatalogAttestation(entry, r.env.RegistrarBase()); err != nil {
+	if err := r.CheckCatalogAttestation(entry); err != nil {
 		return CatalogAttestation{}, err
 	}
 	return entry, nil
@@ -206,7 +209,8 @@ func TemplateCatalogAttestation(t credtemplate.Template, entry CatalogAttestatio
 // UpdateCatalogSchema replaces the SchemaMeta of an added entry (TS11 v1.0
 // §5.3.2). The formats and schema URIs follow from the entry's credentials,
 // so an update can't change them.
-func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema, base string) (CatalogAttestation, error) {
+func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema) (CatalogAttestation, error) {
+	base := r.env.RegistrarBase()
 	if r.isTemplateCatalogID(id, base) {
 		return CatalogAttestation{}, errCatalogTemplate
 	}
@@ -235,7 +239,8 @@ func (r *Registrar) UpdateCatalogSchema(id string, schema AttestationSchema, bas
 }
 
 // DeleteCatalogAttestation removes an added entry.
-func (r *Registrar) DeleteCatalogAttestation(id, base string) error {
+func (r *Registrar) DeleteCatalogAttestation(id string) error {
+	base := r.env.RegistrarBase()
 	if r.isTemplateCatalogID(id, base) {
 		return errCatalogTemplate
 	}

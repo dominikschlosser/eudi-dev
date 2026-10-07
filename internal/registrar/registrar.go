@@ -141,7 +141,8 @@ var (
 // RegisterRelyingParty stores a new relying party. If the request leaves them
 // out, the registrar assigns the identifier and the intended use identifiers,
 // and sets the contact URLs under base.
-func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
+func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
+	base := r.env.RegistrarBase()
 	rp, err := cloneRelyingParty(rp)
 	if err != nil {
 		return WalletRelyingParty{}, err
@@ -151,7 +152,7 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty, base string) (Wa
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.state.RelyingParties) >= maxRelyingParties {
+	if len(r.state.RelyingParties) >= MaxRelyingParties {
 		return WalletRelyingParty{}, errRegistrarFull
 	}
 	for _, id := range rp.Identifier {
@@ -165,7 +166,8 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty, base string) (Wa
 
 // UpdateRelyingParty replaces the registration with the same identifier. New
 // intended uses get identifiers, and existing ones keep theirs.
-func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty, base string) (WalletRelyingParty, error) {
+func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
+	base := r.env.RegistrarBase()
 	rp, err := cloneRelyingParty(rp)
 	if err != nil {
 		return WalletRelyingParty{}, err
@@ -346,7 +348,7 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 
 // Size limits keep a public demo's registrar small between resets.
 const (
-	maxRelyingParties    = 500
+	MaxRelyingParties    = 500
 	maxRegistrationItems = 20
 	maxRegisteredClaims  = 100
 )

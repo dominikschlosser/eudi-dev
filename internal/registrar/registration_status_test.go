@@ -49,7 +49,7 @@ func TestAnUpdateRevokesCertificatesWhoseContentChanged(t *testing.T) {
 			rp := registerTestRelyingParty(t, w)
 			issueTestRegistrationCertificate(t, w, rp)
 			change(&rp)
-			if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+			if _, err := w.UpdateRelyingParty(rp); err != nil {
 				t.Fatal(err)
 			}
 			if statuses := w.RegistrationCertificateStatuses(rp.Identifier[0].Identifier); len(statuses) != 1 || !statuses[0].Revoked {
@@ -63,7 +63,7 @@ func TestAnUnchangedUpdateKeepsCertificatesValid(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	issueTestRegistrationCertificate(t, w, rp)
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	if statuses := w.RegistrationCertificateStatuses(rp.Identifier[0].Identifier); len(statuses) != 1 || statuses[0].Revoked {
@@ -76,7 +76,7 @@ func TestActivatingLeavesRemovedIntendedUsesRevoked(t *testing.T) {
 	rp := registerTestRelyingParty(t, w)
 	issueTestRegistrationCertificate(t, w, rp)
 	rp.Services[0].IntendedUses[0].IntendedUseIdentifier = ""
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{}, false); err != nil || n != 0 {
@@ -88,7 +88,7 @@ func TestStatusesAreListedUnderEveryIdentifier(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	rp.Identifier = append(rp.Identifier, Identifier{Type: "http://data.europa.eu/eudi/id/EUID", Identifier: "DEHRB.12345"})
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	issueTestRegistrationCertificate(t, w, rp)
@@ -104,7 +104,7 @@ func TestActivatingLeavesChangedIntendedUsesRevoked(t *testing.T) {
 	rp := registerTestRelyingParty(t, w)
 	issueTestRegistrationCertificate(t, w, rp)
 	rp.Services[0].IntendedUses[0].Purpose = []MultiLangString{{Lang: "en", Content: "Marketing"}}
-	if _, err := w.UpdateRelyingParty(rp, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(rp); err != nil {
 		t.Fatal(err)
 	}
 	if n, err := w.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, RegistrationScope{}, false); err != nil || n != 0 {
@@ -118,7 +118,7 @@ func TestACertificateForChangedContentIsNotIssued(t *testing.T) {
 	use := snapshot.Services[0].IntendedUses[0].IntendedUseIdentifier
 	changed, _ := cloneRelyingParty(snapshot)
 	changed.Services[0].IntendedUses[0].Purpose = []MultiLangString{{Lang: "en", Content: "Marketing"}}
-	if _, err := w.UpdateRelyingParty(changed, w.RegistrarBase()); err != nil {
+	if _, err := w.UpdateRelyingParty(changed); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := w.allocateRegistrationStatus(snapshot, certificateKey{intendedUse: use}, time.Now().Add(time.Hour)); !errors.Is(err, errRegistrationChanged) {

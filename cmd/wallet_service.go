@@ -435,7 +435,7 @@ func (l *localWallet) RegisterRelyingParty(rp registrar.WalletRelyingParty) (reg
 	if err != nil {
 		return registrar.WalletRelyingParty{}, err
 	}
-	stored, err := w.Registrar().RegisterRelyingParty(rp, w.RegistrarBase())
+	stored, err := w.Registrar().RegisterRelyingParty(rp)
 	if err != nil {
 		return registrar.WalletRelyingParty{}, err
 	}
@@ -464,7 +464,7 @@ func (l *localWallet) CatalogAttestations() ([]registrar.CatalogAttestation, err
 	if err != nil {
 		return nil, err
 	}
-	return w.Registrar().CatalogAttestations(w.RegistrarBase()), nil
+	return w.Registrar().CatalogAttestations(), nil
 }
 
 func (l *localWallet) AddCatalogAttestation(entry registrar.CatalogAttestation) (registrar.CatalogAttestation, error) {
@@ -472,7 +472,7 @@ func (l *localWallet) AddCatalogAttestation(entry registrar.CatalogAttestation) 
 	if err != nil {
 		return registrar.CatalogAttestation{}, err
 	}
-	stored, err := w.Registrar().AddCatalogAttestation(entry, w.RegistrarBase())
+	stored, err := w.Registrar().AddCatalogAttestation(entry)
 	if err != nil {
 		return registrar.CatalogAttestation{}, err
 	}
@@ -487,7 +487,7 @@ func (l *localWallet) DeleteCatalogAttestation(id string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.Registrar().DeleteCatalogAttestation(id, w.RegistrarBase()); err != nil {
+	if err := w.Registrar().DeleteCatalogAttestation(id); err != nil {
 		return err
 	}
 	if err := store.Save(w); err != nil {
