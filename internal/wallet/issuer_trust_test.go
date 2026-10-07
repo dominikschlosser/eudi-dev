@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func TestTheWalletsOwnPIDsValidateWithThePIDTrustedList(t *testing.T) {
@@ -101,11 +102,11 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := generateTestWallet(t)
 			w.RequireARF = true
-			if _, err := w.AddCatalogAttestation(CatalogAttestation{
+			if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
 				Name:        "Diploma",
-				Credentials: []CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
-				Schema:      AttestationSchema{TrustedAuthorities: []TrustAuthority{{FrameworkType: "etsi_tl", Value: tc.list, IsLOTE: &isLOTE}}},
-			}, w.RegistrarBase()); err != nil {
+				Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
+				Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: tc.list, IsLOTE: &isLOTE}}},
+			}); err != nil {
 				t.Fatal(err)
 			}
 			findings := w.trustAnchorFindings(receivedCredential(result.Raw))

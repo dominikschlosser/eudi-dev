@@ -22,6 +22,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
@@ -32,30 +34,30 @@ type issuerAuthentication struct {
 	metadata       map[string]any
 	signerChain    []*x509.Certificate
 	configurations []string
-	accessCAs      *x509.CertPool
-	registrarCAs   *x509.CertPool
+	accessCAs      []*x509.Certificate
+	registrarCAs   []*x509.Certificate
 	statusClient   *http.Client
 }
 
 // issuerRules are the ARF requirements for one kind of provider. A PID
 // Provider has its own numbers for the same checks.
 type issuerRules struct {
-	access, registrar, entitlement, attestationType string
-	entitled                                        func([]string) bool
-	kind                                            string
+	signing, access, registrar, entitlement, attestationType string
+	entitled                                                 func([]string) bool
+	kind                                                     string
 }
 
 var (
 	pidProviderRules = issuerRules{
-		access: "ARF ISSU_24", registrar: "ARF ISSU_23c", entitlement: "ARF ISSU_24a", attestationType: "ARF RPRC_23 and ISSU_24b",
-		entitled: func(e []string) bool { return slices.Contains(e, pidProviderEntitlement) },
+		signing: "ARF ISSU_22", access: "ARF ISSU_24", registrar: "ARF ISSU_23c", entitlement: "ARF ISSU_24a", attestationType: "ARF RPRC_23 and ISSU_24b",
+		entitled: func(e []string) bool { return slices.Contains(e, registrar.PIDProviderEntitlement) },
 		kind:     "PID Provider",
 	}
 	attestationProviderRules = issuerRules{
-		access: "ARF ISSU_34", registrar: "ARF ISSU_33a", entitlement: "ARF ISSU_34a", attestationType: "ARF RPRC_23 and ISSU_34b",
+		signing: "ARF ISSU_32", access: "ARF ISSU_34", registrar: "ARF ISSU_33a", entitlement: "ARF ISSU_34a", attestationType: "ARF RPRC_23 and ISSU_34b",
 		entitled: func(e []string) bool {
 			return slices.ContainsFunc(e, func(v string) bool {
-				return v == qeaaProviderEntitlement || v == pubEAAProviderEntitlement || v == nonQEAAProviderEntitlement
+				return v == registrar.QEAAProviderEntitlement || v == registrar.PubEAAProviderEntitlement || v == registrar.NonQEAAProviderEntitlement
 			})
 		},
 		kind: "QEAA Provider, PuB-EAA Provider or EAA Provider",
@@ -71,7 +73,7 @@ type offeredAttestation struct {
 }
 
 func (o offeredAttestation) rules() issuerRules {
-	if slices.ContainsFunc(o.types, isPIDType) {
+	if slices.ContainsFunc(o.types, credtype.IsPIDType) {
 		return pidProviderRules
 	}
 	return attestationProviderRules
@@ -121,10 +123,11 @@ func issuerARFFindings(a issuerAuthentication) []string {
 	offered := offeredAttestations(a.metadata, a.configurations)
 	accessRule := ruleNames(offered, func(r issuerRules) string { return r.access })
 	registrarRule := ruleNames(offered, func(r issuerRules) string { return r.registrar })
+	signingRule := ruleNames(offered, func(r issuerRules) string { return r.signing })
 
 	var findings []string
 	if len(a.signerChain) == 0 {
-		findings = append(findings, accessRule+": the Credential Issuer Metadata is not signed, so the wallet cannot check the issuer's access certificate. The issuer must sign it as OpenID4VCI 1.0 §12.2.3 describes (ARF ISSU_22 and ISSU_32)")
+		findings = append(findings, accessRule+": the Credential Issuer Metadata is not signed, so the wallet cannot check the issuer's access certificate. The issuer must sign it as OpenID4VCI 1.0 §12.2.3 describes ("+signingRule+")")
 	} else if err := verifyToAnchor(a.signerChain, a.accessCAs); err != nil {
 		findings = append(findings, fmt.Sprintf("%s: the access certificate %q that signs the issuer metadata does not chain to a trusted access certificate authority: %v", accessRule, a.signerChain[0].Subject.String(), err))
 	}
@@ -147,12 +150,12 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the issuer")
 		findings = append(findings, providerCertificateContentFindings(cert)...)
 		if len(a.signerChain) > 0 {
-			findings = append(findings, registrationBindingFindingsFor(cert, a.signerChain[0], "ARF RPRC_22b")...)
+			findings = append(findings, registrationBindingFindings(cert, a.signerChain[0], "ARF RPRC_22b")...)
 		}
 		if err := verifyToAnchor(r.chain, a.registrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("%s: the registration certificate of %s does not chain to a trusted registrar: %v", registrarRule, name, err))
 		}
-		findings = append(findings, registrationStatusFindingsFor(cert, a.statusClient, "ARF RPRC_22a")...)
+		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.registrarCAs, "ARF RPRC_22a")...)
 		for _, e := range toAnyList(cert["entitlements"]) {
 			if s, ok := e.(string); ok {
 				entitlements = append(entitlements, s)
@@ -194,7 +197,7 @@ func providedAttestationsOf(cert map[string]any) []registeredCredential {
 	var out []registeredCredential
 	for _, entry := range listOfMaps(cert["provides_attestations"]) {
 		format, _ := entry["format"].(string)
-		out = append(out, registeredCredential{format: format, types: credentialTypes(entry["meta"])})
+		out = append(out, registeredCredential{format: format, types: registrar.CredentialTypes(entry["meta"])})
 	}
 	return out
 }
@@ -215,10 +218,10 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 		miss("sub (provider identifier)", "ARF RPRC_07")
 	}
 	if len(purposeStrings(cert["srv_description"])) == 0 {
-		miss("srv_description", "ETSI TS 119 475 §5.2.4")
+		miss("srv_description", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01")
 	}
 	if !nonEmptyList(cert["entitlements"]) {
-		miss("entitlements (at least one)", "ETSI TS 119 475 GEN-5.2.4-03")
+		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
 	if !nonEmptyList(cert["provides_attestations"]) {
 		miss("provides_attestations (its attestation types)", "ARF RPRC_15")
@@ -226,7 +229,7 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 	if statuslist.ExtractStatusRef(cert) == nil {
 		miss("status (its entry in the registrar's status list), so the wallet cannot check revocation", "ETSI TS 119 475 V1.2.1 Table 7")
 	}
-	return append(findings, registrationValidityFindingsFor(cert, "ARF RPRC_22a")...)
+	return append(findings, registrationValidityFindings(cert, "ARF RPRC_22a")...)
 }
 
 // issuerARFCheck runs the issuer checks when --arf is on.

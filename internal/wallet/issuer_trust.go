@@ -20,26 +20,28 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/sdjwt"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 )
 
 // catalogueEntryFor returns the catalogue entry that lists format with one of
 // the types.
-func (w *Wallet) catalogueEntryFor(format string, types []string) (CatalogAttestation, bool) {
-	return catalogueEntryIn(w.CatalogAttestations(w.RegistrarBase()), format, types)
+func (w *Wallet) catalogueEntryFor(format string, types []string) (registrar.CatalogAttestation, bool) {
+	return catalogueEntryIn(w.Registrar().CatalogAttestations(), format, types)
 }
 
-func catalogueEntryIn(entries []CatalogAttestation, format string, types []string) (CatalogAttestation, bool) {
+func catalogueEntryIn(entries []registrar.CatalogAttestation, format string, types []string) (registrar.CatalogAttestation, bool) {
 	for _, entry := range entries {
-		if slices.ContainsFunc(entry.Credentials, func(c CatalogCredential) bool {
+		if slices.ContainsFunc(entry.Credentials, func(c registrar.CatalogCredential) bool {
 			return c.Format == format && slices.Contains(types, c.Type)
 		}) {
 			return entry, true
 		}
 	}
-	return CatalogAttestation{}, false
+	return registrar.CatalogAttestation{}, false
 }
 
 // catalogueFindings names the offered attestations the catalogue doesn't list.
@@ -48,7 +50,7 @@ func (w *Wallet) catalogueFindings(metadata map[string]any, configurations []str
 	if !w.ARFChecks() {
 		return nil
 	}
-	entries := w.CatalogAttestations(w.RegistrarBase())
+	entries := w.Registrar().CatalogAttestations()
 	var findings []string
 	for _, o := range offeredAttestations(metadata, configurations) {
 		if !o.known || len(o.types) == 0 {
@@ -84,7 +86,7 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 		return nil
 	}
 	rule := "ARF ISSU_08 to ISSU_10"
-	if slices.ContainsFunc(types, isPIDType) {
+	if slices.ContainsFunc(types, credtype.IsPIDType) {
 		rule = "ARF ISSU_07"
 	}
 	var problems []string

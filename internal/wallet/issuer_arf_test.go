@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 // signedTestIssuerMetadata signs issuer metadata with an access certificate,
@@ -71,7 +72,7 @@ func arfIssuerFindings(checking *Wallet, metadata map[string]any, chain []*x509.
 
 func TestARFAcceptsARegisteredIssuer(t *testing.T) {
 	w := generateTestWallet(t)
-	rp := registerTestIssuer(t, w, nonQEAAProviderEntitlement)
+	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
 	metadata, signer := signedTestIssuerMetadata(t, key, chain, "dc+sd-jwt", testDiplomaVCT, issueTestIssuerInfo(t, w, rp).IssuerInfo)
 	if got := arfIssuerFindings(w, metadata, signer); len(got) != 0 {
@@ -81,10 +82,10 @@ func TestARFAcceptsARegisteredIssuer(t *testing.T) {
 
 func TestARFChecksHowAnIssuerAuthenticates(t *testing.T) {
 	w := generateTestWallet(t)
-	eaa := registerTestIssuer(t, w, nonQEAAProviderEntitlement)
+	eaa := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	eaaKey, eaaChain := issueTestAccessCertificate(t, w, eaa.Identifier[0].Identifier)
 	eaaInfo := issueTestIssuerInfo(t, w, eaa).IssuerInfo
-	pidProvider := registerTestIssuer(t, w, pidProviderEntitlement, ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}})
+	pidProvider := registerTestIssuer(t, w, registrar.PIDProviderEntitlement, registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: mock.DefaultPIDVCT})
 	pidInfo := issueTestIssuerInfo(t, w, pidProvider).IssuerInfo
 
 	for _, tc := range []struct {
@@ -113,16 +114,16 @@ func TestARFChecksHowAnIssuerAuthenticates(t *testing.T) {
 			return arfIssuerFindings(w, metadata, chain)
 		}, "ARF RPRC_22b"},
 		{"a revoked registration certificate", func() []string {
-			if _, err := w.SetRegistrationCertificatesRevoked(eaa.Identifier[0].Identifier, RegistrationScope{}, true); err != nil {
+			if _, err := w.Registrar().SetRegistrationCertificatesRevoked(eaa.Identifier[0].Identifier, registrar.RegistrationScope{}, true); err != nil {
 				t.Fatal(err)
 			}
-			defer w.SetRegistrationCertificatesRevoked(eaa.Identifier[0].Identifier, RegistrationScope{}, false)
+			defer w.Registrar().SetRegistrationCertificatesRevoked(eaa.Identifier[0].Identifier, registrar.RegistrationScope{}, false)
 			metadata, chain := signedTestIssuerMetadata(t, eaaKey, eaaChain, "dc+sd-jwt", testDiplomaVCT, eaaInfo)
 			return arfIssuerFindings(w, metadata, chain)
 		}, "ARF RPRC_22a: the registrar revoked the registration certificate"},
 		{"an access certificate from an unknown authority", func() []string {
 			other := generateTestWallet(t)
-			key, chain := issueTestAccessCertificate(t, other, registerTestIssuer(t, other, nonQEAAProviderEntitlement).Identifier[0].Identifier)
+			key, chain := issueTestAccessCertificate(t, other, registerTestIssuer(t, other, registrar.NonQEAAProviderEntitlement).Identifier[0].Identifier)
 			metadata, signer := signedTestIssuerMetadata(t, key, chain, "dc+sd-jwt", testDiplomaVCT, eaaInfo)
 			return arfIssuerFindings(w, metadata, signer)
 		}, "ARF ISSU_34: the access certificate"},
@@ -140,17 +141,17 @@ func TestARFChecksHowAnIssuerAuthenticates(t *testing.T) {
 // access CA signs any visitor's CSR, so it doesn't count (ARF ISSU_33a).
 func TestARFRefusesAnIssuerRegistrationFromTheAccessCA(t *testing.T) {
 	w := generateTestWallet(t)
-	rp := registerTestIssuer(t, w, nonQEAAProviderEntitlement)
+	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
-	claims, err := RegistrationCertificateClaimsFor(w.RegistrarBase(), providerContent(rp, rp.Services[0]), nil, nil, time.Now())
+	claims, err := registrar.RegistrationCertificateClaimsFor(w.RegistrarBase(), registrar.ProviderCertificateContent(rp, rp.Services[0]), nil, nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged, err := SignRegistrationCertificateJWT(claims, key, chain)
+	forged, err := registrar.SignRegistrationCertificateJWT(claims, key, chain)
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := IssuerInfoValue(registrarDataset(rp, rp.Services[0]), forged)
+	info, err := registrar.IssuerInfoValue(registrar.RegistrarDatasetFor(rp, rp.Services[0]), forged)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,7 @@ func TestStrictARFRefusesAnUnregisteredIssuer(t *testing.T) {
 // nothing, and an offered configuration needs a type to be checked.
 func TestARFChecksOfferedTypesStrictly(t *testing.T) {
 	w := generateTestWallet(t)
-	rp := registerTestIssuer(t, w, nonQEAAProviderEntitlement)
+	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
 	info := issueTestIssuerInfo(t, w, rp).IssuerInfo
 
@@ -236,9 +237,9 @@ func TestARFChecksOfferedTypesStrictly(t *testing.T) {
 // ISSU_34a).
 func TestARFChecksEachKindInAMixedOffer(t *testing.T) {
 	w := generateTestWallet(t)
-	rp := registerTestIssuer(t, w, pidProviderEntitlement,
-		ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{mock.DefaultPIDVCT}}},
-		ProvidedAttestation{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{testDiplomaVCT}}})
+	rp := registerTestIssuer(t, w, registrar.PIDProviderEntitlement,
+		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: mock.DefaultPIDVCT},
+		registrar.ProvidedAttestation{Format: "dc+sd-jwt", Type: testDiplomaVCT})
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
 	metadata, signer := signedTestIssuerMetadata(t, key, chain, "dc+sd-jwt", mock.DefaultPIDVCT, issueTestIssuerInfo(t, w, rp).IssuerInfo)
 	supported := metadata["credential_configurations_supported"].(map[string]any)

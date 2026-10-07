@@ -20,6 +20,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -49,14 +50,14 @@ type walletService interface {
 	SaveTemplate(tpl credtemplate.Template) (string, error)
 	DeleteTemplate(name string) error
 	Certificate(kind, certFormat string, opts walletCertOptions) ([]byte, error)
-	RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error)
-	AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error)
-	RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error)
-	RegistrarRecords() ([]wallet.WalletRelyingParty, error)
-	SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error)
+	RegistrationCertificate(req registrar.RegistrationCertificateRequest) (*registrar.RegistrationCertificateResult, error)
+	AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error)
+	RegisterRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error)
+	RegistrarRecords() ([]registrar.WalletRelyingParty, error)
+	SetRegistrationCertificatesRevoked(identifier string, scope registrar.RegistrationScope, revoked bool) (int, error)
 	DeleteRelyingParty(identifier string) error
-	CatalogAttestations() ([]wallet.CatalogAttestation, error)
-	AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error)
+	CatalogAttestations() ([]registrar.CatalogAttestation, error)
+	AddCatalogAttestation(entry registrar.CatalogAttestation) (registrar.CatalogAttestation, error)
 	DeleteCatalogAttestation(id string) error
 	Config() (map[string]any, error)
 }
@@ -162,19 +163,19 @@ func (r *remoteWallet) Certificate(kind, certFormat string, _ walletCertOptions)
 	return r.c.Certificate(kind, certFormat)
 }
 
-func (r *remoteWallet) RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error) {
-	var out wallet.WalletRelyingParty
+func (r *remoteWallet) RegisterRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error) {
+	var out registrar.WalletRelyingParty
 	err := r.c.RegisterRelyingParty(rp, &out)
 	return out, err
 }
 
-func (r *remoteWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
-	var out []wallet.WalletRelyingParty
+func (r *remoteWallet) RegistrarRecords() ([]registrar.WalletRelyingParty, error) {
+	var out []registrar.WalletRelyingParty
 	err := r.c.RegistrarRecords(&out)
 	return out, err
 }
 
-func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error) {
+func (r *remoteWallet) SetRegistrationCertificatesRevoked(identifier string, scope registrar.RegistrationScope, revoked bool) (int, error) {
 	var out struct {
 		Changed int `json:"changed"`
 	}
@@ -191,14 +192,14 @@ func (r *remoteWallet) DeleteRelyingParty(identifier string) error {
 	return r.c.DeleteRelyingParty(identifier)
 }
 
-func (r *remoteWallet) CatalogAttestations() ([]wallet.CatalogAttestation, error) {
-	var out []wallet.CatalogAttestation
+func (r *remoteWallet) CatalogAttestations() ([]registrar.CatalogAttestation, error) {
+	var out []registrar.CatalogAttestation
 	err := r.c.CatalogAttestations(&out)
 	return out, err
 }
 
-func (r *remoteWallet) AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error) {
-	var out wallet.CatalogAttestation
+func (r *remoteWallet) AddCatalogAttestation(entry registrar.CatalogAttestation) (registrar.CatalogAttestation, error) {
+	var out registrar.CatalogAttestation
 	err := r.c.AddCatalogAttestation(entry, &out)
 	return out, err
 }
@@ -207,16 +208,16 @@ func (r *remoteWallet) DeleteCatalogAttestation(id string) error {
 	return r.c.DeleteCatalogAttestation(id)
 }
 
-func (r *remoteWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
-	var out wallet.AccessCertificateResult
+func (r *remoteWallet) AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error) {
+	var out registrar.AccessCertificateResult
 	if err := r.c.AccessCertificate(req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-func (r *remoteWallet) RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error) {
-	var out wallet.RegistrationCertificateResult
+func (r *remoteWallet) RegistrationCertificate(req registrar.RegistrationCertificateRequest) (*registrar.RegistrationCertificateResult, error) {
+	var out registrar.RegistrationCertificateResult
 	if err := r.c.RegistrationCertificate(req, &out); err != nil {
 		return nil, err
 	}
@@ -429,17 +430,17 @@ func (l *localWallet) DeleteTemplate(name string) error {
 	return credtemplate.Delete(loc, name)
 }
 
-func (l *localWallet) RegisterRelyingParty(rp wallet.WalletRelyingParty) (wallet.WalletRelyingParty, error) {
+func (l *localWallet) RegisterRelyingParty(rp registrar.WalletRelyingParty) (registrar.WalletRelyingParty, error) {
 	w, store, err := l.load()
 	if err != nil {
-		return wallet.WalletRelyingParty{}, err
+		return registrar.WalletRelyingParty{}, err
 	}
-	stored, err := w.RegisterRelyingParty(rp, w.RegistrarBase())
+	stored, err := w.Registrar().RegisterRelyingParty(rp)
 	if err != nil {
-		return wallet.WalletRelyingParty{}, err
+		return registrar.WalletRelyingParty{}, err
 	}
 	if err := store.Save(w); err != nil {
-		return wallet.WalletRelyingParty{}, fmt.Errorf("saving wallet: %w", err)
+		return registrar.WalletRelyingParty{}, fmt.Errorf("saving wallet: %w", err)
 	}
 	return stored, nil
 }
@@ -449,7 +450,7 @@ func (l *localWallet) DeleteRelyingParty(identifier string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.DeleteRelyingParty(identifier); err != nil {
+	if err := w.Registrar().DeleteRelyingParty(identifier); err != nil {
 		return err
 	}
 	if err := store.Save(w); err != nil {
@@ -458,25 +459,25 @@ func (l *localWallet) DeleteRelyingParty(identifier string) error {
 	return nil
 }
 
-func (l *localWallet) CatalogAttestations() ([]wallet.CatalogAttestation, error) {
+func (l *localWallet) CatalogAttestations() ([]registrar.CatalogAttestation, error) {
 	w, _, err := l.load()
 	if err != nil {
 		return nil, err
 	}
-	return w.CatalogAttestations(w.RegistrarBase()), nil
+	return w.Registrar().CatalogAttestations(), nil
 }
 
-func (l *localWallet) AddCatalogAttestation(entry wallet.CatalogAttestation) (wallet.CatalogAttestation, error) {
+func (l *localWallet) AddCatalogAttestation(entry registrar.CatalogAttestation) (registrar.CatalogAttestation, error) {
 	w, store, err := l.load()
 	if err != nil {
-		return wallet.CatalogAttestation{}, err
+		return registrar.CatalogAttestation{}, err
 	}
-	stored, err := w.AddCatalogAttestation(entry, w.RegistrarBase())
+	stored, err := w.Registrar().AddCatalogAttestation(entry)
 	if err != nil {
-		return wallet.CatalogAttestation{}, err
+		return registrar.CatalogAttestation{}, err
 	}
 	if err := store.Save(w); err != nil {
-		return wallet.CatalogAttestation{}, fmt.Errorf("saving wallet: %w", err)
+		return registrar.CatalogAttestation{}, fmt.Errorf("saving wallet: %w", err)
 	}
 	return stored, nil
 }
@@ -486,7 +487,7 @@ func (l *localWallet) DeleteCatalogAttestation(id string) error {
 	if err != nil {
 		return err
 	}
-	if err := w.DeleteCatalogAttestation(id, w.RegistrarBase()); err != nil {
+	if err := w.Registrar().DeleteCatalogAttestation(id); err != nil {
 		return err
 	}
 	if err := store.Save(w); err != nil {
@@ -495,28 +496,28 @@ func (l *localWallet) DeleteCatalogAttestation(id string) error {
 	return nil
 }
 
-func (l *localWallet) RegistrarRecords() ([]wallet.WalletRelyingParty, error) {
+func (l *localWallet) RegistrarRecords() ([]registrar.WalletRelyingParty, error) {
 	w, _, err := l.load()
 	if err != nil {
 		return nil, err
 	}
-	return w.RegistrarRecords(), nil
+	return w.Registrar().RegistrarRecords(), nil
 }
 
-func (l *localWallet) AccessCertificate(req wallet.AccessCertificateRequest) (*wallet.AccessCertificateResult, error) {
+func (l *localWallet) AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error) {
 	w, _, err := l.load()
 	if err != nil {
 		return nil, err
 	}
-	return w.IssueAccessCertificate(req)
+	return w.Registrar().IssueAccessCertificate(req)
 }
 
-func (l *localWallet) RegistrationCertificate(req wallet.RegistrationCertificateRequest) (*wallet.RegistrationCertificateResult, error) {
+func (l *localWallet) RegistrationCertificate(req registrar.RegistrationCertificateRequest) (*registrar.RegistrationCertificateResult, error) {
 	w, store, err := l.load()
 	if err != nil {
 		return nil, err
 	}
-	result, err := w.IssueRegistrationCertificate(req)
+	result, err := w.Registrar().IssueRegistrationCertificate(req)
 	if err != nil {
 		return nil, err
 	}
@@ -526,12 +527,12 @@ func (l *localWallet) RegistrationCertificate(req wallet.RegistrationCertificate
 	return result, nil
 }
 
-func (l *localWallet) SetRegistrationCertificatesRevoked(identifier string, scope wallet.RegistrationScope, revoked bool) (int, error) {
+func (l *localWallet) SetRegistrationCertificatesRevoked(identifier string, scope registrar.RegistrationScope, revoked bool) (int, error) {
 	w, store, err := l.load()
 	if err != nil {
 		return 0, err
 	}
-	changed, err := w.SetRegistrationCertificatesRevoked(identifier, scope, revoked)
+	changed, err := w.Registrar().SetRegistrationCertificatesRevoked(identifier, scope, revoked)
 	if err != nil {
 		return 0, err
 	}

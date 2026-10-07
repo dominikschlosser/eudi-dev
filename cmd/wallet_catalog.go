@@ -22,7 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func walletCatalogCmd() *cobra.Command {
@@ -76,7 +76,7 @@ func listCatalog(cmd *cobra.Command, args []string) error {
 
 func walletCatalogAddCmd() *cobra.Command {
 	var (
-		entry                    wallet.CatalogAttestation
+		entry                    registrar.CatalogAttestation
 		types, claims            []string
 		los, trustedList         string
 		bindingType, rulebookURI string
@@ -100,7 +100,7 @@ the doctype's namespace, or namespace:element.`,
 				if !ok || strings.TrimSpace(typ) == "" {
 					return fmt.Errorf("--type %q is not format:type, such as dc+sd-jwt:urn:example:diploma:1", value)
 				}
-				entry.Credentials = append(entry.Credentials, wallet.CatalogCredential{Format: format, Type: strings.TrimSpace(typ)})
+				entry.Credentials = append(entry.Credentials, registrar.CatalogCredential{Format: format, Type: strings.TrimSpace(typ)})
 			}
 			for _, value := range claims {
 				format, claim, ok := strings.Cut(value, ":")
@@ -122,7 +122,7 @@ the doctype's namespace, or namespace:element.`,
 			entry.Schema.RulebookURI = rulebookURI
 			if trustedList != "" {
 				isLOTE := true
-				entry.Schema.TrustedAuthorities = []wallet.TrustAuthority{{FrameworkType: "etsi_tl", Value: trustedList, IsLOTE: &isLOTE}}
+				entry.Schema.TrustedAuthorities = []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: trustedList, IsLOTE: &isLOTE}}
 			}
 			svc, err := managedWallet()
 			if err != nil {

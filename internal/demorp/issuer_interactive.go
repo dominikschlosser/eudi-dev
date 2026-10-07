@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -448,7 +449,7 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 		[]map[string]any{sdjwtCred, mdocCred})
 	var registration string
 	if rerr == nil {
-		registration, rerr = wallet.SignRegistrationCertificateJWT(registrationClaims, registrarKey, registrarChain)
+		registration, rerr = registrar.SignRegistrationCertificateJWT(registrationClaims, registrarKey, registrarChain)
 	}
 	if rerr == nil {
 		claims["verifier_info"] = []map[string]any{{
@@ -521,6 +522,6 @@ func presentedHolder(claims map[string]any) string {
 func (d *DemoRP) registrationCertificateClaims(accessCertificate *x509.Certificate, name, purpose string, dcqlCredentials []map[string]any) (map[string]any, error) {
 	// The wallet's registrar signs the certificate, so its status entry lives
 	// on the registrar's status list.
-	return wallet.RegistrationCertificateClaimsFor(d.wallet.RegistrarBase(), wallet.RegistrationCertificateContent{Name: name, Purpose: []wallet.MultiLangString{{Lang: "en", Content: purpose}}},
+	return registrar.RegistrationCertificateClaimsFor(d.wallet.RegistrarBase(), registrar.RegistrationCertificateContent{Name: name, Purpose: []registrar.MultiLangString{{Lang: "en", Content: purpose}}},
 		accessCertificate, dcqlCredentials, time.Now())
 }

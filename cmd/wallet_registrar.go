@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func walletRegistrarCmd() *cobra.Command {
@@ -47,7 +47,7 @@ It gets one registration certificate for its service.`,
 
 // partyFlags hold the registration fields that verifiers and issuers share.
 type partyFlags struct {
-	rp                                wallet.WalletRelyingParty
+	rp                                registrar.WalletRelyingParty
 	identifier, legalName, supportURI string
 	serviceID                         string
 }
@@ -62,22 +62,20 @@ func (f *partyFlags) add(cmd *cobra.Command) {
 	_ = cmd.MarkFlagRequired("name")
 }
 
-func (f *partyFlags) register(service wallet.WalletRelyingPartyService) (wallet.WalletRelyingParty, error) {
+func (f *partyFlags) register(service registrar.WalletRelyingPartyService) (registrar.WalletRelyingParty, error) {
 	rp := f.rp
 	if f.identifier != "" {
-		rp.Identifier = []wallet.Identifier{{Identifier: f.identifier}}
+		rp.Identifier = []registrar.Identifier{{Identifier: f.identifier}}
 	}
 	if f.legalName != "" {
 		rp.LegalPerson.LegalName = []string{f.legalName}
 	}
 	service.ServiceIdentifier = f.serviceID
-	if f.supportURI != "" {
-		service.SupportURI = []string{f.supportURI}
-	}
-	rp.Services = []wallet.WalletRelyingPartyService{service}
+	service.SupportURI = f.supportURI
+	rp.Services = []registrar.WalletRelyingPartyService{service}
 	svc, err := managedWallet()
 	if err != nil {
-		return wallet.WalletRelyingParty{}, err
+		return registrar.WalletRelyingParty{}, err
 	}
 	return svc.RegisterRelyingParty(rp)
 }
@@ -101,7 +99,7 @@ func walletPartiesCmd(role string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			parties := slices.DeleteFunc(records, func(rp wallet.WalletRelyingParty) bool { return !hasRole(rp, role) })
+			parties := slices.DeleteFunc(records, func(rp registrar.WalletRelyingParty) bool { return !hasRole(rp, role) })
 			printResult(parties, func() {
 				tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 				if isIssuer {
@@ -114,7 +112,7 @@ func walletPartiesCmd(role string) *cobra.Command {
 					for _, service := range rp.Services {
 						if isIssuer {
 							for _, a := range service.ProvidesAttestations {
-								items = append(items, a.Format+":"+strings.Join(wallet.CredentialTypes(a.Meta), ","))
+								items = append(items, a.Format+":"+a.Type)
 							}
 							continue
 						}
@@ -135,16 +133,14 @@ func walletPartiesCmd(role string) *cobra.Command {
 
 // hasRole reports whether a registration is one of the verifiers or issuers.
 // A service provider counts as a verifier even before it has intended uses.
-func hasRole(rp wallet.WalletRelyingParty, role string) bool {
-	return slices.ContainsFunc(rp.Services, func(s wallet.WalletRelyingPartyService) bool {
+func hasRole(rp registrar.WalletRelyingParty, role string) bool {
+	return slices.ContainsFunc(rp.Services, func(s registrar.WalletRelyingPartyService) bool {
 		if role == "issuers" {
 			return len(s.ProvidesAttestations) > 0
 		}
-		return len(s.IntendedUses) > 0 || slices.Contains(s.Entitlements, entitlementServiceProvider)
+		return len(s.IntendedUses) > 0 || slices.Contains(s.Entitlements, registrar.ServiceProviderEntitlement)
 	})
 }
-
-const entitlementServiceProvider = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
 
 // listSubcommand runs the parent's listing as "list", like wallet list and
 // templates list.
@@ -176,8 +172,8 @@ both roles.`,
 			if err != nil {
 				return err
 			}
-			i := slices.IndexFunc(records, func(rp wallet.WalletRelyingParty) bool {
-				return slices.ContainsFunc(rp.Identifier, func(id wallet.Identifier) bool { return id.Identifier == args[0] })
+			i := slices.IndexFunc(records, func(rp registrar.WalletRelyingParty) bool {
+				return slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == args[0] })
 			})
 			if i < 0 || !hasRole(records[i], role) {
 				return fmt.Errorf("%s is not a registered %s", args[0], singular)
@@ -212,7 +208,7 @@ Run registration-cert to get its registration certificate.`,
 			if err != nil {
 				return err
 			}
-			stored, err := party.register(wallet.WalletRelyingPartyService{IntendedUses: []wallet.IntendedUse{use}})
+			stored, err := party.register(registrar.WalletRelyingPartyService{IntendedUses: []registrar.IntendedUse{use}})
 			if err != nil {
 				return err
 			}
@@ -260,14 +256,14 @@ issuer_info value for your issuer metadata.`,
 			if err != nil {
 				return err
 			}
-			stored, err := party.register(wallet.WalletRelyingPartyService{Entitlements: []string{uri}, ProvidesAttestations: provided})
+			stored, err := party.register(registrar.WalletRelyingPartyService{Entitlements: []string{uri}, ProvidesAttestations: provided})
 			if err != nil {
 				return err
 			}
 			printResult(stored, func() {
 				fmt.Printf("Registered %s as %s\n", stored.TradeName, stored.Identifier[0].Identifier)
 				for _, attestation := range stored.Services[0].ProvidesAttestations {
-					fmt.Printf("Attestation: %s %s\n", attestation.Format, strings.Join(wallet.CredentialTypes(attestation.Meta), ", "))
+					fmt.Printf("Attestation: %s %s\n", attestation.Format, attestation.Type)
 				}
 			})
 			return nil
@@ -284,41 +280,37 @@ issuer_info value for your issuer metadata.`,
 // entitlementNames are the provider entitlements of ETSI TS 119 475 V1.2.1
 // Annex A.2 that --entitlement takes.
 var entitlementNames = map[string]string{
-	"pid":     "https://uri.etsi.org/19475/Entitlement/PID_Provider",
-	"qeaa":    "https://uri.etsi.org/19475/Entitlement/QEAA_Provider",
-	"pub-eaa": "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider",
-	"eaa":     "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider",
+	"pid":     registrar.PIDProviderEntitlement,
+	"qeaa":    registrar.QEAAProviderEntitlement,
+	"pub-eaa": registrar.PubEAAProviderEntitlement,
+	"eaa":     registrar.NonQEAAProviderEntitlement,
 }
 
 // providedAttestations parses format:type values. The type of an SD-JWT VC is
 // its vct and the type of an mdoc its doctype.
-func providedAttestations(values []string) ([]wallet.ProvidedAttestation, error) {
-	attestations := make([]wallet.ProvidedAttestation, 0, len(values))
+func providedAttestations(values []string) ([]registrar.ProvidedAttestation, error) {
+	attestations := make([]registrar.ProvidedAttestation, 0, len(values))
 	for _, value := range values {
 		format, typ, ok := strings.Cut(strings.TrimSpace(value), ":")
 		typ = strings.TrimSpace(typ)
 		if !ok || typ == "" {
 			return nil, fmt.Errorf("--attestation %q is not format:type, such as dc+sd-jwt:urn:eudi:pid:1", value)
 		}
-		switch format {
-		case "dc+sd-jwt":
-			attestations = append(attestations, wallet.ProvidedAttestation{Format: format, Meta: map[string]any{"vct_values": []string{typ}}})
-		case "mso_mdoc":
-			attestations = append(attestations, wallet.ProvidedAttestation{Format: format, Meta: map[string]any{"doctype_value": typ}})
-		default:
+		if format != "dc+sd-jwt" && format != "mso_mdoc" {
 			return nil, fmt.Errorf("--attestation %q has format %q, not dc+sd-jwt or mso_mdoc", value, format)
 		}
+		attestations = append(attestations, registrar.ProvidedAttestation{Format: format, Type: typ})
 	}
 	return attestations, nil
 }
 
-func intendedUseFromFlags(purpose, privacy, dcqlInput string) (wallet.IntendedUse, error) {
-	use := wallet.IntendedUse{}
+func intendedUseFromFlags(purpose, privacy, dcqlInput string) (registrar.IntendedUse, error) {
+	use := registrar.IntendedUse{}
 	if purpose != "" {
-		use.Purpose = []wallet.MultiLangString{{Lang: "en", Content: purpose}}
+		use.Purpose = []registrar.MultiLangString{{Lang: "en", Content: purpose}}
 	}
 	if privacy != "" {
-		use.PrivacyPolicy = []wallet.Policy{{PolicyURI: privacy}}
+		use.PrivacyPolicy = []registrar.Policy{{PolicyURI: privacy}}
 	}
 	if dcqlInput == "" {
 		return use, fmt.Errorf("an intended use needs --dcql with the credentials and claims to register")
@@ -328,7 +320,7 @@ func intendedUseFromFlags(purpose, privacy, dcqlInput string) (wallet.IntendedUs
 		return use, fmt.Errorf("reading the DCQL query: %w", err)
 	}
 	var query struct {
-		Credentials []wallet.RegisteredCredential `json:"credentials"`
+		Credentials []registrar.RegisteredCredential `json:"credentials"`
 	}
 	if err := json.Unmarshal([]byte(raw), &query); err != nil {
 		return use, fmt.Errorf("parsing the DCQL query: %w", err)
@@ -339,7 +331,7 @@ func intendedUseFromFlags(purpose, privacy, dcqlInput string) (wallet.IntendedUs
 
 func walletAccessCertCmd() *cobra.Command {
 	var (
-		req     wallet.AccessCertificateRequest
+		req     registrar.AccessCertificateRequest
 		csrPath string
 	)
 	cmd := &cobra.Command{
@@ -391,7 +383,7 @@ with --json.`,
 }
 
 func walletRegistrationCertCmd() *cobra.Command {
-	var req wallet.RegistrationCertificateRequest
+	var req registrar.RegistrationCertificateRequest
 	var output string
 	var provider bool
 	cmd := &cobra.Command{
@@ -472,8 +464,8 @@ func onlyCertificateTarget(svc walletService, identifier, serviceIdentifier stri
 	if err != nil {
 		return "", err
 	}
-	i := slices.IndexFunc(records, func(rp wallet.WalletRelyingParty) bool {
-		return slices.ContainsFunc(rp.Identifier, func(id wallet.Identifier) bool { return id.Identifier == strings.TrimSpace(identifier) })
+	i := slices.IndexFunc(records, func(rp registrar.WalletRelyingParty) bool {
+		return slices.ContainsFunc(rp.Identifier, func(id registrar.Identifier) bool { return id.Identifier == strings.TrimSpace(identifier) })
 	})
 	if i < 0 {
 		return "", fmt.Errorf("relying party %s is not registered", identifier)
@@ -509,7 +501,7 @@ func onlyCertificateTarget(svc walletService, identifier, serviceIdentifier stri
 // walletRegistrarStatusCmd revokes or activates registration certificates.
 func walletRegistrarStatusCmd(revoke bool) *cobra.Command {
 	var identifier string
-	var scope wallet.RegistrationScope
+	var scope registrar.RegistrationScope
 	use, verb, done := "activate", "Activate", "Activated"
 	if revoke {
 		use, verb, done = "revoke", "Revoke", "Revoked"

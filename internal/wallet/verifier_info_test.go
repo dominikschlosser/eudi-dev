@@ -17,13 +17,13 @@ package wallet
 import (
 	"crypto/ecdsa"
 	"encoding/json"
-	"net/http/httptest"
-	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 func signTestRegistrationCertificate(t *testing.T, w *Wallet, purpose any) string {
@@ -41,7 +41,7 @@ func signTestRegistrationCertificate(t *testing.T, w *Wallet, purpose any) strin
 	if purpose != nil {
 		claims["purpose"] = purpose
 	}
-	raw, err := SignRegistrationCertificateJWT(claims, w.IssuerKey, chain)
+	raw, err := registrar.SignRegistrationCertificateJWT(claims, w.IssuerKey, chain)
 	if err != nil {
 		t.Fatalf("signing registration certificate: %v", err)
 	}
@@ -56,12 +56,20 @@ func verifierInfoPayload(entries ...map[string]any) map[string]any {
 	return map[string]any{"verifier_info": list}
 }
 
+// purposesOf returns the purposes of the registration certificates in
+// verifier_info that verify, and the problems of the others.
+func purposesOf(payload map[string]any) ([]string, []string) {
+	certs, problems := verifiedRegistrationCertificates(payload)
+	purposes, _ := registrationPurposes(certs)
+	return purposes, problems
+}
+
 func TestVerifierInfoPurposes(t *testing.T) {
 	w := generateTestWallet(t)
 
 	t.Run("a plain purpose string is read", func(t *testing.T) {
 		cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
-		purposes, findings := verifierInfoPurposes(verifierInfoPayload(
+		purposes, findings := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "registration_cert", "data": cert},
 		))
 		if len(findings) != 0 {
@@ -77,7 +85,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 			map[string]any{"lang": "de", "value": "Ticketpruefung"},
 			map[string]any{"lang": "en", "value": "Ticket check"},
 		})
-		purposes, _ := verifierInfoPurposes(verifierInfoPayload(
+		purposes, _ := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "registration_cert", "data": cert},
 		))
 		if len(purposes) != 1 || purposes[0] != "Ticket check" {
@@ -90,7 +98,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 			map[string]any{"lang": "de", "value": "Ticketpruefung"},
 			map[string]any{"lang": "fr", "value": "Verification du billet"},
 		})
-		purposes, _ := verifierInfoPurposes(verifierInfoPayload(
+		purposes, _ := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "registration_cert", "data": cert},
 		))
 		if len(purposes) != 1 || purposes[0] != "Ticketpruefung" {
@@ -98,26 +106,11 @@ func TestVerifierInfoPurposes(t *testing.T) {
 		}
 	})
 
-	t.Run("the sub is the registered entity, not the client_id", func(t *testing.T) {
-		// ETSI TS 119 475 uses sub for the legal entity identifier, which need not
-		// match client_id.
-		cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
-		purposes, findings := verifierInfoPurposes(verifierInfoPayload(
-			map[string]any{"format": "registration_cert", "data": cert},
-		))
-		if len(findings) != 0 {
-			t.Errorf("findings = %v, want none", findings)
-		}
-		if len(purposes) != 1 {
-			t.Errorf("purposes = %v, want the purpose shown for a foreign sub", purposes)
-		}
-	})
-
 	t.Run("a broken signature is not shown", func(t *testing.T) {
 		cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
 		parts := strings.Split(cert, ".")
 		tampered := parts[0] + "." + parts[1] + "." + parts[2][:len(parts[2])-4] + "AAAA"
-		purposes, findings := verifierInfoPurposes(verifierInfoPayload(
+		purposes, findings := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "registration_cert", "data": tampered},
 		))
 		if len(purposes) != 0 {
@@ -133,7 +126,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("signing JWT: %v", err)
 		}
-		purposes, findings := verifierInfoPurposes(verifierInfoPayload(
+		purposes, findings := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "jwt", "data": other},
 		))
 		if len(purposes) != 0 || len(findings) != 0 {
@@ -147,7 +140,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("encoding verifier_info: %v", err)
 		}
-		purposes, _ := verifierInfoPurposes(map[string]any{"verifier_info": string(encoded)})
+		purposes, _ := purposesOf(map[string]any{"verifier_info": string(encoded)})
 		if len(purposes) != 1 || purposes[0] != "Checking your ticket" {
 			t.Errorf("purposes = %v, want the certificate's purpose", purposes)
 		}
@@ -155,7 +148,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 
 	t.Run("duplicate purposes are shown once", func(t *testing.T) {
 		cert := signTestRegistrationCertificate(t, w, "Checking your ticket")
-		purposes, _ := verifierInfoPurposes(verifierInfoPayload(
+		purposes, _ := purposesOf(verifierInfoPayload(
 			map[string]any{"format": "registration_cert", "data": cert},
 			map[string]any{"format": "registration_cert", "data": cert},
 		))
@@ -165,7 +158,7 @@ func TestVerifierInfoPurposes(t *testing.T) {
 	})
 
 	t.Run("a request without verifier_info has no purposes", func(t *testing.T) {
-		purposes, findings := verifierInfoPurposes(map[string]any{"client_id": "x509_hash:test-verifier"})
+		purposes, findings := purposesOf(map[string]any{"client_id": "x509_hash:test-verifier"})
 		if len(purposes) != 0 || len(findings) != 0 {
 			t.Errorf("purposes = %v findings = %v, want nothing", purposes, findings)
 		}
@@ -192,73 +185,18 @@ func TestDefaultSigningMaterialPairsKeyAndChain(t *testing.T) {
 	}
 }
 
-func TestPlainParameterRequestShowsThePurpose(t *testing.T) {
-	srv := newTestServer(t, false)
-	cert := signTestRegistrationCertificate(t, srv.wallet, "Checking who you are")
-	verifierInfo, err := json.Marshal([]map[string]any{{"format": "registration_cert", "data": cert}})
-	if err != nil {
-		t.Fatalf("encoding verifier_info: %v", err)
-	}
-
-	dcql, err := json.Marshal(map[string]any{
-		"credentials": []any{map[string]any{
-			"id":     "pid",
-			"format": "dc+sd-jwt",
-			"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
-			"claims": []any{map[string]any{"path": []any{"given_name"}}},
-		}},
-	})
-	if err != nil {
-		t.Fatalf("encoding dcql: %v", err)
-	}
-
-	params := url.Values{
-		"client_id":     {"https://verifier.example"},
-		"response_type": {"vp_token"},
-		"nonce":         {"purpose-nonce"},
-		"response_uri":  {"https://verifier.example/response"},
-		"dcql_query":    {string(dcql)},
-		"verifier_info": {string(verifierInfo)},
-	}
-
-	done := make(chan struct{})
-	go func() {
-		req := httptest.NewRequest("GET", "/authorize?"+params.Encode(), nil)
-		srv.mux.ServeHTTP(httptest.NewRecorder(), req)
-		close(done)
-	}()
-
-	var pending []*ConsentRequest
-	for i := 0; i < 100; i++ {
-		time.Sleep(10 * time.Millisecond)
-		if pending = srv.wallet.GetPendingRequests(); len(pending) > 0 {
-			break
-		}
-	}
-	if len(pending) == 0 {
-		t.Fatal("no pending consent request appeared")
-	}
-	if len(pending[0].Purposes) != 1 || pending[0].Purposes[0] != "Checking who you are" {
-		t.Errorf("Purposes = %v, want the certificate's purpose", pending[0].Purposes)
-	}
-
-	denyReq := httptest.NewRequest("POST", "/api/requests/"+pending[0].ID+"/deny", nil)
-	srv.mux.ServeHTTP(httptest.NewRecorder(), denyReq)
-	<-done
-}
-
 // Without a readable x5c, the purpose cannot be signature-checked and must remain
 // hidden.
 func TestVerifierInfoPurposesHidesAnUncheckableCertificate(t *testing.T) {
 	w := generateTestWallet(t)
-	cert, err := SignRegistrationCertificateJWT(map[string]any{
+	cert, err := registrar.SignRegistrationCertificateJWT(map[string]any{
 		"sub":     "LEIEU-TEST-VERIFIER",
 		"purpose": "Checking your ticket",
 	}, w.IssuerKey, nil)
 	if err != nil {
 		t.Fatalf("signing certificate: %v", err)
 	}
-	purposes, findings := verifierInfoPurposes(verifierInfoPayload(
+	purposes, findings := purposesOf(verifierInfoPayload(
 		map[string]any{"format": "registration_cert", "data": cert},
 	))
 	if len(purposes) != 0 {
@@ -308,14 +246,14 @@ func TestRegistrationCertificateContentFindings(t *testing.T) {
 func TestRegistrationValidityFindings(t *testing.T) {
 	now := time.Now()
 	longLived := map[string]any{"iat": float64(now.Unix()), "exp": float64(now.AddDate(2, 0, 0).Unix())}
-	if !containsSubstring(registrationValidityFindings(longLived), "more than 12 months") {
+	if !containsSubstring(registrationValidityFindings(longLived, "ARF RPRC_17"), "more than 12 months") {
 		t.Error("a certificate valid for two years should be flagged")
 	}
 	expired := map[string]any{"iat": float64(now.AddDate(0, -2, 0).Unix()), "exp": float64(now.AddDate(0, -1, 0).Unix())}
-	if !containsSubstring(registrationValidityFindings(expired), "expired") {
+	if !containsSubstring(registrationValidityFindings(expired, "ARF RPRC_17"), "expired") {
 		t.Error("an expired certificate should be flagged")
 	}
-	if findings := registrationValidityFindings(map[string]any{"iat": float64(now.Unix())}); len(findings) != 0 {
+	if findings := registrationValidityFindings(map[string]any{"iat": float64(now.Unix())}, "ARF RPRC_17"); len(findings) != 0 {
 		t.Errorf("a certificate with iat and no exp should pass, got %v", findings)
 	}
 }
@@ -434,9 +372,9 @@ func TestARFChecksOverAsking(t *testing.T) {
 		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
 		"claims": []any{map[string]any{"path": []any{"given_name"}}},
 	}}
-	cert, err := SignRegistrationCertificateJWT(map[string]any{
+	cert, err := registrar.SignRegistrationCertificateJWT(map[string]any{
 		"sub": "LEIEU-TEST-VERIFIER", "name": "Test Verifier", "iat": time.Now().Unix(),
-		"credentials": RegisteredCredentials(registered),
+		"credentials": registrar.RegisteredCredentials(registered),
 	}, w.IssuerKey, chain)
 	if err != nil {
 		t.Fatalf("signing registration certificate: %v", err)
@@ -466,5 +404,24 @@ func TestARFChecksOverAsking(t *testing.T) {
 	}
 	if findings, err := ValidateAuthorizationRequest(ValidationModeStrict, false, false, request("birthdate")); err != nil || containsSubstring(findings, "RPRC") {
 		t.Errorf("strict mode without --arf: findings %v (%v), want no ARF check", findings, err)
+	}
+}
+
+// The consent dialog shows the purposes of a registration certificate only
+// when the certificate is bound to the access certificate that signed the
+// request (OpenID4VP 1.0 §5.1).
+func TestTheConsentShowsOnlyBoundRegistrations(t *testing.T) {
+	reg := generateTestWallet(t)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
+	if purposes, _ := consentRegistration(signedARFRequest(t, reg, key, chain, verifierInfo)); !slices.Equal(purposes, []string{"Age check"}) {
+		t.Errorf("bound certificate: purposes %v, want Age check", purposes)
+	}
+	otherKey, otherChain, _ := registeredVerifier(t, reg)
+	if purposes, _ := consentRegistration(signedARFRequest(t, reg, otherKey, otherChain, verifierInfo)); len(purposes) != 0 {
+		t.Errorf("certificate of another relying party: purposes %v, want none", purposes)
+	}
+	unsigned := &AuthorizationRequestParams{FullParams: map[string]string{"verifier_info": verifierInfo}}
+	if purposes, _ := consentRegistration(unsigned); len(purposes) != 0 {
+		t.Errorf("unsigned request: purposes %v, want none", purposes)
 	}
 }

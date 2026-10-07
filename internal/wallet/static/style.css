@@ -2185,6 +2185,33 @@ header h1 {
 }
 
 .registrar-catalog-links a,
+.registrar-use-credentials li {
+  margin: 2px 0;
+}
+
+.registrar-use-credentials summary {
+  cursor: pointer;
+}
+
+.registrar-credential-type {
+  color: var(--text);
+}
+
+.registrar-credential-meta {
+  margin-left: 8px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.registrar-credential-claims {
+  margin: 2px 0 6px 14px;
+  line-height: 1.5;
+}
+
+.registrar-credentials-more {
+  font-size: 11px;
+}
+
 .registrar-use-credentials a {
   color: var(--accent);
   text-decoration: none;

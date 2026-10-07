@@ -26,6 +26,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 const DefaultIssueExpiry = 720 * time.Hour
@@ -56,7 +57,7 @@ type IssueOptions struct {
 	SaveTemplate string
 	// Catalog adds the saved template to the attestation catalogue with these
 	// catalogue fields. It needs SaveTemplate.
-	Catalog *CatalogAttestation
+	Catalog *registrar.CatalogAttestation
 	// Omit removes top-level claims from the resolved claim set.
 	Omit []string
 	// VCT applies to sdjwt and jwt and defaults to mock.DefaultPIDVCT.
@@ -254,7 +255,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	// The template and its catalogue entry are checked before the credential
 	// is issued, so a bad entry stores nothing.
 	var saved *credtemplate.Template
-	var catalogEntry CatalogAttestation
+	var catalogEntry registrar.CatalogAttestation
 	if name := strings.TrimSpace(opts.SaveTemplate); name != "" {
 		saved = &credtemplate.Template{
 			Name:            name,
@@ -274,7 +275,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 			saved.UniqueClaims = tpl.UniqueClaims
 		}
 		if opts.Catalog != nil {
-			if catalogEntry, err = w.templateCatalogEntry(*saved, *opts.Catalog); err != nil {
+			if catalogEntry, err = w.Registrar().TemplateCatalogEntry(*saved, *opts.Catalog); err != nil {
 				return nil, err
 			}
 		}
@@ -475,16 +476,16 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	}
 
 	if saved != nil {
-		var added CatalogAttestation
+		var added registrar.CatalogAttestation
 		if opts.Catalog != nil {
-			if added, err = w.AddCatalogAttestation(catalogEntry, w.RegistrarBase()); err != nil {
+			if added, err = w.Registrar().AddCatalogAttestation(catalogEntry); err != nil {
 				return nil, fmt.Errorf("adding the template to the catalogue: %w", err)
 			}
 		}
 		path, err := credtemplate.Save(w.Templates, *saved)
 		if err != nil {
 			if opts.Catalog != nil {
-				_ = w.DeleteCatalogAttestation(added.Schema.ID, w.RegistrarBase())
+				_ = w.Registrar().DeleteCatalogAttestation(added.Schema.ID)
 			}
 			return nil, fmt.Errorf("saving template: %w", err)
 		}

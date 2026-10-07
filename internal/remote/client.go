@@ -26,11 +26,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 type Client struct {
@@ -209,7 +211,7 @@ func (c *Client) RegistrarRecords(out any) error {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := c.do(http.MethodGet, "/api/registrar/wrp?limit=1000", nil, &envelope); err != nil {
+	if err := c.do(http.MethodGet, "/api/registrar/wrp?limit="+strconv.Itoa(registrar.MaxRelyingParties), nil, &envelope); err != nil {
 		return err
 	}
 	return json.Unmarshal(envelope.Data, out)

@@ -28,41 +28,44 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/storage"
 )
 
 // arfRequest returns a request signed with an access certificate from the
 // registrar. The request carries the relying party's registration certificate.
-func arfRequest(t *testing.T, registrar *Wallet, checking *Wallet) *AuthorizationRequestParams {
+func arfRequest(t *testing.T, reg *Wallet, checking *Wallet) *AuthorizationRequestParams {
 	t.Helper()
-	key, chain, verifierInfo := registeredVerifier(t, registrar)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
 	return signedARFRequest(t, checking, key, chain, verifierInfo)
 }
 
 // registeredVerifier registers a relying party with the registrar and returns
 // its key, its access certificate chain and its verifier_info.
-func registeredVerifier(t *testing.T, registrar *Wallet) (*ecdsa.PrivateKey, []*x509.Certificate, string) {
+func registeredVerifier(t *testing.T, reg *Wallet) (*ecdsa.PrivateKey, []*x509.Certificate, string) {
 	t.Helper()
-	rp := registerTestRelyingParty(t, registrar)
-	key, chain := issueTestAccessCertificate(t, registrar, rp.Identifier[0].Identifier)
-	return key, chain, issueTestRegistrationCertificate(t, registrar, rp).VerifierInfo
+	rp := registerTestRelyingParty(t, reg)
+	key, chain := issueTestAccessCertificate(t, reg, rp.Identifier[0].Identifier)
+	return key, chain, issueTestRegistrationCertificate(t, reg, rp).VerifierInfo
 }
 
 // issueTestAccessCertificate creates a key and has the registrar issue an
 // access certificate for it. It returns the key and the chain, leaf first.
-func issueTestAccessCertificate(t *testing.T, registrar *Wallet, identifier string) (*ecdsa.PrivateKey, []*x509.Certificate) {
+func issueTestAccessCertificate(t *testing.T, w *Wallet, identifier string) (*ecdsa.PrivateKey, []*x509.Certificate) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	access, err := registrar.IssueAccessCertificate(AccessCertificateRequest{Identifier: identifier, CSR: testAccessCSR(t, key)})
+	access, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{Identifier: identifier, CSR: testAccessCSR(t, key)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,18 +204,18 @@ func TestARFRequiresAnAccessCertificate(t *testing.T) {
 // A presentation request fetches each registration certificate's status list
 // only once, because another party may serve the list.
 func TestAPresentationRequestReadsTheStatusListOnce(t *testing.T) {
-	registrar := newTestServer(t, true)
+	reg := newTestServer(t, true)
 	var fetches atomic.Int32
-	registrarHandler := registrar.Handler()
+	registrarHandler := reg.Handler()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == registrationStatusListPath {
+		if r.URL.Path == registrar.RegistrationStatusListPath {
 			fetches.Add(1)
 		}
 		registrarHandler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
-	registrar.wallet.IssuerURL = ts.URL
-	key, chain, verifierInfo := registeredVerifier(t, registrar.wallet)
+	reg.wallet.IssuerURL = ts.URL
+	key, chain, verifierInfo := registeredVerifier(t, reg.wallet)
 
 	verifier := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{})
@@ -284,15 +287,82 @@ func TestARFRefusesARegistrationSignedWithAnAccessCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload["purpose"] = []map[string]any{{"lang": "en", "value": "Anything at all"}}
-	forged, err := SignRegistrationCertificateJWT(payload, key, chain)
+	forged, err := registrar.SignRegistrationCertificateJWT(payload, key, chain)
 	if err != nil {
 		t.Fatal(err)
 	}
-	params := signedARFRequest(t, w, key, chain, VerifierInfoValue(forged))
+	params := signedARFRequest(t, w, key, chain, registrar.VerifierInfoValue(forged))
 	if findings := ARFFindings(params); !containsSubstring(findings, "RPRC_02a") {
 		t.Errorf("findings %v, want RPRC_02a for a registration certificate signed with an access certificate", findings)
 	}
 	if findings := ARFFindings(arfRequest(t, w, w)); containsSubstring(findings, "RPRC_02a") {
 		t.Errorf("findings %v, want the registrar's own certificate trusted", findings)
+	}
+}
+
+// A request carries a single registration certificate for its intended use
+// (ARF RPRC_19).
+func TestARFRefusesSeveralRegistrationCertificates(t *testing.T) {
+	reg := generateTestWallet(t)
+	key, chain, verifierInfo := registeredVerifier(t, reg)
+	var entries []any
+	if err := json.Unmarshal([]byte(verifierInfo), &entries); err != nil {
+		t.Fatal(err)
+	}
+	twice, _ := json.Marshal(append(entries, entries...))
+	findings := ARFFindings(signedARFRequest(t, reg, key, chain, string(twice)))
+	if !slices.ContainsFunc(findings, func(f string) bool { return strings.HasPrefix(f, "ARF RPRC_19: the request carries 2") }) {
+		t.Errorf("findings %v, want RPRC_19 for two certificates", findings)
+	}
+}
+
+// ETSI TS 119 475 V1.2.1 Annex B.2.9 requires format and meta, so an entry
+// without them registers nothing (ARF RPRC_21).
+func TestARegisteredEntryWithoutFormatOrTypeRegistersNothing(t *testing.T) {
+	query := map[string]any{"credentials": []any{map[string]any{
+		"id": "pid", "format": "dc+sd-jwt",
+		"meta":   map[string]any{"vct_values": []any{mock.DefaultPIDVCT}},
+		"claims": []any{map[string]any{"path": []any{"given_name"}}},
+	}}}
+	for name, entry := range map[string]map[string]any{
+		"no format": {"meta": map[string]any{"vct_values": []any{mock.DefaultPIDVCT}}, "claim": []any{map[string]any{"path": []any{"given_name"}}}},
+		"no type":   {"format": "dc+sd-jwt", "claim": []any{map[string]any{"path": []any{"given_name"}}}},
+	} {
+		cert := map[string]any{"credentials": []any{entry}}
+		if findings := overAskingFindings(cert, query); len(findings) != 1 {
+			t.Errorf("%s: findings %v, want the PID as over-asking", name, findings)
+		}
+	}
+}
+
+// A relying party that authenticated with a trusted access certificate gets
+// access_denied when strict --arf refuses its request (RFC 6749 §4.1.2.1).
+func TestStrictARFAnswersAnAuthenticatedVerifierWithAccessDenied(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.RequireARF = true
+	srv.wallet.ValidationMode = ValidationModeStrict
+	key, chain, verifierInfo := registeredVerifier(t, srv.wallet)
+	verifier := newCaptureVerifier(t)
+	var info []any
+	if err := json.Unmarshal([]byte(verifierInfo), &info); err != nil {
+		t.Fatal(err)
+	}
+	clientID := X509HashClientID(chain[0])
+	requestObject, err := SignRequestObjectJWT(map[string]any{
+		"client_id": clientID, "response_type": "vp_token", "response_mode": "direct_post",
+		"response_uri": verifier.URL, "nonce": "n", "state": "s", "verifier_info": info,
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"birthdate"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "openid4vp://authorize?" + url.Values{"client_id": {clientID}, "request": {requestObject}}.Encode()
+	body, _ := json.Marshal(map[string]string{"uri": uri})
+	serverRequest(t, srv, http.MethodPost, "/api/presentations", string(body))
+	if form := verifier.received(t); form.Get("error") != "access_denied" || form.Get("state") != "s" || !strings.Contains(form.Get("error_description"), "RPRC_21") {
+		t.Errorf("the verifier received %v, want access_denied naming RPRC_21", form)
 	}
 }

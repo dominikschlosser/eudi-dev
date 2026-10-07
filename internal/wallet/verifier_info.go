@@ -15,69 +15,32 @@
 package wallet
 
 import (
-	"crypto/ecdsa"
-	"crypto/sha256"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
-
-// ETSI TS 119 475 identifies registration certificates by rc-wrp+jwt. Select by this
-// typ even though the verifier_info format is registration_cert (ETSI TS 119 472-2).
-const registrationCertificateTyp = "rc-wrp+jwt"
-
-// Read registered purposes from verifier_info for the consent dialog (OpenID4VP 1.0
-// §5.1). Only rc-wrp+jwt certificates whose signature verifies against their own x5c
-// leaf contribute purposes. Their sub identifies a legal entity and may differ from
-// client_id.
-func verifierInfoPurposes(payload map[string]any) (purposes []string, findings []string) {
-	certs, findings := verifiedRegistrationCertificates(payload)
-	for _, cert := range certs {
-		for _, purpose := range purposeStrings(cert["purpose"]) {
-			if !containsPurpose(purposes, purpose) {
-				purposes = append(purposes, purpose)
-			}
-		}
-	}
-	return purposes, findings
-}
-
-// Verify signatures against each certificate's own x5c leaf. This does not establish
-// trust in the signer. See SECURITY.md.
-func verifiedRegistrationCertificates(payload map[string]any) (certs []map[string]any, findings []string) {
-	registrations, findings := verifiedRegistrations(payload)
-	for _, r := range registrations {
-		certs = append(certs, r.claims)
-	}
-	return certs, findings
-}
 
 type verifiedRegistration struct {
 	claims map[string]any
 	chain  []*x509.Certificate
 }
 
-func verifiedRegistrations(payload map[string]any) (registrations []verifiedRegistration, findings []string) {
-	registrations, problems := verifyRegistrationEntries(infoEntries(payload, "verifier_info"))
-	for _, problem := range problems {
-		findings = append(findings, "The registration certificate "+problem+", so its purpose is not shown")
-	}
-	return registrations, findings
-}
-
-// verifyRegistrationEntries verifies the rc-wrp+jwt entries of a verifier_info
-// or issuer_info array against their own x5c leaf. Each problem completes the
-// sentence "The registration certificate ...".
+// verifyRegistrationEntries verifies the registration certificates of a
+// verifier_info or issuer_info array against their own x5c leaf. ETSI TS 119
+// 475 V1.2.1 types them rc-wrp+jwt, whatever the entry's format. This does not
+// establish trust in the signer. Each problem completes the sentence "the
+// registration certificate ...".
 func verifyRegistrationEntries(entries []map[string]any) (registrations []verifiedRegistration, problems []string) {
 	for _, entry := range entries {
 		data, _ := entry["data"].(string)
@@ -88,49 +51,35 @@ func verifyRegistrationEntries(entries []map[string]any) (registrations []verifi
 		if err != nil {
 			continue
 		}
-		if typ, _ := header["typ"].(string); typ != registrationCertificateTyp {
+		if typ, _ := header["typ"].(string); typ != registrar.RegistrationCertificateTyp {
 			continue
 		}
-		key, err := validate.ExtractX5CLeafKey(header)
-		if err != nil || key == nil {
+		chain, err := validate.X5CCertificates(header)
+		if err != nil || len(chain) == 0 {
 			problems = append(problems, "has no readable x5c certificate")
 			continue
 		}
-		if _, err := jws.Verify(data, key); err != nil {
-			problems = append(problems, fmt.Sprintf("signature does not verify with its x5c leaf (%v)", err))
+		if _, err := jws.Verify(data, chain[0].PublicKey); err != nil {
+			problems = append(problems, "has a signature that does not verify with its x5c leaf")
 			continue
 		}
-		registrations = append(registrations, verifiedRegistration{claims: claims, chain: x5cChain(header)})
+		registrations = append(registrations, verifiedRegistration{claims: claims, chain: chain})
 	}
 	return registrations, problems
 }
 
-// x5cChain parses a JOSE x5c header, leaf first. It skips entries that do not
-// parse.
-func x5cChain(header map[string]any) []*x509.Certificate {
-	entries, _ := header["x5c"].([]any)
-	var chain []*x509.Certificate
-	for _, entry := range entries {
-		encoded, _ := entry.(string)
-		der, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			continue
-		}
-		if cert, err := x509.ParseCertificate(der); err == nil {
-			chain = append(chain, cert)
-		}
-	}
-	return chain
-}
-
 // verifyToAnchor verifies the leaf of chain to one of roots, with the rest of
 // chain as intermediates.
-func verifyToAnchor(chain []*x509.Certificate, roots *x509.CertPool) error {
+func verifyToAnchor(chain []*x509.Certificate, anchors []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("no certificate")
 	}
-	if roots == nil {
+	if len(anchors) == 0 {
 		return errors.New("no trusted CA")
+	}
+	roots := x509.NewCertPool()
+	for _, anchor := range anchors {
+		roots.AddCert(anchor)
 	}
 	intermediates := x509.NewCertPool()
 	for _, cert := range chain[1:] {
@@ -151,20 +100,20 @@ func requestVerifierInfo(authReq *AuthorizationRequestParams) map[string]any {
 }
 
 // registrationStatusFindings checks a registration certificate against its
-// registrar's status list (ARF §6.6.3.3 step 4). An unreadable status is a
-// finding too, because then the wallet can't tell whether the certificate is
-// revoked.
-func registrationStatusFindings(cert map[string]any, client *http.Client) []string {
-	return registrationStatusFindingsFor(cert, client, "ARF RPRC_17")
-}
-
-func registrationStatusFindingsFor(cert map[string]any, client *http.Client, rule string) []string {
+// registrar's status list (ARF §6.6.3.3 step 4). The list must chain to a
+// trusted registrar (ARF RPACANot_03b). An unreadable status is a finding too,
+// because then the wallet can't tell whether the certificate is revoked.
+func registrationStatusFindings(cert map[string]any, client *http.Client, registrarCAs []*x509.Certificate, rule string) []string {
 	ref := statuslist.ExtractStatusRef(cert)
 	if ref == nil {
 		return nil
 	}
 	name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
-	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client})
+	anchors := make([]statuslist.TrustCert, 0, len(registrarCAs))
+	for _, ca := range registrarCAs {
+		anchors = append(anchors, statuslist.TrustCert{Raw: ca.Raw})
+	}
+	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client, TrustListCerts: anchors})
 	if err != nil {
 		return []string{fmt.Sprintf("%s: the status of the registration certificate of %s cannot be checked: %v", rule, name, err)}
 	}
@@ -175,19 +124,38 @@ func registrationStatusFindingsFor(cert map[string]any, client *http.Client, rul
 }
 
 // consentRegistration returns the purposes and privacy policy links the consent
-// dialog shows (ARF RPA_10).
+// dialog shows (ARF RPA_10). It uses only registration certificates bound to
+// the access certificate that signed the request, because OpenID4VP 1.0 §5.1
+// requires the wallet to "validate the signature and ensure binding" of
+// information it uses from verifier_info.
 func consentRegistration(authReq *AuthorizationRequestParams) (purposes, privacyPolicies []string) {
 	if authReq == nil {
 		return nil, nil
 	}
-	certs, _ := verifiedRegistrationCertificates(requestVerifierInfo(authReq))
+	accessChain := requestAccessChain(authReq)
+	if len(accessChain) == 0 {
+		return nil, nil
+	}
+	registrations, _ := verifyRegistrationEntries(infoEntries(requestVerifierInfo(authReq), "verifier_info"))
+	var bound []map[string]any
+	for _, r := range registrations {
+		if len(registrationBindingFindings(r.claims, accessChain[0], "")) == 0 {
+			bound = append(bound, r.claims)
+		}
+	}
+	return registrationPurposes(bound)
+}
+
+// registrationPurposes collects the purposes and the privacy policy links of
+// registration certificates, each once.
+func registrationPurposes(certs []map[string]any) (purposes, privacyPolicies []string) {
 	for _, cert := range certs {
 		for _, purpose := range purposeStrings(cert["purpose"]) {
 			if !containsPurpose(purposes, purpose) {
 				purposes = append(purposes, purpose)
 			}
 		}
-		if policy := stringClaim(cert["privacy_policy"]); isWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
+		if policy := stringClaim(cert["privacy_policy"]); registrar.IsWebURL(policy) && !containsPurpose(privacyPolicies, policy) {
 			privacyPolicies = append(privacyPolicies, policy)
 		}
 	}
@@ -201,9 +169,16 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	if authReq == nil {
 		return nil
 	}
-	registrations, findings := verifiedRegistrations(requestVerifierInfo(authReq))
-	if len(registrations) == 0 {
+	registrations, problems := verifyRegistrationEntries(infoEntries(requestVerifierInfo(authReq), "verifier_info"))
+	var findings []string
+	for _, problem := range problems {
+		findings = append(findings, "ARF RPRC_17: the registration certificate "+problem)
+	}
+	switch count := len(registrations) + len(problems); {
+	case count == 0:
 		findings = append(findings, "ARF RPRC_19: the request has no registration certificate in verifier_info (typ rc-wrp+jwt)")
+	case count > 1:
+		findings = append(findings, fmt.Sprintf("ARF RPRC_19: the request carries %d registration certificates, but only a single one for its intended use", count))
 	}
 	accessChain := requestAccessChain(authReq)
 	if len(accessChain) == 0 {
@@ -211,26 +186,31 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	} else if err := verifyToAnchor(accessChain, authReq.RelyingPartyCAs); err != nil {
 		findings = append(findings, fmt.Sprintf("ARF RPA_04: the access certificate %q does not chain to a trusted access certificate authority: %v", accessChain[0].Subject.String(), err))
 	}
-	var registered []any
 	for _, r := range registrations {
 		cert := r.claims
 		name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
 		findings = append(findings, registrationCertificateContentFindings(cert)...)
-		registered = append(registered, toAnyList(cert["credentials"])...)
 		if len(accessChain) > 0 {
-			findings = append(findings, registrationBindingFindings(cert, accessChain[0])...)
+			findings = append(findings, registrationBindingFindings(cert, accessChain[0], "ARF RPRC_17a")...)
 		}
 		if err := verifyToAnchor(r.chain, authReq.RegistrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not chain to a trusted registrar: %v", name, err))
 		}
-		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient)...)
+		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient, authReq.RegistrarCAs, "ARF RPRC_17")...)
 	}
-	// A request may carry one certificate per intended use. Together they
-	// define what it may request.
-	if len(registrations) > 0 {
-		findings = append(findings, overAskingFindings(map[string]any{"credentials": registered}, authReq.DCQLQuery)...)
+	// RPRC_21 compares the request with "the registration certificate included
+	// in the same request".
+	if len(registrations) == 1 {
+		findings = append(findings, overAskingFindings(registrations[0].claims, authReq.DCQLQuery)...)
 	}
 	return findings
+}
+
+// relyingPartyAuthenticated reports whether a trusted access certificate
+// signed the request (ARF RPA_03 and RPA_04).
+func relyingPartyAuthenticated(authReq *AuthorizationRequestParams) bool {
+	chain := requestAccessChain(authReq)
+	return len(chain) > 0 && verifyToAnchor(chain, authReq.RelyingPartyCAs) == nil
 }
 
 // requestAccessChain returns the request object's x5c chain, leaf first, if the
@@ -241,8 +221,8 @@ func requestAccessChain(authReq *AuthorizationRequestParams) []*x509.Certificate
 	if reqObj == nil || stringClaim(reqObj.Header["alg"]) == "none" || strings.Count(reqObj.Raw, ".") != 2 {
 		return nil
 	}
-	chain := x5cChain(reqObj.Header)
-	if len(chain) == 0 {
+	chain, err := validate.X5CCertificates(reqObj.Header)
+	if err != nil || len(chain) == 0 {
 		return nil
 	}
 	if _, err := jws.Verify(reqObj.Raw, chain[0].PublicKey); err != nil {
@@ -251,16 +231,12 @@ func requestAccessChain(authReq *AuthorizationRequestParams) []*x509.Certificate
 	return chain
 }
 
-// ARF RPRC_17a links a registration certificate to the access certificate of
-// the request through the relying party identifier. An intermediary's
-// certificate carries it in act.sub (ETSI TS 119 475 GEN-5.2.4-09). Neither
-// certificate has a service identifier, so only the relying party is compared
-// (TS 119 475 V1.2.1).
-func registrationBindingFindings(cert map[string]any, access *x509.Certificate) []string {
-	return registrationBindingFindingsFor(cert, access, "ARF RPRC_17a")
-}
-
-func registrationBindingFindingsFor(cert map[string]any, access *x509.Certificate, rule string) []string {
+// registrationBindingFindings links a registration certificate to the access
+// certificate of the request through the relying party identifier (ARF
+// RPRC_17a). An intermediary's certificate carries it in act.sub (ETSI TS 119
+// 475 V1.2.1 GEN-5.2.4-09). Neither certificate has a service identifier, so
+// only the relying party is compared.
+func registrationBindingFindings(cert map[string]any, access *x509.Certificate, rule string) []string {
 	identifier := stringClaim(cert["sub"])
 	if act, ok := cert["act"].(map[string]any); ok && stringClaim(act["sub"]) != "" {
 		identifier = stringClaim(act["sub"])
@@ -282,12 +258,8 @@ func organizationIdentifier(cert *x509.Certificate) string {
 	return ""
 }
 
-func isWebURL(value string) bool {
-	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
-}
-
-// Check required content from ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. Missing
-// fields produce warnings.
+// Check required content from ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44.
+// Missing fields are ARF findings.
 func registrationCertificateContentFindings(cert map[string]any) []string {
 	var findings []string
 	miss := func(field, rule string) {
@@ -300,13 +272,13 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 		miss("sub (relying party identifier)", "ARF RPRC_07")
 	}
 	if stringClaim(cert["privacy_policy"]) == "" {
-		miss("privacy_policy", "ETSI TS 119 475 §5.2.4")
+		miss("privacy_policy", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01")
 	}
 	if len(purposeStrings(cert["srv_description"])) == 0 {
-		miss("srv_description", "ETSI TS 119 475 §5.2.4")
+		miss("srv_description", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01")
 	}
 	if !nonEmptyList(cert["entitlements"]) {
-		miss("entitlements (at least one)", "ETSI TS 119 475 GEN-5.2.4-03")
+		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
 	if !hasContact(cert["support_uri"]) {
 		miss("support_uri (data deletion contact)", "ARF RPRC_11")
@@ -315,25 +287,22 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 		miss("supervisory_authority contact", "ARF RPRC_12")
 	}
 	if !nonEmptyList(cert["credentials"]) {
-		miss("credentials (the registered attestations and attributes)", "ETSI TS 119 475 GEN-5.2.4-06")
+		miss("credentials (the registered attestations and attributes)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-06")
 	}
 	if statuslist.ExtractStatusRef(cert) == nil {
 		miss("status (its entry in the registrar's status list), so the wallet cannot check revocation", "ETSI TS 119 475 V1.2.1 Table 7")
 	}
-	return append(findings, registrationValidityFindings(cert)...)
+	return append(findings, registrationValidityFindings(cert, "ARF RPRC_17")...)
 }
 
-// ETSI TS 119 475 GEN-5.2.4-08 and ARF RPRC_17 require iat. If exp is present, it must
-// be in the future and within 12 months of iat.
-func registrationValidityFindings(cert map[string]any) []string {
-	return registrationValidityFindingsFor(cert, "ARF RPRC_17")
-}
-
-func registrationValidityFindingsFor(cert map[string]any, rule string) []string {
+// ETSI TS 119 475 V1.2.1 GEN-5.2.4-01 (Table 7) requires iat, and GEN-5.2.4-08
+// limits exp to 12 months after it. An expired certificate is invalid (ARF
+// RPRC_17).
+func registrationValidityFindings(cert map[string]any, rule string) []string {
 	var findings []string
 	iat, hasIat := numberClaim(cert["iat"])
 	if !hasIat {
-		findings = append(findings, "ETSI TS 119 475 §5.2.4: the registration certificate has no iat")
+		findings = append(findings, "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01: the registration certificate has no iat")
 	}
 	exp, hasExp := numberClaim(cert["exp"])
 	if !hasExp {
@@ -344,7 +313,7 @@ func registrationValidityFindingsFor(cert map[string]any, rule string) []string 
 		findings = append(findings, rule+": the registration certificate has expired")
 	}
 	if hasIat && expTime.After(time.Unix(int64(iat), 0).AddDate(1, 0, 0)) {
-		findings = append(findings, "ETSI TS 119 475 GEN-5.2.4-08: the registration certificate is valid for more than 12 months")
+		findings = append(findings, "ETSI TS 119 475 V1.2.1 GEN-5.2.4-08: the registration certificate is valid for more than 12 months")
 	}
 	return findings
 }
@@ -365,7 +334,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	}
 	for _, cq := range listOfMaps(dcql["credentials"]) {
 		format, _ := cq["format"].(string)
-		types := credentialTypes(cq["meta"])
+		types := registrar.CredentialTypes(cq["meta"])
 		if !registersCredential(registered, format, types) {
 			overAsk(credentialTypeName(format, types))
 			continue
@@ -383,13 +352,29 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	return findings
 }
 
+// registersCredential reports whether every type the query accepts is
+// registered in its format. ETSI TS 119 475 V1.2.1 Annex B.2.9 requires format
+// and meta, so an entry without them registers nothing.
 func registersCredential(registered []registeredCredential, format string, types []string) bool {
-	for _, rc := range registered {
-		if rc.matches(format, types) {
-			return true
+	if len(types) == 0 {
+		return false
+	}
+	for _, t := range types {
+		if len(registeredFor(registered, format, t)) == 0 {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func registeredFor(registered []registeredCredential, format, credentialType string) []registeredCredential {
+	var out []registeredCredential
+	for _, rc := range registered {
+		if rc.format != "" && rc.format == format && slices.Contains(rc.types, credentialType) {
+			out = append(out, rc)
+		}
+	}
+	return out
 }
 
 // An entry without a claim list declares no attributes (ETSI TS 119 475 V1.2.1
@@ -400,19 +385,11 @@ type registeredCredential struct {
 	paths  [][]any
 }
 
-// An omitted format or type on either side does not restrict matching.
-func (rc registeredCredential) matches(format string, types []string) bool {
-	if format != "" && rc.format != "" && rc.format != format {
-		return false
-	}
-	return typesOverlap(types, rc.types)
-}
-
 func registeredCredentials(cert map[string]any) []registeredCredential {
 	var out []registeredCredential
 	for _, entry := range listOfMaps(cert["credentials"]) {
 		format, _ := entry["format"].(string)
-		rc := registeredCredential{format: format, types: credentialTypes(entry["meta"])}
+		rc := registeredCredential{format: format, types: registrar.CredentialTypes(entry["meta"])}
 		for _, claim := range listOfMaps(entry["claim"]) {
 			if path := toAnyList(claim["path"]); len(path) > 0 {
 				rc.paths = append(rc.paths, path)
@@ -423,33 +400,17 @@ func registeredCredentials(cert map[string]any) []registeredCredential {
 	return out
 }
 
+// registeredCovers reports whether the claim is registered for every type the
+// query accepts.
 func registeredCovers(registered []registeredCredential, format string, types []string, path []any) bool {
-	for _, rc := range registered {
-		if !rc.matches(format, types) {
-			continue
-		}
-		for _, registeredPath := range rc.paths {
-			if pathPrefix(registeredPath, path) {
-				return true
-			}
+	for _, t := range types {
+		if !slices.ContainsFunc(registeredFor(registered, format, t), func(rc registeredCredential) bool {
+			return slices.ContainsFunc(rc.paths, func(p []any) bool { return pathPrefix(p, path) })
+		}) {
+			return false
 		}
 	}
-	return false
-}
-
-// An empty type list does not restrict matching.
-func typesOverlap(a, b []string) bool {
-	if len(a) == 0 || len(b) == 0 {
-		return true
-	}
-	for _, x := range a {
-		for _, y := range b {
-			if x == y {
-				return true
-			}
-		}
-	}
-	return false
+	return len(types) > 0
 }
 
 // Registering a parent path such as address also covers children such as
@@ -464,24 +425,6 @@ func pathPrefix(registered, requested []any) bool {
 		}
 	}
 	return true
-}
-
-// SD-JWT VC uses vct_values. mdoc uses doctype_value.
-func credentialTypes(meta any) []string {
-	m, ok := meta.(map[string]any)
-	if !ok {
-		return nil
-	}
-	var types []string
-	for _, v := range toAnyList(m["vct_values"]) {
-		if s, ok := v.(string); ok {
-			types = append(types, s)
-		}
-	}
-	if s, ok := m["doctype_value"].(string); ok && s != "" {
-		types = append(types, s)
-	}
-	return types
 }
 
 func describeClaim(format string, types []string, path []any) string {
@@ -558,23 +501,6 @@ func toAnyList(v any) []any {
 	}
 	list, _ := v.([]any)
 	return list
-}
-
-// SignRegistrationCertificateJWT includes the leaf in x5c so wallets can verify the
-// registered purpose.
-func SignRegistrationCertificateJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
-	header := map[string]any{
-		"alg": "ES256",
-		"typ": registrationCertificateTyp,
-	}
-	if x5c := buildJWSX5C(signerCerts); len(x5c) > 0 {
-		header["x5c"] = x5c
-		digest := sha256.Sum256(signerCerts[0].Raw)
-		header["x5t#S256"] = base64.RawURLEncoding.EncodeToString(digest[:])
-	}
-	// TS 119 475 V1.2.1 §5.2.1 requires JAdES B-B. TS 119 182-1 V1.2.1 §5.1.11 requires iat after July 2025.
-	header["iat"] = time.Now().Unix()
-	return signJSONWebSignature(claims, signingKey, header)
 }
 
 // infoEntries reads a verifier_info or issuer_info array. Plain request
@@ -676,10 +602,4 @@ func decodeCompactJWT(compact string) (header, payload map[string]any, err error
 		return nil, nil, fmt.Errorf("parsing JWT payload: %w", err)
 	}
 	return header, payload, nil
-}
-
-// CredentialTypes returns the types in a DCQL meta object: vct_values for SD-JWT
-// VC and doctype_value for mdoc.
-func CredentialTypes(meta any) []string {
-	return credentialTypes(meta)
 }

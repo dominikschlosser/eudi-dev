@@ -25,17 +25,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
 
 const (
-	serviceProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
-	qeaaProviderEntitlement    = "https://uri.etsi.org/19475/Entitlement/QEAA_Provider"
-	nonQEAAProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider"
-	pubEAAProviderEntitlement  = "https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider"
-	pidProviderEntitlement     = "https://uri.etsi.org/19475/Entitlement/PID_Provider"
 	localTrustListType         = "http://uri.etsi.org/19602/LoTEType/local"
 	localIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/Issuance"
 	localRevocationServiceType = "http://uri.etsi.org/19602/SvcType/Revocation"
@@ -55,25 +52,6 @@ const (
 	walletProviderRevocationServiceType = "http://uri.etsi.org/19602/SvcType/WalletSolution/Revocation"
 )
 
-// registeredEntitlements are the entitlements of ETSI TS 119 475 V1.2.1 Annex
-// A.2.
-var registeredEntitlements = []string{
-	serviceProviderEntitlement,
-	qeaaProviderEntitlement,
-	nonQEAAProviderEntitlement,
-	pubEAAProviderEntitlement,
-	pidProviderEntitlement,
-	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESeal_Provider",
-	"https://uri.etsi.org/19475/Entitlement/QCert_for_ESig_Provider",
-	"https://uri.etsi.org/19475/Entitlement/rQSealCDs_Provider",
-	"https://uri.etsi.org/19475/Entitlement/rQSigCDs_Provider",
-	"https://uri.etsi.org/19475/Entitlement/ESig_ESeal_Creation_Provider",
-}
-
-// providerEntitlements entitle a service to issue attestations, and its
-// registration certificate lists them (ETSI TS 119 475 V1.2.1 GEN-5.2.4-05).
-var providerEntitlements = []string{pidProviderEntitlement, qeaaProviderEntitlement, pubEAAProviderEntitlement, nonQEAAProviderEntitlement}
-
 type IssuedAttestationSpec struct {
 	Format                      string   `json:"format"`
 	VCT                         string   `json:"vct,omitempty"`
@@ -88,54 +66,6 @@ type IssuedAttestationSpec struct {
 	RevocationServiceType       string   `json:"revocation_service_type,omitempty"`
 	IssuanceServiceName         string   `json:"issuance_service_name,omitempty"`
 	RevocationServiceName       string   `json:"revocation_service_name,omitempty"`
-}
-
-// IssuerInfoEntry matches ETSI TS 119 472-3 issuer_info elements.
-type IssuerInfoEntry struct {
-	Format string `json:"format"`
-	Data   any    `json:"data"`
-}
-
-// Identifier is a minimal TS5-compatible identifier object.
-type Identifier struct {
-	Identifier string `json:"identifier"`
-	Type       string `json:"type,omitempty"`
-}
-
-// MultiLangString is a localised string as defined in TS5.
-type MultiLangString struct {
-	Lang    string `json:"lang"`
-	Content string `json:"content"`
-}
-
-// SupervisoryAuthority is a supervisory authority record as defined in TS5.
-type SupervisoryAuthority struct {
-	Name    string   `json:"name"`
-	Country string   `json:"country"`
-	Email   []string `json:"email,omitempty"`
-	Phone   []string `json:"phone,omitempty"`
-	FormURI []string `json:"formURI,omitempty"`
-}
-
-// ProvidedAttestation describes an issued attestation type in TS5 terms.
-type ProvidedAttestation struct {
-	Format string         `json:"format"`
-	Meta   map[string]any `json:"meta"`
-}
-
-// RegistrarDataset is the minimal subset of registrar data needed for
-// issuer-authorization checks.
-type RegistrarDataset struct {
-	Identifier           []Identifier          `json:"identifier"`
-	TradeName            string                `json:"tradeName,omitempty"`
-	SupportURI           []string              `json:"supportURI,omitempty"`
-	SrvDescription       []MultiLangString     `json:"srvDescription"`
-	IsPSB                bool                  `json:"isPSB"`
-	Entitlements         []string              `json:"entitlements"`
-	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations"`
-	SupervisoryAuthority SupervisoryAuthority  `json:"supervisoryAuthority"`
-	RegistryURI          string                `json:"registryURI"`
-	IsIntermediary       bool                  `json:"isIntermediary"`
 }
 
 type providerRegistrationProfile struct {
@@ -219,11 +149,11 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, trustProfileHint
 
 	if len(spec.Entitlements) == 0 {
 		if isPIDAttestation(spec) || spec.TrustListType == pidTrustListType {
-			spec.Entitlements = []string{pidProviderEntitlement}
+			spec.Entitlements = []string{registrar.PIDProviderEntitlement}
 		} else if spec.VCT != "" || spec.DocType != "" {
-			spec.Entitlements = []string{nonQEAAProviderEntitlement}
+			spec.Entitlements = []string{registrar.NonQEAAProviderEntitlement}
 		} else {
-			spec.Entitlements = []string{serviceProviderEntitlement}
+			spec.Entitlements = []string{registrar.ServiceProviderEntitlement}
 		}
 	}
 	if spec.TrustListType == "" {
@@ -342,13 +272,7 @@ func applyLocalTrustProfileDefaults(spec IssuedAttestationSpec) IssuedAttestatio
 }
 
 func isPIDAttestation(spec IssuedAttestationSpec) bool {
-	return isPIDType(spec.VCT) || isPIDType(spec.DocType)
-}
-
-// isPIDType reports whether a vct or doctype names a PID.
-func isPIDType(t string) bool {
-	t = strings.TrimSpace(t)
-	return strings.HasPrefix(t, "urn:eudi:pid:") || strings.HasPrefix(t, "eu.europa.ec.eudi.pid.")
+	return credtype.IsPIDType(spec.VCT) || credtype.IsPIDType(spec.DocType)
 }
 
 func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
@@ -361,11 +285,11 @@ func inferProviderRegistrationProfile(w *Wallet) providerRegistrationProfile {
 	// the issuer metadata name the demo issuer the same way.
 	profile := providerRegistrationProfile{
 		Entitlements: dedupeStrings(entitlementSet),
-		TradeName:    demoIssuerName,
+		TradeName:    registrar.DemoIssuerName,
 		Description:  "Demo issuer of the eudi-dev test wallet",
 	}
 	if len(profile.Entitlements) == 0 {
-		profile.Entitlements = []string{serviceProviderEntitlement}
+		profile.Entitlements = []string{registrar.ServiceProviderEntitlement}
 	}
 	return profile
 }
@@ -427,26 +351,26 @@ func sanitizeMetadataID(s string) string {
 	return s
 }
 
-func buildProvidedAttestation(spec IssuedAttestationSpec) (ProvidedAttestation, bool) {
+func buildProvidedAttestation(spec IssuedAttestationSpec) (registrar.ProvidedAttestation, bool) {
 	switch spec.Format {
 	case "dc+sd-jwt":
 		if strings.TrimSpace(spec.VCT) == "" {
-			return ProvidedAttestation{}, false
+			return registrar.ProvidedAttestation{}, false
 		}
-		return ProvidedAttestation{
+		return registrar.ProvidedAttestation{
 			Format: spec.Format,
-			Meta:   map[string]any{"vct_values": []string{spec.VCT}},
+			Type:   spec.VCT,
 		}, true
 	case "mso_mdoc":
 		if strings.TrimSpace(spec.DocType) == "" {
-			return ProvidedAttestation{}, false
+			return registrar.ProvidedAttestation{}, false
 		}
-		return ProvidedAttestation{
+		return registrar.ProvidedAttestation{
 			Format: spec.Format,
-			Meta:   map[string]any{"doctype_value": spec.DocType},
+			Type:   spec.DocType,
 		}, true
 	default:
-		return ProvidedAttestation{}, false
+		return registrar.ProvidedAttestation{}, false
 	}
 }
 
@@ -491,38 +415,38 @@ func buildCredentialConfiguration(spec IssuedAttestationSpec) (string, map[strin
 	}
 }
 
-func buildProviderIdentifier(issuer string) []Identifier {
+func buildProviderIdentifier(issuer string) []registrar.Identifier {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	if issuer == "" {
-		return []Identifier{{Identifier: "urn:oid4vc-dev:wallet:issuer", Type: "uri"}}
+		return []registrar.Identifier{{Identifier: "urn:oid4vc-dev:wallet:issuer", Type: "uri"}}
 	}
-	return []Identifier{{Identifier: issuer, Type: "uri"}}
+	return []registrar.Identifier{{Identifier: issuer, Type: "uri"}}
 }
 
-func buildRegistrarDataset(w *Wallet, issuer string) RegistrarDataset {
+func buildRegistrarDataset(w *Wallet, issuer string) registrar.RegistrarDataset {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	registryURI := issuer + "/api/registrar/wrp"
 	profile := inferProviderRegistrationProfile(w)
-	provides := make([]ProvidedAttestation, 0)
+	provides := make([]registrar.ProvidedAttestation, 0)
 	for _, spec := range w.issuedAttestationSpecs() {
 		if att, ok := buildProvidedAttestation(spec); ok {
 			provides = append(provides, att)
 		}
 	}
-	if len(profile.Entitlements) == 1 && profile.Entitlements[0] == serviceProviderEntitlement {
+	if len(profile.Entitlements) == 1 && profile.Entitlements[0] == registrar.ServiceProviderEntitlement {
 		provides = nil
 	}
-	return RegistrarDataset{
+	return registrar.RegistrarDataset{
 		Identifier: buildProviderIdentifier(issuer),
 		TradeName:  profile.TradeName,
 		SupportURI: []string{issuer},
-		SrvDescription: []MultiLangString{
+		SrvDescription: []registrar.MultiLangString{
 			{Lang: "en", Content: profile.Description},
 		},
 		IsPSB:                false,
 		Entitlements:         profile.Entitlements,
 		ProvidesAttestations: provides,
-		SupervisoryAuthority: SupervisoryAuthority{
+		SupervisoryAuthority: registrar.SupervisoryAuthority{
 			Name:    "Local Test Supervisory Authority",
 			Country: "DE",
 			Email:   []string{"dpa@example.invalid"},
@@ -534,44 +458,9 @@ func buildRegistrarDataset(w *Wallet, issuer string) RegistrarDataset {
 
 // IssuerInfo returns the issuer_info entries. They include the registration
 // certificate that CIR (EU) 2026/1731 Annex XI requires.
-func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]IssuerInfoEntry, error) {
+func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]registrar.IssuerInfoEntry, error) {
 	dataset := buildRegistrarDataset(&Wallet{IssuedAttestations: specs}, issuer)
-	_, access, err := w.AccessSigningMaterial()
-	if err != nil {
-		return nil, err
-	}
-	key, chain, err := w.RegistrarSigningMaterial()
-	if err != nil {
-		return nil, err
-	}
-	identifier, _, _ := accessCertificateSubject(access[0])
-	// ETSI TS 119 472-3 V1.1.1 ISS-MDATA-REG_CERT-4.2.3-10 and -12: the dataset
-	// names the provider by the organizationIdentifier of its certificates and
-	// links to its record at the registrar.
-	dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
-	dataset.RegistryURI = w.RegistrarBase() + "/api/registrar/wrp/" + identifier
-	now := time.Now()
-	claims := map[string]any{
-		"sub": identifier, "sub_ln": access[0].Subject.Organization[0],
-		"country": access[0].Subject.Country[0], "name": dataset.TradeName,
-		"registry_uri":    dataset.RegistryURI,
-		"srv_description": []map[string]any{{"lang": "en", "value": dataset.SrvDescription[0].Content}},
-		"entitlements":    dataset.Entitlements, "provides_attestations": dataset.ProvidesAttestations,
-		"support_uri": issuer, "info_uri": issuer,
-		"supervisory_authority": map[string]any{"email": dataset.SupervisoryAuthority.Email[0]},
-		"policy_id":             []string{registrationCertificatePolicy},
-		"certificate_policy":    registrationCertificatePolicyURI,
-		"iat":                   now.Unix(), "exp": now.Add(time.Hour).Unix(),
-		"status": registrationStatusClaim(w.RegistrationStatusListURL(), ownRegistrationStatusIndex),
-	}
-	registration, err := SignRegistrationCertificateJWT(claims, key, chain)
-	if err != nil {
-		return nil, err
-	}
-	return []IssuerInfoEntry{
-		{Format: "registrar_dataset", Data: dataset},
-		{Format: "registration_cert", Data: registration},
-	}, nil
+	return w.Registrar().ProviderIssuerInfo(issuer, dataset)
 }
 
 func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]any, error) {
@@ -673,15 +562,4 @@ func X509HashClientID(leaf *x509.Certificate) string {
 	}
 	sum := sha256.Sum256(leaf.Raw)
 	return "x509_hash:" + format.EncodeBase64URL(sum[:])
-}
-
-func signRegistrarResponseJWT(signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate, payload any) (string, error) {
-	header := map[string]any{
-		"alg": "ES256",
-		"typ": "JWT",
-	}
-	if x5c := buildJWSX5C(signerCerts); len(x5c) > 0 {
-		header["x5c"] = x5c
-	}
-	return signJSONWebSignature(payload, signingKey, header)
 }

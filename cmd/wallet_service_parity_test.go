@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
@@ -354,7 +355,7 @@ func parityCases() []parityCase {
 		}},
 		{method: "RegistrationCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
-			result, err := s.RegistrationCertificate(wallet.RegistrationCertificateRequest{
+			result, err := s.RegistrationCertificate(registrar.RegistrationCertificateRequest{
 				Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier,
 			})
 			if err != nil {
@@ -365,18 +366,18 @@ func parityCases() []parityCase {
 		{method: "SetRegistrationCertificatesRevoked", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
 			use := rp.Services[0].IntendedUses[0].IntendedUseIdentifier
-			if _, err := s.RegistrationCertificate(wallet.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use}); err != nil {
+			if _, err := s.RegistrationCertificate(registrar.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: use}); err != nil {
 				t.Fatal(err)
 			}
-			revoked, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, true)
+			revoked, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, registrar.RegistrationScope{IntendedUseIdentifier: use}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			again, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, true)
+			again, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, registrar.RegistrationScope{IntendedUseIdentifier: use}, true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			activated, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, wallet.RegistrationScope{IntendedUseIdentifier: use}, false)
+			activated, err := s.SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, registrar.RegistrationScope{IntendedUseIdentifier: use}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -417,7 +418,7 @@ func parityCases() []parityCase {
 		}},
 		{method: "AccessCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
-			result, err := s.AccessCertificate(wallet.AccessCertificateRequest{CSR: testCSR(t), Identifier: rp.Identifier[0].Identifier})
+			result, err := s.AccessCertificate(registrar.AccessCertificateRequest{CSR: testCSR(t), Identifier: rp.Identifier[0].Identifier})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -426,20 +427,20 @@ func parityCases() []parityCase {
 	}
 }
 
-func parityCatalogEntry() wallet.CatalogAttestation {
-	return wallet.CatalogAttestation{
+func parityCatalogEntry() registrar.CatalogAttestation {
+	return registrar.CatalogAttestation{
 		Name:        "Parity diploma",
-		Credentials: []wallet.CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:example:diploma:1"}},
+		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:example:diploma:1"}},
 	}
 }
 
-func registerParityRelyingParty(t *testing.T, s walletService) wallet.WalletRelyingParty {
+func registerParityRelyingParty(t *testing.T, s walletService) registrar.WalletRelyingParty {
 	t.Helper()
-	rp, err := s.RegisterRelyingParty(wallet.WalletRelyingParty{
+	rp, err := s.RegisterRelyingParty(registrar.WalletRelyingParty{
 		TradeName: "Parity Shop",
-		Services: []wallet.WalletRelyingPartyService{{IntendedUses: []wallet.IntendedUse{{
-			Purpose:     []wallet.MultiLangString{{Lang: "en", Content: "Parity"}},
-			Credentials: []wallet.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{"urn:eudi:pid:1"}}, Claims: []wallet.RegisteredClaim{{Path: []any{"given_name"}}}}},
+		Services: []registrar.WalletRelyingPartyService{{IntendedUses: []registrar.IntendedUse{{
+			Purpose:     []registrar.MultiLangString{{Lang: "en", Content: "Parity"}},
+			Credentials: []registrar.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []any{"urn:eudi:pid:1"}}, Claims: []registrar.RegisteredClaim{{Path: []any{"given_name"}}}}},
 		}}}},
 	})
 	if err != nil {

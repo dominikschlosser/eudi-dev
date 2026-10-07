@@ -439,7 +439,7 @@ func (d *DemoRP) verifierInfo(body createRequestBody) ([]any, error) {
 	if strings.TrimSpace(body.SigningKey) != "" || body.Identity == "unregistered" {
 		return body.VerifierInfo, nil
 	}
-	return d.wallet.DemoVerifierInfo()
+	return d.wallet.Registrar().DemoVerifierInfo()
 }
 
 // A supplied bundle that does not parse is the client's error. Missing demo
