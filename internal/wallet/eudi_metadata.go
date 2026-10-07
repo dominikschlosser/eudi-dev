@@ -323,29 +323,6 @@ func sanitizeMetadataID(s string) string {
 	return s
 }
 
-func buildProvidedAttestation(spec IssuedAttestationSpec) (registrar.ProvidedAttestation, bool) {
-	switch spec.Format {
-	case "dc+sd-jwt":
-		if strings.TrimSpace(spec.VCT) == "" {
-			return registrar.ProvidedAttestation{}, false
-		}
-		return registrar.ProvidedAttestation{
-			Format: spec.Format,
-			Type:   spec.VCT,
-		}, true
-	case "mso_mdoc":
-		if strings.TrimSpace(spec.DocType) == "" {
-			return registrar.ProvidedAttestation{}, false
-		}
-		return registrar.ProvidedAttestation{
-			Format: spec.Format,
-			Type:   spec.DocType,
-		}, true
-	default:
-		return registrar.ProvidedAttestation{}, false
-	}
-}
-
 func buildCredentialConfiguration(spec IssuedAttestationSpec) (string, map[string]any, bool) {
 	switch spec.Format {
 	case "dc+sd-jwt":
@@ -387,65 +364,6 @@ func buildCredentialConfiguration(spec IssuedAttestationSpec) (string, map[strin
 	}
 }
 
-func buildProviderIdentifier(issuer string) []registrar.Identifier {
-	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	if issuer == "" {
-		return []registrar.Identifier{{Identifier: "urn:oid4vc-dev:wallet:issuer", Type: "uri"}}
-	}
-	return []registrar.Identifier{{Identifier: issuer, Type: "uri"}}
-}
-
-func buildRegistrarDataset(w *Wallet, issuer string) registrar.RegistrarDataset {
-	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	registryURI := issuer + "/api/registrar/wrp"
-	profile := struct {
-		Entitlements []string
-		TradeName    string
-		Description  string
-	}{TradeName: registrar.DemoIssuerName, Description: "Demo issuer of the eudi-dev test wallet"}
-	for _, spec := range w.issuedAttestationSpecs() {
-		profile.Entitlements = append(profile.Entitlements, spec.Entitlements...)
-	}
-	profile.Entitlements = dedupeStrings(profile.Entitlements)
-	if len(profile.Entitlements) == 0 {
-		profile.Entitlements = []string{registrar.ServiceProviderEntitlement}
-	}
-	provides := make([]registrar.ProvidedAttestation, 0)
-	for _, spec := range w.issuedAttestationSpecs() {
-		if att, ok := buildProvidedAttestation(spec); ok {
-			provides = append(provides, att)
-		}
-	}
-	if len(profile.Entitlements) == 1 && profile.Entitlements[0] == registrar.ServiceProviderEntitlement {
-		provides = nil
-	}
-	return registrar.RegistrarDataset{
-		Identifier: buildProviderIdentifier(issuer),
-		TradeName:  profile.TradeName,
-		SupportURI: []string{issuer},
-		SrvDescription: []registrar.MultiLangString{
-			{Lang: "en", Content: profile.Description},
-		},
-		IsPSB:                false,
-		Entitlements:         profile.Entitlements,
-		ProvidesAttestations: provides,
-		SupervisoryAuthority: registrar.SupervisoryAuthority{
-			Name:    "Local Test Supervisory Authority",
-			Country: "DE",
-			Email:   []string{"dpa@example.invalid"},
-		},
-		RegistryURI:    registryURI,
-		IsIntermediary: false,
-	}
-}
-
-// IssuerInfo returns the issuer_info entries. They include the registration
-// certificate that CIR (EU) 2026/1731 Annex XI requires.
-func IssuerInfo(w *Wallet, issuer string, specs []IssuedAttestationSpec) ([]registrar.IssuerInfoEntry, error) {
-	dataset := buildRegistrarDataset(&Wallet{IssuedAttestations: specs}, issuer)
-	return w.Registrar().ProviderIssuerInfo(issuer, dataset)
-}
-
 func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]any, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
 	configs := make(map[string]any)
@@ -457,7 +375,7 @@ func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]a
 		configs[id] = cfg
 	}
 
-	info, err := IssuerInfo(w, issuer, w.issuedAttestationSpecs())
+	info, err := w.DemoIssuerInfo()
 	if err != nil {
 		return nil, err
 	}

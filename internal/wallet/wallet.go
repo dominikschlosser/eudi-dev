@@ -115,11 +115,17 @@ type Wallet struct {
 	// Callback URLs use this origin when BaseURL is unset.
 	ServingOrigin string `json:"-"`
 	// The zero value uses the default template directory.
-	Templates    credtemplate.Location `json:"-"`
-	Log          []LogEntry
-	mu           sync.RWMutex
-	tlsVerify    *bool
-	outboundHTTP *http.Client
+	Templates credtemplate.Location `json:"-"`
+	Log       []LogEntry
+	mu        sync.RWMutex
+	// demoRegistrationMu serializes the demo registrations. Concurrent
+	// requests then share one certificate instead of replacing each other's.
+	demoRegistrationMu sync.Mutex
+	// saveRegistrarChange runs a registrar change outside a request to the
+	// registrar and saves it. A server sets it to its saveMutation.
+	saveRegistrarChange func(change func() bool)
+	tlsVerify           *bool
+	outboundHTTP        *http.Client
 	// Entity backends track the last loaded or saved snapshot and section revisions.
 	// File storage leaves these nil.
 	persisted stateSnapshot

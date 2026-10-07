@@ -290,6 +290,7 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 		seqs = make(map[string]int)
 	}
 	var deferred []orderedEntity
+	registrarEntities := map[string][]orderedEntity{}
 	for _, key := range slices.Sorted(maps.Keys(blobs)) {
 		section := s.sectionOf(key)
 		if !slices.Contains(sections, section) {
@@ -345,15 +346,11 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 			if err = json.Unmarshal(data, &spec); err == nil {
 				loaded.attestations = append(loaded.attestations, spec)
 			}
-		case registrarSection:
-			var rp registrar.WalletRelyingParty
-			if err = json.Unmarshal(data, &rp); err == nil {
-				loaded.relyingParties = append(loaded.relyingParties, rp)
-			}
-		case registrationStatusSection:
-			var status registrar.RegistrationStatus
-			if err = json.Unmarshal(data, &status); err == nil {
-				loaded.registrationStatuses = append(loaded.registrationStatuses, status)
+		case registrarSection, registrationStatusSection:
+			var entity orderedEntity
+			if err = json.Unmarshal(data, &entity); err == nil {
+				seqs[key] = entity.Seq
+				registrarEntities[section] = append(registrarEntities[section], entity)
 			}
 		case catalogSection:
 			var entry registrar.CatalogAttestation
@@ -371,6 +368,24 @@ func (s *WalletStore) parseSections(blobs stateSnapshot, sections []string, know
 		return seqs[s.credentialKey(loaded.credentials[i].ID)] < seqs[s.credentialKey(loaded.credentials[j].ID)]
 	})
 	sort.SliceStable(deferred, func(i, j int) bool { return deferred[i].Seq < deferred[j].Seq })
+	for section, entities := range registrarEntities {
+		sort.SliceStable(entities, func(i, j int) bool { return entities[i].Seq < entities[j].Seq })
+		for _, entity := range entities {
+			if section == registrarSection {
+				var rp registrar.WalletRelyingParty
+				if err := json.Unmarshal(entity.Value, &rp); err != nil {
+					return loaded, nil, fmt.Errorf("parsing a stored registration: %w", err)
+				}
+				loaded.relyingParties = append(loaded.relyingParties, rp)
+				continue
+			}
+			var status registrar.RegistrationStatus
+			if err := json.Unmarshal(entity.Value, &status); err != nil {
+				return loaded, nil, fmt.Errorf("parsing a stored registration status: %w", err)
+			}
+			loaded.registrationStatuses = append(loaded.registrationStatuses, status)
+		}
+	}
 	for _, entity := range deferred {
 		var d DeferredIssuance
 		if err := json.Unmarshal(entity.Value, &d); err != nil {
@@ -591,13 +606,23 @@ func (s *WalletStore) currentEntities(w *Wallet, snapshot stateSnapshot) (map[st
 			return nil, nil, nil, err
 		}
 	}
-	for _, rp := range w.RelyingParties {
-		if err := put(s.stateKey(registrarSection, entityName(rp.Identifier[0].Identifier)), rp); err != nil {
+	// The registrar lists registrations in the order they were made, and the
+	// newest status entry of a certificate is the valid one.
+	parties := w.RelyingParties
+	partySeqs := s.orderedSeqs(registrarSection, w.entitySeqs, len(parties), func(i int) string { return parties[i].Identifier[0].Identifier })
+	for i, rp := range parties {
+		key := s.stateKey(registrarSection, entityName(rp.Identifier[0].Identifier))
+		seqs[key] = partySeqs[i]
+		if err := putOrdered(key, partySeqs[i], rp); err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	for _, status := range w.RegistrationStatuses {
-		if err := put(s.stateKey(registrationStatusSection, strconv.Itoa(status.Index)), status); err != nil {
+	statuses := w.RegistrationStatuses
+	statusSeqs := s.orderedSeqs(registrationStatusSection, w.entitySeqs, len(statuses), func(i int) string { return strconv.Itoa(statuses[i].Index) })
+	for i, status := range statuses {
+		key := s.stateKey(registrationStatusSection, entityName(strconv.Itoa(status.Index)))
+		seqs[key] = statusSeqs[i]
+		if err := putOrdered(key, statusSeqs[i], status); err != nil {
 			return nil, nil, nil, err
 		}
 	}

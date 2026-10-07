@@ -173,8 +173,11 @@ func (w *Wallet) WalletProviderSigningMaterial() (*ecdsa.PrivateKey, []*x509.Cer
 	return w.signingMaterialForProfile(walletProviderTrustListProfile(), "")
 }
 
+// AccessSigningMaterial is the access certificate of the wallet's issuer, the
+// demo issuer. Its CommonName is the trade name of its registration, as ARF
+// RPRC_06 and ETSI TS 119 411-8 V1.1.1 GEN-6.1.1-04 require.
 func (w *Wallet) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.auxiliarySigningMaterial("access", mock.LeafCertOptions{CommonName: "EUDI Dev Test Access", Role: mock.AccessCertificate})
+	return w.auxiliarySigningMaterial("access", mock.LeafCertOptions{CommonName: DemoIssuerName, Role: mock.AccessCertificate})
 }
 
 // RelyingPartyAccessCA issues the access certificates of registered relying

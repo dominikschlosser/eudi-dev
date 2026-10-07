@@ -168,8 +168,8 @@ type createRequestBody struct {
 	// with SigningKey. Empty sends none.
 	VerifierInfo []any `json:"verifier_info"`
 	// Identity "unregistered" sends the demo verifier's access certificate
-	// without its registration certificate. Without SigningKey the request
-	// otherwise carries both.
+	// without its registration certificate. Without SigningKey, "registered"
+	// or an empty value sends both.
 	Identity string `json:"identity"`
 }
 
@@ -223,6 +223,11 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 	var body createRequestBody
 	if err := decodeJSONBody(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+
+	if body.Identity != "" && body.Identity != "registered" && body.Identity != "unregistered" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": `identity must be "registered" or "unregistered"`})
 		return
 	}
 
@@ -423,7 +428,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	if strings.TrimSpace(body.SigningKey) == "" {
-		key, chain, err := d.wallet.AccessSigningMaterial()
+		key, chain, err := d.wallet.DemoVerifierAccessSigningMaterial()
 		if err == nil && (key == nil || len(chain) == 0) {
 			err = fmt.Errorf("the wallet has no access certificate")
 		}
@@ -439,7 +444,7 @@ func (d *DemoRP) verifierInfo(body createRequestBody) ([]any, error) {
 	if strings.TrimSpace(body.SigningKey) != "" || body.Identity == "unregistered" {
 		return body.VerifierInfo, nil
 	}
-	return d.wallet.Registrar().DemoVerifierInfo()
+	return d.wallet.DemoVerifierInfo()
 }
 
 // A supplied bundle that does not parse is the client's error. Missing demo

@@ -252,12 +252,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 			},
 		}),
 	}
-	specs := []wallet.IssuedAttestationSpec{{Format: "dc+sd-jwt", VCT: TicketVCT}}
-	for _, cfg := range d.templateConfigurations() {
-		specs = append(specs, wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType})
-	}
-	// The registrar API lives under the wallet base URL.
-	info, err := wallet.IssuerInfo(d.wallet, d.baseURL(), specs)
+	info, err := d.wallet.DemoIssuerInfo()
 	if err != nil {
 		http.Error(w, "building issuer metadata: "+err.Error(), http.StatusInternalServerError)
 		return

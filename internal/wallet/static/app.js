@@ -3384,9 +3384,8 @@
   let registrarPage = 0;
   const registrarSearch = document.getElementById('registrar-search');
 
-  // The first record is the wallet's own registration as a credential
-  // provider. The newest registrations follow it. Each entry keeps its search
-  // text, so typing does not rebuild it.
+  // The newest registrations come first. Each entry keeps its search text, so
+  // typing does not rebuild it.
   let registrarEntries = [];
   function registrarEntriesInRole() {
     const filter = document.querySelector('input[name="registrar-filter"]:checked').value;
@@ -3404,40 +3403,32 @@
     Array.from(suggestions).sort().forEach(value => datalist.appendChild(new Option(value, value)));
   }
 
-  // The wallet's own issuer presents its certificate in its metadata, so it
-  // has no actions here.
-  function providerRow(identifier, prefix, service, own) {
+  function providerRow(identifier, prefix, service) {
     const servicePrefix = prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default');
-    const status = own ? 'own' : providerStatus(identifier, service.serviceIdentifier || '');
+    const status = providerStatus(identifier, service.serviceIdentifier || '');
     const issuerInfo = registrarVerifierInfo[servicePrefix];
     const entitlements = (service.entitlements || []).map(e => ENTITLEMENT_LABELS[e]).filter(Boolean);
     const row = document.createElement('div');
     row.className = 'registrar-use';
     row.id = servicePrefix;
     row.dataset.status = status;
-    let badge = '';
-    let actions = '';
-    if (!own) {
-      const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
-      badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
-      actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
-        '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
-          (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
-          '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
-        (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
-          (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
-          '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
-      '</span>';
-    }
+    const [badgeClass, badgeText, badgeTitle] = PROVIDER_STATUS_BADGES[status];
+    const badge = '<span class="status-badge ' + badgeClass + '" id="' + servicePrefix + '-status" title="' + escHtml(badgeTitle) + '">' + badgeText + '</span>';
+    const actions = '<span class="registrar-use-actions" id="' + servicePrefix + '-actions">' +
+      '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-issue" title="' +
+        (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
+        '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
+      (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
+        (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+        '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
+    '</span>';
     row.innerHTML =
       '<div class="registrar-use-head" id="' + servicePrefix + '-head">' +
         '<span class="registrar-use-purpose" id="' + servicePrefix + '-entitlement">' + escHtml(entitlements.join(', ') || 'Attestation provider') + '</span>' +
         actions +
       '</div>' +
-      (badge ? '<div class="cred-pills registrar-pills" id="' + servicePrefix + '-pills">' + badge + '</div>' : '') +
-      '<ul class="registrar-use-credentials" id="' + servicePrefix + '-attestations">' +
-        (service.providesAttestations || []).map((a, i) => '<li id="' + servicePrefix + '-attestation-' + i + '">' + escHtml(registeredCredentialSummary(a)) + '</li>').join('') +
-      '</ul>' +
+      '<div class="cred-pills registrar-pills" id="' + servicePrefix + '-pills">' + badge + '</div>' +
+      registeredCredentialList(service.providesAttestations || [], servicePrefix + '-attestations', servicePrefix + '-attestation') +
       (issuerInfo === undefined ? '' :
         '<div class="registrar-use-result" id="' + servicePrefix + '-result">' +
           '<div class="registrar-result-head" id="' + servicePrefix + '-result-head">' +
@@ -3481,7 +3472,7 @@
     const pages = Math.max(1, Math.ceil(matching.length / REGISTRAR_PAGE_SIZE));
     registrarPage = Math.min(registrarPage, pages - 1);
     const shown = matching.slice(registrarPage * REGISTRAR_PAGE_SIZE, (registrarPage + 1) * REGISTRAR_PAGE_SIZE);
-    shown.forEach(({ rp, own }) => {
+    shown.forEach(({ rp }) => {
       const identifier = (rp.identifier || [])[0] ? rp.identifier[0].identifier : '';
       const prefix = 'registrar-party-' + registrarDomID(identifier);
       const card = document.createElement('div');
@@ -3491,10 +3482,10 @@
       card.innerHTML =
         '<div class="registrar-party-head" id="' + prefix + '-head">' +
           '<span class="registrar-party-name" id="' + prefix + '-name">' + escHtml(rp.tradeName || '') + '</span>' +
-          (own ? '' : '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
+          '<span class="registrar-party-actions" id="' + prefix + '-actions">' +
             (relyingPartyRoles(rp).includes('verifier') ? '<button type="button" class="btn btn-sm" id="' + prefix + '-add-use" title="Registers another purpose with its credentials and claims, and issues a registration certificate for it.">Add registration certificate</button>' : '') +
             '<button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button>' +
-          '</span>') +
+          '</span>' +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           relyingPartyRoles(rp).map(role =>
@@ -3504,7 +3495,7 @@
         '</div>';
       (rp.services || []).forEach(service => {
         if ((service.providesAttestations || []).length > 0) {
-          card.appendChild(providerRow(identifier, prefix, service, own));
+          card.appendChild(providerRow(identifier, prefix, service));
         }
         (service.intendedUses || []).forEach(use => {
           const usePrefix = prefix + '-use-' + registrarDomID(use.intendedUseIdentifier);
@@ -3620,8 +3611,7 @@
         registrarRequest('GET', 'api/registrar/registration-certificates'),
       ]);
       if (load !== registrarLoad) return;
-      const entries = (records.data || []).map((rp, index) => ({ rp: rp, own: index === 0, text: relyingPartySearchText(rp) }));
-      registrarEntries = entries.slice(0, 1).concat(entries.slice(1).reverse());
+      registrarEntries = (records.data || []).map(rp => ({ rp: rp, text: relyingPartySearchText(rp) })).reverse();
       registrarStatuses = statuses || [];
     } catch (e) {
       // On an error the list keeps showing the previous result.

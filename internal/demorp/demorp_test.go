@@ -2029,17 +2029,15 @@ func TestIssuerReportsASigningFailureAsAServerFault(t *testing.T) {
 	}
 }
 
-// By default the demo verifier's access certificate signs the request, and the
-// request carries no registration certificate.
 // The demo verifier is registered with the wallet's registrar. Its requests
 // carry its access certificate and, unless the identity is "unregistered", its
 // registration certificate.
 func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 	d, w, _ := newDemoRP(t)
 	h := d.VerifierHandler()
-	_, chain, err := w.AccessSigningMaterial()
+	_, chain, err := w.DemoVerifierAccessSigningMaterial()
 	if err != nil {
-		t.Fatalf("AccessSigningMaterial: %v", err)
+		t.Fatalf("DemoVerifierAccessSigningMaterial: %v", err)
 	}
 	for _, tc := range []struct {
 		body             string
@@ -2060,6 +2058,9 @@ func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 		if payload["client_id"] != wallet.X509HashClientID(chain[0]) {
 			t.Errorf("%s: client_id = %v, want the x509_hash of the demo verifier's access certificate", tc.body, payload["client_id"])
 		}
+	}
+	if code, _ := doJSON(t, h, "POST", "/api/requests", `{"type":"pid","identity":"anonymous"}`, map[string]string{"Content-Type": "application/json"}); code != http.StatusBadRequest {
+		t.Errorf("an unknown identity: %d, want 400", code)
 	}
 }
 

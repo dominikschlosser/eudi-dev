@@ -69,19 +69,14 @@ func (a ProvidedAttestation) certificateClaim() map[string]any {
 	return map[string]any{"format": a.Format, "meta": map[string]any{"vct_values": []string{a.Type}}}
 }
 
-// RegistrarDataset is the minimal subset of registrar data needed for
-// issuer-authorization checks.
+// RegistrarDataset is the registrar_dataset element of issuer_info. ETSI TS
+// 119 472-3 V1.1.1 ISS-MDATA-REG_CERT-4.2.3-10 to -13 require these four
+// members. The entitlements are in the registration certificate.
 type RegistrarDataset struct {
 	Identifier           []Identifier          `json:"identifier"`
-	TradeName            string                `json:"tradeName,omitempty"`
-	SupportURI           []string              `json:"supportURI,omitempty"`
 	SrvDescription       []MultiLangString     `json:"srvDescription"`
-	IsPSB                bool                  `json:"isPSB"`
-	Entitlements         []string              `json:"entitlements"`
-	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations"`
-	SupervisoryAuthority SupervisoryAuthority  `json:"supervisoryAuthority"`
 	RegistryURI          string                `json:"registryURI"`
-	IsIntermediary       bool                  `json:"isIntermediary"`
+	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations"`
 }
 
 // registeredEntitlements are the entitlements of ETSI TS 119 475 V1.2.1 Annex

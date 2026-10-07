@@ -116,6 +116,9 @@ func (s *Server) handlePutTemplate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := s.syncDemoRegistrations(); err != nil {
+		s.log("  WARNING: updating the demo registrations: %v", err)
+	}
 	saved, err := credtemplate.Load(tpl.Name, s.wallet.Templates)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -142,6 +145,9 @@ func (s *Server) handleDeleteTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
+	}
+	if err := s.syncDemoRegistrations(); err != nil {
+		s.log("  WARNING: updating the demo registrations: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": r.PathValue("name")})
 }

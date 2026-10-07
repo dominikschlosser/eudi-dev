@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -2033,41 +2034,29 @@ func TestOpenIDCredentialIssuerMetadata_SignedJWTContainsIssuerInfo(t *testing.T
 	if want := w.IssuerURL + "/api/registrar/wrp/" + ownProviderIdentifier(t, w); record["registryURI"] != want {
 		t.Fatalf("expected registryURI %s, got %v", want, record["registryURI"])
 	}
-	entitlements, ok := record["entitlements"].([]any)
-	if !ok || len(entitlements) != 1 || entitlements[0] != registrar.PIDProviderEntitlement {
-		t.Fatalf("expected PID provider entitlement, got %v", record["entitlements"])
+	// The templates make the demo issuer a PID provider and, for the ticket,
+	// an EAA provider. Its identity check makes it a service provider (ARF
+	// RPRC_05).
+	var dataset registrar.RegistrarDataset
+	if err := json.Unmarshal([]byte(mustJSON(t, record)), &dataset); err != nil {
+		t.Fatal(err)
 	}
-	provides, ok := record["providesAttestations"].([]any)
-	if !ok || len(provides) != 2 {
-		t.Fatalf("expected 2 provided attestation entries, got %v", record["providesAttestations"])
+	var certificate struct {
+		Entitlements []string `json:"entitlements"`
 	}
-
-	var sawVCT, sawDocType bool
-	for _, entry := range provides {
-		att, ok := entry.(map[string]any)
-		if !ok {
-			t.Fatalf("expected providesAttestations object, got %T", entry)
-		}
-		meta, ok := att["meta"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected attestation meta object, got %T", att["meta"])
-		}
-		switch att["format"] {
-		case "dc+sd-jwt":
-			values, ok := meta["vct_values"].([]any)
-			if !ok || len(values) != 1 || values[0] != mock.DefaultPIDVCT {
-				t.Fatalf("expected SD-JWT attestation with VCT %s, got %v", mock.DefaultPIDVCT, meta["vct_values"])
-			}
-			sawVCT = true
-		case "mso_mdoc":
-			if meta["doctype_value"] != "eu.europa.ec.eudi.pid.1" {
-				t.Fatalf("expected mdoc attestation docType, got %v", meta["doctype_value"])
-			}
-			sawDocType = true
+	decodeCompactJWTPayload(t, issuerInfo[1].(map[string]any)["data"].(string), &certificate)
+	if want := []string{registrar.NonQEAAProviderEntitlement, registrar.PIDProviderEntitlement, registrar.ServiceProviderEntitlement}; !slices.Equal(certificate.Entitlements, want) {
+		t.Fatalf("entitlements %v, want %v", certificate.Entitlements, want)
+	}
+	var vcts, docTypes []string
+	for _, att := range dataset.ProvidesAttestations {
+		vcts = append(vcts, att.Type)
+		if att.Format == "mso_mdoc" {
+			docTypes = append(docTypes, att.Type)
 		}
 	}
-	if !sawVCT || !sawDocType {
-		t.Fatalf("expected both SD-JWT and mdoc attestation entries, got %v", record["providesAttestations"])
+	if !slices.Contains(vcts, mock.DefaultPIDVCT) || !slices.Contains(vcts, credtype.DemoTicketVCT) || !slices.Contains(docTypes, mock.PIDNamespace) {
+		t.Fatalf("provided attestations %v, want the PID types and the ticket", dataset.ProvidesAttestations)
 	}
 }
 
@@ -2077,6 +2066,9 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	w.IssuerURL = "https://localhost:8443"
 	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
 		t.Fatalf("generating credentials: %v", err)
+	}
+	if _, err := w.EnsureDemoRegistrations(); err != nil {
+		t.Fatal(err)
 	}
 	srv := NewServer(w, 0, nil)
 
@@ -2094,7 +2086,7 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	}
 	matched := list(mock.DefaultPIDVCT)
 	if len(matched) != 1 || matched[0].Identifier[0].Identifier != ownProviderIdentifier(t, w) {
-		t.Fatalf("matched %+v, want the wallet's provider record", matched)
+		t.Fatalf("matched %+v, want the demo issuer", matched)
 	}
 	if unmatched := list("urn:example:unknown"); len(unmatched) != 0 {
 		t.Fatalf("expected no registrar entries for an unknown attestation, got %d", len(unmatched))

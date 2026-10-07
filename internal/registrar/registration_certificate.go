@@ -70,7 +70,6 @@ type RegistrationCertificateContent struct {
 	ProvidesAttestations []ProvidedAttestation
 	Validity             string
 	// StatusIndex is the certificate's entry in the registrar's status list.
-	// Zero is the entry of the wallet's own certificates.
 	StatusIndex int
 	// StatusListURI defaults to the status list under base.
 	StatusListURI string
@@ -106,40 +105,78 @@ const (
 // registered intended use, or for a provider service without one, with the
 // wallet's registrar key.
 func (r *Registrar) IssueRegistrationCertificate(req RegistrationCertificateRequest) (*RegistrationCertificateResult, error) {
-	rp, ok := r.RelyingParty(req.Identifier)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
-	}
-	if req.IntendedUseIdentifier == "" {
-		return r.issueProviderCertificate(rp, req)
-	}
-	service, use, ok := findIntendedUse(rp, req.ServiceIdentifier, req.IntendedUseIdentifier)
-	if !ok {
-		return nil, fmt.Errorf("%w: no intended use %q", errRelyingPartyNotFound, req.IntendedUseIdentifier)
-	}
-	content := registrationContent(rp, service, use)
-	credentials := make([]map[string]any, 0, len(use.Credentials))
-	for _, c := range use.Credentials {
-		credentials = append(credentials, map[string]any{"format": c.Format, "meta": c.Meta, "claims": c.Claims})
-	}
-	signed, err := r.issueCertificate(rp, certificateKey{intendedUse: use.IntendedUseIdentifier}, content, credentials, req.Validity)
+	rp, key, err := r.certificateSubject(req)
 	if err != nil {
 		return nil, err
 	}
-	return &RegistrationCertificateResult{RegistrationCertificate: signed, VerifierInfo: VerifierInfoValue(signed)}, nil
+	var signed string
+	if key.intendedUse == "" {
+		service, _ := serviceByIdentifier(rp, key.service)
+		signed, err = r.issueCertificate(rp, key, ProviderCertificateContent(rp, service), nil, req.Validity)
+	} else {
+		service, use, _ := findIntendedUse(rp, "", key.intendedUse)
+		credentials := make([]map[string]any, 0, len(use.Credentials))
+		for _, c := range use.Credentials {
+			credentials = append(credentials, map[string]any{"format": c.Format, "meta": c.Meta, "claims": c.Claims})
+		}
+		signed, err = r.issueCertificate(rp, key, registrationContent(rp, service, use), credentials, req.Validity)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return certificateResult(rp, key, signed)
 }
 
-// issueProviderCertificate certifies a provider service and its attestation
-// types (ARF RPRC_13 and RPRC_15).
-func (r *Registrar) issueProviderCertificate(rp WalletRelyingParty, req RegistrationCertificateRequest) (*RegistrationCertificateResult, error) {
-	service, err := providerService(rp, req.ServiceIdentifier)
+// CurrentRegistrationCertificate returns the newest certificate for the
+// request that is neither revoked nor replaced and stays valid for at least
+// another day. Without one it issues a certificate and reports that.
+func (r *Registrar) CurrentRegistrationCertificate(req RegistrationCertificateRequest) (*RegistrationCertificateResult, bool, error) {
+	rp, key, err := r.certificateSubject(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	signed, err := r.issueCertificate(rp, certificateKey{service: service.ServiceIdentifier}, ProviderCertificateContent(rp, service), nil, req.Validity)
-	if err != nil {
-		return nil, err
+	identifier := rp.Identifier[0].Identifier
+	soon := time.Now().Add(24 * time.Hour).Unix()
+	r.mu.RLock()
+	var current string
+	for _, s := range r.state.RegistrationStatuses {
+		if s.Identifier == identifier && key.matches(s) && !s.Revoked && s.Certificate != "" && s.Expires > soon {
+			current = s.Certificate
+		}
 	}
+	r.mu.RUnlock()
+	if current == "" {
+		result, err := r.IssueRegistrationCertificate(req)
+		return result, err == nil, err
+	}
+	result, err := certificateResult(rp, key, current)
+	return result, false, err
+}
+
+// certificateSubject finds the registration and what the certificate
+// certifies.
+func (r *Registrar) certificateSubject(req RegistrationCertificateRequest) (WalletRelyingParty, certificateKey, error) {
+	rp, ok := r.RelyingParty(req.Identifier)
+	if !ok {
+		return rp, certificateKey{}, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
+	}
+	if req.IntendedUseIdentifier == "" {
+		service, err := providerService(rp, req.ServiceIdentifier)
+		return rp, certificateKey{service: service.ServiceIdentifier}, err
+	}
+	if _, _, ok := findIntendedUse(rp, req.ServiceIdentifier, req.IntendedUseIdentifier); !ok {
+		return rp, certificateKey{}, fmt.Errorf("%w: no intended use %q", errRelyingPartyNotFound, req.IntendedUseIdentifier)
+	}
+	return rp, certificateKey{intendedUse: req.IntendedUseIdentifier}, nil
+}
+
+// certificateResult wraps a verifier's certificate in verifier_info and a
+// provider's certificate in issuer_info (ARF RPRC_13 and RPRC_15).
+func certificateResult(rp WalletRelyingParty, key certificateKey, signed string) (*RegistrationCertificateResult, error) {
+	if key.intendedUse != "" {
+		return &RegistrationCertificateResult{RegistrationCertificate: signed, VerifierInfo: VerifierInfoValue(signed)}, nil
+	}
+	service, _ := serviceByIdentifier(rp, key.service)
 	info, err := IssuerInfoValue(RegistrarDatasetFor(rp, service), signed)
 	if err != nil {
 		return nil, err
@@ -186,7 +223,7 @@ func (r *Registrar) issueCertificate(rp WalletRelyingParty, key certificateKey, 
 		r.releaseRegistrationStatus(content.StatusIndex)
 		return "", err
 	}
-	r.replaceRegistrationStatus(content.Identifier, key, content.StatusIndex)
+	r.replaceRegistrationStatus(content.Identifier, key, content.StatusIndex, signed)
 	return signed, nil
 }
 
@@ -207,15 +244,9 @@ func ProviderCertificateContent(rp WalletRelyingParty, service WalletRelyingPart
 func RegistrarDatasetFor(rp WalletRelyingParty, service WalletRelyingPartyService) RegistrarDataset {
 	return RegistrarDataset{
 		Identifier:           rp.Identifier,
-		TradeName:            service.ServiceTradeName,
-		SupportURI:           []string{service.SupportURI},
 		SrvDescription:       service.SrvDescription,
-		IsPSB:                rp.IsPSB,
-		Entitlements:         service.Entitlements,
-		ProvidesAttestations: service.ProvidesAttestations,
-		SupervisoryAuthority: rp.SupervisoryAuthority,
 		RegistryURI:          rp.RegistryURI,
-		IsIntermediary:       service.IsIntermediary,
+		ProvidesAttestations: service.ProvidesAttestations,
 	}
 }
 

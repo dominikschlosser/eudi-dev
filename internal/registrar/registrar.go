@@ -56,9 +56,7 @@ type Env interface {
 	RegistrarBase() string
 	RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error)
 	RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, error)
-	AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error)
 	TemplateLocation() credtemplate.Location
-	ProviderDataset(base string) RegistrarDataset
 }
 
 // Registrar works on a State under the lock of the wallet that stores it.
@@ -227,6 +225,36 @@ func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 	return cloneRelyingParty(rp)
 }
 
+// EnsureRelyingParty registers rp, or updates the registration with its
+// first identifier when the content differs. It reports whether the
+// registration changed.
+func (r *Registrar) EnsureRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, bool, error) {
+	base := r.env.RegistrarBase()
+	if len(rp.Identifier) == 0 {
+		return WalletRelyingParty{}, false, fmt.Errorf("the relying party needs an identifier")
+	}
+	stored, ok := r.RelyingParty(rp.Identifier[0].Identifier)
+	if !ok {
+		registered, err := r.RegisterRelyingParty(rp)
+		return registered, err == nil, err
+	}
+	wanted, err := cloneRelyingParty(rp)
+	if err != nil {
+		return WalletRelyingParty{}, false, err
+	}
+	if err := normalizeRelyingParty(&wanted, base, &stored); err != nil {
+		return WalletRelyingParty{}, false, err
+	}
+	if wanted, err = cloneRelyingParty(wanted); err != nil {
+		return WalletRelyingParty{}, false, err
+	}
+	if reflect.DeepEqual(wanted, stored) {
+		return stored, false, nil
+	}
+	updated, err := r.UpdateRelyingParty(rp)
+	return updated, err == nil, err
+}
+
 func (r *Registrar) DeleteRelyingParty(identifier string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -276,12 +304,6 @@ func cloneRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
 		return WalletRelyingParty{}, fmt.Errorf("decoding the relying party: %w", err)
 	}
 	return clone, nil
-}
-
-// RegistrarRecords are the wallet's own provider registration followed by the
-// registered relying parties, as the registrar API lists them.
-func (r *Registrar) RegistrarRecords() []WalletRelyingParty {
-	return append([]WalletRelyingParty{r.providerRelyingParty(r.env.RegistrarBase())}, r.RegisteredRelyingParties()...)
 }
 
 func relyingPartyIndex(parties []WalletRelyingParty, identifier string) int {
@@ -559,39 +581,8 @@ func newRegistrarID() string {
 	return hex.EncodeToString(b)
 }
 
-// providerRelyingParty is the wallet's own registration in the TS05 v1.5
-// shape: the demo issuer with its entitlements and attestation types, and the
-// demo verifier with its intended use.
-func (r *Registrar) providerRelyingParty(base string) WalletRelyingParty {
-	dataset := r.env.ProviderDataset(base)
-	legalName, country := demoRelyingPartyName, dataset.SupervisoryAuthority.Country
-	if _, access, err := r.env.AccessSigningMaterial(); err == nil {
-		identifier, certLegalName, certCountry := AccessCertificateSubject(access[0])
-		legalName = firstNonEmpty(certLegalName, legalName)
-		country = firstNonEmpty(certCountry, country)
-		dataset.Identifier = []Identifier{{Identifier: identifier, Type: euidIdentifierType}}
-		dataset.RegistryURI = strings.TrimRight(base, "/") + "/api/registrar/wrp/" + identifier
-	}
-	return WalletRelyingParty{
-		Identifier:           dataset.Identifier,
-		LegalPerson:          LegalPerson{LegalName: []string{legalName}},
-		Country:              country,
-		TradeName:            demoRelyingPartyName,
-		IsPSB:                dataset.IsPSB,
-		SupervisoryAuthority: dataset.SupervisoryAuthority,
-		RegistryURI:          dataset.RegistryURI,
-		Services: []WalletRelyingPartyService{{
-			ServiceTradeName:     dataset.TradeName,
-			SupportURI:           firstNonEmpty(dataset.SupportURI...),
-			SrvDescription:       dataset.SrvDescription,
-			Entitlements:         dataset.Entitlements,
-			ProvidesAttestations: dataset.ProvidesAttestations,
-			IsIntermediary:       dataset.IsIntermediary,
-		}, r.demoVerifierService(strings.TrimRight(base, "/"))},
-	}
-}
-
-// matchesWRPQuery applies the TS05 v1.5 §3.2.2 search parameters.
+// matchesWRPQuery applies the search parameters of TS05 v1.5 §3.2.2 and its
+// OpenAPI.
 func matchesWRPQuery(rp WalletRelyingParty, q url.Values) bool {
 	has := func(name string, match func(string) bool) bool {
 		value := strings.TrimSpace(q.Get(name))
