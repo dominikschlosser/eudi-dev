@@ -1388,6 +1388,9 @@ func TestDCQLHolderBindingFlagMustBeBoolean(t *testing.T) {
 
 // The wallet presents a jwt_vc_json credential unchanged, so
 // require_cryptographic_holder_binding does not apply to it.
+// The wallet presents a jwt_vc_json credential without a Verifiable
+// Presentation, so it answers only a query that doesn't require holder
+// binding (OpenID4VP 1.0 Appendix B.1).
 func TestEvaluateDCQL_HolderBindingOfAJWTCredential(t *testing.T) {
 	w := generateTestWallet(t)
 	jwt, err := signJWT(map[string]any{"alg": "ES256", "typ": "JWT"}, map[string]any{"vct": "urn:test:credential", "given_name": "Erika"}, w.IssuerKey)
@@ -1397,9 +1400,15 @@ func TestEvaluateDCQL_HolderBindingOfAJWTCredential(t *testing.T) {
 	if _, err := w.ImportCredential(jwt); err != nil {
 		t.Fatal(err)
 	}
-	query := map[string]any{"credentials": []any{map[string]any{"id": "vc", "format": "jwt_vc_json", "meta": map[string]any{}}}}
-	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
-		t.Errorf("matches %v, want the JWT credential", matches)
+	w.ValidationMode = ValidationModeStrict
+	for _, tc := range []struct {
+		binding bool
+		want    int
+	}{{true, 0}, {false, 1}} {
+		query := map[string]any{"credentials": []any{map[string]any{"id": "vc", "format": "jwt_vc_json", "meta": map[string]any{}, "require_cryptographic_holder_binding": tc.binding}}}
+		if matches := w.EvaluateDCQL(query); len(matches) != tc.want {
+			t.Errorf("binding required %v: matches %v, want %d", tc.binding, matches, tc.want)
+		}
 	}
 }
 

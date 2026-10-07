@@ -73,11 +73,12 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 	strict := mode == ValidationModeStrict
 
 	// The wallet proves holder binding with a KB-JWT for an SD-JWT VC and with
-	// deviceKey for an mdoc. It presents a jwt_vc_json credential as is, so the
-	// flag doesn't apply to it.
+	// deviceKey for an mdoc. It presents a jwt_vc_json credential without a
+	// Verifiable Presentation, so the credential answers only a query that
+	// doesn't require holder binding (OpenID4VP 1.0 Appendix B.1).
 	bound := make(map[string]bool, len(credentials))
 	for _, cred := range credentials {
-		bound[cred.ID] = (cred.Format != "dc+sd-jwt" && cred.Format != "mso_mdoc") || credentialHolderBinding(cred.Raw).Bound
+		bound[cred.ID] = (cred.Format == "dc+sd-jwt" || cred.Format == "mso_mdoc") && credentialHolderBinding(cred.Raw).Bound
 	}
 
 	for _, cq := range credQueries {
