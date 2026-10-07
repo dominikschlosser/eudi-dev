@@ -390,9 +390,9 @@ func normalizeEntitlements(service *WalletRelyingPartyService) error {
 	provider := isAttestationProvider(*service)
 	switch {
 	case !provider && len(service.ProvidesAttestations) > 0:
-		return fmt.Errorf("service %q lists attestations it issues, so it needs an attestation provider entitlement (PID_Provider, QEAA_Provider, PUB_EAA_Provider or Non_Q_EAA_Provider)", service.ServiceTradeName)
+		return fmt.Errorf("service %q lists attestation types, so it needs an attestation provider entitlement (PID_Provider, QEAA_Provider, PUB_EAA_Provider or Non_Q_EAA_Provider)", service.ServiceTradeName)
 	case provider && len(service.ProvidesAttestations) == 0:
-		return fmt.Errorf("service %q is an attestation provider, so it needs the attestation types it issues (ARF RPRC_15)", service.ServiceTradeName)
+		return fmt.Errorf("service %q is an attestation provider, so it has to list its attestation types (ARF RPRC_15)", service.ServiceTradeName)
 	case !slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(registeredEntitlements, e) }):
 		return fmt.Errorf("service %q needs an entitlement from ETSI TS 119 475 Annex A.2, such as %s", service.ServiceTradeName, serviceProviderEntitlement)
 	}

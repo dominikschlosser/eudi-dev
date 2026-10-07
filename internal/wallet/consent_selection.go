@@ -82,7 +82,7 @@ func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[strin
 	// must pick one of them.
 	for _, qid := range activeQueries(options, setChoices) {
 		if query := findConsentQuery(options, qid); query != nil && len(pickedCandidates(query, picks[qid])) == 0 {
-			return fmt.Errorf("no credential matches query %q, pick one to send", qid)
+			return fmt.Errorf("no credential matches query %q. Pick one to send", qid)
 		}
 	}
 	return validateClaimSetChoices(options, picks, claimSets)

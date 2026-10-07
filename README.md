@@ -29,11 +29,11 @@ A wallet for testing EUDI issuers and verifiers, in the browser, on the command 
 
 ## Highlights
 
-**A wallet your issuer or verifier can talk to.** Accept credential offers and answer presentation requests from the web UI, the CLI or the HTTP API. Every exchange shows up in the activity log with its requests and responses. Debug mode reports what an issuer or verifier gets wrong and carries on. Strict mode refuses. → [Wallet](docs/wallet.md), [presenting](docs/wallet/presenting.md), [issuing](docs/wallet/issuing.md)
+**A wallet for testing your issuer or verifier.** Accept credential offers and answer presentation requests from the web UI, the CLI or the HTTP API. Every exchange shows up in the activity log with its requests and responses. Debug mode reports what an issuer or verifier gets wrong and carries on. Strict mode refuses. → [Wallet](docs/wallet.md), [presenting](docs/wallet/presenting.md), [issuing](docs/wallet/issuing.md)
 
 **HAIP and ARF checks.** `--haip` checks verifiers and issuers against HAIP 1.0. `--arf` checks how they authenticate under the ARF: access and registration certificates, revocation, and whether a verifier asks for more than it registered. → [HAIP](docs/wallet/presenting.md#haip-10-enforcement), [ARF checks for verifiers](docs/wallet/presenting.md#arf-checks) and [for issuers](docs/wallet/issuing.md#arf-checks)
 
-**A registrar and a catalogue of attestations.** Register a verifier or an issuer and get its access certificate and registration certificate (ETSI TS 119 411-8, TS 119 475), ready for `verifier_info` or `issuer_info`. The catalogue lists attestation types (EC TS11). Each type links a schema, a rulebook and a trusted list. → [Registrar](docs/wallet/registrar.md)
+**A registrar and a catalogue of attestations.** Register a verifier or an issuer and get its access certificate and registration certificate (ETSI TS 119 411-8, TS 119 475), ready for `verifier_info` or `issuer_info`. The catalogue lists attestation types (EC TS11). Each type links a schema for each format, a rulebook and optionally a trusted list. → [Registrar](docs/wallet/registrar.md)
 
 **PIDs and credential templates.** The EUDI PID and the German, Italian and Dutch PIDs are built in as SD-JWT VC and mdoc, with sample identities. Templates define your own credentials, and `--credentials` loads them on every start. → [Templates](docs/templates.md), [startup credentials](docs/wallet/serve.md#startup-credentials)
 
@@ -88,8 +88,8 @@ eudi [--json] [--no-color] [-v] <command> [flags] [input]
 | Command | Purpose | Docs |
 |---|---|---|
 | `wallet` | The testing wallet: `serve`, `accept`, `scan`, `list`, `logs` and more | [wallet](docs/wallet.md) |
-| `wallet registrar` | Register `verifiers` and `issuers`, issue their certificates, `revoke` and `activate` them | [registrar](docs/wallet/registrar.md) |
-| `wallet catalog` | List and add attestation types | [catalogue](docs/wallet/registrar.md#attestation-catalogue) |
+| `wallet registrar` | Register `verifiers` and `issuers`, then issue, `revoke` and `activate` their certificates | [registrar](docs/wallet/registrar.md) |
+| `wallet catalog` | List, add and remove attestation types | [catalogue](docs/wallet/registrar.md#attestation-catalogue) |
 | `issue` | Generate SD-JWT, JWT or mdoc test credentials | [issue](docs/issue.md) |
 | `templates` | Manage credential templates | [templates](docs/templates.md) |
 | `decode` | Inspect credentials, OpenID4VCI and OpenID4VP requests, and trust lists | [decode](docs/decode.md) |
@@ -140,8 +140,6 @@ When to use something else:
 - To ship a product, use an SDK. The Go packages in this repository are internal (`internal/`).
 - For proximity flows (BLE, NFC), use Multipaz. eudi-dev implements OID4VP over HTTP.
 - To read a single credential, use a hosted decoder.
-
-Never use real credentials (see [SECURITY.md](SECURITY.md)).
 
 ## OpenID certification
 

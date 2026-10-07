@@ -282,7 +282,6 @@ func init() {
 	_ = templatesCmd.MarkPersistentFlagDirname("templates-dir")
 }
 
-// Remote wallets return no file path, so only local saves print one.
 // printTemplateResult prints the saved template's name and path with --json.
 // A remote wallet reports no path.
 func printTemplateResult(name, path string) {

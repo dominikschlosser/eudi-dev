@@ -167,8 +167,8 @@
       <table class="conformance-table">
         <tr><td>Validation mode</td><td>
           <select id="conf-mode-select" class="conf-input">
-            <option value="strict">strict</option>
-            <option value="debug">debug</option>
+            <option value="strict">Strict (refuse)</option>
+            <option value="debug">Debug (warn and continue)</option>
           </select>
         </td></tr>
         <tr><td>HTTPS certificates</td><td>
@@ -187,10 +187,10 @@
         <tr><td>Request objects</td><td>
           <label class="conf-toggle" title="The wallet always sends an encryption key in wallet_metadata. This makes the verifier use it (--require-encrypted-request)"><input type="checkbox" id="conf-encrypted-input"> Refuse unencrypted request objects</label>
         </td></tr>
-        <tr><td>OpenID4VCI</td><td>
+        <tr><td>OpenID4VCI version</td><td>
           <select id="conf-vci-version-select" class="conf-input">
             <option value="1.0">1.0</option>
-            <option value="1.1">1.1 draft</option>
+            <option value="1.1">1.1 draft (where the issuer supports it)</option>
           </select>
         </td></tr>
         <tr><td>mdoc session transcript</td><td id="conf-transcript" title="Set at startup with --session-transcript">—</td></tr>
@@ -216,7 +216,7 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">Issued credentials, wallet attestations, key attestations and the registrar's signing certificate share this CA. Configure it as a trust anchor.</p>
+      <p class="dialog-hint">This CA signs issued credentials, wallet attestations, key attestations and the registrar certificate. Add it as a trust anchor.</p>
 
       <div class="trust-section">
         <div class="trust-section-title">Trust lists</div>
@@ -258,7 +258,7 @@
               <a id="access-ca-cert-pem-link" href="api/certificates/relying-party-access-ca">PEM</a>
               <a id="access-ca-cert-jwks-link" href="api/certificates/relying-party-access-ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Signs the access certificates of registered relying parties. Trust it for access certificates only, not for credential issuers.</span>
+            <span class="trust-item-hint">Signs the access certificates of registered relying parties. Trust it only for access certificates.</span>
           </dd>
           <dt id="tls-row-label">TLS</dt>
           <dd id="tls-row">
@@ -339,9 +339,9 @@
             <option value="https://uri.etsi.org/19475/Entitlement/PID_Provider">PID provider</option>
           </select>
 
-          <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestations it issues</span>
+          <span class="form-label registrar-credentials-label" id="registrar-attestations-label">Attestation types</span>
           <div class="registrar-credentials" id="registrar-attestations" role="group" aria-labelledby="registrar-attestations-label"></div>
-          <button type="button" class="btn btn-sm registrar-add" id="registrar-add-attestation">+ Add attestation</button>
+          <button type="button" class="btn btn-sm registrar-add" id="registrar-add-attestation">+ Add attestation type</button>
           </div>
 
           <div class="registrar-section" id="registrar-use-section">
@@ -357,7 +357,7 @@
           <button type="button" class="btn btn-sm registrar-add" id="registrar-add-credential">+ Add credential</button>
           </div>
 
-          <label class="form-label" for="registrar-registration-validity">Certificate validity</label>
+          <label class="form-label" for="registrar-registration-validity">Registration certificate validity</label>
           <input type="text" id="registrar-registration-validity" class="form-input" value="4320h" placeholder="Go duration, e.g. 4320h" aria-label="Registration certificate validity">
 
           <div class="registrar-section" id="registrar-access-section">

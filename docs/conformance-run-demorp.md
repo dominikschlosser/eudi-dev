@@ -56,7 +56,7 @@ The `--rerun` selector passes through to the official runner exactly as in the w
 
 The verifier plans require the `request_uri` and the `response_uri` to be https, and the HAIP issuer metadata checks require an https credential issuer. The wrapper starts the wallet with an https base URL and `--serve-tls`, so the wallet serves that origin itself over TLS with its own certificate (the suite skips certificate verification on outbound calls).
 
-The suite signs the credentials it presents to the demo verifier under its own CAs (the `vp-signing` CA from `scripts/certs-keys` for SD-JWT VCs, a built-in mdoc IACA root for mdocs). The wrapper passes both to the wallet as `--demo-verifier-issuer-ca` files, so the demo verifier accepts those chains in addition to the wallet CA. The suite server publishes the IACA root at `/mdoc-iaca-root.pem`. When that endpoint is unavailable, the wrapper extracts the same certificate from the suite source.
+The suite presents credentials signed under its own CAs to the demo verifier (the `vp-signing` CA from `scripts/certs-keys` for SD-JWT VCs, a built-in mdoc IACA root for mdocs). The wrapper passes both to the wallet as `--demo-verifier-issuer-ca` files, so the demo verifier accepts those chains in addition to the wallet CA. The suite server publishes the IACA root at `/mdoc-iaca-root.pem`. When that endpoint is unavailable, the wrapper extracts the same certificate from the suite source.
 
 The generated configs also pass the wallet CA to the suite. The issuer configs set it as `credential.trust_anchor_pem`, so the suite validates the demo ticket's certificate chain. The verifier configs set it as `client.request_object_trust_anchor_pem`, so the suite validates the demo verifier's signed request objects.
 

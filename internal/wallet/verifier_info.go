@@ -93,7 +93,7 @@ func verifyRegistrationEntries(entries []map[string]any) (registrations []verifi
 		}
 		key, err := validate.ExtractX5CLeafKey(header)
 		if err != nil || key == nil {
-			problems = append(problems, "carries no readable x5c certificate, so its signature cannot be checked")
+			problems = append(problems, "has no readable x5c certificate")
 			continue
 		}
 		if _, err := jws.Verify(data, key); err != nil {
@@ -203,13 +203,13 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	}
 	registrations, findings := verifiedRegistrations(requestVerifierInfo(authReq))
 	if len(registrations) == 0 {
-		findings = append(findings, "ARF RPRC_19: the request carries no relying party registration certificate (verifier_info entry with typ rc-wrp+jwt), required in every presentation request")
+		findings = append(findings, "ARF RPRC_19: the request has no registration certificate in verifier_info (typ rc-wrp+jwt)")
 	}
 	accessChain := requestAccessChain(authReq)
 	if len(accessChain) == 0 {
 		findings = append(findings, "ARF RPA_03: the request is not signed with a relying party access certificate in x5c")
 	} else if err := verifyToAnchor(accessChain, authReq.RelyingPartyCAs); err != nil {
-		findings = append(findings, fmt.Sprintf("ARF RPA_04: the access certificate %q does not verify to a trusted access certificate authority: %v", accessChain[0].Subject.String(), err))
+		findings = append(findings, fmt.Sprintf("ARF RPA_04: the access certificate %q does not chain to a trusted access certificate authority: %v", accessChain[0].Subject.String(), err))
 	}
 	var registered []any
 	for _, r := range registrations {
@@ -221,7 +221,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 			findings = append(findings, registrationBindingFindings(cert, accessChain[0])...)
 		}
 		if err := verifyToAnchor(r.chain, authReq.RegistrarCAs); err != nil {
-			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not verify to a trusted registrar: %v", name, err))
+			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not chain to a trusted registrar: %v", name, err))
 		}
 		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient)...)
 	}

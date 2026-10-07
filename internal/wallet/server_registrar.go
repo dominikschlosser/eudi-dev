@@ -109,7 +109,7 @@ func (s *Server) handleRegistrarWRPList(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleRegistrarWRPByIdentifier(w http.ResponseWriter, r *http.Request) {
 	rp, ok := s.registrarRecord(r.PathValue("identifier"))
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "wallet relying party not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "relying party not registered"})
 		return
 	}
 	s.writeRegistrarResponse(w, r, map[string]any{"data": rp})

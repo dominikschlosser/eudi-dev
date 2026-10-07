@@ -38,14 +38,14 @@ access certificates (ETSI TS 119 411-8) and registration certificates (ETSI TS
 119 475). The content of both certificates comes from the registration.
 
 A verifier registers intended uses and gets a registration certificate for each.
-An issuer registers as an attestation provider with the attestation types it
-issues and gets one registration certificate for its service.`,
+An issuer registers as an attestation provider and lists its attestation types.
+It gets one registration certificate for its service.`,
 	}
 	cmd.AddCommand(walletPartiesCmd("verifiers"), walletPartiesCmd("issuers"), walletAccessCertCmd(), walletRegistrationCertCmd(), walletRegistrarStatusCmd(true), walletRegistrarStatusCmd(false))
 	return cmd
 }
 
-// partyFlags are the fields a verifier and an issuer register alike.
+// partyFlags hold the registration fields that verifiers and issuers share.
 type partyFlags struct {
 	rp                                wallet.WalletRelyingParty
 	identifier, legalName, supportURI string
@@ -240,12 +240,12 @@ func walletIssuersAddCmd() *cobra.Command {
 	var attestations []string
 	cmd := &cobra.Command{
 		Use:   "add",
-		Short: "Register an issuer with the attestation types it issues",
+		Short: "Register an issuer and its attestation types",
 		Long: `Registers an issuer as an attestation provider with the wallet's registrar. The
 registrar assigns an identifier when --identifier is empty.
 
 --entitlement names the kind of provider (ETSI TS 119 475 Annex A.2) and
---attestation the attestation types it issues (ARF RPRC_15). Run
+each --attestation adds one attestation type (ARF RPRC_15). Run
 registration-cert to get the registration certificate. It comes inside an
 issuer_info value for your issuer metadata.`,
 		Example: `  eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
@@ -275,7 +275,7 @@ issuer_info value for your issuer metadata.`,
 	}
 	party.add(cmd)
 	cmd.Flags().StringVar(&entitlement, "entitlement", "eaa", "Kind of provider: pid, qeaa, pub-eaa or eaa (non-qualified)")
-	cmd.Flags().StringArrayVar(&attestations, "attestation", nil, "Attestation type it issues, as format:type, such as dc+sd-jwt:urn:eudi:pid:1 or mso_mdoc:eu.europa.ec.eudi.pid.1 (repeatable, required)")
+	cmd.Flags().StringArrayVar(&attestations, "attestation", nil, "Attestation type as format:type, such as dc+sd-jwt:urn:eudi:pid:1 or mso_mdoc:eu.europa.ec.eudi.pid.1 (repeatable, required)")
 	_ = cmd.RegisterFlagCompletionFunc("entitlement", staticCompletion(slices.Sorted(maps.Keys(entitlementNames))...))
 	_ = cmd.MarkFlagRequired("attestation")
 	return cmd
@@ -406,9 +406,9 @@ also checks that a request asks only for registered credentials and claims
 (ARF RPRC_21).
 
 For an issuer it certifies the attestation provider service with the attestation
-types it issues (ARF RPRC_13) and prints an issuer_info value (ETSI TS 119 472-3
+types (ARF RPRC_13) and prints an issuer_info value (ETSI TS 119 472-3
 §4.2.3). An issuer puts that value in its Credential Issuer Metadata. With --arf
-the wallet checks it before it requests a credential.
+the wallet checks the value before requesting a credential.
 
 An intended use or a service has one valid certificate at a time. Issuing a new
 one revokes the previous one.
@@ -455,7 +455,7 @@ instead, and --json prints both.`,
 		},
 	}
 	cmd.Flags().StringVar(&req.Identifier, "identifier", "", "Identifier of the registered relying party (required)")
-	cmd.Flags().StringVar(&req.ServiceIdentifier, "service-id", "", "Service of the relying party (default any)")
+	cmd.Flags().StringVar(&req.ServiceIdentifier, "service-id", "", "Service of the relying party (default the service of the intended use)")
 	cmd.Flags().StringVar(&req.IntendedUseIdentifier, "intended-use", "", "Intended use to certify (default the only one)")
 	cmd.Flags().BoolVar(&provider, "provider", false, "Certify the attestation provider service instead of an intended use")
 	cmd.Flags().StringVar(&req.Validity, "validity", "", "Validity as a Go duration, at most 8760h (default 4320h)")

@@ -1954,7 +1954,7 @@ test.describe("ARF checks", () => {
         if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
       }
       await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
-      await expect(page.locator("#offer-arf-warnings-title")).toHaveText("The wallet could not verify this issuer's registration");
+      await expect(page.locator("#offer-arf-warnings-title")).toHaveText("The wallet found problems with this issuer");
       await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF ISSU_34: the Credential Issuer Metadata is not signed");
       await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF RPRC_22a");
     } finally {
@@ -2326,7 +2326,7 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-catalog-save").click();
     await expect(page.locator("#registrar-catalog-overlay")).toBeVisible();
     const card = page.locator(".registrar-party", { hasText: "Library card" });
-    await expect(card.locator("[id$='-los']")).toHaveText("Security: Moderate");
+    await expect(card.locator("[id$='-los']")).toHaveText("Security level: Moderate");
     await expect(card.locator("[id$='-trust']")).toHaveText("No trusted list");
 
     // The schema link serves SD-JWT VC Type Metadata with the claims.

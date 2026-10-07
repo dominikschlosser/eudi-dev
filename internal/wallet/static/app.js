@@ -2028,7 +2028,7 @@
     // requires the wallet to warn the user before it requests the credential.
     if ((details.warnings || []).length > 0) {
       html += '<div class="offer-warnings" id="offer-arf-warnings" role="alert">' +
-        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet could not verify this issuer\'s registration</div>' +
+        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet found problems with this issuer</div>' +
         '<ul id="offer-arf-warnings-list">' + details.warnings.map((w, i) => '<li id="offer-arf-warning-' + i + '">' + escHtml(w) + '</li>').join('') + '</ul>' +
       '</div>';
     }
@@ -2123,7 +2123,7 @@
       return q.candidates.length > 0 ? [q.candidates[0]] : [];
     }
     function thatDoNotMatch(n) {
-      return n + (n === 1 ? ' that does not match' : ' that do not match');
+      return n + ' non-matching';
     }
     // A credential counts once, and only when it matches no query.
     function nonMatchingCount() {
@@ -2193,7 +2193,7 @@
       return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
         '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
         '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
-        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">The verifier prefers its first set. Debug mode lets you send another.</div>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first claim set that fits. Debug mode lets you pick another.</div>' +
       '</div>';
     }
     function isAutoSelection() {
@@ -3539,7 +3539,7 @@
   // parties list, so Close returns there.
   let registrarFromList = false;
   // registrarMode is verifier or issuer. A verifier registers an intended use,
-  // an issuer the attestations it issues.
+  // an issuer its attestation types.
   let registrarMode = 'verifier';
   function showRegistered(done) {
     registrarSubmit.classList.toggle('registrar-registered', done);
@@ -3678,7 +3678,7 @@
     registrarCredentials.lastElementChild.querySelector('[data-field="type"]').focus();
   });
 
-  // An issuer lists the attestation types it issues, each a format and a type
+  // Each attestation type of an issuer is a format and a type
   // (ETSI TS 119 475 V1.2.1 Table 8).
   let registrarAttestationCount = 0;
   const registrarAttestations = document.getElementById('registrar-attestations');
@@ -4020,8 +4020,8 @@
           (entry.template ? '' : '<span class="registrar-party-actions"><button type="button" class="btn btn-danger btn-sm" id="' + prefix + '-delete">Delete</button></span>') +
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
-          (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change or delete the credential template to change this entry.">Template</span>' : '') +
-          '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
+          (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change the credential template to change this entry.">Template</span>' : '') +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security level: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
           '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
           '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +
           '<code class="registrar-party-identifier registrar-catalog-version" id="' + prefix + '-version">v' + escHtml(schema.version) + '</code>' +
