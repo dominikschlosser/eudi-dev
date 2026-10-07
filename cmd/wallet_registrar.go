@@ -17,7 +17,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
@@ -222,9 +222,10 @@ Run registration-cert to get its registration certificate.`,
 		},
 	}
 	party.add(cmd)
-	cmd.Flags().StringVar(&purpose, "purpose", "", "Purpose of the intended use (shown in the consent dialog)")
+	cmd.Flags().StringVar(&purpose, "purpose", "", "Purpose of the intended use (shown in the consent dialog, required)")
 	cmd.Flags().StringVar(&dcqlIn, "dcql", "", "DCQL query with the credentials and claims to register (file, JSON or '-' for stdin, required)")
 	cmd.Flags().StringVar(&privacy, "privacy-policy", "", "Privacy policy URL of the intended use (default a placeholder page on the wallet)")
+	_ = cmd.MarkFlagRequired("purpose")
 	_ = cmd.MarkFlagRequired("dcql")
 	_ = cmd.MarkFlagFilename("dcql", "json")
 	return cmd
@@ -232,7 +233,7 @@ Run registration-cert to get its registration certificate.`,
 
 func walletIssuersAddCmd() *cobra.Command {
 	var party partyFlags
-	var entitlement string
+	var categories []string
 	var attestations []string
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -240,23 +241,28 @@ func walletIssuersAddCmd() *cobra.Command {
 		Long: `Registers an issuer as an attestation provider with the wallet's registrar. The
 registrar assigns an identifier when --identifier is empty.
 
---entitlement names the kind of provider (ETSI TS 119 475 Annex A.2) and
-each --attestation adds one attestation type (ARF RPRC_15). Run
+Each --attestation adds one attestation type (ARF RPRC_15). The registrar
+gives the issuer the entitlement of each type's category in the catalogue
+(ETSI TS 119 475 Annex A.2). --category sets the entitlements instead. Run
 registration-cert to get the registration certificate. It comes inside an
 issuer_info value for your issuer metadata.`,
 		Example: `  eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1
-  eudi wallet registrar issuers add --name "Example PID Provider" --entitlement pid --attestation dc+sd-jwt:urn:eudi:pid:1 --attestation mso_mdoc:eu.europa.ec.eudi.pid.1`,
+  eudi wallet registrar issuers add --name "Example PID Provider" --attestation dc+sd-jwt:urn:eudi:pid:1 --attestation mso_mdoc:eu.europa.ec.eudi.pid.1
+  eudi wallet registrar issuers add --name "Example Bank" --category qeaa --attestation dc+sd-jwt:urn:example:account:1`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			uri, ok := entitlementNames[entitlement]
-			if !ok {
-				return fmt.Errorf("--entitlement takes pid, qeaa, pub-eaa or eaa, not %q", entitlement)
+			var entitlements []string
+			for _, category := range categories {
+				if err := credtemplate.CheckCategory(category); err != nil || category == "" {
+					return fmt.Errorf("--category takes %s, not %q", strings.Join(credtemplate.Categories, ", "), category)
+				}
+				entitlements = append(entitlements, registrar.CategoryOf(category).Entitlement)
 			}
 			provided, err := providedAttestations(attestations)
 			if err != nil {
 				return err
 			}
-			stored, err := party.register(registrar.WalletRelyingPartyService{Entitlements: []string{uri}, ProvidesAttestations: provided})
+			stored, err := party.register(registrar.WalletRelyingPartyService{Entitlements: entitlements, ProvidesAttestations: provided})
 			if err != nil {
 				return err
 			}
@@ -270,20 +276,11 @@ issuer_info value for your issuer metadata.`,
 		},
 	}
 	party.add(cmd)
-	cmd.Flags().StringVar(&entitlement, "entitlement", "eaa", "Kind of provider: pid, qeaa, pub-eaa or eaa (non-qualified)")
+	cmd.Flags().StringArrayVar(&categories, "category", nil, "Credential category whose provider entitlement the issuer gets: pid, qeaa, pub-eaa or eaa (repeatable, default the categories of the attestation types in the catalogue)")
 	cmd.Flags().StringArrayVar(&attestations, "attestation", nil, "Attestation type as format:type, such as dc+sd-jwt:urn:eudi:pid:1 or mso_mdoc:eu.europa.ec.eudi.pid.1 (repeatable, required)")
-	_ = cmd.RegisterFlagCompletionFunc("entitlement", staticCompletion(slices.Sorted(maps.Keys(entitlementNames))...))
+	_ = cmd.RegisterFlagCompletionFunc("category", staticCompletion(credtemplate.Categories...))
 	_ = cmd.MarkFlagRequired("attestation")
 	return cmd
-}
-
-// entitlementNames are the provider entitlements of ETSI TS 119 475 V1.2.1
-// Annex A.2 that --entitlement takes.
-var entitlementNames = map[string]string{
-	"pid":     registrar.PIDProviderEntitlement,
-	"qeaa":    registrar.QEAAProviderEntitlement,
-	"pub-eaa": registrar.PubEAAProviderEntitlement,
-	"eaa":     registrar.NonQEAAProviderEntitlement,
 }
 
 // providedAttestations parses format:type values. The type of an SD-JWT VC is

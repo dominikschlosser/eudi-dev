@@ -61,6 +61,7 @@ func (h *Server) Routes() map[string]http.HandlerFunc {
 		"DELETE " + catalogSchemaPath + "/{id}":                            h.handleDeleteCatalogSchema,
 		"GET " + catalogSchemaPath + "/{id}/{format}":                      h.handleCatalogFormatSchema,
 		"GET /api/catalog/attestations":                                    h.handleCatalogAttestations,
+		"GET /api/catalog/categories":                                      h.handleCatalogCategories,
 		"POST /api/catalog/attestations":                                   h.handleAddCatalogAttestation,
 	}
 	for path, page := range placeholderPages {
@@ -446,6 +447,12 @@ func (h *Server) handleDeleteCatalogSchema(w http.ResponseWriter, r *http.Reques
 // them to the format-specific schemas.
 func (h *Server) handleCatalogAttestations(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, h.Registrar().CatalogAttestations())
+}
+
+// handleCatalogCategories lists the credential categories with their
+// entitlements, trust rules and default levels of security.
+func (h *Server) handleCatalogCategories(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, Categories())
 }
 
 // handleAddCatalogAttestation adds an attestation. TS11 v1.0 leaves

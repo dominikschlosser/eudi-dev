@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
@@ -95,7 +96,7 @@ type WalletRelyingPartyService struct {
 	ServiceTradeName     string                `json:"serviceTradeName"`
 	ServiceIdentifier    string                `json:"serviceIdentifier,omitempty"`
 	SupportURI           string                `json:"supportURI,omitempty"`
-	SrvDescription       []MultiLangString     `json:"srvDescription,omitempty"`
+	SrvDescription       ServiceDescription    `json:"srvDescription,omitempty"`
 	Entitlements         []string              `json:"entitlements"`
 	ProvidesAttestations []ProvidedAttestation `json:"providesAttestations,omitempty"`
 	IsIntermediary       bool                  `json:"isIntermediary"`
@@ -168,7 +169,7 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingPa
 	if err != nil {
 		return WalletRelyingParty{}, err
 	}
-	if err := normalizeRelyingParty(&rp, base, nil); err != nil {
+	if err := normalizeRelyingParty(&rp, base, nil, r.attestationCategories()); err != nil {
 		return WalletRelyingParty{}, err
 	}
 	r.mu.Lock()
@@ -196,6 +197,7 @@ func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 	if len(rp.Identifier) == 0 || strings.TrimSpace(rp.Identifier[0].Identifier) == "" {
 		return WalletRelyingParty{}, fmt.Errorf("an update needs the identifier of the registered relying party")
 	}
+	categories := r.attestationCategories()
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	i := relyingPartyIndex(r.state.RelyingParties, rp.Identifier[0].Identifier)
@@ -211,7 +213,7 @@ func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 			return WalletRelyingParty{}, fmt.Errorf("%w: %s", errRelyingPartyExists, id.Identifier)
 		}
 	}
-	if err := normalizeRelyingParty(&rp, base, &r.state.RelyingParties[i]); err != nil {
+	if err := normalizeRelyingParty(&rp, base, &r.state.RelyingParties[i], categories); err != nil {
 		return WalletRelyingParty{}, err
 	}
 	// A certificate certifies the content of its intended use. When an update
@@ -242,7 +244,7 @@ func (r *Registrar) EnsureRelyingParty(rp WalletRelyingParty) (WalletRelyingPart
 	if err != nil {
 		return WalletRelyingParty{}, false, err
 	}
-	if err := normalizeRelyingParty(&wanted, base, &stored); err != nil {
+	if err := normalizeRelyingParty(&wanted, base, &stored, r.attestationCategories()); err != nil {
 		return WalletRelyingParty{}, false, err
 	}
 	if wanted, err = cloneRelyingParty(wanted); err != nil {
@@ -315,9 +317,22 @@ func hasIdentifier(rp WalletRelyingParty, identifier string) bool {
 	return slices.ContainsFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == identifier })
 }
 
+// attestationCategories names the category of each attestation type in the
+// catalogue. It is read before r.mu is taken.
+func (r *Registrar) attestationCategories() func(format, typ string) string {
+	categories := map[string]string{}
+	for _, entry := range r.CatalogAttestations() {
+		for _, c := range entry.Credentials {
+			categories[c.Format+" "+c.Type] = entry.Category
+		}
+	}
+	return func(format, typ string) string { return categories[format+" "+typ] }
+}
+
 // normalizeRelyingParty checks a registration and fills in what the registrar
-// assigns. For an update, before is the stored registration.
-func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRelyingParty) error {
+// assigns. For an update, before is the stored registration. category names
+// the catalogue category of an attestation type.
+func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRelyingParty, category func(format, typ string) string) error {
 	if err := checkRegistrationSize(*rp); err != nil {
 		return err
 	}
@@ -366,9 +381,9 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 		service.ServiceTradeName = firstNonEmpty(service.ServiceTradeName, rp.TradeName)
 		service.SupportURI = firstNonEmpty(service.SupportURI, base+"/support")
 		if len(service.SrvDescription) == 0 {
-			service.SrvDescription = []MultiLangString{{Lang: "en", Content: service.ServiceTradeName}}
+			service.SrvDescription = ServiceDescription{{{Lang: "en", Content: service.ServiceTradeName}}}
 		}
-		if err := normalizeEntitlements(service); err != nil {
+		if err := normalizeEntitlements(service, category); err != nil {
 			return err
 		}
 		for j := range service.IntendedUses {
@@ -476,15 +491,27 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 // Annex A.2. Table 8 lists provided attestations only for attestation
 // providers, and ARF RPRC_15 requires a provider to list them. A provider that
 // also requests attributes is a service provider too (ARF RPRC_05 note).
-func normalizeEntitlements(service *WalletRelyingPartyService) error {
+// normalizeEntitlements gives a service that lists attestation types but has
+// no provider entitlement the entitlements of their categories. A type outside
+// the catalogue is a PID when its name says so (ARF PID_04 and PID_14), else an
+// EAA.
+func normalizeEntitlements(service *WalletRelyingPartyService, category func(format, typ string) string) error {
 	service.Entitlements = dedupeStrings(service.Entitlements)
+	if len(service.ProvidesAttestations) > 0 && !isAttestationProvider(*service) {
+		for _, attestation := range service.ProvidesAttestations {
+			id := category(attestation.Format, strings.TrimSpace(attestation.Type))
+			if id == "" && credtype.IsPIDType(attestation.Type) {
+				id = credtemplate.CategoryPID
+			}
+			service.Entitlements = append(service.Entitlements, CategoryOf(id).Entitlement)
+		}
+		service.Entitlements = dedupeStrings(service.Entitlements)
+	}
 	if len(service.Entitlements) == 0 && len(service.ProvidesAttestations) == 0 {
 		service.Entitlements = []string{ServiceProviderEntitlement}
 	}
 	provider := isAttestationProvider(*service)
 	switch {
-	case !provider && len(service.ProvidesAttestations) > 0:
-		return fmt.Errorf("service %q lists attestation types, so it needs an attestation provider entitlement (PID_Provider, QEAA_Provider, PUB_EAA_Provider or Non_Q_EAA_Provider)", service.ServiceTradeName)
 	case provider && len(service.ProvidesAttestations) == 0:
 		return fmt.Errorf("service %q is an attestation provider, so it has to list its attestation types (ARF RPRC_15)", service.ServiceTradeName)
 	case !slices.ContainsFunc(service.Entitlements, func(e string) bool { return slices.Contains(registeredEntitlements, e) }):

@@ -133,7 +133,7 @@ func TestTheIssuerCommandChecksItsFlags(t *testing.T) {
 		{[]string{"--name", "X"}, `required flag(s) "attestation" not set`},
 		{[]string{"--name", "X", "--attestation", "diploma"}, "is not format:type"},
 		{[]string{"--name", "X", "--attestation", "ldp_vc:urn:example:x"}, "not dc+sd-jwt or mso_mdoc"},
-		{[]string{"--name", "X", "--attestation", "dc+sd-jwt:urn:example:x", "--entitlement", "provider"}, "--entitlement takes pid, qeaa, pub-eaa or eaa"},
+		{[]string{"--name", "X", "--attestation", "dc+sd-jwt:urn:example:x", "--category", "provider"}, "--category takes pid, qeaa, pub-eaa, eaa"},
 	} {
 		resetFlags(rootCmd)
 		rootCmd.SetArgs(append([]string{"wallet", "registrar", "issuers", "add"}, tc.args...))

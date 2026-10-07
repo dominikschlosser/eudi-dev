@@ -280,12 +280,7 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 	if !nonEmptyList(cert["entitlements"]) {
 		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
-	if !hasContact(cert["support_uri"]) {
-		miss("support_uri (data deletion contact)", "ARF RPRC_11")
-	}
-	if !hasSupervisoryAuthority(cert["supervisory_authority"]) {
-		miss("supervisory_authority contact", "ARF RPRC_12")
-	}
+	registeredPartyFindings(cert, miss)
 	if !nonEmptyList(cert["credentials"]) {
 		miss("credentials (the registered attestations and attributes)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-06")
 	}
@@ -293,6 +288,32 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 		miss("status (its entry in the registrar's status list), so the wallet cannot check revocation", "ETSI TS 119 475 V1.2.1 Table 7")
 	}
 	return append(findings, registrationValidityFindings(cert, "ARF RPRC_17")...)
+}
+
+// registeredPartyFindings checks the fields of Table 7 of ETSI TS 119 475
+// V1.2.1 that every registered relying party has, a verifier or a provider
+// (GEN-5.2.4-01). The registry has no infoURI for every party, so info_uri is
+// optional.
+func registeredPartyFindings(cert map[string]any, miss func(field, rule string)) {
+	const table7 = "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01"
+	if stringClaim(cert["country"]) == "" {
+		miss("country", table7)
+	}
+	if stringClaim(cert["registry_uri"]) == "" {
+		miss("registry_uri", table7)
+	}
+	if !nonEmptyList(cert["policy_id"]) {
+		miss("policy_id", table7)
+	}
+	if stringClaim(cert["certificate_policy"]) == "" {
+		miss("certificate_policy", table7)
+	}
+	if !hasContact(cert["support_uri"]) {
+		miss("support_uri (data deletion contact)", "ARF RPRC_11")
+	}
+	if !hasSupervisoryAuthority(cert["supervisory_authority"]) {
+		miss("supervisory_authority contact", "ARF RPRC_12")
+	}
 }
 
 // ETSI TS 119 475 V1.2.1 GEN-5.2.4-01 (Table 7) requires iat, and GEN-5.2.4-08
@@ -544,6 +565,10 @@ func purposeStrings(raw any) []string {
 				if v := strings.TrimSpace(entry); v != "" {
 					plain = append(plain, v)
 				}
+			case []any:
+				// srv_description nests each description in its own array
+				// (ETSI TS 119 475 V1.2.1 Annex C).
+				plain = append(plain, purposeStrings(entry)...)
 			case map[string]any:
 				text, _ := entry["value"].(string)
 				if text == "" {

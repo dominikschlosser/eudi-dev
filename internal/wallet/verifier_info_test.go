@@ -214,6 +214,8 @@ func conformantRegistrationCert() map[string]any {
 		"sub":                   "LEIEU-TEST",
 		"country":               "EU",
 		"registry_uri":          "https://registrar.example",
+		"policy_id":             []any{"0.4.0.19475.3.1"},
+		"certificate_policy":    "https://registrar.example/policy",
 		"srv_description":       []any{map[string]any{"lang": "en", "value": "Test service"}},
 		"entitlements":          []any{"https://uri.etsi.org/19475/Entitlement/Service_Provider"},
 		"privacy_policy":        "https://example/privacy",
@@ -236,7 +238,7 @@ func TestRegistrationCertificateContentFindings(t *testing.T) {
 
 	sparse := map[string]any{"name": "X", "sub": "Y", "iat": float64(time.Now().Unix())}
 	findings := registrationCertificateContentFindings(sparse)
-	for _, want := range []string{"privacy_policy", "srv_description", "entitlements", "support_uri", "supervisory_authority", "credentials", "status"} {
+	for _, want := range []string{"privacy_policy", "srv_description", "entitlements", "support_uri", "supervisory_authority", "credentials", "status", "country", "registry_uri", "policy_id", "certificate_policy"} {
 		if !containsSubstring(findings, want) {
 			t.Errorf("findings %v should name the missing %s", findings, want)
 		}

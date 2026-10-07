@@ -311,7 +311,7 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	if !IsWebURL(s.RulebookURI) {
 		return fmt.Errorf("rulebookURI %q is not an http or https URL", s.RulebookURI)
 	}
-	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, categoryLevel(entry.Category))
+	s.AttestationLoS = firstNonEmpty(s.AttestationLoS, CategoryOf(entry.Category).AttestationLoS)
 	if !slices.Contains(attestationLevels, s.AttestationLoS) {
 		return fmt.Errorf("attestationLoS %q is not one of %s", s.AttestationLoS, strings.Join(attestationLevels, ", "))
 	}
@@ -366,16 +366,6 @@ func completed(entry CatalogAttestation, base string) CatalogAttestation {
 // CategoryTrustListURL is the wallet's trusted list of a credential category.
 func CategoryTrustListURL(base, category string) string {
 	return base + "/api/trustlists/" + category
-}
-
-// categoryLevel is the default level of security of a category. A PID is
-// issued at assurance level high, and the test wallet treats QEAAs and
-// PuB-EAAs the same way. The level of other EAAs depends on their rulebook.
-func categoryLevel(category string) string {
-	if category == credtemplate.CategoryEAA {
-		return "iso_18045_basic"
-	}
-	return "iso_18045_high"
 }
 
 func catalogSchemaURL(base, id, format string) string {
@@ -469,7 +459,7 @@ func (r *Registrar) templateCatalog(base string) []CatalogAttestation {
 					BindingType: "key",
 				},
 			}
-			entry.Schema.AttestationLoS = categoryLevel(entry.Category)
+			entry.Schema.AttestationLoS = CategoryOf(entry.Category).AttestationLoS
 			index[name] = len(entries)
 			entries = append(entries, entry)
 			i = len(entries) - 1

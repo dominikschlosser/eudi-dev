@@ -16,6 +16,8 @@
 // EC TS05) and its catalogue of attestations (EC TS11).
 package registrar
 
+import "encoding/json"
+
 // Entitlements of ETSI TS 119 475 V1.2.1 Annex A.2.
 const (
 	ServiceProviderEntitlement = "https://uri.etsi.org/19475/Entitlement/Service_Provider"
@@ -41,6 +43,37 @@ type Identifier struct {
 type MultiLangString struct {
 	Lang    string `json:"lang"`
 	Content string `json:"content"`
+}
+
+// ServiceDescription is the srvDescription of a TS05 v1.5 service: an array of
+// arrays of MultiLangString (§2.4.1). Each inner array is one description in
+// several languages. A flat array reads as one description.
+type ServiceDescription [][]MultiLangString
+
+func (d *ServiceDescription) UnmarshalJSON(data []byte) error {
+	var nested [][]MultiLangString
+	if err := json.Unmarshal(data, &nested); err == nil {
+		*d = nested
+		return nil
+	}
+	var flat []MultiLangString
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return err
+	}
+	*d = nil
+	if len(flat) > 0 {
+		*d = ServiceDescription{flat}
+	}
+	return nil
+}
+
+// Strings lists every localised description.
+func (d ServiceDescription) Strings() []MultiLangString {
+	var out []MultiLangString
+	for _, group := range d {
+		out = append(out, group...)
+	}
+	return out
 }
 
 // SupervisoryAuthority is a supervisory authority record as defined in TS5.

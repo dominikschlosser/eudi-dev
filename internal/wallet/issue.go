@@ -75,9 +75,9 @@ type IssueOptions struct {
 	// the next free index on the wallet's list.
 	StatusListURI *string
 	StatusListIdx *int
-	// TrustProfile is a credtemplate category, or "" and "auto" for the
-	// category of the template or the catalogue entry. "local" is eaa.
-	TrustProfile string
+	// Category is a credtemplate category. Empty takes the category of the
+	// template or the catalogue entry.
+	Category string
 	// Trust is registration metadata stored with the issued credential type.
 	// Its Format, VCT and DocType are replaced by the resolved values.
 	Trust IssuedAttestationSpec
@@ -303,7 +303,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		spec.Category = firstNonEmpty(spec.Category, saved.Category)
 	}
 	spec.Category = firstNonEmpty(spec.Category, w.CredentialCategory(tpl, spec))
-	spec, err = NormalizeIssuedAttestationSpec(spec, opts.TrustProfile)
+	spec, err = NormalizeIssuedAttestationSpec(spec, opts.Category)
 	if err != nil {
 		return nil, err
 	}

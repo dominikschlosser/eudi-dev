@@ -989,8 +989,28 @@
     };
   }
 
-  // A category sets the default level of security. Only EAAs default to basic.
-  const categoryLevel = (category) => category === 'eaa' ? 'iso_18045_basic' : 'iso_18045_high';
+  // The credential categories come from the registrar (GET
+  // api/catalog/categories). A category sets the default level of security.
+  let categories = [];
+  const categoryOf = (id) => categories.find(c => c.id === id) || categories[categories.length - 1] || {};
+  const categoryLevel = (id) => categoryOf(id).attestationLoS || 'iso_18045_basic';
+  const categoryLabel = (id) => (categories.find(c => c.id === id) || {}).label || id;
+  async function loadCategories() {
+    categories = await registrarRequest('GET', 'api/catalog/categories');
+    const entitlement = document.getElementById('registrar-entitlement');
+    if (entitlement) {
+      entitlement.innerHTML = '<option value="">From the attestation types</option>' +
+        categories.map(c => '<option value="' + escHtml(c.entitlement) + '">' + escHtml(c.label) + ' provider</option>').join('');
+    }
+    ['registrar-catalog-category', 'issue-catalog-category'].forEach(selectID => {
+      const select = document.getElementById(selectID);
+      if (!select) return;
+      const current = select.value || 'eaa';
+      select.innerHTML = categories.map(c => '<option value="' + escHtml(c.id) + '">' + escHtml(c.description) + '</option>').join('');
+      select.value = current;
+    });
+  }
+  loadCategories().catch(() => { /* The category selects stay empty. */ });
   function linkCategoryLevel(prefix) {
     const category = document.getElementById(prefix + '-catalog-category');
     category.addEventListener('change', () => {
@@ -3327,11 +3347,9 @@
     if (current.length === 0) return 'outdated';
     return current.some(s => !s.revoked) ? 'active' : 'revoked';
   }
-  const ENTITLEMENT_LABELS = {
-    'https://uri.etsi.org/19475/Entitlement/PID_Provider': 'PID provider',
-    'https://uri.etsi.org/19475/Entitlement/QEAA_Provider': 'QEAA provider',
-    'https://uri.etsi.org/19475/Entitlement/PUB_EAA_Provider': 'PuB-EAA provider',
-    'https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider': 'Non-qualified EAA provider',
+  const entitlementLabel = (uri) => {
+    const category = categories.find(c => c.entitlement === uri);
+    return category ? category.label + ' provider' : '';
   };
   const USE_STATUS_BADGES = {
     none: ['status-none ico-circle', 'No certificate', 'The registrar has not issued a registration certificate for this intended use.'],
@@ -3407,7 +3425,7 @@
     const servicePrefix = prefix + '-service-' + registrarDomID(service.serviceIdentifier || 'default');
     const status = providerStatus(identifier, service.serviceIdentifier || '');
     const issuerInfo = registrarVerifierInfo[servicePrefix];
-    const entitlements = (service.entitlements || []).map(e => ENTITLEMENT_LABELS[e]).filter(Boolean);
+    const entitlements = (service.entitlements || []).map(entitlementLabel).filter(Boolean);
     const row = document.createElement('div');
     row.className = 'registrar-use';
     row.id = servicePrefix;
@@ -3607,7 +3625,7 @@
     const load = ++registrarLoad;
     try {
       const [records, statuses] = await Promise.all([
-        registrarRequest('GET', 'api/registrar/wrp?limit=1000'),
+        registrarRequest('GET', 'api/registrar/wrp?limit=500'),
         registrarRequest('GET', 'api/registrar/registration-certificates'),
       ]);
       if (load !== registrarLoad) return;
@@ -4025,7 +4043,7 @@
         serviceTradeName: registrarValue('registrar-name'),
         serviceIdentifier: serviceIdentifier,
         supportURI: supportURI,
-        entitlements: [document.getElementById('registrar-entitlement').value],
+        entitlements: document.getElementById('registrar-entitlement').value ? [document.getElementById('registrar-entitlement').value] : [],
         providesAttestations: attestations,
       }],
     };
@@ -4167,7 +4185,6 @@
     loadCatalogEntries().catch(() => { /* The fields work without suggestions. */ });
   }
 
-  const CATEGORY_LABELS = { pid: 'PID', qeaa: 'QEAA', 'pub-eaa': 'PuB-EAA', eaa: 'EAA' };
   const LOS_LABELS = { 'iso_18045_high': 'High', 'iso_18045_moderate': 'Moderate', 'iso_18045_enhanced-basic': 'Enhanced basic', 'iso_18045_basic': 'Basic' };
   // TS11 bindingType: how an attestation is bound to its holder.
   const BINDING_LABELS = { key: 'Bound to a wallet key', claim: 'Linked to another credential', biometric: 'Bound to biometrics', none: 'Not bound to the holder' };
@@ -4198,7 +4215,7 @@
         '</div>' +
         '<div class="cred-pills registrar-pills" id="' + prefix + '-pills">' +
           (entry.template ? '<span class="status-badge status-none" id="' + prefix + '-template" title="Change the credential template to change this entry.">Template</span>' : '') +
-          '<span class="status-badge status-role-issuer" id="' + prefix + '-category" title="Credential category. It selects the signer and the trusted list.">' + escHtml(CATEGORY_LABELS[entry.category] || entry.category) + '</span>' +
+          '<span class="status-badge status-role-issuer" id="' + prefix + '-category" title="Credential category. It selects the signer and the trusted list.">' + escHtml(categoryLabel(entry.category)) + '</span>' +
           '<span class="status-badge status-role-issuer" id="' + prefix + '-los" title="Level of security (TS11 attestationLoS)">Security level: ' + escHtml(LOS_LABELS[schema.attestationLoS] || schema.attestationLoS) + '</span>' +
           '<span class="status-badge status-none" id="' + prefix + '-binding" title="How the attestation is bound to its holder (TS11 bindingType)">' + escHtml(BINDING_LABELS[schema.bindingType] || schema.bindingType) + '</span>' +
           '<code class="registrar-party-identifier" id="' + prefix + '-id">' + escHtml(schema.id) + '</code>' +

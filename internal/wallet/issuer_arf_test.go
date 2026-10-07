@@ -281,3 +281,35 @@ func TestSignedMetadataIsServedWhenPreferred(t *testing.T) {
 		}
 	}
 }
+
+// issuer_info holds the registration certificate as registration_cert and a
+// registrar_dataset with the provider's registration information (ETSI TS
+// 119 472-3 V1.1.1 §4.2.3).
+func TestIssuerInfoNeedsBothElements(t *testing.T) {
+	w := generateTestWallet(t)
+	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
+	result := issueTestIssuerInfo(t, w, rp)
+	entries := infoEntries(map[string]any{"issuer_info": result.IssuerInfo}, "issuer_info")
+	if got := issuerInfoShapeFindings(entries); len(got) != 0 {
+		t.Fatalf("findings %v for the registrar's issuer_info, want none", got)
+	}
+	certificate := entries[1]
+	certificate["format"] = "jwt"
+	for name, tc := range map[string]struct {
+		entries []map[string]any
+		want    []string
+	}{
+		"no registrar_dataset":   {[]map[string]any{entries[1]}, []string{"4.2.3-05", "4.2.3-07"}},
+		"an empty identifier":    {[]map[string]any{{"format": "registrar_dataset", "data": map[string]any{"identifier": "", "srvDescription": []any{}, "registryURI": "https://registrar.example", "providesAttestations": []any{}}}}, []string{"4.2.3-10"}},
+		"no registryURI or more": {[]map[string]any{{"format": "registrar_dataset", "data": map[string]any{"identifier": []any{}}}}, []string{"4.2.3-11", "4.2.3-12", "4.2.3-13"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := issuerInfoShapeFindings(tc.entries)
+			for _, want := range tc.want {
+				if !containsSubstring(got, want) {
+					t.Errorf("findings %v, want %s", got, want)
+				}
+			}
+		})
+	}
+}

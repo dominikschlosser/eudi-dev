@@ -143,7 +143,7 @@ type IssueAPIRequest struct {
 	NBF           string                        `json:"nbf"`
 	StatusListURI *string                       `json:"status_list_uri"`
 	StatusListIdx *int                          `json:"status_list_idx"`
-	TrustProfile  string                        `json:"trust_profile"`
+	Category      string                        `json:"category"`
 	Trust         IssuedAttestationSpec         `json:"trust"`
 	Display       *IssueDisplay                 `json:"display"`
 	Batch         int                           `json:"batch"`
@@ -173,7 +173,7 @@ func (req IssueAPIRequest) Options() (IssueOptions, error) {
 		Namespace:       req.Namespace,
 		StatusListURI:   req.StatusListURI,
 		StatusListIdx:   req.StatusListIdx,
-		TrustProfile:    req.TrustProfile,
+		Category:        req.Category,
 		Trust:           req.Trust,
 		Display:         req.Display,
 		BatchSize:       req.Batch,

@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
@@ -37,6 +38,9 @@ type issuerAuthentication struct {
 	accessCAs      []*x509.Certificate
 	registrarCAs   []*x509.Certificate
 	statusClient   *http.Client
+	// category names the credential category of an offered type. The rules
+	// of a PID Provider apply to the pid category.
+	category func(format string, types []string) string
 }
 
 // issuerRules are the ARF requirements for one kind of provider. A PID
@@ -67,19 +71,19 @@ var (
 // offeredAttestation is the type of one offered credential configuration.
 // known is false when the metadata doesn't list the configuration.
 type offeredAttestation struct {
-	id, format string
-	types      []string
-	known      bool
+	id, format, category string
+	types                []string
+	known                bool
 }
 
 func (o offeredAttestation) rules() issuerRules {
-	if slices.ContainsFunc(o.types, credtype.IsPIDType) {
+	if o.category == credtemplate.CategoryPID {
 		return pidProviderRules
 	}
 	return attestationProviderRules
 }
 
-func offeredAttestations(metadata map[string]any, configurations []string) []offeredAttestation {
+func offeredAttestations(metadata map[string]any, configurations []string, category func(string, []string) string) []offeredAttestation {
 	supported, _ := metadata["credential_configurations_supported"].(map[string]any)
 	offered := make([]offeredAttestation, 0, len(configurations))
 	for _, id := range configurations {
@@ -92,6 +96,10 @@ func offeredAttestations(metadata map[string]any, configurations []string) []off
 					o.types = append(o.types, t)
 				}
 			}
+			if category == nil {
+				category = typeCategory
+			}
+			o.category = category(o.format, o.types)
 		}
 		offered = append(offered, o)
 	}
@@ -120,7 +128,7 @@ func ruleNames(offered []offeredAttestation, pick func(issuerRules) string) stri
 // ISSU_32, ETSI TS 119 472-3 V1.1.1 §4.2.2). The registration certificate is
 // in its issuer_info (RPRC_22, §4.2.3).
 func issuerARFFindings(a issuerAuthentication) []string {
-	offered := offeredAttestations(a.metadata, a.configurations)
+	offered := offeredAttestations(a.metadata, a.configurations, a.category)
 	accessRule := ruleNames(offered, func(r issuerRules) string { return r.access })
 	registrarRule := ruleNames(offered, func(r issuerRules) string { return r.registrar })
 	signingRule := ruleNames(offered, func(r issuerRules) string { return r.signing })
@@ -132,7 +140,9 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		findings = append(findings, fmt.Sprintf("%s: the access certificate %q that signs the issuer metadata does not chain to a trusted access certificate authority: %v", accessRule, a.signerChain[0].Subject.String(), err))
 	}
 
-	registrations, problems := verifyRegistrationEntries(infoEntries(a.metadata, "issuer_info"))
+	entries := infoEntries(a.metadata, "issuer_info")
+	findings = append(findings, issuerInfoShapeFindings(entries)...)
+	registrations, problems := verifyRegistrationEntries(entries)
 	for _, problem := range problems {
 		findings = append(findings, "ARF RPRC_22a: the issuer's registration certificate "+problem)
 	}
@@ -223,6 +233,7 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 	if !nonEmptyList(cert["entitlements"]) {
 		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
+	registeredPartyFindings(cert, miss)
 	if !nonEmptyList(cert["provides_attestations"]) {
 		miss("provides_attestations (its attestation types)", "ARF RPRC_15")
 	}
@@ -244,7 +255,25 @@ func (w *Wallet) issuerARFCheck(metadata map[string]any, signerChain []*x509.Cer
 		accessCAs:      w.RelyingPartyCAs(),
 		registrarCAs:   w.RegistrarCAs(),
 		statusClient:   w.RegistrationStatusClient(),
+		category:       w.offeredCategory,
 	})
+}
+
+// offeredCategory is the category of the catalogue entry for an offered type.
+// A type without an entry is a PID when its name says so (ARF PID_04 and
+// PID_14, see typeCategory).
+func (w *Wallet) offeredCategory(format string, types []string) string {
+	if entry, ok := w.catalogueEntryFor(format, types); ok {
+		return entry.Category
+	}
+	return typeCategory(format, types)
+}
+
+func typeCategory(_ string, types []string) string {
+	if slices.ContainsFunc(types, credtype.IsPIDType) {
+		return credtemplate.CategoryPID
+	}
+	return ""
 }
 
 // reportARFIssuanceFindings warns in debug mode and refuses in strict mode
@@ -272,4 +301,37 @@ func (w *Wallet) reportARFFindings(issuer string, findings []string, refusal str
 	}
 	w.addProtocolWarning("issuance", "arf_finding", detail, details)
 	return nil
+}
+
+// issuerInfoShapeFindings checks the elements of issuer_info (ETSI TS 119
+// 472-3 V1.1.1 §4.2.3): the registration certificate has the format
+// registration_cert, and a registrar_dataset element holds the identifier,
+// srvDescription, registryURI and providesAttestations of the provider.
+func issuerInfoShapeFindings(entries []map[string]any) []string {
+	const rule = "ETSI TS 119 472-3 V1.1.1 ISS-MDATA-REG_CERT-4.2.3-"
+	var findings []string
+	var dataset map[string]any
+	for _, entry := range entries {
+		format, _ := entry["format"].(string)
+		if format == "registrar_dataset" {
+			dataset, _ = entry["data"].(map[string]any)
+			continue
+		}
+		data, _ := entry["data"].(string)
+		if header, _, err := decodeCompactJWT(data); err == nil && header["typ"] == registrar.RegistrationCertificateTyp && format != "registration_cert" {
+			findings = append(findings, fmt.Sprintf("%s05: the issuer_info element with the registration certificate has the format %q, not registration_cert", rule, format))
+		}
+	}
+	if len(entries) == 0 {
+		return findings
+	}
+	if len(dataset) == 0 {
+		return append(findings, rule+"07: issuer_info has no registrar_dataset element with the provider's registration information")
+	}
+	for i, member := range []string{"identifier", "srvDescription", "registryURI", "providesAttestations"} {
+		if value, ok := dataset[member]; !ok || value == nil || value == "" {
+			findings = append(findings, fmt.Sprintf("%s%d: the registrar_dataset has no %s", rule, 10+i, member))
+		}
+	}
+	return findings
 }

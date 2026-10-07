@@ -54,7 +54,7 @@ var (
 	issueUnbound               bool
 	issueStatusListURI         string
 	issueStatusListIdx         int
-	issueTrustProfile          string
+	issueCategory              string
 	issueEntitlements          []string
 	issueTrustListType         string
 	issueStatusDetermination   string
@@ -176,7 +176,7 @@ func init() {
 
 	for _, c := range []*cobra.Command{issueSDJWTCmd, issueJWTCmd, issueMDOCCmd} {
 		_ = c.RegisterFlagCompletionFunc("template", completeTemplateNames)
-		_ = c.RegisterFlagCompletionFunc("trust-profile", staticCompletion("auto", "pid", "qeaa", "pub-eaa", "eaa"))
+		_ = c.RegisterFlagCompletionFunc("category", staticCompletion(append(credtemplate.Categories, wallet.UnlistedCategory)...))
 	}
 	_ = issueCmd.RegisterFlagCompletionFunc("remote", completeRemoteFlag)
 	_ = issueCmd.MarkPersistentFlagDirname("wallet-dir")
@@ -712,8 +712,8 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	if flags.Changed("status-list-idx") {
 		req["status_list_idx"] = issueStatusListIdx
 	}
-	if issueTrustProfile != "" && issueTrustProfile != "auto" {
-		req["trust_profile"] = issueTrustProfile
+	if issueCategory != "" {
+		req["category"] = issueCategory
 	}
 	// The server fills in Format, VCT and DocType and applies the trust profile. An
 	// empty trust object therefore behaves like an omitted one.
@@ -827,7 +827,7 @@ func displayImageMIME(path string, data []byte) string {
 }
 
 func addIssueTrustMetadataFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&issueTrustProfile, "trust-profile", "auto", "With --wallet: credential category that selects the signer and the trusted list: pid, qeaa, pub-eaa or eaa. auto takes the category of the template or the catalogue entry")
+	cmd.Flags().StringVar(&issueCategory, "category", "", "With --wallet: credential category (it selects the signer and the trusted list): pid, qeaa, pub-eaa or eaa (default the category of the template or the catalogue entry, else eaa). unlisted puts the credential on no list")
 	cmd.Flags().StringSliceVar(&issueEntitlements, "entitlement", nil, "With --wallet: registrar entitlement URI to persist with the issued credential (repeatable)")
 	cmd.Flags().StringVar(&issueTrustListType, "trust-list-type", "", "With --wallet: trust-list LoTE type to persist with the issued credential")
 	cmd.Flags().StringVar(&issueStatusDetermination, "status-determination-approach", "", "With --wallet: trust-list status determination approach URI to persist with the issued credential")
