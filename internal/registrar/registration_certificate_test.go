@@ -107,8 +107,9 @@ func TestTheCurrentCertificateLastsUntilTheRegistrationChanges(t *testing.T) {
 	}
 }
 
-// A revoked certificate is not current, so the next request gets a new one.
-func TestARevokedCertificateIsNotCurrent(t *testing.T) {
+// A revoked certificate stays current until a new one replaces it, so the
+// demo verifier can test a revoked registration.
+func TestARevokedCertificateStaysCurrent(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	req := RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
@@ -120,7 +121,15 @@ func TestARevokedCertificateIsNotCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, issued, err := w.CurrentRegistrationCertificate(req)
-	if err != nil || !issued || second.RegistrationCertificate == first.RegistrationCertificate {
-		t.Errorf("after revocation: issued %v (%v), want a new certificate", issued, err)
+	if err != nil || issued || second.RegistrationCertificate != first.RegistrationCertificate {
+		t.Errorf("after revocation: issued %v (%v), want the revoked certificate", issued, err)
+	}
+	// A new certificate replaces it for good.
+	if _, err := w.IssueRegistrationCertificate(req); err != nil {
+		t.Fatal(err)
+	}
+	third, issued, err := w.CurrentRegistrationCertificate(req)
+	if err != nil || issued || third.RegistrationCertificate == first.RegistrationCertificate {
+		t.Errorf("after a new certificate: issued %v (%v), want the new one", issued, err)
 	}
 }

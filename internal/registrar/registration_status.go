@@ -34,7 +34,7 @@ const (
 )
 
 var (
-	errRegistrationStatusFull = errors.New("the registrar's status list has no free entry")
+	errRegistrationStatusFull = errors.New("the registrar has issued its maximum number of registration certificates. Delete unused relying parties or wait until certificates expire")
 	errRegistrationChanged    = errors.New("the registration changed while the certificate was being issued. Try again")
 )
 
@@ -55,7 +55,9 @@ type RegistrationStatus struct {
 	// Expires is when the certificate expires (Unix time). An expired
 	// certificate needs no status, so its entry is freed.
 	Expires int64 `json:"expires,omitempty"`
-	// Certificate is the signed registration certificate.
+	// Certificate is the signed registration certificate. A superseded entry
+	// drops it, so a relying party that keeps issuing certificates doesn't grow
+	// the stored state.
 	Certificate string `json:"certificate,omitempty"`
 }
 
@@ -134,7 +136,7 @@ func (r *Registrar) replaceRegistrationStatus(identifier string, key certificate
 	for i := range newest {
 		s := &r.state.RegistrationStatuses[i]
 		if s.Identifier == identifier && key.matches(*s) {
-			s.Revoked, s.Superseded = true, true
+			s.Revoked, s.Superseded, s.Certificate = true, true, ""
 		}
 	}
 }
@@ -152,6 +154,7 @@ func (r *Registrar) supersedeRegistrationsLocked(match func(RegistrationStatus) 
 		if match(r.state.RegistrationStatuses[i]) {
 			r.state.RegistrationStatuses[i].Revoked = true
 			r.state.RegistrationStatuses[i].Superseded = true
+			r.state.RegistrationStatuses[i].Certificate = ""
 		}
 	}
 }

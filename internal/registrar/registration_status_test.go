@@ -34,6 +34,17 @@ func TestExpiredStatusEntriesAreFreed(t *testing.T) {
 	}
 }
 
+// Only the current certificate of an intended use is kept in the state.
+func TestASupersededCertificateIsNotStored(t *testing.T) {
+	w := generateTestWallet(t)
+	rp := registerTestRelyingParty(t, w)
+	issueTestRegistrationCertificate(t, w, rp)
+	issueTestRegistrationCertificate(t, w, rp)
+	if len(w.RegistrationStatuses) != 2 || w.RegistrationStatuses[0].Certificate != "" || w.RegistrationStatuses[1].Certificate == "" {
+		t.Errorf("statuses %+v, want the certificate of the newer entry only", w.RegistrationStatuses)
+	}
+}
+
 func TestAnUpdateRevokesCertificatesWhoseContentChanged(t *testing.T) {
 	for name, change := range map[string]func(rp *WalletRelyingParty){
 		"fewer claims": func(rp *WalletRelyingParty) {

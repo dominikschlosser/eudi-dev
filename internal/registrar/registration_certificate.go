@@ -128,8 +128,10 @@ func (r *Registrar) IssueRegistrationCertificate(req RegistrationCertificateRequ
 }
 
 // CurrentRegistrationCertificate returns the newest certificate for the
-// request that is neither revoked nor replaced and stays valid for at least
-// another day. Without one it issues a certificate and reports that.
+// request that is not replaced and stays valid for at least another day. A
+// revoked one stays current until it is activated or replaced, so the demo
+// verifier can test a revoked registration. Without one it issues a
+// certificate and reports that.
 func (r *Registrar) CurrentRegistrationCertificate(req RegistrationCertificateRequest) (*RegistrationCertificateResult, bool, error) {
 	rp, key, err := r.certificateSubject(req)
 	if err != nil {
@@ -140,7 +142,7 @@ func (r *Registrar) CurrentRegistrationCertificate(req RegistrationCertificateRe
 	r.mu.RLock()
 	var current string
 	for _, s := range r.state.RegistrationStatuses {
-		if s.Identifier == identifier && key.matches(s) && !s.Revoked && s.Certificate != "" && s.Expires > soon {
+		if s.Identifier == identifier && key.matches(s) && !s.Superseded && s.Certificate != "" && s.Expires > soon {
 			current = s.Certificate
 		}
 	}
