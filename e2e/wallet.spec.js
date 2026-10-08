@@ -1,6 +1,7 @@
 // @ts-check
 const { test, expect } = require("@playwright/test");
 const { execSync } = require("child_process");
+const crypto = require("crypto");
 const http = require("http");
 const fs = require("fs");
 const os = require("os");
@@ -1283,7 +1284,6 @@ test.describe("A credential bound to a key the wallet does not hold", () => {
   // Presentations require the holder key (RFC 9901 §4.3 and ISO 18013-5 §9.1.3).
   // A credential bound to another wallet stays readable and cannot be presented.
   test("is marked on its card and in its summary", async ({ page }) => {
-    const crypto = require("crypto");
     const b64 = (obj) =>
       Buffer.from(JSON.stringify(obj)).toString("base64url");
     const coordinate = () => crypto.randomBytes(32).toString("base64url");
@@ -1950,15 +1950,14 @@ test.describe("ARF checks", () => {
         uri: "openid-credential-offer://?credential_offer=" + encodeURIComponent(JSON.stringify(offer)),
         interactive: true,
       }).catch(() => {});
-      let pending = [];
-      for (let i = 0; i < 50 && pending.length === 0; i++) {
-        pending = await (await fetch(`${WALLET_URL}/api/requests`)).json();
-        if (pending.length === 0) await new Promise((r) => setTimeout(r, 100));
-      }
-      await page.goto(`${WALLET_URL}/?focus=overview&request=${pending[0].id}`);
-      await expect(page.locator("#offer-arf-warnings-title")).toHaveText("The wallet found problems with this issuer");
-      await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF ISSU_34: the Credential Issuer Metadata is not signed");
-      await expect(page.locator("#offer-arf-warnings-list")).toContainText("ARF RPRC_22a");
+      await page.goto(`${WALLET_URL}/?focus=overview&request=${await waitForPendingRequest()}`);
+      // The findings start as one collapsed line.
+      const summary = page.locator("#consent-findings-summary");
+      await expect(summary).toContainText("findings about this issuer");
+      await expect(page.locator("#consent-findings-list")).toBeHidden();
+      await summary.click();
+      await expect(page.locator("#consent-findings-list")).toContainText("ARF ISSU_34: the Credential Issuer Metadata is not signed");
+      await expect(page.locator("#consent-findings-list")).toContainText("ARF RPRC_22a");
     } finally {
       issuer.close();
     }
@@ -2082,7 +2081,7 @@ test.describe("Registrar", () => {
       verifier_info: verifierInfo,
       dcql_query: { credentials: [{ id: "pid", format: "dc+sd-jwt", meta: { vct_values: ["urn:eudi:pid:1"] }, claims: [{ path: ["age_equal_or_over", "18"] }] }] },
     });
-    const signature = require("crypto").sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" }).toString("base64url");
+    const signature = crypto.sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" }).toString("base64url");
     const uri = "openid4vp://authorize?" + new URLSearchParams({ client_id: clientID, request: input + "." + signature });
     jsonPost(`${WALLET_URL}/api/presentations`, { uri, interactive: true }).catch(() => {});
     await page.goto(`${WALLET_URL}/?request=${await waitForPendingRequest()}`);

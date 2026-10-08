@@ -2181,15 +2181,6 @@
       '</div>';
     }
 
-    // With --arf the wallet checks how the issuer authenticates. The ARF
-    // requires the wallet to warn the user before it requests the credential.
-    if ((details.warnings || []).length > 0) {
-      html += '<div class="offer-warnings" id="offer-arf-warnings" role="alert">' +
-        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet found problems with this issuer</div>' +
-        '<ul id="offer-arf-warnings-list">' + details.warnings.map((w, i) => '<li id="offer-arf-warning-' + i + '">' + escHtml(w) + '</li>').join('') + '</ul>' +
-      '</div>';
-    }
-
     if (details.resolve_error) {
       html += '<p class="dialog-hint" id="offer-resolve-error">Could not retrieve the offer. ' +
         'Showing only its issuer. Approve to retry.</p>';
@@ -2418,9 +2409,22 @@
       return '<div class="who">' + logoHtml + '<div class="who-text"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div></div>';
     }
 
+    // Debug mode continues after failed checks. They stay one collapsed line
+    // under the verifier or the issuer, so the dialog stays readable.
+    function findingsBlock() {
+      const findings = req.findings || [];
+      if (findings.length === 0) return '';
+      const subject = isIssuance ? 'this issuer' : 'this verifier';
+      return '<details class="consent-findings" id="consent-findings">' +
+        '<summary id="consent-findings-summary"><span class="ico-warn" aria-hidden="true"></span>' +
+        findings.length + (findings.length === 1 ? ' finding about ' : ' findings about ') + subject + '</summary>' +
+        '<ul id="consent-findings-list">' + findings.map((f, i) => '<li id="consent-finding-' + i + '">' + escHtml(f) + '</li>').join('') + '</ul>' +
+        '</details>';
+    }
+
     function headerHtml() {
       let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
-        whoBlock();
+        whoBlock() + findingsBlock();
 
       // Verifier purposes come from registration certificates in verifier_info (OpenID4VP
       // 1.0 §5.1).

@@ -181,7 +181,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
 
-	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, dim)
+	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, findings, dim)
 	if err != nil {
 		return err
 	}
@@ -512,7 +512,7 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 	return matches, consentReq.SubmissionCh, nil
 }
 
-func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI string, submissionCh chan wallet.SubmissionResult, dim *color.Color) error {
+func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI string, submissionCh chan wallet.SubmissionResult, findings []string, dim *color.Color) error {
 	params := wallet.PresentationParams{
 		Nonce:         parsed.Nonce,
 		ClientID:      parsed.ClientID,
@@ -596,7 +596,7 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	}
 
 	if jsonOutput {
-		output.PrintJSON(wallet.SubmittedPresentation(result, vpResult))
+		output.PrintJSON(wallet.SubmittedPresentation(result, vpResult, findings))
 	}
 	return verifierRejection(result)
 }

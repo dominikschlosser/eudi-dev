@@ -345,6 +345,40 @@ func TestARegisteredEntryWithoutFormatOrTypeRegistersNothing(t *testing.T) {
 	}
 }
 
+// Debug mode presents and lists the findings in the API response.
+func TestDebugARFListsTheFindingsInTheResponse(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.RequireARF = true
+	srv.wallet.ValidationMode = ValidationModeDebug
+	key, chain, _ := registeredVerifier(t, srv.wallet)
+	verifier := newCaptureVerifier(t)
+	clientID := X509HashClientID(chain[0])
+	requestObject, err := SignRequestObjectJWT(map[string]any{
+		"client_id": clientID, "response_type": "vp_token", "response_mode": "direct_post",
+		"response_uri": verifier.URL, "nonce": "n", "state": "s",
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"given_name"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "openid4vp://authorize?" + url.Values{"client_id": {clientID}, "request": {requestObject}}.Encode()
+	body, _ := json.Marshal(map[string]string{"uri": uri})
+	rec := serverRequest(t, srv, http.MethodPost, "/api/presentations", string(body))
+	var response struct {
+		Status   string
+		Findings []string
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "submitted" || !slices.ContainsFunc(response.Findings, func(f string) bool { return strings.Contains(f, "RPRC_19") }) {
+		t.Errorf("response %s, want a submitted presentation with the RPRC_19 finding", rec.Body)
+	}
+}
+
 // A relying party that authenticated with a trusted access certificate gets
 // access_denied when strict --arf refuses its request (RFC 6749 §4.1.2.1).
 func TestStrictARFAnswersAnAuthenticatedVerifierWithAccessDenied(t *testing.T) {

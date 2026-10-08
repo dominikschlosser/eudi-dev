@@ -354,6 +354,9 @@ type ConsentRequest struct {
 	Nonce        string                       `json:"nonce,omitempty"`
 	ResponseURI  string                       `json:"response_uri,omitempty"`
 	DCQLQuery    map[string]any               `json:"dcql_query,omitempty"`
+	// Findings are what the checks report about the verifier or the issuer in
+	// debug mode. The consent dialog lists them collapsed.
+	Findings []string `json:"findings,omitempty"`
 	// Purposes and privacy policy links from the request's registration
 	// certificates, for the consent dialog.
 	Purposes        []string `json:"purposes,omitempty"`

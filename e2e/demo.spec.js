@@ -256,6 +256,26 @@ test.describe("Demo mode consent visibility", () => {
     await page.locator("#consent-deny").click();
   });
 
+  test("the consent dialog lists the findings about an unregistered verifier", async ({ page }) => {
+    await page.goto(`${BASE}/verifier/`);
+    await page.locator("#identity-unregistered").click();
+    await page.locator('#credential-toggle [data-credential="pid"]').click();
+    await page.locator("#create-request").click();
+    await expect(page.locator("#scheme-uri")).toHaveAttribute("href", /^openid4vp:/);
+    submitAsSchemeHandler("/api/presentations", await page.locator("#scheme-uri").getAttribute("href"));
+    await waitForPending(1);
+
+    await page.goto(`${BASE}/?focus=overview`);
+    await page.locator("#pending-review").click();
+    // Debug mode continues. The findings start as one collapsed line.
+    const summary = page.locator("#consent-findings-summary");
+    await expect(summary).toContainText("about this verifier");
+    await expect(page.locator("#consent-findings-list")).toBeHidden();
+    await summary.click();
+    await expect(page.locator("#consent-findings-list")).toContainText("ARF RPRC_19");
+    await page.locator("#consent-deny").click();
+  });
+
   test("the issuance consent dialog says what is being issued", async ({ page }) => {
     const { body: offer } = await postJSON("/issuer/api/offers", {});
     const offerDoc = await (await fetch(offer.offer_uri)).json();
