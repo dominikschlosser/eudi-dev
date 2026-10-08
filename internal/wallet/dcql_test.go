@@ -1356,25 +1356,35 @@ func TestEvaluateDCQL_DistinctQueriesEachKeepAMatch(t *testing.T) {
 // require_cryptographic_holder_binding defaults to true (OpenID4VP 1.0 §6.1),
 // so an unbound credential answers only a query that sets it to false. Debug
 // mode still offers it among the non-matching credentials.
+// A query requires holder binding by default (OpenID4VP 1.0 §6.1). Strict
+// mode answers it only with a bound credential. Debug mode offers an unbound
+// one, flagged and after the bound ones.
 func TestEvaluateDCQL_HolderBinding(t *testing.T) {
 	w := generateTestWallet(t)
-	w.ValidationMode = ValidationModeDebug
 	noStatus := ""
-	if _, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:bearer", Unbound: true, StatusListURI: &noStatus}); err != nil {
-		t.Fatal(err)
+	for _, unbound := range []bool{true, false} {
+		if _, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:bearer", Unbound: unbound, StatusListURI: &noStatus}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	query := sdjwtVCTQuery("urn:example:bearer")
+
+	w.ValidationMode = ValidationModeStrict
 	_, options := w.EvaluateDCQLWithOptions(query)
-	if matches := w.EvaluateDCQL(query); len(matches) != 0 {
-		t.Errorf("matches %v, want none for a query that requires holder binding", matches)
+	if candidates := options.Queries[0].Candidates; len(candidates) != 1 || candidates[0].Unbound {
+		t.Errorf("strict candidates %+v, want only the bound credential", candidates)
 	}
-	if nonMatching := options.Queries[0].NonMatching; len(nonMatching) != 1 || !strings.Contains(strings.Join(nonMatching[0].Mismatches, " "), "holder binding") {
-		t.Errorf("non-matching %+v, want the unbound credential with the holder binding reason", nonMatching)
+
+	w.ValidationMode = ValidationModeDebug
+	_, options = w.EvaluateDCQLWithOptions(query)
+	if candidates := options.Queries[0].Candidates; len(candidates) != 2 || candidates[0].Unbound || !candidates[1].Unbound {
+		t.Errorf("debug candidates %+v, want the bound credential first and the unbound one flagged", candidates)
 	}
 
 	query["credentials"].([]any)[0].(map[string]any)["require_cryptographic_holder_binding"] = false
-	if matches := w.EvaluateDCQL(query); len(matches) != 1 {
-		t.Errorf("matches %v, want the unbound credential when the query accepts it", matches)
+	_, options = w.EvaluateDCQLWithOptions(query)
+	if candidates := options.Queries[0].Candidates; len(candidates) != 2 || candidates[0].Unbound || candidates[1].Unbound {
+		t.Errorf("candidates %+v, want both credentials unflagged when the query accepts unbound ones", candidates)
 	}
 }
 
@@ -1386,8 +1396,6 @@ func TestDCQLHolderBindingFlagMustBeBoolean(t *testing.T) {
 	}
 }
 
-// The wallet presents a jwt_vc_json credential unchanged, so
-// require_cryptographic_holder_binding does not apply to it.
 // The wallet presents a jwt_vc_json credential without a Verifiable
 // Presentation, so it answers only a query that doesn't require holder
 // binding (OpenID4VP 1.0 Appendix B.1).

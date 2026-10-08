@@ -2503,7 +2503,7 @@
       const claimSet = options ? chosenClaimSet(mc) : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
-        untrustedAuthorityNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
+        untrustedAuthorityNote(mc) + unboundNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
         (claimSet
           ? claimChecklist(mc.credential_id, claimSet.claims, kept, null, null)
           : claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims)) +
@@ -2517,6 +2517,14 @@
       return '<div class="consent-untrusted" role="note">⚠ Could not match this issuer to the verifier\'s trusted authorities. ' +
         'This credential is allowed ' +
         'because debug mode ignores that restriction.</div>';
+    }
+
+    // Debug mode offers a credential without holder binding to a query that
+    // requires it (OpenID4VP 1.0 §6.1).
+    function unboundNote(mc) {
+      if (!mc || !mc.unbound) return '';
+      return '<div class="consent-untrusted" role="note" id="consent-unbound-' + escHtml(mc.credential_id) + '">⚠ This credential has no holder binding, which the query requires. ' +
+        'Debug mode sends it anyway.</div>';
     }
 
 
@@ -2553,7 +2561,7 @@
               ' href="decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
               ' title="Open in decoder">Show</a>' +
           '</div>' +
-        '</div>' + untrustedAuthorityNote(c) +
+        '</div>' + untrustedAuthorityNote(c) + unboundNote(c) +
         mismatchNote(c, 'consent-mismatch-' + qid + '-' + c.credential_id) + '</div>';
     }
 

@@ -80,7 +80,7 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 		}
 	}
 
-	metadata, signerChain, err := fetchIssuerMetadataDocument(w.HTTPClient(), offer.CredentialIssuer, w.ARFChecks())
+	metadata, signerChain, err := fetchIssuerMetadataDocument(w.HTTPClient(), offer.CredentialIssuer, w.ARFChecks(), w.Mode() == ValidationModeStrict)
 	if err != nil {
 		details.MetadataError = err.Error()
 	} else {

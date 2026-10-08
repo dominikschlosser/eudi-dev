@@ -390,6 +390,9 @@ type CredentialMatch struct {
 	// Debug mode can offer credentials that fail trusted_authorities matching. The
 	// consent dialog flags this violation.
 	UntrustedAuthority bool `json:"untrusted_authority,omitempty"`
+	// Debug mode offers a credential without holder binding to a query that
+	// requires it (OpenID4VP 1.0 §6.1). The consent dialog flags it.
+	Unbound bool `json:"unbound,omitempty"`
 	// Selecting an array without its selectively disclosed elements produces an empty
 	// array. Warn so the verifier can request elements with null or an index.
 	EmptyArrayClaims []string `json:"empty_array_claims,omitempty"`
