@@ -17,10 +17,12 @@ package cmd
 import (
 	"crypto"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -291,17 +293,9 @@ func TestRunningWalletServerBaseURLsHonorsExplicitPort(t *testing.T) {
 func TestRunningWalletPresentationPayloadOmitsDefaultOverrides(t *testing.T) {
 	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
 		sessionTranscript: string(wallet.SessionTranscriptOID4VP),
-		mode:              string(wallet.ValidationModeDebug),
 	})
-
-	if got["uri"] != "openid4vp://request" {
-		t.Fatalf("uri = %v, want %q", got["uri"], "openid4vp://request")
-	}
-	if _, ok := got["session_transcript"]; ok {
-		t.Fatalf("default session_transcript should be omitted: %#v", got)
-	}
-	if _, ok := got["mode"]; ok {
-		t.Fatalf("default mode should be omitted: %#v", got)
+	if want := map[string]any{"uri": "openid4vp://request"}; !maps.Equal(got, want) {
+		t.Fatalf("payload %#v, want %#v", got, want)
 	}
 }
 
@@ -309,20 +303,22 @@ func TestRunningWalletPresentationPayloadIncludesNonDefaultOverrides(t *testing.
 	got := runningWalletPresentationPayload("openid4vp://request", dispatchOID4Opts{
 		autoAccept:        true,
 		sessionTranscript: string(wallet.SessionTranscriptISO),
-		haip:              true,
-		mode:              string(wallet.ValidationModeStrict),
 	})
+	want := map[string]any{"uri": "openid4vp://request", "auto_accept": true, "session_transcript": string(wallet.SessionTranscriptISO)}
+	if !maps.Equal(got, want) {
+		t.Fatalf("payload %#v, want %#v", got, want)
+	}
+}
 
-	for key, want := range map[string]any{
-		"uri":                "openid4vp://request",
-		"auto_accept":        true,
-		"session_transcript": string(wallet.SessionTranscriptISO),
-		"haip":               true,
-		"mode":               string(wallet.ValidationModeStrict),
-	} {
-		if got[key] != want {
-			t.Fatalf("%s = %#v, want %#v in payload %#v", key, got[key], want, got)
-		}
+// A running wallet applies its own conformance settings to every step of a
+// flow, so the flags name what to change instead.
+func TestARunningWalletRefusesConformanceFlags(t *testing.T) {
+	if err := checkRemoteConformanceFlags(nil); err != nil {
+		t.Fatal(err)
+	}
+	err := checkRemoteConformanceFlags([]string{"--mode", "--haip"})
+	if err == nil || !strings.Contains(err.Error(), "--mode, --haip") || !strings.Contains(err.Error(), "PUT /api/config/conformance") {
+		t.Fatalf("got %v", err)
 	}
 }
 

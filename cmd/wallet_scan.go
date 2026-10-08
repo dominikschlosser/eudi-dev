@@ -106,6 +106,9 @@ func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
 		if err := checkRemoteOutboundFlags(); err != nil {
 			return err
 		}
+		if err := checkRemoteConformanceFlags(opts.conformanceFlags); err != nil {
+			return err
+		}
 		// The selected wallet fetches the offer and collects the transaction code.
 		// Some offers can be fetched only once.
 		return remoteAccept(c, uri, opts.txCode, !opts.autoAccept)
@@ -167,6 +170,7 @@ request boundaries, so later presentation requests see the new credential.`,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
+				conformanceFlags:    changedConformanceFlags(cmd),
 			})
 		},
 	}
@@ -258,6 +262,7 @@ func walletScanCmd() *cobra.Command {
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
+				conformanceFlags:    changedConformanceFlags(cmd),
 			})
 		},
 	}

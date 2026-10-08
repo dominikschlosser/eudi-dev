@@ -922,6 +922,35 @@ func applyWalletOutbound(w *wallet.Wallet) error {
 	return nil
 }
 
+// conformanceFlagNames are the flags of accept and scan that a running wallet
+// sets for itself.
+var conformanceFlagNames = []string{"haip", "arf", "relying-party-ca", "trust-list-ca", "trusted-list", "key-attestation-level"}
+
+// changedConformanceFlags lists the conformance flags set on the command
+// line, including the persistent wallet --mode.
+func changedConformanceFlags(cmd *cobra.Command) []string {
+	var changed []string
+	if walletCmd.PersistentFlags().Changed("mode") {
+		changed = append(changed, "--mode")
+	}
+	for _, name := range conformanceFlagNames {
+		if cmd.Flags().Changed(name) {
+			changed = append(changed, "--"+name)
+		}
+	}
+	return changed
+}
+
+// checkRemoteConformanceFlags refuses conformance flags for a running or
+// remote wallet. It applies its own settings to every step of a flow, such as
+// a deferred credential it collects later.
+func checkRemoteConformanceFlags(flags []string) error {
+	if len(flags) == 0 {
+		return nil
+	}
+	return fmt.Errorf("a running wallet uses its own conformance settings, so %s can't change them for this flow; set them on 'wallet serve' or through PUT /api/config/conformance", strings.Join(flags, ", "))
+}
+
 func checkRemoteOutboundFlags() error {
 	flags := walletCmd.PersistentFlags()
 	if flags.Changed("tls-verify") || flags.Changed("tls-ca") {

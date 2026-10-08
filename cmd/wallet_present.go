@@ -54,6 +54,10 @@ type dispatchOID4Opts struct {
 	// keyAttestationLevel is what a key attestation claims (see
 	// Wallet.KeyAttestationLevel).
 	keyAttestationLevel string
+	// conformanceFlags are the conformance flags set on the command line. A
+	// running wallet refuses them, because it applies its own settings to
+	// every step of a flow.
+	conformanceFlags []string
 	// docker serves the presentation trust and status lists under
 	// host.docker.internal. A verifier in a container can reach them there, and
 	// the status list token subject matches the URI in the credential.
@@ -263,9 +267,8 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 	if err := checkRemoteOutboundFlags(); err != nil {
 		return true, err
 	}
-	// A running wallet validates with its own --arf setting and relying party CAs.
-	if opts.arf || len(opts.relyingPartyCAs) > 0 || len(opts.trustListCAs) > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: the wallet running at %s uses its own --arf, --relying-party-ca and --trust-list-ca settings, not these flags\n", baseURL)
+	if err := checkRemoteConformanceFlags(opts.conformanceFlags); err != nil {
+		return true, err
 	}
 	payload := runningWalletPresentationPayload(uri, opts)
 
@@ -344,12 +347,6 @@ func runningWalletPresentationPayload(uri string, opts dispatchOID4Opts) map[str
 	}
 	if opts.sessionTranscript != "" && opts.sessionTranscript != string(wallet.SessionTranscriptOID4VP) {
 		payload["session_transcript"] = opts.sessionTranscript
-	}
-	if opts.haip {
-		payload["haip"] = true
-	}
-	if opts.mode != "" && opts.mode != string(wallet.ValidationModeDebug) {
-		payload["mode"] = opts.mode
 	}
 	return payload
 }
