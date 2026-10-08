@@ -90,6 +90,12 @@ type Wallet struct {
 	// TrustListCAPEM holds further CAs of trusted list operators
 	// (--trust-list-ca). --arf checks a fetched trusted list against them.
 	TrustListCAPEM []byte
+	// ConfiguredTrustedListURLs are the external lists from --trusted-list.
+	ConfiguredTrustedListURLs []string
+	// TrustedEntities and AddedTrustedLists are the providers and external
+	// lists that users added to the wallet's trusted lists. They are stored.
+	TrustedEntities   []TrustedEntity
+	AddedTrustedLists []string
 	// Read runtime changes through KeyAttestationLevelSetting. See
 	// ParseKeyAttestationLevel for supported claims about key storage.
 	KeyAttestationLevel string `json:"-"`

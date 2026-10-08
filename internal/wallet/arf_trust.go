@@ -66,8 +66,8 @@ func (t ownStatusListTransport) RoundTrip(req *http.Request) (*http.Response, er
 }
 
 // PrepareARFChecks adds what --arf needs to a request: a client for the status
-// lists of registration certificates, and the trusted CAs for access and
-// registration certificates.
+// lists of registration certificates, and the anchors for access and
+// registration certificates and their status lists.
 func (w *Wallet) PrepareARFChecks(params *AuthorizationRequestParams) {
 	if !w.ARFChecks() {
 		return
@@ -75,39 +75,33 @@ func (w *Wallet) PrepareARFChecks(params *AuthorizationRequestParams) {
 	params.StatusClient = w.RegistrationStatusClient()
 	params.RelyingPartyCAs = w.RelyingPartyCAs()
 	params.RegistrarCAs = w.RegistrarCAs()
+	params.RegistrationStatusCAs = w.RegistrationStatusCAs()
 }
 
-// RelyingPartyCAs are the CAs --arf trusts for access certificates (ARF
-// RPA_04). The wallet CA signs the demo verifier's access certificate, and the
-// relying party access CA signs the ones from the registrar.
-// --relying-party-ca adds others.
+// RelyingPartyCAs are the anchors --arf trusts for access certificates: the
+// issuance services of the lists of access certificate providers (ARF RPA_04
+// and PPNot_06, ETSI TS 119 602 V1.1.1 Annex F).
 func (w *Wallet) RelyingPartyCAs() []*x509.Certificate {
-	cas := w.RegistrarCAs()
-	if _, accessCA, err := w.RelyingPartyAccessCA(); err == nil {
-		cas = append(cas, accessCA)
-	}
-	return cas
+	return w.listAnchors(accessCAListType, issuanceServices)
 }
 
-// RegistrarCAs are the CAs --arf trusts for registration certificates (ARF
-// RPRC_02a). The wallet CA signs the registrar's certificate. The relying
-// party access CA is not one of them, because it signs any visitor's CSR.
-// --relying-party-ca adds others.
+// RegistrarCAs are the anchors --arf trusts for registration certificates:
+// the issuance services of the lists of registration certificate providers
+// (ARF RPRC_02a and RPACANot_04, ETSI TS 119 602 V1.1.1 Annex G).
 func (w *Wallet) RegistrarCAs() []*x509.Certificate {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-	var cas []*x509.Certificate
-	if len(w.CertChain) > 0 {
-		cas = append(cas, w.CertChain[len(w.CertChain)-1])
-	}
-	if configured, err := keys.ParseCertificatesPEM(w.RelyingPartyCAPEM); err == nil {
-		cas = append(cas, configured...)
-	}
-	return cas
+	return w.listAnchors(registrarListType, issuanceServices)
+}
+
+// RegistrationStatusCAs are the anchors of the status lists of registration
+// certificates: the revocation services of the same lists (ARF
+// RPACANot_03b).
+func (w *Wallet) RegistrationStatusCAs() []*x509.Certificate {
+	return w.listAnchors(registrarListType, revocationServices)
 }
 
 // TrustListCAs are the CAs --arf trusts for the signer of a trusted list. The
-// wallet CA signs the wallet's own lists. --trust-list-ca adds others.
+// wallet CA signs the wallet's own lists, like the seal of the Commission on
+// the lists it compiles (ARF TLPub_07). --trust-list-ca adds others.
 func (w *Wallet) TrustListCAs() []*x509.Certificate {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -159,9 +153,6 @@ func (e registrarEnv) RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Cer
 }
 func (e registrarEnv) RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, error) {
 	return e.w.RelyingPartyAccessCA()
-}
-func (e registrarEnv) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return e.w.AccessSigningMaterial()
 }
 func (e registrarEnv) TemplateLocation() credtemplate.Location { return e.w.Templates }
 

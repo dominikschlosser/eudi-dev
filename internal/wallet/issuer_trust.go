@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
@@ -77,11 +76,13 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trust anchors of its catalogue entry. The entry's category names the
+// the trusted lists of its catalogue entry. The entry's category names the
 // rule. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a PID, QEAA
 // or PuB-EAA with the list of its providers, so an entry without a readable
 // list is a finding. ISSU_10 asks for the check of an EAA only when the wallet
-// has the anchors.
+// has the anchors. A PID and a PuB-EAA list on the list of trusted lists
+// counts too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D and
+// H).
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
@@ -91,39 +92,73 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !ok {
 		return nil
 	}
-	rule := map[string]string{
-		credtemplate.CategoryPID:    "ARF ISSU_07",
-		credtemplate.CategoryQEAA:   "ARF ISSU_08",
-		credtemplate.CategoryPubEAA: "ARF ISSU_09",
-	}[entry.Category]
-	if rule == "" {
-		rule = "ARF ISSU_10"
-	}
-	var problems []string
+	rule := registrar.CategoryOf(entry.Category).TrustRule
+	eaa := rule == registrar.CategoryOf(credtemplate.CategoryEAA).TrustRule
+	var urls []string
 	for _, authority := range entry.Schema.TrustedAuthorities {
 		// The wallet reads lists of trusted entities (ETSI TS 119 602) only.
-		if authority.FrameworkType != "etsi_tl" || authority.IsLOTE == nil || !*authority.IsLOTE || authority.Value == "" {
+		if authority.FrameworkType == "etsi_tl" && authority.IsLOTE != nil && *authority.IsLOTE && authority.Value != "" {
+			urls = append(urls, authority.Value)
+		}
+	}
+	typed := map[string]bool{}
+	if listType := categoryListType(entry.Category); listType != "" {
+		for _, u := range w.TrustedListURLs() {
+			if !slices.Contains(urls, u) {
+				urls = append(urls, u)
+				typed[u] = true
+			}
+		}
+	}
+	var problems []string
+	read := false
+	for _, u := range urls {
+		list, err := w.readTrustedList(u)
+		switch {
+		case err != nil && eaa && !typed[u]:
+			// ISSU_10 needs anchors, so the wallet only reports the list.
+			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", u, entry.Name, err), nil)
+			continue
+		case err != nil:
+			if !typed[u] {
+				problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
+			}
 			continue
 		}
-		err := w.validateWithTrustList(cred, authority.Value)
+		if typed[u] && list.SchemeInfo.LoTEType != categoryListType(entry.Category) {
+			continue
+		}
+		read = true
+		err = validateWithAnchors(cred, serviceAnchors(list, issuanceServices))
 		if err == nil {
 			return nil
 		}
-		problems = append(problems, fmt.Sprintf("%s (%v)", authority.Value, err))
+		problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
 	}
-	if len(problems) == 0 {
-		if rule == "ARF ISSU_10" {
-			return nil
-		}
-		return []string{fmt.Sprintf("%s: the catalogue entry %q names no list of trusted entities (ETSI TS 119 602) the wallet can read, so it cannot validate the received %s", rule, entry.Name, credentialLabel(cred))}
+	switch {
+	case !read && eaa:
+		return nil
+	case !read && len(problems) == 0:
+		return []string{fmt.Sprintf("%s: the catalogue entry %q links no readable trusted list, so the wallet cannot validate the received %s", rule, entry.Name, credentialLabel(cred))}
 	}
 	return []string{fmt.Sprintf("%s: the signature of the received %s does not validate with the trusted lists of its catalogue entry %q: %s", rule, credentialLabel(cred), entry.Name, strings.Join(problems, ", "))}
 }
 
-func (w *Wallet) validateWithTrustList(cred StoredCredential, url string) error {
-	anchors, err := w.trustListAnchors(url)
-	if err != nil {
-		return err
+// categoryListType is the ETSI TS 119 602 list type of a category, if it has
+// one.
+func categoryListType(category string) string {
+	switch category {
+	case credtemplate.CategoryPID:
+		return pidTrustListType
+	case credtemplate.CategoryPubEAA:
+		return pubEAATrustListType
+	}
+	return ""
+}
+
+func validateWithAnchors(cred StoredCredential, anchors []trustlist.CertInfo) error {
+	if len(anchors) == 0 {
+		return fmt.Errorf("the trusted list names no issuance service")
 	}
 	key, err := credentialChainKey(cred, anchors)
 	if err != nil {
@@ -148,30 +183,6 @@ func (w *Wallet) validateWithTrustList(cred StoredCredential, url string) error 
 		return fmt.Errorf("the signature does not verify with the key of its certificate")
 	}
 	return nil
-}
-
-// trustListAnchors builds the wallet's own trusted lists in process, because
-// the wallet may not serve them over HTTP. Other lists are fetched.
-func (w *Wallet) trustListAnchors(url string) ([]trustlist.CertInfo, error) {
-	if id, ok := strings.CutPrefix(url, w.RegistrarBase()+"/api/trustlists/"); ok {
-		group, found := FindTrustListGroupForWallet(w, id, "", "")
-		if !found {
-			return nil, fmt.Errorf("the wallet has no trusted list %q", id)
-		}
-		jwt, err := GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
-		if err != nil {
-			return nil, err
-		}
-		return parseTrustListAnchors(jwt)
-	}
-	raw, err := format.FetchURL(url, w.HTTPClient())
-	if err != nil {
-		return nil, fmt.Errorf("fetching the trusted list: %w", err)
-	}
-	if err := verifyTrustListSigner(raw, w.TrustListCAs()); err != nil {
-		return nil, err
-	}
-	return parseTrustListAnchors(raw)
 }
 
 // verifyTrustListSigner checks the JAdES signature of a trusted list (ETSI TS

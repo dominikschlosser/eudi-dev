@@ -168,10 +168,12 @@ type AuthorizationRequestParams struct {
 	// StatusClient fetches the status lists of registration certificates
 	// (Wallet.RegistrationStatusClient).
 	StatusClient *http.Client
-	// RelyingPartyCAs and RegistrarCAs are the CAs --arf trusts for access
-	// certificates and for registration certificates.
-	RelyingPartyCAs []*x509.Certificate
-	RegistrarCAs    []*x509.Certificate
+	// RelyingPartyCAs, RegistrarCAs and RegistrationStatusCAs are the anchors
+	// --arf trusts for access certificates, registration certificates and
+	// their status lists.
+	RelyingPartyCAs       []*x509.Certificate
+	RegistrarCAs          []*x509.Certificate
+	RegistrationStatusCAs []*x509.Certificate
 }
 
 type preparedPresentation struct {

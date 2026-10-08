@@ -303,7 +303,7 @@ func privacyPolicyURI(use IntendedUse) string {
 }
 
 func (r *Registrar) signRegistrationCertificate(content RegistrationCertificateContent, credentials []map[string]any, now time.Time) (string, error) {
-	claims, err := RegistrationCertificateClaimsFor(r.env.RegistrarBase(), content, nil, credentials, now)
+	claims, err := RegistrationCertificateClaimsFor(r.env.RegistrarBase(), content, credentials, now)
 	if err != nil {
 		return "", err
 	}
@@ -326,23 +326,15 @@ func VerifierInfoValue(registrationCertificate string) string {
 }
 
 // RegistrationCertificateClaimsFor builds the payload of ETSI TS 119 475 V1.2.1
-// §5.2.4. If the content has no identifier, legal name or country, they come
-// from the access certificate. base is the base URL of the default contact
-// URLs.
-func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateContent, accessCertificate *x509.Certificate, dcqlCredentials []map[string]any, now time.Time) (map[string]any, error) {
+// §5.2.4. base is the base URL of the default contact URLs.
+func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateContent, dcqlCredentials []map[string]any, now time.Time) (map[string]any, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, fmt.Errorf("a registration certificate needs the relying party's name")
 	}
 	identifier, legalName, country := strings.TrimSpace(req.Identifier), strings.TrimSpace(req.LegalName), strings.TrimSpace(req.Country)
-	if accessCertificate != nil {
-		certIdentifier, certLegalName, certCountry := AccessCertificateSubject(accessCertificate)
-		identifier = firstNonEmpty(identifier, certIdentifier)
-		legalName = firstNonEmpty(legalName, certLegalName)
-		country = firstNonEmpty(country, certCountry)
-	}
 	if identifier == "" {
-		return nil, fmt.Errorf("a registration certificate needs the relying party's identifier or its access certificate")
+		return nil, fmt.Errorf("a registration certificate needs the relying party's identifier")
 	}
 	validity, err := registrationValidity(req.Validity)
 	if err != nil {

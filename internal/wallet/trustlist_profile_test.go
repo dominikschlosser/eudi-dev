@@ -231,6 +231,9 @@ func TestTheCategoryListsFollowTheirLoTEProfiles(t *testing.T) {
 	if !slices.Contains(uris(pubEntity.TrustedEntityInformation.TEAddress.TEElectronicAddress), "http://uri.etsi.org/19602/ListOfTrustedEntities/PubEAAProvider/NL") || len(pubEntity.TrustedEntityInformation.TETradeName) != 2 {
 		t.Errorf("PuB-EAA provider %+v, want the Member State URI and the law reference (Table H.2)", pubEntity.TrustedEntityInformation)
 	}
+	if len(pubEntity.TrustedEntityServices) == 0 {
+		t.Fatal("the PuB-EAA provider has no services")
+	}
 	for _, s := range pubEntity.TrustedEntityServices {
 		if s.ServiceInformation.ServiceStatus != pubEAANotifiedStatus || len(s.ServiceInformation.ServiceDigitalIdentity.X509Certificates) != 1 {
 			t.Errorf("service %+v, want the notified status and one certificate (Table H.3)", s.ServiceInformation)

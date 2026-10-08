@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +33,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -49,6 +49,7 @@ type dispatchOID4Opts struct {
 	arf               bool
 	relyingPartyCAs   []string
 	trustListCAs      []string
+	trustedLists      []string
 	mode              string
 	// keyAttestationLevel is what a key attestation claims (see
 	// Wallet.KeyAttestationLevel).
@@ -80,7 +81,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if opts.haip {
 			w.RequireHAIP = true
 		}
-		if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
+		if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs, opts.trustedLists); err != nil {
 			return err
 		}
 		w.KeyAttestationLevel = opts.keyAttestationLevel
@@ -641,7 +642,7 @@ func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 	if opts.haip {
 		w.RequireHAIP = true
 	}
-	if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
+	if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs, opts.trustedLists); err != nil {
 		return err
 	}
 
@@ -704,10 +705,16 @@ func navigatesHere(browserWaiting bool) bool {
 
 // applyARFOptions turns on --arf and loads the PEM files of
 // --relying-party-ca and --trust-list-ca.
-func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs []string) error {
+func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, trustedLists []string) error {
 	if arf {
 		w.RequireARF = true
 	}
+	for _, list := range trustedLists {
+		if u, err := url.Parse(list); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("--trusted-list %q is not an http or https URL", list)
+		}
+	}
+	w.ConfiguredTrustedListURLs = trustedLists
 	var err error
 	if w.RelyingPartyCAPEM, err = loadPEMCertificates("relying-party-ca", relyingPartyCAs); err != nil {
 		return err
@@ -724,8 +731,8 @@ func loadPEMCertificates(flag string, paths []string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading --%s: %w", flag, err)
 		}
-		if !x509.NewCertPool().AppendCertsFromPEM(data) {
-			return nil, fmt.Errorf("--%s %s holds no PEM certificate", flag, path)
+		if _, err := keys.ParseCertificatesPEM(data); err != nil {
+			return nil, fmt.Errorf("--%s %s: %w", flag, path, err)
 		}
 		bundle = append(append(bundle, data...), '\n')
 	}

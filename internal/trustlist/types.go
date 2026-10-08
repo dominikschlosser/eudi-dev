@@ -30,6 +30,17 @@ type SchemeInfo struct {
 	SchemeOperatorName string
 	ListIssueDatetime  string
 	NextUpdate         string
+	// Pointers are the PointersToOtherLoTE of ETSI TS 119 602 V1.1.1
+	// §6.3.13.
+	Pointers []Pointer
+}
+
+// Pointer names another list of trusted entities: where it is, its type and
+// the certificates of its signer (ETSI TS 119 602 V1.1.1 §6.3.13).
+type Pointer struct {
+	Location     string
+	LoTEType     string
+	Certificates []CertInfo
 }
 
 type TrustedEntity struct {
@@ -38,8 +49,11 @@ type TrustedEntity struct {
 }
 
 type TrustedService struct {
-	ServiceType  string
-	Certificates []CertInfo
+	ServiceType string
+	// ServiceStatus is empty when the list has no service status (ETSI TS
+	// 119 602 V1.1.1 §6.6.0).
+	ServiceStatus string
+	Certificates  []CertInfo
 }
 
 type CertInfo struct {

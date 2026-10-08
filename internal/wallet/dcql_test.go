@@ -853,7 +853,7 @@ func serveTrustList(t *testing.T, tlJWT string) *httptest.Server {
 func TestEvaluateDCQL_TrustedAuthorities_Match(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
-	tlJWT, err := GenerateTrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
+	tlJWT, err := generateEAATrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
 	if err != nil {
 		t.Fatalf("generating trust list: %v", err)
 	}
@@ -889,7 +889,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoMatch(t *testing.T) {
 
 	otherKey, _ := mock.GenerateKey()
 	otherCACert, _ := mock.GenerateCACert(otherKey)
-	tlJWT, err := GenerateTrustListJWT(otherKey, otherCACert)
+	tlJWT, err := generateEAATrustListJWT(otherKey, otherCACert)
 	if err != nil {
 		t.Fatalf("generating trust list: %v", err)
 	}
@@ -1064,7 +1064,7 @@ func TestEvaluateDCQL_TrustedAuthorities_NoCertChain(t *testing.T) {
 
 	// A credential without x5c has no chain to match against the trust list.
 	// It is rejected even when the list contains the CA of its signer.
-	tlJWT, _ := GenerateTrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
+	tlJWT, _ := generateEAATrustListJWT(w.IssuerKey, w.CertChain[len(w.CertChain)-1])
 	ts := serveTrustList(t, tlJWT)
 
 	query := map[string]any{

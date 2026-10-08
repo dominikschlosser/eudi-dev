@@ -3216,10 +3216,71 @@
     }
   }
 
+  // Providers and external lists that the user put on the wallet's trusted
+  // lists (GET api/trust).
+  async function loadAddedTrust() {
+    const entities = document.getElementById('trust-added-entities');
+    const lists = document.getElementById('trust-added-lists');
+    const select = document.getElementById('trust-entity-list');
+    try {
+      const state = await registrarRequest('GET', 'api/trust');
+      const current = select.value;
+      select.innerHTML = (state.entity_lists || []).map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
+      if (current) select.value = current;
+      entities.innerHTML = (state.entities || []).map(e =>
+        '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
+        '<button type="button" class="link-btn" data-entity="' + escHtml(e.id) + '">Remove</button></li>').join('');
+      lists.innerHTML = (state.lists || []).map((l, i) =>
+        '<li id="trust-list-' + i + '"><span>' + escHtml(l.url) + '</span>' +
+        (l.configured ? '<span class="trust-list-name">--trusted-list</span>' : '<button type="button" class="link-btn" data-list="' + escHtml(l.url) + '">Remove</button>') + '</li>').join('');
+    } catch (e) {
+      document.getElementById('trust-error').textContent = e.message;
+    }
+  }
+  async function changeTrust(method, path, body) {
+    const error = document.getElementById('trust-error');
+    error.textContent = '';
+    try {
+      await registrarRequest(method, path, body);
+      await loadAddedTrust();
+      return true;
+    } catch (e) {
+      error.textContent = e.message;
+      return false;
+    }
+  }
+  document.getElementById('trust-entity-add').addEventListener('click', async () => {
+    const ca = document.getElementById('trust-entity-ca');
+    const added = await changeTrust('POST', 'api/trust/entities', {
+      list: document.getElementById('trust-entity-list').value,
+      name: document.getElementById('trust-entity-name').value.trim(),
+      certificates: ca.value,
+    });
+    if (added) {
+      ca.value = '';
+      document.getElementById('trust-entity-name').value = '';
+      loadTrustLists();
+    }
+  });
+  document.getElementById('trust-list-add').addEventListener('click', async () => {
+    const input = document.getElementById('trust-list-url');
+    if (await changeTrust('POST', 'api/trust/lists', { url: input.value.trim() })) input.value = '';
+  });
+  document.getElementById('trust-added-section').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-entity], button[data-list]');
+    if (!button) return;
+    if (button.dataset.entity) {
+      changeTrust('DELETE', 'api/trust/entities/' + encodeURIComponent(button.dataset.entity)).then(() => loadTrustLists());
+    } else {
+      changeTrust('DELETE', 'api/trust/lists?url=' + encodeURIComponent(button.dataset.list));
+    }
+  });
+
   const trustOverlay = document.getElementById('trust-overlay');
   document.getElementById('trust-link').addEventListener('click', (event) => {
     event.preventDefault();
     loadTrustLists();
+    loadAddedTrust();
     trustOverlay.classList.add('active');
   });
   document.getElementById('trust-close').addEventListener('click', () => {
@@ -4367,6 +4428,11 @@
         credentials: credentials,
         schema: catalogSchema('registrar'),
       });
+      const issuerCA = document.getElementById('registrar-catalog-issuer-ca');
+      if (issuerCA.value.trim()) {
+        await registrarRequest('POST', 'api/trust/entities', { list: added.category, name: added.name + ' issuer', certificates: issuerCA.value });
+        issuerCA.value = '';
+      }
       closeCatalogForm();
       await loadCatalogEntries();
       catalogSearch.value = '';

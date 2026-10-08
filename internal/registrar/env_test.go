@@ -33,15 +33,14 @@ type testWallet struct {
 }
 
 type testEnv struct {
-	base                    string
-	caKey                   *ecdsa.PrivateKey
-	ca                      *x509.Certificate
-	registrarKey, accessKey *ecdsa.PrivateKey
-	registrarChain          []*x509.Certificate
-	accessChain             []*x509.Certificate
-	accessCAKey             *ecdsa.PrivateKey
-	accessCA                *x509.Certificate
-	templates               credtemplate.Location
+	base           string
+	caKey          *ecdsa.PrivateKey
+	ca             *x509.Certificate
+	registrarKey   *ecdsa.PrivateKey
+	registrarChain []*x509.Certificate
+	accessCAKey    *ecdsa.PrivateKey
+	accessCA       *x509.Certificate
+	templates      credtemplate.Location
 }
 
 func (e *testEnv) RegistrarBase() string { return e.base }
@@ -61,7 +60,7 @@ func generateTestWallet(t testing.TB) *testWallet {
 		}
 		return k
 	}
-	env := &testEnv{base: "https://wallet.example", caKey: key(), registrarKey: key(), accessKey: key(), accessCAKey: key()}
+	env := &testEnv{base: "https://wallet.example", caKey: key(), registrarKey: key(), accessCAKey: key()}
 	var err error
 	if env.ca, err = mock.GenerateNamedCACert(env.caKey, "Test Wallet CA"); err != nil {
 		t.Fatal(err)
@@ -77,16 +76,11 @@ func generateTestWallet(t testing.TB) *testWallet {
 		return []*x509.Certificate{cert, env.ca}
 	}
 	env.registrarChain = leaf(env.registrarKey, mock.LeafCertOptions{CommonName: "Test Registrar", Role: mock.RegistrarCertificate})
-	env.accessChain = leaf(env.accessKey, mock.LeafCertOptions{CommonName: "Test Access", Role: mock.AccessCertificate})
 	env.templates = credtemplate.FileLocation(t.TempDir())
 	state := &State{}
 	return &testWallet{Registrar: New(&sync.RWMutex{}, state, env), State: state, env: env}
 }
 
 func (w *testWallet) RegistrarBase() string { return w.env.base }
-
-func (w *testWallet) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.env.accessKey, w.env.accessChain, nil
-}
 
 const testDiplomaVCT = "urn:example:diploma:1"

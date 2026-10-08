@@ -186,6 +186,17 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingPa
 	return cloneRelyingParty(rp)
 }
 
+// NormalizedRelyingParty is rp with the defaults the registrar fills in. It
+// doesn't store rp.
+func (r *Registrar) NormalizedRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
+	rp, err := cloneRelyingParty(rp)
+	if err != nil {
+		return WalletRelyingParty{}, err
+	}
+	err = normalizeRelyingParty(&rp, r.env.RegistrarBase(), nil, r.attestationCategories())
+	return rp, err
+}
+
 // UpdateRelyingParty replaces the registration with the same identifier. New
 // intended uses get identifiers, and existing ones keep theirs.
 func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {

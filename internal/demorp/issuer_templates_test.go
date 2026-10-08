@@ -16,6 +16,7 @@ package demorp
 
 import (
 	"encoding/base64"
+	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -207,7 +208,7 @@ func TestTheDemoIssuerPassesTheARFChecks(t *testing.T) {
 	}
 }
 
-// With --arf a strict wallet doesn't store a credential that fails the
+// With --arf a strict wallet doesn't store a credential that fails a readable
 // trusted list of its catalogue entry (ARF ISSU_10, ISSU_11b).
 func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 	w := newIssuanceWallet(t)
@@ -223,6 +224,8 @@ func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 	}
 	foreign := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) { _, _ = rw.Write([]byte(list)) }))
 	t.Cleanup(foreign.Close)
+	// The wallet trusts the other list operator, so the list gives anchors.
+	w.TrustListCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: other.TrustAnchorCertificate().Raw})
 
 	const vct = "urn:example:badge:1"
 	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{Name: "badge", Format: "sdjwt", VCT: vct, Claims: map[string]any{"level": "gold"}}); err != nil {

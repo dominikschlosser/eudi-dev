@@ -98,14 +98,10 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country str
 		return nil, nil, fmt.Errorf("generating provider CA: %w", err)
 	}
 	if !parent.Equal(caCert) {
-		certificateCountry := country
-		if certificateCountry == "" {
-			certificateCountry = mock.DefaultCertificateCountry
-		}
 		base := strings.TrimRight(w.IssuerURL, "/")
 		if base != "" {
-			opts.IssuingCertificateURL = []string{base + "/api/certificates/providers/" + role + "/" + certificateCountry + ".der"}
-			opts.CRLDistributionPoints = []string{base + "/api/crl/providers/" + role + "/" + certificateCountry}
+			opts.IssuingCertificateURL = []string{base + "/api/certificates/providers/" + role + "/" + country + ".der"}
+			opts.CRLDistributionPoints = []string{base + "/api/crl/providers/" + role + "/" + country}
 		}
 	}
 	opts.DNSNames, opts.IPAddresses, opts.URIs = issuerSubjectAltNames(w.IssuerURL)
@@ -174,10 +170,10 @@ func (w *Wallet) WalletProviderSigningMaterial() (*ecdsa.PrivateKey, []*x509.Cer
 }
 
 // AccessSigningMaterial is the access certificate of the wallet's issuer, the
-// demo issuer. Its CommonName is the trade name of its registration, as ARF
-// RPRC_06 and ETSI TS 119 411-8 V1.1.1 GEN-6.1.1-04 require.
+// demo issuer. The registrar issues it like the access certificate of any
+// relying party.
 func (w *Wallet) AccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.auxiliarySigningMaterial("access", mock.LeafCertOptions{CommonName: DemoIssuerName, Role: mock.AccessCertificate})
+	return w.demoAccessSigningMaterial("access", demoIssuerIdentity, DemoIssuerName, demoIssuerServiceID)
 }
 
 // RelyingPartyAccessCA issues the access certificates of registered relying
@@ -188,8 +184,30 @@ func (w *Wallet) RelyingPartyAccessCA() (*ecdsa.PrivateKey, *x509.Certificate, e
 	return w.signingStore().selfSignedCA("relying-party-access-ca", "EUDI Dev Test Relying Party Access CA")
 }
 
+// RegistrarCA is the root of the registrar's signing certificate. It is a
+// separate root like the relying party access CA, so the list of registration
+// certificate providers names only the registrar (ETSI TS 119 602 V1.1.1
+// Annex G).
+func (w *Wallet) RegistrarCA() (*ecdsa.PrivateKey, *x509.Certificate, error) {
+	return w.signingStore().selfSignedCA("registrar-ca", "EUDI Dev Test Registrar CA")
+}
+
+// RegistrarSigningMaterial signs registration certificates, registrar
+// responses and the status list of registration certificates.
 func (w *Wallet) RegistrarSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.auxiliarySigningMaterial("registrar", mock.LeafCertOptions{CommonName: "EUDI Dev Test Registrar", Role: mock.RegistrarCertificate})
+	key, err := w.signingStore().key("registrar")
+	if err != nil {
+		return nil, nil, err
+	}
+	caKey, ca, err := w.RegistrarCA()
+	if err != nil {
+		return nil, nil, err
+	}
+	leaf, err := w.signingStore().certificate(caKey, ca, &key.PublicKey, mock.LeafCertOptions{CommonName: "EUDI Dev Test Registrar", Role: mock.RegistrarCertificate}, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, []*x509.Certificate{leaf, ca}, nil
 }
 
 func (w *Wallet) TrustListSigningMaterial(operator, country string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {

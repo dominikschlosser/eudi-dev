@@ -2596,3 +2596,36 @@ header h1 {
 .offer-description-toggle {
   font-size: 11px;
 }
+
+.trust-added {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.trust-added li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.trust-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.trust-add-form .form-input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.trust-add-form textarea.form-input {
+  flex-basis: 100%;
+  min-height: 60px;
+}

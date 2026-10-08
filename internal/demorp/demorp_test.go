@@ -945,6 +945,9 @@ func TestVerifierWarnsWhenTheCredentialChainCarriesTheTrustAnchor(t *testing.T) 
 	id, params := startVerification(t, h, "pid")
 
 	caCert := d.wallet.CertChain[len(d.wallet.CertChain)-1]
+	// The credential chains to the wallet root, which the demo verifier
+	// trusts as a configured issuer CA here.
+	d.SetVerifierTrustAnchors([]*x509.Certificate{caCert})
 	leaf, err := mock.GenerateLeafCert(d.wallet.CAKey, caCert, &d.wallet.IssuerKey.PublicKey)
 	if err != nil {
 		t.Fatalf("generating a leaf: %v", err)

@@ -29,6 +29,7 @@ import (
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/remote"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -422,6 +423,44 @@ func parityCases() []parityCase {
 			second := s.DeleteCatalogAttestation(added.Schema.ID)
 			return []bool{first == nil, second != nil}
 		}},
+		{method: "TrustState", observe: func(t *testing.T, s walletService) any {
+			if _, err := s.AddTrustedEntity("eaa", "Parity Provider", parityCAPEM(t)); err != nil {
+				t.Fatal(err)
+			}
+			state, err := s.TrustState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			return []any{len(state.Entities), state.Entities[0].Name, state.EntityLists, strings.HasSuffix(state.ListsURL, "/api/trustlists/lists")}
+		}},
+		{method: "AddTrustedEntity", observe: func(t *testing.T, s walletService) any {
+			entity, err := s.AddTrustedEntity("pid", "", parityCAPEM(t))
+			_, unknown := s.AddTrustedEntity("nowhere", "", parityCAPEM(t))
+			return []any{err == nil, entity.List, entity.Name, unknown != nil}
+		}},
+		{method: "RemoveTrustedEntity", observe: func(t *testing.T, s walletService) any {
+			entity, err := s.AddTrustedEntity("qeaa", "Parity Bank", parityCAPEM(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := s.RemoveTrustedEntity(entity.ID)
+			second := s.RemoveTrustedEntity(entity.ID)
+			return []bool{first == nil, second != nil}
+		}},
+		{method: "AddTrustedList", observe: func(t *testing.T, s walletService) any {
+			added := s.AddTrustedList("https://lists.example/pid")
+			invalid := s.AddTrustedList("not a url")
+			state, _ := s.TrustState()
+			return []any{added == nil, invalid != nil, len(state.Lists)}
+		}},
+		{method: "RemoveTrustedList", observe: func(t *testing.T, s walletService) any {
+			if err := s.AddTrustedList("https://lists.example/eaa"); err != nil {
+				t.Fatal(err)
+			}
+			first := s.RemoveTrustedList("https://lists.example/eaa")
+			second := s.RemoveTrustedList("https://lists.example/eaa")
+			return []bool{first == nil, second != nil}
+		}},
 		{method: "AccessCertificate", observe: func(t *testing.T, s walletService) any {
 			rp := registerParityRelyingParty(t, s)
 			result, err := s.AccessCertificate(registrar.AccessCertificateRequest{CSR: testCSR(t), Identifier: rp.Identifier[0].Identifier})
@@ -453,6 +492,20 @@ func registerParityRelyingParty(t *testing.T, s walletService) registrar.WalletR
 		t.Fatal(err)
 	}
 	return rp
+}
+
+// parityCAPEM is a self-signed CA certificate in PEM.
+func parityCAPEM(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := mock.GenerateCACert(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
 }
 
 // testCSR is a PKCS#10 request with an empty subject, like the one

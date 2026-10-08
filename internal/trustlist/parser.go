@@ -109,8 +109,48 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 	if next, ok := lsi["NextUpdate"].(string); ok {
 		info.NextUpdate = next
 	}
+	pointers, _ := lsi["PointersToOtherLoTE"].([]any)
+	for _, raw := range pointers {
+		entry, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		pointer := Pointer{}
+		pointer.Location, _ = entry["LoTELocation"].(string)
+		if qualifiers, ok := entry["LoTEQualifiers"].([]any); ok && len(qualifiers) > 0 {
+			if q, ok := qualifiers[0].(map[string]any); ok {
+				pointer.LoTEType, _ = q["LoTEType"].(string)
+			}
+		}
+		identities, _ := entry["ServiceDigitalIdentities"].([]any)
+		for _, identity := range identities {
+			if m, ok := identity.(map[string]any); ok {
+				pointer.Certificates = append(pointer.Certificates, parseCertificates(m["X509Certificates"])...)
+			}
+		}
+		info.Pointers = append(info.Pointers, pointer)
+	}
 
 	return info
+}
+
+func parseCertificates(raw any) []CertInfo {
+	certs, _ := raw.([]any)
+	var out []CertInfo
+	for _, cert := range certs {
+		certMap, ok := cert.(map[string]any)
+		if !ok {
+			continue
+		}
+		val, ok := certMap["val"].(string)
+		if !ok {
+			continue
+		}
+		if certInfo, err := parseCertificate(val); err == nil {
+			out = append(out, *certInfo)
+		}
+	}
+	return out
 }
 
 func parseTrustedEntity(entry map[string]any) (*TrustedEntity, error) {
@@ -154,25 +194,10 @@ func parseTrustedService(svc map[string]any) (*TrustedService, error) {
 	if st, ok := si["ServiceTypeIdentifier"].(string); ok {
 		service.ServiceType = st
 	}
+	service.ServiceStatus, _ = si["ServiceStatus"].(string)
 
 	if sdi, ok := si["ServiceDigitalIdentity"].(map[string]any); ok {
-		if certs, ok := sdi["X509Certificates"].([]any); ok {
-			for _, cert := range certs {
-				certMap, ok := cert.(map[string]any)
-				if !ok {
-					continue
-				}
-				val, ok := certMap["val"].(string)
-				if !ok {
-					continue
-				}
-				certInfo, err := parseCertificate(val)
-				if err != nil {
-					continue
-				}
-				service.Certificates = append(service.Certificates, *certInfo)
-			}
-		}
+		service.Certificates = parseCertificates(sdi["X509Certificates"])
 	}
 
 	return service, nil

@@ -179,14 +179,17 @@ func TestARFRefusesUnknownAuthorities(t *testing.T) {
 		t.Errorf("findings %v, want RPA_04 and RPRC_02a", findings)
 	}
 
-	// --relying-party-ca trusts the foreign access CA and the foreign wallet CA.
-	// The foreign wallet CA signs the foreign registrar certificate.
+	// --relying-party-ca trusts the foreign access CA and registrar CA.
 	_, foreignAccessCA, err := foreign.RelyingPartyAccessCA()
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, foreignRegistrarCA, err := foreign.RegistrarCA()
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.RelyingPartyCAPEM = append(
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreign.CertChain[len(foreign.CertChain)-1].Raw}),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreignRegistrarCA.Raw}),
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreignAccessCA.Raw})...)
 	w.PrepareARFChecks(params)
 	if findings := ARFFindings(params); containsSubstring(findings, "RPA_04") || containsSubstring(findings, "RPRC_02a") {

@@ -17,7 +17,6 @@ package registrar
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
@@ -53,26 +52,6 @@ func issueTestRegistrationCertificate(t *testing.T, w *testWallet, rp WalletRely
 		t.Fatalf("IssueRegistrationCertificate: %v", err)
 	}
 	return result
-}
-
-// TS 119 475 V1.2.1 §5.1.1 links the certificates through the access
-// certificate's organizationIdentifier.
-func TestTheAccessCertificateFillsTheRelyingPartyFields(t *testing.T) {
-	w := generateTestWallet(t)
-	_, chain, err := w.AccessSigningMaterial()
-	if err != nil {
-		t.Fatalf("AccessSigningMaterial: %v", err)
-	}
-	access := chain[0]
-	claims, err := RegistrationCertificateClaimsFor("https://wallet.example", RegistrationCertificateContent{Name: "Example Shop"}, access, nil, time.Now())
-	if err != nil {
-		t.Fatalf("RegistrationCertificateClaimsFor: %v", err)
-	}
-	identifier, legalName, country := AccessCertificateSubject(access)
-	if claims["sub"] != identifier || claims["sub_ln"] != legalName || claims["country"] != country {
-		t.Errorf("sub %v, sub_ln %v, country %v, want %q, %q and %q from the access certificate",
-			claims["sub"], claims["sub_ln"], claims["country"], identifier, legalName, country)
-	}
 }
 
 func TestRegistrationCertificateRequestsAreChecked(t *testing.T) {

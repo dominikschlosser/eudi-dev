@@ -37,6 +37,7 @@ type issuerAuthentication struct {
 	configurations []string
 	accessCAs      []*x509.Certificate
 	registrarCAs   []*x509.Certificate
+	statusCAs      []*x509.Certificate
 	statusClient   *http.Client
 	// category names the credential category of an offered type. The rules
 	// of a PID Provider apply to the pid category.
@@ -165,7 +166,7 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		if err := verifyToAnchor(r.chain, a.registrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("%s: the registration certificate of %s does not chain to a trusted registrar: %v", registrarRule, name, err))
 		}
-		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.registrarCAs, "ARF RPRC_22a")...)
+		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.statusCAs, "ARF RPRC_22a")...)
 		for _, e := range toAnyList(cert["entitlements"]) {
 			if s, ok := e.(string); ok {
 				entitlements = append(entitlements, s)
@@ -254,6 +255,7 @@ func (w *Wallet) issuerARFCheck(metadata map[string]any, signerChain []*x509.Cer
 		configurations: configurations,
 		accessCAs:      w.RelyingPartyCAs(),
 		registrarCAs:   w.RegistrarCAs(),
+		statusCAs:      w.RegistrationStatusCAs(),
 		statusClient:   w.RegistrationStatusClient(),
 		category:       w.offeredCategory,
 	})

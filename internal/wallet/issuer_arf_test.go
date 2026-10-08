@@ -144,7 +144,7 @@ func TestARFRefusesAnIssuerRegistrationFromTheAccessCA(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
-	claims, err := registrar.RegistrationCertificateClaimsFor(w.RegistrarBase(), registrar.ProviderCertificateContent(rp, rp.Services[0]), nil, nil, time.Now())
+	claims, err := registrar.RegistrationCertificateClaimsFor(w.RegistrarBase(), registrar.ProviderCertificateContent(rp, rp.Services[0]), nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

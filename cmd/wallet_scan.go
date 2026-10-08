@@ -132,6 +132,7 @@ func walletAcceptCmd() *cobra.Command {
 		arf                 bool
 		relyingPartyCAs     []string
 		trustListCAs        []string
+		trustedLists        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -162,6 +163,7 @@ request boundaries, so later presentation requests see the new credential.`,
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
 				trustListCAs:        trustListCAs,
+				trustedLists:        trustedLists,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -179,6 +181,7 @@ request boundaries, so later presentation requests see the new credential.`,
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustedLists, "trusted-list", nil, trustedListFlagUsage)
 	return cmd
 }
 
@@ -193,6 +196,7 @@ func walletScanCmd() *cobra.Command {
 		arf                 bool
 		relyingPartyCAs     []string
 		trustListCAs        []string
+		trustedLists        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -250,6 +254,7 @@ func walletScanCmd() *cobra.Command {
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
 				trustListCAs:        trustListCAs,
+				trustedLists:        trustedLists,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
@@ -268,5 +273,6 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustedLists, "trusted-list", nil, trustedListFlagUsage)
 	return cmd
 }

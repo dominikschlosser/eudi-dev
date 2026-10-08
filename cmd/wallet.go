@@ -96,6 +96,7 @@ func init() {
 	walletCmd.AddCommand(walletCACertCmd())
 	walletCmd.AddCommand(walletRegistrarCmd())
 	walletCmd.AddCommand(walletCatalogCmd())
+	walletCmd.AddCommand(walletTrustCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
 	walletCmd.AddCommand(walletInfoCmd())
 	walletCmd.AddCommand(walletPsCmd())
@@ -562,11 +563,7 @@ Use --url to print only the list URL of a running wallet server.`,
 			if !ok {
 				return fmt.Errorf("wallet has no matching trusted list")
 			}
-			path := "/api/trustlist"
-			if id != "" {
-				path = "/api/trustlists/" + group.ID
-			}
-			jwt, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, path)
+			jwt, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
 			if err != nil {
 				return fmt.Errorf("generating trust list: %w", err)
 			}

@@ -217,12 +217,30 @@
   <div class="consent-overlay" id="trust-overlay">
     <div class="consent-dialog">
       <div class="consent-title">Trust &amp; certificates</div>
-      <p class="dialog-hint">This CA signs issued credentials, wallet attestations, key attestations and the registrar certificate. Add it as a trust anchor.</p>
+      <p class="dialog-hint">The wallet signs a trusted list (ETSI TS 119 602) for each kind of provider. With --arf it checks credentials, access certificates and registration certificates against these lists and the lists you add.</p>
 
       <div class="trust-section">
-        <div class="trust-section-title">Trust lists</div>
-        <p class="trust-section-hint">ETSI trust lists anchored to the wallet CA.</p>
+        <div class="trust-section-title">Trusted lists</div>
+        <p class="trust-section-hint">Lists of trusted entities, signed under the wallet CA.</p>
         <div class="cert-links" id="trust-list-links"></div>
+      </div>
+
+      <div class="trust-section" id="trust-added-section">
+        <div class="trust-section-title">Your providers and lists</div>
+        <p class="trust-section-hint">Put the CA of your issuer or registrar on a list, or add an external list. The <a id="trust-lists-of-lists-link" href="api/trustlists/lists">list of trusted lists</a> points to all of them.</p>
+        <ul class="trust-added" id="trust-added-entities"></ul>
+        <div class="trust-add-form">
+          <select id="trust-entity-list" class="form-input" aria-label="List"></select>
+          <input type="text" id="trust-entity-name" class="form-input" placeholder="Provider name (optional)" aria-label="Provider name">
+          <textarea id="trust-entity-ca" class="form-input form-textarea" placeholder="CA certificate (PEM)" aria-label="CA certificate"></textarea>
+          <button type="button" class="btn btn-sm" id="trust-entity-add">Add CA</button>
+        </div>
+        <ul class="trust-added" id="trust-added-lists"></ul>
+        <div class="trust-add-form">
+          <input type="url" id="trust-list-url" class="form-input" placeholder="https://example.com/trusted-list" aria-label="Trusted list URL">
+          <button type="button" class="btn btn-sm" id="trust-list-add">Add list</button>
+        </div>
+        <div class="form-error" id="trust-error" role="alert"></div>
       </div>
 
       <div class="trust-section">
@@ -250,8 +268,9 @@
             <span class="trust-links">
               <a id="registrar-cert-pem-link" href="api/certificates/registrar">PEM</a>
               <a id="registrar-cert-jwks-link" href="api/certificates/registrar?format=jwks">JWKS</a>
+              <a id="registrar-ca-pem-link" href="api/certificates/registrar-ca">CA</a>
             </span>
-            <span class="trust-item-hint">Signs registration certificates and registrar responses.</span>
+            <span class="trust-item-hint">Signs registration certificates, their status list and registrar responses. Its CA is on the registrar list.</span>
           </dd>
           <dt id="access-ca-row-label">Relying party access CA</dt>
           <dd id="access-ca-row">
@@ -259,7 +278,7 @@
               <a id="access-ca-cert-pem-link" href="api/certificates/relying-party-access-ca">PEM</a>
               <a id="access-ca-cert-jwks-link" href="api/certificates/relying-party-access-ca?format=jwks">JWKS</a>
             </span>
-            <span class="trust-item-hint">Signs the access certificates of registered relying parties. Trust it only for access certificates.</span>
+            <span class="trust-item-hint">Signs the access certificates of registered relying parties. It is on the access-ca list.</span>
           </dd>
           <dt id="tls-row-label">TLS</dt>
           <dd id="tls-row">
@@ -482,6 +501,8 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
 
           <label class="form-label" for="registrar-catalog-trust" title="An ETSI TS 119 602 list of trusted entities (TS11 trustedAuthorities with isLOTE)">Trusted list (LoTE)</label>
           <input type="text" id="registrar-catalog-trust" class="form-input" placeholder="Leave empty for the category's list on this wallet">
+          <label class="form-label" for="registrar-catalog-issuer-ca" title="The wallet puts this CA on the trusted list of the category, so credentials of your issuer pass the check of --arf">Issuer CA (PEM, optional)</label>
+          <textarea id="registrar-catalog-issuer-ca" class="form-input form-textarea" placeholder="CA of your issuer"></textarea>
         </div>
         <div class="form-error" id="registrar-catalog-form-error" role="alert"></div>
         <div class="consent-buttons">

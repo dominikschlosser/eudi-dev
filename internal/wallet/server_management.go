@@ -394,6 +394,15 @@ func (s *Server) handleRelyingPartyAccessCA(w http.ResponseWriter, r *http.Reque
 	writeCertificateExport(w, r, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
 }
 
+func (s *Server) handleRegistrarCA(w http.ResponseWriter, r *http.Request) {
+	_, ca, err := s.wallet.RegistrarCA()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "loading the registrar CA: " + err.Error()})
+		return
+	}
+	writeCertificateExport(w, r, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))
+}
+
 func writeCertificateExport(w http.ResponseWriter, r *http.Request, certPEM []byte) {
 	switch r.URL.Query().Get("format") {
 	case "", "pem":

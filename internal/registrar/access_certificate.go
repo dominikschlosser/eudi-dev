@@ -58,7 +58,8 @@ type AccessCertificateResult struct {
 	ClientIDs []string `json:"clientIds"`
 }
 
-const maxAccessCertificateValidity = 365 * 24 * time.Hour
+// MaxAccessCertificateValidity is the longest validity of an access certificate.
+const MaxAccessCertificateValidity = 365 * 24 * time.Hour
 
 // x509_san_dns names one host, so a DNS name may not contain a wildcard
 // (OpenID4VP 1.0 §5.9.3).
@@ -74,15 +75,44 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errRelyingPartyNotFound, req.Identifier)
 	}
-	service, ok := findService(rp, req.ServiceIdentifier)
-	if !ok {
-		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, req.ServiceIdentifier)
-	}
 	publicKey, err := csrPublicKey(req.CSR)
 	if err != nil {
 		return nil, err
 	}
-	dnsNames := trimmedNonEmpty(req.DNSNames)
+	validity := MaxAccessCertificateValidity
+	if strings.TrimSpace(req.Validity) != "" {
+		parsed, err := time.ParseDuration(strings.TrimSpace(req.Validity))
+		if err != nil || parsed <= 0 || parsed > MaxAccessCertificateValidity {
+			return nil, fmt.Errorf("validity %q is not a Go duration of at most %s", req.Validity, MaxAccessCertificateValidity)
+		}
+		validity = parsed
+	}
+	chain, err := r.AccessCertificateFor(rp, req.ServiceIdentifier, publicKey, req.DNSNames, validity)
+	if err != nil {
+		return nil, err
+	}
+	leaf, ca := chain[0], chain[1]
+	certificate := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}))
+	hash := sha256.Sum256(leaf.Raw)
+	clientIDs := []string{"x509_hash:" + base64.RawURLEncoding.EncodeToString(hash[:])}
+	for _, dnsName := range leaf.DNSNames {
+		clientIDs = append(clientIDs, "x509_san_dns:"+dnsName)
+	}
+	return &AccessCertificateResult{
+		Certificate: certificate,
+		Chain:       certificate + string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})),
+		ClientIDs:   clientIDs,
+	}, nil
+}
+
+// AccessCertificateFor signs the access certificate of a service of rp under
+// the relying party access CA. It returns the certificate and the CA.
+func (r *Registrar) AccessCertificateFor(rp WalletRelyingParty, serviceIdentifier string, publicKey *ecdsa.PublicKey, dnsNames []string, validity time.Duration) ([]*x509.Certificate, error) {
+	service, ok := findService(rp, serviceIdentifier)
+	if !ok {
+		return nil, fmt.Errorf("%w: no service %q", errRelyingPartyNotFound, serviceIdentifier)
+	}
+	dnsNames = trimmedNonEmpty(dnsNames)
 	if len(dnsNames) > maxRegistrationItems {
 		return nil, fmt.Errorf("an access certificate may name at most %d DNS names", maxRegistrationItems)
 	}
@@ -91,19 +121,10 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 			return nil, fmt.Errorf("%q is not a DNS name", name)
 		}
 	}
-	validity := maxAccessCertificateValidity
-	if strings.TrimSpace(req.Validity) != "" {
-		parsed, err := time.ParseDuration(strings.TrimSpace(req.Validity))
-		if err != nil || parsed <= 0 || parsed > maxAccessCertificateValidity {
-			return nil, fmt.Errorf("validity %q is not a Go duration of at most %s", req.Validity, maxAccessCertificateValidity)
-		}
-		validity = parsed
-	}
 	var uris []*url.URL
 	if u, err := url.Parse(service.SupportURI); err == nil && u.Scheme != "" {
 		uris = append(uris, u)
 	}
-
 	caKey, ca, err := r.env.RelyingPartyAccessCA()
 	if err != nil {
 		return nil, fmt.Errorf("%w: loading the relying party access CA: %w", errRegistrarSigning, err)
@@ -122,18 +143,7 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 	if err != nil {
 		return nil, fmt.Errorf("%w: signing the access certificate: %w", errRegistrarSigning, err)
 	}
-
-	certificate := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}))
-	hash := sha256.Sum256(leaf.Raw)
-	clientIDs := []string{"x509_hash:" + base64.RawURLEncoding.EncodeToString(hash[:])}
-	for _, dnsName := range leaf.DNSNames {
-		clientIDs = append(clientIDs, "x509_san_dns:"+dnsName)
-	}
-	return &AccessCertificateResult{
-		Certificate: certificate,
-		Chain:       certificate + string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})),
-		ClientIDs:   clientIDs,
-	}, nil
+	return []*x509.Certificate{leaf, ca}, nil
 }
 
 // csrPublicKey returns the P-256 key of a CSR after checking that its signature
