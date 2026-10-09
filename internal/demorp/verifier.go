@@ -24,8 +24,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -173,6 +175,16 @@ type createRequestBody struct {
 	Identity string `json:"identity"`
 }
 
+// ticketClaimNames are the claims of the ticket template, which the demo
+// verifier's registration covers.
+func (d *DemoRP) ticketClaimNames() []string {
+	cfg, ok := d.templateConfiguration(ticketConfigurationID)
+	if !ok {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(cfg.template.Claims))
+}
+
 type customCredentialTO struct {
 	Format  string  `json:"format"`  // dc+sd-jwt or mso_mdoc
 	VCT     string  `json:"vct"`     // the type for dc+sd-jwt
@@ -262,7 +274,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		vct = TicketVCT
-		claims = []string{"event", "tier", "seat", "given_name", "family_name"}
+		claims = d.ticketClaimNames()
 	case "pid":
 		// An explicit format tests how a wallet handles a request for a format
 		// it does not hold.

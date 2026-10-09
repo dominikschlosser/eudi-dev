@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
@@ -342,7 +343,7 @@ func jsonString(v string) string {
 
 func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientID, nonce string) string {
 	t.Helper()
-	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -355,7 +356,7 @@ func presentTicket(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, clientI
 func TestTicketTimeClaimsAreRounded(t *testing.T) {
 	d, _, holderKey := newDemoRP(t)
 
-	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -411,7 +412,7 @@ func TestVerifierRejectsKeyBindingOutsideTheAcceptableWindow(t *testing.T) {
 			h := d.VerifierHandler()
 			id, params := startVerification(t, h, "ticket")
 
-			credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+			credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
 			if err != nil {
 				t.Fatalf("signing ticket: %v", err)
 			}
@@ -553,6 +554,15 @@ func serveStatusList(t *testing.T, d *DemoRP, w *wallet.Wallet) *httptest.Server
 	return srv
 }
 
+func ticketTemplate(t *testing.T, d *DemoRP) *credtemplate.Template {
+	t.Helper()
+	tpl, err := credtemplate.Load(ticketConfigurationID, d.wallet.Templates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tpl
+}
+
 func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, uri string, idx int) string {
 	t.Helper()
 	chain, err := d.wallet.DefaultSigningCertChain()
@@ -563,7 +573,7 @@ func signTicketWithStatus(t *testing.T, d *DemoRP, holderKey *ecdsa.PrivateKey, 
 		Issuer:        d.issuerID(),
 		VCT:           TicketVCT,
 		ExpiresIn:     24 * time.Hour,
-		Claims:        ticketClaims("", nil, nil),
+		Claims:        ticketTemplate(t, d).Claims,
 		Key:           d.wallet.IssuerKey,
 		HolderKey:     &holderKey.PublicKey,
 		CertChain:     chain,
@@ -1064,7 +1074,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 
 	id, params := startVerification(t, h, "ticket")
 
-	credential, err := d.signTicket(&holderKey.PublicKey, ticketGrant{})
+	credential, err := d.signGranted(&holderKey.PublicKey, ticketGrant{})
 	if err != nil {
 		t.Fatalf("signing ticket: %v", err)
 	}
@@ -1715,13 +1725,13 @@ func TestIssuerPersistsTheReservedStatusIndex(t *testing.T) {
 	saves := 0
 	d.SetOnWalletChange(func() { saves++ })
 
-	if _, err := d.signTicket(&holderKey.PublicKey, ticketGrant{}); err != nil {
+	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{}); err != nil {
 		t.Fatalf("signing a ticket without a status reference: %v", err)
 	}
 	if saves != 0 {
 		t.Errorf("a ticket without a status reference saved the wallet %d times", saves)
 	}
-	if _, err := d.signTicket(&holderKey.PublicKey, ticketGrant{withStatus: true}); err != nil {
+	if _, err := d.signGranted(&holderKey.PublicKey, ticketGrant{withStatus: true}); err != nil {
 		t.Fatalf("signing a ticket with a status reference: %v", err)
 	}
 	if saves != 1 {

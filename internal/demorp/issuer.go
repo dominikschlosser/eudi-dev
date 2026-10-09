@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -30,7 +31,6 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtype"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/httpsec"
-	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -67,15 +67,13 @@ func parseBatchSize(value string) int {
 	return n
 }
 
-// ticketClaims records the wallet attester and its trust status on the ticket.
-// The demo accepts attestations from unknown CAs, so the ticket shows it.
-func ticketClaims(subject string, holder map[string]any, auth *clientAuthentication) map[string]any {
-	claims := map[string]any{
-		"event":       "EUDI Interop Fest",
-		"tier":        "backstage",
-		"seat":        "42A",
-		"given_name":  "Erika",
-		"family_name": "Mustermann",
+// ticketClaims adds the holder to the claims of the ticket template. It also
+// records the wallet attester and its trust status, since the demo accepts
+// attestations from unknown CAs.
+func ticketClaims(base map[string]any, subject string, holder map[string]any, auth *clientAuthentication) map[string]any {
+	claims := maps.Clone(base)
+	if claims == nil {
+		claims = map[string]any{}
 	}
 	if subject == demoAccountUsername {
 		claims["given_name"] = demoAccountGivenName
@@ -217,40 +215,7 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 				"logo":   map[string]any{"uri": issuer + "/logo.svg", "alt_text": "eudi-dev logo"},
 			},
 		},
-		"credential_configurations_supported": d.credentialConfigurations(map[string]any{
-			ticketConfigurationID: map[string]any{
-				"format": "dc+sd-jwt",
-				"vct":    TicketVCT,
-				"scope":  ticketScope,
-				"cryptographic_binding_methods_supported": []string{"jwk"},
-				"proof_types_supported": map[string]any{
-					"jwt": map[string]any{"proof_signing_alg_values_supported": []string{"ES256"}},
-				},
-				// OpenID4VCI 1.0 §12.2.4 puts display and claims inside
-				// credential_metadata.
-				"credential_metadata": map[string]any{
-					"display": []map[string]any{
-						{
-							"name":             "Demo Event Ticket",
-							"description":      "A sample event ticket issued by the demo issuer",
-							"locale":           "en-US",
-							"logo":             map[string]any{"uri": issuer + "/logo.svg", "alt_text": "eudi-dev logo"},
-							"background_color": "#0f766e",
-							"text_color":       "#ffffff",
-						},
-					},
-					"claims": []map[string]any{
-						{"path": []string{"event"}},
-						{"path": []string{"tier"}},
-						{"path": []string{"seat"}},
-						{"path": []string{"given_name"}},
-						{"path": []string{"family_name"}},
-						// Only tickets issued after wallet attestation have this claim.
-						{"path": []string{"wallet_attestation"}},
-					},
-				},
-			},
-		}),
+		"credential_configurations_supported": d.credentialConfigurations(),
 	}
 	info, err := d.wallet.DemoIssuerInfo()
 	if err != nil {
@@ -787,13 +752,18 @@ type ticketGrant struct {
 	clientAuth *clientAuthentication
 }
 
-// signGranted issues the template with the granted configuration id. If no
-// template has that id it issues the ticket.
+// signGranted issues the template with the granted configuration id. The
+// ticket is the demo-ticket template.
 func (d *DemoRP) signGranted(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	if cfg, ok := d.templateConfiguration(granted.configID); ok {
-		return d.signTemplate(cfg, holderKey, granted)
+	id := granted.configID
+	if id == "" {
+		id = ticketConfigurationID
 	}
-	return d.signTicket(holderKey, granted)
+	cfg, ok := d.templateConfiguration(id)
+	if !ok {
+		return "", fmt.Errorf("this issuer has no credential configuration %q", id)
+	}
+	return d.signTemplate(cfg, holderKey, granted)
 }
 
 // configurationIDs returns the offer configurations. An empty offer means
@@ -803,51 +773,6 @@ func (o *offerState) configurationIDs() []string {
 		return []string{ticketConfigurationID}
 	}
 	return append([]string(nil), o.configIDs...)
-}
-
-// signTicket signs under the provider CA of the ticket's category, which the
-// category's trusted list names.
-func (d *DemoRP) signTicket(holderKey *ecdsa.PublicKey, granted ticketGrant) (string, error) {
-	spec := wallet.IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: TicketVCT}
-	spec.Category = d.wallet.CredentialCategory(nil, spec)
-	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")
-	if err != nil {
-		return "", fmt.Errorf("building ticket attestation spec: %w", err)
-	}
-	_ = d.wallet.RegisterIssuedAttestation(spec)
-	signingKey, chain, err := d.wallet.SigningMaterialForIssuedAttestation(spec)
-	if err != nil {
-		return "", fmt.Errorf("building signing certificate chain: %w", err)
-	}
-	// Round iat to the hour. A precise issuance second in iat and exp would let
-	// colluding verifiers correlate the copies of a batch (RFC 9901 §10.1).
-	issuedAt := time.Now().Truncate(time.Hour)
-	config := mock.SDJWTConfig{
-		Issuer:    d.issuerID(),
-		VCT:       TicketVCT,
-		ExpiresIn: 24 * time.Hour,
-		IssuedAt:  &issuedAt,
-		Claims:    ticketClaims(granted.subject, granted.holderClaims, granted.clientAuth),
-		Key:       signingKey,
-		HolderKey: holderKey,
-		CertChain: chain,
-	}
-	if granted.withStatus {
-		uri := d.statusListURI()
-		if uri == "" {
-			return "", fmt.Errorf("this wallet has no status list URL")
-		}
-		config.StatusListURI = uri
-		// Persist the reserved index before a request reloads the wallet. A reused
-		// index would revoke two credentials at once.
-		idx, err := d.wallet.NextStatusIndex()
-		if err != nil {
-			return "", err
-		}
-		config.StatusListIdx = idx
-		d.saveWallet()
-	}
-	return mock.GenerateSDJWT(config)
 }
 
 func decodeJSONBody(r *http.Request, target any) error {

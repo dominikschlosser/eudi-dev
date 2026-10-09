@@ -54,7 +54,7 @@ func (d *DemoRP) templateConfigurations() []templateConfiguration {
 	}
 	configs := make([]templateConfiguration, 0, len(templates))
 	for _, tpl := range templates {
-		if tpl.Name == "" || tpl.Name == ticketConfigurationID {
+		if tpl.Name == "" {
 			continue
 		}
 		format, err := credtemplate.NormalizeFormat(tpl.Format)
@@ -91,18 +91,22 @@ func (d *DemoRP) templateConfiguration(id string) (templateConfiguration, bool) 
 	return templateConfiguration{}, false
 }
 
-// offeredConfigurationIDs returns the ticket and every template configuration.
+// offeredConfigurationIDs returns every template configuration, the ticket
+// first.
 func (d *DemoRP) offeredConfigurationIDs() []string {
 	ids := []string{ticketConfigurationID}
 	for _, cfg := range d.templateConfigurations() {
-		ids = append(ids, cfg.id)
+		if cfg.id != ticketConfigurationID {
+			ids = append(ids, cfg.id)
+		}
 	}
 	return ids
 }
 
-// credentialConfigurations adds the template configurations to the
+// credentialConfigurations lists the template configurations as the
 // credential_configurations_supported entries of OpenID4VCI 1.0 §11.2.3.
-func (d *DemoRP) credentialConfigurations(base map[string]any) map[string]any {
+func (d *DemoRP) credentialConfigurations() map[string]any {
+	base := map[string]any{}
 	for _, cfg := range d.templateConfigurations() {
 		entry := map[string]any{
 			"format": cfg.format,
@@ -226,6 +230,10 @@ func templateClaimPaths(cfg templateConfiguration) []map[string]any {
 		}
 		paths = append(paths, map[string]any{"path": path})
 	}
+	// Only tickets issued after wallet attestation have this claim.
+	if cfg.id == ticketConfigurationID {
+		paths = append(paths, map[string]any{"path": []string{"wallet_attestation"}})
+	}
 	return paths
 }
 
@@ -240,6 +248,9 @@ func (d *DemoRP) signTemplate(cfg templateConfiguration, holderKey *ecdsa.Public
 		}
 	}
 	claims := tpl.WithUniqueClaims(credtemplate.MergeClaims(tpl.Claims, granted.holderClaims))
+	if cfg.id == ticketConfigurationID {
+		claims = tpl.WithUniqueClaims(ticketClaims(tpl.Claims, granted.subject, granted.holderClaims, granted.clientAuth))
+	}
 	spec := wallet.IssuedAttestationSpec{Format: cfg.format, VCT: cfg.vct, DocType: cfg.docType}
 	spec.Category = d.wallet.CredentialCategory(&tpl, spec)
 	spec, err := wallet.NormalizeIssuedAttestationSpec(spec, "")

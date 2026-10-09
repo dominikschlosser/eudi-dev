@@ -64,7 +64,9 @@ func TestIssuerDisplayMetadata(t *testing.T) {
 		t.Error("ticket display has no text_color")
 	}
 	ticketLogo, _ := ticketDisplay["logo"].(map[string]any)
-	if uri, _ := ticketLogo["uri"].(string); !strings.HasSuffix(uri, "/issuer/logo.svg") {
+	// The ticket is a template, so the issuer serves its logo with the
+	// template images.
+	if uri, _ := ticketLogo["uri"].(string); !strings.HasSuffix(uri, "/issuer/templates/demo-ticket/logo") {
 		t.Errorf("ticket logo uri = %q", uri)
 	}
 

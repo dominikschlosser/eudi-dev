@@ -592,7 +592,8 @@ func (w *Wallet) GenerateDefaultCredentials(claimOverrides map[string]any, vct s
 }
 
 // dropExisting replaces existing defaults of the same type. Baseline generation
-// passes false because it removes its protected credentials itself.
+// passes false because it removes its protected credentials itself. The PIDs
+// are issued from the PID templates like any other template credential.
 func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct string, dropExisting bool) error {
 	sdName, mdocName, _ := credtemplate.PIDTemplateNames(vct, w.Templates)
 	sdTpl, err := credtemplate.Load(sdName, w.Templates)
@@ -603,144 +604,31 @@ func (w *Wallet) generateDefaultCredentials(claimOverrides map[string]any, vct s
 	if err != nil {
 		return fmt.Errorf("loading %s template: %w", mdocName, err)
 	}
-	if vct == "" {
-		vct = sdTpl.VCT
-	}
-	if vct == "" {
-		vct = mock.DefaultPIDVCT
-	}
-	mdocDocType := mdocTpl.DocType
-	if mdocDocType == "" {
-		mdocDocType = mock.PIDNamespace
-	}
-	mdocNamespace := mdocTpl.Namespace
-	if mdocNamespace == "" {
-		mdocNamespace = mdocDocType
-	}
+	vct = firstNonEmpty(vct, sdTpl.VCT, mock.DefaultPIDVCT)
+	mdocDocType := firstNonEmpty(mdocTpl.DocType, mock.PIDNamespace)
+	mdocNamespace := firstNonEmpty(mdocTpl.Namespace, mdocDocType)
 	log.Printf("[Wallet] Generating default PID credentials: vct=%s overrides=%d", vct, len(claimOverrides))
-	issuer := strings.TrimRight(w.IssuerURL, "/")
-	if issuer == "" {
-		issuer = "https://issuer.example"
-	}
-
-	sdClaims := credtemplate.MergeClaims(sdTpl.Claims, claimOverrides)
-	mdocClaims := credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides)
-	mdocNamespaces := splitClaimsByNamespace(mdocClaims, mdocNamespace)
 
 	// A protected default stays and is not generated again.
 	var keptSD, keptMDoc bool
 	if dropExisting {
+		mdocNamespaces := splitClaimsByNamespace(credtemplate.MergeClaims(mdocTpl.Claims, claimOverrides), mdocNamespace)
 		keptSD = w.removeByType("dc+sd-jwt", vct) > 0
 		keptMDoc = w.removeMDocsByNamespace(mdocDocType, namespaceNames(mdocNamespaces)) > 0
 		if keptSD || keptMDoc {
 			log.Printf("[Wallet] Keeping protected PID credentials: sdjwt=%t mdoc=%t", keptSD, keptMDoc)
 		}
 	}
-
-	var holderPubKey *ecdsa.PublicKey
-	if w.HolderKey != nil {
-		holderPubKey = &w.HolderKey.PublicKey
-	}
-	pidSpec := applyCategoryDefaults(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: vct, Category: credtemplate.CategoryPID})
-	sdKey, sdChain, err := w.SigningMaterialForIssuedCredential(pidSpec, sdClaims)
-	if err != nil {
-		return fmt.Errorf("building PID signing certificate chain: %w", err)
-	}
-	mdocSpec := applyCategoryDefaults(IssuedAttestationSpec{Format: "mso_mdoc", DocType: mdocDocType, Category: credtemplate.CategoryPID})
-	mdocKey, mdocChain, err := w.SigningMaterialForIssuedCredential(mdocSpec, mdocClaims)
-	if err != nil {
-		return fmt.Errorf("building PID signing certificate chain: %w", err)
-	}
-
-	sdConfig := mock.SDJWTConfig{
-		CertificateIssuer: w.IssuerURL,
-		Issuer:            issuer,
-		VCT:               vct,
-		ExpiresIn:         30 * 24 * time.Hour,
-		Claims:            sdClaims,
-		Key:               sdKey,
-		HolderKey:         holderPubKey,
-		CertChain:         sdChain,
-		AlwaysDisclosed:   sdTpl.AlwaysDisclosed,
-	}
-
-	statusListURL := w.StatusListURL()
-	var sdStatusIdx, mdocStatusIdx int
-	if statusListURL != "" {
-		if sdStatusIdx, err = w.NextStatusIndex(); err != nil {
-			return err
-		}
-		sdConfig.StatusListURI = statusListURL
-		sdConfig.StatusListIdx = sdStatusIdx
-	}
-
 	if !keptSD {
-		sdResult, err := mock.GenerateSDJWT(sdConfig)
-		if err != nil {
-			return fmt.Errorf("generating SD-JWT PID: %w", err)
-		}
-		sdCred, err := w.ImportCredential(sdResult)
-		if err != nil {
-			return fmt.Errorf("importing SD-JWT PID: %w", err)
-		}
-		w.rememberDisplay(sdCred, w.templateDisplay(sdTpl.Display))
-
-		if statusListURL != "" {
-			w.registerStatusEntry(sdCred.ID, sdStatusIdx)
+		if _, err := w.IssueCredential(IssueOptions{Template: sdName, Format: "sdjwt", VCT: vct, Claims: claimOverrides}); err != nil {
+			return fmt.Errorf("issuing the SD-JWT PID: %w", err)
 		}
 	}
-
-	mdocConfig := mock.MDOCConfig{
-		CertificateIssuer: w.IssuerURL,
-		DocType:           mdocDocType,
-		Namespace:         mdocNamespace,
-		// German PID additions use a second namespace. Claim keys encode it as
-		// namespace:element.
-		NamespaceClaims: mdocNamespaces,
-		Key:             mdocKey,
-		HolderKey:       holderPubKey,
-		ExpiresIn:       30 * 24 * time.Hour,
-		CertChain:       mdocChain,
-	}
-
-	if statusListURL != "" {
-		if mdocStatusIdx, err = w.NextStatusIndex(); err != nil {
-			return err
-		}
-		mdocConfig.StatusListURI = statusListURL
-		mdocConfig.StatusListIdx = mdocStatusIdx
-	}
-
 	if !keptMDoc {
-		mdocResult, err := mock.GenerateMDOC(mdocConfig)
-		if err != nil {
-			return fmt.Errorf("generating mdoc PID: %w", err)
-		}
-		mdocCred, err := w.ImportCredential(mdocResult)
-		if err != nil {
-			return fmt.Errorf("importing mdoc PID: %w", err)
-		}
-		w.rememberDisplay(mdocCred, w.templateDisplay(mdocTpl.Display))
-
-		if statusListURL != "" {
-			w.registerStatusEntry(mdocCred.ID, mdocStatusIdx)
+		if _, err := w.IssueCredential(IssueOptions{Template: mdocName, Format: "mdoc", Claims: claimOverrides}); err != nil {
+			return fmt.Errorf("issuing the mdoc PID: %w", err)
 		}
 	}
-
-	if dropExisting {
-		// Replacing defaults also replaces the wallet's registered issuance profiles.
-		w.mu.Lock()
-		w.IssuedAttestations = []IssuedAttestationSpec{pidSpec, mdocSpec}
-		w.mu.Unlock()
-		return nil
-	}
-	// Baseline generation runs once per PID type, so registrations accumulate.
-	for _, spec := range []IssuedAttestationSpec{pidSpec, mdocSpec} {
-		if err := w.RegisterIssuedAttestation(spec); err != nil {
-			return fmt.Errorf("registering PID attestation metadata: %w", err)
-		}
-	}
-
 	return nil
 }
 
