@@ -579,7 +579,7 @@ func (w *Wallet) attestsClient(oauthMeta map[string]any) bool {
 	if w.ForceClientAttestation || method == "attest_jwt_client_auth" || method == "attest_jwt_client_auth_dpop" {
 		return true
 	}
-	if !w.RequireHAIP {
+	if !w.HAIPChecks() {
 		return false
 	}
 	if w.Mode() == ValidationModeStrict {
@@ -610,7 +610,7 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 	if w.attestsClient(ctx.oauthMeta) {
 		// §10.1 lets an issuer require attestation without advertising it. The
 		// wallet attests and warns about the missing advertisement.
-		if w != nil && w.RequireHAIP && w.Mode() != ValidationModeStrict &&
+		if w != nil && w.HAIPChecks() && w.Mode() != ValidationModeStrict &&
 			!w.ForceClientAttestation &&
 			detectTokenEndpointAuthMethod(ctx.oauthMeta) == "" {
 			w.addProtocolWarning("issuance", "client_authentication_not_advertised",
@@ -619,7 +619,7 @@ func (w *Wallet) resolveClientAuthentication(method string, ctx clientAuthContex
 		}
 		return w.attestationClientAuth(ctx)
 	}
-	if w != nil && w.RequireHAIP && !w.ForceClientAttestation {
+	if w != nil && w.HAIPChecks() && !w.ForceClientAttestation {
 		w.addProtocolWarning("issuance", "haip_client_authentication_unavailable",
 			"HAIP 1.0 §4.4.1 requires client authentication at the token endpoint, but this issuer's authorization server offers only unauthenticated access. Proceeding without it.",
 			map[string]any{"token_endpoint": ctx.tokenEndpoint})

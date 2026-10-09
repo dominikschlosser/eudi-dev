@@ -304,7 +304,7 @@ func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *
 	}
 
 	// Strict mode rejects HAIP findings. Debug mode logs them and continues.
-	if w.RequireHAIP {
+	if w.HAIPChecks() {
 		if violations := ValidateHAIPIssuanceCompliance(offer, oauthMeta); len(violations) > 0 {
 			if err := w.reportHAIPViolations("Credential offer", offer.CredentialIssuer, violations); err != nil {
 				return nil, err
@@ -1544,7 +1544,7 @@ type credentialProofs struct {
 // a key attestation is required, a single holder-key proof carries an
 // attestation that lists every batch key (Appendix F.1, HAIP §4.5.1).
 func (w *Wallet) buildCredentialProofs(a credentialRequestAttempt, cNonce string) (credentialProofs, error) {
-	if finding := proofSigningAlgFinding(a.metadata, a.configID, w.RequireHAIP); finding != "" {
+	if finding := proofSigningAlgFinding(a.metadata, a.configID, w.HAIPChecks()); finding != "" {
 		if w.Mode() == ValidationModeStrict {
 			return credentialProofs{}, fmt.Errorf("%s", finding)
 		}

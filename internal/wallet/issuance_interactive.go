@@ -509,7 +509,7 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 	}
 
 	w.PrepareARFChecks(params)
-	findings, err := ValidateAuthorizationRequest(w.Mode(), w.RequireHAIP, w.ARFChecks(), params)
+	findings, err := ValidateAuthorizationRequest(w.Mode(), w.HAIPChecks(), w.ARFChecks(), params)
 	if err != nil {
 		return nil, fmt.Errorf("openid4vp_request: %w", err)
 	}

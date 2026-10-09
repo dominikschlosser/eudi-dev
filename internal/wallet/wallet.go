@@ -895,6 +895,13 @@ func (w *Wallet) HolderKeyPair() *ecdsa.PrivateKey {
 	return w.HolderKey
 }
 
+// HAIPChecks reports whether --haip is on.
+func (w *Wallet) HAIPChecks() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.RequireHAIP
+}
+
 // ARFChecks reports whether --arf is on.
 func (w *Wallet) ARFChecks() bool {
 	w.mu.RLock()
