@@ -1158,6 +1158,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	if len(r.PrivacyPolicies) > 0 {
 		m["privacy_policies"] = r.PrivacyPolicies
 	}
+	if len(r.Findings) > 0 {
+		m["findings"] = r.Findings
+	}
 	if r.CredentialOptions != nil {
 		m["credential_options"] = r.CredentialOptions
 	}
