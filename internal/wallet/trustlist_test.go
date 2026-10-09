@@ -396,8 +396,8 @@ func TestGenerateTrustListJWT_WrongKeyVerification(t *testing.T) {
 }
 
 // A credential is on the list of its category. The category comes from the
-// template or the catalogue entry, and a credential without either is on no
-// list.
+// template or the catalogue entry. A credential without either is an EAA, and
+// an unlisted credential is on no list.
 func TestACredentialIsOnTheListOfItsCategory(t *testing.T) {
 	t.Run("generated root", func(t *testing.T) { checkCategoryLists(t, generateTestWallet(t)) })
 	// A root with path length zero signs the leaves directly.
@@ -472,6 +472,8 @@ func checkCategoryLists(t *testing.T, w *Wallet) {
 	}
 }
 
+// A list type stored by an eudi-dev 2 wallet moves to the list of the spec's
+// category.
 func TestAnEudiDev2ListTypeMovesToTheListOfItsCategory(t *testing.T) {
 	legacy := IssuedAttestationSpec{
 		Format:                "dc+sd-jwt",

@@ -54,8 +54,8 @@ type Server struct {
 	// routeRoots holds the first path segment of every route and static file.
 	// CheckBasePath tests --base-url against it.
 	routeRoots map[string]bool
-	// Read store without storeSyncMu. The log sink runs inside mutations that
-	// already hold it.
+	// The store is read without storeSyncMu because the log sink runs inside
+	// mutations that already hold it.
 	store       atomic.Pointer[WalletStore]
 	storeSyncMu sync.Mutex
 	// Skip reparsing unchanged files. Periodic reloads also catch writes that leave
@@ -278,8 +278,8 @@ func (s *Server) recordRouteRoot(pattern string) {
 	}
 }
 
-// CheckBasePath rejects a --base-url whose path starts with a segment the wallet
-// serves, such as /api. Call after the last Mount or Handle.
+// CheckBasePath rejects a --base-url whose path starts with a segment used by
+// the wallet's own routes, such as /api. Call after the last Mount or Handle.
 func (s *Server) CheckBasePath() error {
 	first, err := publicpath.FirstSegment(s.wallet.BaseURL)
 	if err != nil {

@@ -69,9 +69,9 @@ func ParseLenient(raw string) (*Token, error) {
 // splitComponents assigns the tilde-separated components after the
 // Issuer-signed JWT to Disclosures and to the optional Key Binding JWT.
 //
-// RFC 9901 §4 gives SD-JWT = JWT "~" *(DISCLOSURE "~"), so no component a
-// tilde follows may be empty, and the slot after the final tilde is the
-// KB-JWT: "In the case that there is no Key Binding JWT, the last element MUST
+// RFC 9901 §4 gives SD-JWT = JWT "~" *(DISCLOSURE "~"). So a component
+// between two tildes is never empty, and the slot after the final tilde holds
+// the KB-JWT: "In the case that there is no Key Binding JWT, the last element MUST
 // be an empty string and the last separating tilde character MUST NOT be
 // omitted."
 //
@@ -300,9 +300,9 @@ func computeDigest(raw string, sdAlg string) (string, error) {
 	return format.EncodeBase64URL(h.Sum(nil)), nil
 }
 
-// ReferencedDigests returns every digest the credential refers to. These are
-// the entries of its "_sd" arrays and the array elements {"...": digest}. A
-// disclosure with a digest outside this set belongs to another credential.
+// ReferencedDigests returns the digests in the credential: the entries of its
+// "_sd" arrays and the array elements {"...": digest}. A disclosure with a
+// digest outside this set belongs to another credential.
 func ReferencedDigests(token *Token) map[string]bool {
 	out := make(map[string]bool)
 	if token == nil {

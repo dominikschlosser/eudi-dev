@@ -31,7 +31,7 @@ import (
 // strictPreAuthIssuer serves a pre-authorized_code issuer that can require
 // DPoP-bound tokens, client attestation and key attestation in the proof.
 // Issuer metadata can ask for all three at once. A wallet that omits one gets
-// the error a real issuer would send.
+// the same error as from a real issuer.
 // proofTypes is "jwt", "attestation" or "both". With "both" the jwt type
 // requires a key attestation and the attestation type states no requirement.
 func strictPreAuthIssuer(t *testing.T, w *Wallet, requireDPoP, requireClientAttestation, requireKeyAttestation bool, proofTypes string) (*httptest.Server, string) {
@@ -405,10 +405,10 @@ func TestKeyAttestationClaims(t *testing.T) {
 	}
 }
 
-// TestProofSigningAlgMustBeListed covers Appendix F.1 and F.3. The proof's alg
-// must be one the configuration lists. The wallet signs ES256 only. Strict mode
-// refuses a configuration without it and debug mode warns. The warning cites
-// HAIP §7 when the profile is on.
+// TestProofSigningAlgMustBeListed covers Appendix F.1 and F.3. The
+// configuration must list the proof's alg. The wallet signs ES256 only. Strict
+// mode refuses a configuration without it and debug mode warns. The warning
+// cites HAIP §7 when the profile is on.
 func TestProofSigningAlgMustBeListed(t *testing.T) {
 	metadata := map[string]any{"credential_configurations_supported": map[string]any{
 		"cfg": map[string]any{"proof_types_supported": map[string]any{
@@ -438,8 +438,8 @@ func TestProofSigningAlgMustBeListed(t *testing.T) {
 	}
 }
 
-// TestAccessTokenScheme covers the Authorization scheme a token response
-// implies. RFC 9449 §5 marks a DPoP-bound token with token_type "DPoP".
+// TestAccessTokenScheme covers the Authorization scheme for a token
+// response. RFC 9449 §5 marks a DPoP-bound token with token_type "DPoP".
 func TestAccessTokenScheme(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

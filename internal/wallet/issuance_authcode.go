@@ -168,8 +168,8 @@ func (w *Wallet) processAuthorizationCodeOffer(
 			}
 			return w.completeAuthorizationCodeIssuance(issuance, code)
 		case isRedirectToWeb(err):
-			// The browser sign-in uses the server's pushed request when it
-			// supplies one.
+			// The server can send a request_uri with the redirect to the web
+			// sign-in. The browser then opens that pushed request.
 			if err := w.noteRedirectToWeb(challengeEndpoint, redirectURI, authorizationEndpoint); err != nil {
 				return nil, err
 			}
@@ -693,7 +693,7 @@ func (w *Wallet) attestorFor(auth *ClientAuthentication) *clientAttestor {
 type clientAttestor struct {
 	wallet *Wallet
 	auth   *ClientAuthentication
-	// challenge is the server-provided challenge for the next PoP.
+	// challenge comes from the server and goes into the next PoP.
 	challenge string
 }
 
@@ -782,10 +782,9 @@ func applyClientAuthentication(form url.Values, auth *ClientAuthentication, hold
 }
 
 // createClientAttestationHeaders creates the attestation and, outside combined
-// mode, the PoP for the attested key. Both carry the union of the claims the
-// supported drafts define (the draft-07 shape). Every draft lets a JWT carry
-// claims it does not define (§5.1 and §5.2 rule 1), so one shape verifies under
-// all of them.
+// mode, the PoP for the attested key. Both carry the claims of every supported
+// draft (the draft-07 shape). Every draft allows extra claims in these JWTs
+// (§5.1 and §5.2 rule 1), so one shape verifies under all of them.
 func createClientAttestationHeaders(w *Wallet, auth *ClientAuthentication, challenge string) (map[string]string, error) {
 	if w == nil || w.IssuerKey == nil || len(w.CertChain) == 0 {
 		return nil, fmt.Errorf("wallet issuer signing material is not configured")
@@ -937,8 +936,7 @@ func createKeyAttestation(w *Wallet, metadata map[string]any, configID, cNonce s
 // key attestation (OpenID4VCI 1.0 Appendix D.2).
 var keyAttestationClaimNames = []string{"key_storage", "user_authentication"}
 
-// keyAttestationLevelValues are the values Appendix D.2 defines for those
-// claims.
+// keyAttestationLevelValues are the values of those claims in Appendix D.2.
 var keyAttestationLevelValues = []string{"iso_18045_high", "iso_18045_moderate", "iso_18045_enhanced-basic", "iso_18045_basic"}
 
 // ParseKeyAttestationLevel validates the --key-attestation-level setting. Valid
@@ -1013,11 +1011,11 @@ func credentialProofType(metadata map[string]any, configID string) string {
 	return "jwt"
 }
 
-// proofSigningAlgFinding reports a proof type whose
-// proof_signing_alg_values_supported lacks ES256, the only algorithm this
-// wallet signs with. Appendix F.1 and F.3 require the proof alg to be in that
-// list. HAIP 1.0 §7 also requires issuers to support ES256 for key proofs and
-// key attestations.
+// proofSigningAlgFinding reports a proof type without ES256 in
+// proof_signing_alg_values_supported. The wallet signs proofs only with ES256,
+// and Appendix F.1 and F.3 require the proof alg to be in that list. HAIP 1.0
+// §7 also requires issuers to support ES256 for key proofs and key
+// attestations.
 func proofSigningAlgFinding(metadata map[string]any, configID string, requireHAIP bool) string {
 	proofType := credentialProofType(metadata, configID)
 	proof, _ := credentialProofTypes(metadata, configID)[proofType].(map[string]any)
@@ -1158,7 +1156,6 @@ func responseMapLogDetails(endpoint, endpointName string, response map[string]an
 			if refusal.StatusCode != 0 {
 				details["status_code"] = refusal.StatusCode
 			}
-			// Skip the body when the message already contains it.
 			if refusal.Body != "" && !strings.Contains(refusal.Message, refusal.Body) {
 				details["response_body"] = refusal.Body
 			}
@@ -1743,7 +1740,7 @@ func doDPoPRequest(method, target, contentType, accept string, body []byte, auth
 		}
 		if resp.StatusCode >= 400 {
 			// The caller needs the body. A Credential Error Response (§8.3.1.2)
-			// carries the code it acts on, such as invalid_nonce.
+			// carries an error code such as invalid_nonce, and the caller acts on it.
 			return respBody, resp.StatusCode, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		}
 		return respBody, resp.StatusCode, nil

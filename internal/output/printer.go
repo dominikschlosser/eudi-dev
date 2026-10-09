@@ -666,7 +666,7 @@ func isSimpleArray(arr []any) bool {
 }
 
 func formatDisclosuresJSON(token *sdjwt.Token, disclosures []sdjwt.Disclosure) []map[string]any {
-	// A disclosure whose digest the credential does not reference belongs to another credential.
+	// A disclosure with an unreferenced digest belongs to another credential.
 	referenced := sdjwt.ReferencedDigests(token)
 	result := make([]map[string]any, len(disclosures))
 	for i, d := range disclosures {

@@ -20,9 +20,10 @@ import (
 	"net/http"
 )
 
-// placeholderPage stands in at a default URL the registrar assigns when a
-// registration or a catalogue entry names none. That way the links in
-// registration certificates, in the consent dialog and in the catalogue work.
+// placeholderPage is served at the default URLs. The registrar assigns them
+// when a registration or a catalogue entry has no URL of its own. That way the
+// links in registration certificates, in the consent dialog and in the
+// catalogue work.
 type placeholderPage struct {
 	Kind, Title string
 	Paragraphs  []string

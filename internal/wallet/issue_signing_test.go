@@ -73,8 +73,8 @@ func TestIssueWithSigningOverride(t *testing.T) {
 		t.Error("expected a warning about the self-signed root in the chain")
 	}
 
-	// The type registers like an import. The request's trust metadata
-	// describes the wallet CA, so it does not apply to the foreign chain.
+	// The wallet's lists name the wallet CA, so the request's trust metadata
+	// does not apply to the foreign chain.
 	for _, spec := range w.IssuedAttestations {
 		for _, e := range spec.Entitlements {
 			if e == "https://entitlement.example/custom" {

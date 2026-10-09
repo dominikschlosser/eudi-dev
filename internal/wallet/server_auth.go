@@ -171,9 +171,9 @@ type AuthorizationRequestParams struct {
 	// StatusClient fetches the status lists of registration certificates
 	// (Wallet.RegistrationStatusClient).
 	StatusClient *http.Client
-	// RelyingPartyCAs, RegistrarCAs and RegistrationStatusCAs are the anchors
-	// --arf trusts for access certificates, registration certificates and
-	// their status lists.
+	// RelyingPartyCAs, RegistrarCAs and RegistrationStatusCAs anchor the --arf
+	// checks of access certificates, registration certificates and their status
+	// lists.
 	RelyingPartyCAs       []*x509.Certificate
 	RegistrarCAs          []*x509.Certificate
 	RegistrationStatusCAs []*x509.Certificate
@@ -577,9 +577,9 @@ func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, er
 	return result.RedirectURI
 }
 
-// SubmittedPresentation is the document that POST /api/presentations returns
-// once the response reached the verifier. The CLI prints the same document.
-// findings are the checks that failed in debug mode.
+// SubmittedPresentation builds the answer of POST /api/presentations after the
+// verifier received the response. The CLI prints the same document. findings
+// are the checks that failed in debug mode.
 func SubmittedPresentation(result *DirectPostResult, vp *VPTokenMapResult, findings []string) map[string]any {
 	keys := []string{}
 	if vp != nil && len(vp.QueryIDs()) > 0 {

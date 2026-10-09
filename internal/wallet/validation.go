@@ -282,8 +282,8 @@ func validateResponseMode(responseMode, responseURI, redirectURI string) error {
 	case "dc_api", "dc_api.jwt":
 		return nil
 	case "ia_post", "ia_post.jwt":
-		// The response goes to the Authorization Challenge Endpoint the wallet
-		// called, so there is no response_uri to require (OpenID4VCI 1.1
+		// The response goes to the Authorization Challenge Endpoint called by the
+		// wallet, so there is no response_uri to require (OpenID4VCI 1.1
 		// §6.2.1.1).
 		return nil
 	case "fragment":

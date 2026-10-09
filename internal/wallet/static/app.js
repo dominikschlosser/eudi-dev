@@ -52,7 +52,7 @@
   // Read the request ID before clearing the address bar.
   const openedForRequest = pageParams.get('request') || '';
 
-  // The request ID lets a browser without cookies answer the consent it was redirected to.
+  // The request ID lets a browser without cookies answer its consent request.
   function approveURL(id, action) {
     const named = id === openedForRequest ? '?request=' + encodeURIComponent(id) : '';
     return 'api/requests/' + id + action + named;
@@ -240,7 +240,7 @@
       renderCredentials();
       renderPager();
       credentialsLoaded = true;
-      // Issuance can create trust profiles, so refresh their links too.
+      // Issuance can create trusted lists, so refresh their links too.
       loadTrustLists();
     } catch (e) {
       if (loadId === credentialLoadId) credError.hidden = false;
@@ -1040,7 +1040,7 @@
         field('binding').value = 'key';
         field('trust').value = '';
       },
-      // validate returns the first problem the browser can see. The server
+      // validate returns the first problem found in the browser. The server
       // checks the rest and refuses the whole save.
       validate(defaultName) {
         if (!box.checked) return '';
@@ -1305,9 +1305,9 @@
   const templateEditorJSON = document.getElementById('template-editor-json');
   const issueFormGrid = document.getElementById('issue-form-grid');
 
-  // templateEditor is set while the issue dialog edits a template. source is the
-  // template the editor started from. Its fields that the builder doesn't show
-  // stay in the saved template.
+  // templateEditor is set while the issue dialog edits a template. source is
+  // the original template. The saved template keeps its fields that the
+  // builder doesn't show.
   let templateEditor = null;
 
   function setTemplateMode(editor) {
@@ -2220,7 +2220,7 @@
       (req.credential_options.queries || []).length > 0 ? req.credential_options : null;
     const selection = { editing: false, setChoices: [], picks: {}, claims: {}, claimSets: {}, showNonMatching: {} };
     let submitting = false;
-    // An optional set that only non-matching credentials answer starts skipped,
+    // An optional set answered only by non-matching credentials starts skipped,
     // because auto-accept skips it too.
     function defaultSetChoices(opts) {
       return (opts.sets || []).map(set =>
@@ -2301,8 +2301,8 @@
       return '<div class="consent-multiple-note" id="consent-multiple-' + escHtml(qid) + '">' +
         'The verifier accepts several credentials here. Sending ' + sent + ' of ' + q.candidates.length + ' matching credentials.</div>';
     }
-    // Debug mode offers every claim_sets option the picked credentials satisfy. The
-    // first is the automatic choice.
+    // Debug mode offers every claim_sets option satisfied by the picked
+    // credentials. The first is the automatic choice.
     function claimSetOptions(qid) {
       const picked = activeCandidates(qid);
       if (picked.length === 0) return [];
@@ -3163,7 +3163,7 @@
     return m + ' minutes';
   }
 
-  // Issuance can add trust profiles, so refresh links when credentials change.
+  // Issuance can add trusted lists, so refresh links when credentials change.
   async function loadTrustLists() {
     const row = document.getElementById('trust-list-links');
     try {
@@ -3234,8 +3234,7 @@
     }
   }
 
-  // Providers and external lists that the user put on the wallet's trusted
-  // lists (GET api/trust).
+  // Providers and external lists added by the user (GET api/trust).
   async function loadAddedTrust() {
     const entities = document.getElementById('trust-added-entities');
     const lists = document.getElementById('trust-added-lists');
@@ -3333,7 +3332,7 @@
   }
 
   // Element IDs contain the registrar identifier, so tests can find a party by
-  // the identifier the API returned.
+  // the identifier from the API response.
   const registrarDomID = value => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
 
   // A service provider counts as a verifier even before it has intended uses.
@@ -3355,7 +3354,7 @@
 
   function registeredClaims(credential) {
     const type = registeredCredentialType(credential);
-    // Show mdoc claims the way the dialog takes them: element, or
+    // Show mdoc claims as the dialog expects them: element, or
     // namespace:element.
     return (credential.claims || []).map(c => {
       const path = c.path || [];

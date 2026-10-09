@@ -40,8 +40,8 @@ type PresentationParams struct {
 	ClientMetadata map[string]any
 	RequestObject  *oid4vc.RequestObjectJWT // optional, used to extract JWK thumbprint for mdoc
 	// InteractiveAuthorizationEndpoint is the Authorization Challenge Endpoint
-	// that the presentation is bound to (OpenID4VCI 1.1 §6.2.1.1). It is the
-	// endpoint the wallet called. Other flows leave it empty.
+	// called by the wallet. The presentation is bound to it (OpenID4VCI 1.1
+	// §6.2.1.1). Other flows leave it empty.
 	InteractiveAuthorizationEndpoint string
 }
 

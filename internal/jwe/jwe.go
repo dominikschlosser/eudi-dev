@@ -59,8 +59,8 @@ func ParseHeader(compact string) (Header, error) {
 		return Header{}, fmt.Errorf("missing enc in JWE header")
 	}
 	h.EPK, _ = raw["epk"].(map[string]any)
-	// A malformed apu or apv stays empty. It changes the derived key, so
-	// decryption fails with a clearer error.
+	// A malformed apu or apv stays empty. The derived key then differs, so
+	// decryption fails.
 	if b64, ok := raw["apu"].(string); ok {
 		h.APU, _ = format.DecodeBase64URL(b64)
 	}

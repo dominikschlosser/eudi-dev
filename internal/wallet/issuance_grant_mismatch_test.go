@@ -93,8 +93,8 @@ func grantMismatchIssuer(t *testing.T, w *Wallet, limitedNamesGrants, ownStatesP
 				issueToken(rw)
 				return
 			}
-			// This is no OAuth 2.0 error response. error holds the HTTP status
-			// text and the reason is in a custom field.
+			// This response does not use the OAuth 2.0 error format. error holds
+			// the HTTP status text and a custom field holds the reason.
 			rw.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(rw).Encode(map[string]any{
 				"statusCode": 400,

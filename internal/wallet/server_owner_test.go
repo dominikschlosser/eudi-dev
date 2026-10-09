@@ -90,8 +90,8 @@ func TestPendingRequests_ClientNamingTheBrowserItActsFor(t *testing.T) {
 	}
 }
 
-// Older clients and API callers may omit a browser ID. Their requests remain visible
-// to every caller for compatibility.
+// Older clients and API callers may omit a browser ID. Their requests stay
+// visible to every caller.
 func TestPendingRequests_UnownedStayVisible(t *testing.T) {
 	w := generateTestWallet(t)
 	srv := NewServer(w, 0, nil)

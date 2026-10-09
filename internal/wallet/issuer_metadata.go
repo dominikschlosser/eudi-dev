@@ -84,8 +84,8 @@ func parseIssuerHost(raw string) string {
 	return u.Hostname()
 }
 
-// issuerSigningJWKs lists the signing key of every credential trust list and
-// of the credentials on no list, each with its certificate chain.
+// issuerSigningJWKs lists each signing key with its certificate chain: one
+// for every credential list and one for unlisted credentials.
 func issuerSigningJWKs(w *Wallet, exp time.Time) []any {
 	profiles := []trustListProfile{}
 	for _, group := range TrustListGroupsForWallet(w) {

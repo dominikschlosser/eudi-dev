@@ -65,8 +65,8 @@ func TestACreatedRegistrationCertificatePassesTheWalletsChecks(t *testing.T) {
 	}
 }
 
-// ARF RPRC_17a: the registration certificate names the relying party of the
-// access certificate that signs the request.
+// ARF RPRC_17a: the registration certificate and the access certificate that
+// signs the request name the same relying party.
 func TestTheRegistrationCertificateMatchesTheAccessCertificate(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)

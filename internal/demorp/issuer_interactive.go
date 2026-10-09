@@ -140,8 +140,7 @@ func (d *DemoRP) startInteractiveAuthorization(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// §6.2.2: the wallet supports none of the interaction types this server
-	// offers.
+	// §6.2.2: the wallet supports none of the offered interaction types.
 	if !offersInteractionType(offered, interactionTypePresentation) {
 		writeJSON(w, http.StatusBadRequest, oauthError("missing_interaction_type",
 			"interaction_types_supported in the request is missing the required interaction type '"+interactionTypePresentation+"'"))
@@ -436,8 +435,8 @@ func (d *DemoRP) interactivePresentationRequest(req *requestState) map[string]an
 	}
 
 	// The registration certificate of the identity check goes in
-	// verifier_info (OpenID4VP 1.0 §5.1). Its intended use registers the claims
-	// the request asks for (ARF RPRC_21).
+	// verifier_info (OpenID4VP 1.0 §5.1). Its intended use registers the
+	// requested claims (ARF RPRC_21).
 	if info, err := d.wallet.DemoIdentityCheckVerifierInfo(); err == nil {
 		claims["verifier_info"] = info
 	}

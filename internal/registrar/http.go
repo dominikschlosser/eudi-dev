@@ -30,9 +30,8 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/statuslist"
 )
 
-// Server answers the registrar API. The wallet server routes requests here and
-// passes what it owns: the registrar of the current state and how to save a
-// change.
+// Server answers the registrar API. The wallet server routes the requests to
+// it and provides the registrar and a way to save changes.
 type Server struct {
 	// Registrar returns the registrar of the wallet's current state.
 	Registrar func() *Registrar

@@ -210,8 +210,8 @@ func TestStrictARFRefusesAnUnregisteredIssuer(t *testing.T) {
 	}
 }
 
-// provides_attestations names types, so an entry without one authorises
-// nothing, and an offered configuration needs a type to be checked.
+// provides_attestations lists types. An entry without a type authorises
+// nothing, and the wallet can only check an offered configuration with a type.
 func TestARFChecksOfferedTypesStrictly(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)

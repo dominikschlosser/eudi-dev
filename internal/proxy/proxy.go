@@ -117,7 +117,7 @@ func (s *Server) Store() *Store {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// The Director rewrites the URL to the target.
+	// Read the original URL now, because the Director rewrites it to the target.
 	origURL := originalURL(r)
 
 	var reqBody string
@@ -129,7 +129,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The debug JWE key header is removed before forwarding.
+	// The debug JWE key header is meant for the proxy, so the target never
+	// sees it.
 	debugJWEKey := r.Header.Get("X-Debug-JWE-CEK")
 	r.Header.Del("X-Debug-JWE-CEK")
 
@@ -143,7 +144,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.proxy.ServeHTTP(w, r)
 }
 
-// originalURL reconstructs the URL the client requested. Behind another
+// originalURL reconstructs the URL that the client requested. Behind another
 // reverse proxy it uses X-Forwarded-Host and X-Forwarded-Proto. Otherwise it
 // uses the Host header and request URI.
 func originalURL(r *http.Request) string {

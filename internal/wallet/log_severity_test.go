@@ -19,8 +19,8 @@ import (
 	"testing"
 )
 
-// Warnings retain Success=true but need separate severity so the UI can distinguish
-// them.
+// A warning keeps Success=true. Its severity lets the UI tell it apart from a
+// success.
 func TestAddWarningSeverity(t *testing.T) {
 	w := generateTestWallet(t)
 	before := len(w.GetLog())

@@ -287,7 +287,7 @@ func buildConsentCredentialOptions(candidates, nonMatching []CredentialMatch, cr
 	for _, m := range nonMatching {
 		nonMatchingByQuery[m.QueryID] = append(nonMatchingByQuery[m.QueryID], m)
 	}
-	// Queries that only non-matching credentials answer come last, in request
+	// Queries answered only by non-matching credentials come last, in request
 	// order.
 	for _, cq := range credQueries {
 		cqMap, _ := cq.(map[string]any)
@@ -334,7 +334,7 @@ func buildConsentCredentialOptions(candidates, nonMatching []CredentialMatch, cr
 				set.Options = append(set.Options, ids)
 			}
 		}
-		// Options that only non-matching credentials answer follow the
+		// Options answered only by non-matching credentials come after the
 		// satisfiable ones, so the automatic choice stays a matching option.
 		for _, opt := range ordered {
 			if _, ok := satisfiableOption(opt, byQuery); ok {
@@ -491,9 +491,9 @@ func DCQLQueryFindings(query map[string]any) []string {
 	return findings
 }
 
-// isDCQLIdentifier reports whether an id has the syntax OID4VP 1.0 §6.1 gives
-// it: "a non-empty string consisting of alphanumeric, underscore (_), or
-// hyphen (-) characters".
+// isDCQLIdentifier checks the id syntax of OID4VP 1.0 §6.1: "a non-empty
+// string consisting of alphanumeric, underscore (_), or hyphen (-)
+// characters".
 func isDCQLIdentifier(id string) bool {
 	if id == "" {
 		return false
@@ -615,9 +615,9 @@ type claimSelection struct {
 	match       bool
 }
 
-// matchesFormat checks if a credential matches the requested format. §6.1
-// makes format REQUIRED and DCQLQueryFindings reports a missing one. Debug
-// mode treats a missing format as a wildcard.
+// matchesFormat treats a missing format as a wildcard. §6.1 makes format
+// REQUIRED, so DCQLQueryFindings reports it and strict mode refuses the query
+// before matching.
 func matchesFormat(cred StoredCredential, queryFormat string) bool {
 	if queryFormat == "" {
 		return true
@@ -977,9 +977,9 @@ func mdocClaimKeyFromPath(cred StoredCredential, path []any) string {
 	return key
 }
 
-// claimValuesAtPath returns the claims a claims path pointer selects (§7).
-// Processing a pointer yields a set of claims, so an array wildcard
-// contributes one entry per element.
+// claimValuesAtPath returns the claims selected by a claims path pointer
+// (§7). An array wildcard selects every element, so it adds one entry per
+// element.
 func claimValuesAtPath(cred StoredCredential, path []any) []any {
 	if len(path) == 0 {
 		return nil

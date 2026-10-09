@@ -27,19 +27,19 @@ const (
 	PIDProviderEntitlement     = "https://uri.etsi.org/19475/Entitlement/PID_Provider"
 )
 
-// IssuerInfoEntry matches ETSI TS 119 472-3 issuer_info elements.
+// IssuerInfoEntry is one element of issuer_info (ETSI TS 119 472-3).
 type IssuerInfoEntry struct {
 	Format string `json:"format"`
 	Data   any    `json:"data"`
 }
 
-// Identifier is a minimal TS5-compatible identifier object.
+// Identifier is a TS05 identifier object.
 type Identifier struct {
 	Identifier string `json:"identifier"`
 	Type       string `json:"type,omitempty"`
 }
 
-// MultiLangString is a localised string as defined in TS5.
+// MultiLangString is a localised string of TS05.
 type MultiLangString struct {
 	Lang    string `json:"lang"`
 	Content string `json:"content"`
@@ -76,7 +76,7 @@ func (d ServiceDescription) Strings() []MultiLangString {
 	return out
 }
 
-// SupervisoryAuthority is a supervisory authority record as defined in TS5.
+// SupervisoryAuthority is a supervisory authority record of TS05.
 type SupervisoryAuthority struct {
 	Name    string   `json:"name"`
 	Country string   `json:"country"`

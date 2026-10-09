@@ -337,8 +337,8 @@ func trustListProfileKey(profile trustListProfile) string {
 	return strings.Join(parts, "|")
 }
 
-// trustListGroupID names a category's list by the category. A spec that
-// changes its category's defaults gets a list of its own.
+// trustListGroupID uses the category as the ID of a category list. A spec
+// that changes the defaults of its category gets a list of its own.
 func trustListGroupID(profile trustListProfile) string {
 	switch profile.LoTEType {
 	case walletProviderTrustListType:
@@ -484,7 +484,6 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 			"TrustedEntityServices":    trustListServices(opts.Profile, entity),
 		})
 	}
-	// ETSI trust lists use a JSON wrapper object.
 	payload := map[string]any{
 		"LoTE": map[string]any{
 			"ListAndSchemeInformation": schemeInfo,

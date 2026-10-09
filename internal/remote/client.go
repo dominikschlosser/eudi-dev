@@ -38,8 +38,8 @@ import (
 type Client struct {
 	BaseURL string
 	HTTP    *http.Client
-	// owner is the browser this client submits on behalf of. It is set when the
-	// client opened a wallet UI page for the flow it starts.
+	// owner identifies the browser the client acts for. The client sets it
+	// when it opens a wallet UI page for a flow.
 	owner string
 }
 
@@ -82,7 +82,7 @@ func (c *Client) doWithTimeout(timeout time.Duration, method, path string, body 
 	}
 	// The registrar API signs its answers unless the client asks for JSON.
 	req.Header.Set("Accept", "application/json")
-	// The server recognizes older clients that need compatibility handling.
+	// The server uses the client version to stay compatible with older CLIs.
 	req.Header.Set(config.ClientHeader, "eudi-cli/"+version)
 	if c.owner != "" {
 		req.Header.Set(config.OwnerHeader, c.owner)

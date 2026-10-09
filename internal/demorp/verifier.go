@@ -175,8 +175,8 @@ type createRequestBody struct {
 	Identity string `json:"identity"`
 }
 
-// ticketClaimNames are the claims of the ticket template, which the demo
-// verifier's registration covers.
+// ticketClaimNames returns the claims of the ticket template. The demo
+// verifier's registration certificate lists them.
 func (d *DemoRP) ticketClaimNames() []string {
 	cfg, ok := d.templateConfiguration(ticketConfigurationID)
 	if !ok {
@@ -451,7 +451,8 @@ func (d *DemoRP) requestSigningMaterial(body createRequestBody) (*ecdsa.PrivateK
 
 // verifierInfo returns the verifier_info of a signed request. The demo
 // verifier is registered with the wallet's registrar, so its own requests
-// carry its registration certificate.
+// carry its registration certificate (rc-wrp+jwt, ETSI TS 119 475, OpenID4VP
+// 1.0 §5.1).
 func (d *DemoRP) verifierInfo(body createRequestBody) ([]any, error) {
 	if strings.TrimSpace(body.SigningKey) != "" || body.Identity == "unregistered" {
 		return body.VerifierInfo, nil
@@ -470,8 +471,7 @@ func writeSigningMaterialError(w http.ResponseWriter, body createRequestBody, er
 }
 
 // finalizeRequest signs the request object, stores the request and returns the
-// wallet URL. A registered verifier's verifier_info carries its registration
-// certificate (rc-wrp+jwt, ETSI TS 119 475, OpenID4VP 1.0 §5.1).
+// wallet URL.
 func (d *DemoRP) finalizeRequest(w http.ResponseWriter, req *requestState, dcql map[string]any, responseURI, base string, signingKey *ecdsa.PrivateKey, chain []*x509.Certificate, verifierInfo []any) {
 	now := time.Now()
 	claims := map[string]any{
@@ -770,8 +770,8 @@ func checkPresentationAudience(req *requestState, aud string) error {
 	return errIf(aud != endpoint && aud != origin, "aud is %q, want %q", aud, endpoint)
 }
 
-// rebuildSessionTranscript recomputes the session transcript the holder
-// signed. Interactive Authorization uses the handover of OpenID4VCI 1.1
+// rebuildSessionTranscript recomputes the session transcript that the holder
+// signs. Interactive Authorization uses the handover of OpenID4VCI 1.1
 // Appendix A.2.5.
 func (d *DemoRP) rebuildSessionTranscript(req *requestState) ([]byte, error) {
 	if req.interactiveEndpoint != "" {
@@ -782,7 +782,7 @@ func (d *DemoRP) rebuildSessionTranscript(req *requestState) ([]byte, error) {
 		req.clientID, req.nonce, encryptionJWKThumbprint(req.encKey), d.baseURL()+"/verifier/response/"+req.id)
 }
 
-// originOf is the derived origin of a URL as RFC 6454 §4 defines it.
+// originOf returns the origin of a URL (RFC 6454 §4).
 func originOf(raw string) string {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -935,8 +935,6 @@ func decryptResponse(req *requestState, form url.Values) (string, error) {
 		return "", fmt.Errorf("the decrypted response carried no vp_token")
 	}
 
-	// verifyPresentation parses vp_token itself, so it is encoded again as
-	// received.
 	raw, err := json.Marshal(payload.VPToken)
 	if err != nil {
 		return "", fmt.Errorf("re-encoding the vp_token: %w", err)
@@ -984,7 +982,7 @@ func (d *DemoRP) verifyPresentation(req *requestState, vpToken string) (map[stri
 	}
 
 	// A PID request can offer both formats. The wallet answers under the query
-	// id it can satisfy.
+	// id of the format it holds.
 	var presentations []string
 	if req.queryID != "" {
 		presentations = tokenDoc[req.queryID]
@@ -1311,8 +1309,8 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		return check("revocation status (credential references no status list)", nil)
 	}
 
-	// The status list JWT must chain to a service of the lists. A forged list
-	// could otherwise un-revoke a credential.
+	// The status list JWT must chain to a service on the wallet's credential
+	// provider lists. A forged list could otherwise un-revoke a credential.
 	anchors := d.trustedStatusCerts()
 	if len(anchors) == 0 {
 		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))

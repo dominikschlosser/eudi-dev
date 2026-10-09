@@ -43,8 +43,8 @@ type abcaIssuerConfig struct {
 	// the value in its challenge claim is accepted.
 	challengeValue string
 	// refuseFirstAsStale answers the first token request with
-	// use_fresh_attestation. A server sends that error for an attestation it
-	// considers too old (§7.4).
+	// use_fresh_attestation. A server sends that error when it considers the
+	// attestation too old (§7.4).
 	refuseFirstAsStale bool
 }
 
@@ -185,9 +185,9 @@ func runABCAOffer(t *testing.T, w *Wallet, cfg abcaIssuerConfig) (*abcaCapture, 
 // TestAttestationShapeIsDraftUnion checks the emitted shape for each
 // OpenID4VCI version. The attestation and its PoP carry the union of the
 // claims of the supported drafts, which is the draft-07 shape. Draft-07
-// §5.1/§5.2 require iss in both JWTs and define nbf. Every draft lets a JWT
-// carry claims it does not define (§5.1 and §5.2 rule 1), so one shape
-// verifies under all of them.
+// §5.1/§5.2 require iss in both JWTs and define nbf. Every draft allows extra
+// claims in these JWTs (§5.1 and §5.2 rule 1), so one shape verifies under all
+// of them.
 func TestAttestationShapeIsDraftUnion(t *testing.T) {
 	for _, version := range []VCIVersion{VCIVersion10, VCIVersion11} {
 		t.Run(string(version), func(t *testing.T) {
@@ -216,8 +216,7 @@ func TestAttestationShapeIsDraftUnion(t *testing.T) {
 			if attestation["sub"] != "test-wallet-client" {
 				t.Errorf("attestation sub = %v, want the client_id", attestation["sub"])
 			}
-			// Draft-07 §5.2 rule 4: the PoP iss is the client the attestation
-			// was issued to.
+			// Draft-07 §5.2 rule 4: the PoP iss is the client of the attestation.
 			if pop["iss"] != attestation["sub"] {
 				t.Errorf("PoP iss = %v, want the attestation's sub %v", pop["iss"], attestation["sub"])
 			}

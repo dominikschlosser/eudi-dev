@@ -39,7 +39,8 @@ import (
 // The wallet publishes the providers of access certificates and of
 // registration certificates on lists of their own (ARF RPACANot_05 and
 // RPACANot_05a). The URIs come from ETSI TS 119 602 V1.1.1 Annexes F and G.
-// Annex G registers its status determination URI with this spelling.
+// Annex G spells its status determination URI "WRPRCrovidersList", and the
+// constant keeps that spelling.
 const (
 	accessCAListType              = "http://uri.etsi.org/19602/LoTEType/EUWRPACProvidersList"
 	accessCAStatusDetermination   = "http://uri.etsi.org/19602/WRPACProvidersList/StatusDetn/EU"
@@ -56,8 +57,8 @@ const (
 	accessCAListID   = "access-ca"
 	registrarListID  = "registrar"
 	walletProviderID = "wallet-provider"
-	// listOfListsID is the list that points to every trusted list the wallet
-	// uses (ETSI TS 119 602 V1.1.1 §6.3.13).
+	// listOfListsID is the list that points to all of the wallet's trusted
+	// lists (ETSI TS 119 602 V1.1.1 §6.3.13).
 	listOfListsID          = "lists"
 	listOfTrustedListsType = "https://eudi-test.dev/LoTEType/ListOfTrustedLists"
 	listOperatorName       = "EUDI Dev Wallet"
@@ -101,9 +102,9 @@ func registrarTrustListProfile() trustListProfile {
 	}
 }
 
-// TrustedEntity is a provider that a user put on one of the wallet's trusted
-// lists. The wallet signs the list with the entity on it, so its certificates
-// anchor the --arf checks like the wallet's own providers.
+// TrustedEntity is a provider added by a user to one of the wallet's trusted
+// lists. The wallet signs the list with the entity on it, so the entity's
+// certificates anchor the --arf checks.
 type TrustedEntity struct {
 	ID   string `json:"id"`
 	List string `json:"list"`
@@ -159,17 +160,17 @@ func (w *Wallet) RemoveTrustedEntity(id string) error {
 	return nil
 }
 
-// ListTrustedEntities returns the entities users put on the wallet's lists.
+// ListTrustedEntities returns the entities added by users.
 func (w *Wallet) ListTrustedEntities() []TrustedEntity {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return slices.Clone(w.TrustedEntities)
 }
 
-// trustListEntities are the entities of a wallet list next to the wallet's
-// own provider: the ones users added and, for the access CA and registrar
-// lists, the CAs from --relying-party-ca. Their CAs anchor both the issued
-// certificates and the status lists.
+// trustListEntities returns the entities on a wallet list besides the
+// wallet's own provider: those added by users and, on the access-ca and
+// registrar lists, the CAs from --relying-party-ca. Their CAs anchor both the
+// issued certificates and the status lists.
 func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 	var out []trustListEntity
 	for _, entity := range w.ListTrustedEntities() {
@@ -193,8 +194,8 @@ func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 
 // AddTrustedList puts an external list of trusted entities on the wallet's
 // list of trusted lists. The --arf checks then take anchors from it. Strict
-// mode refuses a list the wallet can't read. Debug mode adds it and reports
-// why.
+// mode refuses an unreadable list. Debug mode adds it and reports why it can't
+// be read.
 func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if u, err := url.Parse(rawURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
@@ -287,9 +288,9 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 	return raw, nil
 }
 
-// readTrustedList returns a list that a trusted list operator signed. The ARF
-// has the wallet accept the provider trust anchors on a list because of that
-// signature (PPNot_05, TLPub_05, TLPub_07).
+// readTrustedList returns a list signed by a trusted list operator. Under the
+// ARF, that signature is why the wallet accepts the trust anchors on the list
+// (PPNot_05, TLPub_05, TLPub_07).
 func (w *Wallet) readTrustedList(rawURL string) (*trustlist.TrustList, error) {
 	return w.readListSignedBy(rawURL, w.TrustListCAs())
 }
@@ -322,9 +323,8 @@ const (
 	revocationServices = "Revocation"
 )
 
-// serviceAnchors are the certificates of the services of a kind that a list
-// names. A withdrawn service anchors nothing (ETSI TS 119 602 V1.1.1 Table
-// H.3).
+// serviceAnchors returns the certificates of a list's services of one kind.
+// A withdrawn service anchors nothing (ETSI TS 119 602 V1.1.1 Table H.3).
 func serviceAnchors(list *trustlist.TrustList, kind string) []trustlist.CertInfo {
 	var anchors []trustlist.CertInfo
 	for _, entity := range list.Entities {
@@ -348,8 +348,8 @@ func (w *Wallet) TrustedListURLs() []string {
 	return append(urls, w.ExternalTrustedLists()...)
 }
 
-// trustedList is a list the wallet reads, or the reason it can't. Via is the
-// list of trusted lists that points to it.
+// trustedList is a list read by the wallet, or the error from reading it. Via
+// is the list of trusted lists that points to it.
 type trustedList struct {
 	URL  string
 	Via  string
@@ -357,11 +357,11 @@ type trustedList struct {
 	Err  error
 }
 
-// trustedLists reads the lists on the wallet's list of trusted lists and the
-// lists that an external list of trusted lists points to. The signer of a
-// listed list chains to a trusted list operator (ARF TLPub_07). A pointed-to
-// list is signed by a certificate of its pointer (ETSI TS 119 602 V1.1.1
-// §6.3.13). The wallet follows one level of pointers.
+// trustedLists reads the wallet's own lists, the external lists, and the
+// lists that an external list of trusted lists points to. An own or external
+// list must be signed by a trusted list operator (ARF TLPub_07). A pointed-to
+// list must be signed with a certificate from its pointer (ETSI TS 119 602
+// V1.1.1 §6.3.13). The wallet follows pointers one level deep.
 func (w *Wallet) trustedLists() []trustedList {
 	urls := w.TrustedListURLs()
 	seen := make(map[string]bool, len(urls))
@@ -388,8 +388,8 @@ func (w *Wallet) trustedLists() []trustedList {
 	return out
 }
 
-// listAnchors are the certificates of the services of a kind on every
-// readable list of the type.
+// listAnchors returns the certificates of all services of one kind on the
+// readable lists of a list type.
 func (w *Wallet) listAnchors(listType, kind string) []*x509.Certificate {
 	var anchors []*x509.Certificate
 	for _, tl := range w.trustedLists() {
@@ -474,11 +474,9 @@ func listPointer(location string, scheme *trustlist.SchemeInfo, signer string) m
 	}
 }
 
-// CredentialProviderAnchors are the certificates of the services of a kind on
-// the credential provider lists of the wallet's list of trusted lists. The
-// demo verifier trusts them like a verifier trusts the lists it reads: the
-// issuance services for credentials and the revocation services for status
-// lists.
+// CredentialProviderAnchors returns the certificates of one service kind on
+// all credential provider lists. The demo verifier trusts the issuance
+// services for credentials and the revocation services for status lists.
 func (w *Wallet) CredentialProviderAnchors(kind string) []*x509.Certificate {
 	var anchors []*x509.Certificate
 	for _, tl := range w.trustedLists() {

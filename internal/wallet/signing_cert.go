@@ -28,8 +28,8 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// SigningCertChainForIssuedAttestation is the signer chain of the type's trust
-// profile.
+// SigningCertChainForIssuedAttestation returns the signer chain for the
+// type's trusted list.
 func (w *Wallet) SigningCertChainForIssuedAttestation(spec IssuedAttestationSpec) ([]*x509.Certificate, error) {
 	_, chain, err := w.signingMaterialForProfile(trustListProfileFromSpec(spec), "")
 	return chain, err
@@ -116,9 +116,9 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country str
 	return issuerKey, certs, nil
 }
 
-// providerRole names the provider CA and signing key of a trust profile. A
-// category's list, every custom list and the wallet provider list each have
-// their own, so a list anchors only the credentials signed for it. The pid
+// providerRole returns the name of the provider CA and signing key for a
+// trusted list. Each category list, custom list and the wallet provider list
+// has its own, so a list anchors only the credentials signed for it. The pid
 // category signs with the wallet's issuer key.
 func providerRole(profile trustListProfile) string {
 	switch {

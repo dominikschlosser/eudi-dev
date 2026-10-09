@@ -93,7 +93,7 @@ type Options struct {
 
 type contextKey struct{}
 
-// Prefix returns the path prefix the browser used for the request, without a trailing
+// Prefix returns the browser's path prefix for the request, without a trailing
 // slash. It is "" when the server is reached at the root.
 func Prefix(r *http.Request) string {
 	prefix, _ := r.Context().Value(contextKey{}).(string)
@@ -138,10 +138,10 @@ func Wrap(opts Options, next http.Handler) http.Handler {
 	})
 }
 
-// publicPrefix determines the path prefix the browser used. X-Forwarded-Prefix is the
-// part the proxy stripped. A base path the proxy kept is appended to it. Without
-// either header, a request for the public host came through a proxy that stripped
-// the base path. Any other request reached the server directly.
+// publicPrefix determines the browser's path prefix. X-Forwarded-Prefix holds the
+// part stripped by the proxy, and a base path kept by the proxy is appended to
+// it. Without either header, a request for the public host came through a proxy
+// that stripped the base path. Any other request reached the server directly.
 func publicPrefix(r *http.Request, basePath, publicHost string, keptBase bool) string {
 	removed := forwardedPrefix(r)
 	switch {

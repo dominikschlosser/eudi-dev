@@ -181,7 +181,7 @@ func firstDisplayEntry(raw any) (map[string]any, bool) {
 	return entry, ok
 }
 
-// configurationClaimNames lists the claims a configuration declares. OID4VCI
+// configurationClaimNames lists the claim names of a configuration. OID4VCI
 // 1.0 uses an array of objects with a "path". Earlier drafts used a nested
 // object keyed by claim name. Issuers still publish both.
 func configurationClaimNames(raw any) []string {

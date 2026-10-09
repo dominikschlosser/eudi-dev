@@ -100,7 +100,7 @@ func TestRegistrationsAreChecked(t *testing.T) {
 	}
 }
 
-// A registration can't claim another party's identifier, not even as an
+// A registration can't claim another party's identifier, also as an
 // additional identifier.
 func TestARegistrationCannotTakeAnotherPartysIdentifier(t *testing.T) {
 	w := generateTestWallet(t)

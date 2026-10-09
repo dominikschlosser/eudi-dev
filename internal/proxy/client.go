@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// DashboardClient reads the dashboard's traffic history and event stream.
-
 package proxy
 
 import (
@@ -31,6 +29,7 @@ import (
 // Streaming has no deadline, so history reads need their own timeout.
 var entriesTimeout = 30 * time.Second
 
+// DashboardClient reads the dashboard's traffic history and event stream.
 type DashboardClient struct {
 	// BaseURL is the dashboard origin, without a trailing slash.
 	BaseURL string

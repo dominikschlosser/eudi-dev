@@ -42,8 +42,8 @@ const (
 )
 
 // DemoVerifierAccessSigningMaterial is the access certificate of the demo
-// verifier. The demo verifier is its own relying party, so its certificate
-// names another organization than the demo issuer's.
+// verifier. The demo verifier is a relying party of its own, so its
+// certificate identifies a different organization from the demo issuer.
 func (w *Wallet) DemoVerifierAccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	return w.demoAccessSigningMaterial("demo-verifier-access", demoVerifierIdentity, demoVerifierName, demoVerifierServiceID)
 }
@@ -129,8 +129,8 @@ func (w *Wallet) DemoVerifierInfo() ([]any, error) {
 }
 
 // DemoIdentityCheckVerifierInfo is the verifier_info of the demo issuer's
-// identity check: the registration certificate of the intended use under
-// which it asks for a PID before issuing.
+// identity check. The demo issuer asks for a PID before it issues, and this
+// is the registration certificate of that intended use.
 func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 	result, err := w.demoCertificate(func() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
 		rp, req, err := w.demoIssuerRegistration()
@@ -146,7 +146,7 @@ func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 type demoRegistration func() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error)
 
 // demoCertificate returns the current certificate of a demo registration. A
-// server saves the registrar change this makes.
+// running server saves the resulting registrar change.
 func (w *Wallet) demoCertificate(build demoRegistration) (*registrar.RegistrationCertificateResult, error) {
 	var result *registrar.RegistrationCertificateResult
 	var err error

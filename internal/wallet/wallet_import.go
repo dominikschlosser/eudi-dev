@@ -83,9 +83,9 @@ func credentialIssuerDID(raw string) string {
 	return keys.DIDReference(kid, iss)
 }
 
-// DID issuer keys cannot be resolved here. The toolkit uses x5c as required by HAIP
-// 1.0 §6.1.1 or SD-JWT VC issuer metadata. Keep the credential and report its
-// unchecked signature and unverifiable status list.
+// The wallet can't resolve DID issuer keys. It finds issuer keys through x5c, as
+// HAIP 1.0 §6.1.1 requires, or through SD-JWT VC issuer metadata. Keep the
+// credential and report its unchecked signature and unverifiable status list.
 func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
 	if w == nil || cred == nil {
 		return

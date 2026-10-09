@@ -170,8 +170,8 @@ func TestCatalogueEntriesAreChecked(t *testing.T) {
 	}
 }
 
-// An entry without trusted authorities links its category's list on the
-// wallet, and the category sets the default level of security.
+// An entry without trusted authorities links the wallet's list of its
+// category, and the category sets the default level of security.
 func TestTheCategoryNamesTheTrustedList(t *testing.T) {
 	w := generateTestWallet(t)
 	for category, level := range map[string]string{"": "iso_18045_basic", "qeaa": "iso_18045_high", "pub-eaa": "iso_18045_high"} {

@@ -37,15 +37,15 @@ type mockIssuerOpts struct {
 	// nonceOnlyGET makes the nonce endpoint answer the POST that §7.1 requires
 	// with 405 and serve the c_nonce over GET.
 	nonceOnlyGET bool
-	// captureNotification receives the Notification Request the wallet sent, so
-	// a test can check it against §11.1.
+	// captureNotification receives the wallet's Notification Request, so a test
+	// can check it against §11.1.
 	captureNotification func(*http.Request, []byte)
 	// refusesNotification publishes a Notification Endpoint that answers every
 	// call with 404.
 	refusesNotification       bool
 	tokenAuthorizationDetails []any
-	// credentialResponse is the JSON object the credential endpoint returns.
-	// When nil, the endpoint returns a single SD-JWT credential.
+	// credentialResponse is the JSON answer of the credential endpoint. When
+	// nil, the endpoint returns a single SD-JWT credential.
 	credentialResponse       map[string]any
 	credentialConfigFormat   string
 	inspectCredentialRequest func(*testing.T, map[string]any)
@@ -2065,10 +2065,9 @@ func TestCallbackIsAcceptedOnAWalletWithoutABaseURL(t *testing.T) {
 	}
 }
 
-// TestProcessCredentialOffer_KeepsCredentialWhenNotificationIsRefused checks
-// that a refused notification leaves the credential in place. §11 makes the
-// endpoint optional for the wallet, and the credential is stored before the
-// notification is sent.
+// §11 makes the Notification Endpoint optional for the wallet, and the wallet
+// stores the credential before it notifies. A refused notification leaves the
+// credential in place.
 func TestProcessCredentialOffer_KeepsCredentialWhenNotificationIsRefused(t *testing.T) {
 	w := generateTestWallet(t)
 	credRaw := generateTestCredential(t, w)

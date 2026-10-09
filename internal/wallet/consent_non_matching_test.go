@@ -185,7 +185,7 @@ func TestStrictModeRefusesWhenNothingMatches(t *testing.T) {
 }
 
 // If the user changes nothing, the consent sends what auto-accept sends. So an
-// optional set that only non-matching credentials can answer starts skipped.
+// optional set without a matching credential starts skipped.
 func TestAnUnchangedConsentSkipsAnOptionalSetNothingMatches(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.ValidationMode = ValidationModeDebug

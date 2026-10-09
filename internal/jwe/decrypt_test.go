@@ -346,8 +346,7 @@ func TestParseHeader(t *testing.T) {
 	}
 }
 
-// A malformed apu stays empty. Decryption then fails on the derived key with
-// a clearer error.
+// A malformed apu stays empty. Decryption then fails on the derived key.
 func TestParseHeaderLeavesAMalformedAPUEmpty(t *testing.T) {
 	header, err := json.Marshal(map[string]any{"enc": "A256GCM", "apu": "!!!not base64!!!"})
 	if err != nil {

@@ -80,8 +80,8 @@ func HAIPCredentialChain(chain []*x509.Certificate) []string {
 	if SelfSignedCertificate(chain[0]) {
 		violations = append(violations, "HAIP 1.0 §6.1.1: the certificate signing the credential MUST NOT be self-signed")
 	}
-	// The anchor depends on what the checking party trusts, and this wallet holds
-	// no such list. The finding reports the visible fact of a self-signed certificate.
+	// The trust anchor depends on the checking party, and the wallet has no such
+	// list. So every self-signed certificate in the chain is a finding.
 	for i, cert := range chain[1:] {
 		if SelfSignedCertificate(cert) {
 			violations = append(violations, fmt.Sprintf(

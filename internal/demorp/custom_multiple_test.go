@@ -128,7 +128,7 @@ func TestVerifierCustomRequestMultipleReachesTheQuery(t *testing.T) {
 	}
 }
 
-// verifiedAnswers returns the claim sets the verifier verified for a multiple query.
+// verifiedAnswers returns the verified claim sets of a multiple query.
 func verifiedAnswers(t *testing.T, status map[string]any, queryID string) []any {
 	t.Helper()
 	if status["status"] != "verified" {

@@ -34,7 +34,8 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	// On a demo the templates it started with are fixed like the built-in ones.
+	// On the public demo, the operator's templates (those present at startup)
+	// are fixed like the built-in ones.
 	if s.demo != nil {
 		for i := range templates {
 			templates[i].Predefined = templates[i].Predefined || s.demo.fixedTemplates[templates[i].Name]
@@ -61,7 +62,7 @@ func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 // templateSaveRequest is a template document. With catalog set, the template
-// also joins the attestation catalogue as an entry of its own.
+// is also added to the attestation catalogue as a new entry.
 type templateSaveRequest struct {
 	credtemplate.Template
 	Catalog *registrar.CatalogAttestation `json:"catalog,omitempty"`

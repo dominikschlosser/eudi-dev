@@ -47,7 +47,6 @@ type postgresStore struct {
 // Openers using the same connection URL share a pool within the process.
 var postgresPools sync.Map
 
-// Commands routed to a wallet server need no local database connection.
 func openPostgres(dsn string) (Store, error) {
 	if store, ok := postgresPools.Load(dsn); ok {
 		return store.(*postgresStore), nil

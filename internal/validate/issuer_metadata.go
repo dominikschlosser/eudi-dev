@@ -202,8 +202,8 @@ func fetchIssuerMetadataDocument(metadataURL string, clients ...*http.Client) (m
 	return doc, nil
 }
 
-// wellKnownJWTVCIssuer is the well-known string SD-JWT VC §3 defines for the
-// JWT VC Issuer Metadata configuration.
+// wellKnownJWTVCIssuer is the well-known path of the JWT VC Issuer Metadata
+// (SD-JWT VC §3).
 const wellKnownJWTVCIssuer = "/.well-known/jwt-vc-issuer"
 
 // JWTVCIssuerMetadataURL builds the location of an issuer's JWT VC Issuer

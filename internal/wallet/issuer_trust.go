@@ -48,7 +48,8 @@ func catalogueEntryIn(entries []registrar.CatalogAttestation, format string, typ
 	return registrar.CatalogAttestation{}, false
 }
 
-// catalogueFindings names the offered attestations the catalogue doesn't list.
+// catalogueFindings reports offered attestations that are missing from the
+// catalogue.
 // No specification has the wallet check this, so these findings only warn.
 func (w *Wallet) catalogueFindings(metadata map[string]any, configurations []string) []string {
 	if !w.ARFChecks() {
@@ -76,13 +77,13 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trusted lists of its catalogue entry. The entry's category names the
-// rule. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a PID, QEAA
-// or PuB-EAA with the list of its providers, so an entry without a readable
-// list is a finding. ISSU_10 asks for the check of an EAA only when the wallet
-// has the anchors. A PID and a PuB-EAA list on the list of trusted lists
-// counts too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D and
-// H).
+// the trusted lists of its catalogue entry. The entry's category decides which
+// rule applies. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a
+// PID, QEAA or PuB-EAA with the list of its providers, so an entry without a
+// readable list is a finding. ISSU_10 asks for the check of an EAA only when
+// the wallet has the anchors. PID and PuB-EAA lists on the list of trusted
+// lists count too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D
+// and H).
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
@@ -180,9 +181,10 @@ func validateWithAnchors(cred StoredCredential, anchors []trustlist.CertInfo) er
 }
 
 // verifyTrustListSigner checks the JAdES signature of a trusted list (ETSI TS
-// 119 602 V1.1.1 Annexes D.4, E.4 and H.4) and that its signer chains to a
-// trusted list operator. The ARF has the wallet accept the provider trust
-// anchors because of the list's signature (PPNot_05, TLPub_05, TLPub_07).
+// 119 602 V1.1.1 Annexes D.4 to H.4) and that its signer chains to one of the
+// certificates: a trusted list operator, or the signer named by a pointer. The
+// ARF has the wallet accept the provider trust anchors because of the list's
+// signature (PPNot_05, TLPub_05, TLPub_07).
 func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 	header, _, err := decodeCompactJWT(strings.TrimSpace(raw))
 	if err != nil {

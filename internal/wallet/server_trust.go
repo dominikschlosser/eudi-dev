@@ -23,8 +23,8 @@ import (
 	"strings"
 )
 
-// TrustedListState is what GET /api/trust answers: the providers users put on
-// the wallet's lists and the external lists on its list of trusted lists.
+// TrustedListState is the answer to GET /api/trust: the providers added to the
+// wallet's lists, and the external lists on its list of trusted lists.
 type TrustedListState struct {
 	Entities []TrustedEntity `json:"entities"`
 	// EntityLists are the lists that take entities.

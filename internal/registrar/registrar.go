@@ -40,7 +40,6 @@ import (
 // entries of their certificates and the added catalogue entries. The wallet
 // embeds it, so it is saved with the wallet.
 type State struct {
-	// RelyingParties are the registrations of the wallet's registrar.
 	RelyingParties []WalletRelyingParty `json:"relying_parties,omitempty"`
 	// RegistrationStatuses are the status list entries of the registration
 	// certificates.
@@ -50,7 +49,7 @@ type State struct {
 	Catalog []CatalogAttestation `json:"catalog,omitempty"`
 }
 
-// Env is what the registrar uses from the wallet it runs in.
+// Env gives the registrar access to the wallet that hosts it.
 type Env interface {
 	// RegistrarBase is the base URL of the registrar's default contact URLs and
 	// registry URIs.
@@ -60,7 +59,8 @@ type Env interface {
 	TemplateLocation() credtemplate.Location
 }
 
-// Registrar works on a State under the lock of the wallet that stores it.
+// Registrar changes a State while holding the lock of the wallet that stores
+// it.
 type Registrar struct {
 	mu    *sync.RWMutex
 	state *State
@@ -186,8 +186,8 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingPa
 	return cloneRelyingParty(rp)
 }
 
-// NormalizedRelyingParty is rp with the defaults the registrar fills in. It
-// doesn't store rp.
+// NormalizedRelyingParty returns rp with the registrar's defaults filled in.
+// It doesn't store rp.
 func (r *Registrar) NormalizedRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
 	rp, err := cloneRelyingParty(rp)
 	if err != nil {
@@ -328,8 +328,8 @@ func hasIdentifier(rp WalletRelyingParty, identifier string) bool {
 	return slices.ContainsFunc(rp.Identifier, func(id Identifier) bool { return id.Identifier == identifier })
 }
 
-// attestationCategories names the category of each attestation type in the
-// catalogue. It is read before r.mu is taken.
+// attestationCategories returns the catalogue category of each attestation
+// type. It reads the catalogue under r.mu, so call it before taking r.mu.
 func (r *Registrar) attestationCategories() func(format, typ string) string {
 	categories := map[string]string{}
 	for _, entry := range r.CatalogAttestations() {
@@ -340,9 +340,9 @@ func (r *Registrar) attestationCategories() func(format, typ string) string {
 	return func(format, typ string) string { return categories[format+" "+typ] }
 }
 
-// normalizeRelyingParty checks a registration and fills in what the registrar
-// assigns. For an update, before is the stored registration. category names
-// the catalogue category of an attestation type.
+// normalizeRelyingParty checks a registration and fills in the values the
+// registrar assigns. For an update, before is the stored registration.
+// category returns the catalogue category of an attestation type.
 func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRelyingParty, category func(format, typ string) string) error {
 	if err := checkRegistrationSize(*rp); err != nil {
 		return err
@@ -497,15 +497,14 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 	return nil
 }
 
-// normalizeEntitlements checks a service's entitlements against what it
-// registers. ETSI TS 119 475 V1.2.1 GEN-5.2.4-03 requires an entitlement from
-// Annex A.2. Table 8 lists provided attestations only for attestation
-// providers, and ARF RPRC_15 requires a provider to list them. A provider that
-// also requests attributes is a service provider too (ARF RPRC_05 note).
-// normalizeEntitlements gives a service that lists attestation types but has
-// no provider entitlement the entitlements of their categories. A type outside
-// the catalogue is a PID when its name says so (ARF PID_04 and PID_14), else an
-// EAA.
+// normalizeEntitlements checks the entitlements of a service. ETSI TS 119 475
+// V1.2.1 GEN-5.2.4-03 requires one from Annex A.2. Table 8 lists provided
+// attestations only for attestation providers, and ARF RPRC_15 requires a
+// provider to list them. A provider that also requests attributes is a service
+// provider too (ARF RPRC_05 note). A service that lists attestation types
+// without a provider entitlement gets the entitlements of their categories. A
+// type outside the catalogue is a PID when its name says so (ARF PID_04 and
+// PID_14). Otherwise it is an EAA.
 func normalizeEntitlements(service *WalletRelyingPartyService, category func(format, typ string) string) error {
 	service.Entitlements = dedupeStrings(service.Entitlements)
 	if len(service.ProvidesAttestations) > 0 && !isAttestationProvider(*service) {
@@ -671,8 +670,8 @@ func matchesWRPQuery(rp WalletRelyingParty, q url.Values) bool {
 			want, err := strconv.ParseBool(v)
 			return err == nil && anyService(func(s WalletRelyingPartyService) bool { return s.IsIntermediary == want })
 		}) &&
-		// This registrar records no intermediaries a service relies on, so a
-		// usesintermediary filter matches nothing.
+		// The registrar doesn't record intermediaries, so a usesintermediary
+		// filter matches nothing.
 		has("usesintermediary", func(string) bool { return false })
 }
 

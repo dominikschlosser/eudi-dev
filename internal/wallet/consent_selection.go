@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The consent dialog can choose one option per credential set and the
-// credentials for each query. A query that sets multiple takes several.
-
 package wallet
 
 import (
@@ -22,6 +19,9 @@ import (
 	"slices"
 )
 
+// ValidateConsentSelection checks the choices made in the consent dialog: one
+// option per credential set and the credentials of each query. A query with
+// multiple can take several credentials.
 func ValidateConsentSelection(options *ConsentCredentialOptions, picks map[string][]string, setChoices []int, claimSets map[string]int) error {
 	if options == nil {
 		if len(picks) == 0 && len(setChoices) == 0 && len(claimSets) == 0 {

@@ -201,8 +201,7 @@ func TestVerifyDeviceAuthRejectsAReplayedResponse(t *testing.T) {
 	}
 }
 
-// The signature must verify with the device key the issuer bound the
-// credential to.
+// The signature must verify with the device key in the MSO.
 func TestVerifyDeviceAuthRejectsAnotherHoldersKey(t *testing.T) {
 	transcript := transcriptFor(t, "nonce")
 	doc := signedDoc(t, testKey(t), transcript)

@@ -598,7 +598,7 @@ func TestParseVPQueryParametersNeverOutrankTheRequestObject(t *testing.T) {
 	}
 }
 
-// A parameter the Request Object omits stays absent.
+// A parameter missing from the Request Object stays absent.
 func TestParseVPDropsQueryParametersTheRequestObjectOmits(t *testing.T) {
 	payload := map[string]any{
 		"client_id":     "https://verifier.example",

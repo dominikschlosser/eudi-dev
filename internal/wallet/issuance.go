@@ -110,24 +110,24 @@ type IssuanceResult struct {
 
 type OfferOptions struct {
 	// PresentationConsented is true when the caller already consented for the
-	// user. A presentation the issuer requests during the flow (OID4VCI 1.1 §6)
-	// then skips the consent prompt.
+	// user. When the issuer then asks for a presentation during the flow
+	// (OID4VCI 1.1 §6), the wallet skips the consent prompt.
 	PresentationConsented bool
 	// TxCode is the transaction code for a pre-authorized offer that requires
 	// one. Each flow carries its own code because concurrent offers can share a
 	// wallet.
 	TxCode string
-	// Owner is the browser this issuance belongs to. A presentation the issuer
-	// requests during the flow belongs to the same browser.
+	// Owner identifies the browser that started this issuance. A presentation
+	// requested by the issuer during the flow goes to the same browser.
 	Owner string
-	// ResolvedOffer is the offer the caller already resolved from the same URI,
-	// for example for a consent dialog. It is used only when reading the URI
-	// again fails.
+	// ResolvedOffer is the offer that the caller already resolved from the same
+	// URI, for example for a consent dialog. The flow uses it only when reading
+	// the URI again fails.
 	ResolvedOffer *oid4vc.CredentialOffer
 }
 
 // resolveOffer reads the credential offer at the URI. approved is the offer
-// the caller resolved from the same URI earlier.
+// that the caller resolved earlier from the same URI.
 //
 // §4.1.3 asks the wallet to fetch the URI "unless it is already cached", so
 // the URI is read again. An issuer that consumes the offer on the first read
@@ -203,8 +203,8 @@ func offerSummary(offer *oid4vc.CredentialOffer) string {
 }
 
 // ProcessCredentialOffer processes an OID4VCI credential offer URI for a user
-// who is present. Interactions the issuer requests during the flow are shown to
-// that user.
+// who is present. When the issuer asks for an interaction during the flow,
+// the wallet shows it to that user.
 func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error) {
 	return w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{})
 }
@@ -289,7 +289,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 			}
 		}
 	}
-	// The ARF checks the issuer before any credential is requested.
+	// The ARF has the wallet check the issuer before it requests a credential.
 	if findings := w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs); len(findings) > 0 {
 		if err := w.reportARFIssuanceFindings(offer.CredentialIssuer, findings); err != nil {
 			return nil, err
@@ -309,9 +309,9 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		return w.processAuthorizationCodeOffer(offer, metadata, oauthMeta, tokenEndpoint, credentialEndpoint, opts)
 	}
 
-	// Token exchange for the pre-authorized code flow. An issuer may protect it
-	// with DPoP, attestation-based client authentication and key attestation,
-	// like the authorization code flow. Each follows the issuer's metadata.
+	// An issuer may protect the pre-authorized token request with DPoP,
+	// attestation-based client authentication and key attestation. Its metadata
+	// says which of them apply.
 	nonces := &dpopNonceState{}
 	dpopKey := w.dpopKeyFor(oauthMeta)
 	// A pre-authorized offer carries no client_id, and the wallet is not
@@ -740,10 +740,10 @@ func isLikelyCompactJWT(raw string) bool {
 	return true
 }
 
-// issuerMetadataTrustAnchors are the roots a signed Credential Issuer Metadata
-// certificate chain must end in. nil selects the host's root store because the
-// wallet has no provisioned anchors of its own. Tests set it to the certificate
-// authority they sign with.
+// issuerMetadataTrustAnchors holds the roots for signed Credential Issuer
+// Metadata. The signer's certificate chain must end in one of them. nil means
+// the host's root store, because the wallet has no issuer anchors of its own.
+// Tests set it to their own CA.
 var issuerMetadataTrustAnchors *x509.CertPool
 
 // signedIssuerMetadataTyp is the typ header value §12.2.3 requires on signed
@@ -757,8 +757,8 @@ const signedIssuerMetadataTyp = "openidvci-issuer-metadata+jwt"
 //
 // §12.2.3 also asks the wallet to "establish trust in the signer" and leaves
 // the mechanism out of scope. The wallet tries to build an x5c chain to a
-// trusted root. It accepts a signer it cannot place because it holds no issuer
-// CAs (ADR-0009).
+// trusted root. It holds no issuer CAs (ADR-0009), so it also accepts a signer
+// without such a chain.
 func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 	if token == nil {
 		return fmt.Errorf("signed issuer metadata token is nil")
@@ -860,8 +860,8 @@ func normalizeMetadataX5CEntries(raw any) ([]string, error) {
 	}
 }
 
-// preAuthorizedCodeGrant is the grant type identifier §4.1.1 defines for the
-// pre-authorized code flow.
+// preAuthorizedCodeGrant is the grant type of the pre-authorized code flow
+// (§4.1.1).
 const preAuthorizedCodeGrant = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 
 func getAuthorizationServer(metadata map[string]any, issuer string) string {
@@ -890,11 +890,11 @@ func authorizationServersFromMetadata(metadata map[string]any) []string {
 	return out
 }
 
-// offerAuthorizationServer reads the authorization_server hint the offer's
-// grant may carry. §4.1.1 defines it as "OPTIONAL string that the Wallet can
-// use to identify the Authorization Server to use with this grant type when
-// authorization_servers parameter in the Credential Issuer metadata has
-// multiple entries."
+// offerAuthorizationServer reads the optional authorization_server hint in
+// the grant of the offer. §4.1.1 defines it as "OPTIONAL string that the
+// Wallet can use to identify the Authorization Server to use with this grant
+// type when authorization_servers parameter in the Credential Issuer metadata
+// has multiple entries."
 func offerAuthorizationServer(offer *oid4vc.CredentialOffer) string {
 	if offer == nil {
 		return ""
@@ -941,8 +941,9 @@ func selectAuthorizationServer(metadata map[string]any, offer *oid4vc.Credential
 	return "", fmt.Errorf("credential offer names authorization server %q, which the issuer metadata of %s does not list", hint, issuer)
 }
 
-// RFC 8414's default of authorization_code and implicit does not fit
-// pre-authorized issuance. An absent grant_types_supported states nothing.
+// grantTypesSupported reports false when the metadata has no
+// grant_types_supported. The RFC 8414 default (authorization_code and implicit)
+// says nothing about pre-authorized issuance.
 func grantTypesSupported(oauthMeta map[string]any) ([]string, bool) {
 	raw, ok := oauthMeta["grant_types_supported"].([]any)
 	if !ok {
@@ -958,7 +959,7 @@ func grantTypesSupported(oauthMeta map[string]any) ([]string, bool) {
 }
 
 // checkAuthorizationServerGrant reports an authorization server whose metadata
-// leaves out the grant this issuance uses. §12.2.4: "by examining the
+// does not list the grant type of this issuance. §12.2.4: "by examining the
 // grant_types_supported values, the Wallet can filter the server to use based
 // on the grant type it plans to use". §4.1.1 defines the offer's
 // authorization_server as the server to use "with this grant type".
@@ -994,8 +995,8 @@ func oauthMetadataFetch(issuer string) metadataFetch {
 }
 
 // fallbackAuthorizationServer finds another advertised authorization server
-// that lists the grant this issuance uses. It applies only when the selected
-// server's metadata leaves the grant out. §4.1.1 makes the offer's
+// that lists the grant type of this issuance. It runs only when the metadata
+// of the selected server leaves that grant out. §4.1.1 makes the offer's
 // authorization_server a value the wallet "can use". Strict mode refuses in
 // checkAuthorizationServerGrant before this runs.
 func (w *Wallet) fallbackAuthorizationServer(metadata map[string]any, authServer string, oauthMeta map[string]any, grantType string) (string, map[string]any, bool) {
@@ -1075,7 +1076,7 @@ func (w *Wallet) resolveTokenEndpoint(metadata map[string]any, oauthMeta map[str
 }
 
 // fetchOAuthMetadata reads the OAuth 2.0 Authorization Server Metadata
-// (RFC 8414) the server publishes at /.well-known/oauth-authorization-server.
+// (RFC 8414) from /.well-known/oauth-authorization-server.
 func fetchOAuthMetadata(client *http.Client, authServer string, payloads ...*LogPayload) (map[string]any, error) {
 	oauthURL, err := wellKnownURL(authServer, "oauth-authorization-server")
 	if err != nil {
@@ -1172,8 +1173,8 @@ func createProofJWT(holderKey *ecdsa.PrivateKey, audience, clientID, cNonce stri
 	if clientID != "" {
 		payload["iss"] = clientID
 	}
-	// The nonce claim echoes a c_nonce the issuer provided. An issuer that
-	// provided none expects the claim to be absent.
+	// The nonce claim repeats the issuer's c_nonce. Without a c_nonce the
+	// issuer expects no nonce claim.
 	if cNonce != "" {
 		payload["nonce"] = cNonce
 	}
@@ -1434,7 +1435,7 @@ func (w *Wallet) reportHAIPViolations(subject, issuer string, violations []strin
 	return nil
 }
 
-// issuanceChallenge obtains the c_nonce the key proofs are signed over. §8.2
+// issuanceChallenge obtains the c_nonce for signing the key proofs. §8.2
 // leaves one source: "The c_nonce value is retrieved from the Nonce Endpoint
 // as defined in Section 7." A c_nonce in the token response comes from a
 // pre-1.0 issuer. Strict mode ignores it. Debug mode uses it with a warning.
@@ -1480,8 +1481,8 @@ type credentialRequestAttempt struct {
 	responseEncryption        map[string]any
 	dpopKey                   *ecdsa.PrivateKey
 	proofKeys                 []*ecdsa.PrivateKey
-	// clientID is the OAuth client_id the access token was issued to. The key
-	// proof sends it as iss. It is empty for an anonymous pre-authorized flow.
+	// clientID is the OAuth client_id of the access token. The key proof sends
+	// it as iss. It is empty for an anonymous pre-authorized flow.
 	clientID string
 	// nonce is the DPoP nonce state of the resource server, not the c_nonce.
 	nonce *string
@@ -1636,7 +1637,6 @@ func credentialResponseLogDetails(endpoint string, response map[string]any, err 
 	return details
 }
 
-// Include the required code length and input mode in the error.
 func txCodeHintSuffix(txCode map[string]any) string {
 	if description, _ := txCode["description"].(string); strings.TrimSpace(description) != "" {
 		return " (" + strings.TrimSpace(description) + ")"

@@ -66,8 +66,8 @@ func remoteClientIfConfigured() (*remote.Client, error) {
 			version = "unknown version"
 		}
 		fmt.Fprintf(os.Stderr, "Routing through the running wallet instance %s (%s, pid %d, same wallet directory). Use --remote local for direct file access.\n", inst.URL, version, inst.PID)
-		// The instance was started from whatever binary was current then, so
-		// it can be a major release behind the CLI now running against it.
+		// The instance may run an older binary than this CLI, even one a major
+		// release behind.
 		if notice := incompatibilityNotice(inst.URL, inst.Version); notice != "" {
 			fmt.Fprintln(os.Stderr, notice)
 		}

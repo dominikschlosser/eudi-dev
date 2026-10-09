@@ -847,8 +847,8 @@ func TestBuildMDOCJSON_DeviceBinding(t *testing.T) {
 	})
 }
 
-// A disclosure the credential does not reference proves nothing about its claims
-// and must be reported.
+// An unreferenced disclosure proves nothing about its claims and must be
+// reported.
 func TestFormatDisclosuresJSON_Referenced(t *testing.T) {
 	token := &sdjwt.Token{
 		Payload: map[string]any{

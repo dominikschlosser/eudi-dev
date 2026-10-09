@@ -115,8 +115,8 @@ func TestOnlyCurrentIssuanceServicesAreAnchors(t *testing.T) {
 	}
 }
 
-// The list of trusted lists points to every list the wallet uses, with its
-// type and the certificate of its signer (ETSI TS 119 602 V1.1.1 §6.3.13).
+// The list of trusted lists points to all of the wallet's lists, with each
+// list's type and signer certificate (ETSI TS 119 602 V1.1.1 §6.3.13).
 func TestTheListOfTrustedListsPointsToEveryList(t *testing.T) {
 	foreign := generateTestWallet(t)
 	external, err := GenerateTrustListJWTForWalletGroup(foreign, "https://foreign.example", DefaultTrustListGroupForWallet(foreign), "/api/trustlists/pid")
@@ -212,7 +212,7 @@ func TestTheTrustAPIAddsAndRemovesEntitiesAndLists(t *testing.T) {
 	}
 }
 
-// The providers and lists users add survive a reload on every storage mode.
+// Added providers and lists survive a reload on every storage mode.
 func TestTrustedEntitiesAndListsSurviveAReload(t *testing.T) {
 	for name, open := range map[string]func(t *testing.T) *WalletStore{
 		"file":   func(t *testing.T) *WalletStore { return NewWalletStore(t.TempDir()) },
@@ -249,9 +249,9 @@ func TestTrustedEntitiesAndListsSurviveAReload(t *testing.T) {
 	}
 }
 
-// A list of trusted lists leads the wallet to the lists it points to. The
-// signer of a pointed-to list is a certificate of its pointer (ETSI TS 119 602
-// V1.1.1 §6.3.13).
+// A list of trusted lists leads the wallet to the lists in its pointers. A
+// pointed-to list must be signed with a certificate from its pointer (ETSI TS
+// 119 602 V1.1.1 §6.3.13).
 func TestAListOfTrustedListsLeadsToItsLists(t *testing.T) {
 	foreign := generateTestWalletWithPID(t)
 	pid := foreign.GetCredentials()[0]
@@ -289,8 +289,8 @@ func TestAListOfTrustedListsLeadsToItsLists(t *testing.T) {
 	}
 }
 
-// Strict mode refuses a list the wallet can't read. Debug mode adds it and
-// says why the wallet can't use it.
+// Strict mode refuses an unreadable list. Debug mode adds it and says why it
+// can't be used.
 func TestAnUnreadableListIsRefusedInStrictModeAndReportedInDebugMode(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)

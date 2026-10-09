@@ -262,8 +262,8 @@ func parseVPParams(q url.Values, opts ParseOptions) (RequestType, any, error) {
 // applyRequestObjectPayload replaces the request parameters with the claims of
 // the Request Object. OID4VP 1.0 §5.10.1: "The Wallet MUST only use the
 // parameters in this Request Object, even if the same parameter was provided
-// in an Authorization Request query parameter". A parameter the signed object
-// omits stays absent.
+// in an Authorization Request query parameter". A parameter missing from the
+// signed object stays absent.
 //
 // request_uri and request_uri_method describe the transport and are kept.
 func applyRequestObjectPayload(req *AuthorizationRequest, payload map[string]any) error {

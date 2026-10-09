@@ -151,7 +151,7 @@ func TestParseReadsEntitiesServicesAndCertificates(t *testing.T) {
 	}
 }
 
-// Keep valid trust anchors when another list entry cannot be parsed.
+// An unreadable list entry leaves the valid trust anchors in place.
 func TestParseSkipsUnreadableEntries(t *testing.T) {
 	good := certB64(t, "Good CA")
 

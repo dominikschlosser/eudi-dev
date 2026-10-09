@@ -15,7 +15,8 @@
 // Package demorp runs a demo OpenID4VCI issuer and OpenID4VP verifier on the wallet
 // server. The issuer supports pre-authorized and authorization code grants with a
 // built-in demo account. The verifier serves signed request objects by reference and
-// checks encrypted direct_post.jwt responses. Both use the wallet CA.
+// checks encrypted direct_post.jwt responses. The issuer signs with the
+// wallet's certificates, and the verifier trusts the wallet's trusted lists.
 package demorp
 
 import (
@@ -55,7 +56,8 @@ type DemoRP struct {
 	// requires from a wallet. The zero value is ClientAuthRequired.
 	clientAuth ClientAuthMode
 	// verifierTrustAnchors lets the demo verifier accept credentials from other
-	// issuers, such as the conformance suite. The wallet CA is always trusted.
+	// issuers, such as the conformance suite. The wallet's credential provider
+	// lists are always trusted.
 	verifierTrustAnchors []*x509.Certificate
 
 	mu       sync.Mutex
@@ -72,8 +74,8 @@ type DemoRP struct {
 	// nonces keeps Nonce Endpoint challenges until they expire. A wallet can
 	// use one nonce for a whole batch of proofs.
 	nonces map[string]time.Time
-	// deferred holds accepted issuances that are not delivered yet. The key is
-	// the transaction id the wallet polls with.
+	// deferred holds accepted issuances that are not delivered yet, keyed by
+	// the transaction id. The wallet polls with that id.
 	deferred map[string]*deferredTicket
 }
 
@@ -108,7 +110,8 @@ func (d *DemoRP) SetClientAuthMode(mode ClientAuthMode) {
 }
 
 // SetVerifierTrustAnchors sets extra CAs for issuer certificate chains. The
-// demo verifier always trusts the wallet CA as well. Call it before serving.
+// demo verifier also trusts the wallet's credential provider lists. Call it
+// before serving.
 func (d *DemoRP) SetVerifierTrustAnchors(anchors []*x509.Certificate) {
 	d.verifierTrustAnchors = anchors
 }

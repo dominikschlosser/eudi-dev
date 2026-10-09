@@ -313,7 +313,7 @@ func TestEvaluateDCQL_ClaimsQueryHasNoRequiredMember(t *testing.T) {
 //
 // birth_place is the encoding-independent identifier in the PID Rulebook. The
 // mdoc element is place_of_birth. Treating the two as equal would disclose an
-// element the request did not cover.
+// element outside the request.
 func TestEvaluateDCQL_MDocDataElementIsNotAliased(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 
@@ -422,7 +422,7 @@ func TestDCQLQueryFindings_WellFormedQueryHasNone(t *testing.T) {
 	}
 }
 
-// In strict mode the findings are errors. A query that lacks a member §6.1
+// In strict mode the findings are errors. A query without a member that §6.1
 // marks REQUIRED gets no credentials.
 func TestEvaluateDCQL_StrictRejectsQueryWithoutMeta(t *testing.T) {
 	w := generateTestWalletWithPID(t)

@@ -31,9 +31,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 )
 
-// VerifyValueDigests checks the disclosed items against the digests the issuer
-// signed in the MSO. The issuer signature covers only the MSO, so this check
-// protects the element values.
+// VerifyValueDigests checks the disclosed items against the digests in the MSO.
+// The issuer signature covers only the MSO, so this check protects the element
+// values.
 func VerifyValueDigests(doc *Document) error {
 	if doc == nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		return fmt.Errorf("document carries no MSO to check digests against")

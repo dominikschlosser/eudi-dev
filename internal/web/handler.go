@@ -31,7 +31,7 @@ type MuxOptions struct {
 	Credential  string // pre-filled credential served via GET /api/prefill
 	Version     string // release version reported by GET /api/meta
 	ImprintHTML []byte // pre-rendered legal notice served at GET /imprint
-	Demo        bool   // public demo deployment, the UI shows a data disclaimer
+	Demo        bool   // public demo deployment (the UI shows a data disclaimer)
 	// CredentialByID resolves ?id= links, so the URL never holds the full
 	// credential. A decoder without a wallet returns 404.
 	CredentialByID func(id string) (string, bool)

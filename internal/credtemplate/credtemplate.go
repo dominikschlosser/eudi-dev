@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Package credtemplate stores reusable claim sets and issuance defaults. Built-in
-// templates cover EU and German PIDs. A user template overrides the built-in
-// template with the same name.
+// templates cover the EU PID, national PIDs and a demo ticket. A user template
+// replaces the built-in template with the same name.
 package credtemplate
 
 import (
@@ -61,8 +61,8 @@ type Template struct {
 	// Nested claims use dotted paths such as "address.country".
 	AlwaysDisclosed []string `json:"always_disclosed,omitempty"`
 	// Category is the kind of attestation: pid, qeaa, pub-eaa or eaa (ARF
-	// ISSU_07 to ISSU_10). Credentials of a category are signed under its
-	// provider CA, which the category's trusted list names.
+	// ISSU_07 to ISSU_10). Each category has its own provider CA, and the
+	// trusted list of the category lists that CA.
 	Category string `json:"category,omitempty"`
 	// UniqueClaims lists claims that get a new random value for every
 	// credential, such as the opaque subject of IT-Wallet 1.4.7 §11.1.2.1.
@@ -71,8 +71,7 @@ type Template struct {
 	// this template. Image fields of a built-in template use "embedded:<file>".
 	// A user template uses a data URI or an https URL.
 	Display *TemplateDisplay `json:"display,omitempty"`
-	// Predefined is true for pre-defined templates compiled into the binary. It is set by
-	// this package and ignored in template files.
+	// Predefined marks the built-in templates. Template files can't set it.
 	Predefined bool `json:"predefined,omitempty"`
 }
 
@@ -371,8 +370,8 @@ func PIDTypes(loc Location) []string {
 	return types
 }
 
-// WithUniqueClaims gives every claim in t.UniqueClaims that claims carries a
-// new random value. Other claims come back unchanged.
+// WithUniqueClaims returns claims with a new random value for each claim
+// listed in t.UniqueClaims. Other claims stay unchanged.
 func (t *Template) WithUniqueClaims(claims map[string]any) map[string]any {
 	if t == nil || len(t.UniqueClaims) == 0 {
 		return claims

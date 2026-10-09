@@ -43,8 +43,8 @@ func (v VCIVersion) UsesInteractiveAuthorization() bool {
 	return v == VCIVersion11
 }
 
-// ABCADraft uses draft-07 for OpenID4VCI 1.0, following its pinned reference rule (§14.7).
-// The 1.1 editor's draft pins draft-08.
+// ABCADraft returns draft-07 for OpenID4VCI 1.0, because its references pin
+// that draft (§14.7). The 1.1 editor's draft pins draft-08.
 func (v VCIVersion) ABCADraft() int {
 	if v == VCIVersion11 {
 		return 8
@@ -52,5 +52,6 @@ func (v VCIVersion) ABCADraft() int {
 	return 7
 }
 
-// ABCALatestDraft identifies additional ABCA methods negotiated through server metadata.
+// ABCALatestDraft is the newest ABCA draft. The wallet uses one of its methods
+// only when the server metadata offers it.
 const ABCALatestDraft = 10

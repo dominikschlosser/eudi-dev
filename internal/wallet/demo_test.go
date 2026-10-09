@@ -76,8 +76,8 @@ func TestDemoAllowsVisitorFlows(t *testing.T) {
 	}
 }
 
-// Visitors can save templates without images. The templates the demo started
-// with stay as they are, and a reset removes the visitors' templates.
+// Visitors can save templates without images. The operator's templates stay
+// as they are, and a reset removes the visitors' templates.
 func TestDemoVisitorTemplates(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
@@ -290,8 +290,8 @@ func TestStartDemoResetUsesDailySchedule(t *testing.T) {
 func TestProtectedCredentials(t *testing.T) {
 	srv := newDemoTestServer(t)
 	srv.SetStore(NewWalletStore(t.TempDir()))
-	// Requests reload the store, so changes are saved the way the serve
-	// command wires it up.
+	// Requests reload the store, so the test saves changes like wallet serve
+	// does.
 	srv.onSave = func() {
 		if err := srv.store.Load().Save(srv.wallet); err != nil {
 			t.Errorf("saving wallet: %v", err)

@@ -31,7 +31,7 @@ services:
 
   wallet:
     build: ../..
-    # Files on the mounted volume, random keys.
+    # File storage on the mounted volume with random keys.
     environment:
       EUDI_DEV_STORAGE: file
       EUDI_DEV_SEED: ""
@@ -56,7 +56,7 @@ services:
   wallet-init:
     profiles: ["setup"]
     build: ../..
-    # Files on the mounted volume, random keys.
+    # File storage on the mounted volume with random keys.
     environment:
       EUDI_DEV_STORAGE: file
       EUDI_DEV_SEED: ""

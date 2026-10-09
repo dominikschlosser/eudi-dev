@@ -53,8 +53,7 @@ var walletHTTPProxy string
 var walletHTTPSProxy string
 var walletNoProxy string
 
-// noOpen suppresses the browser this CLI opens on the user's behalf. The URL
-// is printed instead.
+// noOpen stops the CLI from opening a browser. It prints the URL instead.
 var noOpen bool
 
 var walletCmd = &cobra.Command{
@@ -922,8 +921,8 @@ func applyWalletOutbound(w *wallet.Wallet) error {
 	return nil
 }
 
-// conformanceFlagNames are the flags of accept and scan that a running wallet
-// sets for itself.
+// conformanceFlagNames are flags of accept and scan. A running wallet keeps
+// its own values for them.
 var conformanceFlagNames = []string{"haip", "arf", "relying-party-ca", "trust-list-ca", "trusted-list", "key-attestation-level"}
 
 // changedConformanceFlags lists the conformance flags set on the command

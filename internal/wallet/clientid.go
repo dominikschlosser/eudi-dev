@@ -81,7 +81,7 @@ func VerifyRequestObjectSignature(clientID string, reqObj *oid4vc.RequestObjectJ
 }
 
 // clientAuthState reports whether the request signature verified with the key
-// material the request supplies. That does not establish trust in the signer.
+// material in the request. That does not establish trust in the signer.
 // detail explains an unsigned or unverified request to the consent dialog.
 func clientAuthState(params *AuthorizationRequestParams) (signed bool, detail string) {
 	if params == nil || params.RequestObject == nil {
@@ -135,7 +135,7 @@ func unverifiedSignatureFinding(clientID string) string {
 		// prefix.
 		return ""
 	case clientID == "":
-		// A missing client_id is reported by the checks that own the parameter.
+		// Other checks report a missing client_id.
 		return ""
 	default:
 		return fmt.Sprintf("Request Object signature was not verified: client_id %q carries no Client Identifier Prefix, so its key would have been pre-registered with this wallet, and nothing is", clientID)
@@ -161,7 +161,7 @@ func VerifyClientID(clientID string, reqObj *oid4vc.RequestObjectJWT, responseUR
 		// OID4VP 1.0 §5.9.3: "The Wallet MUST NOT accept this Client Identifier
 		// Prefix in requests." The prefix marks the audience of a Digital
 		// Credentials API presentation. The wallet derives it from the origin
-		// the platform reports.
+		// reported by the platform.
 		return "OID4VP 1.0 §5.9.3: origin: is a reserved Client Identifier Prefix and MUST NOT be accepted in a request"
 	case strings.HasPrefix(clientID, "openid_federation:"):
 		// §5.9.3 defers to OpenID Federation for this prefix. This wallet does

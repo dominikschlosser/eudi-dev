@@ -2093,8 +2093,8 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	}
 }
 
-// An EAA type is registered with the EAA entitlement and is on the EAA list,
-// which has the local type and no PID URIs.
+// An EAA type is registered with the EAA entitlement and is on the EAA list.
+// That list has the EAA list type and no PID URIs.
 func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"

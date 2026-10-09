@@ -162,8 +162,8 @@ func TestHolderBindingOfAnUnreadableConfirmationKey(t *testing.T) {
 	}
 }
 
-// Keep imported DID credentials but report unsupported issuer key resolution (HAIP 1.0
-// §6.1.1 uses x5c).
+// The wallet keeps an imported credential with a DID issuer key and reports
+// that it cannot resolve the key (HAIP 1.0 §6.1.1 uses x5c).
 func TestImportReportsAnIssuerKeyNamedByADID(t *testing.T) {
 	w := generateTestWallet(t)
 	const did = "did:key:z6MkuR4XP7DmHiEzKK46ypK2RyZ3XgqQCz1DHw7XtMg3CEuf"
@@ -201,8 +201,8 @@ func TestImportStaysQuietForAnIssuerKeyNotNamedByADID(t *testing.T) {
 	}
 }
 
-// Use an unresolved DID issuer key. Import parses the credential without verifying
-// this signature.
+// Import parses the credential without verifying the signature, so the DID
+// key does not need to resolve.
 func sdJWTSignedByDID(t *testing.T, did string) string {
 	t.Helper()
 	encode := func(v any) string {

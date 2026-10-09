@@ -231,7 +231,7 @@ class Handler(BaseHTTPRequestHandler):
             if not session:
                 self.redirect("/", set_cookie=expired_cookie)
                 return
-                        # End the Keycloak session before returning here. The realm import configures
+            # End the Keycloak session before returning here. The realm import configures
             # post.logout.redirect.uris for this client.
             logout_url = (
                 f"{demo.KEYCLOAK_BASE_URL}/realms/{demo.VERIFIER_REALM}/protocol/openid-connect/logout?"

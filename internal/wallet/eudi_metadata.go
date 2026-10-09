@@ -75,8 +75,8 @@ type IssuedAttestationSpec struct {
 	Format  string `json:"format"`
 	VCT     string `json:"vct,omitempty"`
 	DocType string `json:"doctype,omitempty"`
-	// Category is a credtemplate category. It selects the trusted list. An
-	// unlisted spec is on no list.
+	// Category is pid, qeaa, pub-eaa, eaa or unlisted. It decides which of the
+	// wallet's trusted lists carries the type. An unlisted type is on none.
 	Category                    string   `json:"category,omitempty"`
 	Entitlements                []string `json:"entitlements,omitempty"`
 	TrustListType               string   `json:"trust_list_type,omitempty"`
@@ -139,9 +139,9 @@ func (w *Wallet) issuedAttestationSpecs() []IssuedAttestationSpec {
 	return out
 }
 
-// UnlistedCategory issues a credential type that no trusted list names, to
-// test how a verifier handles an unanchored issuer. It is not a credential
-// category of the catalogue.
+// UnlistedCategory keeps a credential type off every trusted list. It tests
+// how a verifier handles an issuer without a trust anchor. It is not a
+// credential category of the catalogue.
 const UnlistedCategory = "unlisted"
 
 // NormalizeIssuedAttestationSpec trims the spec and resolves its category. A
@@ -315,8 +315,8 @@ func eaaTrustListProfile() trustListProfile {
 	}
 }
 
-// applyCategoryDefaults fills the trust list fields the spec leaves empty
-// from its category's list.
+// applyCategoryDefaults fills the empty trust list fields of the spec from
+// the list of its category.
 func applyCategoryDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
 	p := categoryTrustListProfile(spec.Category)
 	spec.TrustListType = firstNonEmpty(spec.TrustListType, p.LoTEType)
@@ -461,8 +461,8 @@ func SignCredentialIssuerMetadata(w *Wallet, issuer string, metadata map[string]
 }
 
 // SignRequestObjectJWT signs an OpenID4VP authorization request object (JAR)
-// with the signer's certificate chain in x5c. It sets the typ that
-// ValidateRequestObject expects.
+// with the signer's certificate chain in x5c. Its typ is
+// oauth-authz-req+jwt, as ValidateRequestObject expects.
 func SignRequestObjectJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
 	if signingKey == nil {
 		return "", fmt.Errorf("signing key is required")

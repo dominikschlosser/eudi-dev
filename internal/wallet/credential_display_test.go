@@ -569,8 +569,8 @@ func TestIssueFromTemplateKeepsArtWhenNameOverridden(t *testing.T) {
 func TestIssueWithDisplayTemplateAppliesTemplateArt(t *testing.T) {
 	w := generateTestWallet(t)
 	noStatus := ""
-	// The UI sends a template's claims as explicit values and names the
-	// template only for its display. Embedded images cannot travel in a form.
+	// The UI sends the claims of a template as explicit values and gives the
+	// template name only for the display. Embedded images cannot travel in a form.
 	res, err := w.IssueCredential(IssueOptions{
 		Format:          "sdjwt",
 		VCT:             "urn:example:pid",

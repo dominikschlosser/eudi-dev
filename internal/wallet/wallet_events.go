@@ -104,7 +104,7 @@ func (w *Wallet) RequestDocFor(r *ConsentRequest, owners []string) map[string]an
 	return marshalConsentRequestFor(r, owners)
 }
 
-// The UI uses mine to choose between a consent dialog and a banner.
+// The UI uses the mine field to choose between a consent dialog and a banner.
 func marshalConsentRequestFor(r *ConsentRequest, owners []string) map[string]any {
 	doc := MarshalConsentRequest(r)
 	doc["mine"] = ownedBy(owners, r.Owner)

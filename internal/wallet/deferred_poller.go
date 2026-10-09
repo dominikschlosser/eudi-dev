@@ -193,10 +193,11 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 		pending = refreshed
 	}
 
-	// §9.1 holds a Deferred Credential Request to the same encryption as the
-	// request that started the issuance. The original flow is gone by now, so
-	// the metadata is fetched again. Unreachable metadata leaves the request
+	// §9.1 applies the encryption rules of the Credential Request to the
+	// Deferred Credential Request. The original flow is gone by now, so the
+	// metadata is fetched again. Unreachable metadata leaves the request
 	// unencrypted.
+	//
 	// The validation mode is read once. This runs on the poller goroutine and
 	// can race a PUT /api/config/conformance.
 	mode := s.wallet.Mode()

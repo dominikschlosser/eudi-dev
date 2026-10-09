@@ -154,8 +154,8 @@ func TestAnEAAWithAnUntrustedListIsNotChecked(t *testing.T) {
 	}
 }
 
-// A PID needs the list of its providers (ARF ISSU_07). A catalogue entry that
-// names no readable list is a finding.
+// A PID needs the list of its providers (ARF ISSU_07). A catalogue entry
+// without a readable list is a finding.
 func TestAPIDNeedsAReadableList(t *testing.T) {
 	w := generateTestWalletWithPID(t)
 	w.RequireARF = true

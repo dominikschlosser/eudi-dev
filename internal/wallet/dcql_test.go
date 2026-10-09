@@ -1216,7 +1216,8 @@ func TestEvaluateDCQL_PreferredFormatSortIsStable(t *testing.T) {
 	}
 }
 
-// Without multiple, a query presents one credential (OpenID4VP 1.0 §8.1).
+// addSDJWTPID stores an SD-JWT PID under the ID, issued at iat and bound to
+// the holder key.
 func addSDJWTPID(t *testing.T, w *Wallet, id string, iat int64) {
 	t.Helper()
 	key, err := mock.GenerateKey()
@@ -1353,9 +1354,6 @@ func TestEvaluateDCQL_DistinctQueriesEachKeepAMatch(t *testing.T) {
 	}
 }
 
-// require_cryptographic_holder_binding defaults to true (OpenID4VP 1.0 §6.1),
-// so an unbound credential answers only a query that sets it to false. Debug
-// mode still offers it among the non-matching credentials.
 // A query requires holder binding by default (OpenID4VP 1.0 §6.1). Strict
 // mode answers it only with a bound credential. Debug mode offers an unbound
 // one, flagged and after the bound ones.
@@ -1397,7 +1395,7 @@ func TestDCQLHolderBindingFlagMustBeBoolean(t *testing.T) {
 }
 
 // The wallet presents a jwt_vc_json credential without a Verifiable
-// Presentation, so it answers only a query that doesn't require holder
+// Presentation, so in strict mode it answers only a query without holder
 // binding (OpenID4VP 1.0 Appendix B.1).
 func TestEvaluateDCQL_HolderBindingOfAJWTCredential(t *testing.T) {
 	w := generateTestWallet(t)
