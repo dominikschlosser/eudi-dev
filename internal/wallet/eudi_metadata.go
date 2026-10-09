@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"maps"
 	"sort"
 	"strings"
@@ -397,16 +398,19 @@ func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]a
 		configs[id] = cfg
 	}
 
-	info, err := w.DemoIssuerInfo()
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
+	metadata := map[string]any{
 		"credential_issuer":                   issuer,
 		"credential_endpoint":                 issuer + "/credential",
 		"credential_configurations_supported": configs,
-		"issuer_info":                         info,
-	}, nil
+	}
+	// The metadata stays usable without a registration. A wallet with --arf
+	// then reports the missing issuer_info (ETSI TS 119 472-3 §4.2.3).
+	if info, err := w.DemoIssuerInfo(); err == nil {
+		metadata["issuer_info"] = info
+	} else {
+		log.Printf("[Issuer] WARNING: the issuer metadata has no issuer_info: %v", err)
+	}
+	return metadata, nil
 }
 
 func signJSONWebSignature(payload any, signingKey *ecdsa.PrivateKey, header map[string]any) (string, error) {

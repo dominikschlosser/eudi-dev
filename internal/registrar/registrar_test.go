@@ -15,6 +15,10 @@
 package registrar
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -79,7 +83,6 @@ func TestRegistrationsAreChecked(t *testing.T) {
 		want string
 	}{
 		{"country name", WalletRelyingParty{TradeName: "Shop", Country: "Germany"}, "two-letter country code"},
-		{"too many services", WalletRelyingParty{TradeName: "Shop", Services: make([]WalletRelyingPartyService, 21)}, "at most 20 services"},
 		{"intended use without purpose", WalletRelyingParty{TradeName: "Shop", Services: []WalletRelyingPartyService{{IntendedUses: []IntendedUse{{
 			Credentials: use("").Credentials,
 		}}}}}, "needs a purpose"},
@@ -131,5 +134,18 @@ func TestAnUpdateThroughASecondaryIdentifierKeepsThePrimary(t *testing.T) {
 	}
 	if len(updated.Identifier) != 2 || updated.Identifier[0] != primary {
 		t.Errorf("identifiers %+v, want %v first", updated.Identifier, primary)
+	}
+}
+
+// The API keeps registrations small, so a public demo stays small between
+// resets.
+func TestTheAPIRefusesAnOversizedRegistration(t *testing.T) {
+	reg := generateTestWallet(t)
+	h := &Server{Registrar: func() *Registrar { return reg.Registrar }, Mutate: func(change func() bool) { change() }}
+	body, _ := json.Marshal(WalletRelyingParty{TradeName: "Shop", Services: make([]WalletRelyingPartyService, 21)})
+	rec := httptest.NewRecorder()
+	h.Routes()["POST /api/registrar/wrp"](rec, httptest.NewRequest(http.MethodPost, "/api/registrar/wrp", bytes.NewReader(body)))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "at most 20 services") {
+		t.Errorf("%d %s, want the size limit", rec.Code, rec.Body)
 	}
 }
