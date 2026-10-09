@@ -330,6 +330,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wallet-url", required=True, help="HTTP base URL of the local wallet server (harness control)")
     parser.add_argument("--demo-base-url", required=True, help="HTTPS base URL the demo issuer and verifier advertise")
     parser.add_argument("--wallet-ca-cert", required=True, help="Path to the shared wallet CA PEM")
+    parser.add_argument("--access-ca-cert", required=True, help="Path to the relying party access CA PEM")
     parser.add_argument("--results-dir", required=True, help="Directory for exported official runner results")
     parser.add_argument("--runner-log", required=True, help="Path for mirrored official runner stdout")
     parser.add_argument(
@@ -371,11 +372,12 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: DemoSc
     config = load_config_template(suite_dir / VP_VERIFIER_TEMPLATE)
     config["alias"] = scenario_alias(args, scenario)
     config["description"] = f"oid4vc-dev demo verifier ({scenario.slug})"
-    # The demo verifier signs its request objects under the wallet CA, which
-    # HAIP requires the suite to be given as the trust anchor.
+    # The demo verifier signs its request objects with an access certificate
+    # from the relying party access CA, which HAIP requires the suite to be
+    # given as the trust anchor.
     config.setdefault("client", {})
     config["client"].pop("client_id", None)
-    config["client"]["request_object_trust_anchor_pem"] = Path(args.wallet_ca_cert).read_text()
+    config["client"]["request_object_trust_anchor_pem"] = Path(args.access_ca_cert).read_text()
     # The harness uploads the verification-evidence placeholder itself.
     config["browser"] = []
     with output.open("w") as handle:
