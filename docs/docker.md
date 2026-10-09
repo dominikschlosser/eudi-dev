@@ -87,12 +87,12 @@ Set `-e EUDI_DEV_LOG_FORMAT=json` to write one JSON record per line for a log co
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/authorize` | GET/POST | OID4VP authorization endpoint, accepting the standard OID4VP query parameters (`client_id`, `response_type`, `dcql_query`, `nonce`, `state`, `response_uri`, `response_mode`, `request_uri`) |
-| `/api/trustlist` | GET | Legacy trust list endpoint. Returns the PID trust list when one is registered, otherwise the first available trust list profile |
-| `/api/trustlists` | GET | JSON index of all trust list profiles registered in the wallet. Each entry includes a relative `path` plus optional `advertised_url` / legacy `url` |
-| `/api/trustlists/<id>` | GET | ETSI trust list JWT for one trust list profile |
+| `/api/trustlist` | GET | The PID trusted list, or the list for a `vct` or `doctype` query parameter |
+| `/api/trustlists` | GET | JSON index of the wallet's trusted lists. Each entry includes a relative `path` plus optional `advertised_url` and its alias `url` |
+| `/api/trustlists/<id>` | GET | One trusted list (ETSI TS 119 602) as a signed JWT. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider` and `tl-` IDs for custom lists |
 | `https://<wallet>:8086/.well-known/openid-credential-issuer` | GET | Issuer metadata with registrar data and a registration certificate in `issuer_info`. JSON by default, JWT signed with the access certificate key when the `Accept` header prefers `application/jwt` |
-| `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs. Exposes the signing key by `kid` and its certificate chain |
-| `/api/registrar/wrp` | GET | Searches the registered relying parties (TS05 v1.5). The registrar signs the answer. The wallet's own issuer registration comes first, with its entitlements and `providesAttestations`. Filters include `identifier`, `entitlement` and `providedattestation` |
+| `https://<wallet>:8086/.well-known/jwt-vc-issuer` | GET | JWT VC issuer metadata for wallet-issued SD-JWTs. Lists one JWK with its certificate chain per category list, per custom list and for credentials without a category |
+| `/api/registrar/wrp` | GET | Searches the registered relying parties (TS05 v1.5) in registration order, including the demo issuer and the demo verifier. The registrar signs the answer. Filters include `identifier`, `entitlement` and `providedattestation` |
 | `/api/credentials` | GET/POST | List all credentials / import a credential |
 | `/api/credentials/<id>/status` | GET/POST | Resolve or set the revocation status for a credential |
 | `/api/statuslist` | GET | Status List Token on both HTTP and HTTPS. JWT by default, CWT for a client sending `Accept: application/statuslist+cwt` (`--status-list` only controls whether generated credentials reference the list) |
@@ -104,7 +104,7 @@ Set `-e EUDI_DEV_LOG_FORMAT=json` to write one JSON record per line for a log co
 | `/healthz` | GET | Liveness probe. Answers `200` while the server runs |
 | `/readyz` | GET | Readiness probe. Answers `503` while the storage backend is unreachable |
 
-The [HTTP API reference](wallet/http-api.md) also lists certificate retrieval, provider CRLs and trust list history endpoints. See [test certificates](test-certificates.md) for the EUDI profiles and known testing limits.
+The [HTTP API reference](wallet/http-api.md) also lists certificate retrieval, provider CRLs and trusted list history endpoints. See [test certificates](test-certificates.md) for the EUDI profiles and known testing limits.
 
 ## Typical verifier integration test flow
 
@@ -112,7 +112,7 @@ The [HTTP API reference](wallet/http-api.md) also lists certificate retrieval, p
 2. Your verifier builds an OID4VP authorization request with a DCQL query for PID attributes
 3. Send the request to `http://<wallet>/authorize?client_id=...&response_type=vp_token&response_mode=direct_post&response_uri=http://<your-verifier>/callback&nonce=...&dcql_query=...`
 4. The wallet selects matching credentials and POSTs `vp_token` + `state` to your `response_uri`
-5. Your verifier validates the VP token's signing chain against the wallet's trust list from `/api/trustlist`
+5. Your verifier validates the VP token's signing chain against the wallet's trusted list from `/api/trustlist`
 6. For EUDI issuer authorization checks, resolve provider entitlements and attestation types from the signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`
 
 Behind Docker port mappings or Testcontainers, resolve the relative `path` from `/api/trustlists` against the URL you used to reach the wallet. `advertised_url` is the wallet's configured issuer URL and can differ from that.

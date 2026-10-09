@@ -179,7 +179,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	case count == 0:
 		findings = append(findings, "ARF RPRC_19: the request has no registration certificate in verifier_info (typ rc-wrp+jwt)")
 	case count > 1:
-		findings = append(findings, fmt.Sprintf("ARF RPRC_19: the request carries %d registration certificates, but only a single one for its intended use", count))
+		findings = append(findings, fmt.Sprintf("ARF RPRC_19: the request carries %d registration certificates. It must carry exactly one", count))
 	}
 	accessChain := requestAccessChain(authReq)
 	if len(accessChain) == 0 {
@@ -374,7 +374,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	return findings
 }
 
-// registersCredential reports whether every type the query accepts is
+// registersCredential reports whether every accepted type of the query is
 // registered in its format. ETSI TS 119 475 V1.2.1 Annex B.2.9 requires format
 // and meta, so an entry without them registers nothing.
 func registersCredential(registered []registeredCredential, format string, types []string) bool {

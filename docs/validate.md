@@ -6,7 +6,7 @@ Signature keys are resolved in this order:
 
 1. The credential's x5c (SD-JWT/JWT) or x5chain (mdoc) certificate chain, validated against `--trust-list` when given
 2. An explicitly provided `--key`
-3. The embedded leaf certificate alone, when no trust list is given. This works offline. The output notes that the chain was not validated
+3. The embedded leaf certificate alone, when no trusted list is given. This works offline. The output notes that the chain was not validated
 4. JWT VC Issuer Metadata, for credentials without an embedded certificate
 
 SD-JWT VC §3 inserts `/.well-known/jwt-vc-issuer` between the host and path of `iss`. For example, `https://example.com/tenant/1234` resolves to `https://example.com/.well-known/jwt-vc-issuer/tenant/1234`. The metadata's `issuer` must equal `iss`, and its keys must come from either `jwks` or `jwks_uri`.
@@ -29,7 +29,7 @@ eudi validate credential.txt
 | Flag              | Description                                       |
 |-------------------|---------------------------------------------------|
 | `--key`           | Public key file (PEM or JWK), optional            |
-| `--trust-list`    | ETSI trust list JWT (file path or URL), optional   |
+| `--trust-list`    | ETSI trusted list JWT (file path or URL), optional   |
 | `--status-list`   | Check revocation via status list when the credential contains a status reference (enabled by default) |
 | `--allow-expired` | Accept expired credentials                         |
 | `--haip` | Also check the credential against HAIP 1.0 and report violations |
@@ -44,18 +44,18 @@ The status is reported by name (VALID, INVALID, SUSPENDED, an application specif
 
 ## Certificate chain validation
 
-When a trust list is given and the credential contains an x5c (SD-JWT/JWT) or x5chain (mdoc) chain, the chain is validated against the trust list before the signature is verified:
+When a trusted list is given and the credential contains an x5c (SD-JWT/JWT) or x5chain (mdoc) chain, the chain is validated against the trusted list before the signature is verified:
 
-1. The trust list contains **CA certificates** (trust anchors)
+1. The trusted list contains **CA certificates** (trust anchors)
 2. The credential's x5c/x5chain contains `[leaf, ...intermediates]`
-3. The leaf certificate is verified to chain up to a trust list CA via any intermediates
+3. The leaf certificate is verified to chain up to a trusted list CA via any intermediates
 4. The leaf certificate's public key is used to verify the credential signature
 
-Wallet-issued SD-JWT credentials follow the same model. The header contains a deterministic `kid` and an `x5c` chain with the leaf and any intermediate certificates (without the root). The wallet trust list publishes signing certificates and their provider CAs. The wallet also publishes JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`.
+Wallet-issued SD-JWT credentials follow the same model. The header contains a deterministic `kid` and an `x5c` chain with the leaf and any intermediate certificates (without the root). The wallet trusted list publishes signing certificates and their provider CAs. The wallet also publishes JWT VC issuer metadata at `/.well-known/jwt-vc-issuer`.
 
-The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the local wallet's CA as an implicit trust anchor when no key or trust list is given. Credentials issued by the local wallet then show a verified chain.
+The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the local wallet's CA as an implicit trust anchor when no key or trusted list is given. Credentials issued by the local wallet then show a verified chain.
 
-Trust list validation covers certificate trust and service listing. Provider class and attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar data. When a wallet exposes several trust list profiles, `/api/trustlist` serves the PID list and `/api/trustlists` lists every profile. In containers, use the index entry's relative `path` instead of its advertised URL.
+Trusted list validation covers certificate trust and service listing. Provider class and attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar data. A wallet keeps one trusted list per credential category. `/api/trustlist` serves the PID list and `/api/trustlists` lists every list. In containers, use the index entry's relative `path` instead of its advertised URL.
 
 To let a verifier trust the wallet's local HTTPS endpoints, export the wallet CA with `eudi wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate as a single PEM instead.
 
@@ -69,10 +69,10 @@ eudi validate --trust-list https://bmi.usercontent.opencode.de/eudi-wallet/test-
 
 ## HAIP 1.0
 
-`--haip` adds the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) rules to the format's own checks. Section 6.1.1 requires an SD-JWT VC to carry its issuer's signing certificate and chain in the `x5c` header, without the trust anchor, and forbids a self-signed signing certificate.
+`--haip` adds the [High Assurance Interoperability Profile](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) rules to the format's own checks. Section 6.1.1 requires an SD-JWT VC to carry its issuer's signing certificate and chain in the `x5c` header, without the trust anchor, and forbids a self-signed signing certificate. HAIP sets no such rule for an mdoc, so `--haip` adds nothing to its checks.
 
 Findings are printed. The exit code depends only on the credential's own validity (signature, expiry, revocation).
 
 ## JSON output
 
-`--json` prints one JSON document. It holds the decoded credential, the signature check under `verification`, the status list check under `status` and the HAIP findings under `haipFindings`. A check that didn't run is left out. `haipFindings` is an empty list when there are no findings.
+`--json` prints one JSON document. It holds the decoded credential, the signature check under `verification`, the status list check under `status` and the HAIP findings under `haipFindings`. A check that didn't run is left out. With `--haip`, `haipFindings` is an empty list when there are no findings.

@@ -47,7 +47,7 @@ type RegistrationCertificateRequest struct {
 // RegistrationCertificateContent is what a registration certificate says about
 // the relying party (ETSI TS 119 475 V1.2.1 §5.2.4).
 type RegistrationCertificateContent struct {
-	// Name is the trade name the wallet shows (ARF RPRC_06).
+	// Name is the trade name. The wallet shows it (ARF RPRC_06).
 	Name    string
 	Purpose []MultiLangString
 	// Identifier is the registered legal entity identifier (sub, ARF RPRC_07).

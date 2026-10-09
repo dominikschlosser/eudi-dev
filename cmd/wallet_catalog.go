@@ -200,8 +200,8 @@ func walletCatalogRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <id>",
 		Aliases: []string{"remove", "delete"},
-		Short:   "Remove an attestation type you added",
-		Long:    "Removes an attestation type you added, including one added with a template. The entries of the predefined templates can't be removed.",
+		Short:   "Remove an added attestation type",
+		Long:    "Removes an added attestation type, also one added with a template. The entries of the predefined templates can't be removed.",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()

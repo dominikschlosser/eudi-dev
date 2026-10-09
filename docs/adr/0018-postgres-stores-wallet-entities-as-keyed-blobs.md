@@ -30,7 +30,7 @@ The default wallet uses the prefix `wallet` on hosts and in containers. Custom w
 | `wallet/signing-keys/<name>.pem` | Provider and service signing keys |
 | `wallet/certificates/<name>.pem` | Current provider and service certificates |
 | `wallet/certificate-der/<sha256>.der` | Archived signing certificates |
-| `wallet/trustlists/...` | Current trust lists and signed history |
+| `wallet/trustlists/...` | Current trusted lists and signed history |
 | `wallet-ca-key.pem`, `wallet-ca-cert.pem` | CA shared under the parent prefix |
 
 ## Consequences

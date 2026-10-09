@@ -564,8 +564,6 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 	s.triggerSave()
 }
 
-// Restore the renewed credential while holding the reload lock, including its rotated
-// refresh token.
 // saveCredential restores the credential while holding the reload lock and
 // saves it. A renewed credential starts with status 0, so newStatus registers
 // its status entry again, which a reload may have removed or reverted.

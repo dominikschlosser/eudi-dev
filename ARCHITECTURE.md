@@ -35,14 +35,17 @@ examples/      Keycloak and web-wallet integration examples
 | `oid4vc` | OID4VP and OID4VCI request and offer parsing |
 | `output` | Terminal output formatting |
 | `proxy` | Reverse proxy, traffic classifier, dashboard |
+| `publicpath` | The path prefix of the base URL behind a reverse proxy (ADR-0019) |
 | `qr` | QR scanning from file or screen |
+| `registrar` | Relying party registrar (TS05 v1.5): registrations, access certificates (ETSI TS 119 411-8), registration certificates (ETSI TS 119 475), their status list, and the catalogue of attestations (EC TS11) |
 | `remote` | Remote wallet control (REST client, instance discovery) |
 | `sdjwt` | SD-JWT parsing, disclosure resolution, verification |
+| `serverlog` | Console output as JSON log records |
 | `statuslist` | Token Status List encoding and decoding, in JWT and CWT form |
 | `storage` | Blob storage backed by files, memory or Postgres (ADR-0016) |
-| `trustlist` | ETSI TS 119 602 trust list parsing |
+| `trustlist` | Parsing of trusted lists (ETSI TS 119 602). The wallet keeps one list per credential category (ADR-0022) |
 | `validate` | Checks signatures, expiry and revocation |
-| `wallet` | Wallet state (persisted through `storage`), HTTP server, OID4VP and OID4VCI protocol logic, relying party registrar |
+| `wallet` | Wallet state (persisted through `storage`), HTTP server, OID4VP and OID4VCI protocol logic, the wallet's trusted lists, provider keys and ARF checks |
 | `web` | Decoder and validator web UI |
 
 ## Flows
@@ -88,6 +91,7 @@ The wallet proves possession of its holder key, receives the credential and impo
 | [0019](docs/adr/0019-the-base-url-is-the-public-identity.md) | The base URL is the public identity |
 | [0020](docs/adr/0020-cli-output-can-be-automated.md) | CLI output can be automated |
 | [0021](docs/adr/0021-arf-checks-are-a-separate-profile.md) | ARF checks are a separate profile |
+| [0022](docs/adr/0022-one-trusted-list-per-credential-category.md) | One trusted list per credential category |
 
 ## Related
 

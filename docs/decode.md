@@ -1,6 +1,6 @@
 # Decode
 
-Inspect credentials (SD-JWT, JWT VC, mdoc), OpenID4VCI/VP requests, and ETSI trust lists. The format is detected from the input.
+Inspect credentials (SD-JWT, JWT VC, mdoc), OpenID4VCI/VP requests, and ETSI trusted lists. The format is detected from the input.
 
 ```bash
 # Credentials
@@ -33,7 +33,7 @@ eudi decode -f trustlist https://example.com/trust-list.jwt
 2. **HTTP(S) URL with OID4 query params**: `credential_offer` / `credential_offer_uri` (VCI), `client_id` / `response_type` / `request_uri` (VP)
 3. **SD-JWT**: contains `~` separator
 4. **mdoc**: hex or base64url encoded CBOR
-5. **JSON**: inspected for a trust list `LoTE` object and for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
+5. **JSON**: inspected for a trusted list `LoTE` object and for OID4 marker keys (`credential_issuer` → VCI, `client_id` → VP)
 6. **JWT**: 3 dot-separated parts. Payload inspected for the same markers
 
 ## Format override
@@ -95,7 +95,7 @@ SD-JWT Credential
   [3] birthdate: 1978-02-12
 ```
 
-`decode` automatically verifies JWT and SD-JWT signatures. It uses the embedded `x5c` certificate when present, or issuer metadata resolved from `iss` and `kid`. Use `validate` to supply a key or trust list and check revocation status.
+`decode` automatically verifies JWT and SD-JWT signatures. It uses the embedded `x5c` certificate when present, or issuer metadata resolved from `iss` and `kid`. Use `validate` to supply a key or trusted list and check revocation status.
 
 An SD-JWT that violates an RFC 9901 §7.1 rejection rule (a disclosure that overwrites a signed claim, a duplicate digest, an unreferenced disclosure) is printed with the violated rule shown above the output. The wallet rejects such a credential on import.
 

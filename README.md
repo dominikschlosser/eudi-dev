@@ -39,7 +39,7 @@ A wallet for testing EUDI issuers and verifiers, in the browser, on the command 
 
 **A demo issuer and verifier.** The wallet also serves an issuer and a verifier, so you can try a flow end to end or test another wallet. Both pass the OIDF conformance plans for issuers and verifiers. → [Serving the wallet](docs/wallet/serve.md), [demo conformance](docs/conformance-run-demorp.md)
 
-**Developer tools.** Decode credentials, requests, offers and trust lists, validate signatures and status, scan QR codes, generate DCQL queries, and watch live wallet traffic through a proxy. → [Decode](docs/decode.md), [validate](docs/validate.md), [issue](docs/issue.md), [proxy](docs/proxy.md)
+**Developer tools.** Decode credentials, requests, offers and trusted lists, validate signatures and status, scan QR codes, generate DCQL queries, and watch live wallet traffic through a proxy. → [Decode](docs/decode.md), [validate](docs/validate.md), [issue](docs/issue.md), [proxy](docs/proxy.md)
 
 **Runs where your tests run.** A single binary, a Docker image, a Helm chart and a Testcontainers module, with state in files, memory or Postgres. → [Docker](docs/docker.md), [storage](docs/wallet.md#storage-backends), [public demo hosting](docs/public-demo.md)
 
@@ -92,7 +92,7 @@ eudi [--json] [--no-color] [-v] <command> [flags] [input]
 | `wallet catalog` | List, add and remove attestation types | [catalogue](docs/wallet/registrar.md#attestation-catalogue) |
 | `issue` | Generate SD-JWT, JWT or mdoc test credentials | [issue](docs/issue.md) |
 | `templates` | Manage credential templates | [templates](docs/templates.md) |
-| `decode` | Inspect credentials, OpenID4VCI and OpenID4VP requests, and trust lists | [decode](docs/decode.md) |
+| `decode` | Inspect credentials, OpenID4VCI and OpenID4VP requests, and trusted lists | [decode](docs/decode.md) |
 | `validate` | Verify signatures, expiry and revocation status | [validate](docs/validate.md) |
 | `dcql` | Generate a DCQL query from a credential | |
 | `proxy` | Debug proxy for wallet traffic with a live dashboard | [proxy](docs/proxy.md) |
@@ -111,7 +111,7 @@ Input is a file path, a URL, a raw credential string or stdin. `--json` prints o
 | **mdoc** (`mso_mdoc`) | CBOR IssuerSigned and DeviceResponse, COSE_Sign1 issuerAuth, MSO |
 | **JWT VC** (`jwt_vc_json`) | Plain W3C JWT Verifiable Credentials, presented unchanged |
 | **OpenID4VCI and OpenID4VP** | Credential offers and authorization requests with the schemes `openid-credential-offer://`, `haip-vci://`, `eu-eaa-offer://`, `openid4vp://`, `haip-vp://` and `eudi-openid4vp://` |
-| **ETSI trust lists** | TS 119 602 lists of trusted entities |
+| **ETSI trusted lists** | TS 119 602 lists of trusted entities |
 
 [Spec compliance](docs/spec-compliance.md) lists what is implemented for each specification, and the [flow diagrams](docs/diagrams/README.md) show the issuer and verifier interactions.
 

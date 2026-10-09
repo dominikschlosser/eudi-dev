@@ -14,7 +14,7 @@ eudi issue sdjwt --claims '{"name":"Test","age":30}'
 eudi issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2025-06-01T00:00:00Z
 eudi issue sdjwt --key signing-key.pem
 eudi issue sdjwt --wallet                # Issue and import into wallet
-eudi issue sdjwt --wallet --trust-profile pid
+eudi issue sdjwt --wallet --vct urn:example:badge:1 --trust-profile eaa
 eudi issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trust-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
 eudi issue jwt                           # Plain JWT VC (no selective disclosure)
 eudi issue jwt --pid
@@ -128,9 +128,10 @@ With `--wallet`, the issuer key and certificate depend on the supplied flags:
 A supplied chain that includes its self-signed root produces a warning in debug mode and is rejected in strict mode. The wallet stores the credential and registers its type. That registration supplies metadata for:
 
 - `/.well-known/openid-credential-issuer`
-- `/api/registrar/wrp`
 - `/api/trustlist`
 - `/api/trustlists`
+
+A type with a category is also in the registration of the demo issuer at `/api/registrar/wrp`.
 
 Issued PID signatures include protected certificate URLs and SHA-256 fingerprints when the wallet has a certificate hosting URL. SD-JWT references PEM and mdoc references DER. Offline issuance has no hosting endpoint. See [test certificates](test-certificates.md) for certificate persistence, signing roles and the applicable EUDI versions.
 
@@ -138,29 +139,21 @@ Without explicit status list flags, `--wallet` registers the credential in the w
 
 If a wallet server is running for the same wallet directory, `--wallet` issues through its REST API (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Otherwise the command writes directly into the store. The embedded URLs resolve once `wallet serve` is running.
 
-Trust lists are built from the wallet's issued-attestation registry:
+The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides its signer, so its certificate is on that list. The category comes from `--trust-profile`, else from the template, else from the type's entry in the attestation catalogue. A credential without any of them is on no list.
 
-- each issued or imported credential type contributes one registry entry
-- entries with the same trust list profile fields are grouped into one trust list
-- the legacy `/api/trustlist` endpoint serves the PID trust list first
-- `/api/trustlists` lists every group with its ID (`pid`, `local`), a relative `path`, and an optional `advertised_url`
-
-Without trust-metadata flags, the defaults depend on the credential type:
-
-- PID attestation types default to the PID trust list and entitlement profile
-- other attestation types default to `Non_Q_EAA_Provider` plus the local ETSI-shaped trust list profile
+The category also sets the stored entitlement. PID gets `PID_Provider`, QEAA `QEAA_Provider`, PuB-EAA `PUB_EAA_Provider` and EAA `Non_Q_EAA_Provider`.
 
 These flags set the stored trust and issuer metadata for the credential type:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--trust-profile` | `auto` | Built-in trust list profile for `--wallet` metadata: `auto`, `pid`, or `local` |
+| `--trust-profile` | `auto` | Credential category: `pid`, `qeaa`, `pub-eaa` or `eaa`. `auto` takes the category of the template or the catalogue entry |
 | `--entitlement` | None | Registrar entitlement URI to store for the credential type. Repeatable |
 | `--trust-list-type` | None | LoTE type URI to store for the credential type |
-| `--status-determination-approach` | None | Trust list status determination approach URI to store |
-| `--scheme-community-rule` | None | Trust list scheme community rule URI to store |
-| `--scheme-territory` | None | Trust list scheme territory to store |
-| `--trust-entity-name` | None | Trust list entity name to store |
+| `--status-determination-approach` | None | Trusted list status determination approach URI to store |
+| `--scheme-community-rule` | None | Trusted list scheme community rule URI to store |
+| `--scheme-territory` | None | Trusted list scheme territory to store |
+| `--trust-entity-name` | None | Trusted list entity name to store |
 | `--issuance-service-type` | None | Issuance service type identifier to store |
 | `--revocation-service-type` | None | Revocation service type identifier to store |
 | `--issuance-service-name` | None | Issuance service name to store |

@@ -128,7 +128,8 @@ type Wallet struct {
 	// requests then share one certificate instead of replacing each other's.
 	demoRegistrationMu sync.Mutex
 	// saveRegistrarChange runs a registrar change outside a request to the
-	// registrar and saves it. A server sets it to its saveMutation.
+	// registrar and saves it. A server sets it to its saveMutation, which
+	// takes the store lock. Never call it while holding that lock.
 	saveRegistrarChange func(change func() bool)
 	tlsVerify           *bool
 	outboundHTTP        *http.Client
@@ -402,12 +403,12 @@ type CredentialMatch struct {
 	MissingClaims []string `json:"missing_claims,omitempty"`
 	// Debug mode offers credentials that do not match the query. Mismatches says why.
 	Mismatches []string `json:"mismatches,omitempty"`
-	// Debug mode lists every claim_sets option the credential satisfies when there
-	// is more than one. The first is the automatic selection.
+	// Debug mode lists the matching claim_sets options when there is more than
+	// one. The first is the automatic selection.
 	ClaimSets []ConsentClaimSet `json:"claim_sets,omitempty"`
 }
 
-// ConsentClaimSet is a claim_sets option that the credential satisfies. Index
+// ConsentClaimSet is a matching claim_sets option of a credential. Index
 // is its position in the query's claim_sets.
 type ConsentClaimSet struct {
 	Index  int            `json:"index"`

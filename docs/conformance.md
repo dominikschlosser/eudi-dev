@@ -2,7 +2,7 @@
 
 The harness runs OpenID Foundation wallet plans for OID4VP 1.0, OID4VCI 1.0 and HAIP 1.0 against `eudi-dev`. Separate issuer and verifier plans test the bundled demo services.
 
-The versioned specifications define the requirements. The runs test only the selected plans, variants and test conditions. Certificate profiles, trust lists, registration information, PID rulebooks and other ETSI and ISO requirements need separate checks against their own sources. See [spec compliance](spec-compliance.md) and [test certificates](test-certificates.md) for that coverage and its limits. The suites send no registration certificates, so the runs do not cover the [ARF checks](wallet/presenting.md#arf-checks).
+The versioned specifications define the requirements. The runs test only the selected plans, variants and test conditions. Certificate profiles, trusted lists, registration information, PID rulebooks and other ETSI and ISO requirements need separate checks against their own sources. See [spec compliance](spec-compliance.md) and [test certificates](test-certificates.md) for that coverage and its limits. The suites send no registration certificates, so the runs do not cover the [ARF checks](wallet/presenting.md#arf-checks).
 
 Related docs:
 

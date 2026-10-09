@@ -118,8 +118,8 @@ func (w *Wallet) signingMaterialForProfile(profile trustListProfile, country str
 
 // providerRole names the provider CA and signing key of a trust profile. A
 // category's list, every custom list and the wallet provider list each have
-// their own, so a list anchors only the credentials signed for it. A PID
-// signer uses the wallet's issuer key.
+// their own, so a list anchors only the credentials signed for it. The pid
+// category signs with the wallet's issuer key.
 func providerRole(profile trustListProfile) string {
 	switch {
 	case profile.LoTEType == walletProviderTrustListType:

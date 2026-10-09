@@ -1,6 +1,6 @@
 # Outbound addresses are checked when connecting
 
-The wallet fetches request objects, issuer metadata, status lists and trust lists from URLs supplied by other parties. In a public demo, those URLs could expose private services on the host network.
+The wallet fetches request objects, issuer metadata, status lists and trusted lists from URLs supplied by other parties. In a public demo, those URLs could expose private services on the host network.
 
 A URL check before the fetch cannot prevent this. DNS can return a different address when the connection opens, and redirects can change the destination.
 

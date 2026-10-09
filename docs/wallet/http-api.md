@@ -73,7 +73,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `nbf`             | string  | Not-before as RFC3339 (`2025-01-15T00:00:00Z`) or relative duration (`-1h`)                  |
 | `status_list_uri` | string  | Status list URI to embed. Default is the wallet's own status list when configured. `""` disables it |
 | `status_list_idx` | int     | Status list index (default is the next free index on the wallet's status list)               |
-| `trust_profile`   | string  | Trust list profile for registration metadata: `auto` (default), `pid`, or `local`            |
+| `trust_profile`   | string  | Credential category: `pid`, `qeaa`, `pub-eaa` or `eaa`. `auto` (default) takes the category of the template or the catalogue entry |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
 | `display`         | object  | Card appearance: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
 | `display_template`| string  | Template whose logo and background image the credential uses (for a form that flattened the template's claims into `claims`) |
@@ -156,41 +156,41 @@ curl 'http://localhost:8085/api/certificates/tls?format=jwks'
 
 The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL).
 
-Provider roles are `pid`, `wallet` and `local`. The country is two uppercase letters such as `NL`. Only existing providers can be retrieved. Signing certificate URLs use the SHA-256 fingerprint of the DER certificate and remain available after renewal. JOSE `x5u` uses PEM and COSE `x5u` uses DER. See [test certificates](../test-certificates.md) for the certificate profiles.
+Provider roles are the credential categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for credentials without a category. Each role has its own provider CA. The country is two uppercase letters such as `NL`. Only existing providers can be retrieved. Signing certificate URLs use the SHA-256 fingerprint of the DER certificate and remain available after renewal. JOSE `x5u` uses PEM and COSE `x5u` uses DER. See [test certificates](../test-certificates.md) for the certificate profiles.
 
-### Issuer metadata and trust lists
+### Issuer metadata and trusted lists
 
 These endpoints are available on both wallet ports.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/.well-known/jwt-vc-issuer` | Public credential signing keys |
+| `GET` | `/.well-known/jwt-vc-issuer` | Public credential signing keys, one for each trusted list and one for credentials without a category |
 | `GET` | `/.well-known/openid-credential-issuer` | Wallet issuer metadata |
 | `GET` | `/.well-known/openid-credential-issuer/issuer` | Demo issuer metadata, when the demo is enabled |
-| `GET` | `/api/trustlist` | Default signed trust list |
-| `GET` | `/api/trustlists` | Available trust lists and their URLs |
-| `GET` | `/api/trustlists/{id}` | Signed trust list for a profile |
-| `GET` | `/api/trustlist/history` | Sequence numbers and URLs of saved default trust lists |
-| `GET` | `/api/trustlist/history/{sequence}` | One saved default trust list |
-| `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of saved profile trust lists |
-| `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved profile trust list |
+| `GET` | `/api/trustlist` | Default signed trusted list |
+| `GET` | `/api/trustlists` | Available trusted lists and their URLs |
+| `GET` | `/api/trustlists/{id}` | The signed trusted list `{id}` |
+| `GET` | `/api/trustlist/history` | Sequence numbers and URLs of saved default trusted lists |
+| `GET` | `/api/trustlist/history/{sequence}` | One saved default trusted list |
+| `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of the saved instances of the list `{id}` |
+| `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved instance of the list `{id}` |
 
-Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and a registration certificate signed by the registrar. The registration certificate's status list entry is never revoked.
+Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and the registration certificate of the [demo issuer](registrar.md#the-demo-issuer-and-verifier). If you revoke that certificate in the registrar, the next metadata carries a new one.
 
-Trust lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
+Trusted lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
 
 ### Registrar
 
-These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. See [registrar](registrar.md).
+These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/registrar/wrp` | Search relying party registrations (TS05 v1.5) |
+| `GET` | `/api/registrar/wrp` | Search relying party registrations (TS05 v1.5). With `serviceidentifier` and `isolateService=true` each record contains only that service |
 | `GET` | `/api/registrar/wrp/{identifier}` | One registration |
 | `GET` | `/api/registrar/wrp/{identifier}/services/{serviceidentifier}` | One service of a registration |
-| `GET` | `/api/registrar/wrp/check-intended-use` | Check a registered intended use |
+| `GET` | `/api/registrar/wrp/check-intended-use` | Check whether an intended use matches the given parameters, all optional, including `policyurl`. Answers `404` for an unknown `identifier` |
 | `POST` | `/api/registrar/wrp` | Register a relying party |
-| `PUT` | `/api/registrar/wrp` | Replace a registration. If an intended use or a service changes or is missing, its certificates are revoked |
+| `PUT` | `/api/registrar/wrp` | Replace a registration and answer the stored registration in `data`. If an intended use or a service changes or is missing, its certificates are revoked |
 | `DELETE` | `/api/registrar/wrp/{identifier}` | Delete a registration |
 | `POST` | `/api/registrar/access-certificates` | Issue an access certificate for a CSR of a registered relying party |
 | `POST` | `/api/registrar/registration-certificates` | Issue a registration certificate for a registered intended use (answers `verifierInfo`) or an issuer service (answers `issuerInfo`). Answers `409` if the registration changed in the meantime |
@@ -200,7 +200,7 @@ These endpoints are available on both wallet ports. Anyone with access to the wa
 | `GET` | `/api/catalog/schemas` | Catalogue of attestations (EC TS11 v1.0), signed and paged |
 | `GET`, `PUT`, `DELETE` | `/api/catalog/schemas/{id}` | One attestation schema |
 | `GET` | `/api/catalog/schemas/{id}/{format}` | The schema behind a schema URI |
-| `GET`, `POST` | `/api/catalog/attestations` | List the catalogue with names and types (`GET`) or add an entry (`POST`) |
+| `GET`, `POST` | `/api/catalog/attestations` | List the catalogue with names, types and the `category` of each entry (`GET`) or add an entry (`POST`) |
 | `GET` | `/privacy-policy`, `/support`, `/supervisory-authority`, `/rulebook` | Placeholder pages for the default privacy policy, support, supervisory authority and rulebook URLs |
 
 ### One-shot error override
@@ -224,6 +224,8 @@ The next OID4VP authorization request returns the configured error:
   "error_description": "User denied consent"
 }
 ```
+
+Strict mode with `--arf` answers the same way when it refuses a request only because of ARF findings and the verifier signed the request with a trusted access certificate. The wallet sends the verifier `access_denied` (OpenID4VP 1.0 §8.5, RFC 6749 §4.1.2.1), and the API answers with `"status": "refused"`. The `error_description` starts with "The request does not meet the ARF registration rules" and names the findings. A request without an access certificate gets HTTP 400 like any invalid request, and the verifier gets no answer (see [presenting](presenting.md)).
 
 **Clear override without consuming:**
 
@@ -458,7 +460,7 @@ curl -X POST http://localhost:8085/api/presentations \
 
 ## Remote control
 
-In remote mode, CLI commands use a running wallet's REST API. This covers credential management, issuance, renewal, deferred issuance, logs, presentations, trust lists, certificate export, configuration and templates. `wallet logs --follow` remains local-only. `serve` and URL handler registration run locally. `scan` captures locally and sends the detected flow to the selected wallet.
+In remote mode, CLI commands use a running wallet's REST API. This covers credential management, issuance, renewal, deferred issuance, logs, presentations, trusted lists, certificate export, configuration and templates. `wallet logs --follow` remains local-only. `serve` and URL handler registration run locally. `scan` captures locally and sends the detected flow to the selected wallet.
 
 ```bash
 # Switch management to a running instance (persisted until switched back)

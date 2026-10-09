@@ -15,7 +15,7 @@ Pass the public URL, including the path prefix, as `--base-url`:
 eudi wallet serve --base-url https://example.com/some/context
 ```
 
-The wallet builds all of its URLs from this value: the issuer identifier, the endpoints in its metadata, the links in credential offers and presentation requests, and the status list and trust list URLs. Many of these URLs appear in signed credentials and metadata, so request headers do not change them.
+The wallet builds all of its URLs from this value: the issuer identifier, the endpoints in its metadata, the links in credential offers and presentation requests, and the status list and trusted list URLs. Many of these URLs appear in signed credentials and metadata, so request headers do not change them.
 
 Use an https base URL. With an http base URL, the wallet serves its own issuer on a separate HTTPS port (the wallet port plus one), which your proxy does not cover.
 

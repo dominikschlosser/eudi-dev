@@ -4,7 +4,7 @@ The wallet can run behind a reverse proxy, either on its own host or under a pat
 
 ## Decision
 
-All URLs the wallet signs or publishes come from `--base-url` only. This covers issuer identifiers, metadata endpoints, `request_uri`, `response_uri`, the sign-in callback, status list and trust list URLs, and the names in certificates.
+All URLs the wallet signs or publishes come from `--base-url` only. This covers issuer identifiers, metadata endpoints, `request_uri`, `response_uri`, the sign-in callback, status list and trusted list URLs, and the names in certificates.
 
 These URLs appear in credentials and certificates that outlive the request, so they must not depend on how a request was routed. Forwarded headers can also be set by any client. Deriving URLs from them would let a client choose what the wallet signs.
 
@@ -20,6 +20,6 @@ Handlers write redirects such as `/decoder/` as if the server ran at the root. `
 
 Web pages and scripts use relative links. A test in `internal/publicpath` fails if a served page links to a path that starts with `/`.
 
-Links in API responses, such as credential image URLs and trust list paths, include the request's prefix.
+Links in API responses, such as credential image URLs and trusted list paths, include the request's prefix.
 
 The path prefix must not start with a path the server uses itself. With `--base-url https://example.com/api`, the server could not tell whether `/api/version` is its own API or the version endpoint under the prefix. `wallet serve` and `eudi proxy` refuse such a base URL.

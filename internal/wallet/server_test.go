@@ -2261,7 +2261,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	}
 	selectedScheme := selectedLoTE["ListAndSchemeInformation"].(map[string]any)
 	if selectedScheme["LoTEType"] != localTrustListType {
-		t.Fatalf("expected doctype-selected trust list to return local profile, got %v", selectedScheme["LoTEType"])
+		t.Fatalf("doctype-selected list has LoTEType %v, want the EAA list type", selectedScheme["LoTEType"])
 	}
 
 	byIDResp := serverRequest(t, srv, "GET", "/api/trustlists/eaa", "")
@@ -2276,7 +2276,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	}
 	byIDScheme := byIDLoTE["ListAndSchemeInformation"].(map[string]any)
 	if byIDScheme["LoTEType"] != localTrustListType {
-		t.Fatalf("expected /api/trustlists/eaa to return local profile, got %v", byIDScheme["LoTEType"])
+		t.Fatalf("/api/trustlists/eaa has LoTEType %v, want the EAA list type", byIDScheme["LoTEType"])
 	}
 	uris, ok := byIDScheme["SchemeInformationURI"].([]any)
 	if !ok || len(uris) != 2 {

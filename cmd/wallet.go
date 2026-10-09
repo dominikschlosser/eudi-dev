@@ -504,7 +504,7 @@ The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa) and
 one for wallet providers. Each list names its providers with their certificates.
 Without selection flags, this prints the PID provider list, like /api/trustlist.
 Use --id, --vct, or --doctype to select another list.
-Use --list to see the lists this wallet serves.
+Use --list to see all lists of the wallet.
 Use --url to print only the list URL of a running wallet server.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if id != "" && (vct != "" || docType != "") {
@@ -574,7 +574,7 @@ Use --url to print only the list URL of a running wallet server.`,
 	}
 
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
-	cmd.Flags().BoolVar(&list, "list", false, "List the trusted lists this wallet serves instead of printing one")
+	cmd.Flags().BoolVar(&list, "list", false, "List all trusted lists of the wallet instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
 	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa' or 'wallet-provider'")

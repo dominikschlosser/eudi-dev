@@ -72,6 +72,8 @@ Deferred issuances are saved in the selected storage backend. With file or Postg
 
 ## ARF checks
 
+The offer flow applies `--mode`, `--haip` and `--arf` like a presentation, whether the offer comes from `wallet accept`, `wallet scan` or an offer URL.
+
 With `--arf` the wallet also checks the issuer before it requests a credential, for an offer and for a renewal, as ARF v3.0.0 §6.6.2.2 and §6.6.2.3 describe. It asks for signed metadata first (`Accept: application/jwt, application/json;q=0.5`) and checks that:
 
 - the Credential Issuer Metadata is signed with an access certificate (OpenID4VCI 1.0 §12.2.3, ISSU_22 and ISSU_32), and that certificate chains to a trusted access certificate authority (ISSU_24 for a PID Provider, ISSU_34 for an Attestation Provider)
@@ -80,9 +82,17 @@ With `--arf` the wallet also checks the issuer before it requests a credential, 
 - it registers the issuer as a PID Provider for a PID (ISSU_24a), or as a QEAA, PuB-EAA or EAA Provider for other attestations (ISSU_34a)
 - it lists every offered credential type in `provides_attestations` (RPRC_23, ISSU_24b, ISSU_34b)
 
+Signed metadata must carry `iat`. Metadata with an `exp` in the past is rejected (OpenID4VCI 1.0 §12.2.3).
+
 The consent dialog for the offer lists the findings. In `--mode debug` they are also logged as warnings and issuance goes on. In `--mode strict` the wallet doesn't request the credential. The trust anchors are the same as for verifiers (see [ARF checks](presenting.md#arf-checks)).
 
-When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). If the entry links a trusted list, the credential's certificate chain (`x5c` or `x5chain`) must end in a certificate on that list, and the signature must verify. ARF ISSU_07 asks this for a PID, and ISSU_08 to ISSU_10 for other attestations. The PID entries link the wallet's own PID provider list, so a PID from another wallet's CA fails. An entry without a trusted list is not checked, because ISSU_10 applies only when the wallet has the issuer's trust anchors. In `--mode debug` a failure is a warning. In `--mode strict` the wallet doesn't store the credential (ISSU_11b). Every copy of a batch, renewals and deferred credentials get the same check.
+When the credential arrives, the wallet looks up its type in the [attestation catalogue](registrar.md#attestation-catalogue). The entry's category names the rule: ARF ISSU_07 for a PID, ISSU_08 for a QEAA, ISSU_09 for a PuB-EAA and ISSU_10 for another EAA. The credential's certificate chain (`x5c` or `x5chain`) must end in a certificate on the trusted list of the entry, and the signature must verify. An entry links the wallet's own list of its category unless it names another list, so a PID from another wallet's CA fails.
+
+A PID, QEAA or PuB-EAA entry must link a trusted list, and the wallet must be able to read it. Otherwise that is a finding too. ISSU_10 applies only when the wallet has the issuer's trust anchors, so an EAA entry without a list is not checked.
+
+The wallet verifies the JAdES signature of each fetched trusted list. The signer must chain to a trusted list operator: the wallet CA or a CA from `--trust-list-ca` (ARF PPNot_05, TLPub_05, TLPub_07). The flag takes a PEM file and is repeatable on `wallet serve`, `wallet accept` and `wallet scan`.
+
+In `--mode debug` a failure is a warning. In `--mode strict` the wallet doesn't store the credential (ISSU_11b). Every copy of a batch, renewals and deferred credentials get the same check.
 
 If an offered type has no catalogue entry, the consent dialog and the log show a warning. No specification requires this check, so the warning never stops issuance, not even in strict mode.
 

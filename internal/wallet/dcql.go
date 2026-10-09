@@ -740,7 +740,7 @@ func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []a
 	return nil
 }
 
-// satisfiableClaimSets lists every claim_sets option the credential can answer, in
+// satisfiableClaimSets lists the matching claim_sets options of a credential, in
 // the verifier's order. Debug mode offers them in the consent dialog.
 func satisfiableClaimSets(cred StoredCredential, cqMap map[string]any) []ConsentClaimSet {
 	claimsQuery, _ := cqMap["claims"].([]any)
@@ -1593,7 +1593,7 @@ func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([
 		tlRaw, err = format.FetchURL(fallbackURL, clients...)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch trust list %s: %w", trustListURL, err)
+		return nil, fmt.Errorf("fetching the trusted list %s: %w", trustListURL, err)
 	}
 	return parseTrustListAnchors(tlRaw)
 }
@@ -1601,11 +1601,11 @@ func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([
 func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
 	tl, err := trustlist.Parse(tlRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse trust list: %w", err)
+		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
 	certs := trustlist.ExtractPublicKeys(tl)
 	if len(certs) == 0 {
-		return nil, fmt.Errorf("trust list contains no certificates")
+		return nil, fmt.Errorf("the trusted list contains no certificates")
 	}
 	return certs, nil
 }

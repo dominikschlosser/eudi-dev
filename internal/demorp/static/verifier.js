@@ -308,7 +308,7 @@ for (const option of document.querySelectorAll("#format-toggle .toggle-option"))
 }
 
 const IDENTITY_HINTS = {
-  registered: "The demo verifier is registered with the wallet's registrar for the credentials of the wallet's templates. The request is signed with its access certificate and carries its registration certificate. A wallet with ARF checks reports RPRC_21 for anything else the request asks for.",
+  registered: "The demo verifier is registered with the wallet's registrar for the credentials of the wallet's templates. The request is signed with its access certificate and carries its registration certificate. If the request asks for anything else, a wallet with ARF checks reports RPRC_21.",
   unregistered: "The request is signed with the demo verifier's access certificate but has no registration certificate. A wallet with ARF checks reports RPRC_19.",
   own: "The request is signed with your key and access certificate.",
   unsigned: "With this client identifier prefix the request is unsigned, so it can't show who the verifier is. The registration certificate and own certificates need x509_hash or x509_san_dns.",

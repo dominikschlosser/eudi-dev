@@ -144,7 +144,7 @@ func (w *Wallet) Registrar() *registrar.Registrar {
 	return registrar.New(&w.mu, &w.State, registrarEnv{w})
 }
 
-// registrarEnv gives the registrar what it uses from the wallet.
+// registrarEnv implements registrar.Env for the wallet.
 type registrarEnv struct{ w *Wallet }
 
 func (e registrarEnv) RegistrarBase() string { return e.w.RegistrarBase() }

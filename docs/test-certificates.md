@@ -21,7 +21,7 @@ Checked on 1 October 2026 against [ARF v3.0.0](https://github.com/eu-digital-ide
 | Attestation structure | ETSI TS 119 472-1 V1.2.1, February 2026 | [Specification](https://www.etsi.org/deliver/etsi_ts/119400_119499/11947201/01.02.01_60/ts_11947201v010201p.pdf) |
 | Registration information | ETSI TS 119 475 V1.2.1, March 2026 | [Specification](https://www.etsi.org/deliver/etsi_ts/119400_119499/119475/01.02.01_60/ts_119475v010201p.pdf) |
 | Trusted entity lists | ETSI TS 119 602 V1.1.1, November 2025 | [Specification](https://www.etsi.org/deliver/etsi_TS/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf) |
-| Trust list signatures | ETSI TS 119 182-1 V1.2.1, July 2024 | [Specification](https://www.etsi.org/deliver/etsi_ts/119100_119199/11918201/01.02.01_60/ts_11918201v010201p.pdf) |
+| Trusted list signatures | ETSI TS 119 182-1 V1.2.1, July 2024 | [Specification](https://www.etsi.org/deliver/etsi_ts/119100_119199/11918201/01.02.01_60/ts_11918201v010201p.pdf) |
 | EU PID attributes | PID Rulebook v1.7 | [Rulebook](https://github.com/eu-digital-identity-wallet/eudi-doc-attestation-rulebooks-catalog/blob/6d8f7f8422e5bf6c48186005b6835c078f762a67/rulebooks/pid/pid-rulebook.md) |
 | German PID attributes | German PID Rulebook 1.0.0 consultation draft | [Rulebook](https://bmi.usercontent.opencode.de/eudi-wallet/eidas-2.0-architekturkonzept/content/features/PID/german-pid-rulebook/) |
 
@@ -33,19 +33,21 @@ OpenID4VCI 1.0 is the baseline, with 1.1 available as an optional draft feature 
 
 | Role | Material |
 | --- | --- |
-| PID issuance | Credential key, PID provider leaf with QcType `0.4.0.194126.1.1` |
+| PID issuance | Wallet issuer key, PID provider leaf with QcType `0.4.0.194126.1.1` |
+| Other credential issuance | One key per provider role and a provider leaf |
 | Wallet and key attestations | Separate wallet provider key and leaf with QcType `0.4.0.194126.1.2` |
-| Signed issuer metadata and verifier requests | Separate access key and certificate with policy `0.4.0.194118.1.2` |
+| Signed issuer metadata and demo issuer requests | Access key and certificate of the demo issuer, with policy `0.4.0.194118.1.2` |
+| Demo verifier requests | Access key and certificate of the demo verifier, with policy `0.4.0.194118.1.2` |
 | Registered relying parties | Access certificates issued for a CSR, with policy `0.4.0.194118.1.2`, signed by a separate relying party access CA (see [registrar](wallet/registrar.md)) |
 | Registrar responses and registration certificates | Separate registrar key and signing certificate |
 | Credential status | Separate status key and signing certificate |
-| Trust lists | Separate list operator key and signing certificate |
+| Trusted lists | Separate list operator key and signing certificate |
 
-The generated root CA permits one intermediate CA. PID, wallet provider and local credential signing certificates use a provider intermediate for their role and country. Access, registrar, status and trust list signing certificates are signed directly by the root. PID and local credential signer leaves carry the ISO/IEC 18013-5 document signing purpose. The credential signer's subject country matches the credential's `issuing_country`, with `NL` as the default. Its AIA and CRL URLs identify the provider intermediate and its revocation list.
+The generated root CA permits one intermediate CA. Credential and wallet provider signing certificates use a provider intermediate for their role and country. Each provider role has its own signing key and provider intermediate. The roles are the categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for credentials without a category. So a trusted list anchors only the credentials signed for it. No list names the `unlisted` intermediate. Access, registrar, status and trusted list signing certificates are signed directly by the root. Credential signer leaves carry the ISO/IEC 18013-5 document signing purpose. The credential signer's subject country matches the credential's `issuing_country`, with `NL` as the default. Its AIA and CRL URLs identify the provider intermediate and its revocation list.
 
 The provider intermediate provides the certificate retrieval path that TS 119 412-6 V1.1.1 clause 4.4.3 requires. In the PID Rulebook, the trust anchors are notified provider keys. ISO/IEC 18013-5:2021 Annex B uses a direct IACA hierarchy whose root has a path length of zero. The generated root has a path length of one, and the OpenID suite reports this as an ISO profile warning. Certificate signatures and trust paths are checked separately.
 
-A configured root with a path length of zero signs provider leaves directly. That chain has no provider intermediate, so it lacks the retrieval path described above. The wallet uses the configured CA's keys and chain.
+A configured root with a path length of zero signs provider leaves directly. That chain has no provider intermediate, so it lacks the retrieval path described above. The wallet uses the configured CA's keys and chain, and the trusted lists name only the signing leaves.
 
 PID signatures include the protected certificate references that CIR (EU) 2026/1731 Annex I requires. SD-JWT uses `x5u` and `x5t#S256`. Mdoc uses `x5u` and SHA-256 `x5t`. The `x5u` URLs contain the certificate fingerprint and return PEM for JOSE or DER for COSE. The protected `iat` records the signing time, separate from the credential's issuance time. Published certificates stay available after renewal. Offline issuance has no certificate hosting endpoint.
 
@@ -71,7 +73,7 @@ The [complete certificate examples](test-certificate-examples.md) contain public
 
 The root's subject and issuer are both `C=NL, O=EUDI Dev Test CA, CN=OID4VC Dev Wallet CA`. It has critical key usage `keyCertSign, cRLSign` (`2.5.29.15`) and critical basic constraints `CA:TRUE, pathlen:1` (`2.5.29.19`).
 
-The provider intermediates and signing leaves have `C=NL` and organization identifier `NTRNL-00000000` (`2.5.4.97`) in this reference configuration. For credential signers and their provider CAs, the country and identifier follow the credential's `issuing_country`. The trust list signer uses the supplied country and operator name. Its organization is `EUDI Dev Wallet` in this reference set. The other intermediates and leaves use organization `EUDI Dev Test Provider`.
+The provider intermediates and signing leaves have `C=NL` and organization identifier `NTRNL-00000000` (`2.5.4.97`) in this reference configuration. For credential signers and their provider CAs, the country and identifier follow the credential's `issuing_country`. The trusted list signer uses the supplied country and operator name. Its organization is `EUDI Dev Wallet` in this reference set. The access signer of the demo verifier has organization `EUDI Dev Test Verifier` and identifier `NTRNL-00000001`, so it is registered as its own relying party. An access signer's common name is the trade name of its registration (ETSI TS 119 411-8 V1.1.1 GEN-6.1.1-04, ARF RPRC_06). The other intermediates and leaves use organization `EUDI Dev Test Provider`.
 
 ### Subjects and issuers
 
@@ -79,16 +81,21 @@ The provider intermediates and signing leaves have `C=NL` and organization ident
 | --- | --- | --- |
 | PID provider CA | `EUDI Dev Test pid CA NL` | Root CA |
 | Wallet provider CA | `EUDI Dev Test wallet CA NL` | Root CA |
-| Local credential provider CA | `EUDI Dev Test local CA NL` | Root CA |
+| QEAA, PuB-EAA and EAA provider CAs | `EUDI Dev Test qeaa CA NL`, `EUDI Dev Test pub-eaa CA NL`, `EUDI Dev Test eaa CA NL` | Root CA |
+| Provider CA of a credential type with its own trusted list | `EUDI Dev Test tl-<8 hex digits> CA NL` | Root CA |
+| Provider CA of credentials without a category | `EUDI Dev Test unlisted CA NL` | Root CA |
 | PID signer | `EUDI Dev Wallet PID Provider (pid)` | PID provider CA |
 | Wallet provider signer | `EUDI Dev Wallet Provider (wallet-provider)` | Wallet provider CA |
-| Local credential signer | `EUDI Dev Wallet Issuer (local)` | Local credential provider CA |
-| Access signer | `EUDI Dev Test Access` | Root CA |
+| QEAA, PuB-EAA and EAA signers | `EUDI Dev Wallet QEAA Provider (qeaa)`, `EUDI Dev Wallet PuB-EAA Provider (pub-eaa)`, `EUDI Dev Wallet EAA Provider (eaa)` | Provider CA of the category |
+| Signer of a credential type with its own trusted list | `<entity name> (tl-<8 hex digits>)` | Provider CA of that list |
+| Signer of credentials without a category | `EUDI Dev Wallet Issuer` | Provider CA of credentials without a category |
+| Access signer of the demo issuer | `EUDI Dev Demo Issuer` | Root CA |
+| Access signer of the demo verifier | `EUDI Dev Demo Verifier` | Root CA |
 | Registrar signer | `EUDI Dev Test Registrar` | Root CA |
 | Status signer | `EUDI Dev Status List Signer` | Root CA |
-| Trust list signer | `EUDI Dev Test List Operator` | Root CA |
+| Trusted list signer | `EUDI Dev Test List Operator` | Root CA |
 
-Provider intermediates have critical key usage `keyCertSign, cRLSign` and critical basic constraints `CA:TRUE, pathlen:0`. Signing leaves have critical key usage `digitalSignature` and omit basic constraints. Only PID and local credential signers carry the critical extended key usage `mdlDS` (`1.0.18013.5.1.2`). The other signing roles have no extended key usage extension.
+Provider intermediates have critical key usage `keyCertSign, cRLSign` and critical basic constraints `CA:TRUE, pathlen:0`. Signing leaves have critical key usage `digitalSignature` and omit basic constraints. Only credential signers carry the critical extended key usage `mdlDS` (`1.0.18013.5.1.2`). The other signing roles have no extended key usage extension.
 
 ### Provider and access indicators
 
@@ -99,7 +106,7 @@ The PID and wallet provider signers have a non-critical QCStatements extension (
 | PID | `0.4.0.194126.1.1` | `30153013060604008e4601063009060704008bec4e0101` |
 | Wallet provider | `0.4.0.194126.1.2` | `30153013060604008e4601063009060704008bec4e0102` |
 
-The access signer's non-critical certificate policies extension (`2.5.29.32`) contains policy `0.4.0.194118.1.2`, the legal person access policy identifier from TS 119 411-8 V1.1.1 clause 5.3. Its CPS qualifier (`1.3.6.1.5.5.7.2.1`) is `https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md`.
+Both access signers have a non-critical certificate policies extension (`2.5.29.32`) with policy `0.4.0.194118.1.2`, the legal person access policy identifier from TS 119 411-8 V1.1.1 clause 5.3. Its CPS qualifier (`1.3.6.1.5.5.7.2.1`) is `https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md`.
 
 ### Retrieval, revocation and alternative names
 
@@ -109,9 +116,9 @@ The examples use the public demo origin `https://eudi-test.dev`. A configured HT
 | --- | --- | --- | --- |
 | PID signer | `https://eudi-test.dev/api/certificates/providers/pid/NL.der` | `https://eudi-test.dev/api/crl/providers/pid/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
 | Wallet provider signer | `https://eudi-test.dev/api/certificates/providers/wallet/NL.der` | `https://eudi-test.dev/api/crl/providers/wallet/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
-| Local credential signer | `https://eudi-test.dev/api/certificates/providers/local/NL.der` | `https://eudi-test.dev/api/crl/providers/local/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
+| EAA signer | `https://eudi-test.dev/api/certificates/providers/eaa/NL.der` | `https://eudi-test.dev/api/crl/providers/eaa/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
 | Provider intermediates | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | None |
-| Access, registrar and trust list signers | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
+| Access, registrar and trusted list signers | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
 | Status signer | None | `https://eudi-test.dev/api/crl` | None |
 | Root CA | None | None | None |
 
@@ -129,13 +136,13 @@ The default local issuer URL is `https://localhost:8086`. The wallet's HTTP UI a
 
 An IP-based issuer URL produces an IP subject alternative name instead of a DNS name. Offline issuance has no issuer URL, so certificates omit issuer-based AIA, CRL distribution points and subject alternative names. The fixed issuer contact URI is always present.
 
-## Discovery and trust lists
+## Discovery and trusted lists
 
-Both issuer discovery endpoints serve JSON by default and signed metadata when the `Accept` header prefers `application/jwt`. The signed form includes the access certificate in protected `x5c`. The `issuer_info` array contains registrar data and a registration certificate signed by the test registrar. Registration certificates use the identifier, legal name and country from the access certificate. Every registration certificate has the policy `0.4.0.19475.3.1` in `policy_id` (ETSI TS 119 475 V1.2.1 OVR-6.1.3-01) and links this page as `certificate_policy`.
+Both issuer discovery endpoints serve JSON by default and signed metadata when the `Accept` header prefers `application/jwt`. The signed form includes the access certificate in protected `x5c`. The `issuer_info` array contains the registrar dataset and the registration certificate of the demo issuer, signed by the wallet's registrar. The demo issuer's registration takes the identifier, legal name and country from its access certificate. Every registration certificate has the policy `0.4.0.19475.3.1` in `policy_id` (ETSI TS 119 475 V1.2.1 OVR-6.1.3-01) and links this page as `certificate_policy`.
 
-Trust lists publish issuance certificates, their provider CAs and status signing certificates. This keeps credentials verifiable across country overrides and certificate renewal. Protected `iat` and `x5t#S256` headers carry the signing time and certificate reference that JAdES requires. Trust lists use English language code `en`, whole second UTC timestamps, postal addresses and a self pointer. An unchanged list keeps its signed instance until it expires. Changed content or expiry advances the sequence number. Append `/history` to a trust list URL to list its retained instances, then `/history/<sequence>` to retrieve one.
+Trusted lists publish issuance certificates, their provider CAs and status signing certificates. This keeps credentials verifiable across country overrides and certificate renewal. Protected `iat` and `x5t#S256` headers carry the signing time and the certificate reference, as JAdES requires. Trusted lists use English language code `en`, whole second UTC timestamps, postal addresses and a self pointer. An unchanged list keeps its signed instance until it expires. Changed content or expiry advances the sequence number. Append `/history` to a trusted list URL to list its retained instances, then `/history/<sequence>` to retrieve one.
 
-The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID and wallet provider lists follow Annexes D and E. Their fictional provider entries are for local interoperability tests.
+The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID, wallet provider and PuB-EAA lists follow Annexes D, E and H. TS 119 602 defines no list type for QEAA and EAA providers, so their lists use the wallet's own type `http://uri.etsi.org/19602/LoTEType/local`. The fictional provider entries are for local interoperability tests.
 
 ## Public PID provider comparison
 
@@ -145,6 +152,6 @@ EUDI Dev uses P-256 keys for all of those roles. Generated data types and names 
 
 ## Test scope
 
-The requirements come from the versioned specifications and their regulatory adaptations. The [OpenID Foundation conformance tests](https://openid.net/certification/) cover the selected OpenID4VP, OpenID4VCI and HAIP plans and variants. They do not cover every EUDI requirement. ETSI certificate profiles, trust lists, registration information, PID rulebooks and ISO mdoc requirements must be checked against their own sources.
+The requirements come from the versioned specifications and their regulatory adaptations. The [OpenID Foundation conformance tests](https://openid.net/certification/) cover the selected OpenID4VP, OpenID4VCI and HAIP plans and variants. They do not cover every EUDI requirement. ETSI certificate profiles, trusted lists, registration information, PID rulebooks and ISO mdoc requirements must be checked against their own sources.
 
 The toolkit tests protocol exchanges, signatures, certificate structure and generated data. The [registrar](wallet/registrar.md) simulates relying party registration, including revocation through a status list. Official trust, certified hardware protection and physical presence checks require the corresponding ecosystem services. Configured key attestation assurance values are simulated. See [spec compliance](spec-compliance.md) and [conformance results](conformance-results.md) for implemented checks and remaining protocol limits.

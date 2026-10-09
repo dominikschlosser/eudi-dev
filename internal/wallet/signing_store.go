@@ -150,7 +150,7 @@ func (s *signingStore) selfSignedCA(role, commonName string) (*ecdsa.PrivateKey,
 			return nil, nil, err
 		}
 	}
-	return nil, nil, fmt.Errorf("storing the %s certificate kept conflicting", role)
+	return nil, nil, fmt.Errorf("storing the %s certificate failed after repeated conflicts", role)
 }
 
 func (w *Wallet) signingStore() *signingStore {
@@ -221,7 +221,7 @@ func (s *signingStore) cachedCertificate(identity []byte, ca *x509.Certificate, 
 		}
 		return s.retainCertificate(cert)
 	}
-	return nil, fmt.Errorf("signing certificate changed concurrently too often")
+	return nil, fmt.Errorf("storing the signing certificate failed after repeated conflicts")
 }
 
 func (s *signingStore) retainCertificate(cert *x509.Certificate) (*x509.Certificate, error) {

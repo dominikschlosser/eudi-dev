@@ -556,7 +556,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
   <div class="consent-overlay" id="issue-overlay">
     <div class="consent-dialog">
       <div class="consent-title" id="issue-title">Issue Credential</div>
-      <p class="dialog-hint" id="issue-hint">Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.</p>
+      <p class="dialog-hint" id="issue-hint">Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. Templates fill fields you can edit.</p>
       <form id="issue-form">
         <div class="template-editor-head" id="template-editor-head" hidden>
           <div class="form-grid">
@@ -668,7 +668,7 @@ openssl req -new -key verifier.key -subj "/" -out verifier.csr</pre>
           <div class="form-section-label issue-signing-field issue-only">Signing (optional)</div>
 
           <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-key">Signing key</label>
-          <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM or JWK private key. Default: the wallet issuer key"></textarea>
+          <textarea id="issue-signing-key" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM or JWK private key. Default: the key of the credential's category"></textarea>
 
           <label class="form-label form-label-top issue-signing-field issue-only" for="issue-signing-cert">Certificate chain</label>
           <textarea id="issue-signing-cert" class="form-input form-textarea issue-signing-field issue-only" placeholder="PEM certificates, leaf first. Embedded as the credential's x5c"></textarea>

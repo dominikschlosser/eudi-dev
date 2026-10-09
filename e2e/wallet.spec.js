@@ -2066,7 +2066,7 @@ test.describe("Registrar", () => {
     await page.locator("#registrar-close").click();
 
     // The wallet shows the purpose of a registration certificate bound to the
-    // access certificate that signs the request (ARF RPRC_17a).
+    // access certificate that signs the request (OpenID4VP 1.0 §5.1).
     const key = pem.match(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----/)[0];
     const x5c = [...pem.matchAll(/-----BEGIN CERTIFICATE-----([\s\S]+?)-----END CERTIFICATE-----/g)].map((m) => m[1].replace(/\s/g, ""));
     const responseURI = "http://127.0.0.1:9/response";

@@ -19,7 +19,7 @@ A credential type that contains everything another type defines and adds more. F
 _Avoid_: Subtype, derived type, inherited credential, trust relationship
 
 **Attestation**:
-Always qualify this word. It has three unrelated meanings: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (this wallet's record that it issues a given credential type, used to register that type on a trust list). EUDI documents also use "attestation" as a synonym for credential.
+Always qualify this word. It has three unrelated meanings: a **client attestation** (the wallet proving itself to an issuer), a **verifier attestation** (a verifier proving itself to the wallet), and an **issued attestation** (the wallet's record of an issued credential type. Its trusted lists name these types). EUDI documents also use "attestation" as a synonym for credential.
 
 **Template**:
 A named, reusable set of claims and issuance settings. The wallet issues credentials from it. A template is not a credential and not a credential type.
@@ -58,7 +58,7 @@ Identifies a relying party (ETSI TS 119 411-8). A verifier signs its request obj
 A signed JWT from the registrar (ETSI TS 119 475). A verifier's certificate lists one intended use, and the verifier sends it in `verifier_info`. An issuer's certificate lists the attestation types of its service, and the issuer publishes it in `issuer_info`.
 
 **Attestation catalogue**:
-A list of attestation types (EC TS11 catalogue of attestations). Each entry links a schema for each format, a rulebook and optionally a trusted list. Every predefined credential template has an entry.
+A list of attestation types (EC TS11 catalogue of attestations). Each entry has a credential category and links a schema for each format, a rulebook and a trusted list, by default the list of its category. Every predefined credential template has an entry.
 
 **Relying party access CA**:
 Signs the access certificates from the wallet's registrar. It is separate from the wallet CA.
@@ -99,11 +99,19 @@ _Avoid_: Refresh (for the credential operation)
 
 ### Trust and status
 
-**Trust list**:
-A signed list of the certificates a verifier should accept, published by this wallet.
+**Trusted list**:
+A signed list that names providers and their certificates. ETSI TS 119 602 calls it a **list of trusted entities** (LoTE). The names mean the same thing. A wallet or verifier checks that a credential's certificate chains to a certificate on the list for the credential's kind. This wallet publishes one list per credential category and one for wallet providers ([ADR-0022](docs/adr/0022-one-trusted-list-per-credential-category.md)). A trusted list operator signs it.
+_Avoid_: Trust list, trust profile
+
+**Credential category**:
+The kind of attestation: `pid`, `qeaa`, `pub-eaa` or `eaa` (ARF ISSU_07 to ISSU_10). Each category has its own signing key, provider CA and trusted list. A credential gets its category from its template or its catalogue entry. A credential without one is on no list.
+
+**Provider role**:
+A signer of this wallet with its own key and provider CA under the wallet CA. The roles are the four credential categories, `wallet` (the wallet provider), `unlisted` (credentials without a category) and `tl-<8 hex>` (a custom trusted list).
+_Avoid_: Trust profile (for the role)
 
 **Trust profile**:
-The trust list a credential type is registered on (`pid`, `local`, or `auto`). It is unrelated to the **demo profile** (a hosting configuration) and to **HAIP** (a specification profile). Always qualify "profile".
+The `--trust-profile` value of `issue ... --wallet`: a credential category, or `auto` for the category of the template or catalogue entry. It is unrelated to the **demo profile** (a hosting configuration) and to **HAIP** (a specification profile). Always qualify "profile".
 
 **Status list**:
 The published bitstring a verifier fetches to check whether a credential is still valid. The wallet manages the entries on its own list and reads the lists of other issuers.

@@ -1317,8 +1317,8 @@
     templateEditorHead.hidden = !on;
     document.getElementById('issue-title').textContent = on ? (editor.source ? 'Edit template' : 'New template') : 'Issue Credential';
     document.getElementById('issue-hint').textContent = on
-      ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for fields the builder doesn't show."
-      : "Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.";
+      ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for the other template fields."
+      : "Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. Templates fill fields you can edit.";
     issueSubmit.textContent = on ? 'Save template' : 'Issue';
     document.getElementById('template-editor-mode-builder').checked = true;
     templateEditorJSON.hidden = true;
@@ -2341,7 +2341,7 @@
       return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
         '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
         '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
-        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first claim set that fits. Debug mode lets you pick another.</div>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first matching claim set. Debug mode lets you pick another.</div>' +
       '</div>';
     }
     function isAutoSelection() {
@@ -2539,7 +2539,7 @@
     function unansweredNote(qid) {
       return '<div class="consent-unanswered" role="note" id="consent-unanswered-' + escHtml(qid) + '">' +
         'No credential matches <span class="query-chip">' + escHtml(qid) + '</span>. ' +
-        'Debug mode can send one that does not match. Choose it under Edit.</div>';
+        'Debug mode can send a non-matching one. Choose it under Edit.</div>';
     }
     function candidateRowHtml(qid, c, i, multi) {
       const picked = selection.picks[qid].includes(c.credential_id);
@@ -3135,7 +3135,7 @@
       config.preferred_format ? 'neutral' : 'off');
     const intro = document.getElementById('conf-intro');
     if (intro) {
-      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.';
+      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. Strict mode verifies HTTPS certificates and debug mode does not. The HTTPS setting below can change that.';
       intro.textContent = demoMode ? base + ' The public demo runs with fixed settings.' : base;
     }
     const reset = document.getElementById('conf-reset');
