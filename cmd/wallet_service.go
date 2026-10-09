@@ -86,6 +86,9 @@ func managedWalletWithLoader(load func() (*wallet.Wallet, *wallet.WalletStore, e
 		return nil, err
 	}
 	if c != nil {
+		if walletCmd.PersistentFlags().Changed("mode") {
+			return nil, checkRemoteConformanceFlags([]string{"--mode"})
+		}
 		return &remoteWallet{c: c}, nil
 	}
 	return &localWallet{load: load}, nil

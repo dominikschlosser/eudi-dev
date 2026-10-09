@@ -629,3 +629,20 @@ func argPairPresent(args []string, flag string, value string) bool {
 	}
 	return false
 }
+
+// Every command that talks to a running wallet refuses --mode, not only accept
+// and scan.
+func TestEveryRemoteCommandRefusesMode(t *testing.T) {
+	resetRemoteTestState(t)
+	url, _ := startRemoteTestWallet(t)
+	remoteFlag = url
+	mode := walletCmd.PersistentFlags().Lookup("mode")
+	if err := mode.Value.Set("strict"); err != nil {
+		t.Fatal(err)
+	}
+	mode.Changed = true
+	t.Cleanup(func() { _ = mode.Value.Set(mode.DefValue); mode.Changed = false })
+	if _, err := managedWallet(); err == nil || !strings.Contains(err.Error(), "eudi wallet trust") {
+		t.Fatalf("err = %v, want the refusal that points to wallet trust", err)
+	}
+}
