@@ -293,6 +293,12 @@ func (w *Wallet) CreateVPTokenMap(matches []CredentialMatch, params Presentation
 	}
 
 	for _, match := range matches {
+		// The mdoc path logs its own warning for a missing deviceKey.
+		if match.Unbound && match.Format != "mso_mdoc" {
+			w.addProtocolWarning("presentation", "unbound_credential",
+				fmt.Sprintf("Credential %s has no holder binding, which the query %s requires (OpenID4VP 1.0 §6.1). Debug mode presents it without key binding.", credTypeLabel(match), match.QueryID),
+				map[string]any{"credential_id": match.CredentialID, "query_id": match.QueryID})
+		}
 		tokenResult, err := w.createVPToken(match, params, mdocNonce)
 		if err != nil {
 			return nil, fmt.Errorf("creating VP token for %s: %w", match.QueryID, err)

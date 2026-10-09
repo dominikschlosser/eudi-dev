@@ -1438,3 +1438,21 @@ func TestEvaluateDCQL_UnboundMdocInStrictMode(t *testing.T) {
 		t.Errorf("strict matches %v, want none", matches)
 	}
 }
+
+// Debug mode presents an unbound SD-JWT VC to a query that requires holder
+// binding and says so in the activity log (OpenID4VP 1.0 §6.1).
+func TestPresentingAnUnboundCredentialLeavesAWarning(t *testing.T) {
+	w := generateTestWallet(t)
+	noStatus := ""
+	issued, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:bearer", Unbound: true, StatusListURI: &noStatus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := CredentialMatch{QueryID: "q", CredentialID: issued.Credential.ID, Format: "dc+sd-jwt", VCT: "urn:example:bearer", Unbound: true}
+	if _, err := w.CreateVPTokenMap([]CredentialMatch{match}, PresentationParams{Nonce: "n", ClientID: "x509_hash:abc", ResponseMode: "direct_post"}); err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarningContaining(w, "no holder binding") {
+		t.Error("no warning about the unbound credential")
+	}
+}
