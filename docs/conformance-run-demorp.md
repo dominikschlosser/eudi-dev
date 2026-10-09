@@ -58,7 +58,7 @@ The verifier plans require the `request_uri` and the `response_uri` to be https,
 
 The suite presents credentials signed under its own CAs to the demo verifier (the `vp-signing` CA from `scripts/certs-keys` for SD-JWT VCs, a built-in mdoc IACA root for mdocs). The wrapper passes both to the wallet as `--demo-verifier-issuer-ca` files, so the demo verifier accepts those chains in addition to the wallet CA. The suite server publishes the IACA root at `/mdoc-iaca-root.pem`. When that endpoint is unavailable, the wrapper extracts the same certificate from the suite source.
 
-The generated configs also pass the wallet CA to the suite. The issuer configs set it as `credential.trust_anchor_pem`, so the suite validates the demo ticket's certificate chain. The verifier configs set it as `client.request_object_trust_anchor_pem`, so the suite validates the demo verifier's signed request objects.
+The generated configs also pass trust anchors to the suite. The issuer configs set the wallet CA as `credential.trust_anchor_pem`, so the suite validates the demo ticket's certificate chain. The verifier configs set the relying party access CA as `client.request_object_trust_anchor_pem`, because the demo verifier signs its request objects with an access certificate from that CA.
 
 ## Environment Overrides
 

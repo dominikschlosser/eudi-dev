@@ -152,6 +152,14 @@ if [ ! -f "$WALLET_CA_CERT" ]; then
   fi
 fi
 
+# The demo verifier signs its request objects with an access certificate from
+# the relying party access CA, a root of its own.
+ACCESS_CA_CERT="$RUN_DIR/relying-party-access-ca.pem"
+if ! curl -fsS "$WALLET_URL/api/certificates/relying-party-access-ca" -o "$ACCESS_CA_CERT"; then
+  echo "error: could not fetch the relying party access CA from $WALLET_URL/api/certificates/relying-party-access-ca" >&2
+  exit 1
+fi
+
 echo "Running OIDF issuer + verifier plans against $CONFORMANCE_SERVER ($CONFORMANCE_MODE mode)"
 RUN_STATUS=0
 "$VENV_DIR/bin/python" "$ROOT_DIR/scripts/oidf_demorp_conformance.py" \
@@ -159,6 +167,7 @@ RUN_STATUS=0
   --wallet-url "$WALLET_URL" \
   --demo-base-url "$DEMO_BASE_URL" \
   --wallet-ca-cert "$WALLET_CA_CERT" \
+  --access-ca-cert "$ACCESS_CA_CERT" \
   --results-dir "$RESULTS_DIR" \
   --runner-log "$RUNNER_LOG" \
   "$@" || RUN_STATUS=$?
