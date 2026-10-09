@@ -522,6 +522,10 @@ func (h *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
 		return
 	}
+	if h.Registrar().CertificateCount(req.Identifier) >= maxCertificatesPerRelyingParty {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%s holds %d registration certificates, the most the registrar issues to one relying party. Older ones free up when they expire", req.Identifier, maxCertificatesPerRelyingParty)})
+		return
+	}
 	var result *RegistrationCertificateResult
 	var err error
 	h.Mutate(func() bool {

@@ -33,8 +33,12 @@ const (
 	registrationStatusListSize = 1 << 17
 )
 
+// maxCertificatesPerRelyingParty bounds the certificates the API issues to one
+// relying party. With MaxRelyingParties parties the status list keeps room.
+const maxCertificatesPerRelyingParty = 100
+
 var (
-	errRegistrationStatusFull = errors.New("the registrar has issued its maximum number of registration certificates. Delete unused relying parties or wait until certificates expire")
+	errRegistrationStatusFull = errors.New("the registrar has issued its maximum number of registration certificates. Entries free up when certificates expire")
 	errRegistrationChanged    = errors.New("the registration changed while the certificate was being issued. Try again")
 )
 
@@ -263,4 +267,19 @@ func scopeFilter(rp WalletRelyingParty, scope RegistrationScope) (func(Registrat
 		}
 		return slices.ContainsFunc(service.IntendedUses, func(u IntendedUse) bool { return u.IntendedUseIdentifier == s.IntendedUse })
 	}, nil
+}
+
+// CertificateCount is the number of unexpired registration certificates of
+// the relying party, superseded ones included.
+func (r *Registrar) CertificateCount(identifier string) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	now := time.Now().Unix()
+	n := 0
+	for _, s := range r.state.RegistrationStatuses {
+		if s.Identifier == identifier && (s.Expires == 0 || s.Expires >= now) {
+			n++
+		}
+	}
+	return n
 }

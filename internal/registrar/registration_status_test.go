@@ -15,7 +15,11 @@
 package registrar
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -134,5 +138,22 @@ func TestACertificateForChangedContentIsNotIssued(t *testing.T) {
 	}
 	if _, err := w.allocateRegistrationStatus(snapshot, certificateKey{intendedUse: use}, time.Now().Add(time.Hour)); !errors.Is(err, errRegistrationChanged) {
 		t.Errorf("error %v, want the changed registration refused", err)
+	}
+}
+
+// The API issues at most 100 certificates to one relying party, so visitors
+// of a public demo can't fill the status list.
+func TestTheAPICapsTheCertificatesOfARelyingParty(t *testing.T) {
+	reg := generateTestWallet(t)
+	rp := registerTestRelyingParty(t, reg)
+	for i := range maxCertificatesPerRelyingParty {
+		reg.State.RegistrationStatuses = append(reg.State.RegistrationStatuses, RegistrationStatus{Index: i + 1, Identifier: rp.Identifier[0].Identifier, Superseded: true})
+	}
+	h := &Server{Registrar: func() *Registrar { return reg.Registrar }, Mutate: func(change func() bool) { change() }}
+	body, _ := json.Marshal(RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier})
+	rec := httptest.NewRecorder()
+	h.Routes()["POST /api/registrar/registration-certificates"](rec, httptest.NewRequest(http.MethodPost, "/api/registrar/registration-certificates", bytes.NewReader(body)))
+	if rec.Code != http.StatusConflict {
+		t.Errorf("%d %s, want the per-party cap", rec.Code, rec.Body)
 	}
 }
