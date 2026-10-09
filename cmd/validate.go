@@ -298,8 +298,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 // reportCatalogueTrust validates the credential with the trusted lists of its
 // entry in the wallet's attestation catalogue. The result is informational, so
-// it leaves the exit code alone.
+// it leaves the exit code alone. Without a wallet there is no catalogue, and
+// validate creates none.
 func reportCatalogueTrust(raw string, report jsonReport) {
+	if store, err := openStore(); err != nil || !store.Exists() {
+		return
+	}
 	w, _, err := loadWallet()
 	if err != nil {
 		return

@@ -746,6 +746,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 		ImprintHTML: imprintHTML,
 		Demo:        opts.Demo,
 		WalletStore: store,
+		Wallet:      w,
 		CredentialByID: func(id string) (string, bool) {
 			cred, ok := w.GetCredential(id)
 			if !ok {

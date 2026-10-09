@@ -59,6 +59,8 @@ The web decoder (`eudi serve` and the wallet's embedded decoder) also uses the l
 
 When the wallet's attestation catalogue has an entry for the credential type, `validate` and the web decoder also check whether one of the entry's trusted lists anchors the credential. They read the lists the entry links. For a PID or a PuB-EAA they also read the lists of that type on the wallet's list of trusted lists, as the wallet does on issuance. The decoder shows the result as the `trust` check. `validate` prints it and adds `trust` to `--json`. The exit code doesn't depend on it. A type without a catalogue entry gets no trust check.
 
+`validate` and the decoder of `eudi serve` read the stored wallet. The lists from `wallet serve --trusted-list` and the operators from `--trust-list-ca` count only in the decoder of the running wallet.
+
 Trusted list validation covers certificate trust and service listing. Provider class and attestation-type entitlement come from signed Credential Issuer metadata (`/.well-known/openid-credential-issuer`, `issuer_info`) and registrar data. A wallet keeps one trusted list per credential category. `/api/trustlist` serves the PID list and `/api/trustlists` lists every list. In containers, use the index entry's relative `path` instead of its advertised URL.
 
 To let a verifier trust the wallet's local HTTPS endpoints, export the wallet CA with `eudi wallet ca-cert --out wallet-ca-cert.pem` and add it to the verifier trust store. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate as a single PEM instead.
