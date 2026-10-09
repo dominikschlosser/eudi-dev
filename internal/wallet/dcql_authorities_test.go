@@ -319,9 +319,9 @@ func TestCheckTrustedAuthorities(t *testing.T) {
 // listed CA and rejects an unrelated one.
 func TestCheckETSITrustListMDOC(t *testing.T) {
 	caCert, leafCert, _, _ := authorityChain(t)
-	tlJWT, err := GenerateTrustListJWT(mustGenerateKey(t), caCert)
+	tlJWT, err := generateEAATrustListJWT(mustGenerateKey(t), caCert)
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWT: %v", err)
+		t.Fatalf("generateEAATrustListJWT: %v", err)
 	}
 	ts := serveTrustList(t, tlJWT)
 

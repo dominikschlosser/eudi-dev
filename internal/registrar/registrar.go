@@ -186,6 +186,17 @@ func (r *Registrar) RegisterRelyingParty(rp WalletRelyingParty) (WalletRelyingPa
 	return cloneRelyingParty(rp)
 }
 
+// NormalizedRelyingParty is rp with the defaults the registrar fills in. It
+// doesn't store rp.
+func (r *Registrar) NormalizedRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
+	rp, err := cloneRelyingParty(rp)
+	if err != nil {
+		return WalletRelyingParty{}, err
+	}
+	err = normalizeRelyingParty(&rp, r.env.RegistrarBase(), nil, r.attestationCategories())
+	return rp, err
+}
+
 // UpdateRelyingParty replaces the registration with the same identifier. New
 // intended uses get identifiers, and existing ones keep theirs.
 func (r *Registrar) UpdateRelyingParty(rp WalletRelyingParty) (WalletRelyingParty, error) {
@@ -461,7 +472,7 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 		if len(CredentialTypes(credential.Meta)) == 0 {
 			return fmt.Errorf("a %s credential needs its type in meta (vct_values or doctype_value)", credential.Format)
 		}
-		// TS05 v1.5 §2.4.5: a credential always lists the attributes it asks for.
+		// TS05 v1.5 §2.4.5: a credential always lists its requested attributes.
 		if !slices.ContainsFunc(credential.Claims, func(c RegisteredClaim) bool { return len(c.Path) > 0 }) {
 			return fmt.Errorf("the %s credential %s needs at least one claim", credential.Format, strings.Join(CredentialTypes(credential.Meta), ", "))
 		}

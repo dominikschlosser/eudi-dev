@@ -96,6 +96,7 @@ func init() {
 	walletCmd.AddCommand(walletCACertCmd())
 	walletCmd.AddCommand(walletRegistrarCmd())
 	walletCmd.AddCommand(walletCatalogCmd())
+	walletCmd.AddCommand(walletTrustCmd())
 	walletCmd.AddCommand(walletTLSCertCmd())
 	walletCmd.AddCommand(walletInfoCmd())
 	walletCmd.AddCommand(walletPsCmd())
@@ -503,7 +504,7 @@ The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa) and
 one for wallet providers. Each list names its providers with their certificates.
 Without selection flags, this prints the PID provider list, like /api/trustlist.
 Use --id, --vct, or --doctype to select another list.
-Use --list to see the lists this wallet serves.
+Use --list to see all lists of the wallet.
 Use --url to print only the list URL of a running wallet server.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			if id != "" && (vct != "" || docType != "") {
@@ -562,11 +563,7 @@ Use --url to print only the list URL of a running wallet server.`,
 			if !ok {
 				return fmt.Errorf("wallet has no matching trusted list")
 			}
-			path := "/api/trustlist"
-			if id != "" {
-				path = "/api/trustlists/" + group.ID
-			}
-			jwt, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, path)
+			jwt, err := wallet.GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
 			if err != nil {
 				return fmt.Errorf("generating trust list: %w", err)
 			}
@@ -577,7 +574,7 @@ Use --url to print only the list URL of a running wallet server.`,
 	}
 
 	cmd.Flags().BoolVar(&urlOnly, "url", false, "Print only the trust list URL (for a running wallet server)")
-	cmd.Flags().BoolVar(&list, "list", false, "List the trusted lists this wallet serves instead of printing one")
+	cmd.Flags().BoolVar(&list, "list", false, "List all trusted lists of the wallet instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
 	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa' or 'wallet-provider'")
@@ -923,6 +920,35 @@ func applyWalletOutbound(w *wallet.Wallet) error {
 		return fmt.Errorf("configuring outbound HTTP: %w", err)
 	}
 	return nil
+}
+
+// conformanceFlagNames are the flags of accept and scan that a running wallet
+// sets for itself.
+var conformanceFlagNames = []string{"haip", "arf", "relying-party-ca", "trust-list-ca", "trusted-list", "key-attestation-level"}
+
+// changedConformanceFlags lists the conformance flags set on the command
+// line, including the persistent wallet --mode.
+func changedConformanceFlags(cmd *cobra.Command) []string {
+	var changed []string
+	if walletCmd.PersistentFlags().Changed("mode") {
+		changed = append(changed, "--mode")
+	}
+	for _, name := range conformanceFlagNames {
+		if cmd.Flags().Changed(name) {
+			changed = append(changed, "--"+name)
+		}
+	}
+	return changed
+}
+
+// checkRemoteConformanceFlags refuses conformance flags for a running or
+// remote wallet. It applies its own settings to every step of a flow, such as
+// a deferred credential it collects later.
+func checkRemoteConformanceFlags(flags []string) error {
+	if len(flags) == 0 {
+		return nil
+	}
+	return fmt.Errorf("a running wallet uses its own conformance settings, so %s can't change them for this flow; set them on 'wallet serve' or through PUT /api/config/conformance", strings.Join(flags, ", "))
 }
 
 func checkRemoteOutboundFlags() error {

@@ -42,7 +42,6 @@ const (
 	demoAccountFamily    = "Anderson"
 
 	authCodeGrant = "authorization_code"
-	ticketScope   = "demo-ticket"
 
 	// requestURIPrefix is the URN form RFC 9126 requires for a PAR request URI.
 	requestURIPrefix = "urn:ietf:params:oauth:request_uri:"
@@ -128,15 +127,16 @@ func (d *DemoRP) authorizationServerMetadata() map[string]any {
 		popMethods = append(popMethods, "none")
 	}
 	metadata := map[string]any{
-		"issuer":                                           issuer,
-		"authorization_endpoint":                           issuer + "/authorize",
-		"pushed_authorization_request_endpoint":            issuer + "/par",
-		"require_pushed_authorization_requests":            true,
-		"token_endpoint":                                   issuer + "/token",
-		"response_types_supported":                         []string{"code"},
-		"response_modes_supported":                         []string{"query"},
-		"grant_types_supported":                            []string{authCodeGrant, preAuthGrant},
-		"scopes_supported":                                 []string{ticketScope},
+		"issuer":                                issuer,
+		"authorization_endpoint":                issuer + "/authorize",
+		"pushed_authorization_request_endpoint": issuer + "/par",
+		"require_pushed_authorization_requests": true,
+		"token_endpoint":                        issuer + "/token",
+		"response_types_supported":              []string{"code"},
+		"response_modes_supported":              []string{"query"},
+		"grant_types_supported":                 []string{authCodeGrant, preAuthGrant},
+		// Each credential configuration has its id as scope.
+		"scopes_supported":                                 d.offeredConfigurationIDs(),
 		"code_challenge_methods_supported":                 []string{"S256"},
 		"dpop_signing_alg_values_supported":                []string{"ES256"},
 		"token_endpoint_auth_methods_supported":            authMethods,
@@ -774,15 +774,17 @@ func (d *DemoRP) attestationSigner(header map[string]any) (attestationSigner, er
 	return attestationSigner{key: key, leaf: certs[0], trusted: d.chainsToWalletProviderCA(certs)}, nil
 }
 
-// The attestation has only its leaf. The wallet provider CA of the local
-// wallet is the trust anchor.
+// The wallet provider list of the local wallet anchors the attestation (ETSI
+// TS 119 602 V1.1.1 Annex E).
 func (d *DemoRP) chainsToWalletProviderCA(certs []*x509.Certificate) bool {
-	anchor := d.wallet.TrustAnchorCertificate()
-	if anchor == nil || len(certs) == 0 {
+	anchors := d.wallet.WalletProviderAnchors()
+	if len(anchors) == 0 || len(certs) == 0 {
 		return false
 	}
 	roots := x509.NewCertPool()
-	roots.AddCert(anchor)
+	for _, anchor := range anchors {
+		roots.AddCert(anchor)
+	}
 	intermediates := x509.NewCertPool()
 	for _, cert := range certs[1:] {
 		intermediates.AddCert(cert)

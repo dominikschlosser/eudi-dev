@@ -1,6 +1,6 @@
 # One binary plays wallet, issuer, verifier and CA
 
-`wallet serve` also runs a demo issuer at `/issuer` and verifier at `/verifier` (`internal/demorp`). It signs credentials, serves issuer metadata and status lists, publishes trust lists and acts as a CA. This gives developers a complete local flow without configuring another service. External wallets, issuers and verifiers can use the same endpoints.
+`wallet serve` also runs a demo issuer at `/issuer` and verifier at `/verifier` (`internal/demorp`). It signs credentials, serves issuer metadata and status lists, publishes trusted lists and acts as a CA. This gives developers a complete local flow without configuring another service. External wallets, issuers and verifiers can use the same endpoints.
 
 The verifier follows HAIP 1.0. It serves signed request objects by reference and derives its `x509_hash:` client ID from its signing certificate. It requests `direct_post.jwt` responses with a fresh encryption key for each request. It checks credential signatures, key binding JWTs and status lists.
 

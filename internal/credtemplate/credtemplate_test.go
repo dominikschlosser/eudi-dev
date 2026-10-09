@@ -250,7 +250,7 @@ func TestUniqueClaimsGetANewValueForEveryCredential(t *testing.T) {
 		t.Errorf("other claims or the template claims changed: %v, %v", first, claims)
 	}
 	if _, ok := first["absent"]; ok {
-		t.Error("a unique claim the credential does not carry was added")
+		t.Error("a unique claim outside the credential was added")
 	}
 }
 

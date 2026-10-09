@@ -1390,25 +1390,35 @@ header h1 {
 }
 .consent-claim-warn { color: var(--yellow); margin-right: 6px; }
 
-.offer-warnings {
-  margin: 10px 0;
-  padding: 8px 10px;
+.consent-findings {
+  margin: 8px 0;
   border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, var(--yellow) 8%, transparent);
   font-size: 11px;
 }
 
-.offer-warnings-title {
+.consent-findings summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
   color: var(--yellow);
   font-weight: 600;
+  cursor: pointer;
+  list-style: none;
 }
 
-.offer-warnings ul {
-  margin: 4px 0 0;
-  padding-left: 16px;
+.consent-findings summary::-webkit-details-marker { display: none; }
+.consent-findings summary::after { content: "Show"; margin-left: auto; font-weight: 500; color: var(--text-dim); }
+.consent-findings[open] summary::after { content: "Hide"; }
+
+.consent-findings ul {
+  margin: 0 0 6px;
+  padding: 0 10px 0 26px;
   overflow-wrap: anywhere;
 }
+
 /* Show warnings without hover so they remain accessible on touch screens. */
 .consent-claim-hint {
   flex-basis: 100%;
@@ -2595,4 +2605,37 @@ header h1 {
 
 .offer-description-toggle {
   font-size: 11px;
+}
+
+.trust-added {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.trust-added li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.trust-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.trust-add-form .form-input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.trust-add-form textarea.form-input {
+  flex-basis: 100%;
+  min-height: 60px;
 }

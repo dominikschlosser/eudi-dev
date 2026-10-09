@@ -17,7 +17,6 @@ package registrar
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
@@ -53,26 +52,6 @@ func issueTestRegistrationCertificate(t *testing.T, w *testWallet, rp WalletRely
 		t.Fatalf("IssueRegistrationCertificate: %v", err)
 	}
 	return result
-}
-
-// TS 119 475 V1.2.1 §5.1.1 links the certificates through the access
-// certificate's organizationIdentifier.
-func TestTheAccessCertificateFillsTheRelyingPartyFields(t *testing.T) {
-	w := generateTestWallet(t)
-	_, chain, err := w.AccessSigningMaterial()
-	if err != nil {
-		t.Fatalf("AccessSigningMaterial: %v", err)
-	}
-	access := chain[0]
-	claims, err := RegistrationCertificateClaimsFor("https://wallet.example", RegistrationCertificateContent{Name: "Example Shop"}, access, nil, time.Now())
-	if err != nil {
-		t.Fatalf("RegistrationCertificateClaimsFor: %v", err)
-	}
-	identifier, legalName, country := AccessCertificateSubject(access)
-	if claims["sub"] != identifier || claims["sub_ln"] != legalName || claims["country"] != country {
-		t.Errorf("sub %v, sub_ln %v, country %v, want %q, %q and %q from the access certificate",
-			claims["sub"], claims["sub_ln"], claims["country"], identifier, legalName, country)
-	}
 }
 
 func TestRegistrationCertificateRequestsAreChecked(t *testing.T) {
@@ -128,8 +107,9 @@ func TestTheCurrentCertificateLastsUntilTheRegistrationChanges(t *testing.T) {
 	}
 }
 
-// A revoked certificate is not current, so the next request gets a new one.
-func TestARevokedCertificateIsNotCurrent(t *testing.T) {
+// A revoked certificate stays current until a new one replaces it, so the
+// demo verifier can test a revoked registration.
+func TestARevokedCertificateStaysCurrent(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)
 	req := RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier}
@@ -141,7 +121,15 @@ func TestARevokedCertificateIsNotCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, issued, err := w.CurrentRegistrationCertificate(req)
-	if err != nil || !issued || second.RegistrationCertificate == first.RegistrationCertificate {
-		t.Errorf("after revocation: issued %v (%v), want a new certificate", issued, err)
+	if err != nil || issued || second.RegistrationCertificate != first.RegistrationCertificate {
+		t.Errorf("after revocation: issued %v (%v), want the revoked certificate", issued, err)
+	}
+	// A new certificate replaces it for good.
+	if _, err := w.IssueRegistrationCertificate(req); err != nil {
+		t.Fatal(err)
+	}
+	third, issued, err := w.CurrentRegistrationCertificate(req)
+	if err != nil || issued || third.RegistrationCertificate == first.RegistrationCertificate {
+		t.Errorf("after a new certificate: issued %v (%v), want the new one", issued, err)
 	}
 }

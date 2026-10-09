@@ -81,6 +81,7 @@ func walletCatalogAddCmd() *cobra.Command {
 		types, claims            []string
 		los, trustedList         string
 		bindingType, rulebookURI string
+		issuerCA                 string
 	)
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -95,7 +96,9 @@ the doctype's namespace, or namespace:element.
 
 --category is pid, qeaa, pub-eaa or eaa. The wallet signs credentials of the
 type under the provider CA of that category, and the entry links the
-category's trusted list unless --trusted-list names another.`,
+category's trusted list unless --trusted-list names another. --issuer-ca puts
+the CA of your own issuer on that list, so with --arf its credentials of the
+type pass the trusted list check.`,
 		Example: `  eudi wallet catalog add --name "University diploma" --type dc+sd-jwt:urn:example:diploma:1 --claim dc+sd-jwt:degree
   eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --claim mso_mdoc:degree --category qeaa
   eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --los moderate --trusted-list https://example.com/lote`,
@@ -130,6 +133,13 @@ category's trusted list unless --trusted-list names another.`,
 				isLOTE := true
 				entry.Schema.TrustedAuthorities = []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: trustedList, IsLOTE: &isLOTE}}
 			}
+			var caPEM []byte
+			if issuerCA != "" {
+				var err error
+				if caPEM, err = os.ReadFile(issuerCA); err != nil {
+					return fmt.Errorf("reading --issuer-ca: %w", err)
+				}
+			}
 			svc, err := managedWallet()
 			if err != nil {
 				return err
@@ -137,6 +147,11 @@ category's trusted list unless --trusted-list names another.`,
 			added, err := svc.AddCatalogAttestation(entry)
 			if err != nil {
 				return err
+			}
+			if caPEM != nil {
+				if _, err := svc.AddTrustedEntity(added.Category, added.Name+" issuer", string(caPEM)); err != nil {
+					return fmt.Errorf("putting --issuer-ca on the %s list: %w", added.Category, err)
+				}
 			}
 			printResult(added, func() {
 				fmt.Printf("Added %s as %s\n", added.Name, added.Schema.ID)
@@ -155,6 +170,8 @@ category's trusted list unless --trusted-list names another.`,
 	cmd.Flags().StringVar(&bindingType, "binding", "", "How the attestation is bound to its holder: key (a key in the wallet), claim (linked to another credential, such as a PID), biometric or none (default key)")
 	cmd.Flags().StringVar(&rulebookURI, "rulebook", "", "URL of the rulebook (default a placeholder page on the wallet)")
 	cmd.Flags().StringVar(&trustedList, "trusted-list", "", "URL of the trusted list of its issuers (ETSI TS 119 602, default the category's list on the wallet)")
+	cmd.Flags().StringVar(&issuerCA, "issuer-ca", "", "PEM file with the CA of your issuer. The wallet puts it on the trusted list of the category")
+	_ = cmd.MarkFlagFilename("issuer-ca", "pem")
 	_ = cmd.RegisterFlagCompletionFunc("category", staticCompletion(credtemplate.Categories...))
 	_ = cmd.RegisterFlagCompletionFunc("los", staticCompletion("basic", "enhanced-basic", "moderate", "high"))
 	_ = cmd.RegisterFlagCompletionFunc("binding", staticCompletion("key", "claim", "biometric", "none"))
@@ -183,8 +200,8 @@ func walletCatalogRemoveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <id>",
 		Aliases: []string{"remove", "delete"},
-		Short:   "Remove an attestation type you added",
-		Long:    "Removes an attestation type you added, including one added with a template. The entries of the predefined templates can't be removed.",
+		Short:   "Remove an added attestation type",
+		Long:    "Removes an added attestation type, also one added with a template. The entries of the predefined templates can't be removed.",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()

@@ -72,7 +72,7 @@ func TestEveryCopyOfABatchIsChecked(t *testing.T) {
 }
 
 // An attestation entry can link any list of trusted entities. The wallet
-// fetches it and checks that a trusted list operator signed it (ARF ISSU_10,
+// fetches it and checks that a trusted list operator signed it (ARF ISSU_08,
 // PPNot_05).
 func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 	const vct = "urn:example:diploma:1"
@@ -110,6 +110,7 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 			}
 			if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
 				Name:        "Diploma",
+				Category:    credtemplate.CategoryQEAA,
 				Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: vct}},
 				Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: tc.list, IsLOTE: &isLOTE}}},
 			}); err != nil {
@@ -120,6 +121,36 @@ func TestAnAttestationIsCheckedAgainstAFetchedList(t *testing.T) {
 				t.Errorf("findings %v, want %q", findings, tc.want)
 			}
 		})
+	}
+}
+
+// ISSU_10 asks for the check of an EAA only when the wallet has the anchors. A
+// list signed by an unknown operator gives none.
+func TestAnEAAWithAnUntrustedListIsNotChecked(t *testing.T) {
+	issuer := generateTestWallet(t)
+	result, err := issuer.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, _ := FindTrustListGroupForWallet(issuer, credtemplate.CategoryEAA, "", "")
+	list, err := GenerateTrustListJWTForWalletGroup(issuer, issuer.IssuerURL, group, "/api/trustlists/eaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) { _, _ = rw.Write([]byte(list)) }))
+	t.Cleanup(srv.Close)
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	isLOTE := true
+	if _, err := w.Registrar().AddCatalogAttestation(registrar.CatalogAttestation{
+		Name:        "Badge",
+		Credentials: []registrar.CatalogCredential{{Format: "dc+sd-jwt", Type: "urn:example:badge:1"}},
+		Schema:      registrar.AttestationSchema{TrustedAuthorities: []registrar.TrustAuthority{{FrameworkType: "etsi_tl", Value: srv.URL, IsLOTE: &isLOTE}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if findings := w.trustAnchorFindings(receivedCredential(result.Raw)); len(findings) != 0 {
+		t.Errorf("findings %v, want none", findings)
 	}
 }
 
@@ -143,7 +174,7 @@ func TestAPIDNeedsAReadableList(t *testing.T) {
 }
 
 // ISSU_10 applies only when the wallet has the issuer's trust anchors. An
-// entry that names no list of trusted entities isn't checked.
+// EAA entry without a trusted list is not checked.
 func TestAnAttestationWithoutATrustedListIsNotChecked(t *testing.T) {
 	w := generateTestWallet(t)
 	w.RequireARF = true

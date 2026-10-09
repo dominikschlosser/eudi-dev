@@ -42,7 +42,8 @@ func (s *Server) handleTrustList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet has no matching trust list", http.StatusNotFound)
 		return
 	}
-	jwt, err := GenerateTrustListJWTForWalletGroup(s.wallet, s.wallet.IssuerURL, group, "/api/trustlist")
+	// The selected list is the same instance as /api/trustlists/{id}.
+	jwt, err := GenerateTrustListJWTForWalletGroup(s.wallet, s.wallet.IssuerURL, group, "/api/trustlists/"+group.ID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("generating trust list: %v", err), http.StatusInternalServerError)
 		return
@@ -65,6 +66,16 @@ func (s *Server) handleTrustListByID(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "wallet has no CA certificate chain", http.StatusInternalServerError)
 		return
 	}
+	if r.PathValue("id") == listOfListsID {
+		jwt, err := GenerateListOfTrustedLists(s.wallet, s.wallet.IssuerURL)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("generating the list of trusted lists: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/jwt")
+		_, _ = w.Write([]byte(jwt))
+		return
+	}
 	group, ok := FindTrustListGroupForWallet(s.wallet, r.PathValue("id"), "", "")
 	if !ok {
 		http.Error(w, "trust list not found", http.StatusNotFound)
@@ -85,10 +96,7 @@ func (s *Server) handleTrustListHistory(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	listPath := "/api/trustlist"
-	if r.PathValue("id") != "" {
-		listPath = "/api/trustlists/" + group.ID
-	}
+	listPath := "/api/trustlists/" + group.ID
 	issuer := strings.TrimRight(s.wallet.IssuerURL, "/")
 	if _, err := GenerateTrustListJWTForWalletGroup(s.wallet, issuer, group, listPath); err != nil {
 		http.Error(w, "loading trust list history: "+err.Error(), http.StatusInternalServerError)

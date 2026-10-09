@@ -17,7 +17,8 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | Subcommand     | Purpose                                                         |
 |----------------|-----------------------------------------------------------------|
 | `serve`        | Start wallet HTTP server with web UI, OID4VP endpoints, and optional URL scheme handling |
-| `registrar`    | Register relying parties and issue their certificates (see [registrar](wallet/registrar.md)) |
+| `registrar`    | Register verifiers and issuers, issue their access and registration certificates, and revoke or activate them (`verifiers`, `issuers`, `access-cert`, `registration-cert`, `revoke`, `activate`). See [registrar](wallet/registrar.md) |
+| `catalog`      | List, add and remove attestation types in the [attestation catalogue](wallet/registrar.md#attestation-catalogue) (`list`, `add`, `rm`) |
 | `list`         | List stored credentials                                         |
 | `show`         | Show a stored credential by ID (raw or decoded)                 |
 | `import`       | Import a credential from file, stdin, or raw string (SD-JWT, JWT VC, mdoc) |
@@ -28,7 +29,7 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | `refresh`      | Ask a credential's issuer for a fresh copy over the refresh token grant |
 | `deferred`     | Manage deferred credentials the wallet has not received yet (`check`, `abandon`) |
 | `logs`         | Show persisted wallet OID4VP/OID4VCI interaction logs      |
-| `trust-list`   | Print the trust list JWT (`--list` for the profiles, `--url` for the URL) |
+| `trust-list`   | Print a trusted list JWT (`--list` for all lists, `--url` for the URL) |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
 | `ps`           | List running wallet instances                                   |
@@ -108,7 +109,7 @@ The wallet derives these relationships from two sources:
 - the PID type itself. A country or region code after `urn:eudi:pid:` (`urn:eudi:pid:de:1`, `urn:eudi:pid:fr:1`) marks a domestic type. A domestic type extends `urn:eudi:pid:1`. A version number after `urn:eudi:pid:` (`urn:eudi:pid:1`, `urn:eudi:pid:2`) marks the country-independent type
 - the `aka_vcts` claim ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §2.2.2.2). It lists additional types of the credential and applies to every credential type. The German PID issued by eudi-dev carries it
 
-Inheritance describes the credential type only. Signature and trust list checks decide whether the issuer is authorized (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so").
+Inheritance describes the credential type only. Signature and trusted list checks decide whether the issuer is authorized (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so").
 
 In mdoc every PID has the doctype `eu.europa.ec.eudi.pid.1` (PID_05). National elements are in a domestic namespace. Its name is the doctype with the country or region code appended (`eu.europa.ec.eudi.pid.de.1`, PID_06). A `doctype_value` request therefore matches every PID. A claim query selects a national element by its namespace: `"path": ["eu.europa.ec.eudi.pid.de.1", "birth_name"]`.
 
@@ -127,7 +128,7 @@ All wallet state is stored in `~/.eudi-dev/wallet/` by default:
 └── wallet/
     ├── wallet.json       # Credentials + metadata
     ├── holder.pem        # Holder EC private key (auto-generated on first use)
-    ├── issuer.pem        # Issuer EC private key (for self-issued credentials)
+    ├── issuer.pem        # Issuer EC private key (signs PIDs)
     ├── wallet-log-cleaned-at # Timestamp marker written by wallet logs clean
     ├── wallet-tls-cert.pem # HTTPS certificate for wallet endpoints on port+1
     ├── wallet-tls-key.pem  # HTTPS private key for wallet endpoints on port+1
@@ -145,9 +146,9 @@ On the file backend the activity log is the top-level `log` field of `wallet.jso
 
 Keys are P-256 EC keys, generated on first use and reused across invocations. Wallets under the same parent directory share a persisted root CA. The generated root permits one intermediate CA. Credential and wallet provider certificates use provider intermediates for their role and country. A configured root with a path length of zero signs those leaves directly.
 
-Generated credentials use the wallet's issuer key. SD-JWT credentials carry a deterministic `kid` and a certificate chain in `x5c`, with the self-signed root omitted. The wallet's trust lists publish the corresponding signing certificates and provider CAs. JWT VC issuer metadata also exposes the credential signing key.
+Generated credentials are signed with the key of their provider role. A PID uses the wallet's issuer key. The other categories, custom lists and credentials without a category have their own keys in `signing-keys/` (see [trusted lists](wallet/serve.md#trusted-lists)). SD-JWT credentials carry a deterministic `kid` and a certificate chain in `x5c`, with the self-signed root omitted. The wallet's trusted lists publish the corresponding signing certificates and provider CAs. JWT VC issuer metadata lists one key per list.
 
-Wallet attestations, access signatures, registrar responses, status lists and trust lists use separate keys and certificates. File and Postgres storage keep signing certificates across restarts. Published certificate URLs stay available after renewal. See [test certificates](test-certificates.md) for the signing roles, EUDI specification versions and ISO certificate profile difference.
+Wallet attestations, access signatures, registrar responses, status lists and trusted lists use separate keys and certificates. File and Postgres storage keep signing certificates across restarts. Published certificate URLs stay available after renewal. See [test certificates](test-certificates.md) for the signing roles, EUDI specification versions and ISO certificate profile difference.
 
 Generated credentials expire in **30 days** by default. Use `--exp` to override (e.g. `--exp 720h` for 30 days, `--exp 24h` for 1 day). Use `--nbf` to set a not-before time (RFC3339 or duration, e.g. `--nbf 2025-01-15T00:00:00Z` or `--nbf -1h`).
 
@@ -194,7 +195,7 @@ eudi wallet logs --json       # JSON array of log entries
 
 ## Serving the wallet
 
-`wallet serve` runs the web UI, protocol endpoints, trust lists and management API. It loads credentials from the selected storage backend and asks for consent on interactive requests. On macOS it can also register URL scheme handlers.
+`wallet serve` runs the web UI, protocol endpoints, trusted lists and management API. It loads credentials from the selected storage backend and asks for consent on interactive requests. On macOS it can also register URL scheme handlers.
 
 The activity view shows each protocol request and response, with its endpoint and status. Encrypted exchanges show an **Encrypted** label and the plaintext. The details show the encrypted value. Credential summaries list the selected disclosure paths. The [activity log API](wallet/http-api.md#activity-log) describes the JSON format of this view.
 
@@ -203,7 +204,7 @@ eudi wallet serve                      # web UI on http://localhost:8085
 eudi wallet serve --auto-accept --pid  # headless, with default PIDs, for tests
 ```
 
-See [serving the wallet](wallet/serve.md) for the endpoints, trust list profiles, certificate export, URL scheme registration, runtime conformance settings, and every `wallet serve` flag.
+See [serving the wallet](wallet/serve.md) for the endpoints, trusted lists, certificate export, URL scheme registration, runtime conformance settings, and every `wallet serve` flag.
 
 ## Presenting from the wallet
 

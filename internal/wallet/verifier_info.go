@@ -100,17 +100,18 @@ func requestVerifierInfo(authReq *AuthorizationRequestParams) map[string]any {
 }
 
 // registrationStatusFindings checks a registration certificate against its
-// registrar's status list (ARF §6.6.3.3 step 4). The list must chain to a
-// trusted registrar (ARF RPACANot_03b). An unreadable status is a finding too,
-// because then the wallet can't tell whether the certificate is revoked.
-func registrationStatusFindings(cert map[string]any, client *http.Client, registrarCAs []*x509.Certificate, rule string) []string {
+// registrar's status list (ARF §6.6.3.3 step 4). The list must chain to the
+// revocation service of a trusted registrar (ARF RPACANot_03b). An unreadable
+// status is a finding too, because then the wallet can't tell whether the
+// certificate is revoked.
+func registrationStatusFindings(cert map[string]any, client *http.Client, statusCAs []*x509.Certificate, rule string) []string {
 	ref := statuslist.ExtractStatusRef(cert)
 	if ref == nil {
 		return nil
 	}
 	name := firstNonEmpty(stringClaim(cert["name"]), stringClaim(cert["sub"]), "the relying party")
-	anchors := make([]statuslist.TrustCert, 0, len(registrarCAs))
-	for _, ca := range registrarCAs {
+	anchors := make([]statuslist.TrustCert, 0, len(statusCAs))
+	for _, ca := range statusCAs {
 		anchors = append(anchors, statuslist.TrustCert{Raw: ca.Raw})
 	}
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client, TrustListCerts: anchors})
@@ -178,7 +179,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	case count == 0:
 		findings = append(findings, "ARF RPRC_19: the request has no registration certificate in verifier_info (typ rc-wrp+jwt)")
 	case count > 1:
-		findings = append(findings, fmt.Sprintf("ARF RPRC_19: the request carries %d registration certificates, but only a single one for its intended use", count))
+		findings = append(findings, fmt.Sprintf("ARF RPRC_19: the request carries %d registration certificates. It must carry exactly one", count))
 	}
 	accessChain := requestAccessChain(authReq)
 	if len(accessChain) == 0 {
@@ -196,7 +197,7 @@ func ARFFindings(authReq *AuthorizationRequestParams) []string {
 		if err := verifyToAnchor(r.chain, authReq.RegistrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("ARF RPRC_02a: the registration certificate of %s does not chain to a trusted registrar: %v", name, err))
 		}
-		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient, authReq.RegistrarCAs, "ARF RPRC_17")...)
+		findings = append(findings, registrationStatusFindings(cert, authReq.StatusClient, authReq.RegistrationStatusCAs, "ARF RPRC_17")...)
 	}
 	// RPRC_21 compares the request with "the registration certificate included
 	// in the same request".
@@ -373,7 +374,7 @@ func overAskingFindings(cert map[string]any, dcql map[string]any) []string {
 	return findings
 }
 
-// registersCredential reports whether every type the query accepts is
+// registersCredential reports whether every accepted type of the query is
 // registered in its format. ETSI TS 119 475 V1.2.1 Annex B.2.9 requires format
 // and meta, so an entry without them registers nothing.
 func registersCredential(registered []registeredCredential, format string, types []string) bool {

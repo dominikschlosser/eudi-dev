@@ -243,7 +243,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		wellKnown:     "openid-credential-issuer",
 		issuer:        offer.CredentialIssuer,
 		fetch: func(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
-			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, payloads...)
+			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, w.Mode() == ValidationModeStrict, payloads...)
 			signerChain = chain
 			return metadata, err
 		},
@@ -583,15 +583,16 @@ func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
 	return metadata, err
 }
 
-func fetchIssuerMetadata(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
-	metadata, _, err := fetchIssuerMetadataDocument(client, issuer, false, payloads...)
+func fetchIssuerMetadata(client *http.Client, issuer string, strict bool, payloads ...*LogPayload) (map[string]any, error) {
+	metadata, _, err := fetchIssuerMetadataDocument(client, issuer, false, strict, payloads...)
 	return metadata, err
 }
 
 // fetchIssuerMetadataDocument also returns the certificate chain of signed
 // metadata. preferSigned asks for the signed form first. The ARF requires
-// issuers to provide it (ISSU_22, ISSU_32).
-func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigned bool, payloads ...*LogPayload) (map[string]any, []*x509.Certificate, error) {
+// issuers to provide it (ISSU_22, ISSU_32). strict refuses signed metadata
+// without iat or past its exp.
+func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigned, strict bool, payloads ...*LogPayload) (map[string]any, []*x509.Certificate, error) {
 	metadataURL, err := wellKnownURL(issuer, "openid-credential-issuer")
 	if err != nil {
 		return nil, nil, fmt.Errorf("building issuer metadata URL: %w", err)
@@ -634,7 +635,7 @@ func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigne
 	if payload := firstLogPayload(payloads); payload != nil {
 		payload.Body = string(body)
 	}
-	return parseIssuerMetadataDocument(body, resp.Header.Get("Content-Type"), issuer)
+	return parseIssuerMetadataDocument(body, resp.Header.Get("Content-Type"), issuer, strict)
 }
 
 func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
@@ -657,8 +658,10 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 }
 
 // parseIssuerMetadataDocument also returns the certificate chain that signed
-// the metadata, or nil for unsigned metadata.
-func parseIssuerMetadataDocument(body []byte, contentType, issuer string) (map[string]any, []*x509.Certificate, error) {
+// the metadata, or nil for unsigned metadata. OpenID4VCI 1.0 §12.2.3 requires
+// iat in signed metadata, and exp limits its use. Strict mode refuses metadata
+// that breaks this. Debug mode logs a warning and continues.
+func parseIssuerMetadataDocument(body []byte, contentType, issuer string, strict bool) (map[string]any, []*x509.Certificate, error) {
 	raw := strings.TrimSpace(string(body))
 	if raw == "" {
 		return nil, nil, fmt.Errorf("issuer metadata response was empty")
@@ -674,6 +677,12 @@ func parseIssuerMetadataDocument(body []byte, contentType, issuer string) (map[s
 		}
 		if err := verifySignedIssuerMetadata(token, issuer); err != nil {
 			return nil, nil, err
+		}
+		if problem := signedIssuerMetadataFreshness(token); problem != "" {
+			if strict {
+				return nil, nil, fmt.Errorf("OpenID4VCI 1.0 §12.2.3: %s", problem)
+			}
+			log.Printf("[VCI] Warning: OpenID4VCI 1.0 §12.2.3: %s (debug mode continues)", problem)
 		}
 		metadata = token.Payload
 		chain, _ = signedIssuerMetadataChain(token)
@@ -765,13 +774,6 @@ func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 	if sub != issuer {
 		return fmt.Errorf("signed issuer metadata sub %q does not match the credential issuer identifier %q", sub, issuer)
 	}
-	if _, ok := token.Payload["iat"].(float64); !ok {
-		return fmt.Errorf("signed issuer metadata has no iat")
-	}
-	if exp, ok := token.Payload["exp"].(float64); ok && time.Unix(int64(exp), 0).Before(time.Now()) {
-		return fmt.Errorf("signed issuer metadata expired at %s", time.Unix(int64(exp), 0).UTC().Format(time.RFC3339))
-	}
-
 	certs, err := signedIssuerMetadataChain(token)
 	if err != nil {
 		return err
@@ -784,6 +786,16 @@ func verifySignedIssuerMetadata(token *sdjwt.Token, issuer string) error {
 		log.Printf("[VCI] signed issuer metadata signer could not be anchored (%v). The wallet holds no issuer trust anchors, so the metadata is read as signed but unplaced", err)
 	}
 	return nil
+}
+
+func signedIssuerMetadataFreshness(token *sdjwt.Token) string {
+	if _, ok := token.Payload["iat"].(float64); !ok {
+		return "the signed issuer metadata has no iat"
+	}
+	if exp, ok := token.Payload["exp"].(float64); ok && time.Unix(int64(exp), 0).Before(time.Now()) {
+		return fmt.Sprintf("the signed issuer metadata expired at %s", time.Unix(int64(exp), 0).UTC().Format(time.RFC3339))
+	}
+	return ""
 }
 
 func signedIssuerMetadataChain(token *sdjwt.Token) ([]*x509.Certificate, error) {

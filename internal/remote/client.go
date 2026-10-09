@@ -222,6 +222,32 @@ func (c *Client) DeleteRelyingParty(identifier string) error {
 	return c.do(http.MethodDelete, "/api/registrar/wrp/"+url.PathEscape(identifier), nil, nil)
 }
 
+// TrustState reads the providers and external lists that users added to the
+// wallet's trusted lists.
+func (c *Client) TrustState(out any) error {
+	return c.do(http.MethodGet, "/api/trust", nil, out)
+}
+
+// AddTrustedEntity puts a provider on one of the wallet's lists.
+func (c *Client) AddTrustedEntity(entity, out any) error {
+	return c.do(http.MethodPost, "/api/trust/entities", entity, out)
+}
+
+// RemoveTrustedEntity takes a provider off its list.
+func (c *Client) RemoveTrustedEntity(id string) error {
+	return c.do(http.MethodDelete, "/api/trust/entities/"+url.PathEscape(id), nil, nil)
+}
+
+// AddTrustedList puts an external list on the wallet's list of trusted lists.
+func (c *Client) AddTrustedList(listURL string) error {
+	return c.do(http.MethodPost, "/api/trust/lists", map[string]string{"url": listURL}, nil)
+}
+
+// RemoveTrustedList takes an external list off the list of trusted lists.
+func (c *Client) RemoveTrustedList(listURL string) error {
+	return c.do(http.MethodDelete, "/api/trust/lists?url="+url.QueryEscape(listURL), nil, nil)
+}
+
 // CatalogAttestations reads the wallet's attestation catalogue with names and
 // credential types.
 func (c *Client) CatalogAttestations(out any) error {

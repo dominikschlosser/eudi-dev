@@ -137,6 +137,9 @@ func redirectBrowser(w http.ResponseWriter, redirectURI string) {
 }
 
 type AuthorizationRequestParams struct {
+	// Findings are the checks that failed in debug mode. The consent dialog
+	// and the API response list them.
+	Findings      []string
 	ClientID      string
 	ResponseType  string
 	ResponseMode  string
@@ -168,10 +171,12 @@ type AuthorizationRequestParams struct {
 	// StatusClient fetches the status lists of registration certificates
 	// (Wallet.RegistrationStatusClient).
 	StatusClient *http.Client
-	// RelyingPartyCAs and RegistrarCAs are the CAs --arf trusts for access
-	// certificates and for registration certificates.
-	RelyingPartyCAs []*x509.Certificate
-	RegistrarCAs    []*x509.Certificate
+	// RelyingPartyCAs, RegistrarCAs and RegistrationStatusCAs are the anchors
+	// --arf trusts for access certificates, registration certificates and
+	// their status lists.
+	RelyingPartyCAs       []*x509.Certificate
+	RegistrarCAs          []*x509.Certificate
+	RegistrationStatusCAs []*x509.Certificate
 }
 
 type preparedPresentation struct {
@@ -232,6 +237,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 
+	authReq.Findings = findings
 	for _, finding := range findings {
 		s.log("  WARNING: %s", finding)
 	}
@@ -312,6 +318,7 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		DCQLQuery:    authReq.DCQLQuery,
 
 		CredentialOptions: credentialOptions,
+		Findings:          authReq.Findings,
 	}
 	consentReq.Purposes, consentReq.PrivacyPolicies = consentRegistration(authReq)
 	consentReq.applyClientAuth(authReq)
@@ -572,12 +579,17 @@ func (s *Server) reportRefusalToVerifier(authReq *AuthorizationRequestParams, er
 
 // SubmittedPresentation is the document that POST /api/presentations returns
 // once the response reached the verifier. The CLI prints the same document.
-func SubmittedPresentation(result *DirectPostResult, vp *VPTokenMapResult) map[string]any {
+// findings are the checks that failed in debug mode.
+func SubmittedPresentation(result *DirectPostResult, vp *VPTokenMapResult, findings []string) map[string]any {
 	keys := []string{}
 	if vp != nil && len(vp.QueryIDs()) > 0 {
 		keys = vp.QueryIDs()
 	}
-	return withRedirectURI(map[string]any{"status": "submitted", "response": result, "vp_token_keys": keys}, result.RedirectURI)
+	body := map[string]any{"status": "submitted", "response": result, "vp_token_keys": keys}
+	if len(findings) > 0 {
+		body["findings"] = findings
+	}
+	return withRedirectURI(body, result.RedirectURI)
 }
 
 // withRedirectURI adds the verifier's redirect_uri to an API response. Without
@@ -668,7 +680,7 @@ func (s *Server) submitPresentation(w http.ResponseWriter, authReq *Authorizatio
 	if authReq.BrowserRedirect {
 		redirectBrowser(w, result.RedirectURI)
 	} else {
-		writeJSON(w, http.StatusOK, SubmittedPresentation(result, prepared.VPResult))
+		writeJSON(w, http.StatusOK, SubmittedPresentation(result, prepared.VPResult, authReq.Findings))
 	}
 
 	return SubmissionResult{

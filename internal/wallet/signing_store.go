@@ -150,7 +150,7 @@ func (s *signingStore) selfSignedCA(role, commonName string) (*ecdsa.PrivateKey,
 			return nil, nil, err
 		}
 	}
-	return nil, nil, fmt.Errorf("storing the %s certificate kept conflicting", role)
+	return nil, nil, fmt.Errorf("storing the %s certificate failed after repeated conflicts", role)
 }
 
 func (w *Wallet) signingStore() *signingStore {
@@ -163,19 +163,28 @@ func (w *Wallet) signingStore() *signingStore {
 }
 
 func (s *signingStore) certificate(caKey *ecdsa.PrivateKey, ca *x509.Certificate, pub *ecdsa.PublicKey, opts mock.LeafCertOptions, renew bool) (*x509.Certificate, error) {
-	publicKey, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		return nil, err
-	}
 	options, err := json.Marshal(opts)
 	if err != nil {
 		return nil, err
 	}
-	identity := sha256.New()
-	identity.Write(ca.Raw)
-	identity.Write(publicKey)
-	identity.Write(options)
-	key := path.Join(s.prefix, "certificates", fmt.Sprintf("%x.pem", identity.Sum(nil)))
+	return s.cachedCertificate(options, ca, pub, renew, func() (*x509.Certificate, error) {
+		return mock.GenerateLeafCertWithOptions(caKey, ca, pub, opts)
+	})
+}
+
+// cachedCertificate keeps the certificate that issue creates for pub under ca
+// and the subject the identity describes. It issues a new one before the
+// stored one expires or when renew is set.
+func (s *signingStore) cachedCertificate(identity []byte, ca *x509.Certificate, pub *ecdsa.PublicKey, renew bool, issue func() (*x509.Certificate, error)) (*x509.Certificate, error) {
+	publicKey, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.New()
+	digest.Write(ca.Raw)
+	digest.Write(publicKey)
+	digest.Write(identity)
+	key := path.Join(s.prefix, "certificates", fmt.Sprintf("%x.pem", digest.Sum(nil)))
 	for range 5 {
 		blobs, err := s.backend.ReadAll(path.Dir(key))
 		if err != nil {
@@ -198,7 +207,7 @@ func (s *signingStore) certificate(caKey *ecdsa.PrivateKey, ca *x509.Certificate
 				return s.retainCertificate(cert)
 			}
 		}
-		cert, err := mock.GenerateLeafCertWithOptions(caKey, ca, pub, opts)
+		cert, err := issue()
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +221,7 @@ func (s *signingStore) certificate(caKey *ecdsa.PrivateKey, ca *x509.Certificate
 		}
 		return s.retainCertificate(cert)
 	}
-	return nil, fmt.Errorf("signing certificate changed concurrently too often")
+	return nil, fmt.Errorf("storing the signing certificate failed after repeated conflicts")
 }
 
 func (s *signingStore) retainCertificate(cert *x509.Certificate) (*x509.Certificate, error) {

@@ -21,6 +21,8 @@ When a verifier responds to a presentation with a `redirect_uri`, the wallet pri
 
 `debug` mode matches DCQL queries loosely to help troubleshoot verifier queries. A credential that matches the requested format and metadata and at least one requested claim counts as a match with a warning, even when other required claim paths are missing. `strict` mode requires every claim path.
 
+The wallet presents a `jwt_vc_json` credential without a Verifiable Presentation, so it can't prove holder binding. Such a credential answers only a query with `require_cryptographic_holder_binding: false` (OpenID4VP 1.0 Appendix B.1).
+
 ```bash
 eudi wallet accept 'openid4vp://authorize?...' --auto-accept
 eudi wallet accept 'eu-eaa-offer://?credential_offer_uri=...'
@@ -43,6 +45,7 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled: strict refuses the flow, debug reports them and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [ARF checks](#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
 | `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
+| `--trust-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
 
 Pre-authorized code offers work directly with `wallet accept`. Authorization code offers require a running `wallet serve` instance. The client ID defaults to the wallet origin and the redirect URI to its `/callback` endpoint. Override them with `--vci-client-id` and `--vci-redirect-uri`. The wallet uses PAR and DPoP when advertised by the issuer.
 
@@ -72,7 +75,7 @@ eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 
 The wallet handling the flow fetches the offer and prompts for a transaction code when one is required. For a local flow, the CLI prompts when stdin is a terminal and `--tx-code` was not given. See [ADR-0012](../adr/0012-every-entry-point-runs-the-same-flow.md).
 
-`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf` and `--relying-party-ca` flags as `accept`.
+`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf`, `--relying-party-ca` and `--trust-list-ca` flags as `accept`.
 
 ## Invoking the wallet by URL
 
@@ -159,12 +162,16 @@ The wallet checks that:
 
 - the request is signed with an access certificate in `x5c` (RPA_03)
 - the access certificate chains to a trusted access certificate authority (RPA_04)
-- the request carries a registration certificate in `verifier_info` (RPRC_19)
-- the registration certificate is signed by a trusted registrar (RPRC_02a), names the relying party of the access certificate (RPRC_17a), contains all claims required by ETSI TS 119 475 and is not expired (RPRC_17)
-- the registrar has not revoked the registration certificate, and its status list can be read (RPRC_17)
-- the request asks only for registered credentials and claims (RPRC_21)
+- the request carries exactly one registration certificate in `verifier_info` (RPRC_19)
+- the registration certificate is signed by a trusted registrar (RPRC_02a), names the relying party of the access certificate (RPRC_17a), has a valid signature and `typ`, contains all claims required by ETSI TS 119 475 and is not expired (RPRC_17)
+- the registrar has not revoked the registration certificate (RPRC_17). Its status list must be readable and chain to a trusted registrar (RPACANot_03b)
+- the request asks only for credentials and claims registered in that certificate (RPRC_21)
 
-In `--mode strict` a request that fails a check is refused. In `--mode debug` the findings are logged as warnings. The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). Strict mode refuses. If the CLI passes a request to a running wallet, that wallet's `--arf` and `--relying-party-ca` settings apply.
+In `--mode debug` the findings are logged as warnings. The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). Strict mode refuses. If the CLI passes a request to a running wallet, that wallet's `--arf`, `--relying-party-ca` and `--trust-list-ca` settings apply.
+
+How strict mode refuses depends on the verifier. When only ARF findings remain and the request is signed with a trusted access certificate, the wallet sends the verifier an `access_denied` error response (OpenID4VP 1.0 §8.5, RFC 6749 §4.1.2.1). Its `error_description` is "The request does not meet the ARF registration rules: " followed by the findings, for example `ARF RPRC_19: ...`. `POST /api/presentations` answers with status `refused` and the same description. Any other strict refusal stays in the wallet. The caller gets HTTP 400 as described under [HAIP 1.0 Enforcement](#haip-10-enforcement).
+
+The consent dialog shows the purposes and privacy policies of the registration certificates. Only certificates that belong to the access certificate of the signed request count. An unsigned request shows none.
 
 Access certificates must chain to the relying party access CA of the [registrar](registrar.md), the wallet CA (which signs the access certificates of the demo verifier and the demo issuer) or a CA from `--relying-party-ca`. Registration certificates must chain to the wallet CA (which signs the registrar certificate) or a CA from `--relying-party-ca`. The relying party access CA signs any visitor's CSR, so it doesn't count as a registrar. Use `--relying-party-ca` for the CAs of an external ecosystem, such as a member state's sandbox. It applies to both checks. See [ADR 0021](../adr/0021-arf-checks-are-a-separate-profile.md).
 

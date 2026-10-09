@@ -63,6 +63,7 @@ type walletServeOptions struct {
 	ARF                     bool
 	RelyingPartyCAs         []string
 	TrustListCAs            []string
+	TrustedLists            []string
 	VCIVersion              string
 	ClientAttestation       bool
 	AdhocDisplayImages      bool
@@ -85,7 +86,8 @@ type walletServeOptions struct {
 const (
 	arfFlagUsage            = "Check the access and registration certificates of verifiers and issuers against the ARF, including over-asking and revocation. With --mode strict the wallet refuses the request or the offer on any finding"
 	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. --arf trusts them in addition to the wallet's own CAs (repeatable)"
-	trustListCAFlagUsage    = "PEM file with CA certificates of trusted list operators. --arf trusts a fetched trusted list signed under them, in addition to the wallet's own CA (repeatable)"
+	trustListCAFlagUsage    = "PEM file with CA certificates of trusted list operators. With --arf the wallet also accepts trusted lists signed under these CAs (repeatable)"
+	trustedListFlagUsage    = "URL of an external list of trusted entities (ETSI TS 119 602) for the wallet's list of trusted lists. With --arf its providers anchor the checks of their list type (repeatable)"
 )
 
 // demoVerifierIssuerCAFiles lists the files of both issuer CA flags.
@@ -132,7 +134,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.CredentialsFile, "credentials", "", "Credentials to issue or import on every start and after a demo reset: a YAML or JSON file, a directory of such files, or '-' for stdin")
 	cmd.Flags().BoolVar(&opts.PID, "pid", false, "Auto-generate default EUDI PID credentials (SD-JWT + mdoc)")
 	cmd.Flags().StringVar(&opts.KeyPath, "key", "", "Holder private key file (PEM/JWK). Uses the stored key or auto-generates one if omitted")
-	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated credentials (PEM/JWK)")
+	cmd.Flags().StringVar(&opts.IssuerKey, "issuer-key", "", "Issuer key for generated PIDs (PEM/JWK)")
 	cmd.Flags().StringVar(&opts.SessionTranscript, "session-transcript", "oid4vp", "mdoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().BoolVar(&opts.Register, "register", false, "Register OS URL scheme handlers (openid4vp://, eudi-openid4vp://, haip-vp://, openid-credential-offer://, haip-vci://, eu-eaa-offer://)")
 	cmd.Flags().BoolVar(&opts.NoRegister, "no-register", false, "Skip URL scheme registration (overrides --register)")
@@ -146,6 +148,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().BoolVar(&opts.ARF, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&opts.RelyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().StringArrayVar(&opts.TrustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&opts.TrustedLists, "trusted-list", nil, trustedListFlagUsage)
 	cmd.Flags().BoolVar(&opts.HAIP, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&opts.AdhocDisplayImages, "adhoc-display-images", false, "Keep an issuer's https display image URL and let the card fetch it on demand instead of fetching once and storing the image (nothing is stored but the issuer sees each render, while a data URI, template art, and http URLs are still embedded)")
 	cmd.Flags().StringVar(&opts.VCIVersion, "vci-version", string(wallet.VCIVersion10), "OpenID4VCI feature level the wallet uses as a client: '1.0' (the published version, the default) or '1.1' (also uses what the 1.1 draft adds, where an issuer offers it)")
@@ -156,7 +159,7 @@ so the wallet automatically receives incoming protocol requests.`,
 	cmd.Flags().StringVar(&opts.DemoReset, "demo-reset", "1h", "When to restore the clean demo baseline: an interval (24h), a daily wall-clock time (00:00), or one with a timezone (\"00:00 Europe/Berlin\"). 0 disables. Requires --demo")
 	cmd.Flags().StringVar(&opts.ImprintFile, "imprint-file", "", "HTML snippet with the site operator's legal notice, served at /imprint (required for public EU hosting)")
 	cmd.Flags().BoolVar(&opts.ServeTLS, "serve-tls", false, "Serve an https --base-url locally with the wallet's own TLS certificate instead of expecting an external TLS terminator in front (the HTTP port stays bound as well)")
-	cmd.Flags().StringArrayVar(&opts.DemoVerifierIssuerCAs, "demo-verifier-issuer-ca", nil, "PEM file with CA certificates of credential issuers the demo verifier accepts in addition to the wallet's own CA (repeatable). Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run")
+	cmd.Flags().StringArrayVar(&opts.DemoVerifierIssuerCAs, "demo-verifier-issuer-ca", nil, "PEM file with extra issuer CA certificates for the demo verifier, in addition to the wallet's own CA (repeatable). Use it for credentials issued outside this wallet, such as in an OIDF conformance suite run")
 	cmd.Flags().StringArrayVar(&opts.DemoVerifierTrustAnchors, "demo-verifier-trust-anchor", nil, "")
 	_ = cmd.Flags().MarkDeprecated("demo-verifier-trust-anchor", "use --demo-verifier-issuer-ca")
 	cmd.Flags().StringVar(&opts.LogFormat, "log-format", os.Getenv(serverlog.EnvVar), "Console output format: 'text' (the default) or 'json' (one JSON record per line on stdout, for log collectors) (default $"+serverlog.EnvVar+")")
@@ -491,7 +494,7 @@ func runWalletServe(cmd *cobra.Command, opts *walletServeOptions) error {
 	if opts.HAIP {
 		w.RequireHAIP = true
 	}
-	if err := applyARFOptions(w, opts.ARF, opts.RelyingPartyCAs, opts.TrustListCAs); err != nil {
+	if err := applyARFOptions(w, opts.ARF, opts.RelyingPartyCAs, opts.TrustListCAs, opts.TrustedLists); err != nil {
 		return err
 	}
 	if opts.AdhocDisplayImages {

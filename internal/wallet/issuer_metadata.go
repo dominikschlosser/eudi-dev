@@ -89,7 +89,7 @@ func parseIssuerHost(raw string) string {
 func issuerSigningJWKs(w *Wallet, exp time.Time) []any {
 	profiles := []trustListProfile{}
 	for _, group := range TrustListGroupsForWallet(w) {
-		if group.Profile.LoTEType != walletProviderTrustListType {
+		if group.listsCredentialProviders() {
 			profiles = append(profiles, group.Profile)
 		}
 	}

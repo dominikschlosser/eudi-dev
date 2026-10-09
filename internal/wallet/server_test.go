@@ -2187,8 +2187,8 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	}
 	index := decodeJSON(t, indexResp)
 	rawLists, ok := index["trust_lists"].([]any)
-	if !ok || len(rawLists) != 5 {
-		t.Fatalf("expected the four category lists and the wallet provider list, got %v", index["trust_lists"])
+	if !ok || len(rawLists) != 7 {
+		t.Fatalf("expected the four category lists and the wallet provider, access CA and registrar lists, got %v", index["trust_lists"])
 	}
 	var sawPIDDefault, sawEAA, sawWalletProvider bool
 	for _, raw := range rawLists {
@@ -2261,7 +2261,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	}
 	selectedScheme := selectedLoTE["ListAndSchemeInformation"].(map[string]any)
 	if selectedScheme["LoTEType"] != localTrustListType {
-		t.Fatalf("expected doctype-selected trust list to return local profile, got %v", selectedScheme["LoTEType"])
+		t.Fatalf("doctype-selected list has LoTEType %v, want the EAA list type", selectedScheme["LoTEType"])
 	}
 
 	byIDResp := serverRequest(t, srv, "GET", "/api/trustlists/eaa", "")
@@ -2276,7 +2276,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 	}
 	byIDScheme := byIDLoTE["ListAndSchemeInformation"].(map[string]any)
 	if byIDScheme["LoTEType"] != localTrustListType {
-		t.Fatalf("expected /api/trustlists/eaa to return local profile, got %v", byIDScheme["LoTEType"])
+		t.Fatalf("/api/trustlists/eaa has LoTEType %v, want the EAA list type", byIDScheme["LoTEType"])
 	}
 	uris, ok := byIDScheme["SchemeInformationURI"].([]any)
 	if !ok || len(uris) != 2 {

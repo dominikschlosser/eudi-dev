@@ -57,7 +57,7 @@ func signedTestIssuerMetadata(t *testing.T, key *ecdsa.PrivateKey, chain []*x509
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, signerChain, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", "https://issuer.example")
+	metadata, signerChain, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", "https://issuer.example", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestARFRefusesAnIssuerRegistrationFromTheAccessCA(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestIssuer(t, w, registrar.NonQEAAProviderEntitlement)
 	key, chain := issueTestAccessCertificate(t, w, rp.Identifier[0].Identifier)
-	claims, err := registrar.RegistrationCertificateClaimsFor(w.RegistrarBase(), registrar.ProviderCertificateContent(rp, rp.Services[0]), nil, nil, time.Now())
+	claims, err := registrar.RegistrationCertificateClaimsFor(w.RegistrarBase(), registrar.ProviderCertificateContent(rp, rp.Services[0]), nil, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestARFAcceptsTheWalletsOwnIssuer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, chain, err := parseIssuerMetadataDocument([]byte(signed), "application/jwt", w.IssuerURL)
+	parsed, chain, err := parseIssuerMetadataDocument([]byte(signed), "application/jwt", w.IssuerURL, true)
 	if err != nil {
 		t.Fatal(err)
 	}

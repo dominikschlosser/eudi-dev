@@ -77,6 +77,7 @@ All fields except `claims` are optional:
 | `claims` | The default claim set |
 | `always_disclosed` | Claims issued plainly instead of selectively disclosable (see below) |
 | `unique_claims` | Claims that get a new random value in every credential, for example an opaque subject identifier |
+| `category` | `pid`, `qeaa`, `pub-eaa` or `eaa`. Credentials from the template are on the [trusted list](wallet/serve.md#trusted-lists) of this category. Without one, the template's catalogue entry gives the category. The predefined PID templates are `pid` and the demo ticket is `eaa` |
 | `display` | Card appearance for credentials issued from the template (`name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image`). Image fields take a data URI or an http(s) URL. The predefined PID templates set it |
 | `predefined` | Set on predefined templates in listings and exports. Ignored on import |
 
@@ -165,7 +166,7 @@ eudi issue sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --
 # Create or update a template directly
 eudi templates save employee-card --format sdjwt --vct urn:example:employee --claims '{"employee_id": "E-1"}' --always-disclosed employee_id
 
-# Customize a pre-defined template (the copy overrides it when saved under the same name)
+# Customize a predefined template (the copy overrides it when saved under the same name)
 eudi templates save german-pid-sdjwt --from german-pid-sdjwt --vct urn:custom:pid
 
 # Import a shared template (file, JSON string, or - for stdin)
@@ -173,7 +174,7 @@ eudi templates import shared-template.json
 eudi templates import '{"format":"sdjwt","claims":{"a":1}}' --name my-cred
 eudi templates show employee-card > share-me.json
 
-# Delete a user template (deleting an override restores the pre-defined version)
+# Delete a user template (deleting an override restores the predefined version)
 eudi templates delete employee-card
 ```
 
@@ -211,10 +212,10 @@ The wallet server exposes the same template store:
 The predefined templates are always in the [attestation catalogue](wallet/registrar.md#attestation-catalogue). User templates are added only on request. To add one, send a `catalog` object next to the template document in `PUT /api/templates/{name}`, or next to `save_as_template` in `POST /api/issue`:
 
 ```json
-{"name": "Employee card", "schema": {"rulebookURI": "https://example.com/rulebook", "attestationLoS": "iso_18045_basic", "bindingType": "key", "trustedAuthorities": [{"frameworkType": "etsi_tl", "value": "https://example.com/trusted-list", "isLOTE": true}]}}
+{"name": "Employee card", "category": "eaa", "schema": {"rulebookURI": "https://example.com/rulebook", "attestationLoS": "iso_18045_basic", "bindingType": "key", "trustedAuthorities": [{"frameworkType": "etsi_tl", "value": "https://example.com/trusted-list", "isLOTE": true}]}}
 ```
 
-The entry gets the template's format, type and claims. An empty name becomes the template's display name or its name. Only an SD-JWT VC template with a `vct` or an mdoc template with a `doctype` can be added. The wallet checks the entry before it saves anything. If the entry is invalid or its name is taken, it saves neither the template nor the entry, and `POST /api/issue` doesn't issue the credential. Deleting the template keeps the entry. Delete the entry in the catalogue.
+The entry gets the template's format, type and claims. An empty name becomes the template's display name or its name. The entry's category defaults to the template's category, else `eaa`. The template then takes the entry's category. A user template without a category and without a catalogue entry is on no trusted list. Only an SD-JWT VC template with a `vct` or an mdoc template with a `doctype` can be added. The wallet checks the entry before it saves anything. If the entry is invalid or its name is taken, it saves neither the template nor the entry, and `POST /api/issue` doesn't issue the credential. Deleting the template keeps the entry. Delete the entry in the catalogue.
 
 ```bash
 # Import a template and issue from it
@@ -231,8 +232,8 @@ curl -X POST http://localhost:8085/api/issue \
 
 Choose a template in the issue dialog to fill in the form, then edit any values you need. Uncheck a claim's SD checkbox to make it always visible. In JSON mode, use the "Always visible" field. Dotted paths select nested claims. Enter a name in "Save as template" to save the form after successful issuance.
 
-**Templates** in the header and the Templates button list the templates. On a phone the header link is under **Menu**. **New template** and **Edit** open the template editor. It has the fields of the issue dialog that a template stores: format, type, claims, expiry and card appearance. A switch at the top changes between the builder and the template JSON, so you can paste a template to import it or set fields the builder doesn't show, such as `unique_claims`. Fields the builder doesn't show stay in the template when you edit it. **Delete** removes a user template.
+**Templates** in the header and the Templates button list the templates. On a phone the header link is under **Menu**. **New template** and **Edit** open the template editor. It has the issue dialog fields for a template: format, type, claims, expiry and card appearance. A switch at the top changes between the builder and the template JSON. In the JSON you can paste a template to import it, or set other fields such as `unique_claims`. Editing in the builder keeps these fields. **Delete** removes a user template.
 
-The template editor and "Save as template" in the issue dialog have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, rulebook, level of security, holder binding and trusted list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
+The template editor and "Save as template" in the issue dialog have the checkbox "Add the template to the attestation catalogue". Ticking it shows the catalogue fields: the attestation name, the category, the rulebook, the level of security, the holder binding and the trusted list. Choosing a category sets its default level of security, and an empty trusted list links the category's list. The dialog shows an error if a field is invalid or the name is taken, and nothing is saved.
 
 On a public demo, visitors can save templates too. They can't change or delete the predefined templates or the operator's templates (those present at startup). Visitor templates can't have their own images. Images of the bundled templates still work. A demo keeps at most 50 visitor templates, and a reset deletes them.

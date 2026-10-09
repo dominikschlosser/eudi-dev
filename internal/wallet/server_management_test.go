@@ -323,7 +323,7 @@ func TestCertificateExportAPI(t *testing.T) {
 	}
 	srv.SetStore(store)
 
-	for _, path := range []string{"/api/certificates/ca", "/api/certificates/tls", "/api/certificates/relying-party-access-ca"} {
+	for _, path := range []string{"/api/certificates/ca", "/api/certificates/tls", "/api/certificates/relying-party-access-ca", "/api/certificates/registrar-ca"} {
 		t.Run(path, func(t *testing.T) {
 			resp := serverRequest(t, srv, http.MethodGet, path, "")
 			if resp.Code != http.StatusOK {

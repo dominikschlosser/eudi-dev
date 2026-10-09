@@ -16,7 +16,6 @@ package cmd
 
 import (
 	"bytes"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +33,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/output"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
@@ -49,10 +49,15 @@ type dispatchOID4Opts struct {
 	arf               bool
 	relyingPartyCAs   []string
 	trustListCAs      []string
+	trustedLists      []string
 	mode              string
 	// keyAttestationLevel is what a key attestation claims (see
 	// Wallet.KeyAttestationLevel).
 	keyAttestationLevel string
+	// conformanceFlags are the conformance flags set on the command line. A
+	// running wallet refuses them, because it applies its own settings to
+	// every step of a flow.
+	conformanceFlags []string
 	// docker serves the presentation trust and status lists under
 	// host.docker.internal. A verifier in a container can reach them there, and
 	// the status list token subject matches the URI in the credential.
@@ -80,7 +85,7 @@ func dispatchURI(uri string, opts dispatchOID4Opts) error {
 		if opts.haip {
 			w.RequireHAIP = true
 		}
-		if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
+		if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs, opts.trustedLists); err != nil {
 			return err
 		}
 		w.KeyAttestationLevel = opts.keyAttestationLevel
@@ -180,7 +185,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	_, _ = dim.Fprintln(humanOut(), "───────────────────────────────────────")
 
-	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, dim)
+	err = submitPresentation(w, store, matches, parsed, responseURI, submissionCh, findings, dim)
 	if err != nil {
 		return err
 	}
@@ -262,9 +267,8 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 	if err := checkRemoteOutboundFlags(); err != nil {
 		return true, err
 	}
-	// A running wallet validates with its own --arf setting and relying party CAs.
-	if opts.arf || len(opts.relyingPartyCAs) > 0 || len(opts.trustListCAs) > 0 {
-		fmt.Fprintf(os.Stderr, "Warning: the wallet running at %s uses its own --arf, --relying-party-ca and --trust-list-ca settings, not these flags\n", baseURL)
+	if err := checkRemoteConformanceFlags(opts.conformanceFlags); err != nil {
+		return true, err
 	}
 	payload := runningWalletPresentationPayload(uri, opts)
 
@@ -343,12 +347,6 @@ func runningWalletPresentationPayload(uri string, opts dispatchOID4Opts) map[str
 	}
 	if opts.sessionTranscript != "" && opts.sessionTranscript != string(wallet.SessionTranscriptOID4VP) {
 		payload["session_transcript"] = opts.sessionTranscript
-	}
-	if opts.haip {
-		payload["haip"] = true
-	}
-	if opts.mode != "" && opts.mode != string(wallet.ValidationModeDebug) {
-		payload["mode"] = opts.mode
 	}
 	return payload
 }
@@ -511,7 +509,7 @@ func waitForConsent(w *wallet.Wallet, matches []wallet.CredentialMatch, parsed *
 	return matches, consentReq.SubmissionCh, nil
 }
 
-func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI string, submissionCh chan wallet.SubmissionResult, dim *color.Color) error {
+func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []wallet.CredentialMatch, parsed *oid4vc.AuthorizationRequest, responseURI string, submissionCh chan wallet.SubmissionResult, findings []string, dim *color.Color) error {
 	params := wallet.PresentationParams{
 		Nonce:         parsed.Nonce,
 		ClientID:      parsed.ClientID,
@@ -595,7 +593,7 @@ func submitPresentation(w *wallet.Wallet, store *wallet.WalletStore, matches []w
 	}
 
 	if jsonOutput {
-		output.PrintJSON(wallet.SubmittedPresentation(result, vpResult))
+		output.PrintJSON(wallet.SubmittedPresentation(result, vpResult, findings))
 	}
 	return verifierRejection(result)
 }
@@ -641,7 +639,7 @@ func processCredentialOffer(uri string, opts dispatchOID4Opts) error {
 	if opts.haip {
 		w.RequireHAIP = true
 	}
-	if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs); err != nil {
+	if err := applyARFOptions(w, opts.arf, opts.relyingPartyCAs, opts.trustListCAs, opts.trustedLists); err != nil {
 		return err
 	}
 
@@ -704,10 +702,16 @@ func navigatesHere(browserWaiting bool) bool {
 
 // applyARFOptions turns on --arf and loads the PEM files of
 // --relying-party-ca and --trust-list-ca.
-func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs []string) error {
+func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, trustedLists []string) error {
 	if arf {
 		w.RequireARF = true
 	}
+	for _, list := range trustedLists {
+		if u, err := url.Parse(list); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return fmt.Errorf("--trusted-list %q is not an http or https URL", list)
+		}
+	}
+	w.ConfiguredTrustedListURLs = trustedLists
 	var err error
 	if w.RelyingPartyCAPEM, err = loadPEMCertificates("relying-party-ca", relyingPartyCAs); err != nil {
 		return err
@@ -724,8 +728,8 @@ func loadPEMCertificates(flag string, paths []string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading --%s: %w", flag, err)
 		}
-		if !x509.NewCertPool().AppendCertsFromPEM(data) {
-			return nil, fmt.Errorf("--%s %s holds no PEM certificate", flag, path)
+		if _, err := keys.ParseCertificatesPEM(data); err != nil {
+			return nil, fmt.Errorf("--%s %s: %w", flag, path, err)
 		}
 		bundle = append(append(bundle, data...), '\n')
 	}

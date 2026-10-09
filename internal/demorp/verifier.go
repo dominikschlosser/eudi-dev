@@ -24,8 +24,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -173,6 +175,16 @@ type createRequestBody struct {
 	Identity string `json:"identity"`
 }
 
+// ticketClaimNames are the claims of the ticket template, which the demo
+// verifier's registration covers.
+func (d *DemoRP) ticketClaimNames() []string {
+	cfg, ok := d.templateConfiguration(ticketConfigurationID)
+	if !ok {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(cfg.template.Claims))
+}
+
 type customCredentialTO struct {
 	Format  string  `json:"format"`  // dc+sd-jwt or mso_mdoc
 	VCT     string  `json:"vct"`     // the type for dc+sd-jwt
@@ -262,7 +274,7 @@ func (d *DemoRP) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		vct = TicketVCT
-		claims = []string{"event", "tier", "seat", "given_name", "family_name"}
+		claims = d.ticketClaimNames()
 	case "pid":
 		// An explicit format tests how a wallet handles a request for a format
 		// it does not hold.
@@ -1299,9 +1311,9 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		return check("revocation status (credential references no status list)", nil)
 	}
 
-	// The status list JWT must chain to the same CAs as the credential. A
-	// forged list could otherwise un-revoke a credential.
-	anchors := d.trustedIssuerCerts()
+	// The status list JWT must chain to a service of the lists. A forged list
+	// could otherwise un-revoke a credential.
+	anchors := d.trustedStatusCerts()
 	if len(anchors) == 0 {
 		return check("credential is not revoked", fmt.Errorf("this verifier has no CA certificate"))
 	}
@@ -1321,14 +1333,22 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 	return check("credential is not revoked", errIf(result.Status != 0, "the issuer's status list marks this credential as revoked"))
 }
 
-// trustedIssuerCerts returns the trust anchors for issuer chains. They are the
-// wallet CA and the anchors from SetVerifierTrustAnchors.
+// trustedIssuerCerts returns the trust anchors for issuer chains: the
+// issuance services on the wallet's credential provider lists and the anchors
+// from SetVerifierTrustAnchors. A credential on no list fails.
 func (d *DemoRP) trustedIssuerCerts() []trustlist.CertInfo {
-	var anchors []*x509.Certificate
-	if caCert := d.wallet.TrustAnchorCertificate(); caCert != nil {
-		anchors = append(anchors, caCert)
-	}
-	anchors = append(anchors, d.verifierTrustAnchors...)
+	return certInfos(append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.verifierTrustAnchors...))
+}
+
+// trustedStatusCerts returns the trust anchors for status lists: the issuance
+// and revocation services on the same lists, because an issuer may sign its
+// status list itself, and the anchors from SetVerifierTrustAnchors.
+func (d *DemoRP) trustedStatusCerts() []trustlist.CertInfo {
+	anchors := append(d.wallet.CredentialProviderAnchors(wallet.IssuanceServices), d.wallet.CredentialProviderAnchors(wallet.RevocationServices)...)
+	return certInfos(append(anchors, d.verifierTrustAnchors...))
+}
+
+func certInfos(anchors []*x509.Certificate) []trustlist.CertInfo {
 	certs := make([]trustlist.CertInfo, 0, len(anchors))
 	for _, anchor := range anchors {
 		certs = append(certs, trustlist.CertInfo{

@@ -59,6 +59,11 @@ type walletService interface {
 	CatalogAttestations() ([]registrar.CatalogAttestation, error)
 	AddCatalogAttestation(entry registrar.CatalogAttestation) (registrar.CatalogAttestation, error)
 	DeleteCatalogAttestation(id string) error
+	TrustState() (wallet.TrustedListState, error)
+	AddTrustedEntity(list, name, certificatesPEM string) (wallet.TrustedEntity, error)
+	RemoveTrustedEntity(id string) error
+	AddTrustedList(url string) error
+	RemoveTrustedList(url string) error
 	Config() (map[string]any, error)
 }
 
@@ -206,6 +211,30 @@ func (r *remoteWallet) AddCatalogAttestation(entry registrar.CatalogAttestation)
 
 func (r *remoteWallet) DeleteCatalogAttestation(id string) error {
 	return r.c.DeleteCatalogAttestation(id)
+}
+
+func (r *remoteWallet) TrustState() (wallet.TrustedListState, error) {
+	var out wallet.TrustedListState
+	err := r.c.TrustState(&out)
+	return out, err
+}
+
+func (r *remoteWallet) AddTrustedEntity(list, name, certificatesPEM string) (wallet.TrustedEntity, error) {
+	var out wallet.TrustedEntity
+	err := r.c.AddTrustedEntity(map[string]string{"list": list, "name": name, "certificates": certificatesPEM}, &out)
+	return out, err
+}
+
+func (r *remoteWallet) RemoveTrustedEntity(id string) error {
+	return r.c.RemoveTrustedEntity(id)
+}
+
+func (r *remoteWallet) AddTrustedList(url string) error {
+	return r.c.AddTrustedList(url)
+}
+
+func (r *remoteWallet) RemoveTrustedList(url string) error {
+	return r.c.RemoveTrustedList(url)
 }
 
 func (r *remoteWallet) AccessCertificate(req registrar.AccessCertificateRequest) (*registrar.AccessCertificateResult, error) {
@@ -488,6 +517,50 @@ func (l *localWallet) DeleteCatalogAttestation(id string) error {
 		return err
 	}
 	if err := w.Registrar().DeleteCatalogAttestation(id); err != nil {
+		return err
+	}
+	if err := store.Save(w); err != nil {
+		return fmt.Errorf("saving wallet: %w", err)
+	}
+	return nil
+}
+
+func (l *localWallet) TrustState() (wallet.TrustedListState, error) {
+	w, _, err := l.load()
+	if err != nil {
+		return wallet.TrustedListState{}, err
+	}
+	return w.TrustState(), nil
+}
+
+func (l *localWallet) AddTrustedEntity(list, name, certificatesPEM string) (wallet.TrustedEntity, error) {
+	var entity wallet.TrustedEntity
+	err := l.change(func(w *wallet.Wallet) (err error) {
+		entity, err = w.AddTrustedEntity(list, name, certificatesPEM)
+		return err
+	})
+	return entity, err
+}
+
+func (l *localWallet) RemoveTrustedEntity(id string) error {
+	return l.change(func(w *wallet.Wallet) error { return w.RemoveTrustedEntity(id) })
+}
+
+func (l *localWallet) AddTrustedList(url string) error {
+	return l.change(func(w *wallet.Wallet) error { _, err := w.AddTrustedList(url); return err })
+}
+
+func (l *localWallet) RemoveTrustedList(url string) error {
+	return l.change(func(w *wallet.Wallet) error { return w.RemoveTrustedList(url) })
+}
+
+// change applies a change to the local wallet and saves it.
+func (l *localWallet) change(apply func(*wallet.Wallet) error) error {
+	w, store, err := l.load()
+	if err != nil {
+		return err
+	}
+	if err := apply(w); err != nil {
 		return err
 	}
 	if err := store.Save(w); err != nil {

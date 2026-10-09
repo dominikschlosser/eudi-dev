@@ -61,7 +61,7 @@ Every response includes these headers:
 
 Every wallet server includes an issuer at `/issuer` and a verifier at `/verifier`. The issuer offers a Demo Event Ticket through pre-authorized and authorization code flows. The verifier requests the ticket or a PID through OpenID4VP.
 
-The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. On its page you can instead register it with the wallet's registrar for the credentials and claims you pick, or paste your own key, access certificate and `verifier_info`. A registered verifier sends its registration certificate with each request. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
+The verifier signs requests delivered from `/verifier/request/{id}` with its access certificate, identifies itself with `x509_hash:` and receives encrypted `direct_post.jwt` responses. It is registered with the wallet's registrar for the credentials of the wallet's templates and sends its registration certificate with each request. On its page you can instead send a request without the registration certificate, or paste your own key, access certificate and `verifier_info`. Each request has its own encryption key and accepts one response. Offers and requests expire after ten minutes and are kept only in memory.
 
 The verifier page has a PID format toggle. By default, a PID request accepts either an SD-JWT VC or an mdoc, and the wallet presents one it holds. Select a format to test whether the wallet can present it. The ticket is always an SD-JWT VC.
 
@@ -110,7 +110,7 @@ The limits allow interactive use and cap automated traffic. An idle page makes a
 
 ## Base URL and issuer URL
 
-With an HTTPS base URL, all advertised issuer, status list, metadata and trust list URLs use that origin. The reverse proxy terminates TLS and the wallet serves HTTP behind it.
+With an HTTPS base URL, all advertised issuer, status list, metadata and trusted list URLs use that origin. The reverse proxy terminates TLS and the wallet serves HTTP behind it.
 
 With an HTTP base URL, the wallet also starts its self-signed HTTPS listener on port+1.
 
@@ -155,7 +155,7 @@ The access token is bound to the DPoP key. The credential request must prove pos
 
 The demo issuer trusts the shared wallet CA. It also accepts attestations from other providers when their signature verifies against the included leaf certificate. The demo issuer can then test other wallets without trusting their provider.
 
-The ticket records the result in `wallet_attestation`: `trusted` for a chain reaching the wallet CA, `untrusted` for another signer, or `none` when authentication was optional and omitted. The wallet provider's trust list is available at `/api/trustlists/wallet-provider`.
+The ticket records the result in `wallet_attestation`: `trusted` for a chain reaching the wallet CA, `untrusted` for another signer, or `none` when authentication was optional and omitted. The wallet provider's trusted list is available at `/api/trustlists/wallet-provider`.
 
 To test a wallet without attestation, use `--demo-issuer-client-auth optional`. The authorization server then also advertises and accepts `none`. It still verifies any attestation that is sent. The default is `required` (HAIP 1.0 §4.4.1).
 
@@ -174,14 +174,14 @@ The certificate chain is included in the attestation. These endpoints publish th
 | --- | --- |
 | CA certificate (the anchor to pin) | `/api/certificates/ca`, JWKS form with `?format=jwks` |
 | Wallet provider certificates | `/api/trustlists/wallet-provider` |
-| Credential signing key by `kid` | `/.well-known/jwt-vc-issuer` |
-| Trust list index | `/api/trustlists` |
+| Credential signing keys, one JWK per trusted list | `/.well-known/jwt-vc-issuer` |
+| Trusted list index | `/api/trustlists` |
 
 Pin the CA through an out-of-band exchange. It is self-signed and persists across restarts and resets. Signing certificates can be renewed without changing that anchor.
 
-Trust lists are grouped by role. The `pid` and `local` lists publish credential signing certificates and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
+Trusted lists are grouped by provider role. Each category has its own signing key and provider CA. The `pid`, `qeaa`, `pub-eaa` and `eaa` lists publish the credential signing certificates of their category and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
 
-The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registrar-signed registration certificate whose identifier, legal name and country match the access certificate. The registration certificate's status list entry is never revoked. See [test certificates](test-certificates.md) for the exact profiles and versions.
+The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registration certificate from the registrar. Its identifier, legal name and country match the access certificate. The demo issuer and the demo verifier are registered with the registrar like any relying party. If a visitor revokes one of their registration certificates, the wallet issues a new one. See [test certificates](test-certificates.md) for the exact profiles and versions.
 
 ## Imprint
 
@@ -281,7 +281,7 @@ Visitor counts are approximate because addresses are masked. Everyone sharing an
 ## Deployment notes
 
 - Terminate TLS in a reverse proxy (the example uses Caddy with automatic Let's Encrypt) and forward to the wallet's HTTP port. The wallet derives all advertised URLs from `--base-url`.
-- Mount a volume at `/home/app/.eudi-dev` and set `EUDI_DEV_STORAGE=file` and `EUDI_DEV_SEED=`. This persists credentials, keys and the shared CA. Mount the parent of `wallet/` so the CA survives restarts and verifiers can reuse their trust lists.
+- Mount a volume at `/home/app/.eudi-dev` and set `EUDI_DEV_STORAGE=file` and `EUDI_DEV_SEED=`. This persists credentials, keys and the shared CA. Mount the parent of `wallet/` so the CA survives restarts and verifiers can reuse their trusted lists.
 - Run one replica when using file storage.
 - Leave `HTTP_PROXY` and `HTTPS_PROXY` unset in the container and do not pass `--http-proxy` or `--https-proxy`. With an outbound proxy, the connection-time address checks see only the proxy's address.
 - Requests to the demo's own public URL, such as a pasted offer, resolve through public DNS. This works on cloud hosts that support hairpin NAT. A compose network alias for the public hostname would resolve to a private address and be blocked.

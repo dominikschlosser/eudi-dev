@@ -1,0 +1,134 @@
+// Copyright 2026 Dominik Schlosser
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package wallet
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"slices"
+	"strings"
+)
+
+// TrustedListState is what GET /api/trust answers: the providers users put on
+// the wallet's lists and the external lists on its list of trusted lists.
+type TrustedListState struct {
+	Entities []TrustedEntity `json:"entities"`
+	// EntityLists are the lists that take entities.
+	EntityLists []string          `json:"entity_lists"`
+	Lists       []TrustedListLink `json:"lists"`
+	// ListsURL is the wallet's list of trusted lists.
+	ListsURL string `json:"lists_url"`
+}
+
+// TrustedListLink is an external list. Configured comes from --trusted-list
+// and can't be removed through the API.
+type TrustedListLink struct {
+	URL        string `json:"url"`
+	Configured bool   `json:"configured,omitempty"`
+}
+
+// TrustState describes the wallet's trusted lists for the API.
+func (w *Wallet) TrustState() TrustedListState {
+	w.mu.RLock()
+	configured := slices.Clone(w.ConfiguredTrustedListURLs)
+	w.mu.RUnlock()
+	state := TrustedListState{Entities: w.ListTrustedEntities(), EntityLists: TrustedEntityLists(), ListsURL: w.ownTrustListURL(listOfListsID)}
+	if state.Entities == nil {
+		state.Entities = []TrustedEntity{}
+	}
+	state.Lists = []TrustedListLink{}
+	for _, u := range w.ExternalTrustedLists() {
+		state.Lists = append(state.Lists, TrustedListLink{URL: u, Configured: slices.Contains(configured, u)})
+	}
+	return state
+}
+
+func (s *Server) handleTrustState(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.wallet.TrustState())
+}
+
+func (s *Server) handleAddTrustedEntity(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		List         string `json:"list"`
+		Name         string `json:"name"`
+		Certificates string `json:"certificates"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	var entity TrustedEntity
+	var err error
+	s.saveMutation(func() bool {
+		entity, err = s.wallet.AddTrustedEntity(body.List, body.Name, body.Certificates)
+		return err == nil
+	})
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, entity)
+}
+
+func (s *Server) handleRemoveTrustedEntity(w http.ResponseWriter, r *http.Request) {
+	var err error
+	s.saveMutation(func() bool {
+		err = s.wallet.RemoveTrustedEntity(r.PathValue("id"))
+		return err == nil
+	})
+	writeTrustResult(w, err)
+}
+
+func (s *Server) handleAddTrustedList(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	var added string
+	var err error
+	s.saveMutation(func() bool {
+		added, err = s.wallet.AddTrustedList(body.URL)
+		return err == nil
+	})
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, TrustedListLink{URL: added})
+}
+
+func (s *Server) handleRemoveTrustedList(w http.ResponseWriter, r *http.Request) {
+	var err error
+	s.saveMutation(func() bool {
+		err = s.wallet.RemoveTrustedList(strings.TrimSpace(r.URL.Query().Get("url")))
+		return err == nil
+	})
+	writeTrustResult(w, err)
+}
+
+func writeTrustResult(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrTrustNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case err != nil:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

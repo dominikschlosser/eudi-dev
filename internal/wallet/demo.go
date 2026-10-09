@@ -189,6 +189,8 @@ func (w *Wallet) ResetToBaseline() {
 	w.RelyingParties = nil
 	w.RegistrationStatuses = nil
 	w.Catalog = nil
+	w.TrustedEntities = nil
+	w.AddedTrustedLists = nil
 	// A pending deferral belongs to the wiped session. The poller must not
 	// carry it or its keys into the fresh baseline.
 	w.DeferredIssuances = nil

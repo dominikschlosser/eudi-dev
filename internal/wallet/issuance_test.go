@@ -485,7 +485,7 @@ func TestParseIssuerMetadataResponse_SignedJWT(t *testing.T) {
 		t.Fatalf("signing issuer metadata: %v", err)
 	}
 
-	metadata, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL)
+	metadata, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, true)
 	if err != nil {
 		t.Fatalf("parsing signed issuer metadata: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestParseIssuerMetadataResponse_RejectsTamperedSignedJWT(t *testing.T) {
 	parts[1] = format.EncodeBase64URL([]byte(tamperedPayload))
 	tampered := strings.Join(parts, ".")
 
-	if _, _, err := parseIssuerMetadataDocument([]byte(tampered), "application/jwt", w.IssuerURL); err == nil {
+	if _, _, err := parseIssuerMetadataDocument([]byte(tampered), "application/jwt", w.IssuerURL, true); err == nil {
 		t.Fatal("expected tampered signed issuer metadata to fail verification")
 	}
 }
@@ -580,7 +580,7 @@ func TestParseIssuerMetadataResponse_SignedMetadataTrust(t *testing.T) {
 		if err != nil {
 			t.Fatalf("signing: %v", err)
 		}
-		if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+		if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, true); err == nil {
 			t.Fatal("signed issuer metadata with no way to establish trust in its signer was accepted")
 		}
 	})
@@ -594,7 +594,7 @@ func TestParseIssuerMetadataResponse_SignedMetadataTrust(t *testing.T) {
 		}
 		issuerMetadataTrustAnchors = x509.NewCertPool()
 		t.Cleanup(func() { issuerMetadataTrustAnchors = nil })
-		metadata, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL)
+		metadata, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, true)
 		if err != nil {
 			t.Fatalf("signed issuer metadata from an unanchored signer was refused: %v", err)
 		}
@@ -609,7 +609,7 @@ func TestParseIssuerMetadataResponse_SignedMetadataTrust(t *testing.T) {
 		}
 		sig[0] ^= 0xFF
 		parts[2] = format.EncodeBase64URL(sig)
-		if _, _, err := parseIssuerMetadataDocument([]byte(strings.Join(parts, ".")), "application/jwt", w.IssuerURL); err == nil {
+		if _, _, err := parseIssuerMetadataDocument([]byte(strings.Join(parts, ".")), "application/jwt", w.IssuerURL, true); err == nil {
 			t.Fatal("signed issuer metadata whose signature does not verify was accepted")
 		}
 	})
@@ -643,7 +643,7 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataForAnotherIssuer(t *te
 	if err != nil {
 		t.Fatalf("signing: %v", err)
 	}
-	if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
+	if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, true); err == nil {
 		t.Fatal("signed issuer metadata whose sub names another issuer was accepted")
 	}
 }
@@ -654,17 +654,17 @@ func TestParseIssuerMetadataResponse_RejectsSignedMetadataForAnotherIssuer(t *te
 func TestParseIssuerMetadataResponse_RejectsMismatchedCredentialIssuer(t *testing.T) {
 	raw := []byte(`{"credential_issuer":"https://attacker.example","credential_endpoint":"https://attacker.example/credential"}`)
 
-	if _, _, err := parseIssuerMetadataDocument(raw, "application/json", "https://issuer.example"); err == nil {
+	if _, _, err := parseIssuerMetadataDocument(raw, "application/json", "https://issuer.example", true); err == nil {
 		t.Fatal("metadata declaring a different credential_issuer was used")
 	}
 
 	missing := []byte(`{"credential_endpoint":"https://issuer.example/credential"}`)
-	if _, _, err := parseIssuerMetadataDocument(missing, "application/json", "https://issuer.example"); err == nil {
+	if _, _, err := parseIssuerMetadataDocument(missing, "application/json", "https://issuer.example", true); err == nil {
 		t.Fatal("metadata carrying no credential_issuer was used")
 	}
 
 	slashed := []byte(`{"credential_issuer":"https://issuer.example/"}`)
-	if _, _, err := parseIssuerMetadataDocument(slashed, "application/json", "https://issuer.example"); err == nil {
+	if _, _, err := parseIssuerMetadataDocument(slashed, "application/json", "https://issuer.example", true); err == nil {
 		t.Fatal("metadata whose credential_issuer differs only by a trailing slash was used")
 	}
 }
@@ -680,7 +680,7 @@ func TestParseIssuerMetadataResponse_JSONWithDots(t *testing.T) {
 		}
 	}`)
 
-	metadata, _, err := parseIssuerMetadataDocument(raw, "application/json", "http://localhost:8080/realms/wallet-app-demo")
+	metadata, _, err := parseIssuerMetadataDocument(raw, "application/json", "http://localhost:8080/realms/wallet-app-demo", true)
 	if err != nil {
 		t.Fatalf("parsing metadata JSON: %v", err)
 	}
@@ -816,6 +816,8 @@ func TestCreateProofJWT_IssMatchesClientID(t *testing.T) {
 
 // OpenID4VCI 1.0 §12.2.3 requires iat in signed metadata. Metadata whose exp
 // has passed is not used.
+// OpenID4VCI 1.0 §12.2.3: strict mode refuses signed metadata without iat or
+// past its exp. Debug mode reads it.
 func TestParseIssuerMetadataResponse_RequiresIatAndRejectsExpiredMetadata(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://issuer.example:8443"
@@ -824,18 +826,29 @@ func TestParseIssuerMetadataResponse_RequiresIatAndRejectsExpiredMetadata(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, times := range map[string]map[string]any{
-		"no iat":  {},
-		"expired": {"iat": time.Now().Add(-2 * time.Hour).Unix(), "exp": time.Now().Add(-time.Hour).Unix()},
+	for name, tc := range map[string]struct {
+		times map[string]any
+		want  string
+	}{
+		"current": {map[string]any{"iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix()}, ""},
+		"no iat":  {map[string]any{}, "iat"},
+		"expired": {map[string]any{"iat": time.Now().Add(-2 * time.Hour).Unix(), "exp": time.Now().Add(-time.Hour).Unix()}, "expired"},
 	} {
 		payload := map[string]any{"credential_issuer": w.IssuerURL, "credential_endpoint": w.IssuerURL + "/credential", "sub": w.IssuerURL}
-		maps.Copy(payload, times)
+		maps.Copy(payload, tc.times)
 		raw, err := signJSONWebSignature(payload, w.IssuerKey, map[string]any{"alg": "ES256", "typ": signedIssuerMetadataTyp, "x5c": buildJWSX5C(chain)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL); err == nil {
-			t.Errorf("%s: the signed metadata was accepted", name)
+		if _, _, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, false); err != nil {
+			t.Errorf("%s in debug mode: %v", name, err)
+		}
+		_, _, err = parseIssuerMetadataDocument([]byte(raw), "application/jwt", w.IssuerURL, true)
+		if tc.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%s: error %v, want one about %s", name, err, tc.want)
 		}
 	}
 }

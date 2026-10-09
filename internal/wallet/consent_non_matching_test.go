@@ -94,7 +94,7 @@ func TestANonMatchingCredentialIsSentOnlyWhenPicked(t *testing.T) {
 	}
 	got := ApplyConsentSelection(options, matches, ConsentResult{Approved: true, Picks: picks})
 	if len(got) != 1 || got[0].CredentialID != sdjwt || !slices.Equal(got[0].SelectedKeys, []string{"given_name"}) {
-		t.Fatalf("selection %+v, want the picked SD-JWT PID with the requested claim it has", got)
+		t.Fatalf("selection %+v, want the picked SD-JWT PID with its requested claim", got)
 	}
 }
 

@@ -429,6 +429,7 @@ func (w *Wallet) prepareIssuanceConsentRequest(raw, owner string) (*ConsentReque
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
 	req.OfferDetails = w.describeCredentialOffer(offer)
+	req.Findings = req.OfferDetails.Findings
 	// Keep the resolved offer for approval because the issuer may allow it to be
 	// fetched only once.
 	req.ResolvedOffer = offer

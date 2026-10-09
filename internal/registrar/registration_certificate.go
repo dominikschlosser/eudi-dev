@@ -47,7 +47,7 @@ type RegistrationCertificateRequest struct {
 // RegistrationCertificateContent is what a registration certificate says about
 // the relying party (ETSI TS 119 475 V1.2.1 §5.2.4).
 type RegistrationCertificateContent struct {
-	// Name is the trade name the wallet shows (ARF RPRC_06).
+	// Name is the trade name. The wallet shows it (ARF RPRC_06).
 	Name    string
 	Purpose []MultiLangString
 	// Identifier is the registered legal entity identifier (sub, ARF RPRC_07).
@@ -128,8 +128,10 @@ func (r *Registrar) IssueRegistrationCertificate(req RegistrationCertificateRequ
 }
 
 // CurrentRegistrationCertificate returns the newest certificate for the
-// request that is neither revoked nor replaced and stays valid for at least
-// another day. Without one it issues a certificate and reports that.
+// request that is not replaced and stays valid for at least another day. A
+// revoked one stays current until it is activated or replaced, so the demo
+// verifier can test a revoked registration. Without one it issues a
+// certificate and reports that.
 func (r *Registrar) CurrentRegistrationCertificate(req RegistrationCertificateRequest) (*RegistrationCertificateResult, bool, error) {
 	rp, key, err := r.certificateSubject(req)
 	if err != nil {
@@ -140,7 +142,7 @@ func (r *Registrar) CurrentRegistrationCertificate(req RegistrationCertificateRe
 	r.mu.RLock()
 	var current string
 	for _, s := range r.state.RegistrationStatuses {
-		if s.Identifier == identifier && key.matches(s) && !s.Revoked && s.Certificate != "" && s.Expires > soon {
+		if s.Identifier == identifier && key.matches(s) && !s.Superseded && s.Certificate != "" && s.Expires > soon {
 			current = s.Certificate
 		}
 	}
@@ -303,7 +305,7 @@ func privacyPolicyURI(use IntendedUse) string {
 }
 
 func (r *Registrar) signRegistrationCertificate(content RegistrationCertificateContent, credentials []map[string]any, now time.Time) (string, error) {
-	claims, err := RegistrationCertificateClaimsFor(r.env.RegistrarBase(), content, nil, credentials, now)
+	claims, err := RegistrationCertificateClaimsFor(r.env.RegistrarBase(), content, credentials, now)
 	if err != nil {
 		return "", err
 	}
@@ -326,23 +328,15 @@ func VerifierInfoValue(registrationCertificate string) string {
 }
 
 // RegistrationCertificateClaimsFor builds the payload of ETSI TS 119 475 V1.2.1
-// §5.2.4. If the content has no identifier, legal name or country, they come
-// from the access certificate. base is the base URL of the default contact
-// URLs.
-func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateContent, accessCertificate *x509.Certificate, dcqlCredentials []map[string]any, now time.Time) (map[string]any, error) {
+// §5.2.4. base is the base URL of the default contact URLs.
+func RegistrationCertificateClaimsFor(base string, req RegistrationCertificateContent, dcqlCredentials []map[string]any, now time.Time) (map[string]any, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, fmt.Errorf("a registration certificate needs the relying party's name")
 	}
 	identifier, legalName, country := strings.TrimSpace(req.Identifier), strings.TrimSpace(req.LegalName), strings.TrimSpace(req.Country)
-	if accessCertificate != nil {
-		certIdentifier, certLegalName, certCountry := AccessCertificateSubject(accessCertificate)
-		identifier = firstNonEmpty(identifier, certIdentifier)
-		legalName = firstNonEmpty(legalName, certLegalName)
-		country = firstNonEmpty(country, certCountry)
-	}
 	if identifier == "" {
-		return nil, fmt.Errorf("a registration certificate needs the relying party's identifier or its access certificate")
+		return nil, fmt.Errorf("a registration certificate needs the relying party's identifier")
 	}
 	validity, err := registrationValidity(req.Validity)
 	if err != nil {

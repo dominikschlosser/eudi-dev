@@ -32,9 +32,9 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/validate"
 )
 
-// GenerateTrustListJWT signs a list of the local profile with the CA as its
+// generateEAATrustListJWT signs an EAA list with the CA as its
 // trust anchor.
-func GenerateTrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certificate) (string, error) {
+func generateEAATrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certificate) (string, error) {
 	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
 		OperatorName: "EUDI Dev Wallet",
 		Profile: trustListProfile{
@@ -58,9 +58,9 @@ func TestGenerateTrustListJWT_ValidSignature(t *testing.T) {
 		t.Fatalf("GenerateCACert: %v", err)
 	}
 
-	jwt, err := GenerateTrustListJWT(caKey, caCert)
+	jwt, err := generateEAATrustListJWT(caKey, caCert)
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWT: %v", err)
+		t.Fatalf("generateEAATrustListJWT: %v", err)
 	}
 
 	token, err := sdjwt.Parse(jwt)
@@ -78,9 +78,9 @@ func TestGenerateTrustListJWT_Header(t *testing.T) {
 	caKey, _ := mock.GenerateKey()
 	caCert, _ := mock.GenerateCACert(caKey)
 
-	jwt, err := GenerateTrustListJWT(caKey, caCert)
+	jwt, err := generateEAATrustListJWT(caKey, caCert)
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWT: %v", err)
+		t.Fatalf("generateEAATrustListJWT: %v", err)
 	}
 
 	parts := strings.SplitN(jwt, ".", 3)
@@ -110,9 +110,9 @@ func TestGenerateTrustListJWT_PayloadStructure(t *testing.T) {
 	caKey, _ := mock.GenerateKey()
 	caCert, _ := mock.GenerateCACert(caKey)
 
-	jwt, err := GenerateTrustListJWT(caKey, caCert)
+	jwt, err := generateEAATrustListJWT(caKey, caCert)
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWT: %v", err)
+		t.Fatalf("generateEAATrustListJWT: %v", err)
 	}
 
 	parts := strings.SplitN(jwt, ".", 3)
@@ -232,7 +232,7 @@ func TestTrustListGroupsForWallet_MixedProfiles(t *testing.T) {
 	for _, group := range groups {
 		ids = append(ids, group.ID)
 	}
-	if want := []string{"pid", "qeaa", "pub-eaa", "eaa", "wallet-provider"}; !slices.Equal(ids, want) {
+	if want := []string{"pid", "qeaa", "pub-eaa", "eaa", "wallet-provider", "access-ca", "registrar"}; !slices.Equal(ids, want) {
 		t.Fatalf("groups %v, want %v", ids, want)
 	}
 	if len(groups[3].Specs) != 1 || groups[3].Specs[0].DocType != "org.iso.23220.photoid.1" {
@@ -329,8 +329,8 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 
 	entries := BuildTrustListIndexEntries(w, "")
-	if len(entries) != 5 {
-		t.Fatalf("expected five trust-list entries, got %d", len(entries))
+	if len(entries) != 7 {
+		t.Fatalf("expected seven trust-list entries, got %d", len(entries))
 	}
 	if entries[0].Path != "/api/trustlists/pid" {
 		t.Fatalf("expected pid path, got %s", entries[0].Path)
@@ -343,8 +343,8 @@ func TestBuildTrustListIndexEntries_UsesRelativePathAndOptionalAdvertisedURL(t *
 	}
 
 	entries = BuildTrustListIndexEntries(w, "https://wallet.example:8443")
-	if len(entries) != 5 {
-		t.Fatalf("expected five trust-list entries, got %d", len(entries))
+	if len(entries) != 7 {
+		t.Fatalf("expected seven trust-list entries, got %d", len(entries))
 	}
 	if entries[0].AdvertisedURL != "https://wallet.example:8443/api/trustlists/pid" {
 		t.Fatalf("expected advertised_url, got %s", entries[0].AdvertisedURL)
@@ -383,9 +383,9 @@ func TestGenerateTrustListJWT_WrongKeyVerification(t *testing.T) {
 	otherKey, _ := mock.GenerateKey()
 	caCert, _ := mock.GenerateCACert(caKey)
 
-	jwt, err := GenerateTrustListJWT(caKey, caCert)
+	jwt, err := generateEAATrustListJWT(caKey, caCert)
 	if err != nil {
-		t.Fatalf("GenerateTrustListJWT: %v", err)
+		t.Fatalf("generateEAATrustListJWT: %v", err)
 	}
 
 	token, _ := sdjwt.Parse(jwt)

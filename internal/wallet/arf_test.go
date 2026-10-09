@@ -179,14 +179,17 @@ func TestARFRefusesUnknownAuthorities(t *testing.T) {
 		t.Errorf("findings %v, want RPA_04 and RPRC_02a", findings)
 	}
 
-	// --relying-party-ca trusts the foreign access CA and the foreign wallet CA.
-	// The foreign wallet CA signs the foreign registrar certificate.
+	// --relying-party-ca trusts the foreign access CA and registrar CA.
 	_, foreignAccessCA, err := foreign.RelyingPartyAccessCA()
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, foreignRegistrarCA, err := foreign.RegistrarCA()
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.RelyingPartyCAPEM = append(
-		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreign.CertChain[len(foreign.CertChain)-1].Raw}),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreignRegistrarCA.Raw}),
 		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreignAccessCA.Raw})...)
 	w.PrepareARFChecks(params)
 	if findings := ARFFindings(params); containsSubstring(findings, "RPA_04") || containsSubstring(findings, "RPRC_02a") {
@@ -339,6 +342,40 @@ func TestARegisteredEntryWithoutFormatOrTypeRegistersNothing(t *testing.T) {
 		if findings := overAskingFindings(cert, query); len(findings) != tc.findings {
 			t.Errorf("%s: findings %v, want %d", name, findings, tc.findings)
 		}
+	}
+}
+
+// Debug mode presents and lists the findings in the API response.
+func TestDebugARFListsTheFindingsInTheResponse(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.RequireARF = true
+	srv.wallet.ValidationMode = ValidationModeDebug
+	key, chain, _ := registeredVerifier(t, srv.wallet)
+	verifier := newCaptureVerifier(t)
+	clientID := X509HashClientID(chain[0])
+	requestObject, err := SignRequestObjectJWT(map[string]any{
+		"client_id": clientID, "response_type": "vp_token", "response_mode": "direct_post",
+		"response_uri": verifier.URL, "nonce": "n", "state": "s",
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"given_name"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := "openid4vp://authorize?" + url.Values{"client_id": {clientID}, "request": {requestObject}}.Encode()
+	body, _ := json.Marshal(map[string]string{"uri": uri})
+	rec := serverRequest(t, srv, http.MethodPost, "/api/presentations", string(body))
+	var response struct {
+		Status   string
+		Findings []string
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "submitted" || !slices.ContainsFunc(response.Findings, func(f string) bool { return strings.Contains(f, "RPRC_19") }) {
+		t.Errorf("response %s, want a submitted presentation with the RPRC_19 finding", rec.Body)
 	}
 }
 

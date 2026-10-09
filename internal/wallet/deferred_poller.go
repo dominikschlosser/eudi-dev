@@ -200,7 +200,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	// The validation mode is read once. This runs on the poller goroutine and
 	// can race a PUT /api/config/conformance.
 	mode := s.wallet.Mode()
-	metadata, metadataErr := fetchIssuerMetadata(s.wallet.HTTPClient(), pending.Issuer)
+	metadata, metadataErr := fetchIssuerMetadata(s.wallet.HTTPClient(), pending.Issuer, s.wallet.Mode() == ValidationModeStrict)
 	if metadataErr != nil {
 		metadata = nil
 	}

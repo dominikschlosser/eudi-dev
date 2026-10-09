@@ -2,7 +2,7 @@
 
 # Serving the wallet
 
-`wallet serve` runs the persistent wallet HTTP server (web UI, OID4VP and OID4VCI endpoints, trust lists, optional URL scheme handling). This page also covers the certificate exports (`ca-cert`, `tls-cert`), the `trust-list` command, URL scheme registration (`register`, `unregister`), and the runtime conformance settings.
+`wallet serve` runs the persistent wallet HTTP server (web UI, OID4VP and OID4VCI endpoints, trusted lists, optional URL scheme handling). This page also covers the certificate exports (`ca-cert`, `tls-cert`), the `trust-list` command, URL scheme registration (`register`, `unregister`), and the runtime conformance settings.
 
 ## `wallet serve`
 
@@ -13,8 +13,8 @@ The server exposes:
 - Web UI for credential management and consent (list, show, import, remove, and issue credentials, with credential templates and CA and TLS certificate downloads)
 - OID4VP authorization endpoint (`/authorize`)
 - OID4VCI credential offer endpoint (`/credential-offer`). Accepts `credential_offer` / `credential_offer_uri` query parameters. Offer links can use the wallet URL in place of a custom scheme (see [Invoking the wallet by URL](presenting.md#invoking-the-wallet-by-url))
-- Legacy ETSI trust list endpoint (`/api/trustlist`). Use this URL as `--trust-list` when validating PID credentials issued by the wallet
-- Trust list index endpoint (`/api/trustlists`) with one JWT endpoint per trust list profile
+- Trusted list endpoint (`/api/trustlist`), which serves the PID list or the list for a `vct` or `doctype`. Use this URL as `--trust-list` when validating PID credentials issued by the wallet
+- Trusted list index endpoint (`/api/trustlists`) with one JWT endpoint per list
 - HTTPS wallet endpoints on the wallet's effective issuer URL, including `/.well-known/jwt-vc-issuer`, `/.well-known/openid-credential-issuer`, `/api/trustlist`, `/api/trustlists`, `/api/statuslist`, and `/api/registrar/wrp`
 - A management API mirroring the wallet CLI (list, show, import, and remove credentials, issue credentials, generate PIDs, export certificates). It has no authentication (see [HTTP API](http-api.md))
 
@@ -26,17 +26,17 @@ If the offer requires a transaction code and none is given, issuance fails befor
 
 After storing a credential, the wallet calls the issuer's Notification Endpoint if the issuer publishes one. The endpoint is optional (OpenID4VCI 1.0 §11). A rejected call logs a warning and the credential stays in the wallet. The warning quotes the response and compares it with §11.3 (an Authorization Error Response for a rejected token, a 400 for a bad `notification_id`).
 
-The consent dialog for a presentation request also shows the purpose and privacy policy from the verifier's registration certificate (see [what the wallet checks](registrar.md#what-the-wallet-checks)). `--arf` checks the registration certificate (see [ARF checks](presenting.md#arf-checks)).
+The consent dialog for a presentation request also shows the purpose and privacy policy from the verifier's registration certificate. The certificate must belong to the access certificate of the signed request (see [what the wallet checks](registrar.md#what-the-wallet-checks)). `--arf` checks the registration certificate (see [ARF checks](presenting.md#arf-checks)).
 
 The presentation dialog starts with the wallet's automatic credential selection. If there are alternatives, **Edit** lets the user choose a credential-set option and a credential for each query. Changes apply immediately. **Done** returns to the summary, and **reset to auto** restores the automatic selection. Claim checkboxes apply to the selected credential. **Deny** and **Approve** apply to the whole presentation. Auto-accept submits the automatic selection without a dialog.
 
 If the verifier sets `multiple: true` on a query, all matching credentials are selected. **Edit** can deselect them. At least one stays selected.
 
-In debug mode the dialog also offers the wallet's credentials that do not match a query. This lets you test how a verifier handles a wrong answer. **Edit** lists them under each query with the reasons (format, type, missing claims). They are never picked automatically. If you pick one, the wallet discloses whichever requested claims the credential has. When nothing matches a request from a link, the UI or a DC API call, debug mode opens the dialog, and **Approve** stays disabled until you pick a credential for every query. Auto-accept, API submissions and presentations requested during issuance get no dialog. The wallet answers them with `access_denied`.
+In debug mode the dialog also offers non-matching credentials. This lets you test how a verifier handles a wrong answer. **Edit** lists them under each query with the reasons (format, type, missing claims). They are never picked automatically. If you pick one, the wallet discloses every requested claim present in the credential. When nothing matches a request from a link, the UI or a DC API call, debug mode opens the dialog, and **Approve** stays disabled until you pick a credential for every query. Auto-accept, API submissions and presentations requested during issuance get no dialog. The wallet answers them with `access_denied`.
 
-When a query lists `claim_sets`, the wallet sends the first set the credential satisfies (OpenID4VP 1.0 §6.4.1). In debug mode a dropdown above the credential lists every claim set it can answer. Choosing a set discloses its claims, and the claim checkboxes still apply.
+When a query lists `claim_sets`, the wallet uses the first matching claim set (OpenID4VP 1.0 §6.4.1). In debug mode a dropdown above the credential lists every matching claim set. Choosing a set discloses its claims, and the claim checkboxes still apply.
 
-API clients receive the alternatives in `credential_options`. In debug mode each query also lists `non_matching` credentials with their `mismatches`. `unmatched` on a credential set lists the options that no matching credential answers. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set), `claim_sets` (query ID to the index of a claim set the credential satisfies, debug mode only) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
+API clients receive the alternatives in `credential_options`. In debug mode each query also lists `non_matching` credentials with their `mismatches`. `unmatched` on a credential set lists the options without a matching credential. Send `picks` (query ID to credential ID, or to a list of credential IDs when the query has `"multiple": true`), `set_choices` (option index per set, or `-1` to skip an optional set), `claim_sets` (query ID to the index of a matching claim set, debug mode only) and `selected_claims` to `POST /api/requests/{id}/approve`. An invalid selection returns `400` and leaves the request pending.
 
 ![Consent dialog](../assets/wallet-consent-ui.png)
 
@@ -85,32 +85,48 @@ An open activity entry shows its details and the request or response as formatte
 
 Encrypted exchanges show the wire value first. **View decrypted** shows the plaintext. **View encrypted** switches back to the wire value. These buttons change the log display only.
 
-**Trust & certificates** lists trust list URLs and offers CA, signing and HTTPS certificates. Verifiers use the CA for wallet-issued credentials. Issuers use it for wallet and key attestations.
+**Trust & certificates** lists trusted list URLs and offers CA, signing and HTTPS certificates. Verifiers use the CA for wallet-issued credentials. Issuers use it for wallet and key attestations.
 
-The default local issuer URL is `https://localhost:8086`, on `<port+1>` relative to the wallet's HTTP port. An HTTPS `--base-url`, such as `https://eudi-test.dev`, becomes the issuer URL. Issuer metadata, trust lists and status lists are then served from the public origin behind an external TLS terminator (see [public demo hosting](../public-demo.md)). The [certificate examples](../test-certificates.md#retrieval-revocation-and-alternative-names) use the public demo origin and document localhost separately.
+The default local issuer URL is `https://localhost:8086`, on `<port+1>` relative to the wallet's HTTP port. An HTTPS `--base-url`, such as `https://eudi-test.dev`, becomes the issuer URL. Issuer metadata, trusted lists and status lists are then served from the public origin behind an external TLS terminator (see [public demo hosting](../public-demo.md)). The [certificate examples](../test-certificates.md#retrieval-revocation-and-alternative-names) use the public demo origin and document localhost separately.
 
 To serve the wallet under a path prefix on a shared host, include the prefix in the base URL, such as `https://example.com/some/context`. See [behind a reverse proxy](../reverse-proxy.md) for the proxy setup.
 
 For a local https origin without an external TLS terminator, add `--serve-tls`. The wallet then also listens on the base URL's port with its own TLS certificate. The plain HTTP port stays open. `--serve-tls` requires an https `--base-url` with an explicit port. The [demo issuer and verifier conformance run](../conformance-run-demorp.md) uses this because the OIDF suite requires https endpoints.
 
-The demo verifier accepts presented credentials whose issuer chains lead to the wallet's own CA. `--demo-verifier-issuer-ca <pem>` (repeatable) adds the CAs of issuers outside this wallet (for example, the OIDF conformance suite signs its credentials under its own CAs).
+The demo verifier accepts credentials issued under the wallet's own CA. `--demo-verifier-issuer-ca <pem>` (repeatable) adds the CAs of issuers outside this wallet (for example, the OIDF conformance suite signs its credentials under its own CAs).
 
 `wallet ca-cert` exports the shared wallet CA for verifier trust stores or CI fixtures. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate.
 
-The wallet keeps an issued-attestation registry next to its credentials. Each credential type can register:
+### Trusted lists
 
-- its attestation identifier (`vct` or `docType`)
-- its registrar entitlements
-- its trust list profile data such as LoTE type, entity name, and issuance or revocation service type identifiers
+The wallet publishes one trusted list (a list of trusted entities, ETSI TS 119 602) per credential category. Each category is a provider role with its own signing key and its own provider CA under the wallet CA. A credential's category decides which key signs it, so its certificate is on the list of its category:
 
-Trust lists are created from that registry:
+| Category | List ID | LoTE type |
+|---|---|---|
+| PID | `pid` | `EUPIDProvidersList` (ETSI TS 119 602 Annex D) |
+| QEAA | `qeaa` | `local` |
+| PuB-EAA | `pub-eaa` | `EUPubEAAProvidersList` (ETSI TS 119 602 Annex H) |
+| EAA | `eaa` | `local` |
 
-- `wallet generate-pid` and `wallet serve --pid` register PID attestation types with the PID trust list profile
-- `issue ... --wallet` issues with the wallet issuer, stores the credential, and registers one issued-attestation entry for its credential type
-- `wallet import` registers a default issued-attestation entry for the imported credential type
-- credentials with identical trust list profile fields share one trust list
+TS 119 602 has no list type for QEAA or other EAA providers (QEAA providers are on TS 119 612 trusted lists). Their lists use `http://uri.etsi.org/19602/LoTEType/local`, a type URI of this wallet.
 
-Each trust list publishes its service's signing certificates, provider CAs and status signing certificates. A separate list operator key signs the list. An unchanged list keeps its signed instance until it expires. Changed content or expiry increments the sequence number. Previous instances are available at the list's `/history` endpoint.
+The PID role signs with the wallet's issuer key (`issuer.pem`). The other roles have keys named `issuer-<role>` in the signing store, and the wallet provider has `wallet-provider`. `/.well-known/jwt-vc-issuer` lists one JWK per category list, per custom list and for credentials without a category. The wallet serves each provider CA certificate at `/api/certificates/providers/{role}/{country}.der`.
+
+A credential gets its category in this order:
+
+- `--trust-profile` of `issue ... --wallet`, or `trust_profile` in the issue API
+- the `category` of its [template](../templates.md)
+- the category of its entry in the [attestation catalogue](registrar.md#attestation-catalogue)
+
+A credential without a category is on no list. That is the case for an ad hoc credential without a template, and for a template without a catalogue entry. Its signer has its own provider role (`unlisted`) and provider CA. No list names them.
+
+The wallet also keeps an issued-attestation registry. It lists each issued credential type with its category and trusted list data. The trusted lists name these types:
+
+- `wallet generate-pid` and `wallet serve --pid` register the PID types
+- `issue ... --wallet` registers the type of the issued credential
+- `wallet import` registers the type of an imported credential without a category
+
+Each trusted list publishes its service's signing certificates, provider CAs and status signing certificates. With a configured root of path length zero, the list names only the signing certificates. A separate list operator key under the wallet CA signs the list. An unchanged list keeps its signed instance until it expires. Changed content or expiry increments the sequence number. Previous instances are available at the list's `/history` endpoint.
 
 Wallet and key attestations use a separate wallet provider key. Their `x5c` contains the leaf and any intermediate certificates, with the self-signed root omitted. Issuers can pin the root from `/api/certificates/ca` or use `/api/trustlists/wallet-provider`.
 
@@ -118,42 +134,43 @@ Wallet and key attestations use a separate wallet provider key. Their `x5c` cont
 
 The startup banner warns about a persisted Docker hostname outside Docker. It also warns about stored credentials with issuer or status list URLs that this server does not serve. Those credentials fail validation and status checks until they are issued again.
 
-Each profile describes a role through its LoTE type, entity name and service types. It is served at `/api/trustlists/{id}` with a stable ID:
+Each list is served at `/api/trustlists/{id}`:
 
-- `pid` for the built-in PID profile
-- `wallet-provider` for the Wallet Provider profile (always present, used by issuers to verify the wallet attestation)
-- `local` for the built-in local ETSI-shaped profile
-- `tl-<hash>` for any additional custom profile
+- `pid`, `qeaa`, `pub-eaa` and `eaa` for the categories
+- `wallet-provider` for the Wallet Provider list, which issuers use to verify the wallet attestation
+- `tl-<hash>` for a credential type with its own trusted list fields, such as `--trust-list-type`
 
-`eudi wallet trust-list --list` lists these profiles for the selected local or remote wallet:
+`eudi wallet trust-list --list` shows these lists for the selected local or remote wallet:
 
 ```
 ID               DEFAULT  CATEGORY              PATH
 pid              yes      Credential providers  /api/trustlists/pid
+qeaa                      Credential providers  /api/trustlists/qeaa
+pub-eaa                   Credential providers  /api/trustlists/pub-eaa
+eaa                       Credential providers  /api/trustlists/eaa
 wallet-provider           Wallet providers      /api/trustlists/wallet-provider
 ```
 
 With `--json` it prints the `/api/trustlists` body unchanged.
 
-`/api/trustlists` lists the profiles for API clients. Each entry includes:
+`/api/trustlists` lists them for API clients. Each entry includes:
 
-- `id`, for example `pid` or `local`
+- `id`, for example `pid` or `eaa`
 - `path`, for example `/api/trustlists/pid`
 - `advertised_url` when the wallet has an issuer URL configured, for example `https://localhost:8086/api/trustlists/pid`
 - `url`, an alias for `advertised_url`
 
 Clients that call the wallet through Docker port mappings, reverse proxies, or Testcontainers should resolve `path` against the URL they used for `/api/trustlists`. `advertised_url` is the configured publication URL of the wallet. It can differ from the URL the caller used.
 
-`/api/trustlist` is the legacy endpoint. Its selection rules are:
+`/api/trustlist` selects a list by credential type:
 
-- if a PID trust list profile exists, `/api/trustlist` returns that PID trust list
-- if no PID profile exists, `/api/trustlist` returns the first available profile
-- `vct` and `doctype` query parameters select the trust list for a specific credential type
+- without parameters it returns the PID list
+- `vct` and `doctype` select the list that names a credential type
 
 Examples:
 
 - `/api/trustlists/pid`
-- `/api/trustlists/local`
+- `/api/trustlists/eaa`
 - `/api/trustlist?vct=urn:eudi:pid:1`
 - `/api/trustlist?doctype=org.iso.23220.photoid.1`
 
@@ -171,29 +188,26 @@ Example discovery response:
       "loTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList"
     },
     {
+      "id": "eaa",
+      "default": false,
+      "path": "/api/trustlists/eaa",
+      "advertised_url": "https://localhost:8086/api/trustlists/eaa",
+      "url": "https://localhost:8086/api/trustlists/eaa",
+      "loTEType": "http://uri.etsi.org/19602/LoTEType/local"
+    },
+    {
       "id": "wallet-provider",
       "default": false,
       "path": "/api/trustlists/wallet-provider",
       "advertised_url": "https://localhost:8086/api/trustlists/wallet-provider",
       "url": "https://localhost:8086/api/trustlists/wallet-provider",
       "loTEType": "http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList"
-    },
-    {
-      "id": "local",
-      "default": false,
-      "path": "/api/trustlists/local",
-      "advertised_url": "https://localhost:8086/api/trustlists/local",
-      "url": "https://localhost:8086/api/trustlists/local",
-      "loTEType": "http://uri.etsi.org/19602/LoTEType/local"
     }
   ]
 }
 ```
 
-When the wallet needs a local default profile, it uses:
-- `LoTEType = http://uri.etsi.org/19602/LoTEType/local`
-- `SvcType/Issuance`
-- `SvcType/Revocation`
+The example leaves out the `qeaa` and `pub-eaa` entries.
 
 `--register` also registers OS URL scheme handlers. `openid4vp://`, `eudi-openid4vp://`, `haip-vp://`, `openid-credential-offer://`, `haip-vci://` and `eu-eaa-offer://` links then open the wallet on macOS. On Linux and Windows, `--register` is a no-op.
 
@@ -214,7 +228,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--credentials`         | None     | Credentials to add on every start, from a YAML or JSON file, a directory of such files, or stdin (`-`). See [startup credentials](#startup-credentials) |
 | `--pid`                 | `false`  | Generate default EUDI PID credentials on start   |
 | `--key`                 | None     | Override holder key (PEM/JWK)                    |
-| `--issuer-key`          | None     | Override issuer key (PEM/JWK)                    |
+| `--issuer-key`          | None     | Issuer key for generated PIDs (PEM/JWK)          |
 | `--mode`                | `debug`  | Validation mode: `debug` or `strict`             |
 | `--storage`             | `file`   | Storage backend: `file`, `memory`, `auto` or a `postgres://` URL. `$EUDI_DEV_STORAGE` when set (see [storage backends](../wallet.md#storage-backends)) |
 | `--seed`                | None     | Derive the generated keys from this string. `auto` seeds the memory backend only. `$EUDI_DEV_SEED` when set (see [seeded keys](../wallet.md#seeded-keys)) |
@@ -237,6 +251,7 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled. Strict aborts the flow. Debug reports the violation and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [verifiers](presenting.md#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
 | `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
+| `--trust-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](issuing.md#wallet-attestation)) |
 | `--adhoc-display-images` | `false` | Fetch HTTPS display images on demand instead of storing them. The issuer sees each render. See [display images](#display-images) |
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
@@ -305,11 +320,9 @@ Data URIs, template images and HTTP URLs are stored in both modes. Storing HTTP 
 
 ## `wallet trust-list`
 
-Prints the ETSI trust list JWT containing the selected role's signing certificates, provider CAs and status signing certificates. Verifiers use its provider CAs to validate the `x5c` or `x5chain` embedded in credentials. Issuer authorization data such as provider entitlements and `providesAttestations` comes from signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`. See [test certificates](../test-certificates.md).
+Prints a trusted list of the wallet (ETSI TS 119 602) as a signed JWT. It contains the signing certificates, provider CAs and status signing certificates of the selected list. Verifiers use its provider CAs to validate the `x5c` or `x5chain` embedded in credentials. Issuer authorization data such as provider entitlements and `providesAttestations` comes from signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`. See [test certificates](../test-certificates.md).
 
-`wallet trust-list` prints the same trust list as the legacy `/api/trustlist` endpoint: the PID trust list when the wallet has a PID trust list profile, otherwise the first available profile.
-
-`--id`, `--vct`, or `--doctype` selects a specific trust list profile. Typical profile IDs are `pid` and `local`.
+Without selection flags it prints the PID list, like `/api/trustlist`. `--id`, `--vct` or `--doctype` selects another list. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider` and the `tl-` IDs of custom lists. `--list` shows all lists of the wallet.
 
 Pipe the output to a file or pass it to `validate --trust-list`. `--url` prints only the URL for a running wallet server.
 
@@ -318,7 +331,7 @@ eudi wallet trust-list                          # Print the trust list JWT
 eudi wallet trust-list > trustlist.jwt          # Save to file
 eudi wallet trust-list --url                    # http://localhost:8085/api/trustlist
 eudi wallet trust-list --id pid --url           # http://localhost:8085/api/trustlists/pid
-eudi wallet trust-list --id local --url         # http://localhost:8085/api/trustlists/local
+eudi wallet trust-list --id eaa --url           # http://localhost:8085/api/trustlists/eaa
 eudi wallet trust-list --doctype org.iso.23220.photoid.1 --url
 eudi wallet trust-list --url --port 9000        # http://localhost:9000/api/trustlist
 eudi wallet trust-list --url --docker           # http://host.docker.internal:8085/api/trustlist
@@ -326,17 +339,17 @@ eudi wallet trust-list --url --docker           # http://host.docker.internal:80
 
 | Flag       | Default | Description                                        |
 |------------|---------|----------------------------------------------------|
-| `--url`    | `false` | Print only the trust list URL (for a running server) |
-| `--list`   | `false` | List the trust list profiles this wallet serves instead of printing one |
-| `--id`     | None    | Select a trust list profile ID such as `pid` or `local` |
-| `--vct`    | None    | Select the trust list covering this SD-JWT `vct`    |
-| `--doctype`| None    | Select the trust list covering this mdoc `docType`  |
+| `--url`    | `false` | Print only the trusted list URL (for a running server) |
+| `--list`   | `false` | List all trusted lists of the wallet instead of printing one |
+| `--id`     | None    | ID of the list to print, such as `pid`, `eaa` or `wallet-provider` |
+| `--vct`    | None    | Select the trusted list covering this SD-JWT `vct`    |
+| `--doctype`| None    | Select the trusted list covering this mdoc `docType`  |
 | `--port`   | `8085`  | Wallet server port (used with --url)                |
 | `--docker` | `false` | Use `host.docker.internal` instead of `localhost` (used with --url) |
 
 ## `wallet ca-cert`
 
-Loads or creates the shared root CA certificate and prints exactly one PEM certificate. Wallets under the same parent directory use this root for their signing and HTTPS certificate chains. New provider chains include an intermediate CA. Trust lists publish the relevant service certificates and provider CAs.
+Loads or creates the shared root CA certificate and prints exactly one PEM certificate. Wallets under the same parent directory use this root for their signing and HTTPS certificate chains. Provider chains include an intermediate CA. Trusted lists publish the relevant service certificates and provider CAs.
 
 `--jwks` exports the certificate as a JWKS document. It contains the certificate's public key as a JWK with `kid`, `alg`, `use`, the certificate chain in `x5c`, and the leaf hash in `x5t#S256`. Use it for JWKS-based trust configuration.
 

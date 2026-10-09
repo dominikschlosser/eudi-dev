@@ -1317,8 +1317,8 @@
     templateEditorHead.hidden = !on;
     document.getElementById('issue-title').textContent = on ? (editor.source ? 'Edit template' : 'New template') : 'Issue Credential';
     document.getElementById('issue-hint').textContent = on
-      ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for fields the builder doesn't show."
-      : "Uses the wallet's issuer key by default and stores the credential. Only the format is required. Templates fill fields you can edit.";
+      ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for the other template fields."
+      : "Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. Templates fill fields you can edit.";
     issueSubmit.textContent = on ? 'Save template' : 'Issue';
     document.getElementById('template-editor-mode-builder').checked = true;
     templateEditorJSON.hidden = true;
@@ -2181,15 +2181,6 @@
       '</div>';
     }
 
-    // With --arf the wallet checks how the issuer authenticates. The ARF
-    // requires the wallet to warn the user before it requests the credential.
-    if ((details.warnings || []).length > 0) {
-      html += '<div class="offer-warnings" id="offer-arf-warnings" role="alert">' +
-        '<div class="offer-warnings-title" id="offer-arf-warnings-title"><span class="ico-warn" aria-hidden="true"></span>The wallet found problems with this issuer</div>' +
-        '<ul id="offer-arf-warnings-list">' + details.warnings.map((w, i) => '<li id="offer-arf-warning-' + i + '">' + escHtml(w) + '</li>').join('') + '</ul>' +
-      '</div>';
-    }
-
     if (details.resolve_error) {
       html += '<p class="dialog-hint" id="offer-resolve-error">Could not retrieve the offer. ' +
         'Showing only its issuer. Approve to retry.</p>';
@@ -2350,7 +2341,7 @@
       return '<div class="consent-claim-set" id="consent-claim-set-row-' + escHtml(qid) + '">' +
         '<label class="consent-purpose-label" for="consent-claim-set-' + escHtml(qid) + '">Claim set for ' + escHtml(qid) + '</label>' +
         '<select class="form-input" id="consent-claim-set-' + escHtml(qid) + '" data-query="' + escHtml(qid) + '">' + optionsHtml + '</select>' +
-        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first claim set that fits. Debug mode lets you pick another.</div>' +
+        '<div class="consent-claim-set-hint" id="consent-claim-set-hint-' + escHtml(qid) + '">By default the wallet sends the first matching claim set. Debug mode lets you pick another.</div>' +
       '</div>';
     }
     function isAutoSelection() {
@@ -2418,9 +2409,22 @@
       return '<div class="who">' + logoHtml + '<div class="who-text"><div class="who-nm">' + nameHtml + chip + '</div>' + sub + '</div></div>';
     }
 
+    // Debug mode continues after failed checks. They stay one collapsed line
+    // under the verifier or the issuer, so the dialog stays readable.
+    function findingsBlock() {
+      const findings = req.findings || [];
+      if (findings.length === 0) return '';
+      const subject = isIssuance ? 'this issuer' : 'this verifier';
+      return '<details class="consent-findings" id="consent-findings">' +
+        '<summary id="consent-findings-summary"><span class="ico-warn" aria-hidden="true"></span>' +
+        findings.length + (findings.length === 1 ? ' finding about ' : ' findings about ') + subject + '</summary>' +
+        '<ul id="consent-findings-list">' + findings.map((f, i) => '<li id="consent-finding-' + i + '">' + escHtml(f) + '</li>').join('') + '</ul>' +
+        '</details>';
+    }
+
     function headerHtml() {
       let html = '<div class="consent-title">' + (isIssuance ? 'Credential Offer' : 'Presentation Request') + '</div>' +
-        whoBlock();
+        whoBlock() + findingsBlock();
 
       // Verifier purposes come from registration certificates in verifier_info (OpenID4VP
       // 1.0 §5.1).
@@ -2499,7 +2503,7 @@
       const claimSet = options ? chosenClaimSet(mc) : null;
       return '<div class="consent-credential" id="consent-credential-' + mc.credential_id + '" data-credential-id="' + mc.credential_id + '" data-vct="' + escHtml(mc.vct || '') + '" data-doctype="' + escHtml(mc.doctype || '') + '">' +
         '<div class="credential-card' + (cred.batch ? ' batch' : '') + '">' + body.html + '</div>' +
-        untrustedAuthorityNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
+        untrustedAuthorityNote(mc) + unboundNote(mc) + mismatchNote(mc, 'consent-mismatch-' + mc.query_id + '-' + mc.credential_id) +
         (claimSet
           ? claimChecklist(mc.credential_id, claimSet.claims, kept, null, null)
           : claimChecklist(mc.credential_id, mc.claims, kept, mc.empty_array_claims, mc.missing_claims)) +
@@ -2515,6 +2519,14 @@
         'because debug mode ignores that restriction.</div>';
     }
 
+    // Debug mode offers a credential without holder binding to a query that
+    // requires it (OpenID4VP 1.0 §6.1).
+    function unboundNote(mc) {
+      if (!mc || !mc.unbound) return '';
+      return '<div class="consent-untrusted" role="note" id="consent-unbound-' + escHtml(mc.credential_id) + '">⚠ This credential has no holder binding, which the query requires. ' +
+        'Debug mode sends it anyway.</div>';
+    }
+
 
     // Debug mode sends a non-matching credential when the user picks it. Name every
     // reason so the expected verifier error is clear.
@@ -2527,7 +2539,7 @@
     function unansweredNote(qid) {
       return '<div class="consent-unanswered" role="note" id="consent-unanswered-' + escHtml(qid) + '">' +
         'No credential matches <span class="query-chip">' + escHtml(qid) + '</span>. ' +
-        'Debug mode can send one that does not match. Choose it under Edit.</div>';
+        'Debug mode can send a non-matching one. Choose it under Edit.</div>';
     }
     function candidateRowHtml(qid, c, i, multi) {
       const picked = selection.picks[qid].includes(c.credential_id);
@@ -2549,7 +2561,7 @@
               ' href="decoder/?id=' + encodeURIComponent(c.credential_id) + '" target="_blank" rel="noopener"' +
               ' title="Open in decoder">Show</a>' +
           '</div>' +
-        '</div>' + untrustedAuthorityNote(c) +
+        '</div>' + untrustedAuthorityNote(c) + unboundNote(c) +
         mismatchNote(c, 'consent-mismatch-' + qid + '-' + c.credential_id) + '</div>';
     }
 
@@ -3123,7 +3135,7 @@
       config.preferred_format ? 'neutral' : 'off');
     const intro = document.getElementById('conf-intro');
     if (intro) {
-      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. HTTPS certificates are verified in strict mode and not in debug mode, unless you set them below.';
+      const base = 'Debug mode logs failed checks as warnings and continues. Strict mode refuses the request, the offer or the credential. Strict mode verifies HTTPS certificates and debug mode does not. The HTTPS setting below can change that.';
       intro.textContent = demoMode ? base + ' The public demo runs with fixed settings.' : base;
     }
     const reset = document.getElementById('conf-reset');
@@ -3216,10 +3228,71 @@
     }
   }
 
+  // Providers and external lists that the user put on the wallet's trusted
+  // lists (GET api/trust).
+  async function loadAddedTrust() {
+    const entities = document.getElementById('trust-added-entities');
+    const lists = document.getElementById('trust-added-lists');
+    const select = document.getElementById('trust-entity-list');
+    try {
+      const state = await registrarRequest('GET', 'api/trust');
+      const current = select.value;
+      select.innerHTML = (state.entity_lists || []).map(id => '<option value="' + escHtml(id) + '">' + escHtml(id) + '</option>').join('');
+      if (current) select.value = current;
+      entities.innerHTML = (state.entities || []).map(e =>
+        '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
+        '<button type="button" class="link-btn" data-entity="' + escHtml(e.id) + '">Remove</button></li>').join('');
+      lists.innerHTML = (state.lists || []).map((l, i) =>
+        '<li id="trust-list-' + i + '"><span>' + escHtml(l.url) + '</span>' +
+        (l.configured ? '<span class="trust-list-name">--trusted-list</span>' : '<button type="button" class="link-btn" data-list="' + escHtml(l.url) + '">Remove</button>') + '</li>').join('');
+    } catch (e) {
+      document.getElementById('trust-error').textContent = e.message;
+    }
+  }
+  async function changeTrust(method, path, body) {
+    const error = document.getElementById('trust-error');
+    error.textContent = '';
+    try {
+      await registrarRequest(method, path, body);
+      await loadAddedTrust();
+      return true;
+    } catch (e) {
+      error.textContent = e.message;
+      return false;
+    }
+  }
+  document.getElementById('trust-entity-add').addEventListener('click', async () => {
+    const ca = document.getElementById('trust-entity-ca');
+    const added = await changeTrust('POST', 'api/trust/entities', {
+      list: document.getElementById('trust-entity-list').value,
+      name: document.getElementById('trust-entity-name').value.trim(),
+      certificates: ca.value,
+    });
+    if (added) {
+      ca.value = '';
+      document.getElementById('trust-entity-name').value = '';
+      loadTrustLists();
+    }
+  });
+  document.getElementById('trust-list-add').addEventListener('click', async () => {
+    const input = document.getElementById('trust-list-url');
+    if (await changeTrust('POST', 'api/trust/lists', { url: input.value.trim() })) input.value = '';
+  });
+  document.getElementById('trust-added-section').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-entity], button[data-list]');
+    if (!button) return;
+    if (button.dataset.entity) {
+      changeTrust('DELETE', 'api/trust/entities/' + encodeURIComponent(button.dataset.entity)).then(() => loadTrustLists());
+    } else {
+      changeTrust('DELETE', 'api/trust/lists?url=' + encodeURIComponent(button.dataset.list));
+    }
+  });
+
   const trustOverlay = document.getElementById('trust-overlay');
   document.getElementById('trust-link').addEventListener('click', (event) => {
     event.preventDefault();
     loadTrustLists();
+    loadAddedTrust();
     trustOverlay.classList.add('active');
   });
   document.getElementById('trust-close').addEventListener('click', () => {
@@ -4367,6 +4440,11 @@
         credentials: credentials,
         schema: catalogSchema('registrar'),
       });
+      const issuerCA = document.getElementById('registrar-catalog-issuer-ca');
+      if (issuerCA.value.trim()) {
+        await registrarRequest('POST', 'api/trust/entities', { list: added.category, name: added.name + ' issuer', certificates: issuerCA.value });
+        issuerCA.value = '';
+      }
       closeCatalogForm();
       await loadCatalogEntries();
       catalogSearch.value = '';

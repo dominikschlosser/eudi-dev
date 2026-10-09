@@ -74,8 +74,10 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 
 	// The wallet proves holder binding with a KB-JWT for an SD-JWT VC and with
 	// deviceKey for an mdoc. It presents a jwt_vc_json credential without a
-	// Verifiable Presentation, so the credential answers only a query that
-	// doesn't require holder binding (OpenID4VP 1.0 Appendix B.1).
+	// Verifiable Presentation, so the credential has no holder binding
+	// (OpenID4VP 1.0 Appendix B.1). Strict mode answers a query that requires
+	// binding only with a bound credential. Debug mode offers an unbound one
+	// too, flagged and after the bound ones.
 	bound := make(map[string]bool, len(credentials))
 	for _, cred := range credentials {
 		bound[cred.ID] = (cred.Format == "dc+sd-jwt" || cred.Format == "mso_mdoc") && credentialHolderBinding(cred.Raw).Bound
@@ -108,8 +110,11 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				skipped["meta mismatch"]++
 				mismatches = append(mismatches, metaMismatch(cred, cqMap))
 			}
+			unbound := false
 			switch {
 			case bound[cred.ID]:
+			case requiresHolderBinding(cqMap) && debug:
+				unbound = true
 			case requiresHolderBinding(cqMap):
 				skipped["no holder binding"]++
 				mismatches = append(mismatches, "has no holder binding, which the query requires")
@@ -172,6 +177,10 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				}
 			}
 
+			if unbound {
+				log.Printf("[DCQL] Warning: query=%s: credential %s (%s) has no holder binding, which the query requires (OpenID4VP 1.0 §6.1), offered in debug mode",
+					queryID, typeLabel, cred.Format)
+			}
 			matched++
 			log.Printf("[DCQL]   query=%s: credential %s (%s) matched, selected claims: %v", queryID, typeLabel, cred.Format, selection.selectedKeys)
 			matches = append(matches, CredentialMatch{
@@ -183,6 +192,7 @@ func (w *Wallet) EvaluateDCQLWithOptions(query map[string]any) ([]CredentialMatc
 				Claims:             filterClaims(cred, selection.selectedKeys),
 				SelectedKeys:       selection.selectedKeys,
 				UntrustedAuthority: untrustedAuthority,
+				Unbound:            unbound,
 				EmptyArrayClaims:   selection.emptyArrays,
 				MissingClaims:      selection.missingRequired,
 				ClaimSets:          claimSets,
@@ -530,7 +540,10 @@ func sortMatchesTrustedFirst(matches []CredentialMatch) {
 		if matches[i].QueryID != matches[j].QueryID {
 			return false
 		}
-		return !matches[i].UntrustedAuthority && matches[j].UntrustedAuthority
+		if matches[i].UntrustedAuthority != matches[j].UntrustedAuthority {
+			return !matches[i].UntrustedAuthority
+		}
+		return !matches[i].Unbound && matches[j].Unbound
 	})
 }
 
@@ -727,7 +740,7 @@ func selectFromClaimSets(cred StoredCredential, claimsQuery []any, claimSets []a
 	return nil
 }
 
-// satisfiableClaimSets lists every claim_sets option the credential can answer, in
+// satisfiableClaimSets lists the matching claim_sets options of a credential, in
 // the verifier's order. Debug mode offers them in the consent dialog.
 func satisfiableClaimSets(cred StoredCredential, cqMap map[string]any) []ConsentClaimSet {
 	claimsQuery, _ := cqMap["claims"].([]any)
@@ -1580,7 +1593,7 @@ func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([
 		tlRaw, err = format.FetchURL(fallbackURL, clients...)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch trust list %s: %w", trustListURL, err)
+		return nil, fmt.Errorf("fetching the trusted list %s: %w", trustListURL, err)
 	}
 	return parseTrustListAnchors(tlRaw)
 }
@@ -1588,11 +1601,11 @@ func fetchTrustListCertificates(trustListURL string, clients ...*http.Client) ([
 func parseTrustListAnchors(tlRaw string) ([]trustlist.CertInfo, error) {
 	tl, err := trustlist.Parse(tlRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse trust list: %w", err)
+		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
 	certs := trustlist.ExtractPublicKeys(tl)
 	if len(certs) == 0 {
-		return nil, fmt.Errorf("trust list contains no certificates")
+		return nil, fmt.Errorf("the trusted list contains no certificates")
 	}
 	return certs, nil
 }

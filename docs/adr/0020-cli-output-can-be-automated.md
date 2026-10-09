@@ -8,12 +8,12 @@ With `--json`, a command writes exactly one JSON document to stdout and nothing 
 
 - A command that returns data prints it as an object or an array. An empty result is an empty array (or an object holding one), never a text message.
 - A command that changes something prints an object that says what changed, such as `{"removed": 1, "id": "a1b2"}`.
-- A command whose result is an artifact (a credential, a PEM certificate, a trust list JWT) prints the bare artifact without `--json`, so a script can use it as is. With `--json` it wraps the artifact in an object, such as `{"credential": "..."}`.
+- If the result is an artifact (a credential, a PEM certificate, a trusted list JWT), the command prints the bare artifact without `--json`, so a script can use it as is. With `--json` it wraps the artifact in an object, such as `{"credential": "..."}`.
 - A command that checks several things (`validate`) collects them in one document.
 
 ## Failures
 
-A failing command exits non-zero and writes the error to stderr. A command that has a result and still fails, such as `validate` on an invalid signature, prints its document first, so a script sees what failed. Declining a consent request or letting it time out is a failure.
+A failing command exits non-zero and writes the error to stderr. If a command fails but has a result, such as `validate` on an invalid signature, it prints its document first, so a script sees what failed. Declining a consent request or letting it time out is a failure.
 
 ## Long-running commands
 

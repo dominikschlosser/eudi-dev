@@ -37,6 +37,7 @@ type issuerAuthentication struct {
 	configurations []string
 	accessCAs      []*x509.Certificate
 	registrarCAs   []*x509.Certificate
+	statusCAs      []*x509.Certificate
 	statusClient   *http.Client
 	// category names the credential category of an offered type. The rules
 	// of a PID Provider apply to the pid category.
@@ -137,7 +138,7 @@ func issuerARFFindings(a issuerAuthentication) []string {
 	if len(a.signerChain) == 0 {
 		findings = append(findings, accessRule+": the Credential Issuer Metadata is not signed, so the wallet cannot check the issuer's access certificate. The issuer must sign it as OpenID4VCI 1.0 §12.2.3 describes ("+signingRule+")")
 	} else if err := verifyToAnchor(a.signerChain, a.accessCAs); err != nil {
-		findings = append(findings, fmt.Sprintf("%s: the access certificate %q that signs the issuer metadata does not chain to a trusted access certificate authority: %v", accessRule, a.signerChain[0].Subject.String(), err))
+		findings = append(findings, fmt.Sprintf("%s: the access certificate %q of the signed issuer metadata does not chain to a trusted access certificate authority: %v", accessRule, a.signerChain[0].Subject.String(), err))
 	}
 
 	entries := infoEntries(a.metadata, "issuer_info")
@@ -165,7 +166,7 @@ func issuerARFFindings(a issuerAuthentication) []string {
 		if err := verifyToAnchor(r.chain, a.registrarCAs); err != nil {
 			findings = append(findings, fmt.Sprintf("%s: the registration certificate of %s does not chain to a trusted registrar: %v", registrarRule, name, err))
 		}
-		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.registrarCAs, "ARF RPRC_22a")...)
+		findings = append(findings, registrationStatusFindings(cert, a.statusClient, a.statusCAs, "ARF RPRC_22a")...)
 		for _, e := range toAnyList(cert["entitlements"]) {
 			if s, ok := e.(string); ok {
 				entitlements = append(entitlements, s)
@@ -254,6 +255,7 @@ func (w *Wallet) issuerARFCheck(metadata map[string]any, signerChain []*x509.Cer
 		configurations: configurations,
 		accessCAs:      w.RelyingPartyCAs(),
 		registrarCAs:   w.RegistrarCAs(),
+		statusCAs:      w.RegistrationStatusCAs(),
 		statusClient:   w.RegistrationStatusClient(),
 		category:       w.offeredCategory,
 	})

@@ -42,16 +42,55 @@ const (
 )
 
 // DemoVerifierAccessSigningMaterial is the access certificate of the demo
-// verifier. It names another organization than the issuer's access
-// certificate, so the two have their own registrations. Its CommonName is the
-// trade name of the registration (ARF RPRC_06).
+// verifier. The demo verifier is its own relying party, so its certificate
+// names another organization than the demo issuer's.
 func (w *Wallet) DemoVerifierAccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
-	return w.auxiliarySigningMaterial("demo-verifier-access", mock.LeafCertOptions{
-		CommonName:             demoVerifierName,
-		Organization:           "EUDI Dev Test Verifier",
-		OrganizationIdentifier: "NTR" + mock.DefaultCertificateCountry + "-00000001",
-		Role:                   mock.AccessCertificate,
+	return w.demoAccessSigningMaterial("demo-verifier-access", demoVerifierIdentity, demoVerifierName, demoVerifierServiceID)
+}
+
+// demoIdentity is the registered identity of a demo relying party.
+type demoIdentity struct {
+	Identifier, LegalName, Country string
+}
+
+var (
+	demoIssuerIdentity   = demoIdentity{Identifier: listedProviderIdentifier, LegalName: listedProviderName, Country: mock.DefaultCertificateCountry}
+	demoVerifierIdentity = demoIdentity{Identifier: "NTR" + mock.DefaultCertificateCountry + "-00000001", LegalName: "EUDI Dev Test Verifier", Country: mock.DefaultCertificateCountry}
+)
+
+// demoAccessSigningMaterial has the registrar sign the access certificate of
+// a demo relying party, with a key from the signing store. The wallet keeps
+// the certificate until it is about to expire. The DNS name of the issuer URL
+// makes x509_san_dns client identifiers work (OpenID4VP 1.0 §5.9.3).
+func (w *Wallet) demoAccessSigningMaterial(keyName string, identity demoIdentity, tradeName, serviceID string) (*ecdsa.PrivateKey, []*x509.Certificate, error) {
+	key, err := w.signingStore().key(keyName)
+	if err != nil {
+		return nil, nil, err
+	}
+	rp, err := w.Registrar().NormalizedRelyingParty(w.demoRelyingParty(identity, registrar.WalletRelyingPartyService{ServiceTradeName: tradeName, ServiceIdentifier: serviceID}))
+	if err != nil {
+		return nil, nil, err
+	}
+	_, ca, err := w.RelyingPartyAccessCA()
+	if err != nil {
+		return nil, nil, err
+	}
+	dnsNames, _, _ := issuerSubjectAltNames(w.IssuerURL)
+	subject, err := json.Marshal([]any{rp.Identifier[0].Identifier, rp.LegalPerson.LegalName, rp.Country, tradeName, serviceID, rp.Services[0].SupportURI, dnsNames})
+	if err != nil {
+		return nil, nil, err
+	}
+	leaf, err := w.signingStore().cachedCertificate(subject, ca, &key.PublicKey, false, func() (*x509.Certificate, error) {
+		chain, err := w.Registrar().AccessCertificateFor(rp, serviceID, &key.PublicKey, dnsNames, registrar.MaxAccessCertificateValidity)
+		if err != nil {
+			return nil, err
+		}
+		return chain[0], nil
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return key, []*x509.Certificate{leaf, ca}, nil
 }
 
 // EnsureDemoRegistrations registers the demo issuer and the demo verifier, or
@@ -153,10 +192,6 @@ func decodeInfo(value, name string) ([]any, error) {
 // its template or its catalogue entry. Its identity check asks for a PID
 // before it issues, so it registers that intended use too.
 func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
-	_, access, err := w.AccessSigningMaterial()
-	if err != nil {
-		return registrar.WalletRelyingParty{}, registrar.RegistrationCertificateRequest{}, err
-	}
 	catalogue := w.Registrar().CatalogAttestations()
 	var entitlements, vcts, docTypes []string
 	add := func(category, format, vct, docType string) {
@@ -198,7 +233,7 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 	for _, docType := range sortedUnique(docTypes) {
 		provides = append(provides, registrar.ProvidedAttestation{Format: "mso_mdoc", Type: docType})
 	}
-	rp := w.demoRelyingParty(access[0], registrar.WalletRelyingPartyService{
+	rp := w.demoRelyingParty(demoIssuerIdentity, registrar.WalletRelyingPartyService{
 		ServiceTradeName:     DemoIssuerName,
 		ServiceIdentifier:    demoIssuerServiceID,
 		SrvDescription:       registrar.ServiceDescription{{{Lang: "en", Content: "Demo issuer of the eudi-dev test wallet"}}},
@@ -220,10 +255,6 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 // It covers the claims of every predefined credential template, so the demo
 // requests ask only for registered claims (ARF RPRC_21).
 func (w *Wallet) demoVerifierRegistration() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
-	_, access, err := w.DemoVerifierAccessSigningMaterial()
-	if err != nil {
-		return registrar.WalletRelyingParty{}, registrar.RegistrationCertificateRequest{}, err
-	}
 	var credentials []registrar.RegisteredCredential
 	for _, entry := range w.Registrar().CatalogAttestations() {
 		if !entry.Template {
@@ -241,7 +272,7 @@ func (w *Wallet) demoVerifierRegistration() (registrar.WalletRelyingParty, regis
 			credentials = append(credentials, rc)
 		}
 	}
-	rp := w.demoRelyingParty(access[0], registrar.WalletRelyingPartyService{
+	rp := w.demoRelyingParty(demoVerifierIdentity, registrar.WalletRelyingPartyService{
 		ServiceTradeName:  demoVerifierName,
 		ServiceIdentifier: demoVerifierServiceID,
 		SrvDescription:    registrar.ServiceDescription{{{Lang: "en", Content: "Demo verifier of the eudi-dev test wallet"}}},
@@ -254,14 +285,11 @@ func (w *Wallet) demoVerifierRegistration() (registrar.WalletRelyingParty, regis
 	return rp, registrar.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: demoVerifierIntendedUseID}, nil
 }
 
-// demoRelyingParty takes the identifier, legal name and country from the
-// access certificate.
-func (w *Wallet) demoRelyingParty(access *x509.Certificate, service registrar.WalletRelyingPartyService) registrar.WalletRelyingParty {
-	identifier, legalName, country := registrar.AccessCertificateSubject(access)
+func (w *Wallet) demoRelyingParty(identity demoIdentity, service registrar.WalletRelyingPartyService) registrar.WalletRelyingParty {
 	return registrar.WalletRelyingParty{
-		Identifier:  []registrar.Identifier{{Identifier: identifier, Type: "http://data.europa.eu/eudi/id/EUID"}},
-		LegalPerson: registrar.LegalPerson{LegalName: []string{legalName}},
-		Country:     country,
+		Identifier:  []registrar.Identifier{{Identifier: identity.Identifier, Type: "http://data.europa.eu/eudi/id/EUID"}},
+		LegalPerson: registrar.LegalPerson{LegalName: []string{identity.LegalName}},
+		Country:     identity.Country,
 		TradeName:   service.ServiceTradeName,
 		Services:    []registrar.WalletRelyingPartyService{service},
 	}

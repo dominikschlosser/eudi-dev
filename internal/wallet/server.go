@@ -187,6 +187,7 @@ func (s *Server) setupRoutes() {
 	s.routeFunc("GET /api/certificates/tls", s.handleTLSCertificate)
 	s.routeFunc("GET /api/certificates/registrar", s.handleRegistrarCertificate)
 	s.routeFunc("GET /api/certificates/relying-party-access-ca", s.handleRelyingPartyAccessCA)
+	s.routeFunc("GET /api/certificates/registrar-ca", s.handleRegistrarCA)
 
 	s.routeFunc("GET /api/requests", s.withFreshStore(s.handleListRequests))
 	s.routeFunc("GET /api/requests/stream", s.withFreshStore(s.handleRequestStream))
@@ -195,6 +196,11 @@ func (s *Server) setupRoutes() {
 
 	s.routeFunc("GET /api/trustlist", s.withFreshStore(s.handleTrustList))
 	s.routeFunc("GET /api/trustlists", s.withFreshStore(s.handleTrustListIndex))
+	s.routeFunc("GET /api/trust", s.withFreshStore(s.handleTrustState))
+	s.routeFunc("POST /api/trust/entities", s.withFreshStore(s.handleAddTrustedEntity))
+	s.routeFunc("DELETE /api/trust/entities/{id}", s.withFreshStore(s.handleRemoveTrustedEntity))
+	s.routeFunc("POST /api/trust/lists", s.withFreshStore(s.handleAddTrustedList))
+	s.routeFunc("DELETE /api/trust/lists", s.withFreshStore(s.handleRemoveTrustedList))
 	s.routeFunc("GET /api/trustlists/{id}", s.withFreshStore(s.handleTrustListByID))
 	s.routeFunc("GET /api/trustlist/history", s.withFreshStore(s.handleTrustListHistory))
 	s.routeFunc("GET /api/trustlist/history/{sequence}", s.withFreshStore(s.handleTrustListHistory))
@@ -461,6 +467,8 @@ func (s *Server) applyPersistedWalletState(reloaded *Wallet) {
 	s.wallet.RelyingParties = slices.Clone(reloaded.RelyingParties)
 	s.wallet.RegistrationStatuses = slices.Clone(reloaded.RegistrationStatuses)
 	s.wallet.Catalog = slices.Clone(reloaded.Catalog)
+	s.wallet.TrustedEntities = slices.Clone(reloaded.TrustedEntities)
+	s.wallet.AddedTrustedLists = slices.Clone(reloaded.AddedTrustedLists)
 	s.wallet.Credentials = append([]StoredCredential(nil), reloaded.Credentials...)
 	// The poller and issuance flow manage deferred issuances in memory. Reloading them
 	// here could erase a new deferral before it has been saved.
@@ -556,8 +564,6 @@ func (s *Server) saveIssuedCredential(result *IssuanceResult) {
 	s.triggerSave()
 }
 
-// Restore the renewed credential while holding the reload lock, including its rotated
-// refresh token.
 // saveCredential restores the credential while holding the reload lock and
 // saves it. A renewed credential starts with status 0, so newStatus registers
 // its status entry again, which a reload may have removed or reverted.

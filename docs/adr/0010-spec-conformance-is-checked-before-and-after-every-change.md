@@ -28,7 +28,7 @@ The versioned specifications and their applicable regulatory adaptations define 
 
 The OpenID Foundation conformance suite tests selected OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0 plans and variants. The wallet plans test this wallet ([runbook](../conformance-run.md)). The issuer and verifier plans test the demo issuer and verifier ([runbook](../conformance-run-demorp.md)). [Conformance results](../conformance-results.md) record those runs and their limits. Passing these plans does not establish conformance to the full EUDI specification set.
 
-[ADR-0013](0013-only-the-eudi-stack-is-supported.md) limits the specification set to what the ARF references. ETSI certificate profiles, trust lists, registration information, PID rulebooks and ISO mdoc requirements need checks against their own versioned sources. The toolkit's validations and tests cover implemented rules, including registration certificates and over-asking. [Spec compliance](../spec-compliance.md) lists the remaining gaps.
+[ADR-0013](0013-only-the-eudi-stack-is-supported.md) limits the specification set to what the ARF references. ETSI certificate profiles, trusted lists, registration information, PID rulebooks and ISO mdoc requirements need checks against their own versioned sources. The toolkit's validations and tests cover implemented rules, including registration certificates and over-asking. [Spec compliance](../spec-compliance.md) lists the remaining gaps.
 
 ## Watched sources
 

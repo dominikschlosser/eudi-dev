@@ -106,6 +106,9 @@ func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
 		if err := checkRemoteOutboundFlags(); err != nil {
 			return err
 		}
+		if err := checkRemoteConformanceFlags(opts.conformanceFlags); err != nil {
+			return err
+		}
 		// The selected wallet fetches the offer and collects the transaction code.
 		// Some offers can be fetched only once.
 		return remoteAccept(c, uri, opts.txCode, !opts.autoAccept)
@@ -132,6 +135,7 @@ func walletAcceptCmd() *cobra.Command {
 		arf                 bool
 		relyingPartyCAs     []string
 		trustListCAs        []string
+		trustedLists        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -162,14 +166,16 @@ request boundaries, so later presentation requests see the new credential.`,
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
 				trustListCAs:        trustListCAs,
+				trustedLists:        trustedLists,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
+				conformanceFlags:    changedConformanceFlags(cmd),
 			})
 		},
 	}
 
-	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them. A running wallet server applies its own setting")
+	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Server port for OID4VP (serves trust list and consent UI)")
 	cmd.Flags().BoolVar(&autoAccept, "auto-accept", false, "Auto-approve OID4VP presentations")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
@@ -179,6 +185,7 @@ request boundaries, so later presentation requests see the new credential.`,
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustedLists, "trusted-list", nil, trustedListFlagUsage)
 	return cmd
 }
 
@@ -193,6 +200,7 @@ func walletScanCmd() *cobra.Command {
 		arf                 bool
 		relyingPartyCAs     []string
 		trustListCAs        []string
+		trustedLists        []string
 		docker              bool
 		keyAttestationLevel string
 	)
@@ -250,9 +258,11 @@ func walletScanCmd() *cobra.Command {
 				arf:                 arf,
 				relyingPartyCAs:     relyingPartyCAs,
 				trustListCAs:        trustListCAs,
+				trustedLists:        trustedLists,
 				mode:                walletValidationMode,
 				docker:              docker,
 				keyAttestationLevel: keyAttestationLevel,
+				conformanceFlags:    changedConformanceFlags(cmd),
 			})
 		},
 	}
@@ -263,10 +273,11 @@ func walletScanCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&docker, "docker", false, "Serve the trust and status lists under host.docker.internal so a verifier in a container reaches them")
 	cmd.Flags().StringVar(&sessionTranscript, "session-transcript", "oid4vp", "mdoc session transcript mode: 'oid4vp' (OID4VP 1.0, default) or 'iso' (ISO 18013-7)")
 	cmd.Flags().StringVar(&txCode, "tx-code", "", "Transaction code for OID4VCI pre-authorized code flow")
-	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them. A running wallet server applies its own setting")
+	cmd.Flags().StringVar(&keyAttestationLevel, "key-attestation-level", "", "What the key attestation claims as key_storage and user_authentication (OpenID4VCI Appendix D.2): whatever the issuer requires (default), 'none', or one of iso_18045_high, iso_18045_moderate, iso_18045_enhanced-basic, iso_18045_basic for both. The wallet holds its keys in files and can prove none of them")
 	cmd.Flags().BoolVar(&haip, "haip", false, "Enforce HAIP 1.0 on presentations (x509_hash, direct_post.jwt, DCQL, JAR, ES256) and on credential offers (https issuer, and authorization code offers also need PAR, PKCE S256, DPoP, client auth)")
 	cmd.Flags().BoolVar(&arf, "arf", false, arfFlagUsage)
 	cmd.Flags().StringArrayVar(&relyingPartyCAs, "relying-party-ca", nil, relyingPartyCAFlagUsage)
 	cmd.Flags().StringArrayVar(&trustListCAs, "trust-list-ca", nil, trustListCAFlagUsage)
+	cmd.Flags().StringArrayVar(&trustedLists, "trusted-list", nil, trustedListFlagUsage)
 	return cmd
 }

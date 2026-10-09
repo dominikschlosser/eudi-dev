@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,21 @@ func TestNew(t *testing.T) {
 	}
 	if len(w.Credentials) != 0 {
 		t.Errorf("expected 0 credentials, got %d", len(w.Credentials))
+	}
+}
+
+// Generating the PIDs again keeps the other issued credential types and their
+// trusted lists.
+func TestGeneratingPIDsKeepsOtherIssuedTypes(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	if _, err := w.IssueCredential(IssueOptions{Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": "gold"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.GenerateDefaultCredentials(nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(w.issuedAttestationSpecs(), func(s IssuedAttestationSpec) bool { return s.VCT == "urn:example:badge:1" }) {
+		t.Errorf("issued types %+v, want the badge kept", w.issuedAttestationSpecs())
 	}
 }
 
