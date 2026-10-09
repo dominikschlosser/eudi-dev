@@ -64,6 +64,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		checks = append(checks, checkSDJWTExpiry(token))
 		checks = append(checks, CheckSDJWTIntegrity(token))
 		checks = append(checks, checkSDJWTSignature(token, opts))
+		checks = append(checks, checkCatalogueTrust(input, opts))
 		checks = append(checks, checkSDJWTStatus(token, opts)...)
 
 		result["validation"] = map[string]any{
@@ -106,6 +107,7 @@ func Validate(input string, opts ValidateOpts) (map[string]any, error) {
 		checks = append(checks, checkMDOCExpiry(doc))
 		checks = append(checks, CheckMDOCIntegrity(doc))
 		checks = append(checks, checkMDOCSignature(doc, opts))
+		checks = append(checks, checkCatalogueTrust(input, opts))
 		checks = append(checks, checkMDOCStatus(doc, opts)...)
 
 		result["validation"] = map[string]any{

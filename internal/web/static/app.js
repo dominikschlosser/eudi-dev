@@ -533,7 +533,7 @@
     let icon, label, cls, summary;
     if (pending.length > 0) {
       icon = "\u22ef"; label = "Checking"; cls = "checking";
-      summary = pending.map((c) => c.name).join(", ") + " at the issuer";
+      summary = pending.map((c) => c.name).join(", ");
     } else if (violations.length > 0) {
       icon = "\u2717"; label = "Invalid"; cls = "expired";
       summary = violations.length === 1 ? "1 violation" : violations.length + " violations";

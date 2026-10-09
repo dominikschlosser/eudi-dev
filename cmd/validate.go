@@ -167,6 +167,8 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		reportCatalogueTrust(raw, report)
+
 		if statusListFlag {
 			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, tlCerts, report); err != nil {
 				return err
@@ -277,6 +279,8 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		reportCatalogueTrust(raw, report)
+
 		// ExtractStatusRef expects {"status": {"status_list": ...}} and
 		// MSO.Status is the inner map.
 		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
@@ -290,6 +294,32 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// reportCatalogueTrust validates the credential with the trusted lists of its
+// entry in the wallet's attestation catalogue. The result is informational, so
+// it leaves the exit code alone.
+func reportCatalogueTrust(raw string, report jsonReport) {
+	w, _, err := loadWallet()
+	if err != nil {
+		return
+	}
+	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	if !found {
+		return
+	}
+	report.add("trust", anchoring, func() {
+		switch {
+		case anchoring.AnchoredBy != "":
+			fmt.Printf("  ✓ Anchored by the trusted list %s of the catalogue entry %q\n", anchoring.AnchoredBy, anchoring.Entry)
+		case len(anchoring.Findings) > 0:
+			for _, f := range anchoring.Findings {
+				fmt.Printf("  ✗ %s\n", f)
+			}
+		default:
+			fmt.Printf("  – The catalogue entry %q links no readable trusted list\n", anchoring.Entry)
+		}
+	})
 }
 
 // printLeafSourceNote explains a leaf-only verification so a green result is

@@ -364,8 +364,8 @@ func TestHandleValidate_SDJWTBasic(t *testing.T) {
 		t.Fatalf("expected checks array, got %T", val["checks"])
 	}
 
-	if len(checks) != 5 {
-		t.Errorf("expected 5 checks, got %d", len(checks))
+	if len(checks) != 6 {
+		t.Errorf("expected 6 checks, got %d", len(checks))
 	}
 
 	names := make(map[string]string)
@@ -772,8 +772,8 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 	val1 := result1["validation"].(map[string]any)
 	checks1 := val1["checks"].([]any)
 
-	if len(checks1) != 5 {
-		t.Errorf("expected 5 checks without key, got %d", len(checks1))
+	if len(checks1) != 6 {
+		t.Errorf("expected 6 checks without key, got %d", len(checks1))
 	}
 
 	body2, _ := json.Marshal(map[string]any{
@@ -789,8 +789,8 @@ func TestHandleValidate_VerifyFormAlwaysPresent(t *testing.T) {
 	val2 := result2["validation"].(map[string]any)
 	checks2 := val2["checks"].([]any)
 
-	if len(checks2) != 5 {
-		t.Errorf("expected 5 checks with invalid key, got %d", len(checks2))
+	if len(checks2) != 6 {
+		t.Errorf("expected 6 checks with invalid key, got %d", len(checks2))
 	}
 
 	for _, c := range checks2 {
