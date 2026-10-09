@@ -715,3 +715,16 @@ func TestDemoCapsAddedTrustedLists(t *testing.T) {
 		t.Errorf("list %d = %d, want 403", maxDemoTrustedLists+1, w.Code)
 	}
 }
+
+// Visitors share the demo issuer and verifier, so the public demo refuses to
+// change or delete their registrations.
+func TestDemoProtectsTheDemoRegistrations(t *testing.T) {
+	srv := newDemoTestServer(t)
+	if w := serverRequest(t, srv, "DELETE", "/api/registrar/wrp/"+demoVerifierIdentity.Identifier, ""); w.Code != http.StatusForbidden {
+		t.Errorf("delete = %d, want 403", w.Code)
+	}
+	body := `{"identifier":[{"identifier":"` + demoIssuerIdentity.Identifier + `","type":"http://data.europa.eu/eudi/id/EORI-No"}],"tradeName":"Mine"}`
+	if w := serverRequest(t, srv, "PUT", "/api/registrar/wrp", body); w.Code != http.StatusForbidden {
+		t.Errorf("update = %d, want 403", w.Code)
+	}
+}

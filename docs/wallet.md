@@ -110,7 +110,7 @@ The wallet derives these relationships from two sources:
 - the PID type itself. A country or region code after `urn:eudi:pid:` (`urn:eudi:pid:de:1`, `urn:eudi:pid:fr:1`) marks a domestic type. A domestic type extends `urn:eudi:pid:1`. A version number after `urn:eudi:pid:` (`urn:eudi:pid:1`, `urn:eudi:pid:2`) marks the country-independent type
 - the `aka_vcts` claim ([SD-JWT VC](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) §2.2.2.2). It lists additional types of the credential and applies to every credential type. The German PID issued by eudi-dev carries it
 
-Inheritance describes the credential type only. Signature and trusted list checks decide whether the issuer is authorized (§6.6: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so").
+Inheritance describes the credential type only. Signature and trusted list checks decide whether the issuer is authorized (§7.7: "Verifiers and Holders MUST NOT assume that any issuer who issues a credential extending a known type is authorized to do so").
 
 In mdoc every PID has the doctype `eu.europa.ec.eudi.pid.1` (PID_05). National elements are in a domestic namespace. Its name is the doctype with the country or region code appended (`eu.europa.ec.eudi.pid.de.1`, PID_06). A `doctype_value` request therefore matches every PID. A claim query selects a national element by its namespace: `"path": ["eu.europa.ec.eudi.pid.de.1", "birth_name"]`.
 

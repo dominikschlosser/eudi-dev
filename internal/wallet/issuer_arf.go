@@ -215,9 +215,9 @@ func providedAttestationsOf(cert map[string]any) []registeredCredential {
 }
 
 // providerCertificateContentFindings checks a provider's registration
-// certificate against ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44.
-// RPRC_11 and RPRC_12 apply to relying parties only, and a provider
-// certificate has no intended use (RPRC_05).
+// certificate against ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. A
+// provider certificate has no intended use (RPRC_05), so it has no privacy
+// policy either.
 func providerCertificateContentFindings(cert map[string]any) []string {
 	var findings []string
 	miss := func(field, rule string) {
@@ -235,7 +235,7 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 	if !nonEmptyList(cert["entitlements"]) {
 		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
-	registeredPartyFindings(cert, miss)
+	registeredPartyFindings(cert, miss, "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01")
 	if !nonEmptyList(cert["provides_attestations"]) {
 		miss("provides_attestations (its attestation types)", "ARF RPRC_15")
 	}
@@ -332,9 +332,14 @@ func issuerInfoShapeFindings(entries []map[string]any) []string {
 		return append(findings, rule+"07: issuer_info has no registrar_dataset element with the provider's registration information")
 	}
 	for i, member := range []string{"identifier", "srvDescription", "registryURI", "providesAttestations"} {
-		if value, ok := dataset[member]; !ok || value == nil || value == "" {
+		if value, ok := dataset[member]; !ok || value == nil || value == "" || isEmptyList(value) {
 			findings = append(findings, fmt.Sprintf("%s%d: the registrar_dataset has no %s", rule, 10+i, member))
 		}
 	}
 	return findings
+}
+
+func isEmptyList(value any) bool {
+	list, ok := value.([]any)
+	return ok && len(list) == 0
 }

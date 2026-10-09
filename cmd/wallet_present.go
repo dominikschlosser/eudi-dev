@@ -341,7 +341,7 @@ func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error)
 			return true, fmt.Errorf("%s", result.Error)
 		}
 		return true, fmt.Errorf("no matching credentials found")
-	case "error":
+	case "error", "refused":
 		if result.ErrorDescription != "" {
 			return true, fmt.Errorf("%s: %s", result.Error, result.ErrorDescription)
 		}

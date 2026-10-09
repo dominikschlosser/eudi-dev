@@ -228,3 +228,17 @@ func TestGetTemplate_StillServesABareName(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 }
+
+// A request that can't add its template to the catalogue leaves no
+// credential behind.
+func TestAFailedCatalogueEntryLeavesNoCredential(t *testing.T) {
+	srv := newTestServer(t, true)
+	before := len(srv.wallet.GetCredentials())
+	body := `{"format": "sdjwt", "vct": "urn:eudi:pid:1", "claims": {"given_name": "Erika"}, "save_as_template": "my-pid", "catalog": {"name": "My PID"}}`
+	if resp := serverRequest(t, srv, http.MethodPost, "/api/issue", body); resp.Code < 400 || !strings.Contains(resp.Body.String(), "catalogue") {
+		t.Fatalf("issue = %d %s, want a refusal for a type the catalogue has", resp.Code, resp.Body)
+	}
+	if got := len(srv.wallet.GetCredentials()); got != before {
+		t.Errorf("the wallet holds %d credentials, want %d", got, before)
+	}
+}

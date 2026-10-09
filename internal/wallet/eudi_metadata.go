@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"maps"
 	"sort"
 	"strings"
@@ -43,6 +44,10 @@ const (
 	eaaTrustListType          = "https://eudi-test.dev/LoTEType/EAAProvidersList"
 	eaaIssuanceServiceType    = "https://eudi-test.dev/SvcType/EAA/Issuance"
 	eaaRevocationServiceType  = "https://eudi-test.dev/SvcType/EAA/Revocation"
+	qeaaStatusDetermination   = "https://eudi-test.dev/QEAAProvidersList/StatusDetn"
+	qeaaSchemeCommunityRules  = "https://eudi-test.dev/QEAAProvidersList/schemerules"
+	eaaStatusDetermination    = "https://eudi-test.dev/EAAProvidersList/StatusDetn"
+	eaaSchemeCommunityRules   = "https://eudi-test.dev/EAAProvidersList/schemerules"
 	// eudi-dev 2 wallets store these types for their EAA list.
 	legacyTrustListType       = "http://uri.etsi.org/19602/LoTEType/local"
 	legacyIssuanceServiceType = "http://uri.etsi.org/19602/SvcType/Issuance"
@@ -290,13 +295,15 @@ func categoryTrustListProfile(category string) trustListProfile {
 		}
 	case credtemplate.CategoryQEAA:
 		return trustListProfile{
-			Category:              category,
-			LoTEType:              qeaaTrustListType,
-			IssuanceServiceType:   qeaaIssuanceServiceType,
-			RevocationServiceType: qeaaRevocationServiceType,
-			IssuanceServiceName:   "QEAA Issuance Service",
-			RevocationServiceName: "QEAA Revocation Service",
-			EntityName:            "EUDI Dev Wallet QEAA Provider",
+			Category:                    category,
+			LoTEType:                    qeaaTrustListType,
+			StatusDeterminationApproach: qeaaStatusDetermination,
+			SchemeTypeCommunityRules:    qeaaSchemeCommunityRules,
+			IssuanceServiceType:         qeaaIssuanceServiceType,
+			RevocationServiceType:       qeaaRevocationServiceType,
+			IssuanceServiceName:         "QEAA Issuance Service",
+			RevocationServiceName:       "QEAA Revocation Service",
+			EntityName:                  "EUDI Dev Wallet QEAA Provider",
 		}
 	default:
 		return eaaTrustListProfile()
@@ -305,13 +312,15 @@ func categoryTrustListProfile(category string) trustListProfile {
 
 func eaaTrustListProfile() trustListProfile {
 	return trustListProfile{
-		Category:              credtemplate.CategoryEAA,
-		LoTEType:              eaaTrustListType,
-		IssuanceServiceType:   eaaIssuanceServiceType,
-		RevocationServiceType: eaaRevocationServiceType,
-		IssuanceServiceName:   "EAA Issuance Service",
-		RevocationServiceName: "EAA Revocation Service",
-		EntityName:            "EUDI Dev Wallet EAA Provider",
+		Category:                    credtemplate.CategoryEAA,
+		LoTEType:                    eaaTrustListType,
+		StatusDeterminationApproach: eaaStatusDetermination,
+		SchemeTypeCommunityRules:    eaaSchemeCommunityRules,
+		IssuanceServiceType:         eaaIssuanceServiceType,
+		RevocationServiceType:       eaaRevocationServiceType,
+		IssuanceServiceName:         "EAA Issuance Service",
+		RevocationServiceName:       "EAA Revocation Service",
+		EntityName:                  "EUDI Dev Wallet EAA Provider",
 	}
 }
 
@@ -397,16 +406,19 @@ func buildOpenIDCredentialIssuerMetadata(w *Wallet, issuer string) (map[string]a
 		configs[id] = cfg
 	}
 
-	info, err := w.DemoIssuerInfo()
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
+	metadata := map[string]any{
 		"credential_issuer":                   issuer,
 		"credential_endpoint":                 issuer + "/credential",
 		"credential_configurations_supported": configs,
-		"issuer_info":                         info,
-	}, nil
+	}
+	// The metadata stays usable without a registration. A wallet with --arf
+	// then reports the missing issuer_info (ETSI TS 119 472-3 §4.2.3).
+	if info, err := w.DemoIssuerInfo(); err == nil {
+		metadata["issuer_info"] = info
+	} else {
+		log.Printf("[Issuer] WARNING: the issuer metadata has no issuer_info: %v", err)
+	}
+	return metadata, nil
 }
 
 func signJSONWebSignature(payload any, signingKey *ecdsa.PrivateKey, header map[string]any) (string, error) {

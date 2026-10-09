@@ -478,8 +478,9 @@ func TestDeferredPollerRunsFromTheServer(t *testing.T) {
 	stop := server.StartBackgroundTasks()
 	defer stop()
 
+	// The poller stores the credential before it drops the pending record.
 	deadline := time.Now().Add(5 * time.Second)
-	for len(w.GetCredentials()) == 0 && time.Now().Before(deadline) {
+	for (len(w.GetCredentials()) == 0 || len(w.DeferredIssuanceList()) != 0) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 

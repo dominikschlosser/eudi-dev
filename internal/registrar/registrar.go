@@ -344,9 +344,6 @@ func (r *Registrar) attestationCategories() func(format, typ string) string {
 // registrar assigns. For an update, before is the stored registration.
 // category returns the catalogue category of an attestation type.
 func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRelyingParty, category func(format, typ string) string) error {
-	if err := checkRegistrationSize(*rp); err != nil {
-		return err
-	}
 	rp.TradeName = strings.TrimSpace(rp.TradeName)
 	if rp.TradeName == "" && len(rp.Services) > 0 {
 		rp.TradeName = strings.TrimSpace(rp.Services[0].ServiceTradeName)
@@ -415,7 +412,9 @@ func normalizeRelyingParty(rp *WalletRelyingParty, base string, before *WalletRe
 	return nil
 }
 
-// Size limits keep a public demo's registrar small between resets.
+// Size limits keep a public demo's registrar small between resets. They apply
+// to registrations from the API. The wallet's own demo registrations list
+// every type it issues.
 const (
 	MaxRelyingParties    = 500
 	maxRegistrationItems = 20
@@ -481,8 +480,6 @@ func normalizeIntendedUse(use *IntendedUse, base string, before *WalletRelyingPa
 	if before != nil {
 		if _, kept, ok := findIntendedUse(*before, "", use.IntendedUseIdentifier); ok {
 			use.CreatedAt = kept.CreatedAt
-		} else {
-			use.IntendedUseIdentifier = ""
 		}
 	}
 	if use.IntendedUseIdentifier == "" {

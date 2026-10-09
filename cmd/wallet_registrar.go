@@ -159,7 +159,7 @@ func walletPartyRemoveCmd(role string) *cobra.Command {
 		Use:     "rm <identifier>",
 		Aliases: []string{"remove", "delete"},
 		Short:   "Remove a registered " + singular + " and revoke its registration certificates",
-		Long: "Removes the registration of a " + singular + ` and revokes all its registration
+		Long: "Removes the registration of " + article(singular) + " " + singular + ` and revokes all its registration
 certificates. A relying party that is a verifier and an issuer is removed in
 both roles.`,
 		Args: cobra.ExactArgs(1),
@@ -512,7 +512,7 @@ A service's certificates are its provider certificate and those of its intended
 uses. The change shows in the registrar's status list, and the registration
 itself is kept.
 
-Certificates the registrar revoked itself stay revoked. That happens when a
+Certificates revoked by the registrar itself stay revoked. That happens when a
 newer certificate replaces one, or when an update changes or removes what it
 certifies.`,
 		Example: "  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B\n  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B --intended-use 3f2a9c1e7b6d4a50\n  eudi wallet registrar " + use + " --identifier NTRNL-1A2B3C4D5E6F7A8B --service-id diplomas",
@@ -537,4 +537,12 @@ certifies.`,
 	cmd.Flags().StringVar(&scope.ServiceIdentifier, "service-id", "", "Only change the certificates of this service (default all)")
 	_ = cmd.MarkFlagRequired("identifier")
 	return cmd
+}
+
+// article is the indefinite article of an English word.
+func article(word string) string {
+	if strings.ContainsRune("aeiou", rune(strings.ToLower(word + " ")[0])) {
+		return "an"
+	}
+	return "a"
 }

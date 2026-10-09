@@ -24,6 +24,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
 func walletCatalogCmd() *cobra.Command {
@@ -97,8 +98,9 @@ the doctype's namespace, or namespace:element.
 --category is pid, qeaa, pub-eaa or eaa. The wallet signs credentials of the
 type under the provider CA of that category, and the entry links the
 category's trusted list unless --trusted-list names another. --issuer-ca puts
-the CA of your own issuer on that list, so with --arf its credentials of the
-type pass the trusted list check.`,
+the CA of your own issuer on the category's list, so with --arf its
+credentials of the type pass the trusted list check. It can't go with
+--trusted-list, because the entry then links another list.`,
 		Example: `  eudi wallet catalog add --name "University diploma" --type dc+sd-jwt:urn:example:diploma:1 --claim dc+sd-jwt:degree
   eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --claim mso_mdoc:degree --category qeaa
   eudi wallet catalog add --name "University diploma" --type mso_mdoc:org.example.diploma.1 --los moderate --trusted-list https://example.com/lote`,
@@ -135,9 +137,16 @@ type pass the trusted list check.`,
 			}
 			var caPEM []byte
 			if issuerCA != "" {
+				if trustedList != "" {
+					return fmt.Errorf("--issuer-ca puts the CA on the wallet's list of the category, and --trusted-list links another list. Use one of them")
+				}
 				var err error
 				if caPEM, err = os.ReadFile(issuerCA); err != nil {
 					return fmt.Errorf("reading --issuer-ca: %w", err)
+				}
+				// The entry is added only with a usable CA.
+				if _, err := wallet.NewTrustedEntity(credtemplate.CategoryEAA, "", string(caPEM)); err != nil {
+					return fmt.Errorf("--issuer-ca: %w", err)
 				}
 			}
 			svc, err := managedWallet()

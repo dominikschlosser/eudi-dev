@@ -244,7 +244,7 @@ func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string
 			violations = append(violations, w.haipCredentialViolations(raw)...)
 		}
 		if len(violations) > 0 {
-			violations = slices.Compact(violations)
+			violations = dedupeStrings(violations)
 			if err := w.reportHAIPViolations("Credential", issuer, violations); err != nil {
 				return nil, err
 			}
@@ -258,7 +258,7 @@ func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string
 	if len(findings) == 0 {
 		return debugFindings, nil
 	}
-	findings = slices.Compact(findings)
+	findings = dedupeStrings(findings)
 	if err := w.reportARFFindings(issuer, findings, "the received credential fails the ARF checks"); err != nil {
 		return nil, err
 	}

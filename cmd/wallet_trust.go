@@ -38,7 +38,9 @@ registration certificate providers (registrar). A list of trusted lists at
 
 add-ca puts the CA of your own issuer or registrar on one of the wallet's lists.
 add-list puts an external list on the list of trusted lists. Its signer has to
-chain to the wallet CA or to a CA from --trust-list-ca.
+chain to the wallet CA or to a CA from wallet serve --trust-list-ca. A list
+that a list of trusted lists points to needs the certificate of its pointer
+instead.
 
 Without a subcommand, or with list, it lists what you added.`,
 		Args: cobra.NoArgs,
@@ -66,10 +68,20 @@ func listTrust(cmd *cobra.Command, args []string) error {
 		_ = tw.Flush()
 		fmt.Printf("\nList of trusted lists: %s\n", state.ListsURL)
 		for _, l := range state.Lists {
+			var notes []string
 			if l.Configured {
-				fmt.Printf("  %s (--trusted-list)\n", l.URL)
-			} else {
-				fmt.Printf("  %s\n", l.URL)
+				notes = append(notes, "--trusted-list")
+			}
+			if l.Via != "" {
+				notes = append(notes, "from "+l.Via)
+			}
+			line := "  " + l.URL
+			if len(notes) > 0 {
+				line += " (" + strings.Join(notes, ", ") + ")"
+			}
+			fmt.Println(line)
+			if l.Error != "" {
+				fmt.Printf("    not used: %s\n", l.Error)
 			}
 		}
 	})
@@ -141,7 +153,7 @@ func walletTrustAddListCmd() *cobra.Command {
 		Long: `Puts an external list of trusted entities (ETSI TS 119 602) on the wallet's list
 of trusted lists. With --arf its providers anchor the checks of its list type,
 for example a PID provider list for received PIDs. Its signer has to chain to
-the wallet CA or to a CA from --trust-list-ca.`,
+the wallet CA or to a CA from wallet serve --trust-list-ca.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc, err := managedWallet()

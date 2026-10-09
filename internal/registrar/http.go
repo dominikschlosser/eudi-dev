@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -37,6 +38,17 @@ type Server struct {
 	Registrar func() *Registrar
 	// Mutate runs change and saves the wallet when change reports a change.
 	Mutate func(change func() bool)
+	// Protected reports whether clients may not update or delete the
+	// registration of the identifier.
+	Protected func(identifier string) bool
+}
+
+func (h *Server) refuseProtected(w http.ResponseWriter, identifier string) bool {
+	if h.Protected == nil || !h.Protected(strings.TrimSpace(identifier)) {
+		return false
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("%s is a registration of the public demo, and visitors can't change it. Register your own relying party instead", identifier)})
+	return true
 }
 
 // Routes are the registrar API's patterns and handlers.
@@ -111,6 +123,11 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	for _, id := range rp.Identifier {
+		if h.refuseProtected(w, id.Identifier) {
+			return
+		}
+	}
 	var stored WalletRelyingParty
 	var err error
 	h.Mutate(func() bool {
@@ -125,6 +142,9 @@ func (h *Server) handleUpdateRelyingParty(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Server) handleDeleteRelyingParty(w http.ResponseWriter, r *http.Request) {
+	if h.refuseProtected(w, r.PathValue("identifier")) {
+		return
+	}
 	var err error
 	h.Mutate(func() bool {
 		err = h.Registrar().DeleteRelyingParty(r.PathValue("identifier"))
@@ -141,6 +161,10 @@ func decodeRelyingParty(w http.ResponseWriter, r *http.Request) (WalletRelyingPa
 	var rp WalletRelyingParty
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&rp); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid relying party: " + err.Error()})
+		return rp, false
+	}
+	if err := checkRegistrationSize(rp); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return rp, false
 	}
 	return rp, true
@@ -391,8 +415,8 @@ func (h *Server) handleCatalogSchema(w http.ResponseWriter, r *http.Request) {
 	h.writeRegistrarResponse(w, r, map[string]any{"data": entry.Schema})
 }
 
-// handleCatalogFormatSchema serves the format-specific schema a schema URI
-// points to (TS11 v1.0 §4.3.4).
+// handleCatalogFormatSchema serves the format-specific schema behind a schema
+// URI (TS11 v1.0 §4.3.4).
 func (h *Server) handleCatalogFormatSchema(w http.ResponseWriter, r *http.Request) {
 	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"))
 	var schema map[string]any
@@ -496,6 +520,10 @@ func (h *Server) handleIssueRegistrationCertificate(w http.ResponseWriter, r *ht
 	var req RegistrationCertificateRequest
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body: " + err.Error()})
+		return
+	}
+	if h.Registrar().CertificateCount(req.Identifier) >= maxCertificatesPerRelyingParty {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": fmt.Sprintf("%s holds %d registration certificates, the most the registrar issues to one relying party. Older ones free up when they expire", req.Identifier, maxCertificatesPerRelyingParty)})
 		return
 	}
 	var result *RegistrationCertificateResult

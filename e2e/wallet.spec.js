@@ -1051,11 +1051,13 @@ test.describe("Credential Issuing via UI", () => {
       await expect(page.locator(`#${id}`)).toBeVisible();
     }
     const categories = page.locator("#trust-list-links .trust-items dt");
-    await expect(categories).toHaveText(["Credential providers", "Wallet providers"]);
+    await expect(categories).toHaveText(["Credential providers", "Relying party certificates", "Wallet providers"]);
     const credentialGroup = page.locator("#trust-list-links .trust-items dd").nth(0);
     await expect(credentialGroup.locator(".trust-links a")).toHaveText(["pid", "qeaa", "pub-eaa", "eaa"]);
-    const walletGroup = page.locator("#trust-list-links .trust-items dd").nth(1);
+    const walletGroup = page.locator("#trust-list-links .trust-items dd").nth(2);
     await expect(walletGroup.locator(".trust-links a")).toHaveText(["wallet-provider"]);
+    const relyingPartyGroup = page.locator("#trust-list-links .trust-items dd").nth(1);
+    await expect(relyingPartyGroup.locator(".trust-links a")).toHaveText(["access-ca", "registrar"]);
     const names = page.locator("#trust-list-links .trust-list-name");
     expect(await names.count()).toBeGreaterThan(0);
     for (const name of await names.allTextContents()) {

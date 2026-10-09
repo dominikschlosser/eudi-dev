@@ -33,7 +33,7 @@ x5c() { awk '/BEGIN/ {c=""} !/-----/ {c=c $0} /END/ {printf "%s\"%s\"", (n++ ? "
 
 ### 1. Register
 
-The registration follows the TS05 data model. The intended use lists the credentials and claims the verifier may request. Here it is the birth date from the EUDI PID.
+The registration follows the TS05 data model. The intended use lists which credentials and claims the verifier may request. Here it is the birth date from the EUDI PID.
 
 ```bash
 curl -s -X POST localhost:8085/api/registrar/wrp -H 'Content-Type: application/json' -d '{
@@ -364,7 +364,7 @@ jq -n --arg uri "openid-credential-offer://?credential_offer=$(jq -rn --arg v "$
 
 Before it requests the token, the wallet checks the signed metadata. The access certificate must chain to a CA on its `access-ca` list. The registration certificate must chain to a CA on its `registrar` list, list the offered type and give the issuer the entitlement of its category (see [ARF checks for issuers](issuing.md#arf-checks)).
 
-The offer above passes. An offer for a type the registration certificate doesn't list gets a finding. In debug mode it is a warning in the activity log:
+The offer above passes. An offer for a type missing from the registration certificate gets a finding. In debug mode it is a warning in the activity log:
 
 ```text
 ARF RPRC_23 and ISSU_34b: the issuer's registration certificate does not list urn:example:badge:1 in provides_attestations

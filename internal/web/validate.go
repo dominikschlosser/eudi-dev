@@ -42,6 +42,8 @@ type ValidateOpts struct {
 	// WalletStore provides the CA and issuer key for locally issued credentials. Nil
 	// selects the default wallet.
 	WalletStore *wallet.WalletStore
+	// Wallet is the running wallet, if the decoder runs inside one.
+	Wallet *wallet.Wallet
 }
 
 // Validate adds a validation object to the decoded result.

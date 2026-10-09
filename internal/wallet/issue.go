@@ -461,9 +461,11 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 	}
 
 	if saved != nil {
+		// A failed request leaves no credential behind.
 		var added registrar.CatalogAttestation
 		if opts.Catalog != nil {
 			if added, err = w.Registrar().AddCatalogAttestation(catalogEntry); err != nil {
+				w.RemoveCredential(result.Credential.ID)
 				return nil, fmt.Errorf("adding the template to the catalogue: %w", err)
 			}
 		}
@@ -472,6 +474,7 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 			if opts.Catalog != nil {
 				_ = w.Registrar().DeleteCatalogAttestation(added.Schema.ID)
 			}
+			w.RemoveCredential(result.Credential.ID)
 			return nil, fmt.Errorf("saving template: %w", err)
 		}
 		result.TemplatePath = path

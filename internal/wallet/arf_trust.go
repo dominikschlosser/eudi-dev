@@ -100,8 +100,9 @@ func (w *Wallet) RegistrationStatusCAs() []*x509.Certificate {
 }
 
 // TrustListCAs are the CAs --arf trusts for the signer of a trusted list. The
-// wallet CA signs the wallet's own lists, like the seal of the Commission on
-// the lists it compiles (ARF TLPub_07). --trust-list-ca adds others.
+// wallet's list operator key, certified by the wallet CA, signs the wallet's
+// own lists, like the seal of the Commission on the lists it compiles (ARF
+// TLPub_07). --trust-list-ca adds others.
 func (w *Wallet) TrustListCAs() []*x509.Certificate {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

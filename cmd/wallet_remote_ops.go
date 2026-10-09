@@ -399,7 +399,7 @@ func remoteFlowError(result map[string]any) error {
 	switch status {
 	case "denied":
 		return fmt.Errorf("the request was denied")
-	case "no_match", "error", "failed":
+	case "no_match", "error", "failed", "refused":
 		if message == "" {
 			message = status
 		}

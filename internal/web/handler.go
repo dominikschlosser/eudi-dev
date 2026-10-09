@@ -38,6 +38,9 @@ type MuxOptions struct {
 	// WalletStore provides the CA and issuer key for local verification. Nil selects
 	// the default wallet.
 	WalletStore *wallet.WalletStore
+	// Wallet is the running wallet. Its trusted lists include the ones from
+	// the flags of wallet serve, which the store doesn't keep.
+	Wallet *wallet.Wallet
 }
 
 func ListenAndServe(port int, opts MuxOptions) error {
@@ -59,7 +62,7 @@ func NewMuxWithOptions(opts MuxOptions) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/decode", handleDecode)
-	mux.HandleFunc("POST /api/validate", handleValidate(opts.WalletStore))
+	mux.HandleFunc("POST /api/validate", handleValidate(opts.WalletStore, opts.Wallet))
 	mux.HandleFunc("GET /api/prefill", handlePrefill(opts.Credential))
 	mux.HandleFunc("GET /api/credentials/{id}", handleCredentialByID(opts.CredentialByID))
 	mux.HandleFunc("GET /api/meta", func(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +162,7 @@ type validateRequest struct {
 	Offline      bool   `json:"offline"`
 }
 
-func handleValidate(store *wallet.WalletStore) http.HandlerFunc {
+func handleValidate(store *wallet.WalletStore, live *wallet.Wallet) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 
@@ -181,6 +184,7 @@ func handleValidate(store *wallet.WalletStore) http.HandlerFunc {
 			CheckStatus:  req.CheckStatus,
 			Offline:      req.Offline,
 			WalletStore:  store,
+			Wallet:       live,
 		})
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, err.Error())

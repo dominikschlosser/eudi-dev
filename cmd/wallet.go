@@ -499,8 +499,10 @@ func walletTrustListCmd() *cobra.Command {
 		Long: `Prints a list of trusted entities (ETSI TS 119 602) of this wallet as a signed JWT.
 The output can be piped to a file or used directly with --trust-list in the validate command.
 
-The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa) and
-one for wallet providers. Each list names its providers with their certificates.
+The wallet keeps one list per credential category (pid, qeaa, pub-eaa, eaa),
+one for wallet providers (wallet-provider), one for access certificate
+providers (access-ca) and one for registrars (registrar). --id lists prints the
+list of trusted lists. Each list names its providers with their certificates.
 Without selection flags, this prints the PID provider list, like /api/trustlist.
 Use --id, --vct, or --doctype to select another list.
 Use --list to see all lists of the wallet.
@@ -955,7 +957,7 @@ func checkRemoteConformanceFlags(flags []string) error {
 	if len(flags) == 0 {
 		return nil
 	}
-	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Set --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Put CAs and lists on its trusted lists with 'eudi wallet trust'. --trust-list-ca can only be set on 'wallet serve'", strings.Join(flags, ", "))
+	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Change --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Add CAs and lists with 'eudi wallet trust'. Set --trust-list-ca on 'wallet serve'", strings.Join(flags, ", "))
 }
 
 func checkRemoteOutboundFlags() error {

@@ -89,18 +89,22 @@ func (s *Server) handleAddTrustedEntity(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if s.demo != nil && len(s.wallet.ListTrustedEntities()) >= maxDemoTrustedEntities {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added providers. Remove one first", maxDemoTrustedEntities)})
-		return
-	}
-	var entity TrustedEntity
-	var err error
-	s.saveMutation(func() bool {
-		entity, err = s.wallet.AddTrustedEntity(body.List, body.Name, body.Certificates)
-		return err == nil
-	})
+	entity, err := NewTrustedEntity(body.List, body.Name, body.Certificates)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	full := false
+	s.saveMutation(func() bool {
+		if s.demo != nil && !s.wallet.hasTrustedEntity(entity.ID) && len(s.wallet.ListTrustedEntities()) >= maxDemoTrustedEntities {
+			full = true
+			return false
+		}
+		s.wallet.storeTrustedEntity(entity)
+		return true
+	})
+	if full {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added providers. Remove one first", maxDemoTrustedEntities)})
 		return
 	}
 	writeJSON(w, http.StatusCreated, entity)
@@ -123,18 +127,23 @@ func (s *Server) handleAddTrustedList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	if s.demo != nil && len(s.wallet.ExternalTrustedLists()) >= maxDemoTrustedLists {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added lists. Remove one first", maxDemoTrustedLists)})
-		return
-	}
-	var added TrustedListLink
-	var err error
-	s.saveMutation(func() bool {
-		added, err = s.wallet.AddTrustedList(body.URL)
-		return err == nil
-	})
+	// The wallet reads the list before it takes the store lock.
+	added, err := s.wallet.CheckTrustedList(body.URL)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	full := false
+	s.saveMutation(func() bool {
+		if s.demo != nil && s.wallet.addedTrustedListCount(added.URL) >= maxDemoTrustedLists {
+			full = true
+			return false
+		}
+		s.wallet.storeTrustedList(added.URL)
+		return true
+	})
+	if full {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added lists. Remove one first", maxDemoTrustedLists)})
 		return
 	}
 	writeJSON(w, http.StatusCreated, added)

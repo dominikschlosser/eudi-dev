@@ -72,10 +72,13 @@ func checkCatalogueTrust(raw string, opts ValidateOpts) CheckResult {
 		result.NeedsNetwork = true
 		return result
 	}
-	w, err := loadLocalWallet(opts.WalletStore)
-	if err != nil || w == nil {
-		result.Detail = "No wallet with an attestation catalogue"
-		return result
+	w := opts.Wallet
+	if w == nil {
+		var err error
+		if w, err = loadLocalWallet(opts.WalletStore); err != nil || w == nil {
+			result.Detail = "No wallet with an attestation catalogue"
+			return result
+		}
 	}
 	anchoring, found := w.CheckCatalogueAnchoring(raw)
 	switch {

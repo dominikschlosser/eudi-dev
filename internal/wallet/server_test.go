@@ -2149,8 +2149,8 @@ func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	}
 	decodeCompactJWTPayload(t, trustListResp.Body.String(), &list)
 	scheme := list.LoTE.ListAndSchemeInformation
-	if scheme["LoTEType"] != eaaTrustListType || scheme["StatusDeterminationApproach"] != nil {
-		t.Fatalf("scheme %v, want the EAA list type without a status determination approach", scheme)
+	if scheme["LoTEType"] != eaaTrustListType || scheme["StatusDeterminationApproach"] != eaaStatusDetermination {
+		t.Fatalf("scheme %v, want the EAA list type and its status determination approach", scheme)
 	}
 	if len(list.LoTE.TrustedEntitiesList) != 1 || len(list.LoTE.TrustedEntitiesList[0].TrustedEntityServices) != 2 {
 		t.Fatalf("entities %+v, want one entity with two services", list.LoTE.TrustedEntitiesList)

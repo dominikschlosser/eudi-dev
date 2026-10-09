@@ -300,7 +300,7 @@ func TestIssuerInfoNeedsBothElements(t *testing.T) {
 		want    []string
 	}{
 		"no registrar_dataset":   {[]map[string]any{entries[1]}, []string{"4.2.3-05", "4.2.3-07"}},
-		"an empty identifier":    {[]map[string]any{{"format": "registrar_dataset", "data": map[string]any{"identifier": "", "srvDescription": []any{}, "registryURI": "https://registrar.example", "providesAttestations": []any{}}}}, []string{"4.2.3-10"}},
+		"empty members":          {[]map[string]any{{"format": "registrar_dataset", "data": map[string]any{"identifier": "", "srvDescription": []any{}, "registryURI": "https://registrar.example", "providesAttestations": []any{}}}}, []string{"4.2.3-10", "4.2.3-11", "4.2.3-13"}},
 		"no registryURI or more": {[]map[string]any{{"format": "registrar_dataset", "data": map[string]any{"identifier": []any{}}}}, []string{"4.2.3-11", "4.2.3-12", "4.2.3-13"}},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
@@ -134,6 +136,7 @@ type Wallet struct {
 	saveRegistrarChange func(change func() bool)
 	listCacheMu         sync.Mutex
 	listCache           map[string]cachedList
+	listFetches         singleflight.Group
 	tlsVerify           *bool
 	outboundHTTP        *http.Client
 	// Entity backends track the last loaded or saved snapshot and section revisions.
@@ -810,7 +813,7 @@ var BaselinePIDTemplates = []string{"pid-sdjwt", "german-pid-sdjwt"}
 
 // GenerateProtectedDefaults marks the newly generated defaults as protected.
 func (w *Wallet) GenerateProtectedDefaults() error {
-	// The old baseline may hold types that are no longer in the baseline.
+	// A stored baseline can hold types that BaselinePIDTemplates leaves out.
 	w.removeProtected()
 
 	existing := make(map[string]bool)
@@ -890,6 +893,13 @@ func (w *Wallet) HolderKeyPair() *ecdsa.PrivateKey {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.HolderKey
+}
+
+// HAIPChecks reports whether --haip is on.
+func (w *Wallet) HAIPChecks() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.RequireHAIP
 }
 
 // ARFChecks reports whether --arf is on.
@@ -1157,6 +1167,9 @@ func MarshalConsentRequest(r *ConsentRequest) map[string]any {
 	}
 	if len(r.PrivacyPolicies) > 0 {
 		m["privacy_policies"] = r.PrivacyPolicies
+	}
+	if len(r.Findings) > 0 {
+		m["findings"] = r.Findings
 	}
 	if r.CredentialOptions != nil {
 		m["credential_options"] = r.CredentialOptions

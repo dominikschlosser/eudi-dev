@@ -314,6 +314,9 @@ const IDENTITY_HINTS = {
   unsigned: "With this client identifier prefix the request is unsigned, so it can't show who the verifier is. The registration certificate and own certificates need x509_hash or x509_san_dns.",
 };
 let identity = "registered";
+// chosenIdentity is the user's choice. An unsigned request shows
+// "unregistered" without forgetting it.
+let chosenIdentity = identity;
 
 function selectIdentity(name) {
   identity = name;
@@ -327,7 +330,9 @@ function selectIdentity(name) {
 }
 for (const option of document.querySelectorAll("#identity-toggle .toggle-option")) {
   option.addEventListener("click", () => {
-    if (!option.disabled) selectIdentity(option.dataset.identity);
+    if (option.disabled) return;
+    chosenIdentity = option.dataset.identity;
+    selectIdentity(chosenIdentity);
   });
 }
 selectIdentity(identity);
@@ -344,7 +349,7 @@ function updateIdentityAvailability() {
     option.disabled = unsigned;
     option.title = unsigned ? "Needs a signed request (x509_hash or x509_san_dns)" : "";
   }
-  selectIdentity(unsigned ? "unregistered" : identity);
+  selectIdentity(unsigned ? "unregistered" : chosenIdentity);
 }
 for (const id of ["credential-toggle", "scheme-toggle"]) {
   document.getElementById(id).addEventListener("click", updateIdentityAvailability);
