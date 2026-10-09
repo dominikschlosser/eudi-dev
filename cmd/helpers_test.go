@@ -29,6 +29,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/config"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/trustlist"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -644,5 +645,23 @@ func TestEveryRemoteCommandRefusesMode(t *testing.T) {
 	t.Cleanup(func() { _ = mode.Value.Set(mode.DefValue); mode.Changed = false })
 	if _, err := managedWallet(); err == nil || !strings.Contains(err.Error(), "eudi wallet trust") {
 		t.Fatalf("err = %v, want the refusal that points to wallet trust", err)
+	}
+}
+
+// trust-list prints the list of trusted lists under the ID of its URL.
+func TestTrustListPrintsTheListOfTrustedLists(t *testing.T) {
+	resetRemoteTestState(t)
+	rootCmd.SetArgs([]string{"wallet", "trust-list", "--id", "lists"})
+	out := captureStdout(t, func() {
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	list, err := trustlist.Parse(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("parsing %q: %v", out, err)
+	}
+	if len(list.SchemeInfo.Pointers) == 0 {
+		t.Error("the list of trusted lists has no pointers")
 	}
 }

@@ -59,10 +59,13 @@ const (
 	walletProviderID = "wallet-provider"
 	// listOfListsID is the list that points to all of the wallet's trusted
 	// lists (ETSI TS 119 602 V1.1.1 §6.3.13).
-	listOfListsID          = "lists"
+	listOfListsID          = ListOfTrustedListsID
 	listOfTrustedListsType = "https://eudi-test.dev/LoTEType/ListOfTrustedLists"
 	listOperatorName       = "EUDI Dev Wallet"
 )
+
+// ListOfTrustedListsID is the ID of the wallet's list of trusted lists.
+const ListOfTrustedListsID = "lists"
 
 // listsCredentialProviders reports whether the group lists the providers of
 // credentials, as opposed to wallet providers, access CAs and registrars.

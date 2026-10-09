@@ -558,6 +558,14 @@ Use --url to print only the list URL of a running wallet server.`,
 			if w.CAKey == nil || len(w.CertChain) < 2 {
 				return fmt.Errorf("wallet has no CA certificate chain")
 			}
+			if id == wallet.ListOfTrustedListsID {
+				jwt, err := wallet.GenerateListOfTrustedLists(w, w.IssuerURL)
+				if err != nil {
+					return fmt.Errorf("generating the list of trusted lists: %w", err)
+				}
+				printTrustList(jwt)
+				return nil
+			}
 			group, ok := wallet.FindTrustListGroupForWallet(w, id, vct, docType)
 			if !ok {
 				return fmt.Errorf("wallet has no matching trusted list")
@@ -576,7 +584,7 @@ Use --url to print only the list URL of a running wallet server.`,
 	cmd.Flags().BoolVar(&list, "list", false, "List all trusted lists of the wallet instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
-	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa' or 'wallet-provider'")
+	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa', 'wallet-provider' or 'lists' for the list of trusted lists")
 	cmd.Flags().StringVar(&vct, "vct", "", "Select the trust list covering this SD-JWT VCT")
 	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trust list covering this mdoc docType")
 	return cmd
