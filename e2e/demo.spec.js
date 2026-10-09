@@ -1487,6 +1487,10 @@ test.describe("Demo verifier identity", () => {
     await expect(page.locator("#identity-own")).toBeDisabled();
     await expect(page.locator("#identity-unregistered")).toHaveAttribute("aria-checked", "true");
     await expect(page.locator("#identity-hint")).toContainText("the request is unsigned");
+
+    // A signed request again uses the registration the user chose.
+    await page.locator('#scheme-toggle [data-scheme="x509_hash"]').click();
+    await expect(page.locator("#identity-registered")).toHaveAttribute("aria-checked", "true");
   });
 
   test("own certificates need a signing key", async ({ page }) => {
