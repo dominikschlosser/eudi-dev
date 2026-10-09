@@ -204,6 +204,7 @@ func TestRemoteFlowErrorFailsRefusedFlows(t *testing.T) {
 		{map[string]any{"status": "denied"}, true},
 		{map[string]any{"status": "no_match", "error": "access_denied"}, true},
 		{map[string]any{"status": "failed", "error": "invalid_grant"}, true},
+		{map[string]any{"status": "refused", "error": "access_denied", "error_description": "ARF RPRC_21"}, true},
 	} {
 		if err := remoteFlowError(tc.result); (err != nil) != tc.wantErr {
 			t.Errorf("%v: err = %v, want an error %v", tc.result, err, tc.wantErr)
