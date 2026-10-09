@@ -574,14 +574,17 @@ def fetch_wallet_materials(wallet_url: str, wallet_issuer_url: str, wallet_ca_ce
         wallet_issuer_url.rstrip("/") + "/.well-known/jwt-vc-issuer",
         context=ssl_context_for_ca(wallet_ca_cert),
     )
-    keys = issuer_meta.get("jwks", {}).get("keys", [])
-    if len(keys) != 1 or not isinstance(keys[0], dict):
-        raise RuntimeError(f"wallet issuer metadata did not expose exactly one issuer JWK: {keys!r}")
+    keys = [key for key in issuer_meta.get("jwks", {}).get("keys", []) if isinstance(key, dict)]
+    # The wallet signs each credential category with its own key. The PID
+    # provider's key is the one the configs name.
+    pid_keys = [key for key in keys if b"PID Provider" in base64.b64decode((key.get("x5c") or [""])[0])]
+    if len(pid_keys) != 1:
+        raise RuntimeError(f"wallet issuer metadata did not expose exactly one PID provider JWK: {keys!r}")
 
     version = str(wallet_request(wallet_url, "GET", "/api/version").get("version", ""))
     return WalletMaterials(
         holder_jwk=public_jwk(holder_jwk),
-        issuer_jwk=public_jwk(keys[0]),
+        issuer_jwk=public_jwk(pid_keys[0]),
         ca_pem=wallet_ca_cert.read_text(),
         version=version.removeprefix("v"),
     )
