@@ -90,13 +90,7 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 		info.LoTEType = lt
 	}
 
-	if son, ok := lsi["SchemeOperatorName"].([]any); ok && len(son) > 0 {
-		if entry, ok := son[0].(map[string]any); ok {
-			if v, ok := entry["value"].(string); ok {
-				info.SchemeOperatorName = v
-			}
-		}
-	}
+	info.SchemeOperatorName = firstMultiLangValue(lsi["SchemeOperatorName"])
 
 	// Trust lists in the wild spell the key both "ListIssueDateTime" and
 	// "ListIssueDatetime".
@@ -109,6 +103,7 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 	if next, ok := lsi["NextUpdate"].(string); ok {
 		info.NextUpdate = next
 	}
+	info.SchemeTerritory, _ = lsi["SchemeTerritory"].(string)
 	pointers, _ := lsi["PointersToOtherLoTE"].([]any)
 	for _, raw := range pointers {
 		entry, ok := raw.(map[string]any)
@@ -120,6 +115,8 @@ func parseSchemeInfo(lsi map[string]any) *SchemeInfo {
 		if qualifiers, ok := entry["LoTEQualifiers"].([]any); ok && len(qualifiers) > 0 {
 			if q, ok := qualifiers[0].(map[string]any); ok {
 				pointer.LoTEType, _ = q["LoTEType"].(string)
+				pointer.SchemeOperatorName = firstMultiLangValue(q["SchemeOperatorName"])
+				pointer.SchemeTerritory, _ = q["SchemeTerritory"].(string)
 			}
 		}
 		identities, _ := entry["ServiceDigitalIdentities"].([]any)
@@ -232,4 +229,16 @@ func ExtractPublicKeys(tl *TrustList) []CertInfo {
 		}
 	}
 	return keys
+}
+
+// firstMultiLangValue is the first value of a sequence of multilingual
+// strings (ETSI TS 119 602 V1.1.1 §6.1.4).
+func firstMultiLangValue(raw any) string {
+	values, _ := raw.([]any)
+	if len(values) == 0 {
+		return ""
+	}
+	entry, _ := values[0].(map[string]any)
+	value, _ := entry["value"].(string)
+	return value
 }

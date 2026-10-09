@@ -2623,6 +2623,16 @@ header h1 {
   overflow-wrap: anywhere;
 }
 
+.trust-added .trust-list-name {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.trust-added .trust-list-error {
+  display: block;
+  color: var(--red);
+}
+
 .trust-add-form {
   display: flex;
   flex-wrap: wrap;

@@ -148,10 +148,16 @@ the wallet CA or to a CA from --trust-list-ca.`,
 			if err != nil {
 				return err
 			}
-			if err := svc.AddTrustedList(args[0]); err != nil {
+			link, err := svc.AddTrustedList(args[0])
+			if err != nil {
 				return err
 			}
-			printResult(map[string]any{"added": args[0]}, func() { fmt.Printf("Added %s\n", args[0]) })
+			printResult(link, func() {
+				fmt.Printf("Added %s\n", link.URL)
+				if link.Error != "" {
+					fmt.Printf("The wallet can't use it yet: %s\n", link.Error)
+				}
+			})
 			return nil
 		},
 	}

@@ -38,9 +38,9 @@ func generateEAATrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certific
 	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
 		OperatorName: "EUDI Dev Wallet",
 		Profile: trustListProfile{
-			LoTEType:              localTrustListType,
-			IssuanceServiceType:   localIssuanceServiceType,
-			RevocationServiceType: localRevocationServiceType,
+			LoTEType:              eaaTrustListType,
+			IssuanceServiceType:   eaaIssuanceServiceType,
+			RevocationServiceType: eaaRevocationServiceType,
 			IssuanceServiceName:   "Issuance Service",
 			RevocationServiceName: "Revocation Service",
 			EntityName:            "EUDI Dev Wallet Issuer",
@@ -146,8 +146,8 @@ func TestGenerateTrustListJWT_PayloadStructure(t *testing.T) {
 	if schemeInfo["LoTESequenceNumber"] != float64(1) {
 		t.Errorf("expected LoTESequenceNumber 1, got %v", schemeInfo["LoTESequenceNumber"])
 	}
-	if schemeInfo["LoTEType"] != localTrustListType {
-		t.Errorf("expected local LoTEType %s, got %v", localTrustListType, schemeInfo["LoTEType"])
+	if schemeInfo["LoTEType"] != eaaTrustListType {
+		t.Errorf("expected the EAA list type %s, got %v", eaaTrustListType, schemeInfo["LoTEType"])
 	}
 	if _, ok := schemeInfo["ListIssueDateTime"].(string); !ok {
 		t.Errorf("expected ListIssueDateTime string, got %T", schemeInfo["ListIssueDateTime"])
@@ -469,5 +469,33 @@ func checkCategoryLists(t *testing.T, w *Wallet) {
 				t.Errorf("on the lists %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAnEudiDev2ListTypeMovesToTheListOfItsCategory(t *testing.T) {
+	legacy := IssuedAttestationSpec{
+		Format:                "dc+sd-jwt",
+		VCT:                   "urn:test:1",
+		TrustListType:         legacyTrustListType,
+		IssuanceServiceType:   legacyIssuanceServiceType,
+		RevocationServiceType: legacyRevocationService,
+		EntityName:            "EUDI Dev Wallet Issuer",
+	}
+	for _, tc := range []struct {
+		category string
+		want     trustListProfile
+	}{
+		{"", eaaTrustListProfile()},
+		{credtemplate.CategoryQEAA, categoryTrustListProfile(credtemplate.CategoryQEAA)},
+	} {
+		spec := legacy
+		spec.Category = tc.category
+		got, err := NormalizeIssuedAttestationSpec(spec, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.TrustListType != tc.want.LoTEType || got.IssuanceServiceType != tc.want.IssuanceServiceType || got.RevocationServiceType != tc.want.RevocationServiceType || got.EntityName != tc.want.EntityName {
+			t.Errorf("category %q: got %+v, want the list of %s", tc.category, got, tc.want.Category)
+		}
 	}
 }

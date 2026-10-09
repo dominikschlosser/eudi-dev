@@ -239,8 +239,8 @@ func (c *Client) RemoveTrustedEntity(id string) error {
 }
 
 // AddTrustedList puts an external list on the wallet's list of trusted lists.
-func (c *Client) AddTrustedList(listURL string) error {
-	return c.do(http.MethodPost, "/api/trust/lists", map[string]string{"url": listURL}, nil)
+func (c *Client) AddTrustedList(listURL string, out any) error {
+	return c.do(http.MethodPost, "/api/trust/lists", map[string]string{"url": listURL}, out)
 }
 
 // RemoveTrustedList takes an external list off the list of trusted lists.

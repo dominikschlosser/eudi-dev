@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -57,7 +58,9 @@ const (
 	walletProviderID = "wallet-provider"
 	// listOfListsID is the list that points to every trusted list the wallet
 	// uses (ETSI TS 119 602 V1.1.1 §6.3.13).
-	listOfListsID = "lists"
+	listOfListsID          = "lists"
+	listOfTrustedListsType = "https://eudi-test.dev/LoTEType/ListOfTrustedLists"
+	listOperatorName       = "EUDI Dev Wallet"
 )
 
 // listsCredentialProviders reports whether the group lists the providers of
@@ -165,12 +168,13 @@ func (w *Wallet) ListTrustedEntities() []TrustedEntity {
 
 // trustListEntities are the entities of a wallet list next to the wallet's
 // own provider: the ones users added and, for the access CA and registrar
-// lists, the CAs from --relying-party-ca.
+// lists, the CAs from --relying-party-ca. Their CAs anchor both the issued
+// certificates and the status lists.
 func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 	var out []trustListEntity
 	for _, entity := range w.ListTrustedEntities() {
 		if entity.List == listID {
-			out = append(out, trustListEntity{Name: entity.Name, Issuance: entity.Certificates})
+			out = append(out, trustListEntity{Name: entity.Name, Issuance: entity.Certificates, Revocation: entity.Certificates})
 		}
 	}
 	if listID == accessCAListID || listID == registrarListID {
@@ -188,18 +192,30 @@ func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 }
 
 // AddTrustedList puts an external list of trusted entities on the wallet's
-// list of trusted lists. The --arf checks then take anchors from it.
-func (w *Wallet) AddTrustedList(rawURL string) (string, error) {
+// list of trusted lists. The --arf checks then take anchors from it. Strict
+// mode refuses a list the wallet can't read. Debug mode adds it and reports
+// why.
+func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if u, err := url.Parse(rawURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return "", fmt.Errorf("%q is not an http or https URL", rawURL)
+		return TrustedListLink{}, fmt.Errorf("%q is not an http or https URL", rawURL)
+	}
+	w.listCacheMu.Lock()
+	delete(w.listCache, rawURL)
+	w.listCacheMu.Unlock()
+	link := TrustedListLink{URL: rawURL}
+	if _, err := w.readTrustedList(rawURL); err != nil {
+		if w.Mode() == ValidationModeStrict {
+			return TrustedListLink{}, fmt.Errorf("the wallet can't use %s: %w", rawURL, err)
+		}
+		link.Error = err.Error()
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !slices.Contains(w.AddedTrustedLists, rawURL) {
 		w.AddedTrustedLists = append(w.AddedTrustedLists, rawURL)
 	}
-	return rawURL, nil
+	return link, nil
 }
 
 // RemoveTrustedList takes an external list off the list of trusted lists.
@@ -233,6 +249,15 @@ func (w *Wallet) ownTrustListURL(id string) string {
 	return w.RegistrarBase() + "/api/trustlists/" + id
 }
 
+// listCacheTTL bounds how long the wallet reuses a fetched list. An operator
+// can publish a list before its next update (ETSI TS 119 602 V1.1.1 §6.3.15).
+const listCacheTTL = 5 * time.Minute
+
+type cachedList struct {
+	raw     string
+	fetched time.Time
+}
+
 // rawTrustedList builds one of the wallet's own lists in process, because the
 // wallet may not serve them over HTTP. It fetches every other list.
 func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
@@ -243,23 +268,41 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 		}
 		return GenerateTrustListJWTForWalletGroup(w, w.IssuerURL, group, "/api/trustlists/"+group.ID)
 	}
+	w.listCacheMu.Lock()
+	cached, ok := w.listCache[rawURL]
+	w.listCacheMu.Unlock()
+	if ok && time.Since(cached.fetched) < listCacheTTL {
+		return cached.raw, nil
+	}
 	raw, err := format.FetchURL(rawURL, w.HTTPClient())
 	if err != nil {
 		return "", fmt.Errorf("fetching the trusted list: %w", err)
 	}
+	w.listCacheMu.Lock()
+	if w.listCache == nil {
+		w.listCache = map[string]cachedList{}
+	}
+	w.listCache[rawURL] = cachedList{raw: raw, fetched: time.Now()}
+	w.listCacheMu.Unlock()
 	return raw, nil
 }
 
 // readTrustedList returns a list that a trusted list operator signed. The ARF
 // has the wallet accept the provider trust anchors on a list because of that
-// signature (PPNot_05, TLPub_05, TLPub_07). A list past its next update is
-// expired (ETSI TS 119 602 V1.1.1 §6.3.15).
+// signature (PPNot_05, TLPub_05, TLPub_07).
 func (w *Wallet) readTrustedList(rawURL string) (*trustlist.TrustList, error) {
+	return w.readListSignedBy(rawURL, w.TrustListCAs())
+}
+
+// readListSignedBy returns the list if its signer chains to one of the
+// certificates. A list past its next update is expired (ETSI TS 119 602
+// V1.1.1 §6.3.15).
+func (w *Wallet) readListSignedBy(rawURL string, signers []*x509.Certificate) (*trustlist.TrustList, error) {
 	raw, err := w.rawTrustedList(rawURL)
 	if err != nil {
 		return nil, err
 	}
-	if err := verifyTrustListSigner(raw, w.TrustListCAs()); err != nil {
+	if err := verifyTrustListSigner(raw, signers); err != nil {
 		return nil, err
 	}
 	list, err := trustlist.Parse(raw)
@@ -305,86 +348,130 @@ func (w *Wallet) TrustedListURLs() []string {
 	return append(urls, w.ExternalTrustedLists()...)
 }
 
-// listAnchors are the certificates of the services of a kind on every list of
-// the type on the list of trusted lists. A list that can't be read anchors
-// nothing.
-func (w *Wallet) listAnchors(listType, kind string) []*x509.Certificate {
-	var anchors []*x509.Certificate
-	for _, u := range w.TrustedListURLs() {
-		list, err := w.readTrustedList(u)
-		if err != nil || list.SchemeInfo.LoTEType != listType {
+// trustedList is a list the wallet reads, or the reason it can't. Via is the
+// list of trusted lists that points to it.
+type trustedList struct {
+	URL  string
+	Via  string
+	List *trustlist.TrustList
+	Err  error
+}
+
+// trustedLists reads the lists on the wallet's list of trusted lists and the
+// lists that an external list of trusted lists points to. The signer of a
+// listed list chains to a trusted list operator (ARF TLPub_07). A pointed-to
+// list is signed by a certificate of its pointer (ETSI TS 119 602 V1.1.1
+// §6.3.13). The wallet follows one level of pointers.
+func (w *Wallet) trustedLists() []trustedList {
+	urls := w.TrustedListURLs()
+	seen := make(map[string]bool, len(urls))
+	for _, u := range urls {
+		seen[u] = true
+	}
+	operators := w.TrustListCAs()
+	var out []trustedList
+	for _, u := range urls {
+		list, err := w.readListSignedBy(u, operators)
+		out = append(out, trustedList{URL: u, List: list, Err: err})
+		if err != nil || list.SchemeInfo.LoTEType != listOfTrustedListsType {
 			continue
 		}
-		anchors = append(anchors, parsedAnchors(serviceAnchors(list, kind))...)
+		for _, pointer := range list.SchemeInfo.Pointers {
+			if pointer.Location == "" || seen[pointer.Location] {
+				continue
+			}
+			seen[pointer.Location] = true
+			pointed, err := w.readListSignedBy(pointer.Location, parsedAnchors(pointer.Certificates))
+			out = append(out, trustedList{URL: pointer.Location, Via: u, List: pointed, Err: err})
+		}
+	}
+	return out
+}
+
+// listAnchors are the certificates of the services of a kind on every
+// readable list of the type.
+func (w *Wallet) listAnchors(listType, kind string) []*x509.Certificate {
+	var anchors []*x509.Certificate
+	for _, tl := range w.trustedLists() {
+		if tl.Err == nil && tl.List.SchemeInfo.LoTEType == listType {
+			anchors = append(anchors, parsedAnchors(serviceAnchors(tl.List, kind))...)
+		}
 	}
 	return anchors
 }
 
-// GenerateListOfTrustedLists signs the list that points to every trusted
-// list the wallet uses: its own lists and the external ones (ETSI TS 119 602
-// V1.1.1 §6.3.13). Each pointer names the list's location, its type and the
-// certificate of its signer. An external list that can't be read has no
-// pointer.
+// GenerateListOfTrustedLists signs the list that points to the wallet's own
+// lists and to the readable external ones (ETSI TS 119 602 V1.1.1 §6.3.13).
+// A pointer names the list's location, the certificate of its signer and the
+// qualifiers of §6.3.13 c).
 func GenerateListOfTrustedLists(w *Wallet, issuer string) (string, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	key, chain, err := w.TrustListSigningMaterial("EUDI Dev Wallet", mock.DefaultCertificateCountry)
+	key, chain, err := w.TrustListSigningMaterial(listOperatorName, mock.DefaultCertificateCountry)
 	if err != nil {
 		return "", err
 	}
-	signer := base64.StdEncoding.EncodeToString(chain[0].Raw)
-	pointer := func(location, listType, signerCert string) map[string]any {
-		return map[string]any{
-			"LoTELocation":             location,
-			"ServiceDigitalIdentities": []map[string]any{{"X509Certificates": []map[string]string{{"val": signerCert}}}},
-			"LoTEQualifiers":           []map[string]any{{"LoTEType": listType, "MimeType": "application/jwt"}},
-		}
-	}
 	var pointers []map[string]any
-	for _, group := range TrustListGroupsForWallet(w) {
-		pointers = append(pointers, pointer(firstNonEmpty(issuer, w.RegistrarBase())+"/api/trustlists/"+group.ID, group.Profile.LoTEType, signer))
+	for _, tl := range w.trustedLists() {
+		if tl.Err != nil || tl.Via != "" {
+			continue
+		}
+		signers, err := validate.X5CCertificates(tl.List.Header)
+		if err != nil || len(signers) == 0 {
+			continue
+		}
+		location := tl.URL
+		if id, own := strings.CutPrefix(tl.URL, w.RegistrarBase()+"/api/trustlists/"); own && issuer != "" {
+			location = issuer + "/api/trustlists/" + id
+		}
+		pointers = append(pointers, listPointer(location, tl.List.SchemeInfo, base64.StdEncoding.EncodeToString(signers[0].Raw)))
 	}
-	for _, u := range w.ExternalTrustedLists() {
-		raw, err := w.rawTrustedList(u)
-		if err != nil {
-			continue
-		}
-		header, _, err := decodeCompactJWT(strings.TrimSpace(raw))
-		if err != nil {
-			continue
-		}
-		certs, err := validate.X5CCertificates(header)
-		list, parseErr := trustlist.Parse(raw)
-		if err != nil || len(certs) == 0 || parseErr != nil {
-			continue
-		}
-		pointers = append(pointers, pointer(u, list.SchemeInfo.LoTEType, base64.StdEncoding.EncodeToString(certs[0].Raw)))
+	content, err := json.Marshal(pointers)
+	if err != nil {
+		return "", err
 	}
-	now := time.Now().UTC().Truncate(time.Second)
-	payload := map[string]any{
-		"LoTE": map[string]any{
-			"ListAndSchemeInformation": map[string]any{
-				"LoTEVersionIdentifier": 1,
-				"LoTESequenceNumber":    1,
-				"LoTEType":              localTrustListType,
-				"SchemeOperatorName":    []map[string]string{{"lang": "en", "value": "EUDI Dev Wallet"}},
-				"SchemeName":            []map[string]string{{"lang": "en", "value": "EUDI Dev list of trusted lists"}},
-				"SchemeTerritory":       "EU",
-				"ListIssueDateTime":     now.Format(time.RFC3339),
-				"NextUpdate":            now.Add(24 * time.Hour).Format(time.RFC3339),
-				"PointersToOtherLoTE":   pointers,
+	dir := w.signingStore().trustListDir(firstNonEmpty(issuer, w.RegistrarBase()), "/api/trustlists/"+listOfListsID)
+	return w.signingStore().sequencedList(dir, chain[0], content, func(sequence int) (string, error) {
+		now := time.Now().UTC().Truncate(time.Second)
+		payload := map[string]any{
+			"LoTE": map[string]any{
+				"ListAndSchemeInformation": map[string]any{
+					"LoTEVersionIdentifier": 1,
+					"LoTESequenceNumber":    sequence,
+					"LoTEType":              listOfTrustedListsType,
+					"SchemeOperatorName":    []map[string]string{{"lang": "en", "value": listOperatorName}},
+					"SchemeName":            []map[string]string{{"lang": "en", "value": "EUDI Dev list of trusted lists"}},
+					"SchemeTerritory":       "EU",
+					"ListIssueDateTime":     now.Format(time.RFC3339),
+					"NextUpdate":            now.Add(24 * time.Hour).Format(time.RFC3339),
+					"PointersToOtherLoTE":   pointers,
+				},
+				"TrustedEntitiesList": []map[string]any{},
 			},
-			"TrustedEntitiesList": []map[string]any{},
-		},
+		}
+		digest := sha256.Sum256(chain[0].Raw)
+		header := map[string]any{
+			"alg":      "ES256",
+			"typ":      "JWT",
+			"x5c":      []string{base64.StdEncoding.EncodeToString(chain[0].Raw)},
+			"iat":      now.Unix(),
+			"x5t#S256": base64.RawURLEncoding.EncodeToString(digest[:]),
+		}
+		return jws.Sign(header, payload, key)
+	})
+}
+
+// listPointer is an OtherLoTEPointer of ETSI TS 119 602 V1.1.1 §6.3.13.
+func listPointer(location string, scheme *trustlist.SchemeInfo, signer string) map[string]any {
+	return map[string]any{
+		"LoTELocation":             location,
+		"ServiceDigitalIdentities": []map[string]any{{"X509Certificates": []map[string]string{{"val": signer}}}},
+		"LoTEQualifiers": []map[string]any{{
+			"LoTEType":           scheme.LoTEType,
+			"SchemeOperatorName": []map[string]string{{"lang": "en", "value": scheme.SchemeOperatorName}},
+			"SchemeTerritory":    scheme.SchemeTerritory,
+			"MimeType":           "application/jwt",
+		}},
 	}
-	digest := sha256.Sum256(chain[0].Raw)
-	header := map[string]any{
-		"alg":      "ES256",
-		"typ":      "JWT",
-		"x5c":      []string{signer},
-		"iat":      now.Unix(),
-		"x5t#S256": base64.RawURLEncoding.EncodeToString(digest[:]),
-	}
-	return jws.Sign(header, payload, key)
 }
 
 // CredentialProviderAnchors are the certificates of the services of a kind on
@@ -394,16 +481,15 @@ func GenerateListOfTrustedLists(w *Wallet, issuer string) (string, error) {
 // lists.
 func (w *Wallet) CredentialProviderAnchors(kind string) []*x509.Certificate {
 	var anchors []*x509.Certificate
-	for _, u := range w.TrustedListURLs() {
-		list, err := w.readTrustedList(u)
-		if err != nil {
+	for _, tl := range w.trustedLists() {
+		if tl.Err != nil {
 			continue
 		}
-		switch list.SchemeInfo.LoTEType {
-		case walletProviderTrustListType, accessCAListType, registrarListType:
+		switch tl.List.SchemeInfo.LoTEType {
+		case walletProviderTrustListType, accessCAListType, registrarListType, listOfTrustedListsType:
 			continue
 		}
-		anchors = append(anchors, parsedAnchors(serviceAnchors(list, kind))...)
+		anchors = append(anchors, parsedAnchors(serviceAnchors(tl.List, kind))...)
 	}
 	return anchors
 }

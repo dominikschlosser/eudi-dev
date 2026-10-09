@@ -94,46 +94,40 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	}
 	rule := registrar.CategoryOf(entry.Category).TrustRule
 	eaa := rule == registrar.CategoryOf(credtemplate.CategoryEAA).TrustRule
-	var urls []string
+	var candidates []trustedList
 	for _, authority := range entry.Schema.TrustedAuthorities {
 		// The wallet reads lists of trusted entities (ETSI TS 119 602) only.
 		if authority.FrameworkType == "etsi_tl" && authority.IsLOTE != nil && *authority.IsLOTE && authority.Value != "" {
-			urls = append(urls, authority.Value)
+			list, err := w.readTrustedList(authority.Value)
+			candidates = append(candidates, trustedList{URL: authority.Value, List: list, Err: err})
 		}
 	}
-	typed := map[string]bool{}
 	if listType := categoryListType(entry.Category); listType != "" {
-		for _, u := range w.TrustedListURLs() {
-			if !slices.Contains(urls, u) {
-				urls = append(urls, u)
-				typed[u] = true
+		for _, tl := range w.trustedLists() {
+			linked := slices.ContainsFunc(candidates, func(c trustedList) bool { return c.URL == tl.URL })
+			if tl.Err == nil && tl.List.SchemeInfo.LoTEType == listType && !linked {
+				candidates = append(candidates, tl)
 			}
 		}
 	}
 	var problems []string
 	read := false
-	for _, u := range urls {
-		list, err := w.readTrustedList(u)
+	for _, c := range candidates {
 		switch {
-		case err != nil && eaa && !typed[u]:
+		case c.Err != nil && eaa:
 			// ISSU_10 needs anchors, so the wallet only reports the list.
-			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", u, entry.Name, err), nil)
+			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", c.URL, entry.Name, c.Err), nil)
 			continue
-		case err != nil:
-			if !typed[u] {
-				problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
-			}
-			continue
-		}
-		if typed[u] && list.SchemeInfo.LoTEType != categoryListType(entry.Category) {
+		case c.Err != nil:
+			problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, c.Err))
 			continue
 		}
 		read = true
-		err = validateWithAnchors(cred, serviceAnchors(list, issuanceServices))
+		err := validateWithAnchors(cred, serviceAnchors(c.List, issuanceServices))
 		if err == nil {
 			return nil
 		}
-		problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
+		problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, err))
 	}
 	switch {
 	case !read && eaa:

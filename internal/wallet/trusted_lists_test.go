@@ -128,6 +128,7 @@ func TestTheListOfTrustedListsPointsToEveryList(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://wallet.example"
 	w.ConfiguredTrustedListURLs = []string{srv.URL}
+	w.TrustListCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreign.TrustAnchorCertificate().Raw})
 
 	raw, err := GenerateListOfTrustedLists(w, w.IssuerURL)
 	if err != nil {
@@ -140,11 +141,14 @@ func TestTheListOfTrustedListsPointsToEveryList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if list.SchemeInfo.LoTEType != listOfTrustedListsType {
+		t.Errorf("type %q, want %q", list.SchemeInfo.LoTEType, listOfTrustedListsType)
+	}
 	types := map[string]string{}
 	for _, p := range list.SchemeInfo.Pointers {
 		types[p.Location] = p.LoTEType
-		if len(p.Certificates) != 1 {
-			t.Errorf("pointer %s names %d signer certificates, want one", p.Location, len(p.Certificates))
+		if len(p.Certificates) != 1 || p.SchemeOperatorName == "" || p.SchemeTerritory == "" {
+			t.Errorf("pointer %+v, want one signer certificate, the operator name and the territory", p)
 		}
 	}
 	for location, want := range map[string]string{
@@ -242,5 +246,78 @@ func TestTrustedEntitiesAndListsSurviveAReload(t *testing.T) {
 				t.Errorf("lists %v, want the added one", got)
 			}
 		})
+	}
+}
+
+// A list of trusted lists leads the wallet to the lists it points to. The
+// signer of a pointed-to list is a certificate of its pointer (ETSI TS 119 602
+// V1.1.1 §6.3.13).
+func TestAListOfTrustedListsLeadsToItsLists(t *testing.T) {
+	foreign := generateTestWalletWithPID(t)
+	pid := foreign.GetCredentials()[0]
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		var raw string
+		var err error
+		if r.URL.Path == "/api/trustlists/lists" {
+			raw, err = GenerateListOfTrustedLists(foreign, foreign.IssuerURL)
+		} else {
+			raw, err = GenerateTrustListJWTForWalletGroup(foreign, foreign.IssuerURL, DefaultTrustListGroupForWallet(foreign), "/api/trustlists/pid")
+		}
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, _ = rw.Write([]byte(raw))
+	}))
+	t.Cleanup(srv.Close)
+	foreign.IssuerURL = srv.URL
+
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	w.TrustListCAPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: foreign.TrustAnchorCertificate().Raw})
+	if _, err := w.AddTrustedList(srv.URL + "/api/trustlists/lists"); err != nil {
+		t.Fatal(err)
+	}
+	if findings := w.trustAnchorFindings(receivedCredential(pid.Raw)); len(findings) != 0 {
+		t.Errorf("findings %v, want none through the pointed-to PID list", findings)
+	}
+	state := w.TrustState()
+	if !slices.ContainsFunc(state.Lists, func(l TrustedListLink) bool {
+		return l.URL == srv.URL+"/api/trustlists/pid" && l.Via == srv.URL+"/api/trustlists/lists" && l.Error == ""
+	}) {
+		t.Errorf("lists %+v, want the PID list reached through the list of trusted lists", state.Lists)
+	}
+}
+
+// Strict mode refuses a list the wallet can't read. Debug mode adds it and
+// says why the wallet can't use it.
+func TestAnUnreadableListIsRefusedInStrictModeAndReportedInDebugMode(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	if _, err := w.AddTrustedList(srv.URL); err == nil {
+		t.Error("strict mode added an unreadable list")
+	}
+	w.ValidationMode = ValidationModeDebug
+	link, err := w.AddTrustedList(srv.URL)
+	if err != nil || link.Error == "" {
+		t.Errorf("link %+v, err %v, want the list with the reason", link, err)
+	}
+	if state := w.TrustState(); len(state.Lists) != 1 || state.Lists[0].Error == "" {
+		t.Errorf("lists %+v, want the list with the reason", state.Lists)
+	}
+}
+
+// A CA added to the registrar list anchors the registration certificates and
+// their status lists (ETSI TS 119 602 V1.1.1 Table G.3).
+func TestAnAddedRegistrarCAAnchorsCertificatesAndStatusLists(t *testing.T) {
+	w := generateTestWallet(t)
+	ca := generateTestWallet(t).TrustAnchorCertificate()
+	if _, err := w.AddTrustedEntity(registrarListID, "Other Registrar", string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw}))); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(w.RegistrarCAs(), ca.Equal) || !slices.ContainsFunc(w.RegistrationStatusCAs(), ca.Equal) {
+		t.Error("the added registrar CA anchors neither the certificates nor their status lists")
 	}
 }

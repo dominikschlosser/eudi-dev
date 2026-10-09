@@ -705,3 +705,13 @@ func TestDemoCapsVisitorTemplates(t *testing.T) {
 		t.Errorf("replacing a visitor template at the cap = %d, want 200", w.Code)
 	}
 }
+
+func TestDemoCapsAddedTrustedLists(t *testing.T) {
+	srv := newDemoTestServer(t)
+	for i := range maxDemoTrustedLists {
+		srv.wallet.AddedTrustedLists = append(srv.wallet.AddedTrustedLists, fmt.Sprintf("https://lists.example/%d", i))
+	}
+	if w := serverRequest(t, srv, "POST", "/api/trust/lists", `{"url":"https://lists.example/more"}`); w.Code != http.StatusForbidden {
+		t.Errorf("list %d = %d, want 403", maxDemoTrustedLists+1, w.Code)
+	}
+}

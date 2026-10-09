@@ -131,6 +131,8 @@ type Wallet struct {
 	// registrar and saves it. A server sets it to its saveMutation, which
 	// takes the store lock. Never call it while holding that lock.
 	saveRegistrarChange func(change func() bool)
+	listCacheMu         sync.Mutex
+	listCache           map[string]cachedList
 	tlsVerify           *bool
 	outboundHTTP        *http.Client
 	// Entity backends track the last loaded or saved snapshot and section revisions.

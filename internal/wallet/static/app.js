@@ -3242,9 +3242,13 @@
       entities.innerHTML = (state.entities || []).map(e =>
         '<li id="trust-entity-' + escHtml(e.id) + '"><span>' + escHtml(e.name) + ' <span class="trust-list-name">' + escHtml(e.list) + '</span></span>' +
         '<button type="button" class="link-btn" data-entity="' + escHtml(e.id) + '">Remove</button></li>').join('');
-      lists.innerHTML = (state.lists || []).map((l, i) =>
-        '<li id="trust-list-' + i + '"><span>' + escHtml(l.url) + '</span>' +
-        (l.configured ? '<span class="trust-list-name">--trusted-list</span>' : '<button type="button" class="link-btn" data-list="' + escHtml(l.url) + '">Remove</button>') + '</li>').join('');
+      lists.innerHTML = (state.lists || []).map((l, i) => {
+        let action = '<button type="button" class="link-btn" data-list="' + escHtml(l.url) + '">Remove</button>';
+        if (l.via) action = '<span class="trust-list-name">from ' + escHtml(l.via) + '</span>';
+        else if (l.configured) action = '<span class="trust-list-name">--trusted-list</span>';
+        const error = l.error ? '<span class="trust-list-error" id="trust-list-error-' + i + '">Not used: ' + escHtml(l.error) + '</span>' : '';
+        return '<li id="trust-list-' + i + '"><span>' + escHtml(l.url) + error + '</span>' + action + '</li>';
+      }).join('');
     } catch (e) {
       document.getElementById('trust-error').textContent = e.message;
     }

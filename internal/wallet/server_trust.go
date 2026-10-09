@@ -17,6 +17,7 @@ package wallet
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -34,10 +35,13 @@ type TrustedListState struct {
 }
 
 // TrustedListLink is an external list. Configured comes from --trusted-list
-// and can't be removed through the API.
+// and can't be removed through the API. Error says why the wallet can't use
+// the list. Via names the list of trusted lists that points to it.
 type TrustedListLink struct {
 	URL        string `json:"url"`
 	Configured bool   `json:"configured,omitempty"`
+	Via        string `json:"via,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // TrustState describes the wallet's trusted lists for the API.
@@ -50,11 +54,26 @@ func (w *Wallet) TrustState() TrustedListState {
 		state.Entities = []TrustedEntity{}
 	}
 	state.Lists = []TrustedListLink{}
-	for _, u := range w.ExternalTrustedLists() {
-		state.Lists = append(state.Lists, TrustedListLink{URL: u, Configured: slices.Contains(configured, u)})
+	external := w.ExternalTrustedLists()
+	for _, tl := range w.trustedLists() {
+		if tl.Via == "" && !slices.Contains(external, tl.URL) {
+			continue
+		}
+		link := TrustedListLink{URL: tl.URL, Configured: slices.Contains(configured, tl.URL), Via: tl.Via}
+		if tl.Err != nil {
+			link.Error = tl.Err.Error()
+		}
+		state.Lists = append(state.Lists, link)
 	}
 	return state
 }
+
+// Visitors of the public demo share its trusted lists, and every check reads
+// the added lists.
+const (
+	maxDemoTrustedEntities = 20
+	maxDemoTrustedLists    = 5
+)
 
 func (s *Server) handleTrustState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.wallet.TrustState())
@@ -68,6 +87,10 @@ func (s *Server) handleAddTrustedEntity(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if s.demo != nil && len(s.wallet.ListTrustedEntities()) >= maxDemoTrustedEntities {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added providers. Remove one first", maxDemoTrustedEntities)})
 		return
 	}
 	var entity TrustedEntity
@@ -100,7 +123,11 @@ func (s *Server) handleAddTrustedList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 		return
 	}
-	var added string
+	if s.demo != nil && len(s.wallet.ExternalTrustedLists()) >= maxDemoTrustedLists {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("the public demo holds at most %d added lists. Remove one first", maxDemoTrustedLists)})
+		return
+	}
+	var added TrustedListLink
 	var err error
 	s.saveMutation(func() bool {
 		added, err = s.wallet.AddTrustedList(body.URL)
@@ -110,7 +137,7 @@ func (s *Server) handleAddTrustedList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, TrustedListLink{URL: added})
+	writeJSON(w, http.StatusCreated, added)
 }
 
 func (s *Server) handleRemoveTrustedList(w http.ResponseWriter, r *http.Request) {

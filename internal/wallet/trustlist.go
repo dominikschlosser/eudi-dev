@@ -425,14 +425,7 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		opts.OperatorName = "EUDI Dev Wallet"
 	}
 	if opts.Profile.LoTEType == "" {
-		opts.Profile = trustListProfile{
-			LoTEType:              localTrustListType,
-			IssuanceServiceType:   localIssuanceServiceType,
-			RevocationServiceType: localRevocationServiceType,
-			IssuanceServiceName:   "Issuance Service",
-			RevocationServiceName: "Revocation Service",
-			EntityName:            "EUDI Dev Wallet Issuer",
-		}
+		opts.Profile = eaaTrustListProfile()
 	}
 
 	if opts.Profile.SchemeTerritory == "" {
@@ -471,15 +464,15 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		}
 		schemeInfo["DistributionPoints"] = []string{opts.Issuer + path}
 	}
-	// ETSI TS 119 602 V1.1.1 Table D.1 and Table E.1 require a pointer to the
-	// list itself. Table H.1 forbids pointers and fixes the history period.
+	// ETSI TS 119 602 V1.1.1 Tables D.1 to G.1 require a pointer to the list
+	// itself. Table H.1 forbids pointers and fixes the history period.
 	if opts.Profile.LoTEType == pubEAATrustListType {
 		schemeInfo["HistoricalInformationPeriod"] = 65535
 	} else if opts.Issuer != "" {
 		schemeInfo["PointersToOtherLoTE"] = []map[string]any{{
 			"LoTELocation":             opts.Issuer + path,
 			"ServiceDigitalIdentities": []map[string]any{{"X509Certificates": []map[string]string{{"val": certB64}}}},
-			"LoTEQualifiers":           []map[string]any{{"LoTEType": opts.Profile.LoTEType, "SchemeOperatorName": schemeInfo["SchemeOperatorName"], "MimeType": "application/jwt"}},
+			"LoTEQualifiers":           []map[string]any{{"LoTEType": opts.Profile.LoTEType, "SchemeOperatorName": schemeInfo["SchemeOperatorName"], "SchemeTerritory": schemeInfo["SchemeTerritory"], "MimeType": "application/jwt"}},
 		}}
 	}
 

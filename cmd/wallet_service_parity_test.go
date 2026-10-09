@@ -448,13 +448,13 @@ func parityCases() []parityCase {
 			return []bool{first == nil, second != nil}
 		}},
 		{method: "AddTrustedList", observe: func(t *testing.T, s walletService) any {
-			added := s.AddTrustedList("https://lists.example/pid")
-			invalid := s.AddTrustedList("not a url")
+			added, err := s.AddTrustedList("https://lists.example/pid")
+			_, invalid := s.AddTrustedList("not a url")
 			state, _ := s.TrustState()
-			return []any{added == nil, invalid != nil, len(state.Lists)}
+			return []any{err == nil, added.URL, added.Error != "", invalid != nil, len(state.Lists)}
 		}},
 		{method: "RemoveTrustedList", observe: func(t *testing.T, s walletService) any {
-			if err := s.AddTrustedList("https://lists.example/eaa"); err != nil {
+			if _, err := s.AddTrustedList("https://lists.example/eaa"); err != nil {
 				t.Fatal(err)
 			}
 			first := s.RemoveTrustedList("https://lists.example/eaa")
