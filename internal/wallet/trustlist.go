@@ -442,28 +442,26 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		"ListIssueDateTime":     issueTime,
 		"NextUpdate":            nextUpdate,
 	}
+	// ETSI TS 119 602 V1.1.1 Annexes D to H ask for scheme explicit lists, and
+	// Table 1 makes every scheme element mandatory for them.
 	schemeInfo["SchemeName"] = []map[string]string{{"lang": "en", "value": opts.Profile.SchemeTerritory + ": EUDI Dev Test Providers"}}
+	schemeInfo["PolicyOrLegalNotice"] = []map[string]string{{"LoTELegalNotice": "Test data of eudi-dev. The listed providers are fictional and carry no official trust."}}
 	schemeInfo["SchemeOperatorAddress"] = map[string]any{
 		"SchemeOperatorPostalAddress":     []map[string]string{{"lang": "en", "StreetAddress": "Test address", "Country": "NL"}},
 		"SchemeOperatorElectronicAddress": []map[string]string{{"lang": "en", "uriValue": "https://github.com/dominikschlosser/eudi-dev"}},
 	}
-	if opts.Profile.StatusDeterminationApproach != "" {
-		schemeInfo["StatusDeterminationApproach"] = opts.Profile.StatusDeterminationApproach
-	}
-	if opts.Profile.SchemeTypeCommunityRules != "" {
-		schemeInfo["SchemeTypeCommunityRules"] = []map[string]string{{"lang": "en", "uriValue": opts.Profile.SchemeTypeCommunityRules}}
-	}
+	schemeInfo["StatusDeterminationApproach"] = firstNonEmpty(opts.Profile.StatusDeterminationApproach, eaaStatusDetermination)
+	schemeInfo["SchemeTypeCommunityRules"] = []map[string]string{{"lang": "en", "uriValue": firstNonEmpty(opts.Profile.SchemeTypeCommunityRules, eaaSchemeCommunityRules)}}
 	if opts.Profile.SchemeTerritory != "" {
 		schemeInfo["SchemeTerritory"] = opts.Profile.SchemeTerritory
 	}
 	path := firstNonEmpty(opts.TrustListPath, "/api/trustlist")
+	schemeURIs := []map[string]string{{"lang": "en", "uriValue": "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md"}}
 	if opts.Issuer != "" {
-		schemeInfo["SchemeInformationURI"] = []map[string]string{
-			{"lang": "en", "uriValue": "https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md"},
-			{"lang": "en", "uriValue": opts.Issuer + path + "/history"},
-		}
+		schemeURIs = append(schemeURIs, map[string]string{"lang": "en", "uriValue": opts.Issuer + path + "/history"})
 		schemeInfo["DistributionPoints"] = []string{opts.Issuer + path}
 	}
+	schemeInfo["SchemeInformationURI"] = schemeURIs
 	// ETSI TS 119 602 V1.1.1 Tables D.1 to G.1 require a pointer to the list
 	// itself. Table H.1 forbids pointers and fixes the history period.
 	if opts.Profile.LoTEType == pubEAATrustListType {

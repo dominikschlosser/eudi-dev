@@ -535,7 +535,6 @@ func GenerateListOfTrustedLists(w *Wallet, issuer string) (string, error) {
 					"LoTESequenceNumber":    sequence,
 					"LoTEType":              listOfTrustedListsType,
 					"SchemeOperatorName":    []map[string]string{{"lang": "en", "value": listOperatorName}},
-					"SchemeName":            []map[string]string{{"lang": "en", "value": "EUDI Dev list of trusted lists"}},
 					"SchemeTerritory":       "EU",
 					"ListIssueDateTime":     now.Format(time.RFC3339),
 					"NextUpdate":            now.Add(24 * time.Hour).Format(time.RFC3339),

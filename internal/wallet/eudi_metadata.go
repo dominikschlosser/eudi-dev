@@ -44,6 +44,10 @@ const (
 	eaaTrustListType          = "https://eudi-test.dev/LoTEType/EAAProvidersList"
 	eaaIssuanceServiceType    = "https://eudi-test.dev/SvcType/EAA/Issuance"
 	eaaRevocationServiceType  = "https://eudi-test.dev/SvcType/EAA/Revocation"
+	qeaaStatusDetermination   = "https://eudi-test.dev/QEAAProvidersList/StatusDetn"
+	qeaaSchemeCommunityRules  = "https://eudi-test.dev/QEAAProvidersList/schemerules"
+	eaaStatusDetermination    = "https://eudi-test.dev/EAAProvidersList/StatusDetn"
+	eaaSchemeCommunityRules   = "https://eudi-test.dev/EAAProvidersList/schemerules"
 	// eudi-dev 2 wallets store these types for their EAA list.
 	legacyTrustListType       = "http://uri.etsi.org/19602/LoTEType/local"
 	legacyIssuanceServiceType = "http://uri.etsi.org/19602/SvcType/Issuance"
@@ -291,13 +295,15 @@ func categoryTrustListProfile(category string) trustListProfile {
 		}
 	case credtemplate.CategoryQEAA:
 		return trustListProfile{
-			Category:              category,
-			LoTEType:              qeaaTrustListType,
-			IssuanceServiceType:   qeaaIssuanceServiceType,
-			RevocationServiceType: qeaaRevocationServiceType,
-			IssuanceServiceName:   "QEAA Issuance Service",
-			RevocationServiceName: "QEAA Revocation Service",
-			EntityName:            "EUDI Dev Wallet QEAA Provider",
+			Category:                    category,
+			LoTEType:                    qeaaTrustListType,
+			StatusDeterminationApproach: qeaaStatusDetermination,
+			SchemeTypeCommunityRules:    qeaaSchemeCommunityRules,
+			IssuanceServiceType:         qeaaIssuanceServiceType,
+			RevocationServiceType:       qeaaRevocationServiceType,
+			IssuanceServiceName:         "QEAA Issuance Service",
+			RevocationServiceName:       "QEAA Revocation Service",
+			EntityName:                  "EUDI Dev Wallet QEAA Provider",
 		}
 	default:
 		return eaaTrustListProfile()
@@ -306,13 +312,15 @@ func categoryTrustListProfile(category string) trustListProfile {
 
 func eaaTrustListProfile() trustListProfile {
 	return trustListProfile{
-		Category:              credtemplate.CategoryEAA,
-		LoTEType:              eaaTrustListType,
-		IssuanceServiceType:   eaaIssuanceServiceType,
-		RevocationServiceType: eaaRevocationServiceType,
-		IssuanceServiceName:   "EAA Issuance Service",
-		RevocationServiceName: "EAA Revocation Service",
-		EntityName:            "EUDI Dev Wallet EAA Provider",
+		Category:                    credtemplate.CategoryEAA,
+		LoTEType:                    eaaTrustListType,
+		StatusDeterminationApproach: eaaStatusDetermination,
+		SchemeTypeCommunityRules:    eaaSchemeCommunityRules,
+		IssuanceServiceType:         eaaIssuanceServiceType,
+		RevocationServiceType:       eaaRevocationServiceType,
+		IssuanceServiceName:         "EAA Issuance Service",
+		RevocationServiceName:       "EAA Revocation Service",
+		EntityName:                  "EUDI Dev Wallet EAA Provider",
 	}
 }
 
