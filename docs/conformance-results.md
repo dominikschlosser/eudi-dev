@@ -2,6 +2,51 @@
 
 Reproduce these runs with [Running OIDF Wallet Conformance](./conformance-run.md).
 
+## Run of 2026-10-09 (3.0.0-beta.1)
+
+The beta was checked against suite `release-v5.3.1` (revision `440eec8`) in strict mode. The full wallet matrix ran with file storage. The demo issuer and verifier ran all nine plans.
+
+| Target | Configurations | Modules | `PASSED` | `REVIEW` | `WARNING` | `FAILED` |
+|---|---:|---:|---:|---:|---:|---:|
+| Wallet, file | 78 | 744 | 530 | 188 | 26 | 0 |
+| Demo issuer and verifier | 9 | 111 | 67 | 36 | 8 | 0 |
+
+No module failed. The 26 wallet warnings are the IACA path length advisory described for 2.5.0. The 8 demo warnings are the metadata warnings described for the run of 2026-10-08.
+
+The demo verifier signs its request objects with an access certificate from the relying party access CA. The harness gives the suite that CA as its trust anchor. The wallet signs each credential category with its own key, so the harness picks the key of the PID provider for the suite.
+
+The suite answered one metadata request with HTTP 504. The wallet retried, and the harness sent the same offer again. The pending deferred requests of the first attempt then interrupted three modules, and the suite stopped the run. The remaining 16 plans ran again on their own. The numbers above contain only completed modules.
+
+The full Go race suite and all 226 browser tests passed on each of file, memory and Postgres storage. Vet and lint also passed.
+
+## Run of 2026-10-08 (3.0.0 development build)
+
+The release was checked against suite `release-v5.3.1` (revision `440eec8`) in strict mode. The full wallet matrix ran with file storage. Memory and Postgres each ran the 10 HAIP plans. The demo issuer and verifier ran all nine plans.
+
+| Target | Configurations | Modules | `PASSED` | `REVIEW` | `WARNING` | `FAILED` |
+|---|---:|---:|---:|---:|---:|---:|
+| Wallet, file | 78 | 744 | 530 | 188 | 26 | 0 |
+| Wallet, memory, HAIP | 10 | 228 | 166 | 36 | 26 | 0 |
+| Wallet, Postgres, HAIP | 10 | 228 | 166 | 36 | 26 | 0 |
+| Demo issuer and verifier | 9 | 111 | 67 | 36 | 8 | 0 |
+
+No wallet module failed. Release-v5.3.1 builds the multisigned DC API presentation correctly, so the two suite failures of 2.6.0 do not occur. The `invalid-client-id-prefix` module also runs in the multisigned DC API plans, which adds 8 modules. The 26 wallet warnings are the IACA path length advisory described for 2.5.0.
+
+The demo verifier sends its registration certificate in `verifier_info` by default. All 36 of its outcomes matched expectations. The 8 demo warnings come from the metadata modules of the four issuer plans, which run on both the unsigned and the signed issuer metadata. The suite's schemas do not know `issuer_info` (ETSI TS 119 472-3) and `client_attestation_pop_methods_supported` (the client attestation draft). Neither warning was suppressed.
+
+The suite server stopped answering twice during these runs. The plans it cut off were run again on their own. The numbers above contain only completed modules.
+
+The full Go race suite and all 221 browser tests passed on each of file, memory and Postgres storage. Vet, lint and the benchmark smoke check also passed.
+
+Two load tests ran against two wallet servers built from the release tree and sharing one Postgres database:
+
+| Run | Issuances | Presentations and callbacks | Duration | Issuance p95 | Presentation p95 |
+|---|---:|---:|---:|---:|---:|
+| Default | 160 | 240 | 1.330 s | 105 ms | 92 ms |
+| Stress | 640 | 960 | 12.606 s | 459 ms | 378 ms |
+
+Both runs passed every correctness check. Each credential appeared once, status indices were unique, every presentation callback arrived and both servers reported the same count.
+
 ## Run of 2026-10-04 (2.6.0)
 
 The release was checked against suite `release-v5.2.4` (revision `ab35a8d`) in strict mode. The full wallet matrix ran with file storage. Memory and Postgres each ran the 10 HAIP plans. The demo issuer and verifier ran all nine plans.
