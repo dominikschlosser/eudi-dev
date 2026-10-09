@@ -651,6 +651,16 @@ header h1 {
   gap: 16px;
 }
 
+.footer-prerelease {
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .footer-disclaimer {
   font-size: 10px;
   color: var(--text-dim);

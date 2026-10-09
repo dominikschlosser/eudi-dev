@@ -2950,6 +2950,12 @@
       if (config.version) {
         window.EUDI_VERSION = config.version;
         document.getElementById('footer-version').textContent = 'eudi-dev ' + config.version;
+        const prerelease = /-(alpha|beta|rc)\b/i.exec(config.version);
+        if (prerelease) {
+          const label = document.getElementById('footer-prerelease');
+          label.textContent = { alpha: 'Alpha', beta: 'Beta', rc: 'Release candidate' }[prerelease[1].toLowerCase()];
+          label.hidden = false;
+        }
       }
       if (config.imprint) {
         document.getElementById('imprint-link').hidden = false;
