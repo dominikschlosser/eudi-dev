@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
@@ -319,5 +320,24 @@ func TestAnAddedRegistrarCAAnchorsCertificatesAndStatusLists(t *testing.T) {
 	}
 	if !slices.ContainsFunc(w.RegistrarCAs(), ca.Equal) || !slices.ContainsFunc(w.RegistrationStatusCAs(), ca.Equal) {
 		t.Error("the added registrar CA anchors neither the certificates nor their status lists")
+	}
+}
+
+// An unreachable list is fetched once a minute, not on every check.
+func TestAFailedListIsReusedForAMinute(t *testing.T) {
+	var fetches atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		http.NotFound(rw, nil)
+	}))
+	t.Cleanup(srv.Close)
+	w := generateTestWallet(t)
+	for range 3 {
+		if _, err := w.readTrustedList(srv.URL); err == nil {
+			t.Fatal("read an unreachable list")
+		}
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Errorf("fetched %d times, want once", got)
 	}
 }

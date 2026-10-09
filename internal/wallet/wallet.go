@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mdoc"
@@ -134,6 +136,7 @@ type Wallet struct {
 	saveRegistrarChange func(change func() bool)
 	listCacheMu         sync.Mutex
 	listCache           map[string]cachedList
+	listFetches         singleflight.Group
 	tlsVerify           *bool
 	outboundHTTP        *http.Client
 	// Entity backends track the last loaded or saved snapshot and section revisions.

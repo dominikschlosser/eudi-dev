@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
@@ -129,6 +130,17 @@ func TrustedEntityLists() []string {
 // AddTrustedEntity puts a provider with the certificates in PEM on the list.
 // The same certificates on the same list replace the earlier entry.
 func (w *Wallet) AddTrustedEntity(list, name, certificatesPEM string) (TrustedEntity, error) {
+	entity, err := NewTrustedEntity(list, name, certificatesPEM)
+	if err != nil {
+		return TrustedEntity{}, err
+	}
+	w.storeTrustedEntity(entity)
+	return entity, nil
+}
+
+// NewTrustedEntity reads the provider with the certificates in PEM. Its ID
+// follows from the list and the certificates.
+func NewTrustedEntity(list, name, certificatesPEM string) (TrustedEntity, error) {
 	list, name = strings.TrimSpace(list), strings.TrimSpace(name)
 	if !slices.Contains(TrustedEntityLists(), list) {
 		return TrustedEntity{}, fmt.Errorf("list %q is not one of %s", list, strings.Join(TrustedEntityLists(), ", "))
@@ -145,10 +157,20 @@ func (w *Wallet) AddTrustedEntity(list, name, certificatesPEM string) (TrustedEn
 		digest.Write(cert.Raw)
 	}
 	entity.ID = hex.EncodeToString(digest.Sum(nil)[:8])
+	return entity, nil
+}
+
+func (w *Wallet) storeTrustedEntity(entity TrustedEntity) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.TrustedEntities = append(slices.DeleteFunc(w.TrustedEntities, func(e TrustedEntity) bool { return e.ID == entity.ID }), entity)
-	return entity, nil
+}
+
+// hasTrustedEntity reports whether the wallet holds an entity with the ID.
+func (w *Wallet) hasTrustedEntity(id string) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return slices.ContainsFunc(w.TrustedEntities, func(e TrustedEntity) bool { return e.ID == id })
 }
 
 // RemoveTrustedEntity takes a provider off its list.
@@ -200,6 +222,17 @@ func (w *Wallet) trustListEntities(listID string) []trustListEntity {
 // mode refuses an unreadable list. Debug mode adds it and reports why it can't
 // be read.
 func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
+	link, err := w.CheckTrustedList(rawURL)
+	if err != nil {
+		return TrustedListLink{}, err
+	}
+	w.storeTrustedList(link.URL)
+	return link, nil
+}
+
+// CheckTrustedList reads an external list before it is added. Strict mode
+// refuses a list the wallet can't read. Debug mode reports why in the link.
+func (w *Wallet) CheckTrustedList(rawURL string) (TrustedListLink, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if u, err := url.Parse(rawURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return TrustedListLink{}, fmt.Errorf("%q is not an http or https URL", rawURL)
@@ -214,12 +247,29 @@ func (w *Wallet) AddTrustedList(rawURL string) (TrustedListLink, error) {
 		}
 		link.Error = err.Error()
 	}
+	return link, nil
+}
+
+// addedTrustedListCount counts the lists users added, without the one at
+// rawURL.
+func (w *Wallet) addedTrustedListCount(rawURL string) int {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	n := 0
+	for _, u := range w.AddedTrustedLists {
+		if u != rawURL {
+			n++
+		}
+	}
+	return n
+}
+
+func (w *Wallet) storeTrustedList(rawURL string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !slices.Contains(w.AddedTrustedLists, rawURL) {
 		w.AddedTrustedLists = append(w.AddedTrustedLists, rawURL)
 	}
-	return link, nil
 }
 
 // RemoveTrustedList takes an external list off the list of trusted lists.
@@ -253,12 +303,21 @@ func (w *Wallet) ownTrustListURL(id string) string {
 	return w.RegistrarBase() + "/api/trustlists/" + id
 }
 
-// listCacheTTL bounds how long the wallet reuses a fetched list. An operator
-// can publish a list before its next update (ETSI TS 119 602 V1.1.1 §6.3.15).
-const listCacheTTL = 5 * time.Minute
+// The wallet reuses a fetched list for listCacheTTL, because an operator can
+// publish a list before its next update (ETSI TS 119 602 V1.1.1 §6.3.15). A
+// failed fetch is reused for failedListCacheTTL, so an unreachable list can't
+// slow down every check.
+const (
+	listCacheTTL       = 5 * time.Minute
+	failedListCacheTTL = time.Minute
+	// maxFollowedPointers caps the lists the wallet reads from one external
+	// list of trusted lists.
+	maxFollowedPointers = 20
+)
 
 type cachedList struct {
 	raw     string
+	err     error
 	fetched time.Time
 }
 
@@ -275,20 +334,23 @@ func (w *Wallet) rawTrustedList(rawURL string) (string, error) {
 	w.listCacheMu.Lock()
 	cached, ok := w.listCache[rawURL]
 	w.listCacheMu.Unlock()
-	if ok && time.Since(cached.fetched) < listCacheTTL {
-		return cached.raw, nil
+	if ok && (cached.err == nil && time.Since(cached.fetched) < listCacheTTL || cached.err != nil && time.Since(cached.fetched) < failedListCacheTTL) {
+		return cached.raw, cached.err
 	}
-	raw, err := format.FetchURL(rawURL, w.HTTPClient())
+	fetched, err, _ := w.listFetches.Do(rawURL, func() (any, error) {
+		raw, err := format.FetchURL(rawURL, w.HTTPClient())
+		w.listCacheMu.Lock()
+		if w.listCache == nil {
+			w.listCache = map[string]cachedList{}
+		}
+		w.listCache[rawURL] = cachedList{raw: raw, err: err, fetched: time.Now()}
+		w.listCacheMu.Unlock()
+		return raw, err
+	})
 	if err != nil {
-		return "", fmt.Errorf("fetching the trusted list: %w", err)
+		return "", err
 	}
-	w.listCacheMu.Lock()
-	if w.listCache == nil {
-		w.listCache = map[string]cachedList{}
-	}
-	w.listCache[rawURL] = cachedList{raw: raw, fetched: time.Now()}
-	w.listCacheMu.Unlock()
-	return raw, nil
+	return fetched.(string), nil
 }
 
 // readTrustedList returns a list signed by a trusted list operator. Under the
@@ -313,7 +375,12 @@ func (w *Wallet) readListSignedBy(rawURL string, signers []*x509.Certificate) (*
 	if err != nil {
 		return nil, fmt.Errorf("parsing the trusted list: %w", err)
 	}
-	if next, err := time.Parse(time.RFC3339, list.SchemeInfo.NextUpdate); err == nil && next.Before(time.Now()) {
+	// A closed list has a null NextUpdate, and its services are expired.
+	next, err := time.Parse(time.RFC3339, list.SchemeInfo.NextUpdate)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("the trusted list has no NextUpdate date, so it is closed or malformed (ETSI TS 119 602 V1.1.1 §6.3.15)")
+	case next.Before(time.Now()):
 		return nil, fmt.Errorf("the trusted list expired at %s (ETSI TS 119 602 V1.1.1 §6.3.15)", list.SchemeInfo.NextUpdate)
 	}
 	return list, nil
@@ -372,23 +439,49 @@ func (w *Wallet) trustedLists() []trustedList {
 		seen[u] = true
 	}
 	operators := w.TrustListCAs()
-	var out []trustedList
-	for _, u := range urls {
-		list, err := w.readListSignedBy(u, operators)
-		out = append(out, trustedList{URL: u, List: list, Err: err})
-		if err != nil || list.SchemeInfo.LoTEType != listOfTrustedListsType {
+	out := make([]trustedList, len(urls))
+	readAll(len(urls), func(i int) {
+		list, err := w.readListSignedBy(urls[i], operators)
+		out[i] = trustedList{URL: urls[i], List: list, Err: err}
+	})
+	var pointed []trustedList
+	var pointers []trustlist.Pointer
+	for _, tl := range out {
+		if tl.Err != nil || tl.List.SchemeInfo.LoTEType != listOfTrustedListsType {
 			continue
 		}
-		for _, pointer := range list.SchemeInfo.Pointers {
-			if pointer.Location == "" || seen[pointer.Location] {
+		followed := 0
+		for _, pointer := range tl.List.SchemeInfo.Pointers {
+			if pointer.Location == "" || seen[pointer.Location] || followed == maxFollowedPointers {
 				continue
 			}
 			seen[pointer.Location] = true
-			pointed, err := w.readListSignedBy(pointer.Location, parsedAnchors(pointer.Certificates))
-			out = append(out, trustedList{URL: pointer.Location, Via: u, List: pointed, Err: err})
+			followed++
+			pointed = append(pointed, trustedList{URL: pointer.Location, Via: tl.URL})
+			pointers = append(pointers, pointer)
 		}
 	}
-	return out
+	readAll(len(pointed), func(i int) {
+		list, err := w.readListSignedBy(pointed[i].URL, parsedAnchors(pointers[i].Certificates))
+		if err == nil && pointers[i].LoTEType != "" && list.SchemeInfo.LoTEType != pointers[i].LoTEType {
+			list, err = nil, fmt.Errorf("the list has the type %s, and its pointer names %s", list.SchemeInfo.LoTEType, pointers[i].LoTEType)
+		}
+		pointed[i].List, pointed[i].Err = list, err
+	})
+	return append(out, pointed...)
+}
+
+// readAll runs read for every index in parallel and waits for all of them.
+func readAll(n int, read func(i int)) {
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			read(i)
+		}()
+	}
+	wg.Wait()
 }
 
 // listAnchors returns the certificates of all services of one kind on the
