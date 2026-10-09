@@ -259,7 +259,7 @@ func (s *Server) processOfferURI(w http.ResponseWriter, uri, txCode, session str
 			s.wallet.AddLog("issuance", fmt.Sprintf("Failed: %v", err), false)
 			s.wallet.NotifyError(WalletError{
 				Owner:   session,
-				Message: "Credential offer parsing failed",
+				Message: "The wallet refused the credential offer",
 				Detail:  err.Error(),
 			})
 			s.triggerUIRequest("")
@@ -429,6 +429,11 @@ func (w *Wallet) prepareIssuanceConsentRequest(raw, owner string) (*ConsentReque
 	req.ClientID = offer.CredentialIssuer
 	req.OfferConfigs = append([]string(nil), offer.CredentialConfigurationIDs...)
 	req.OfferDetails = w.describeCredentialOffer(offer)
+	// Strict mode refuses an issuer that fails the ARF checks before the user
+	// is asked, as it refuses a verifier (RPRC_22a, ISSU_24a).
+	if len(req.OfferDetails.ARFFindings) > 0 && w.Mode() == ValidationModeStrict {
+		return nil, "", w.reportARFIssuanceFindings(offer.CredentialIssuer, req.OfferDetails.ARFFindings)
+	}
 	req.Findings = req.OfferDetails.Findings
 	// Keep the resolved offer for approval because the issuer may allow it to be
 	// fetched only once.

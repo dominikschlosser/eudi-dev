@@ -51,9 +51,13 @@ type IssuanceOfferDetails struct {
 	TxCodeDescription string              `json:"tx_code_description,omitempty"`
 	Credentials       []OfferedCredential `json:"credentials,omitempty"`
 	MetadataError     string              `json:"metadata_error,omitempty"`
-	// Findings are the ARF and catalogue findings about the issuer. The ARF
-	// requires the wallet to warn the user before it requests the credential.
+	// Findings are the metadata, ARF and catalogue findings about the issuer.
+	// The ARF requires the wallet to warn the user before it requests the
+	// credential.
 	Findings []string `json:"-"`
+	// ARFFindings are the ARF findings among them. Strict mode refuses an
+	// offer that has any before the consent dialog opens.
+	ARFFindings []string `json:"-"`
 	// OfferURI and ResolveError are set when an offer passed by reference
 	// could not be fetched. The dialog then shows the host and the reason.
 	OfferURI     string `json:"offer_uri,omitempty"`
@@ -80,13 +84,17 @@ func (w *Wallet) describeCredentialOffer(offer *oid4vc.CredentialOffer) *Issuanc
 		}
 	}
 
-	metadata, signerChain, err := fetchIssuerMetadataDocument(w.HTTPClient(), offer.CredentialIssuer, w.ARFChecks(), w.Mode() == ValidationModeStrict)
+	// The flow logs the metadata problems itself, so the dialog only lists them.
+	var freshness []string
+	policy := metadataPolicy{strict: w.Mode() == ValidationModeStrict, warn: func(problem string) { freshness = append(freshness, problem) }}
+	metadata, signerChain, err := fetchIssuerMetadataDocument(w.HTTPClient(), offer.CredentialIssuer, w.ARFChecks(), policy)
 	if err != nil {
 		details.MetadataError = err.Error()
 	} else {
 		details.IssuerName, details.IssuerLogo = issuerDisplay(metadata)
 		details.IssuerLogo = w.embedDisplayImage(details.IssuerLogo, "issuer_logo")
-		details.Findings = append(w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs), w.catalogueFindings(metadata, offer.CredentialConfigurationIDs)...)
+		details.ARFFindings = w.issuerARFCheck(metadata, signerChain, offer.CredentialConfigurationIDs)
+		details.Findings = append(append(freshness, details.ARFFindings...), w.catalogueFindings(metadata, offer.CredentialConfigurationIDs)...)
 	}
 
 	for _, id := range offer.CredentialConfigurationIDs {

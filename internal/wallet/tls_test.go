@@ -110,7 +110,10 @@ func TestWalletTLSModeAndOverrides(t *testing.T) {
 					_, err := w.resolveOffer("openid-credential-offer://?credential_offer_uri="+url.QueryEscape(server.URL), nil)
 					return err
 				}},
-				{"issuer metadata", func() error { _, err := fetchIssuerMetadata(w.HTTPClient(), server.URL, true); return err }},
+				{"issuer metadata", func() error {
+					_, err := fetchIssuerMetadata(w.HTTPClient(), server.URL, metadataPolicy{strict: true})
+					return err
+				}},
 				{"OAuth metadata", func() error { _, err := fetchOAuthMetadata(w.HTTPClient(), server.URL); return err }},
 				{"token POST", func() error {
 					_, err := postFormWithDPoP(w.HTTPClient(), server.URL, url.Values{"grant_type": {"test"}}, nil, "", nil, nil)

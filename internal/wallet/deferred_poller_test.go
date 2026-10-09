@@ -706,3 +706,30 @@ func TestFailingBackgroundTaskIsRetriedThenAbandoned(t *testing.T) {
 	}
 	_ = logged
 }
+
+// OpenID4VCI 1.0 §9.1 applies the encryption rules of the Credential Request
+// to the Deferred Credential Request. Strict mode needs the issuer metadata
+// for them, so without it the poller retries later instead of sending the
+// request.
+func TestStrictDeferredCollectionWaitsForUsableMetadata(t *testing.T) {
+	w := generateTestWallet(t)
+	w.ValidationMode = ValidationModeStrict
+	srv, polls := deferredCollectionIssuer(t, generateTestCredential(t, w), 0, 1)
+	defer srv.Close()
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	server := NewServer(w, 0, nil)
+	pending := pendingFor(t, w, srv.URL, 1)
+	pending.NextAttemptAt = time.Now().Add(-time.Second)
+	w.AddDeferredIssuance(pending)
+
+	server.collectDueDeferredCredentials(time.Now())
+	if got := polls(); got != 0 {
+		t.Errorf("the wallet sent %d deferred requests without the issuer metadata", got)
+	}
+	if list := w.DeferredIssuanceList(); len(list) != 1 || list[0].Attempts != 1 {
+		t.Errorf("records %+v, want the issuance rescheduled", list)
+	}
+}

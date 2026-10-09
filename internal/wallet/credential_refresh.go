@@ -38,6 +38,22 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		dpopKey = w.HolderKey
 	}
 
+	// The credential request needs the Nonce Endpoint (§8.2) and the
+	// issuer's encryption requirements. Both come from the Credential Issuer
+	// Metadata (§12.2.2).
+	metadata, signerChain, metadataErr := fetchIssuerMetadataDocument(w.HTTPClient(), renewal.Issuer, w.ARFChecks(), w.metadataPolicy(w.Mode(), nil))
+	if metadataErr != nil {
+		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
+	}
+	// A renewal requests a credential too, so the ARF checks apply. They run
+	// before the token request, so a refusal keeps the refresh token.
+	if findings := w.issuerARFCheck(metadata, signerChain, []string{renewal.ConfigurationID}); len(findings) > 0 {
+		if err := w.reportARFIssuanceFindings(renewal.Issuer, findings); err != nil {
+			return nil, err
+		}
+	}
+	w.reportCatalogueFindings(renewal.Issuer, w.catalogueFindings(metadata, []string{renewal.ConfigurationID}))
+
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("refresh_token", renewal.RefreshToken)
@@ -65,21 +81,6 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 		return nil, fmt.Errorf("the token response carried no access_token")
 	}
 	authScheme := accessTokenScheme(tokenResp, renewal.UseDPoP)
-
-	// The credential request needs the Nonce Endpoint (§8.2) and the
-	// issuer's encryption requirements. Both come from the Credential Issuer
-	// Metadata (§12.2.2).
-	metadata, signerChain, metadataErr := fetchIssuerMetadataDocument(w.HTTPClient(), renewal.Issuer, w.ARFChecks(), w.Mode() == ValidationModeStrict)
-	if metadataErr != nil {
-		return nil, fmt.Errorf("fetching the issuer metadata of %s: %w", renewal.Issuer, metadataErr)
-	}
-	// A renewal requests a credential too, so the ARF checks apply.
-	if findings := w.issuerARFCheck(metadata, signerChain, []string{renewal.ConfigurationID}); len(findings) > 0 {
-		if err := w.reportARFIssuanceFindings(renewal.Issuer, findings); err != nil {
-			return nil, err
-		}
-	}
-	w.reportCatalogueFindings(renewal.Issuer, w.catalogueFindings(metadata, []string{renewal.ConfigurationID}))
 
 	cNonce, err := w.issuanceChallenge(metadata, tokenResp, renewal.Issuer, &nonce)
 	if err != nil {
@@ -133,7 +134,7 @@ func (w *Wallet) RefreshCredential(id string) (*StoredCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the renewed credential: %w", err)
 	}
-	if err := w.checkReceivedCredentials(credResp, renewal.Issuer); err != nil {
+	if _, err := w.checkReceivedCredentials(credResp, renewal.Issuer); err != nil {
 		return nil, err
 	}
 

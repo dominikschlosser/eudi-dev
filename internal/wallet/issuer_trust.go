@@ -234,18 +234,21 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 // before the wallet stores one, on every issuance path. Each copy of a batch
 // is signed on its own. With --haip it applies HAIP 1.0 §6.1.1, and with
 // --arf the trust anchor check. In strict mode a failed check refuses the
-// response (ARF ISSU_11b).
-func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) error {
+// response (ARF ISSU_11b). In debug mode it returns the findings.
+func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) ([]string, error) {
 	credentials := credentialStringsFromResponse(credResp)
+	var debugFindings []string
 	if _, haip, _ := w.ConformanceSettings(); haip {
 		var violations []string
 		for _, raw := range credentials {
 			violations = append(violations, w.haipCredentialViolations(raw)...)
 		}
 		if len(violations) > 0 {
-			if err := w.reportHAIPViolations("Credential", issuer, slices.Compact(violations)); err != nil {
-				return err
+			violations = slices.Compact(violations)
+			if err := w.reportHAIPViolations("Credential", issuer, violations); err != nil {
+				return nil, err
 			}
+			debugFindings = append(debugFindings, violations...)
 		}
 	}
 	var findings []string
@@ -253,9 +256,13 @@ func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string
 		findings = append(findings, w.trustAnchorFindings(receivedCredential(raw))...)
 	}
 	if len(findings) == 0 {
-		return nil
+		return debugFindings, nil
 	}
-	return w.reportARFFindings(issuer, slices.Compact(findings), "the received credential fails the ARF checks")
+	findings = slices.Compact(findings)
+	if err := w.reportARFFindings(issuer, findings, "the received credential fails the ARF checks"); err != nil {
+		return nil, err
+	}
+	return append(debugFindings, findings...), nil
 }
 
 // receivedCredential reads the format and type of a raw SD-JWT VC or mdoc.

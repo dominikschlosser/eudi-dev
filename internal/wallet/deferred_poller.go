@@ -195,14 +195,18 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 
 	// §9.1 applies the encryption rules of the Credential Request to the
 	// Deferred Credential Request. The original flow is gone by now, so the
-	// metadata is fetched again. Unreachable metadata leaves the request
-	// unencrypted.
+	// metadata is fetched again. Strict mode retries later when it can't use
+	// the metadata. Debug mode sends the request unencrypted and says so.
 	//
 	// The validation mode is read once. This runs on the poller goroutine and
 	// can race a PUT /api/config/conformance.
 	mode := s.wallet.Mode()
-	metadata, metadataErr := fetchIssuerMetadata(s.wallet.HTTPClient(), pending.Issuer, s.wallet.Mode() == ValidationModeStrict)
+	metadata, metadataErr := fetchIssuerMetadata(s.wallet.HTTPClient(), pending.Issuer, s.wallet.metadataPolicy(mode, nil))
 	if metadataErr != nil {
+		if mode == ValidationModeStrict {
+			return s.rescheduleDeferred(pending, pending.Interval(), fmt.Sprintf("the issuer metadata can't be used: %v", metadataErr))
+		}
+		s.wallet.addProtocolWarning("issuance", "deferred_metadata_unavailable", fmt.Sprintf("The issuer metadata of %s can't be used, so the deferred credential request goes unencrypted: %v", pending.Issuer, metadataErr), map[string]any{"issuer": pending.Issuer})
 		metadata = nil
 	}
 	responseEncryption, err := buildCredentialResponseEncryptionRequest(mode, metadata, s.wallet.HolderKeyPair())
@@ -239,7 +243,7 @@ func (s *Server) attemptDeferredCollection(pending DeferredIssuance) DeferredAtt
 	if err != nil {
 		return s.abandonDeferred(pending, fmt.Sprintf("the issuer answered without a usable credential: %v", err))
 	}
-	if err := s.wallet.checkReceivedCredentials(credResp, pending.Issuer); err != nil {
+	if _, err := s.wallet.checkReceivedCredentials(credResp, pending.Issuer); err != nil {
 		return s.abandonDeferred(pending, err.Error())
 	}
 	imported, err := s.wallet.importPrimaryCredential(credential, proofKeys)

@@ -451,8 +451,13 @@ func TestResolveClientAuthentication(t *testing.T) {
 // A refresh error shows the issuer's OAuth error description.
 func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
 	w := generateTestWallet(t)
+	var serverURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer") {
+			_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+			return
+		}
 		rw.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(rw).Encode(map[string]any{
 			"error":             "invalid_grant",
@@ -460,6 +465,7 @@ func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
+	serverURL = srv.URL
 
 	oldClient := httpClient
 	httpClient = srv.Client()
@@ -487,10 +493,17 @@ func TestRefreshReportsWhatTheIssuerSaid(t *testing.T) {
 // A refresh error without OAuth error fields shows the response body.
 func TestRefreshReportsANonOAuthRefusal(t *testing.T) {
 	w := generateTestWallet(t)
+	var serverURL string
 	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/.well-known/openid-credential-issuer") {
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+			return
+		}
 		http.Error(rw, "gateway is on fire", http.StatusBadGateway)
 	}))
 	defer srv.Close()
+	serverURL = srv.URL
 
 	oldClient := httpClient
 	httpClient = srv.Client()
@@ -687,5 +700,39 @@ func TestAFailedRenewalKeepsTheStatus(t *testing.T) {
 	}
 	if entry, _ := w.StatusEntryFor(id); entry.Status != 1 {
 		t.Errorf("status %d after the failed renewal, want 1", entry.Status)
+	}
+}
+
+// Strict --arf checks the issuer before the token request, so a refused
+// renewal keeps its refresh token.
+func TestStrictARFRefusesARenewalBeforeTheTokenRequest(t *testing.T) {
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = ValidationModeStrict
+	var serverURL string
+	tokenRequests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/token") {
+			tokenRequests++
+		}
+		_ = json.NewEncoder(rw).Encode(renewalIssuerMetadata(serverURL))
+	}))
+	defer srv.Close()
+	serverURL = srv.URL
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	imported, err := w.ImportCredential(generateTestCredential(t, w))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.rememberRenewal(imported.ID, "refresh-1", CredentialRenewal{
+		Issuer: srv.URL, TokenEndpoint: srv.URL + "/token",
+		CredentialEndpoint: srv.URL + "/credential", ConfigurationID: "cfg",
+	})
+	if _, err := w.RefreshCredential(imported.ID); err == nil || tokenRequests != 0 {
+		t.Errorf("err %v after %d token requests, want the refusal before the first", err, tokenRequests)
 	}
 }
