@@ -75,8 +75,8 @@ type IssuedAttestationSpec struct {
 	Format  string `json:"format"`
 	VCT     string `json:"vct,omitempty"`
 	DocType string `json:"doctype,omitempty"`
-	// Category is a credtemplate category. It selects the trusted list. A
-	// spec without a category and without a trust list type is on no list.
+	// Category is a credtemplate category. It selects the trusted list. An
+	// unlisted spec is on no list.
 	Category                    string   `json:"category,omitempty"`
 	Entitlements                []string `json:"entitlements,omitempty"`
 	TrustListType               string   `json:"trust_list_type,omitempty"`
@@ -257,8 +257,9 @@ func dedupeStrings(values []string) []string {
 
 // categoryTrustListProfile is the trusted list of a credential category. ETSI
 // TS 119 602 V1.1.1 defines list types for PID providers (Annex D) and PuB-EAA
-// providers (Annex H). QEAA providers are on TS 119 612 trusted lists, and other
-// EAA providers have no list type, so both use the local type.
+// providers (Annex H). QEAA providers are on TS 119 612 trusted lists, and
+// other EAA providers have no list type, so both lists have types of their
+// own.
 func categoryTrustListProfile(category string) trustListProfile {
 	switch category {
 	case credtemplate.CategoryPID:

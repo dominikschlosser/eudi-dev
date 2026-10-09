@@ -82,11 +82,8 @@ func TestWalletStore_SaveAndLoad(t *testing.T) {
 	if _, err := w.ImportCredential(sdjwt); err != nil {
 		t.Fatalf("importing: %v", err)
 	}
-	if len(w.IssuedAttestations) != 1 {
-		t.Fatalf("expected 1 issued-attestation entry after import, got %d", len(w.IssuedAttestations))
-	}
-	if w.IssuedAttestations[0].VCT != "TestCred" {
-		t.Fatalf("expected issued-attestation VCT TestCred, got %s", w.IssuedAttestations[0].VCT)
+	if err := w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: "TestCred"}); err != nil {
+		t.Fatal(err)
 	}
 
 	if err := store.Save(w); err != nil {

@@ -445,8 +445,8 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	// The trust metadata describes the wallet CA. An override chain keeps the
-	// plain registration from the import.
+	// The wallet's lists name the wallet CA, so a credential signed with an
+	// override chain is on none of them.
 	if opts.SigningKey == nil {
 		if err := w.RegisterIssuedAttestation(spec); err != nil {
 			return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)

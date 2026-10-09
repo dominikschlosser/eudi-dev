@@ -187,10 +187,11 @@ func decodeInfo(value, name string) ([]any, error) {
 }
 
 // demoIssuerRegistration registers the demo issuer as a provider of the
-// credential types that have a category, with the entitlements of those
-// categories (ETSI TS 119 475 V1.2.1 Table 8). A type gets its category from
-// its template or its catalogue entry. Its identity check asks for a PID
-// before it issues, so it registers that intended use too.
+// credential types it issues, with the entitlements of their categories (ETSI
+// TS 119 475 V1.2.1 Table 8). A type gets its category from its template or
+// its catalogue entry. A type without one is an EAA, and an unlisted type is
+// left out. Its identity check asks for a PID before it issues, so it
+// registers that intended use too.
 func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
 	catalogue := w.Registrar().CatalogAttestations()
 	var entitlements, vcts, docTypes []string
@@ -198,8 +199,11 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 		if entry, ok := catalogueEntryIn(catalogue, format, []string{vct, docType}); ok && category == "" {
 			category = entry.Category
 		}
-		if category == "" || category == UnlistedCategory {
+		switch category {
+		case UnlistedCategory:
 			return
+		case "":
+			category = credtemplate.CategoryEAA
 		}
 		switch format {
 		case "dc+sd-jwt":

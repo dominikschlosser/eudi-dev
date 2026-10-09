@@ -70,6 +70,11 @@ func TestEntities_RoundTrip(t *testing.T) {
 	}
 	first := importTestCredential(t, w, "First")
 	second := importTestCredential(t, w, "Second")
+	for _, vct := range []string{"First", "Second"} {
+		if err := w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: "dc+sd-jwt", VCT: vct}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	w.RegisterStatusEntry(first, 7)
 	w.DeferredIssuances = []DeferredIssuance{{ID: "d1", TransactionID: "tx", DeferredEndpoint: "https://issuer.example/deferred"}}
 	w.BaseURL = "http://wallet.example"
@@ -364,7 +369,7 @@ func TestEntities_ChangedSectionsNameWhatOthersChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := changedSections(t, store, w, false)
-	if !slices.Equal(changed, []string{credentialsSection, attestationsSection}) {
+	if !slices.Equal(changed, []string{credentialsSection}) {
 		t.Fatalf("an import elsewhere changed %v", changed)
 	}
 	if err := store.loadSections(w, changed); err != nil {

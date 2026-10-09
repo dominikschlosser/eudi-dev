@@ -499,3 +499,19 @@ func TestAnEudiDev2ListTypeMovesToTheListOfItsCategory(t *testing.T) {
 		}
 	}
 }
+
+// An imported PID leaves the wallet's own PID types on the PID list, because
+// the wallet lists only what it issues.
+func TestAnImportedPIDLeavesTheWalletsPIDList(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	for _, c := range generateTestWalletWithPID(t).GetCredentials() {
+		if _, err := w.ImportCredential(c.Raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, spec := range w.issuedAttestationSpecs() {
+		if spec.Category != credtemplate.CategoryPID {
+			t.Errorf("%s %s%s has category %q, want pid", spec.Format, spec.VCT, spec.DocType, spec.Category)
+		}
+	}
+}
