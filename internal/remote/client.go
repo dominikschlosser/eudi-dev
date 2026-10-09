@@ -333,9 +333,12 @@ const interactiveTimeout = config.ConsentTimeout + config.SlowRequestTimeout
 // Present sends a presentation request URI to the remote wallet. With
 // interactive set, the wallet shows its consent dialog and holds the response
 // until the user decides.
-func (c *Client) Present(uri string, interactive bool) (map[string]any, error) {
+func (c *Client) Present(uri string, interactive bool, sessionTranscript string) (map[string]any, error) {
 	var out map[string]any
 	body := map[string]any{"uri": uri}
+	if sessionTranscript != "" {
+		body["session_transcript"] = sessionTranscript
+	}
 	timeout := time.Duration(0)
 	if interactive {
 		body["interactive"] = true

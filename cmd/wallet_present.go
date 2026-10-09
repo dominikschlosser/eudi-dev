@@ -264,7 +264,14 @@ func findFreePresentationPortPair(start int) (int, error) {
 	return 0, fmt.Errorf("could not find free adjacent presentation ports near %d", start)
 }
 
+// tryPresentViaRunningServer hands the request to a wallet server on this
+// machine. The instance registry only knows servers of the same wallet
+// directory, while the URL handler (url-handler.sh) points to the server that
+// registered it. --remote local keeps the flow in this process.
 func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error) {
+	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") {
+		return false, nil
+	}
 	var baseURL string
 	for _, candidate := range runningWalletServerBaseURLs(opts) {
 		if isRunningWalletServer(candidate) {

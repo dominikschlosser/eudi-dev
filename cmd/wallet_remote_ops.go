@@ -356,7 +356,7 @@ func printGeneratedPID(vct string) {
 	})
 }
 
-func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error {
+func remoteAccept(c *remote.Client, uri, txCode, sessionTranscript string, interactive bool) error {
 	isVCI := isCredentialOfferURI(uri)
 	// Assign an owner so this tab receives the consent request on a shared wallet.
 	if interactive && !noOpen {
@@ -373,7 +373,7 @@ func remoteAccept(c *remote.Client, uri, txCode string, interactive bool) error 
 	if isVCI {
 		result, err = c.AcceptOffer(uri, txCode, interactive)
 	} else {
-		result, err = c.Present(uri, interactive)
+		result, err = c.Present(uri, interactive, sessionTranscript)
 	}
 	if err != nil {
 		return err
