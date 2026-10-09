@@ -4,7 +4,7 @@ When a verifier sends a signed request object, the wallet verifies the JWS again
 
 ## Trust anchors
 
-This test wallet has no configured verifier or issuer CAs. It checks signature validity and chain consistency. Trusting the root certificate would need a configured anchor.
+Without `--arf`, this test wallet has no configured verifier or issuer CAs. It checks signature validity and chain consistency. Trusting the root certificate would need a configured anchor. `--arf` adds anchors from trusted lists for access certificates, registration certificates and received credentials ([ADR 0021](0021-arf-checks-are-a-separate-profile.md), [ADR 0023](0023-trust-anchors-come-from-trusted-lists.md)).
 
 `verifySuppliedX5CChain` builds a root pool from the top certificate of the supplied chain and verifies the leaf against that. This proves the chain is consistent. It does not show who issued the root. `verifyIssuerMetadataChainTrust` logs "signed but unplaced" when it cannot anchor the signer.
 

@@ -111,7 +111,11 @@ func acceptOID4URI(uri string, opts dispatchOID4Opts) error {
 		}
 		// The selected wallet fetches the offer and collects the transaction code.
 		// Some offers can be fetched only once.
-		return remoteAccept(c, uri, opts.txCode, !opts.autoAccept)
+		transcript := opts.sessionTranscript
+		if transcript == string(wallet.SessionTranscriptOID4VP) {
+			transcript = ""
+		}
+		return remoteAccept(c, uri, opts.txCode, transcript, !opts.autoAccept)
 	}
 	w := &wallet.Wallet{}
 	if err := applyValidationMode(w, opts.mode); err != nil {

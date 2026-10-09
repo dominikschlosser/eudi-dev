@@ -167,8 +167,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		reportCatalogueTrust(raw, report)
+
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, tlCerts, report); err != nil {
+			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -219,7 +221,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		}
 
 		if statusListFlag {
-			if err := checkStatus(token.ResolvedClaims, tlCerts, report); err != nil {
+			if err := checkStatus(token.ResolvedClaims, statuslist.FormatJWT, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -277,10 +279,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		reportCatalogueTrust(raw, report)
+
 		// ExtractStatusRef expects {"status": {"status_list": ...}} and
 		// MSO.Status is the inner map.
 		if statusListFlag && doc.IssuerAuth != nil && doc.IssuerAuth.MSO != nil && doc.IssuerAuth.MSO.Status != nil {
-			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, tlCerts, report); err != nil {
+			if err := checkStatus(map[string]any{"status": doc.IssuerAuth.MSO.Status}, statuslist.FormatCWT, tlCerts, report); err != nil {
 				return err
 			}
 		}
@@ -290,6 +294,32 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// reportCatalogueTrust validates the credential with the trusted lists of its
+// entry in the wallet's attestation catalogue. The result is informational, so
+// it leaves the exit code alone.
+func reportCatalogueTrust(raw string, report jsonReport) {
+	w, _, err := loadWallet()
+	if err != nil {
+		return
+	}
+	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	if !found {
+		return
+	}
+	report.add("trust", anchoring, func() {
+		switch {
+		case anchoring.AnchoredBy != "":
+			fmt.Printf("  ✓ Anchored by the trusted list %s of the catalogue entry %q\n", anchoring.AnchoredBy, anchoring.Entry)
+		case len(anchoring.Findings) > 0:
+			for _, f := range anchoring.Findings {
+				fmt.Printf("  ✗ %s\n", f)
+			}
+		default:
+			fmt.Printf("  – The catalogue entry %q links no readable trusted list\n", anchoring.Entry)
+		}
+	})
 }
 
 // printLeafSourceNote explains a leaf-only verification so a green result is
@@ -319,7 +349,7 @@ func verifyWithBestKey[T any](pubKeys []crypto.PublicKey, x5cKey crypto.PublicKe
 	return best
 }
 
-func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, report jsonReport) error {
+func checkStatus(claims map[string]any, prefer string, tlCerts []trustlist.CertInfo, report jsonReport) error {
 	ref := statuslist.ExtractStatusRef(claims)
 	if ref == nil {
 		return nil
@@ -328,7 +358,7 @@ func checkStatus(claims map[string]any, tlCerts []trustlist.CertInfo, report jso
 		return fmt.Errorf("status check: %s", ref.Invalid)
 	}
 
-	checkOpts := statuslist.CheckOptions{}
+	checkOpts := statuslist.CheckOptions{Prefer: prefer}
 	for _, ci := range tlCerts {
 		if len(ci.Raw) > 0 {
 			checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})

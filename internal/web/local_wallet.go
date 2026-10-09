@@ -15,6 +15,7 @@
 package web
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
@@ -59,4 +60,35 @@ func verifyWithLocalWalletIssuerKey(token *sdjwt.Token, store *wallet.WalletStor
 	}
 
 	return sdjwt.Verify(token, &w.IssuerKey.PublicKey), "local wallet issuer key"
+}
+
+// checkCatalogueTrust validates a credential with the trusted lists of its
+// entry in the wallet's attestation catalogue, as the wallet does with a
+// received credential.
+func checkCatalogueTrust(raw string, opts ValidateOpts) CheckResult {
+	result := CheckResult{Name: "trust", Status: "skipped"}
+	if opts.Offline {
+		result.Detail = "Needs the trusted lists of the attestation catalogue"
+		result.NeedsNetwork = true
+		return result
+	}
+	w, err := loadLocalWallet(opts.WalletStore)
+	if err != nil || w == nil {
+		result.Detail = "No wallet with an attestation catalogue"
+		return result
+	}
+	anchoring, found := w.CheckCatalogueAnchoring(raw)
+	switch {
+	case !found:
+		result.Detail = "The attestation catalogue has no entry for this credential type"
+	case anchoring.AnchoredBy != "":
+		result.Status = "pass"
+		result.Detail = fmt.Sprintf("Anchored by the trusted list %s of the catalogue entry %q", anchoring.AnchoredBy, anchoring.Entry)
+	case len(anchoring.Findings) > 0:
+		result.Status = "fail"
+		result.Detail = strings.Join(anchoring.Findings, " ")
+	default:
+		result.Detail = fmt.Sprintf("The catalogue entry %q links no readable trusted list. An EAA needs anchors only when the wallet has them (ARF ISSU_10)", anchoring.Entry)
+	}
+	return result
 }

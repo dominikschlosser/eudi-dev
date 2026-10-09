@@ -469,3 +469,41 @@ func TestACredentialWithAShortIDIsPresented(t *testing.T) {
 		t.Fatalf("verifier received %v, want a vp_token", form)
 	}
 }
+
+// Strict --arf answers a verifier that authenticated with a trusted access
+// certificate with access_denied inside the Digital Credentials API result,
+// like on /authorize (OpenID4VP 1.0 Appendix A).
+func TestStrictARFAnswersOverTheDCAPIWithAccessDenied(t *testing.T) {
+	srv := newTestServer(t, true)
+	srv.wallet.RequireARF = true
+	srv.wallet.ValidationMode = ValidationModeStrict
+	key, chain, verifierInfo := registeredVerifier(t, srv.wallet)
+	var info []any
+	if err := json.Unmarshal([]byte(verifierInfo), &info); err != nil {
+		t.Fatal(err)
+	}
+	requestObject, err := SignRequestObjectJWT(map[string]any{
+		"client_id": X509HashClientID(chain[0]), "response_type": "vp_token", "response_mode": "dc_api",
+		"nonce": "n", "expected_origins": []any{"https://rp.example"}, "verifier_info": info,
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"birthdate"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{"digital": map[string]any{"requests": []any{
+		map[string]any{"protocol": BrowserAPIProtocolOpenID4VPSigned, "data": map[string]any{"request": requestObject}},
+	}}})
+	req := httptest.NewRequest("POST", "/api/dc-api", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://rp.example")
+	rec := httptest.NewRecorder()
+	srv.mux.ServeHTTP(rec, req)
+	result := decodeJSON(t, rec)
+	data, _ := result["data"].(map[string]any)
+	if rec.Code != http.StatusOK || data["error"] != "access_denied" {
+		t.Errorf("%d %s, want access_denied in the API result", rec.Code, rec.Body)
+	}
+}

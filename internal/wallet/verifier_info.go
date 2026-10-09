@@ -114,7 +114,7 @@ func registrationStatusFindings(cert map[string]any, client *http.Client, status
 	for _, ca := range statusCAs {
 		anchors = append(anchors, statuslist.TrustCert{Raw: ca.Raw})
 	}
-	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client, TrustListCerts: anchors})
+	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: client, TrustListCerts: anchors, Prefer: statuslist.FormatJWT})
 	if err != nil {
 		return []string{fmt.Sprintf("%s: the status of the registration certificate of %s cannot be checked: %v", rule, name, err)}
 	}

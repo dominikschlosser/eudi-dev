@@ -102,6 +102,9 @@ type IssuanceResult struct {
 	Pending       bool   `json:"pending,omitempty"`
 	TransactionID string `json:"transaction_id,omitempty"`
 	RetryInterval string `json:"retry_interval,omitempty"`
+	// Findings are the checks that failed in debug mode, as for a
+	// presentation.
+	Findings []string `json:"findings,omitempty"`
 	// The server restores this credential if a concurrent reload drops it before
 	// the save. A browser sign-in is slow enough for UI polling to trigger such a
 	// reload.
@@ -124,6 +127,15 @@ type OfferOptions struct {
 	// URI, for example for a consent dialog. The flow uses it only when reading
 	// the URI again fails.
 	ResolvedOffer *oid4vc.CredentialOffer
+
+	// findings collects the debug findings of the flow for its result.
+	findings *[]string
+}
+
+func (o OfferOptions) addFindings(findings ...string) {
+	if o.findings != nil {
+		*o.findings = append(*o.findings, findings...)
+	}
 }
 
 // resolveOffer reads the credential offer at the URI. approved is the offer
@@ -209,7 +221,17 @@ func (w *Wallet) ProcessCredentialOffer(offerURI string) (*IssuanceResult, error
 	return w.ProcessCredentialOfferWithOptions(offerURI, OfferOptions{})
 }
 
-func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (_ *IssuanceResult, err error) {
+func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOptions) (*IssuanceResult, error) {
+	var findings []string
+	opts.findings = &findings
+	result, err := w.processCredentialOffer(offerURI, opts)
+	if result != nil && result.Findings == nil {
+		result.Findings = findings
+	}
+	return result, err
+}
+
+func (w *Wallet) processCredentialOffer(offerURI string, opts OfferOptions) (_ *IssuanceResult, err error) {
 	offer, err := w.resolveOffer(offerURI, opts.ResolvedOffer)
 	if err != nil {
 		return nil, err
@@ -243,7 +265,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		wellKnown:     "openid-credential-issuer",
 		issuer:        offer.CredentialIssuer,
 		fetch: func(client *http.Client, issuer string, payloads ...*LogPayload) (map[string]any, error) {
-			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, w.Mode() == ValidationModeStrict, payloads...)
+			metadata, chain, err := fetchIssuerMetadataDocument(client, issuer, preferSigned, w.metadataPolicy(w.Mode(), opts.addFindings), payloads...)
 			signerChain = chain
 			return metadata, err
 		},
@@ -287,6 +309,7 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 			if err := w.reportHAIPViolations("Credential offer", offer.CredentialIssuer, violations); err != nil {
 				return nil, err
 			}
+			opts.addFindings(violations...)
 		}
 	}
 	// The ARF has the wallet check the issuer before it requests a credential.
@@ -294,8 +317,11 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		if err := w.reportARFIssuanceFindings(offer.CredentialIssuer, findings); err != nil {
 			return nil, err
 		}
+		opts.addFindings(findings...)
 	}
-	w.reportCatalogueFindings(offer.CredentialIssuer, w.catalogueFindings(metadata, offer.CredentialConfigurationIDs))
+	catalogueFindings := w.catalogueFindings(metadata, offer.CredentialConfigurationIDs)
+	w.reportCatalogueFindings(offer.CredentialIssuer, catalogueFindings)
+	opts.addFindings(catalogueFindings...)
 
 	if offer.Grants.PreAuthorizedCode == "" {
 		if w.Mode() == ValidationModeStrict {
@@ -478,17 +504,11 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		return nil, err
 	}
 
-	if w.RequireHAIP {
-		if violations := w.haipCredentialViolations(credential); len(violations) > 0 {
-			if err := w.reportHAIPViolations("Credential", offer.CredentialIssuer, violations); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer); err != nil {
+	received, err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer)
+	if err != nil {
 		return nil, err
 	}
+	opts.addFindings(received...)
 	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
 		return nil, fmt.Errorf("importing received credential: %w", err)
@@ -583,16 +603,35 @@ func (w *Wallet) fetchLoggedMetadata(f metadataFetch) (map[string]any, error) {
 	return metadata, err
 }
 
-func fetchIssuerMetadata(client *http.Client, issuer string, strict bool, payloads ...*LogPayload) (map[string]any, error) {
-	metadata, _, err := fetchIssuerMetadataDocument(client, issuer, false, strict, payloads...)
+// metadataPolicy decides what happens to signed issuer metadata without iat
+// or past its exp. Strict mode refuses it. Debug mode logs a warning and
+// passes it to report.
+type metadataPolicy struct {
+	strict bool
+	warn   func(problem string)
+}
+
+func (w *Wallet) metadataPolicy(mode ValidationMode, report func(findings ...string)) metadataPolicy {
+	return metadataPolicy{
+		strict: mode == ValidationModeStrict,
+		warn: func(problem string) {
+			w.addProtocolWarning("issuance", "issuer_metadata_freshness", problem+". Debug mode continues", nil)
+			if report != nil {
+				report(problem)
+			}
+		},
+	}
+}
+
+func fetchIssuerMetadata(client *http.Client, issuer string, policy metadataPolicy, payloads ...*LogPayload) (map[string]any, error) {
+	metadata, _, err := fetchIssuerMetadataDocument(client, issuer, false, policy, payloads...)
 	return metadata, err
 }
 
 // fetchIssuerMetadataDocument also returns the certificate chain of signed
 // metadata. preferSigned asks for the signed form first. The ARF requires
-// issuers to provide it (ISSU_22, ISSU_32). strict refuses signed metadata
-// without iat or past its exp.
-func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigned, strict bool, payloads ...*LogPayload) (map[string]any, []*x509.Certificate, error) {
+// issuers to provide it (ISSU_22, ISSU_32).
+func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigned bool, policy metadataPolicy, payloads ...*LogPayload) (map[string]any, []*x509.Certificate, error) {
 	metadataURL, err := wellKnownURL(issuer, "openid-credential-issuer")
 	if err != nil {
 		return nil, nil, fmt.Errorf("building issuer metadata URL: %w", err)
@@ -635,7 +674,7 @@ func fetchIssuerMetadataDocument(client *http.Client, issuer string, preferSigne
 	if payload := firstLogPayload(payloads); payload != nil {
 		payload.Body = string(body)
 	}
-	return parseIssuerMetadataDocument(body, resp.Header.Get("Content-Type"), issuer, strict)
+	return parseIssuerMetadataDocument(body, resp.Header.Get("Content-Type"), issuer, policy)
 }
 
 func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
@@ -659,9 +698,9 @@ func wellKnownURL(issuerOrServer, wellKnownType string) (string, error) {
 
 // parseIssuerMetadataDocument also returns the certificate chain that signed
 // the metadata, or nil for unsigned metadata. OpenID4VCI 1.0 §12.2.3 requires
-// iat in signed metadata, and exp limits its use. Strict mode refuses metadata
-// that breaks this. Debug mode logs a warning and continues.
-func parseIssuerMetadataDocument(body []byte, contentType, issuer string, strict bool) (map[string]any, []*x509.Certificate, error) {
+// iat in signed metadata, and exp limits its use. The policy decides what
+// happens to metadata that breaks this.
+func parseIssuerMetadataDocument(body []byte, contentType, issuer string, policy metadataPolicy) (map[string]any, []*x509.Certificate, error) {
 	raw := strings.TrimSpace(string(body))
 	if raw == "" {
 		return nil, nil, fmt.Errorf("issuer metadata response was empty")
@@ -679,10 +718,14 @@ func parseIssuerMetadataDocument(body []byte, contentType, issuer string, strict
 			return nil, nil, err
 		}
 		if problem := signedIssuerMetadataFreshness(token); problem != "" {
-			if strict {
-				return nil, nil, fmt.Errorf("OpenID4VCI 1.0 §12.2.3: %s", problem)
+			problem = "OpenID4VCI 1.0 §12.2.3: " + problem
+			if policy.strict {
+				return nil, nil, errors.New(problem)
 			}
-			log.Printf("[VCI] Warning: OpenID4VCI 1.0 §12.2.3: %s (debug mode continues)", problem)
+			log.Printf("[VCI] Warning: %s (debug mode continues)", problem)
+			if policy.warn != nil {
+				policy.warn(problem)
+			}
 		}
 		metadata = token.Payload
 		chain, _ = signedIssuerMetadataChain(token)

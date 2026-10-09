@@ -81,7 +81,7 @@ func (s *Server) handleGetCredentialStatus(w http.ResponseWriter, r *http.Reques
 
 	// For externally issued credentials, report whether the status issuer's key is
 	// trusted. A valid signature alone does not establish trust.
-	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: s.wallet.HTTPClient()})
+	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{HTTPClient: s.wallet.HTTPClient(), Prefer: statuslist.FormatForCredential(cred.Format)})
 	if err != nil {
 		// The UI badge is temporary. Keep the failure reason in the activity log.
 		s.wallet.addProtocolWarning("wallet", "status_list_check_failed",

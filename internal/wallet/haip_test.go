@@ -28,6 +28,7 @@ import (
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/format"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/jws"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 
 	"github.com/dominikschlosser/eudi-dev/v3/internal/oid4vc"
 )
@@ -690,4 +691,22 @@ func TestHAIPChecksRunInBothModesAndTheModeDecidesSeverity(t *testing.T) {
 			t.Errorf("findings = %v, want no profile checks without --haip", findings)
 		}
 	})
+}
+
+// With --haip every credential of a response follows HAIP 1.0 §6.1.1, also
+// the second copy of a batch. Strict mode refuses the response.
+func TestStrictHAIPChecksEveryCopyOfABatch(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	good := w.GetCredentials()[0].Raw
+	key, _ := mock.GenerateKey()
+	bare, err := mock.GenerateSDJWT(mock.SDJWTConfig{Issuer: "https://issuer.example", VCT: "urn:eudi:pid:1", ExpiresIn: time.Hour, Claims: map[string]any{"given_name": "Erika"}, Key: key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.RequireHAIP = true
+	w.ValidationMode = ValidationModeStrict
+	resp := map[string]any{"credentials": []any{map[string]any{"credential": good}, map[string]any{"credential": bare}}}
+	if _, err := w.checkReceivedCredentials(resp, "https://issuer.example"); err == nil || !strings.Contains(err.Error(), "§6.1.1") {
+		t.Errorf("err %v, want the §6.1.1 finding for the second copy", err)
+	}
 }

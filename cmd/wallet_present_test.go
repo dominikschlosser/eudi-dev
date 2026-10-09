@@ -15,7 +15,12 @@
 package cmd
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -24,6 +29,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/keys"
+	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/wallet"
 )
 
@@ -229,5 +236,95 @@ func TestOneShotPresentationPrintsOnlyTheResultAsJSON(t *testing.T) {
 	}
 	if doc.Status != "submitted" || doc.Response.StatusCode != http.StatusOK || len(doc.VPTokenKeys) != 1 {
 		t.Errorf("document %+v, want the running server's submitted document", doc)
+	}
+}
+
+// Strict --arf answers a verifier that authenticated with a trusted access
+// certificate with access_denied, as the wallet's /authorize endpoint does.
+func TestOneShotPresentationSendsTheARFRefusalToTheVerifier(t *testing.T) {
+	resetRemoteTestState(t)
+	useStrictValidation(t)
+	w, store, err := loadWallet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp, err := w.Registrar().RegisterRelyingParty(registrar.WalletRelyingParty{
+		TradeName:  "Example Shop",
+		Identifier: []registrar.Identifier{{Type: "http://data.europa.eu/eudi/id/LEI", Identifier: "LEIXG-5299000J2N45DDNE4Y28"}},
+		Services: []registrar.WalletRelyingPartyService{{IntendedUses: []registrar.IntendedUse{{
+			Purpose:     []registrar.MultiLangString{{Lang: "en", Content: "Age check"}},
+			Credentials: []registrar.RegisteredCredential{{Format: "dc+sd-jwt", Meta: map[string]any{"vct_values": []string{"urn:eudi:pid:1"}}, Claims: []registrar.RegisteredClaim{{Path: []any{"age_over_18"}}}}},
+		}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, err := w.Registrar().IssueAccessCertificate(registrar.AccessCertificateRequest{Identifier: rp.Identifier[0].Identifier, CSR: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr}))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registration, err := w.Registrar().IssueRegistrationCertificate(registrar.RegistrationCertificateRequest{Identifier: rp.Identifier[0].Identifier, IntendedUseIdentifier: rp.Services[0].IntendedUses[0].IntendedUseIdentifier})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(w); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := keys.ParseCertificatesPEM([]byte(access.Chain))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	received := make(chan url.Values, 1)
+	verifier := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		received <- r.PostForm
+		rw.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(verifier.Close)
+	var info []any
+	if err := json.Unmarshal([]byte(registration.VerifierInfo), &info); err != nil {
+		t.Fatal(err)
+	}
+	clientID := wallet.X509HashClientID(chain[0])
+	request, err := wallet.SignRequestObjectJWT(map[string]any{
+		"client_id": clientID, "response_type": "vp_token", "response_mode": "direct_post",
+		"response_uri": verifier.URL, "nonce": "n", "state": "s", "verifier_info": info,
+		"dcql_query": map[string]any{"credentials": []any{map[string]any{
+			"id": "pid", "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []any{"urn:eudi:pid:1"}},
+			"claims": []any{map[string]any{"path": []any{"birthdate"}}},
+		}}},
+	}, key, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	_ = listener.Close()
+
+	err = acceptOID4URI("openid4vp://authorize?"+url.Values{"client_id": {clientID}, "request": {request}}.Encode(), dispatchOID4Opts{
+		port: port, portExplicit: true, autoAccept: true, arf: true, mode: walletValidationMode,
+	})
+	if err == nil || !strings.Contains(err.Error(), "RPRC_21") {
+		t.Fatalf("err = %v, want the RPRC_21 refusal", err)
+	}
+	select {
+	case form := <-received:
+		if form.Get("error") != "access_denied" || form.Get("state") != "s" {
+			t.Errorf("the verifier received %v, want access_denied", form)
+		}
+	default:
+		t.Error("the verifier received no response")
 	}
 }

@@ -14,7 +14,7 @@ eudi issue sdjwt --claims '{"name":"Test","age":30}'
 eudi issue sdjwt --iss https://my-issuer.example --vct my-type --exp 48h --nbf 2025-06-01T00:00:00Z
 eudi issue sdjwt --key signing-key.pem
 eudi issue sdjwt --wallet                # Issue and import into wallet
-eudi issue sdjwt --wallet --vct urn:example:badge:1 --trust-profile eaa
+eudi issue sdjwt --wallet --vct urn:example:badge:1 --category eaa
 eudi issue sdjwt --wallet --entitlement https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider --trust-list-type http://example.com/LoTEType/Custom --issuance-service-type http://example.com/SvcType/Custom/Issuance --revocation-service-type http://example.com/SvcType/Custom/Revocation
 eudi issue jwt                           # Plain JWT VC (no selective disclosure)
 eudi issue jwt --pid
@@ -121,11 +121,11 @@ Every SD-JWT claim is selectively disclosable by default. `--always-disclosed` (
 
 With `--wallet`, the issuer key and certificate depend on the supplied flags:
 
-- By default, the wallet uses its issuer key and a certificate for the selected trust profile. A provider intermediate CA signs this certificate. If the configured root has a path length of zero, the root signs it directly.
+- By default, the wallet uses the key and the certificate of the credential's category. A provider intermediate CA signs this certificate. If the configured root has a path length of zero, the root signs it directly.
 - `--key` supplies another issuer key. The wallet creates a certificate for it under the shared CA.
-- `--key` with `--cert` uses the supplied key and chain. Trust profile and registration metadata flags are ignored, and the credential type is registered as an import.
+- `--key` with `--cert` uses the supplied key and chain. The category and the registration metadata flags are ignored. The wallet didn't sign the credential, so its type is on none of the wallet's lists.
 
-A supplied chain that includes its self-signed root produces a warning in debug mode and is rejected in strict mode. The wallet stores the credential and registers its type. That registration supplies metadata for:
+A supplied chain that includes its self-signed root produces a warning in debug mode and is rejected in strict mode. Otherwise the wallet stores the credential and registers its type. That registration supplies metadata for:
 
 - `/.well-known/openid-credential-issuer`
 - `/api/trustlist`
@@ -139,7 +139,7 @@ Without explicit status list flags, `--wallet` registers the credential in the w
 
 If a wallet server is running for the same wallet directory, `--wallet` issues through its REST API (see [remote control](wallet/http-api.md#automatic-routing-single-writer)). Otherwise the command writes directly into the store. The embedded URLs resolve once `wallet serve` is running.
 
-The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides its signer, so its certificate is on that list. The category comes from `--trust-profile`, else from the template, else from the type's entry in the attestation catalogue. A credential without any of them is on no list.
+The wallet publishes one trusted list per credential category: `pid`, `qeaa`, `pub-eaa` and `eaa` (see [trusted lists](wallet/serve.md#trusted-lists)). The category of a credential decides its signer, so its certificate is on that list. The category comes from `--category`, else from the template, else from the type's entry in the attestation catalogue. A credential without any of them is an EAA. `--category unlisted` keeps it off every list, to test how a verifier handles an issuer without a trust anchor.
 
 The category also sets the stored entitlement. PID gets `PID_Provider`, QEAA `QEAA_Provider`, PuB-EAA `PUB_EAA_Provider` and EAA `Non_Q_EAA_Provider`.
 
@@ -147,7 +147,7 @@ These flags set the stored trust and issuer metadata for the credential type:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--trust-profile` | `auto` | Credential category: `pid`, `qeaa`, `pub-eaa` or `eaa`. `auto` takes the category of the template or the catalogue entry |
+| `--category` | The template's or the catalogue entry's category, else `eaa` | Credential category: `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted` |
 | `--entitlement` | None | Registrar entitlement URI to store for the credential type. Repeatable |
 | `--trust-list-type` | None | LoTE type URI to store for the credential type |
 | `--status-determination-approach` | None | Trusted list status determination approach URI to store |

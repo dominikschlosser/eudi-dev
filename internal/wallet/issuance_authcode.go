@@ -149,6 +149,7 @@ func (w *Wallet) processAuthorizationCodeOffer(
 		dpopKey:            dpopKey,
 		nonces:             nonces,
 		configID:           configID,
+		findings:           opts.findings,
 	}
 
 	// Without PAR, requestURI stays empty and the parameters go in the query
@@ -272,6 +273,8 @@ type authorizationCodeIssuance struct {
 	dpopKey      *ecdsa.PrivateKey
 	nonces       *dpopNonceState
 	configID     string
+	// findings collects the debug findings of the flow for its result.
+	findings *[]string
 }
 
 func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance, code string) (*IssuanceResult, error) {
@@ -398,8 +401,12 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		return nil, err
 	}
 
-	if err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer); err != nil {
+	received, err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer)
+	if err != nil {
 		return nil, err
+	}
+	if ctx.findings != nil {
+		*ctx.findings = append(*ctx.findings, received...)
 	}
 	imported, err := w.importPrimaryCredential(credential, proofKeys)
 	if err != nil {
@@ -426,14 +433,18 @@ func (w *Wallet) completeAuthorizationCodeIssuance(ctx authorizationCodeIssuance
 		credFormat = imported.Format
 	}
 	verificationStatus, verificationDetail := verifyImportedJWTMetadataSignature(credential, w.HTTPClient())
-	return &IssuanceResult{
+	result := &IssuanceResult{
 		CredentialID:       imported.ID,
 		Format:             credFormat,
 		Issuer:             offer.CredentialIssuer,
 		VerificationStatus: verificationStatus,
 		VerificationDetail: verificationDetail,
 		Imported:           imported,
-	}, nil
+	}
+	if ctx.findings != nil {
+		result.Findings = *ctx.findings
+	}
+	return result, nil
 }
 
 // unauthenticatedClientMethod is the IANA registered token endpoint auth method

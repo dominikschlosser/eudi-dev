@@ -77,22 +77,47 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trusted lists of its catalogue entry. The entry's category decides which
-// rule applies. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a
-// PID, QEAA or PuB-EAA with the list of its providers, so an entry without a
-// readable list is a finding. ISSU_10 asks for the check of an EAA only when
-// the wallet has the anchors. PID and PuB-EAA lists on the list of trusted
-// lists count too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D
-// and H).
+// the trusted lists of its catalogue entry when --arf is on.
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
 	}
+	anchoring, _ := w.catalogueAnchoring(cred)
+	return anchoring.Findings
+}
+
+// CatalogueAnchoring is the result of validating a credential with the
+// trusted lists of its catalogue entry.
+type CatalogueAnchoring struct {
+	Entry    string `json:"entry"`
+	Category string `json:"category"`
+	// AnchoredBy is the list whose issuance service anchors the credential.
+	AnchoredBy string   `json:"anchored_by,omitempty"`
+	Findings   []string `json:"findings,omitempty"`
+}
+
+// CheckCatalogueAnchoring validates a raw SD-JWT VC or mdoc with the trusted
+// lists of its catalogue entry. found is false when the catalogue has no entry
+// for its type.
+func (w *Wallet) CheckCatalogueAnchoring(raw string) (anchoring CatalogueAnchoring, found bool) {
+	return w.catalogueAnchoring(receivedCredential(raw))
+}
+
+// catalogueAnchoring validates the signature of a credential with the trusted
+// lists of its catalogue entry. The entry's category decides which rule
+// applies. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a PID,
+// QEAA or PuB-EAA with the list of its providers, so an entry without a
+// readable list is a finding. ISSU_10 asks for the check of an EAA only when
+// the wallet has the anchors. PID and PuB-EAA lists on the list of trusted
+// lists count too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D
+// and H).
+func (w *Wallet) catalogueAnchoring(cred StoredCredential) (CatalogueAnchoring, bool) {
 	types := []string{cred.VCT, cred.DocType}
 	entry, ok := w.catalogueEntryFor(cred.Format, types)
 	if !ok {
-		return nil
+		return CatalogueAnchoring{}, false
 	}
+	result := CatalogueAnchoring{Entry: entry.Name, Category: registrar.CategoryOf(entry.Category).ID}
 	rule := registrar.CategoryOf(entry.Category).TrustRule
 	eaa := rule == registrar.CategoryOf(credtemplate.CategoryEAA).TrustRule
 	var candidates []trustedList
@@ -126,17 +151,19 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 		read = true
 		err := validateWithAnchors(cred, serviceAnchors(c.List, issuanceServices))
 		if err == nil {
-			return nil
+			result.AnchoredBy = c.URL
+			return result, true
 		}
 		problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, err))
 	}
 	switch {
 	case !read && eaa:
-		return nil
 	case !read && len(problems) == 0:
-		return []string{fmt.Sprintf("%s: the catalogue entry %q links no readable trusted list, so the wallet cannot validate the received %s", rule, entry.Name, credentialLabel(cred))}
+		result.Findings = []string{fmt.Sprintf("%s: the catalogue entry %q links no readable trusted list, so the wallet cannot validate the received %s", rule, entry.Name, credentialLabel(cred))}
+	default:
+		result.Findings = []string{fmt.Sprintf("%s: the signature of the received %s does not validate with the trusted lists of its catalogue entry %q: %s", rule, credentialLabel(cred), entry.Name, strings.Join(problems, ", "))}
 	}
-	return []string{fmt.Sprintf("%s: the signature of the received %s does not validate with the trusted lists of its catalogue entry %q: %s", rule, credentialLabel(cred), entry.Name, strings.Join(problems, ", "))}
+	return result, true
 }
 
 // categoryListType is the ETSI TS 119 602 list type of a category, if it has
@@ -203,19 +230,39 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 	return nil
 }
 
-// checkReceivedCredentials runs the trust anchor check on every credential of
-// a credential response before the wallet stores one. Each copy of a batch is
-// signed on its own. In strict mode a failed check refuses the response (ARF
-// ISSU_11b).
-func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) error {
+// checkReceivedCredentials checks every credential of a credential response
+// before the wallet stores one, on every issuance path. Each copy of a batch
+// is signed on its own. With --haip it applies HAIP 1.0 §6.1.1, and with
+// --arf the trust anchor check. In strict mode a failed check refuses the
+// response (ARF ISSU_11b). In debug mode it returns the findings.
+func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) ([]string, error) {
+	credentials := credentialStringsFromResponse(credResp)
+	var debugFindings []string
+	if _, haip, _ := w.ConformanceSettings(); haip {
+		var violations []string
+		for _, raw := range credentials {
+			violations = append(violations, w.haipCredentialViolations(raw)...)
+		}
+		if len(violations) > 0 {
+			violations = slices.Compact(violations)
+			if err := w.reportHAIPViolations("Credential", issuer, violations); err != nil {
+				return nil, err
+			}
+			debugFindings = append(debugFindings, violations...)
+		}
+	}
 	var findings []string
-	for _, raw := range credentialStringsFromResponse(credResp) {
+	for _, raw := range credentials {
 		findings = append(findings, w.trustAnchorFindings(receivedCredential(raw))...)
 	}
 	if len(findings) == 0 {
-		return nil
+		return debugFindings, nil
 	}
-	return w.reportARFFindings(issuer, slices.Compact(findings), "the received credential fails the ARF checks")
+	findings = slices.Compact(findings)
+	if err := w.reportARFFindings(issuer, findings, "the received credential fails the ARF checks"); err != nil {
+		return nil, err
+	}
+	return append(debugFindings, findings...), nil
 }
 
 // receivedCredential reads the format and type of a raw SD-JWT VC or mdoc.

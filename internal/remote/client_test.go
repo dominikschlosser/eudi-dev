@@ -195,7 +195,7 @@ func TestClientEndpoints(t *testing.T) {
 		},
 		{
 			name:       "Present",
-			call:       func(c *Client) error { _, err := c.Present("openid4vp://request", false); return err },
+			call:       func(c *Client) error { _, err := c.Present("openid4vp://request", false, ""); return err },
 			wantMethod: http.MethodPost, wantPath: "/api/presentations",
 			wantBody: `{"uri":"openid4vp://request"}`,
 		},
@@ -451,7 +451,7 @@ func TestPresentAndAcceptOfferSendInteractive(t *testing.T) {
 	c, closeFn := r.server(t)
 	defer closeFn()
 
-	if _, err := c.Present("openid4vp://x", true); err != nil {
+	if _, err := c.Present("openid4vp://x", true, ""); err != nil {
 		t.Fatalf("Present: %v", err)
 	}
 	if !strings.Contains(r.body, `"interactive":true`) {
@@ -463,5 +463,18 @@ func TestPresentAndAcceptOfferSendInteractive(t *testing.T) {
 	}
 	if !strings.Contains(r.body, `"interactive":true`) {
 		t.Errorf("interactive AcceptOffer body = %q, want interactive:true", r.body)
+	}
+}
+
+func TestPresentSendsTheSessionTranscript(t *testing.T) {
+	r := &recorder{reply: "{}"}
+	c, closeFn := r.server(t)
+	defer closeFn()
+
+	if _, err := c.Present("openid4vp://x", false, "iso"); err != nil {
+		t.Fatalf("Present: %v", err)
+	}
+	if !strings.Contains(r.body, `"session_transcript":"iso"`) {
+		t.Errorf("Present body = %q, want the session transcript", r.body)
 	}
 }

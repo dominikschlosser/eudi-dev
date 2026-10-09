@@ -558,6 +558,14 @@ Use --url to print only the list URL of a running wallet server.`,
 			if w.CAKey == nil || len(w.CertChain) < 2 {
 				return fmt.Errorf("wallet has no CA certificate chain")
 			}
+			if id == wallet.ListOfTrustedListsID {
+				jwt, err := wallet.GenerateListOfTrustedLists(w, w.IssuerURL)
+				if err != nil {
+					return fmt.Errorf("generating the list of trusted lists: %w", err)
+				}
+				printTrustList(jwt)
+				return nil
+			}
 			group, ok := wallet.FindTrustListGroupForWallet(w, id, vct, docType)
 			if !ok {
 				return fmt.Errorf("wallet has no matching trusted list")
@@ -576,7 +584,7 @@ Use --url to print only the list URL of a running wallet server.`,
 	cmd.Flags().BoolVar(&list, "list", false, "List all trusted lists of the wallet instead of printing one")
 	cmd.Flags().IntVar(&port, "port", config.DefaultWalletPort, "Wallet server port (used with --url)")
 	cmd.Flags().BoolVar(&docker, "docker", false, "Use host.docker.internal instead of localhost (used with --url)")
-	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa' or 'wallet-provider'")
+	cmd.Flags().StringVar(&id, "id", "", "ID of the list to print, for example 'pid', 'eaa', 'wallet-provider' or 'lists' for the list of trusted lists")
 	cmd.Flags().StringVar(&vct, "vct", "", "Select the trust list covering this SD-JWT VCT")
 	cmd.Flags().StringVar(&docType, "doctype", "", "Select the trust list covering this mdoc docType")
 	return cmd
@@ -947,7 +955,7 @@ func checkRemoteConformanceFlags(flags []string) error {
 	if len(flags) == 0 {
 		return nil
 	}
-	return fmt.Errorf("a running wallet uses its own conformance settings, so %s can't change them for this flow; set them on 'wallet serve' or through PUT /api/config/conformance", strings.Join(flags, ", "))
+	return fmt.Errorf("a running wallet keeps its own settings, so %s can't change them. Set --mode, --haip, --arf and --key-attestation-level on 'wallet serve' or through PUT /api/config/conformance. Put CAs and lists on its trusted lists with 'eudi wallet trust'. --trust-list-ca can only be set on 'wallet serve'", strings.Join(flags, ", "))
 }
 
 func checkRemoteOutboundFlags() error {

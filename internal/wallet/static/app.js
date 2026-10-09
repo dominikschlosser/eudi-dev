@@ -4496,7 +4496,31 @@
     document.querySelectorAll('.howto-origin').forEach((el) => {
       el.textContent = appBase.href.replace(/\/$/, '');
     });
+    // A release links the docs of its own tag. A beta's docs aren't on main yet.
+    const ref = /^v\d/.test(window.EUDI_VERSION || '') ? window.EUDI_VERSION : 'main';
+    howtoOverlay.querySelectorAll('a[data-doc]').forEach((a) => {
+      a.href = 'https://github.com/dominikschlosser/eudi-dev/blob/' + encodeURIComponent(ref) + '/' + a.dataset.doc;
+    });
     howtoOverlay.classList.add('active');
+  });
+  const howtoTabs = Array.from(howtoOverlay.querySelectorAll('.howto-tab'));
+  function selectHowtoTab(tab) {
+    howtoTabs.forEach((t) => {
+      const selected = t === tab;
+      t.classList.toggle('active', selected);
+      t.setAttribute('aria-selected', String(selected));
+      t.tabIndex = selected ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !selected;
+    });
+  }
+  howtoTabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => selectHowtoTab(tab));
+    tab.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      const next = howtoTabs[(i + (event.key === 'ArrowRight' ? 1 : howtoTabs.length - 1)) % howtoTabs.length];
+      selectHowtoTab(next);
+      next.focus();
+    });
   });
   document.getElementById('howto-close').addEventListener('click', () => {
     howtoOverlay.classList.remove('active');

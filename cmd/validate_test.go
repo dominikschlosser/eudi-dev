@@ -420,7 +420,7 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 				"idx": 0,
 			},
 		},
-	}, nil, nil)
+	}, statuslist.FormatJWT, nil, nil)
 	if err == nil {
 		t.Fatal("expected revoked status list to fail validation")
 	}

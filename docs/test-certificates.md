@@ -36,14 +36,21 @@ OpenID4VCI 1.0 is the baseline, with 1.1 available as an optional draft feature 
 | PID issuance | Wallet issuer key, PID provider leaf with QcType `0.4.0.194126.1.1` |
 | Other credential issuance | One key per provider role and a provider leaf |
 | Wallet and key attestations | Separate wallet provider key and leaf with QcType `0.4.0.194126.1.2` |
-| Signed issuer metadata and demo issuer requests | Access key and certificate of the demo issuer, with policy `0.4.0.194118.1.2` |
-| Demo verifier requests | Access key and certificate of the demo verifier, with policy `0.4.0.194118.1.2` |
-| Registered relying parties | Access certificates issued for a CSR, with policy `0.4.0.194118.1.2`, signed by a separate relying party access CA (see [registrar](wallet/registrar.md)) |
-| Registrar responses and registration certificates | Separate registrar key and signing certificate |
+| Signed issuer metadata and demo issuer requests | Access key and certificate of the demo issuer, from the registrar like any access certificate |
+| Demo verifier requests | Access key and certificate of the demo verifier, from the registrar like any access certificate |
+| Registered relying parties | Access certificates issued for a CSR, with policy `0.4.0.194118.1.2`, signed by the relying party access CA (see [registrar](wallet/registrar.md)) |
+| Registrar responses and registration certificates | Separate registrar key and signing certificate under the registrar CA |
 | Credential status | Separate status key and signing certificate |
 | Trusted lists | Separate list operator key and signing certificate |
 
-The generated root CA permits one intermediate CA. Credential and wallet provider signing certificates use a provider intermediate for their role and country. Each provider role has its own signing key and provider intermediate. The roles are the categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for credentials without a category. So a trusted list anchors only the credentials signed for it. No list names the `unlisted` intermediate. Access, registrar, status and trusted list signing certificates are signed directly by the root. Credential signer leaves carry the ISO/IEC 18013-5 document signing purpose. The credential signer's subject country matches the credential's `issuing_country`, with `NL` as the default. Its AIA and CRL URLs identify the provider intermediate and its revocation list.
+The generated root CA permits one intermediate CA. Credential and wallet provider signing certificates use a provider intermediate for their role and country. Each provider role has its own signing key and provider intermediate. The roles are the categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for unlisted credentials. So a trusted list anchors only the credentials signed for it. No list names the `unlisted` intermediate. Status and trusted list signing certificates are signed directly by the root.
+
+Two more self-signed CAs sit beside the root. They have the subject organization `EUDI Dev Test CA`, the same key usage as the root and basic constraints `CA:TRUE, pathlen:0`:
+
+- The **relying party access CA** (`CN=EUDI Dev Test Relying Party Access CA`) signs every access certificate of the registrar, including those of the demo issuer and the demo verifier. The wallet's `access-ca` list names it.
+- The **registrar CA** (`CN=EUDI Dev Test Registrar CA`) signs the registrar's signing certificate. The wallet's `registrar` list names it.
+
+Neither chains to the root. The root anchors credential issuers, and a visitor's CSR must never produce a certificate under it. Credential signer leaves carry the ISO/IEC 18013-5 document signing purpose. The credential signer's subject country matches the credential's `issuing_country`, with `NL` as the default. Its AIA and CRL URLs identify the provider intermediate and its revocation list.
 
 The provider intermediate provides the certificate retrieval path that TS 119 412-6 V1.1.1 clause 4.4.3 requires. In the PID Rulebook, the trust anchors are notified provider keys. ISO/IEC 18013-5:2021 Annex B uses a direct IACA hierarchy whose root has a path length of zero. The generated root has a path length of one, and the OpenID suite reports this as an ISO profile warning. Certificate signatures and trust paths are checked separately.
 
@@ -83,15 +90,15 @@ The provider intermediates and signing leaves have `C=NL` and organization ident
 | Wallet provider CA | `EUDI Dev Test wallet CA NL` | Root CA |
 | QEAA, PuB-EAA and EAA provider CAs | `EUDI Dev Test qeaa CA NL`, `EUDI Dev Test pub-eaa CA NL`, `EUDI Dev Test eaa CA NL` | Root CA |
 | Provider CA of a credential type with its own trusted list | `EUDI Dev Test tl-<8 hex digits> CA NL` | Root CA |
-| Provider CA of credentials without a category | `EUDI Dev Test unlisted CA NL` | Root CA |
+| Provider CA of unlisted credentials | `EUDI Dev Test unlisted CA NL` | Root CA |
 | PID signer | `EUDI Dev Wallet PID Provider (pid)` | PID provider CA |
 | Wallet provider signer | `EUDI Dev Wallet Provider (wallet-provider)` | Wallet provider CA |
 | QEAA, PuB-EAA and EAA signers | `EUDI Dev Wallet QEAA Provider (qeaa)`, `EUDI Dev Wallet PuB-EAA Provider (pub-eaa)`, `EUDI Dev Wallet EAA Provider (eaa)` | Provider CA of the category |
 | Signer of a credential type with its own trusted list | `<entity name> (tl-<8 hex digits>)` | Provider CA of that list |
-| Signer of credentials without a category | `EUDI Dev Wallet Issuer` | Provider CA of credentials without a category |
-| Access signer of the demo issuer | `EUDI Dev Demo Issuer` | Root CA |
-| Access signer of the demo verifier | `EUDI Dev Demo Verifier` | Root CA |
-| Registrar signer | `EUDI Dev Test Registrar` | Root CA |
+| Signer of unlisted credentials | `EUDI Dev Wallet Issuer` | Provider CA of unlisted credentials |
+| Access signer of the demo issuer | `EUDI Dev Demo Issuer`, organizational unit `issuance` | Relying party access CA |
+| Access signer of the demo verifier | `EUDI Dev Demo Verifier`, organizational unit `verification` | Relying party access CA |
+| Registrar signer | `EUDI Dev Test Registrar` | Registrar CA |
 | Status signer | `EUDI Dev Status List Signer` | Root CA |
 | Trusted list signer | `EUDI Dev Test List Operator` | Root CA |
 
@@ -106,7 +113,7 @@ The PID and wallet provider signers have a non-critical QCStatements extension (
 | PID | `0.4.0.194126.1.1` | `30153013060604008e4601063009060704008bec4e0101` |
 | Wallet provider | `0.4.0.194126.1.2` | `30153013060604008e4601063009060704008bec4e0102` |
 
-Both access signers have a non-critical certificate policies extension (`2.5.29.32`) with policy `0.4.0.194118.1.2`, the legal person access policy identifier from TS 119 411-8 V1.1.1 clause 5.3. Its CPS qualifier (`1.3.6.1.5.5.7.2.1`) is `https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md`.
+Every access certificate has a non-critical certificate policies extension (`2.5.29.32`) with policy `0.4.0.194118.1.2`, the legal person access policy identifier from TS 119 411-8 V1.1.1 clause 5.3. Its CPS qualifier (`1.3.6.1.5.5.7.2.1`) is `https://github.com/dominikschlosser/eudi-dev/blob/main/docs/test-certificates.md`. Access certificates have critical basic constraints `CA:FALSE` and last one year.
 
 ### Retrieval, revocation and alternative names
 
@@ -118,9 +125,11 @@ The examples use the public demo origin `https://eudi-test.dev`. A configured HT
 | Wallet provider signer | `https://eudi-test.dev/api/certificates/providers/wallet/NL.der` | `https://eudi-test.dev/api/crl/providers/wallet/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
 | EAA signer | `https://eudi-test.dev/api/certificates/providers/eaa/NL.der` | `https://eudi-test.dev/api/crl/providers/eaa/NL` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
 | Provider intermediates | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | None |
-| Access, registrar and trusted list signers | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
+| Trusted list signer | `https://eudi-test.dev/api/certificates/ca.der` | `https://eudi-test.dev/api/crl` | DNS `eudi-test.dev`, URI `https://eudi-test.dev` |
+| Access signers of the demo issuer and the demo verifier | None | None | DNS `eudi-test.dev`, URI `https://eudi-test.dev/support` |
+| Registrar signer | None | None | None |
 | Status signer | None | `https://eudi-test.dev/api/crl` | None |
-| Root CA | None | None | None |
+| Root CA, relying party access CA and registrar CA | None | None | None |
 
 ### Localhost special case
 
@@ -138,11 +147,11 @@ An IP-based issuer URL produces an IP subject alternative name instead of a DNS 
 
 ## Discovery and trusted lists
 
-Both issuer discovery endpoints serve JSON by default and signed metadata when the `Accept` header prefers `application/jwt`. The signed form includes the access certificate in protected `x5c`. The `issuer_info` array contains the registrar dataset and the registration certificate of the demo issuer, signed by the wallet's registrar. The demo issuer's registration takes the identifier, legal name and country from its access certificate. Every registration certificate has the policy `0.4.0.19475.3.1` in `policy_id` (ETSI TS 119 475 V1.2.1 OVR-6.1.3-01) and links this page as `certificate_policy`.
+Both issuer discovery endpoints serve JSON by default and signed metadata when the `Accept` header prefers `application/jwt`. The signed form includes the access certificate in protected `x5c`, without the relying party access CA. The `issuer_info` array contains the registrar dataset and the registration certificate of the demo issuer, signed by the wallet's registrar. The demo issuer's registration takes the identifier, legal name and country from its access certificate. Every registration certificate has the policy `0.4.0.19475.3.1` in `policy_id` (ETSI TS 119 475 V1.2.1 OVR-6.1.3-01) and links this page as `certificate_policy`.
 
 Trusted lists publish issuance certificates, their provider CAs and status signing certificates. This keeps credentials verifiable across country overrides and certificate renewal. Protected `iat` and `x5t#S256` headers carry the signing time and the certificate reference, as JAdES requires. Trusted lists use English language code `en`, whole second UTC timestamps, postal addresses and a self pointer. An unchanged list keeps its signed instance until it expires. Changed content or expiry advances the sequence number. Append `/history` to a trusted list URL to list its retained instances, then `/history/<sequence>` to retrieve one.
 
-The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID, wallet provider and PuB-EAA lists follow Annexes D, E and H. TS 119 602 defines no list type for QEAA and EAA providers, so their lists use the wallet's own type `http://uri.etsi.org/19602/LoTEType/local`. The fictional provider entries are for local interoperability tests.
+The schema is ETSI's [published JSON binding](https://forge.etsi.org/rep/esi/x19_60201_lists_of_trusted_entities), revision `e84f427f0cde99513b574ef4b5a155ac4a38eab6` from 13 November 2025. The PID, wallet provider, access certificate provider, registration certificate provider and PuB-EAA lists follow Annexes D to H. TS 119 602 defines no list type for QEAA and EAA providers. Their lists use types of this project: `https://eudi-test.dev/LoTEType/QEAAProvidersList` and `https://eudi-test.dev/LoTEType/EAAProvidersList`. The list of trusted lists has the type `https://eudi-test.dev/LoTEType/ListOfTrustedLists`. The fictional provider entries are for local interoperability tests.
 
 ## Public PID provider comparison
 

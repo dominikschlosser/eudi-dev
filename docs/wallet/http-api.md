@@ -73,7 +73,7 @@ curl -X DELETE http://localhost:8085/api/credentials
 | `nbf`             | string  | Not-before as RFC3339 (`2025-01-15T00:00:00Z`) or relative duration (`-1h`)                  |
 | `status_list_uri` | string  | Status list URI to embed. Default is the wallet's own status list when configured. `""` disables it |
 | `status_list_idx` | int     | Status list index (default is the next free index on the wallet's status list)               |
-| `trust_profile`   | string  | Credential category: `pid`, `qeaa`, `pub-eaa` or `eaa`. `auto` (default) takes the category of the template or the catalogue entry |
+| `category`        | string  | Credential category: `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted`. Empty (default) takes the category of the template or the catalogue entry, else `eaa` |
 | `trust`           | object  | Trust/registration metadata to persist with the credential type (same fields as the `issue` trust flags, e.g. `entitlements`, `trust_list_type`, `entity_name`) |
 | `display`         | object  | Card appearance: `name`, `description`, `background_color`, `text_color`, `logo`, `logo_alt_text`, `background_image` (the `--display-*` flags). A public demo drops operator-supplied images |
 | `display_template`| string  | Template whose logo and background image the credential uses (for a form that flattened the template's claims into `claims`) |
@@ -144,6 +144,7 @@ The CA and TLS endpoints mirror `wallet ca-cert` and `wallet tls-cert`. Both ret
 | `GET`  | `/api/certificates/tls?format=jwks` | HTTPS leaf certificate as JWKS                       | `wallet tls-cert --jwks` |
 | `GET` | `/api/certificates/registrar` | Registrar signing certificate (PEM, `?format=jwks` for JWKS) | |
 | `GET` | `/api/certificates/relying-party-access-ca` | Relying party access CA. It signs the access certificates of registered relying parties (PEM, `?format=jwks` for JWKS) | |
+| `GET` | `/api/certificates/registrar-ca` | Registrar CA. It signs the registrar signing certificate (PEM) | |
 | `GET` | `/api/certificates/ca.der` | Root CA certificate as DER | |
 | `GET` | `/api/certificates/providers/{role}/{country}.der` | Provider CA certificate as DER | |
 | `GET` | `/api/certificates/signers/{sha256}.pem` | Archived signing certificate as PEM | |
@@ -156,7 +157,7 @@ curl 'http://localhost:8085/api/certificates/tls?format=jwks'
 
 The TLS certificate matches the HTTPS wallet host of the running server (its effective issuer URL).
 
-Provider roles are the credential categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for credentials without a category. Each role has its own provider CA. The country is two uppercase letters such as `NL`. Only existing providers can be retrieved. Signing certificate URLs use the SHA-256 fingerprint of the DER certificate and remain available after renewal. JOSE `x5u` uses PEM and COSE `x5u` uses DER. See [test certificates](../test-certificates.md) for the certificate profiles.
+Provider roles are the credential categories `pid`, `qeaa`, `pub-eaa` and `eaa`, `wallet` for the wallet provider, `tl-<8 hex digits>` for a credential type with its own trusted list, and `unlisted` for unlisted credentials. Each role has its own provider CA. The country is two uppercase letters such as `NL`. Only existing providers can be retrieved. Signing certificate URLs use the SHA-256 fingerprint of the DER certificate and remain available after renewal. JOSE `x5u` uses PEM and COSE `x5u` uses DER. See [test certificates](../test-certificates.md) for the certificate profiles.
 
 ### Issuer metadata and trusted lists
 
@@ -164,7 +165,7 @@ These endpoints are available on both wallet ports.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/.well-known/jwt-vc-issuer` | Public credential signing keys, one for each trusted list and one for credentials without a category |
+| `GET` | `/.well-known/jwt-vc-issuer` | Public credential signing keys, one for each trusted list and one for unlisted credentials |
 | `GET` | `/.well-known/openid-credential-issuer` | Wallet issuer metadata |
 | `GET` | `/.well-known/openid-credential-issuer/issuer` | Demo issuer metadata, when the demo is enabled |
 | `GET` | `/api/trustlist` | Default signed trusted list |
@@ -174,14 +175,22 @@ These endpoints are available on both wallet ports.
 | `GET` | `/api/trustlist/history/{sequence}` | One saved default trusted list |
 | `GET` | `/api/trustlists/{id}/history` | Sequence numbers and URLs of the saved instances of the list `{id}` |
 | `GET` | `/api/trustlists/{id}/history/{sequence}` | One saved instance of the list `{id}` |
+| `GET` | `/api/trustlists/lists` | The [list of trusted lists](serve.md#list-of-trusted-lists) |
+| `GET` | `/api/trust` | The providers and external lists you added to the trusted lists |
+| `POST` | `/api/trust/entities` | Put a provider on one of the lists: `list`, `name` and `certificates` (PEM) |
+| `DELETE` | `/api/trust/entities/{id}` | Take a provider off its list |
+| `POST` | `/api/trust/lists` | Put an external list on the list of trusted lists: `url` |
+| `DELETE` | `/api/trust/lists?url=<url>` | Take an external list off |
 
 Issuer metadata is JSON by default. An `Accept` header that ranks `application/jwt` above `application/json` selects metadata signed with the access certificate key. Its `issuer_info` holds the registrar dataset and the registration certificate of the [demo issuer](registrar.md#the-demo-issuer-and-verifier). If you revoke that certificate in the registrar, the next metadata carries a new one.
 
-Trusted lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [wallet server](serve.md) for discovery and filtering.
+Trusted lists contain service certificates and provider CAs. A separate list operator key signs them. History preserves each published JWT. Changed content or an expired instance advances the sequence number. See [trusted lists](serve.md#trusted-lists) for the list IDs, the providers and lists you add, and discovery.
 
 ### Registrar
 
-These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api).
+These endpoints are available on both wallet ports. Anyone with access to the wallet can register, change and delete relying parties, as with credentials. All `GET` endpoints under `/api/registrar/wrp` and `PUT /api/registrar/wrp` answer with a JWT signed by the registrar (`application/jwt`). Its payload has `iss`, `iat` and `data`. Send `Accept: application/json` without `application/jwt` to get the payload unsigned. See [registrar](registrar.md#registrar-api). The [registrar API walkthrough](registrar-api.md) registers a verifier and an issuer with curl and uses their certificates.
+
+`PUT /api/registrar/wrp` and `PUT /api/catalog/schemas/{id}` have no CLI command. Use the API or the UI for them.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -353,7 +362,7 @@ curl -H 'Accept: application/statuslist+cwt' http://localhost:8085/api/statuslis
 
 The wallet and `eudi validate` read both forms. When they resolve a credential's status reference, they request both media types and parse the format the server returns.
 
-`GET /api/crl` serves the root CA's DER certificate revocation list (`application/pkix-crl`). `GET /api/crl/providers/{role}/{country}` serves a provider CA's CRL. Generated signing certificates point to their provider's CRL. Existing certificates signed directly by the root use `/api/crl`. These lists are empty and freshly signed with a week of validity. Credential revocation uses the status list.
+`GET /api/crl` serves the root CA's DER certificate revocation list (`application/pkix-crl`). `GET /api/crl/providers/{role}/{country}` serves a provider CA's CRL. Generated signing certificates point to their provider's CRL. Certificates signed directly by the root, such as the status and trusted list signers, use `/api/crl`. These lists are empty and freshly signed with a week of validity. Credential revocation uses the status list.
 
 ### Deferred issuance
 
@@ -493,6 +502,8 @@ The instance version is shown when a target is selected, in the `VERSION` column
 When a live instance serves the same wallet directory and no remote target is configured, the CLI routes commands through that instance's REST API. It prints `Routing through the running wallet instance <url>`, the release and the process ID to stderr. Version incompatibilities are reported there as well.
 
 Use `--remote local` or an explicit `--templates-dir` to bypass routing and access storage directly. While a server is running, prefer routing so the server sees each change immediately.
+
+A routed command uses the settings of the running wallet for every step of a flow, including a credential collected later. So it refuses `--mode`, `--haip`, `--arf`, `--key-attestation-level`, `--relying-party-ca`, `--trust-list-ca` and `--trusted-list`. Set the mode, HAIP, ARF and key attestation level on `wallet serve` or with `PUT /api/config/conformance`. Put CAs and lists on the wallet's trusted lists with `wallet trust`. `--trust-list-ca` can only be set on `wallet serve`.
 
 `wallet info` compares a running instance's configuration with the wallet file and warns when they differ (the file changed after the server started). Restarting `wallet serve` reloads the file.
 

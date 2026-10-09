@@ -477,3 +477,38 @@ func TestZlibDecompress_ReadsAnHonestList(t *testing.T) {
 		t.Errorf("out = %v, want the three bytes written", out)
 	}
 }
+
+// A Status Provider that serves both representations answers in the format
+// of the credential: JWT for an SD-JWT VC and CWT for an mdoc (Section 8.1).
+func TestCheckAsksForTheFormatOfTheCredential(t *testing.T) {
+	key, leaf, ca := testChain(t)
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := StatusListConfig{URI: srv.URL, CertChain: []*x509.Certificate{leaf, ca}}
+		if NegotiateMediaType(r.Header.Get("Accept")) == MediaTypeCWT {
+			token, err := GenerateStatusListCWT(make([]byte, 16), key, cfg)
+			if err != nil {
+				t.Error(err)
+			}
+			w.Header().Set("Content-Type", MediaTypeCWT)
+			_, _ = w.Write(token)
+			return
+		}
+		token, err := GenerateStatusListJWT(make([]byte, 16), key, cfg)
+		if err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", MediaTypeJWT)
+		_, _ = w.Write([]byte(token))
+	}))
+	t.Cleanup(srv.Close)
+	for credentialFormat, want := range map[string]string{"dc+sd-jwt": FormatJWT, "mso_mdoc": FormatCWT} {
+		result, err := CheckWithOptions(&StatusRef{URI: srv.URL, Idx: 0}, CheckOptions{Prefer: FormatForCredential(credentialFormat)})
+		if err != nil {
+			t.Fatalf("%s: %v", credentialFormat, err)
+		}
+		if result.Format != want {
+			t.Errorf("%s: the status list came as %s, want %s", credentialFormat, result.Format, want)
+		}
+	}
+}

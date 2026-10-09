@@ -57,7 +57,7 @@ func signedTestIssuerMetadata(t *testing.T, key *ecdsa.PrivateKey, chain []*x509
 	if err != nil {
 		t.Fatal(err)
 	}
-	metadata, signerChain, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", "https://issuer.example", true)
+	metadata, signerChain, err := parseIssuerMetadataDocument([]byte(raw), "application/jwt", "https://issuer.example", metadataPolicy{strict: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestARFAcceptsTheWalletsOwnIssuer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, chain, err := parseIssuerMetadataDocument([]byte(signed), "application/jwt", w.IssuerURL, true)
+	parsed, chain, err := parseIssuerMetadataDocument([]byte(signed), "application/jwt", w.IssuerURL, metadataPolicy{strict: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,5 +311,42 @@ func TestIssuerInfoNeedsBothElements(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Debug mode returns the issuance findings in the result, as it does for a
+// presentation.
+func TestDebugARFReturnsTheIssuanceFindingsInTheResult(t *testing.T) {
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{})
+	defer srv.Close()
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	result, err := w.ProcessCredentialOffer(offerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsSubstring(result.Findings, "RPRC_22a") {
+		t.Errorf("findings %v, want the unregistered issuer's RPRC_22a", result.Findings)
+	}
+}
+
+// Strict --arf refuses an issuer that fails the ARF checks before the consent
+// dialog opens, as it refuses a verifier.
+func TestStrictARFRefusesAnOfferBeforeTheConsentDialog(t *testing.T) {
+	w := generateTestWallet(t)
+	w.RequireARF = true
+	w.ValidationMode = ValidationModeStrict
+	srv, offerURI := setupMockIssuer(t, w, mockIssuerOpts{})
+	defer srv.Close()
+	oldClient := httpClient
+	httpClient = srv.Client()
+	defer func() { httpClient = oldClient }()
+
+	if _, _, err := w.prepareIssuanceConsentRequest(offerURI, ""); err == nil || !strings.Contains(err.Error(), "RPRC_22a") {
+		t.Errorf("err %v, want the refusal before the dialog", err)
 	}
 }

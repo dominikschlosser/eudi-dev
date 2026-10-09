@@ -16,6 +16,7 @@ package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -60,6 +61,17 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	dcMode, dcHAIP, _ := reqServer.wallet.ConformanceSettings()
 	reqServer.wallet.PrepareARFChecks(authReq)
 	findings, err := ValidateAuthorizationRequest(dcMode, dcHAIP, reqServer.wallet.ARFChecks(), authReq)
+	var refusal *ARFRefusal
+	if errors.As(err, &refusal) {
+		reqServer.log("  REFUSED: %v", err)
+		reqServer.wallet.AddLog("presentation", err.Error(), false)
+		reqServer.wallet.NotifyError(WalletError{Owner: requestOwner(r), Message: "The request does not meet the ARF registration rules", Detail: err.Error()})
+		reqServer.triggerUIRequest("")
+		// OpenID4VP 1.0 Appendix A returns a protocol error inside the
+		// fulfilled API result.
+		reqServer.writeBrowserAuthorizationError(w, authReq, protocol, errorCodeAccessDenied, "The request does not meet the ARF registration rules: "+strings.Join(refusal.Findings, ", "), http.StatusOK)
+		return
+	}
 	if err != nil {
 		reqServer.log("  ERROR: %v", err)
 		reqServer.wallet.AddLog("presentation", err.Error(), false)
@@ -101,6 +113,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 	for _, finding := range findings {
 		reqServer.log("  WARNING: %s", finding)
 	}
+	authReq.Findings = findings
 	reqServer.wallet.warnFindings("presentation", specCitedSummary("The request", findings), findings)
 	reqServer.wallet.warnUndefinedRequestParameters("presentation", authReq)
 
@@ -155,6 +168,7 @@ func (s *Server) handleBrowserPresentationAPI(w http.ResponseWriter, r *http.Req
 		Nonce:        authReq.Nonce,
 		ResponseURI:  authReq.ResponseURI,
 		DCQLQuery:    authReq.DCQLQuery,
+		Findings:     authReq.Findings,
 
 		CredentialOptions: credentialOptions,
 	}

@@ -26,9 +26,11 @@ The default wallet uses the prefix `wallet` on hosts and in containers. Custom w
 | `wallet/state/deferred/<id>` | Deferred issuance JSON and order |
 | `wallet/state/revision/credentials` | Credential section revision marker |
 | `wallet/state/status-counter/value` | Next status list index |
+| `wallet/state/trust/lists` | Providers and external lists added to the trusted lists |
 | `wallet/holder.pem`, `wallet/issuer.pem` | Private keys |
 | `wallet/signing-keys/<name>.pem` | Provider and service signing keys |
 | `wallet/certificates/<name>.pem` | Current provider and service certificates |
+| `wallet/authorities/<name>.pem` | The relying party access CA and the registrar CA |
 | `wallet/certificate-der/<sha256>.der` | Archived signing certificates |
 | `wallet/trustlists/...` | Current trusted lists and signed history |
 | `wallet-ca-key.pem`, `wallet-ca-cert.pem` | CA shared under the parent prefix |

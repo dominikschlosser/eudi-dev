@@ -92,6 +92,11 @@ type StatusResult struct {
 
 type CheckOptions struct {
 	HTTPClient *http.Client
+	// Prefer is FormatJWT or FormatCWT, the format of the credential. The
+	// request asks for that representation first and accepts the other one
+	// (Section 8.1 uses RFC 9110 content negotiation). An SD-JWT VC prefers
+	// JWT, an mdoc CWT.
+	Prefer string
 	// TrustListCerts are the CA certificates for the token's chain. When empty
 	// the key comes from the token and the result is not trust anchored. The
 	// signature is still verified: "Relying Parties MUST reject JWTs with an

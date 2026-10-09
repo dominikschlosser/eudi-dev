@@ -158,6 +158,27 @@ test.describe("Wallet Dashboard", () => {
     await expect(page.locator("h1")).toHaveText("EUDI Dev Wallet");
   });
 
+  test("how to use has a registrar tab with the registrar API", async ({ page }) => {
+    await page.goto(WALLET_URL);
+    await page.click("#how-to-use-link");
+    await expect(page.locator("#howto-panel-basics")).toBeVisible();
+    await expect(page.locator("#howto-panel-registrar")).toBeHidden();
+
+    await page.click("#howto-tab-registrar");
+    await expect(page.locator("#howto-tab-registrar")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#howto-panel-basics")).toBeHidden();
+    const panel = page.locator("#howto-panel-registrar");
+    await expect(panel).toContainText(`${WALLET_URL}/api/registrar/wrp`);
+    await expect(panel.locator('a[data-doc="docs/wallet/registrar-api.md"]')).toHaveAttribute(
+      "href",
+      /^https:\/\/github\.com\/dominikschlosser\/eudi-dev\/blob\/[^/]+\/docs\/wallet\/registrar-api\.md$/,
+    );
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#howto-panel-basics")).toBeVisible();
+    await page.click("#howto-close");
+  });
+
   test("conformance panel changes the local wallet setting via the endpoint", async ({
     page,
   }) => {

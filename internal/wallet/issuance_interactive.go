@@ -513,6 +513,7 @@ func (w *Wallet) parseInteractiveAuthorizationRequest(request map[string]any, en
 	if err != nil {
 		return nil, fmt.Errorf("openid4vp_request: %w", err)
 	}
+	params.Findings = findings
 	w.warnFindings("issuance", specCitedSummary("The issuer's openid4vp_request", findings), findings)
 	w.warnUndefinedRequestParameters("issuance", params)
 
@@ -584,6 +585,7 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		ClientID:     asking,
 		Nonce:        authReq.Nonce,
 		DCQLQuery:    authReq.DCQLQuery,
+		Findings:     authReq.Findings,
 
 		CredentialOptions: credentialOptions,
 	}

@@ -17,6 +17,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -128,6 +129,17 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 	authReq := authorizationRequestParamsFromParsed(parsed, responseURI, "cli")
 	w.PrepareARFChecks(authReq)
 	findings, err := wallet.ValidateAuthorizationRequest(w.ValidationMode, w.RequireHAIP, w.RequireARF, authReq)
+	var refusal *wallet.ARFRefusal
+	if errors.As(err, &refusal) {
+		// The verifier authenticated with a trusted access certificate, so it
+		// gets the refusal, as on the wallet's /authorize endpoint.
+		params := wallet.PresentationParams{Nonce: parsed.Nonce, ClientID: parsed.ClientID, ResponseURI: responseURI, ResponseMode: parsed.ResponseMode, ClientMetadata: authReq.ClientMetadata, RequestObject: parsed.RequestObject}
+		description := "The request does not meet the ARF registration rules: " + strings.Join(refusal.Findings, ", ")
+		if _, sendErr := w.SubmitAuthorizationError("access_denied", description, parsed.State, responseURI, params); sendErr != nil {
+			return errors.Join(err, fmt.Errorf("sending access_denied: %w", sendErr))
+		}
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -252,7 +264,14 @@ func findFreePresentationPortPair(start int) (int, error) {
 	return 0, fmt.Errorf("could not find free adjacent presentation ports near %d", start)
 }
 
+// tryPresentViaRunningServer hands the request to a wallet server on this
+// machine. The instance registry only knows servers of the same wallet
+// directory, while the URL handler (url-handler.sh) points to the server that
+// registered it. --remote local keeps the flow in this process.
 func tryPresentViaRunningServer(uri string, opts dispatchOID4Opts) (bool, error) {
+	if strings.EqualFold(strings.TrimSpace(remoteFlag), "local") {
+		return false, nil
+	}
 	var baseURL string
 	for _, candidate := range runningWalletServerBaseURLs(opts) {
 		if isRunningWalletServer(candidate) {
