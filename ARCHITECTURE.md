@@ -92,6 +92,7 @@ The wallet proves possession of its holder key, receives the credential and impo
 | [0020](docs/adr/0020-cli-output-can-be-automated.md) | CLI output can be automated |
 | [0021](docs/adr/0021-arf-checks-are-a-separate-profile.md) | ARF checks are a separate profile |
 | [0022](docs/adr/0022-one-trusted-list-per-credential-category.md) | One trusted list per credential category |
+| [0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md) | Trust anchors come from trusted lists |
 
 ## Related
 

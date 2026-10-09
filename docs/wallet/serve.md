@@ -99,7 +99,7 @@ The demo verifier accepts a credential when its certificate chains to an issuanc
 
 ### Trusted lists
 
-The wallet publishes lists of trusted entities (ETSI TS 119 602). It takes every trust anchor from such lists ([ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md)). That covers the `--arf` checks of received credentials and of the access and registration certificates of verifiers and issuers. It also covers the checks of the demo issuer and the demo verifier.
+The wallet publishes lists of trusted entities (ETSI TS 119 602). It takes every trust anchor from such lists ([ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md)). With `--arf`, the wallet checks received credentials against them. It also checks the access and registration certificates of verifiers and issuers. The demo issuer and the demo verifier use them too.
 
 | List ID | Lists | LoTE type |
 |---|---|---|
@@ -214,7 +214,7 @@ The wallet keeps a fetched external list for 5 minutes. A list past its `NextUpd
 }
 ```
 
-The wallet follows the pointers of an external list of this type, one level deep. A pointed-to list must be signed by a certificate of its pointer (§6.3.13). `GET /api/trust` shows such a list with `via`. Put another eudi-dev wallet's `/api/trustlists/lists` on the list to trust all its lists at once.
+The wallet follows the pointers of an external list of this type, one level deep. A pointed-to list must be signed by a certificate of its pointer (§6.3.13). `GET /api/trust` shows such a list with `via`. Put another eudi-dev wallet's `/api/trustlists/lists` on the list to trust all its lists at once. Its signer chains to that wallet's CA, so start this wallet with `--trust-list-ca` and that CA.
 
 `wallet serve` reuses persisted issuer and status list URLs unless `--base-url` or `--docker` overrides them. Credentials generated earlier then keep resolving against the same endpoints. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They print a note when no server serves the embedded URLs.
 
@@ -226,7 +226,7 @@ Each list is served at `/api/trustlists/{id}`:
 - `wallet-provider` for the Wallet Provider list, which issuers use to verify the wallet attestation
 - `access-ca` and `registrar` for the providers of relying party certificates
 - `lists` for the list of trusted lists
-- `tl-<hash>` for a credential type with its own trusted list fields, such as `--trust-list-type`
+- `tl-<8 hex digits>` for a credential type with its own trusted list fields, such as `--trust-list-type`
 
 `eudi wallet trust-list --list` shows these lists for the selected local or remote wallet:
 
@@ -413,7 +413,7 @@ Data URIs, template images and HTTP URLs are stored in both modes. Storing HTTP 
 
 Prints a trusted list of the wallet (ETSI TS 119 602) as a signed JWT. It contains the signing certificates, provider CAs and status signing certificates of the selected list. Verifiers use its provider CAs to validate the `x5c` or `x5chain` embedded in credentials. Issuer authorization data such as provider entitlements and `providesAttestations` comes from signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`. See [test certificates](../test-certificates.md).
 
-Without selection flags it prints the PID list, like `/api/trustlist`. `--id`, `--vct` or `--doctype` selects another list. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider`, `access-ca`, `registrar` and the `tl-` IDs of custom lists. `--list` shows all lists of the wallet. The list of trusted lists is at `/api/trustlists/lists`.
+Without selection flags it prints the PID list, like `/api/trustlist`. `--id`, `--vct` or `--doctype` selects another list. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider`, `access-ca`, `registrar` and the `tl-` IDs of custom lists. `--list` shows all lists of the wallet. `--id lists` prints the list of trusted lists, which is also at `/api/trustlists/lists`.
 
 Pipe the output to a file or pass it to `validate --trust-list`. `--url` prints only the URL for a running wallet server.
 

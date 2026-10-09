@@ -229,7 +229,8 @@ func (s *Server) handleAuthFlow(w http.ResponseWriter, authReq *AuthorizationReq
 		return
 	}
 	// The override answers only a valid request. An invalid one gets no
-	// response at its response_uri (OpenID4VP 1.0 §8.5).
+	// response at its response_uri (RFC 6749 §4.1.2.1, which OpenID4VP 1.0
+	// §8.5 applies).
 	if override := s.wallet.ConsumeNextError(); override != nil {
 		s.log("  Next-error override consumed: %s", override.Error)
 		s.wallet.AddLog("presentation", fmt.Sprintf("Returned error override: %s", override.Error), false)

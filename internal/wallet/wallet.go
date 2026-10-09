@@ -813,7 +813,7 @@ var BaselinePIDTemplates = []string{"pid-sdjwt", "german-pid-sdjwt"}
 
 // GenerateProtectedDefaults marks the newly generated defaults as protected.
 func (w *Wallet) GenerateProtectedDefaults() error {
-	// The old baseline may hold types that are no longer in the baseline.
+	// A stored baseline can hold types that BaselinePIDTemplates leaves out.
 	w.removeProtected()
 
 	existing := make(map[string]bool)

@@ -156,8 +156,9 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 }
 
 // TrustListGroupsForWallet lists one trusted list per credential category,
-// the lists of credential types with their own trust profile, and the wallet
-// provider list. Unlisted credential types are on no list.
+// the lists of credential types with their own trust profile, the wallet
+// provider list, the access CA list and the registrar list. Unlisted credential
+// types are on no list.
 func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 	byID := make(map[string]*TrustListGroup)
 	var groups []*TrustListGroup

@@ -236,8 +236,8 @@ func requestAccessChain(authReq *AuthorizationRequestParams) []*x509.Certificate
 // registrationBindingFindings links a registration certificate to the access
 // certificate of the request through the relying party identifier (ARF
 // RPRC_17a). An intermediary's certificate carries it in act.sub (ETSI TS 119
-// 475 V1.2.1 GEN-5.2.4-09). Neither certificate has a service identifier, so
-// only the relying party is compared.
+// 475 V1.2.1 GEN-5.2.4-09). The registration certificate has no service
+// identifier (Table 7), so only the relying party is compared.
 func registrationBindingFindings(cert map[string]any, access *x509.Certificate, rule string) []string {
 	identifier := stringClaim(cert["sub"])
 	if act, ok := cert["act"].(map[string]any); ok && stringClaim(act["sub"]) != "" {

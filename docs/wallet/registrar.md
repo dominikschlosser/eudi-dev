@@ -118,7 +118,7 @@ Every element has an ID for automated tests:
 
 The registrar fills in the rest. `registry_uri` points to the registration in the registrar API, and a verifier's `entitlements` contains the service provider entitlement. `jti` is a random identifier of the certificate (ETSI TS 119 475 V1.2.1 GEN-6.2.6.1-03, RFC 7519 §4.1.7). `policy_id` is `0.4.0.19475.3.1` (OVR-6.1.3-01), and `certificate_policy` links to [test certificates](../test-certificates.md). An empty support URL becomes `<issuer URL>/support`, and an empty privacy policy becomes `<issuer URL>/privacy-policy`. The wallet serves a placeholder page at each of these URLs and at `<issuer URL>/supervisory-authority`.
 
-The access certificate has the policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3) and is signed by the relying party access CA. That CA is a separate root. Access certificates from the registrar never chain to the wallet CA. The wallet CA is the trust anchor for credential issuers. The registrar key signs the registration certificates. Its certificate chains to the registrar CA, another separate root. You can download the registrar certificate, the registrar CA and the relying party access CA under **Trust & certificates**.
+The access certificate has the policy `0.4.0.194118.1.2` (ETSI TS 119 411-8 §5.3) and is signed by the relying party access CA. That CA is a separate root. Access certificates from the registrar never chain to the wallet CA. The registrar key signs the registration certificates. Its certificate chains to the registrar CA, another separate root. You can download the registrar certificate, the registrar CA and the relying party access CA under **Trust & certificates**.
 
 ## What the wallet checks
 
@@ -150,7 +150,7 @@ The demo issuer and the demo verifier are registered like any other relying part
 
 The wallet registers both when it starts, after a demo reset, when you save or delete a template and once an hour. It saves these changes. Their records follow the templates. A change you make to them is replaced at the next update.
 
-Each uses its current registration certificate. When there is none, or it expires within a day, the registrar issues one. **Issue new certificate** in the UI gives them a new one like any relying party. **Revoke** revokes the current certificate. The demo does not reuse a revoked certificate, so the registrar issues a new one the next time the demo needs it.
+Each uses its current registration certificate. When there is none, or it expires within a day, the registrar issues one. **Issue new certificate** in the UI gives them a new one like any relying party. **Revoke** revokes the current certificate. A revoked certificate stays the current one, so the demo keeps sending it until **Issue new certificate** replaces it. On the public demo this applies to every visitor until the next reset.
 
 The demo issuer signs its metadata with its access certificate and publishes its registration certificate in `issuer_info`. On the demo verifier page you choose how the verifier identifies itself:
 

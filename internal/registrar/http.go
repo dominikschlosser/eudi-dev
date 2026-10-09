@@ -415,8 +415,8 @@ func (h *Server) handleCatalogSchema(w http.ResponseWriter, r *http.Request) {
 	h.writeRegistrarResponse(w, r, map[string]any{"data": entry.Schema})
 }
 
-// handleCatalogFormatSchema serves the format-specific schema a schema URI
-// points to (TS11 v1.0 §4.3.4).
+// handleCatalogFormatSchema serves the format-specific schema behind a schema
+// URI (TS11 v1.0 §4.3.4).
 func (h *Server) handleCatalogFormatSchema(w http.ResponseWriter, r *http.Request) {
 	entry, ok := h.Registrar().CatalogAttestation(r.PathValue("id"))
 	var schema map[string]any

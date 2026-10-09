@@ -722,7 +722,7 @@ func parseIssuerMetadataDocument(body []byte, contentType, issuer string, policy
 			if policy.strict {
 				return nil, nil, errors.New(problem)
 			}
-			log.Printf("[VCI] Warning: %s (debug mode continues)", problem)
+			log.Printf("[VCI] Warning: %s. Debug mode continues", problem)
 			if policy.warn != nil {
 				policy.warn(problem)
 			}

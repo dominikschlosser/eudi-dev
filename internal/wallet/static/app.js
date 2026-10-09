@@ -1318,7 +1318,7 @@
     document.getElementById('issue-title').textContent = on ? (editor.source ? 'Edit template' : 'New template') : 'Issue Credential';
     document.getElementById('issue-hint').textContent = on
       ? "A template holds the type, claims and card appearance of a credential. Switch to JSON for the other template fields."
-      : "Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. Templates fill fields you can edit.";
+      : "Signs with the key of the credential's category unless you paste one, and stores the credential. Only the format is required. A template fills in the fields. You can still edit them.";
     issueSubmit.textContent = on ? 'Save template' : 'Issue';
     document.getElementById('template-editor-mode-builder').checked = true;
     templateEditorJSON.hidden = true;
@@ -3519,7 +3519,7 @@
         (status === 'active' ? 'Issues a new certificate and revokes the current one.' : 'Issues a registration certificate for this service and its attestations.') +
         '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
       (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + servicePrefix + '-revoke" title="' +
-        (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+        (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
         '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
     '</span>';
     row.innerHTML =
@@ -3617,7 +3617,7 @@
                     outdated: 'Issues a certificate for the changed purpose and claims.' }[status] +
                   '">' + (status === 'none' ? 'Issue certificate' : 'Issue new certificate') + '</button>' +
                 (status === 'none' || status === 'outdated' ? '' : '<button type="button" class="btn btn-sm" id="' + usePrefix + '-revoke" title="' +
-                  (status === 'revoked' ? 'Makes the certificate valid again.' : 'Revokes the certificate on the status list.') +
+                  (status === 'revoked' ? 'Makes the certificate valid.' : 'Revokes the certificate on the status list.') +
                   '">' + (status === 'revoked' ? 'Activate' : 'Revoke') + '</button>') +
               '</span>' +
             '</div>' +

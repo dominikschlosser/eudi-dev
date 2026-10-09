@@ -210,6 +210,7 @@ These endpoints are available on both wallet ports. Anyone with access to the wa
 | `GET`, `PUT`, `DELETE` | `/api/catalog/schemas/{id}` | One attestation schema |
 | `GET` | `/api/catalog/schemas/{id}/{format}` | The schema behind a schema URI |
 | `GET`, `POST` | `/api/catalog/attestations` | List the catalogue with names, types and the `category` of each entry (`GET`) or add an entry (`POST`) |
+| `GET` | `/api/catalog/categories` | The credential categories with their label, entitlement, trust rule and level of security |
 | `GET` | `/privacy-policy`, `/support`, `/supervisory-authority`, `/rulebook` | Placeholder pages for the default privacy policy, support, supervisory authority and rulebook URLs |
 
 ### One-shot error override
