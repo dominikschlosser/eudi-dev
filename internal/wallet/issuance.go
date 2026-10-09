@@ -478,14 +478,6 @@ func (w *Wallet) ProcessCredentialOfferWithOptions(offerURI string, opts OfferOp
 		return nil, err
 	}
 
-	if w.RequireHAIP {
-		if violations := w.haipCredentialViolations(credential); len(violations) > 0 {
-			if err := w.reportHAIPViolations("Credential", offer.CredentialIssuer, violations); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	if err := w.checkReceivedCredentials(credResp, offer.CredentialIssuer); err != nil {
 		return nil, err
 	}

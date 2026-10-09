@@ -407,6 +407,8 @@ func TestInteractiveAuthorizationIsNotHeldToHAIPChannelRules(t *testing.T) {
 	w.RequireHAIP = true
 	w.ValidationMode = ValidationModeStrict
 	issuer := newInteractiveIssuer(t, w)
+	// HAIP 1.0 §6.1.1 asks for the issuer's chain in x5c.
+	issuer.credential = generateTestWalletWithPID(t).GetCredentials()[0].Raw
 
 	result, err := w.ProcessCredentialOffer(interactiveOfferURI(issuer.url))
 	if err != nil {

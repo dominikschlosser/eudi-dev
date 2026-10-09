@@ -203,13 +203,26 @@ func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 	return nil
 }
 
-// checkReceivedCredentials runs the trust anchor check on every credential of
-// a credential response before the wallet stores one. Each copy of a batch is
-// signed on its own. In strict mode a failed check refuses the response (ARF
-// ISSU_11b).
+// checkReceivedCredentials checks every credential of a credential response
+// before the wallet stores one, on every issuance path. Each copy of a batch
+// is signed on its own. With --haip it applies HAIP 1.0 §6.1.1, and with
+// --arf the trust anchor check. In strict mode a failed check refuses the
+// response (ARF ISSU_11b).
 func (w *Wallet) checkReceivedCredentials(credResp map[string]any, issuer string) error {
+	credentials := credentialStringsFromResponse(credResp)
+	if _, haip, _ := w.ConformanceSettings(); haip {
+		var violations []string
+		for _, raw := range credentials {
+			violations = append(violations, w.haipCredentialViolations(raw)...)
+		}
+		if len(violations) > 0 {
+			if err := w.reportHAIPViolations("Credential", issuer, slices.Compact(violations)); err != nil {
+				return err
+			}
+		}
+	}
 	var findings []string
-	for _, raw := range credentialStringsFromResponse(credResp) {
+	for _, raw := range credentials {
 		findings = append(findings, w.trustAnchorFindings(receivedCredential(raw))...)
 	}
 	if len(findings) == 0 {
