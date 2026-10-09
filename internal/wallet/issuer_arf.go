@@ -332,9 +332,14 @@ func issuerInfoShapeFindings(entries []map[string]any) []string {
 		return append(findings, rule+"07: issuer_info has no registrar_dataset element with the provider's registration information")
 	}
 	for i, member := range []string{"identifier", "srvDescription", "registryURI", "providesAttestations"} {
-		if value, ok := dataset[member]; !ok || value == nil || value == "" {
+		if value, ok := dataset[member]; !ok || value == nil || value == "" || isEmptyList(value) {
 			findings = append(findings, fmt.Sprintf("%s%d: the registrar_dataset has no %s", rule, 10+i, member))
 		}
 	}
 	return findings
+}
+
+func isEmptyList(value any) bool {
+	list, ok := value.([]any)
+	return ok && len(list) == 0
 }
