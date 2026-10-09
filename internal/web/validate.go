@@ -465,7 +465,7 @@ func checkSDJWTStatus(token *sdjwt.Token, opts ValidateOpts) []CheckResult {
 	if err != nil {
 		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
 	}
-	return checkStatusRef(ref, tlCerts)
+	return checkStatusRef(ref, statuslist.FormatJWT, tlCerts)
 }
 
 func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) []CheckResult {
@@ -484,7 +484,7 @@ func checkMDOCStatus(doc *mdoc.Document, opts ValidateOpts) []CheckResult {
 	if err != nil {
 		return []CheckResult{{Name: "status", Status: "fail", Detail: err.Error()}}
 	}
-	return checkStatusRef(ref, tlCerts)
+	return checkStatusRef(ref, statuslist.FormatCWT, tlCerts)
 }
 
 // A credential without a status reference needs no network check. A reference stays
@@ -517,7 +517,7 @@ func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResul
 
 // The credential status and the trust in the status list signature are
 // separate checks.
-func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []CheckResult {
+func checkStatusRef(ref *statuslist.StatusRef, prefer string, tlCerts []trustlist.CertInfo) []CheckResult {
 	if ref == nil {
 		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status list reference in credential"}}
 	}
@@ -525,7 +525,7 @@ func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []C
 		return []CheckResult{{Name: "status", Status: "fail", Detail: fmt.Sprintf("Malformed status list reference: %s", ref.Invalid)}}
 	}
 
-	checkOpts := statuslist.CheckOptions{}
+	checkOpts := statuslist.CheckOptions{Prefer: prefer}
 	for _, ci := range tlCerts {
 		if len(ci.Raw) > 0 {
 			checkOpts.TrustListCerts = append(checkOpts.TrustListCerts, statuslist.TrustCert{Raw: ci.Raw})

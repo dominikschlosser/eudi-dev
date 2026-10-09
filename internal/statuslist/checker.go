@@ -121,7 +121,7 @@ func CheckWithOptions(ref *StatusRef, opts CheckOptions) (*StatusResult, error) 
 		return nil, fmt.Errorf("status list index %d is negative", ref.Idx)
 	}
 
-	body, contentType, err := fetchStatusListToken(ref.URI, opts.HTTPClient)
+	body, contentType, err := fetchStatusListToken(ref.URI, acceptHeader(opts.Prefer), opts.HTTPClient)
 	if err != nil {
 		return nil, err
 	}
@@ -178,15 +178,36 @@ func CheckWithOptions(ref *StatusRef, opts CheckOptions) (*StatusResult, error) 
 	}, nil
 }
 
+// acceptHeader asks for the preferred representation first and for the other
+// one with a lower weight.
+func acceptHeader(prefer string) string {
+	switch prefer {
+	case FormatJWT:
+		return MediaTypeJWT + ", " + MediaTypeCWT + ";q=0.5"
+	case FormatCWT:
+		return MediaTypeCWT + ", " + MediaTypeJWT + ";q=0.5"
+	}
+	return MediaTypeJWT + ", " + MediaTypeCWT
+}
+
+// FormatForCredential is the status list format that matches a credential
+// format: CWT for an mdoc and JWT for every JWT-based format.
+func FormatForCredential(credentialFormat string) string {
+	switch credentialFormat {
+	case "mso_mdoc", "mdoc":
+		return FormatCWT
+	}
+	return FormatJWT
+}
+
 // fetchStatusListToken performs the Section 8.1 request. It returns the raw
 // token body and the declared content type.
-func fetchStatusListToken(uri string, clients ...*http.Client) ([]byte, string, error) {
+func fetchStatusListToken(uri, accept string, clients ...*http.Client) ([]byte, string, error) {
 	req, err := http.NewRequest("GET", uri, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating request: %w", err)
 	}
-	// mdoc issuers may serve the CWT form.
-	req.Header.Set("Accept", MediaTypeJWT+", "+MediaTypeCWT)
+	req.Header.Set("Accept", accept)
 
 	resp, err := format.HTTPClientForURL(uri, clients...).Do(req)
 	if err != nil {

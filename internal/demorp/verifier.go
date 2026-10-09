@@ -1320,6 +1320,7 @@ func (d *DemoRP) checkRevocation(token *sdjwt.Token, check func(string, error) e
 		trustCerts = append(trustCerts, statuslist.TrustCert{Raw: anchor.Raw})
 	}
 	result, err := statuslist.CheckWithOptions(ref, statuslist.CheckOptions{
+		Prefer:         statuslist.FormatJWT,
 		TrustListCerts: trustCerts,
 	})
 	if err != nil {
