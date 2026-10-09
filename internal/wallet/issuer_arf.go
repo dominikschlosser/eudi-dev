@@ -215,9 +215,9 @@ func providedAttestationsOf(cert map[string]any) []registeredCredential {
 }
 
 // providerCertificateContentFindings checks a provider's registration
-// certificate against ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44.
-// RPRC_11 and RPRC_12 apply to relying parties only, and a provider
-// certificate has no intended use (RPRC_05).
+// certificate against ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. A
+// provider certificate has no intended use (RPRC_05), so it has no privacy
+// policy either.
 func providerCertificateContentFindings(cert map[string]any) []string {
 	var findings []string
 	miss := func(field, rule string) {
@@ -235,7 +235,7 @@ func providerCertificateContentFindings(cert map[string]any) []string {
 	if !nonEmptyList(cert["entitlements"]) {
 		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
-	registeredPartyFindings(cert, miss)
+	registeredPartyFindings(cert, miss, "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01")
 	if !nonEmptyList(cert["provides_attestations"]) {
 		miss("provides_attestations (its attestation types)", "ARF RPRC_15")
 	}

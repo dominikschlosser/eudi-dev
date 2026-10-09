@@ -282,7 +282,7 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 	if !nonEmptyList(cert["entitlements"]) {
 		miss("entitlements (at least one)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-03")
 	}
-	registeredPartyFindings(cert, miss)
+	registeredPartyFindings(cert, miss, "ARF RPRC_11", "ARF RPRC_12")
 	if !nonEmptyList(cert["credentials"]) {
 		miss("credentials (the registered attestations and attributes)", "ETSI TS 119 475 V1.2.1 GEN-5.2.4-06")
 	}
@@ -295,7 +295,9 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 // registeredPartyFindings checks the fields of ETSI TS 119 475 V1.2.1 Table 7
 // (GEN-5.2.4-01). Every registered relying party has them, verifier or
 // provider. Not every registry entry has an infoURI, so info_uri is optional.
-func registeredPartyFindings(cert map[string]any, miss func(field, rule string)) {
+// The ARF asks a relying party for the contacts (RPRC_11, RPRC_12). For a
+// provider they are Table 7 fields. The caller names the rules to cite.
+func registeredPartyFindings(cert map[string]any, miss func(field, rule string), supportRule, supervisoryRule string) {
 	const table7 = "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01"
 	if stringClaim(cert["country"]) == "" {
 		miss("country", table7)
@@ -310,10 +312,10 @@ func registeredPartyFindings(cert map[string]any, miss func(field, rule string))
 		miss("certificate_policy", table7)
 	}
 	if !hasContact(cert["support_uri"]) {
-		miss("support_uri (data deletion contact)", "ARF RPRC_11")
+		miss("support_uri (data deletion contact)", supportRule)
 	}
 	if !hasSupervisoryAuthority(cert["supervisory_authority"]) {
-		miss("supervisory_authority contact", "ARF RPRC_12")
+		miss("supervisory_authority contact", supervisoryRule)
 	}
 }
 
