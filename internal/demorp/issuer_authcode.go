@@ -101,8 +101,8 @@ type authRequestState struct {
 	scope         string
 	codeChallenge string
 	issuerState   string
-	// clientAttestation and clientAttestationPoP are the raw compact JWTs the
-	// wallet sent to the PAR endpoint. The sign-in page shows them in its
+	// clientAttestation and clientAttestationPoP are the raw compact JWTs that
+	// the wallet sent to the PAR endpoint. The sign-in page shows them in its
 	// debug panel.
 	clientAttestation    string
 	clientAttestationPoP string
@@ -116,8 +116,8 @@ type authRequestState struct {
 	expires      time.Time
 }
 
-// authorizationServerMetadata lists the client authentication methods the
-// endpoints accept, together with PAR, PKCE S256 and DPoP for HAIP.
+// authorizationServerMetadata lists the accepted client authentication
+// methods, together with PAR, PKCE S256 and DPoP for HAIP.
 func (d *DemoRP) authorizationServerMetadata() map[string]any {
 	issuer := d.issuerID()
 	authMethods := []string{attestationClientAuth, attestationDPoPClientAuth}
@@ -479,7 +479,8 @@ func oauthError(code, description string) map[string]string {
 }
 
 // verifyDPoPProof checks the signature, HTTP method and URL of a DPoP proof
-// under RFC 9449. It returns the key thumbprint the token is bound to.
+// under RFC 9449. It returns the thumbprint of the key that the token is
+// bound to.
 func (d *DemoRP) verifyDPoPProof(r *http.Request, expectedURL, accessToken string) (string, error) {
 	raw := strings.TrimSpace(r.Header.Get("DPoP"))
 	if raw == "" {
@@ -543,8 +544,8 @@ type clientAuthentication struct {
 	// attester is the iss claim of the wallet attestation. Drafts -08 and
 	// later omit iss, so the signing certificate subject is the fallback.
 	attester string
-	// trusted reports whether the certificate chains to the known wallet
-	// provider CA.
+	// trusted reports whether the attestation chains to a provider on the
+	// wallet provider lists.
 	trusted bool
 }
 
@@ -584,8 +585,8 @@ func attestationFailed(format string, args ...any) *clientAuthError {
 // key thumbprint.
 //
 // Attestations from unknown wallet provider CAs are accepted for interop
-// tests and marked untrusted on the ticket. The known CA is published at
-// /api/trustlists/wallet-provider.
+// tests and marked untrusted on the ticket. The wallet provider list is
+// published at /api/trustlists/wallet-provider.
 func (d *DemoRP) authenticateClient(r *http.Request, clientID, jkt string) (clientAuthentication, *clientAuthError) {
 	// The validation checklist requires "precisely one" of each header field.
 	// A second attestation would otherwise pass unverified.
@@ -748,7 +749,8 @@ func (s attestationSigner) name(payload map[string]any) string {
 }
 
 // The draft leaves key resolution to the deployment. This issuer reads the
-// key from the x5c leaf and checks the chain against the wallet provider CA.
+// key from the x5c leaf and checks the chain against the wallet provider
+// lists.
 func (d *DemoRP) attestationSigner(header map[string]any) (attestationSigner, error) {
 	rawChain, _ := header["x5c"].([]any)
 	if len(rawChain) == 0 {

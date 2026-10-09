@@ -814,10 +814,8 @@ func TestCreateProofJWT_IssMatchesClientID(t *testing.T) {
 	}
 }
 
-// OpenID4VCI 1.0 §12.2.3 requires iat in signed metadata. Metadata whose exp
-// has passed is not used.
-// OpenID4VCI 1.0 §12.2.3: strict mode refuses signed metadata without iat or
-// past its exp. Debug mode reads it.
+// OpenID4VCI 1.0 §12.2.3 requires iat in signed metadata, and metadata past
+// its exp is not used. Strict mode refuses such metadata. Debug mode reads it.
 func TestParseIssuerMetadataResponse_RequiresIatAndRejectsExpiredMetadata(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://issuer.example:8443"

@@ -337,7 +337,7 @@ func TestExtractAndValidateMDOCX5Chain_Uint64Label(t *testing.T) {
 	caCert, caKey, caDER := generateCACert(t)
 	_, _, leafDER := generateLeafCert(t, caCert, caKey)
 
-	// Some CBOR decoders may use uint64 for the label
+	// Some CBOR decoders use uint64 for the label.
 	doc := &mdoc.Document{
 		IssuerAuth: &mdoc.IssuerAuth{
 			UnprotectedHeader: map[any]any{
@@ -400,8 +400,8 @@ func TestCheckStatus_ReturnsErrorForRevokedCredential(t *testing.T) {
 
 	var statusSrv *httptest.Server
 	statusSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The sub claim has to be the URI the credential references, so the
-		// token is issued for the URL this server is actually reachable at.
+		// The token's sub must equal the status list URI in the credential, so
+		// the token uses this server's URL.
 		jwt, err := statuslist.GenerateStatusListJWT(bitstring, key, statuslist.StatusListConfig{
 			URI: statusSrv.URL,
 		})

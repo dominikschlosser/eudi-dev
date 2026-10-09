@@ -33,14 +33,26 @@ import (
 )
 
 const (
-	localTrustListType         = "http://uri.etsi.org/19602/LoTEType/local"
-	localIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/Issuance"
-	localRevocationServiceType = "http://uri.etsi.org/19602/SvcType/Revocation"
-	pidTrustListType           = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList"
-	pidStatusDetermination     = "http://uri.etsi.org/19602/PIDProvidersList/StatusDetn/EU"
-	pidSchemeCommunityRules    = "http://uri.etsi.org/19602/PIDProviders/schemerules/EU"
-	pidIssuanceServiceType     = "http://uri.etsi.org/19602/SvcType/PID/Issuance"
-	pidRevocationServiceType   = "http://uri.etsi.org/19602/SvcType/PID/Revocation"
+	// ETSI TS 119 602 V1.1.1 registers no list type for QEAA or other EAA
+	// providers. Annex C.1 has a scheme operator create its own URIs, and
+	// §6.3.3 asks for one type per profile. The URIs name the profile, so
+	// every deployment uses them whatever its base URL.
+	qeaaTrustListType         = "https://eudi-test.dev/LoTEType/QEAAProvidersList"
+	qeaaIssuanceServiceType   = "https://eudi-test.dev/SvcType/QEAA/Issuance"
+	qeaaRevocationServiceType = "https://eudi-test.dev/SvcType/QEAA/Revocation"
+	eaaTrustListType          = "https://eudi-test.dev/LoTEType/EAAProvidersList"
+	eaaIssuanceServiceType    = "https://eudi-test.dev/SvcType/EAA/Issuance"
+	eaaRevocationServiceType  = "https://eudi-test.dev/SvcType/EAA/Revocation"
+	// eudi-dev 2 wallets store these types for their EAA list.
+	legacyTrustListType       = "http://uri.etsi.org/19602/LoTEType/local"
+	legacyIssuanceServiceType = "http://uri.etsi.org/19602/SvcType/Issuance"
+	legacyRevocationService   = "http://uri.etsi.org/19602/SvcType/Revocation"
+
+	pidTrustListType         = "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList"
+	pidStatusDetermination   = "http://uri.etsi.org/19602/PIDProvidersList/StatusDetn/EU"
+	pidSchemeCommunityRules  = "http://uri.etsi.org/19602/PIDProviders/schemerules/EU"
+	pidIssuanceServiceType   = "http://uri.etsi.org/19602/SvcType/PID/Issuance"
+	pidRevocationServiceType = "http://uri.etsi.org/19602/SvcType/PID/Revocation"
 
 	// ETSI TS 119 602 V1.1.1 Annex H.
 	pubEAATrustListType         = "http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList"
@@ -63,8 +75,8 @@ type IssuedAttestationSpec struct {
 	Format  string `json:"format"`
 	VCT     string `json:"vct,omitempty"`
 	DocType string `json:"doctype,omitempty"`
-	// Category is a credtemplate category. It selects the trusted list. A
-	// spec without a category and without a trust list type is on no list.
+	// Category is pid, qeaa, pub-eaa, eaa or unlisted. It decides which of the
+	// wallet's trusted lists carries the type. An unlisted type is on none.
 	Category                    string   `json:"category,omitempty"`
 	Entitlements                []string `json:"entitlements,omitempty"`
 	TrustListType               string   `json:"trust_list_type,omitempty"`
@@ -127,9 +139,9 @@ func (w *Wallet) issuedAttestationSpecs() []IssuedAttestationSpec {
 	return out
 }
 
-// UnlistedCategory issues a credential type that no trusted list names, to
-// test how a verifier handles an unanchored issuer. It is not a credential
-// category of the catalogue.
+// UnlistedCategory keeps a credential type off every trusted list. It tests
+// how a verifier handles an issuer without a trust anchor. It is not a
+// credential category of the catalogue.
 const UnlistedCategory = "unlisted"
 
 // NormalizeIssuedAttestationSpec trims the spec and resolves its category. A
@@ -162,6 +174,18 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, category string)
 	if err := credtemplate.CheckCategory(spec.Category); err != nil {
 		return IssuedAttestationSpec{}, err
 	}
+	if spec.TrustListType == legacyTrustListType {
+		spec.TrustListType = ""
+		if spec.IssuanceServiceType == legacyIssuanceServiceType {
+			spec.IssuanceServiceType = ""
+		}
+		if spec.RevocationServiceType == legacyRevocationService {
+			spec.RevocationServiceType = ""
+		}
+		if spec.EntityName == "EUDI Dev Wallet Issuer" {
+			spec.EntityName = ""
+		}
+	}
 	if spec.TrustListType == walletProviderTrustListType {
 		return IssuedAttestationSpec{}, fmt.Errorf("the wallet provider list holds wallet and key attestations, not credentials")
 	}
@@ -171,12 +195,6 @@ func NormalizeIssuedAttestationSpec(spec IssuedAttestationSpec, category string)
 		spec.Category = credtemplate.CategoryPID
 	case spec.TrustListType == pubEAATrustListType:
 		spec.Category = credtemplate.CategoryPubEAA
-	case spec.TrustListType == localTrustListType && (spec.EntityName == "" || spec.EntityName == "EUDI Dev Wallet Issuer"):
-		// Wallets of eudi-dev 2 store the default local profile without a
-		// category. It is the EAA list.
-		spec.TrustListType, spec.StatusDeterminationApproach, spec.SchemeTypeCommunityRules, spec.SchemeTerritory = "", "", "", ""
-		spec.EntityName, spec.IssuanceServiceType, spec.RevocationServiceType, spec.IssuanceServiceName, spec.RevocationServiceName = "", "", "", "", ""
-		spec.Category = credtemplate.CategoryEAA
 	case spec.TrustListType == "":
 		spec.Category = credtemplate.CategoryEAA
 	}
@@ -239,8 +257,9 @@ func dedupeStrings(values []string) []string {
 
 // categoryTrustListProfile is the trusted list of a credential category. ETSI
 // TS 119 602 V1.1.1 defines list types for PID providers (Annex D) and PuB-EAA
-// providers (Annex H). QEAA providers are on TS 119 612 trusted lists, and other
-// EAA providers have no list type, so both use the local type.
+// providers (Annex H). QEAA providers are on TS 119 612 trusted lists, and
+// other EAA providers have no list type, so both lists have types of their
+// own.
 func categoryTrustListProfile(category string) trustListProfile {
 	switch category {
 	case credtemplate.CategoryPID:
@@ -270,26 +289,34 @@ func categoryTrustListProfile(category string) trustListProfile {
 			EntityName:                  "EUDI Dev Wallet PuB-EAA Provider",
 		}
 	case credtemplate.CategoryQEAA:
-		return localCategoryProfile(category, "QEAA")
+		return trustListProfile{
+			Category:              category,
+			LoTEType:              qeaaTrustListType,
+			IssuanceServiceType:   qeaaIssuanceServiceType,
+			RevocationServiceType: qeaaRevocationServiceType,
+			IssuanceServiceName:   "QEAA Issuance Service",
+			RevocationServiceName: "QEAA Revocation Service",
+			EntityName:            "EUDI Dev Wallet QEAA Provider",
+		}
 	default:
-		return localCategoryProfile(credtemplate.CategoryEAA, "EAA")
+		return eaaTrustListProfile()
 	}
 }
 
-func localCategoryProfile(category, label string) trustListProfile {
+func eaaTrustListProfile() trustListProfile {
 	return trustListProfile{
-		Category:              category,
-		LoTEType:              localTrustListType,
-		IssuanceServiceType:   localIssuanceServiceType,
-		RevocationServiceType: localRevocationServiceType,
-		IssuanceServiceName:   label + " Issuance Service",
-		RevocationServiceName: label + " Revocation Service",
-		EntityName:            "EUDI Dev Wallet " + label + " Provider",
+		Category:              credtemplate.CategoryEAA,
+		LoTEType:              eaaTrustListType,
+		IssuanceServiceType:   eaaIssuanceServiceType,
+		RevocationServiceType: eaaRevocationServiceType,
+		IssuanceServiceName:   "EAA Issuance Service",
+		RevocationServiceName: "EAA Revocation Service",
+		EntityName:            "EUDI Dev Wallet EAA Provider",
 	}
 }
 
-// applyCategoryDefaults fills the trust list fields the spec leaves empty
-// from its category's list.
+// applyCategoryDefaults fills the empty trust list fields of the spec from
+// the list of its category.
 func applyCategoryDefaults(spec IssuedAttestationSpec) IssuedAttestationSpec {
 	p := categoryTrustListProfile(spec.Category)
 	spec.TrustListType = firstNonEmpty(spec.TrustListType, p.LoTEType)
@@ -434,8 +461,8 @@ func SignCredentialIssuerMetadata(w *Wallet, issuer string, metadata map[string]
 }
 
 // SignRequestObjectJWT signs an OpenID4VP authorization request object (JAR)
-// with the signer's certificate chain in x5c. It sets the typ that
-// ValidateRequestObject expects.
+// with the signer's certificate chain in x5c. Its typ is
+// oauth-authz-req+jwt, as ValidateRequestObject expects.
 func SignRequestObjectJWT(claims map[string]any, signingKey *ecdsa.PrivateKey, signerCerts []*x509.Certificate) (string, error) {
 	if signingKey == nil {
 		return "", fmt.Errorf("signing key is required")

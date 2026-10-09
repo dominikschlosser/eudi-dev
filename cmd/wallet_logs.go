@@ -106,7 +106,8 @@ func printWalletLogs(w io.Writer, entries []wallet.LogEntry, opts walletLogPrint
 	if entries != nil {
 		visible := make([]wallet.LogEntry, 0, len(entries))
 		for _, entry := range entries {
-			// Omit deferred exchange diagnostics to preserve the CLI log output.
+			// Deferred polling logs a request and a response on every retry. The
+			// CLI log leaves them out.
 			if event := entry.Details["event"]; event == "deferred_credential_request" || event == "deferred_credential_response" {
 				continue
 			}

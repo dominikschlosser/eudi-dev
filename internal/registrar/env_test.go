@@ -24,8 +24,8 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// testWallet is a registrar with its own state, CAs and signing material, as
-// a wallet would give it.
+// testWallet gives a registrar its own state, CAs and signing material, as a
+// wallet does.
 type testWallet struct {
 	*Registrar
 	*State

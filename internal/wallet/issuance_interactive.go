@@ -42,9 +42,9 @@ const (
 	interactionTypeAuthViaWeb = "urn:openid:dcp:ia:auth_via_web"
 
 	// errorInsufficientAuthorization is the error of an Interaction Required
-	// Response (§6.2.1). The member is error. The draft's prose says error_code
-	// once. Its examples, first-party-apps §5.2.2 and RFC 6749 §5.2 all use
-	// error.
+	// Response (§6.2.1). It comes in the error member. The draft's prose says
+	// error_code once, while its examples, first-party-apps §5.2.2 and RFC 6749
+	// §5.2 all use error.
 	errorInsufficientAuthorization = "insufficient_authorization"
 
 	// errorRedirectToWeb means the authorization server wants the exchange
@@ -222,8 +222,8 @@ func (w *Wallet) initialAuthorizationChallengeForm(setup authorizationCodeSetup,
 
 // postAuthorizationChallenge sends one request to the Authorization Challenge
 // Endpoint and returns its JSON response. The body decides the outcome. An
-// Interaction Required Response (§6.2.1) is a 403 that carries the request the
-// wallet has to answer.
+// Interaction Required Response (§6.2.1) is a 403 with a request for the
+// wallet in its body.
 func (w *Wallet) postAuthorizationChallenge(endpoint string, form url.Values, setup authorizationCodeSetup) (map[string]any, error) {
 	w.addProtocolLog("issuance", "authorization_challenge_request",
 		fmt.Sprintf("Authorization challenge request to %s", endpoint), true,
@@ -565,8 +565,8 @@ func (w *Wallet) awaitInteractivePresentationConsent(endpoint string, authReq *A
 		return matches, true, nil
 	}
 
-	// An unsigned request carries no client_id (Appendix A.2). The prompt shows
-	// the endpoint this presentation is bound to.
+	// An unsigned request carries no client_id (Appendix A.2). The prompt then
+	// shows the challenge endpoint, because the presentation is bound to it.
 	asking := authReq.ClientID
 	if asking == "" {
 		asking = derivedOrigin(endpoint)

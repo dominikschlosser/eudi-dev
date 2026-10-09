@@ -29,7 +29,7 @@ import (
 )
 
 // The issuer metadata lists every credential template beside the ticket,
-// named after the template, with the type the template carries.
+// named after the template and with the template's type.
 func TestIssuerMetadataListsTheTemplates(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	code, doc := doJSON(t, d.IssuerHandler(), "GET", "/.well-known/openid-credential-issuer", "", nil)
@@ -170,8 +170,8 @@ func TestOfferOfTemplatesIssuesThem(t *testing.T) {
 	}
 }
 
-// An offer for a configuration the issuer does not have is refused, and a
-// credential request for a configuration the offer did not name is refused.
+// The issuer refuses an offer for an unknown configuration. It also refuses a
+// credential request for a configuration outside the offer.
 func TestOfferRefusesUnknownConfigurations(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	code, doc := doJSON(t, d.IssuerHandler(), "POST", "/api/offers?credential=no-such-template", "", nil)
@@ -208,7 +208,7 @@ func TestTheDemoIssuerPassesTheARFChecks(t *testing.T) {
 	}
 }
 
-// With --arf a strict wallet doesn't store a credential that fails a readable
+// With --arf a strict wallet doesn't store a credential that fails the
 // trusted list of its catalogue entry (ARF ISSU_10, ISSU_11b).
 func TestAStrictWalletRefusesACredentialOutsideItsTrustedList(t *testing.T) {
 	w := newIssuanceWallet(t)

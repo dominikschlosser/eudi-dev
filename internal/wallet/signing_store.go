@@ -172,9 +172,9 @@ func (s *signingStore) certificate(caKey *ecdsa.PrivateKey, ca *x509.Certificate
 	})
 }
 
-// cachedCertificate keeps the certificate that issue creates for pub under ca
-// and the subject the identity describes. It issues a new one before the
-// stored one expires or when renew is set.
+// cachedCertificate stores the certificate created by issue for pub under ca.
+// identity describes the subject and is part of the cache key. A new
+// certificate is issued before the stored one expires or when renew is set.
 func (s *signingStore) cachedCertificate(identity []byte, ca *x509.Certificate, pub *ecdsa.PublicKey, renew bool, issue func() (*x509.Certificate, error)) (*x509.Certificate, error) {
 	publicKey, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {

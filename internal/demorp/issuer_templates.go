@@ -45,7 +45,7 @@ type templateConfiguration struct {
 	template credtemplate.Template
 }
 
-// templateConfigurations lists the templates the demo issuer can issue,
+// templateConfigurations lists the templates that the demo issuer can issue,
 // sorted by name. It skips templates that are neither SD-JWT nor mdoc.
 func (d *DemoRP) templateConfigurations() []templateConfiguration {
 	templates, err := credtemplate.List(d.wallet.Templates)

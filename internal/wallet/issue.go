@@ -44,8 +44,8 @@ type IssueOptions struct {
 	// directory. Claims are merged on top of its claims. Its VCT, doc type,
 	// namespace and expiry apply when the matching option is unset.
 	Template string
-	// Claims nil with no template uses a small default claim set. With PID
-	// set it uses the full PID Rulebook claim set from the PID template for VCT.
+	// Claims nil with no template uses a small default claim set. With PID set,
+	// it uses all PID Rulebook claims from the PID template for VCT.
 	Claims map[string]any
 	PID    bool
 	// AlwaysDisclosed lists claims (dotted paths for nested claims) that go
@@ -75,8 +75,8 @@ type IssueOptions struct {
 	// the next free index on the wallet's list.
 	StatusListURI *string
 	StatusListIdx *int
-	// Category is a credtemplate category. Empty takes the category of the
-	// template or the catalogue entry.
+	// Category is pid, qeaa, pub-eaa, eaa or unlisted. Empty takes the category
+	// of the template or the catalogue entry, else eaa.
 	Category string
 	// Trust is registration metadata stored with the issued credential type.
 	// Its Format, VCT and DocType are replaced by the resolved values.
@@ -92,7 +92,7 @@ type IssueOptions struct {
 	DisplayTemplate string
 	// SigningKey and SigningCertChain replace the wallet's issuer key and chain.
 	// They are set together and the leaf must certify the key. Trust is
-	// ignored, so the type registers like an imported foreign credential.
+	// ignored, and the type is on none of the wallet's lists.
 	SigningKey       *ecdsa.PrivateKey
 	SigningCertChain []*x509.Certificate
 	// Unbound issues the credential without a holder key. An SD-JWT VC then
@@ -445,8 +445,8 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 		}
 	}
 
-	// The trust metadata describes the wallet CA. An override chain keeps the
-	// plain registration from the import.
+	// The wallet's lists name the wallet CA, so a credential signed with an
+	// override chain is on none of them.
 	if opts.SigningKey == nil {
 		if err := w.RegisterIssuedAttestation(spec); err != nil {
 			return nil, fmt.Errorf("registering issued-attestation metadata: %w", err)
@@ -481,8 +481,8 @@ func (w *Wallet) IssueCredential(opts IssueOptions) (*IssueResult, error) {
 }
 
 // CredentialCategory is the category of the template, or else of the
-// catalogue entry for the credential type. Without either the type is on no
-// trusted list.
+// catalogue entry for the credential type. It is empty without either, and
+// the type is then an EAA.
 func (w *Wallet) CredentialCategory(tpl *credtemplate.Template, spec IssuedAttestationSpec) string {
 	if tpl != nil && tpl.Category != "" {
 		return tpl.Category

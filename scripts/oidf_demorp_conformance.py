@@ -42,14 +42,15 @@ from oidf_wallet_conformance import (
 
 LOGIN_REQUEST_URI_RE = re.compile(r'name="request_uri" value="([^"]+)"')
 
-# What VCIWaitForCredentialOffer logs each time a module starts waiting for a
-# credential offer at its exposed endpoint.
+# VCIWaitForCredentialOffer logs this message each time a module starts
+# waiting for a credential offer at its exposed endpoint.
 OFFER_WAIT_LOG_MESSAGE = "Waiting for call to credential offer endpoint, see exposed values."
 
 VCI_ISSUER_TEMPLATE = "scripts/test-configs-rp-against-op/vci-issuer-test-config-client_attestation-client-auth-dpop.json"
 VP_VERIFIER_TEMPLATE = "scripts/test-configs-rp-against-op/vp-verifier-test-config.json"
 
-# Request the country independent PID, which the suite supports as SD-JWT VC and mdoc.
+# The issuer plans request the demo ticket. The verifier plans request the
+# country independent PID, which the suite holds as SD-JWT VC and mdoc.
 DEMO_CREDENTIAL_CONFIGURATION_ID = "demo-ticket"
 PID_VCT = "urn:eudi:pid:1"
 
@@ -75,7 +76,7 @@ class DemoScenario:
     variant: dict[str, str]
     # modules limits the run to these test names. None runs the whole plan.
     modules: tuple[str, ...] | None = None
-        # offer_query configures issuer initiated offers. None selects wallet initiated
+    # offer_query configures issuer initiated offers. None selects wallet initiated
     # issuance without an offer.
     offer_query: str | None = None
     # request_body creates the demo verifier request of a vp scenario
@@ -169,7 +170,7 @@ def vp_modules_for_variant(variant: dict[str, str]) -> tuple[str, ...]:
         # fetch twice.
         modules.remove(VP_VERIFIER_MODULE_REQUEST_URI_FETCHED_TWICE)
     else:
-                # The demo serves request objects through GET. The POST module would skip, which
+        # The demo serves request objects through GET. The POST module would skip, which
         # the runner treats as failure.
         modules.remove(VP_VERIFIER_MODULE_REQUEST_URI_METHOD_POST)
     return tuple(modules)
@@ -260,7 +261,7 @@ def demo_scenarios() -> list[DemoScenario]:
             modules=vci_issuer_modules("issuer_initiated"),
             offer_query="batch=8",
         ),
-                # Run the VCI modules. The appended FAPI2 plans require a fuller authorization
+        # Run the VCI modules. The appended FAPI2 plans require a fuller authorization
         # server. Other variants are fixed by module group, and the runner uses the first
         # group containing each module.
         DemoScenario(
@@ -423,7 +424,7 @@ def submit_verifier_request(wallet_url: str, scenario: DemoScenario, alias: str)
 
 
 def unverified_opener() -> urllib.request.OpenerDirector:
-        # Local redirects cross the wallet and suite TLS origins, whose certificates are not
+    # Local redirects cross the wallet and suite TLS origins, whose certificates are not
     # in the system truststore.
     context = ssl._create_unverified_context()
     return urllib.request.build_opener(urllib.request.HTTPSHandler(context=context))
@@ -530,7 +531,7 @@ def handle_module(
         state["request_submitted"] = True
         state["demo_request_id"] = submit_verifier_request(wallet_url, scenario, alias)
 
-        # Create an offer for each logged wait. Some modules run twice and pre-authorized
+    # Create an offer for each logged wait. Some modules run twice and pre-authorized
     # codes can only be redeemed once.
     if scenario and alias and scenario.kind == "vci" and scenario.offer_query:
         waits = sum(1 for entry in logs if entry.get("msg") == OFFER_WAIT_LOG_MESSAGE)

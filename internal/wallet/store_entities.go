@@ -287,7 +287,7 @@ type loadedSections struct {
 	settings             walletSettings
 }
 
-// storedTrust is what users added to the wallet's trusted lists.
+// storedTrust holds the providers and lists added by users.
 type storedTrust struct {
 	Entities []TrustedEntity `json:"entities,omitempty"`
 	Lists    []string        `json:"lists,omitempty"`

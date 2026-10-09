@@ -62,7 +62,7 @@ type walletService interface {
 	TrustState() (wallet.TrustedListState, error)
 	AddTrustedEntity(list, name, certificatesPEM string) (wallet.TrustedEntity, error)
 	RemoveTrustedEntity(id string) error
-	AddTrustedList(url string) error
+	AddTrustedList(url string) (wallet.TrustedListLink, error)
 	RemoveTrustedList(url string) error
 	Config() (map[string]any, error)
 }
@@ -229,8 +229,10 @@ func (r *remoteWallet) RemoveTrustedEntity(id string) error {
 	return r.c.RemoveTrustedEntity(id)
 }
 
-func (r *remoteWallet) AddTrustedList(url string) error {
-	return r.c.AddTrustedList(url)
+func (r *remoteWallet) AddTrustedList(url string) (wallet.TrustedListLink, error) {
+	var link wallet.TrustedListLink
+	err := r.c.AddTrustedList(url, &link)
+	return link, err
 }
 
 func (r *remoteWallet) RemoveTrustedList(url string) error {
@@ -546,8 +548,14 @@ func (l *localWallet) RemoveTrustedEntity(id string) error {
 	return l.change(func(w *wallet.Wallet) error { return w.RemoveTrustedEntity(id) })
 }
 
-func (l *localWallet) AddTrustedList(url string) error {
-	return l.change(func(w *wallet.Wallet) error { _, err := w.AddTrustedList(url); return err })
+func (l *localWallet) AddTrustedList(url string) (wallet.TrustedListLink, error) {
+	var link wallet.TrustedListLink
+	err := l.change(func(w *wallet.Wallet) error {
+		var err error
+		link, err = w.AddTrustedList(url)
+		return err
+	})
+	return link, err
 }
 
 func (l *localWallet) RemoveTrustedList(url string) error {

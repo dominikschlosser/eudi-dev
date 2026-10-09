@@ -72,18 +72,17 @@ services:
       - wallet-data:/home/app/.eudi-dev
       - ./imprint.html:/config/imprint.html:ro
 
-  # Preview uses its own release, URL and data volume. deploy.sh promote selects its
-  # tested image for the main site.
+  # The preview host runs the newest beta with its own URL and data volume.
   wallet-preview:
-    image: ghcr.io/dominikschlosser/eudi-dev:${PREVIEW_TAG:-latest}
+    image: ghcr.io/dominikschlosser/eudi-dev:${PREVIEW_TAG:-beta}
     restart: unless-stopped
     logging: *logging
     # The demo persists: files on the mounted volume and its own random keys.
     environment:
       EUDI_DEV_STORAGE: file
       EUDI_DEV_SEED: ""
-    # Opt-in: a plain production up/push leaves it alone, and ./deploy.sh
-    # preview names it explicitly to bring it up.
+    # Only ./deploy.sh preview starts it. A production up or push leaves it
+    # alone.
     profiles: ["preview"]
     command:
       - wallet
@@ -116,8 +115,8 @@ services:
     environment:
       EUDI_DEV_STORAGE: file
       EUDI_DEV_SEED: ""
-    # Opt-in: a plain production up/push leaves it alone, and ./deploy.sh
-    # strict names it explicitly to bring it up.
+    # Only ./deploy.sh strict starts it. A production up or push leaves it
+    # alone.
     profiles: ["strict"]
     # The harness accesses management endpoints through an SSH tunnel to this loopback
     # port. Caddy restricts the public routes.

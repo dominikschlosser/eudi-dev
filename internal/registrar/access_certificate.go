@@ -58,10 +58,9 @@ type AccessCertificateResult struct {
 	ClientIDs []string `json:"clientIds"`
 }
 
-// MaxAccessCertificateValidity is the longest validity of an access certificate.
 const MaxAccessCertificateValidity = 365 * 24 * time.Hour
 
-// x509_san_dns names one host, so a DNS name may not contain a wildcard
+// x509_san_dns identifies one host, so a DNS name may not contain a wildcard
 // (OpenID4VP 1.0 §5.9.3).
 var dnsNamePattern = regexp.MustCompile(`^(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(?i:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*$`)
 
@@ -105,7 +104,7 @@ func (r *Registrar) IssueAccessCertificate(req AccessCertificateRequest) (*Acces
 	}, nil
 }
 
-// AccessCertificateFor signs the access certificate of a service of rp under
+// AccessCertificateFor signs an access certificate for a service of rp with
 // the relying party access CA. It returns the certificate and the CA.
 func (r *Registrar) AccessCertificateFor(rp WalletRelyingParty, serviceIdentifier string, publicKey *ecdsa.PublicKey, dnsNames []string, validity time.Duration) ([]*x509.Certificate, error) {
 	service, ok := findService(rp, serviceIdentifier)

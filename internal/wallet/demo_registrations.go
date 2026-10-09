@@ -42,8 +42,8 @@ const (
 )
 
 // DemoVerifierAccessSigningMaterial is the access certificate of the demo
-// verifier. The demo verifier is its own relying party, so its certificate
-// names another organization than the demo issuer's.
+// verifier. The demo verifier is a relying party of its own, so its
+// certificate identifies a different organization from the demo issuer.
 func (w *Wallet) DemoVerifierAccessSigningMaterial() (*ecdsa.PrivateKey, []*x509.Certificate, error) {
 	return w.demoAccessSigningMaterial("demo-verifier-access", demoVerifierIdentity, demoVerifierName, demoVerifierServiceID)
 }
@@ -129,8 +129,8 @@ func (w *Wallet) DemoVerifierInfo() ([]any, error) {
 }
 
 // DemoIdentityCheckVerifierInfo is the verifier_info of the demo issuer's
-// identity check: the registration certificate of the intended use under
-// which it asks for a PID before issuing.
+// identity check. The demo issuer asks for a PID before it issues, and this
+// is the registration certificate of that intended use.
 func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 	result, err := w.demoCertificate(func() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
 		rp, req, err := w.demoIssuerRegistration()
@@ -146,7 +146,7 @@ func (w *Wallet) DemoIdentityCheckVerifierInfo() ([]any, error) {
 type demoRegistration func() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error)
 
 // demoCertificate returns the current certificate of a demo registration. A
-// server saves the registrar change this makes.
+// running server saves the resulting registrar change.
 func (w *Wallet) demoCertificate(build demoRegistration) (*registrar.RegistrationCertificateResult, error) {
 	var result *registrar.RegistrationCertificateResult
 	var err error
@@ -187,10 +187,11 @@ func decodeInfo(value, name string) ([]any, error) {
 }
 
 // demoIssuerRegistration registers the demo issuer as a provider of the
-// credential types that have a category, with the entitlements of those
-// categories (ETSI TS 119 475 V1.2.1 Table 8). A type gets its category from
-// its template or its catalogue entry. Its identity check asks for a PID
-// before it issues, so it registers that intended use too.
+// credential types it issues, with the entitlements of their categories (ETSI
+// TS 119 475 V1.2.1 Table 8). A type gets its category from its template or
+// its catalogue entry. A type without one is an EAA, and an unlisted type is
+// left out. Its identity check asks for a PID before it issues, so it
+// registers that intended use too.
 func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registrar.RegistrationCertificateRequest, error) {
 	catalogue := w.Registrar().CatalogAttestations()
 	var entitlements, vcts, docTypes []string
@@ -198,8 +199,11 @@ func (w *Wallet) demoIssuerRegistration() (registrar.WalletRelyingParty, registr
 		if entry, ok := catalogueEntryIn(catalogue, format, []string{vct, docType}); ok && category == "" {
 			category = entry.Category
 		}
-		if category == "" || category == UnlistedCategory {
+		switch category {
+		case UnlistedCategory:
 			return
+		case "":
+			category = credtemplate.CategoryEAA
 		}
 		switch format {
 		case "dc+sd-jwt":

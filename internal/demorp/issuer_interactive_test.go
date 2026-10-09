@@ -171,8 +171,8 @@ func TestBrowserOfferFallsBackToRedirectToWeb(t *testing.T) {
 
 // A browser offer redeemed by a wallet that advertises auth_via_web gets the
 // Interaction Required Response of §6.2.1.2. It holds insufficient_authorization
-// with the interaction type, an auth_session, and the request_uri the wallet
-// takes to the authorization endpoint.
+// with the interaction type, an auth_session and a request_uri for the
+// authorization endpoint.
 func TestBrowserOfferAsksForTheAuthViaWebInteraction(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	issuerState := createOfferState(t, d, authorizationBrowser)
@@ -520,7 +520,7 @@ func startInteractiveSession(t *testing.T, d *DemoRP, provider walletProvider, c
 }
 
 // The query's aki must match the issued credential's AuthorityKeyId so the wallet can
-// select a credential this issuer trusts.
+// select a credential that this issuer trusts.
 func TestInteractiveRequestPinsTheIssuerCA(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 
@@ -659,8 +659,8 @@ func TestInteractiveAuthorizationVerifiesThePresentation(t *testing.T) {
 	})
 }
 
-// Browser sign-in stores its pushed requests in the state map the PAR
-// endpoint fills. The map has one cap, and a full map answers 429.
+// Browser sign-in stores its pushed requests in the same state map as the PAR
+// endpoint. The map has one cap, and a full map answers 429.
 func TestBrowserOfferChallengeIsCappedLikePAR(t *testing.T) {
 	d, _, _ := newDemoRP(t)
 	provider := foreignWalletProvider(t)

@@ -21,8 +21,8 @@ import (
 	"strings"
 )
 
-// definedRequestParameters are the Authorization Request parameters OID4VP
-// 1.0 defines or reuses (§5.1, §5.2, §5.10, §8.2, Appendix A.2, RFC 6749,
+// definedRequestParameters lists the Authorization Request parameters defined
+// or reused by OID4VP 1.0 (§5.1, §5.2, §5.10, §8.2, Appendix A.2, RFC 6749,
 // JAR).
 var definedRequestParameters = map[string]bool{
 	"client_id":          true,
@@ -44,8 +44,8 @@ var definedRequestParameters = map[string]bool{
 	"wallet_nonce":       true,
 }
 
-// definedRequestObjectMembers adds what a signed request object may also
-// carry (RFC 7519 registered claims, used by JAR).
+// definedRequestObjectMembers adds the members a signed request object may
+// also carry: the RFC 7519 registered claims used by JAR.
 var definedRequestObjectMembers = func() map[string]bool {
 	merged := map[string]bool{
 		"iss": true,

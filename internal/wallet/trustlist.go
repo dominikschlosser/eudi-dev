@@ -157,7 +157,7 @@ func GenerateTrustListJWTForWalletGroup(w *Wallet, issuer string, group TrustLis
 
 // TrustListGroupsForWallet lists one trusted list per credential category,
 // the lists of credential types with their own trust profile, and the wallet
-// provider list. Credential types without a category are on no list.
+// provider list. Unlisted credential types are on no list.
 func TrustListGroupsForWallet(w *Wallet) []TrustListGroup {
 	byID := make(map[string]*TrustListGroup)
 	var groups []*TrustListGroup
@@ -337,8 +337,8 @@ func trustListProfileKey(profile trustListProfile) string {
 	return strings.Join(parts, "|")
 }
 
-// trustListGroupID names a category's list by the category. A spec that
-// changes its category's defaults gets a list of its own.
+// trustListGroupID uses the category as the ID of a category list. A spec
+// that changes the defaults of its category gets a list of its own.
 func trustListGroupID(profile trustListProfile) string {
 	switch profile.LoTEType {
 	case walletProviderTrustListType:
@@ -425,14 +425,7 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		opts.OperatorName = "EUDI Dev Wallet"
 	}
 	if opts.Profile.LoTEType == "" {
-		opts.Profile = trustListProfile{
-			LoTEType:              localTrustListType,
-			IssuanceServiceType:   localIssuanceServiceType,
-			RevocationServiceType: localRevocationServiceType,
-			IssuanceServiceName:   "Issuance Service",
-			RevocationServiceName: "Revocation Service",
-			EntityName:            "EUDI Dev Wallet Issuer",
-		}
+		opts.Profile = eaaTrustListProfile()
 	}
 
 	if opts.Profile.SchemeTerritory == "" {
@@ -471,15 +464,15 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 		}
 		schemeInfo["DistributionPoints"] = []string{opts.Issuer + path}
 	}
-	// ETSI TS 119 602 V1.1.1 Table D.1 and Table E.1 require a pointer to the
-	// list itself. Table H.1 forbids pointers and fixes the history period.
+	// ETSI TS 119 602 V1.1.1 Tables D.1 to G.1 require a pointer to the list
+	// itself. Table H.1 forbids pointers and fixes the history period.
 	if opts.Profile.LoTEType == pubEAATrustListType {
 		schemeInfo["HistoricalInformationPeriod"] = 65535
 	} else if opts.Issuer != "" {
 		schemeInfo["PointersToOtherLoTE"] = []map[string]any{{
 			"LoTELocation":             opts.Issuer + path,
 			"ServiceDigitalIdentities": []map[string]any{{"X509Certificates": []map[string]string{{"val": certB64}}}},
-			"LoTEQualifiers":           []map[string]any{{"LoTEType": opts.Profile.LoTEType, "SchemeOperatorName": schemeInfo["SchemeOperatorName"], "MimeType": "application/jwt"}},
+			"LoTEQualifiers":           []map[string]any{{"LoTEType": opts.Profile.LoTEType, "SchemeOperatorName": schemeInfo["SchemeOperatorName"], "SchemeTerritory": schemeInfo["SchemeTerritory"], "MimeType": "application/jwt"}},
 		}}
 	}
 
@@ -491,7 +484,6 @@ func generateTrustListJWTWithOptions(signingKey *ecdsa.PrivateKey, caCert *x509.
 			"TrustedEntityServices":    trustListServices(opts.Profile, entity),
 		})
 	}
-	// ETSI trust lists use a JSON wrapper object.
 	payload := map[string]any{
 		"LoTE": map[string]any{
 			"ListAndSchemeInformation": schemeInfo,

@@ -83,9 +83,9 @@ func credentialIssuerDID(raw string) string {
 	return keys.DIDReference(kid, iss)
 }
 
-// DID issuer keys cannot be resolved here. The toolkit uses x5c as required by HAIP
-// 1.0 §6.1.1 or SD-JWT VC issuer metadata. Keep the credential and report its
-// unchecked signature and unverifiable status list.
+// The wallet can't resolve DID issuer keys. It finds issuer keys through x5c, as
+// HAIP 1.0 §6.1.1 requires, or through SD-JWT VC issuer metadata. Keep the
+// credential and report its unchecked signature and unverifiable status list.
 func (w *Wallet) noteDIDIssuerKey(cred *StoredCredential) {
 	if w == nil || cred == nil {
 		return
@@ -232,9 +232,7 @@ func (w *Wallet) importSDJWT(raw, group, bindingKeyPEM string) (*StoredCredentia
 		cred.VCT = vct
 	}
 
-	stored := w.appendCredential(cred)
-	_ = w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: cred.Format, VCT: cred.VCT, DocType: cred.DocType})
-	return stored, nil
+	return w.appendCredential(cred), nil
 }
 
 func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCredential, error) {
@@ -259,9 +257,7 @@ func (w *Wallet) importPlainJWT(raw, group, bindingKeyPEM string) (*StoredCreden
 		cred.VCT = jwtVCType(payload)
 	}
 
-	stored := w.appendCredential(cred)
-	_ = w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: cred.Format, VCT: cred.VCT, DocType: cred.DocType})
-	return stored, nil
+	return w.appendCredential(cred), nil
 }
 
 // VC Data Model 1.1 puts the type array inside vc. Some issuers put it at the payload
@@ -321,9 +317,7 @@ func (w *Wallet) importMDoc(raw, group, bindingKeyPEM string) (*StoredCredential
 	}
 	cred.issuedAt = mdocSignedAt(doc)
 
-	stored := w.appendCredential(cred)
-	_ = w.RegisterIssuedAttestation(IssuedAttestationSpec{Format: cred.Format, VCT: cred.VCT, DocType: cred.DocType})
-	return stored, nil
+	return w.appendCredential(cred), nil
 }
 
 func (w *Wallet) ImportCredentialFromFile(path string) error {

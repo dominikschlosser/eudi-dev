@@ -48,7 +48,8 @@ func catalogueEntryIn(entries []registrar.CatalogAttestation, format string, typ
 	return registrar.CatalogAttestation{}, false
 }
 
-// catalogueFindings names the offered attestations the catalogue doesn't list.
+// catalogueFindings reports offered attestations that are missing from the
+// catalogue.
 // No specification has the wallet check this, so these findings only warn.
 func (w *Wallet) catalogueFindings(metadata map[string]any, configurations []string) []string {
 	if !w.ARFChecks() {
@@ -76,13 +77,13 @@ func (w *Wallet) reportCatalogueFindings(issuer string, findings []string) {
 }
 
 // trustAnchorFindings validates the signature of a received credential with
-// the trusted lists of its catalogue entry. The entry's category names the
-// rule. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a PID, QEAA
-// or PuB-EAA with the list of its providers, so an entry without a readable
-// list is a finding. ISSU_10 asks for the check of an EAA only when the wallet
-// has the anchors. A PID and a PuB-EAA list on the list of trusted lists
-// counts too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D and
-// H).
+// the trusted lists of its catalogue entry. The entry's category decides which
+// rule applies. ARF ISSU_07, ISSU_08 and ISSU_09 have the wallet validate a
+// PID, QEAA or PuB-EAA with the list of its providers, so an entry without a
+// readable list is a finding. ISSU_10 asks for the check of an EAA only when
+// the wallet has the anchors. PID and PuB-EAA lists on the list of trusted
+// lists count too, because ETSI TS 119 602 V1.1.1 gives them a type (Annexes D
+// and H).
 func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	if !w.ARFChecks() {
 		return nil
@@ -94,46 +95,40 @@ func (w *Wallet) trustAnchorFindings(cred StoredCredential) []string {
 	}
 	rule := registrar.CategoryOf(entry.Category).TrustRule
 	eaa := rule == registrar.CategoryOf(credtemplate.CategoryEAA).TrustRule
-	var urls []string
+	var candidates []trustedList
 	for _, authority := range entry.Schema.TrustedAuthorities {
 		// The wallet reads lists of trusted entities (ETSI TS 119 602) only.
 		if authority.FrameworkType == "etsi_tl" && authority.IsLOTE != nil && *authority.IsLOTE && authority.Value != "" {
-			urls = append(urls, authority.Value)
+			list, err := w.readTrustedList(authority.Value)
+			candidates = append(candidates, trustedList{URL: authority.Value, List: list, Err: err})
 		}
 	}
-	typed := map[string]bool{}
 	if listType := categoryListType(entry.Category); listType != "" {
-		for _, u := range w.TrustedListURLs() {
-			if !slices.Contains(urls, u) {
-				urls = append(urls, u)
-				typed[u] = true
+		for _, tl := range w.trustedLists() {
+			linked := slices.ContainsFunc(candidates, func(c trustedList) bool { return c.URL == tl.URL })
+			if tl.Err == nil && tl.List.SchemeInfo.LoTEType == listType && !linked {
+				candidates = append(candidates, tl)
 			}
 		}
 	}
 	var problems []string
 	read := false
-	for _, u := range urls {
-		list, err := w.readTrustedList(u)
+	for _, c := range candidates {
 		switch {
-		case err != nil && eaa && !typed[u]:
+		case c.Err != nil && eaa:
 			// ISSU_10 needs anchors, so the wallet only reports the list.
-			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", u, entry.Name, err), nil)
+			w.addProtocolWarning("issuance", "trusted_list", fmt.Sprintf("The trusted list %s of the catalogue entry %q gives no anchors: %v", c.URL, entry.Name, c.Err), nil)
 			continue
-		case err != nil:
-			if !typed[u] {
-				problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
-			}
-			continue
-		}
-		if typed[u] && list.SchemeInfo.LoTEType != categoryListType(entry.Category) {
+		case c.Err != nil:
+			problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, c.Err))
 			continue
 		}
 		read = true
-		err = validateWithAnchors(cred, serviceAnchors(list, issuanceServices))
+		err := validateWithAnchors(cred, serviceAnchors(c.List, issuanceServices))
 		if err == nil {
 			return nil
 		}
-		problems = append(problems, fmt.Sprintf("%s (%v)", u, err))
+		problems = append(problems, fmt.Sprintf("%s (%v)", c.URL, err))
 	}
 	switch {
 	case !read && eaa:
@@ -186,9 +181,10 @@ func validateWithAnchors(cred StoredCredential, anchors []trustlist.CertInfo) er
 }
 
 // verifyTrustListSigner checks the JAdES signature of a trusted list (ETSI TS
-// 119 602 V1.1.1 Annexes D.4, E.4 and H.4) and that its signer chains to a
-// trusted list operator. The ARF has the wallet accept the provider trust
-// anchors because of the list's signature (PPNot_05, TLPub_05, TLPub_07).
+// 119 602 V1.1.1 Annexes D.4 to H.4) and that its signer chains to one of the
+// certificates: a trusted list operator, or the signer named by a pointer. The
+// ARF has the wallet accept the provider trust anchors because of the list's
+// signature (PPNot_05, TLPub_05, TLPub_07).
 func verifyTrustListSigner(raw string, operators []*x509.Certificate) error {
 	header, _, err := decodeCompactJWT(strings.TrimSpace(raw))
 	if err != nil {

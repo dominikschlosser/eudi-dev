@@ -394,7 +394,8 @@ func TestDCQLMultipleCombinedWithAnotherQueryInOneOption(t *testing.T) {
 	}
 }
 
-// A required set with a multiple query and an optional set with another credential.
+// A required set holds a multiple query, and an optional set asks for another
+// credential.
 func TestDCQLMultipleWithAnOptionalSet(t *testing.T) {
 	w := pidBaselineWallet(t)
 	query := map[string]any{

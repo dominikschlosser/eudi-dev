@@ -400,7 +400,8 @@
   const TYPING_DECODE_DELAY = 300;
   const PASTE_DECODE_DELAY = 10;
 
-  // Paste emits two events. The earlier scheduled decode processes it once.
+  // A paste fires both paste and input. Only the decode that is due first
+  // runs, so the credential is decoded once.
   function scheduleDecode(delay) {
     const dueAt = Date.now() + delay;
     if (decodeTimer !== null && decodeDueAt <= dueAt) return;

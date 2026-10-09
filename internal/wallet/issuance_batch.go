@@ -40,11 +40,11 @@ func advertisedBatchSize(metadata map[string]any) int {
 	return int(size)
 }
 
-// issuanceProofKeys returns the keys a credential request binds copies to,
-// with the holder key first. buildCredentialProofs turns them into proofs.
-// When the issuer advertises batch_size >= 2, fresh ephemeral keys bind each
-// credential in the batch to a distinct key. RFC 9901 §10.1 requires this for
-// SD-JWT batches. It is recommended for mdoc.
+// issuanceProofKeys returns the proof keys of a credential request, holder
+// key first. buildCredentialProofs turns them into proofs. When the issuer
+// advertises batch_size >= 2, each copy of the batch is bound to its own fresh
+// key. RFC 9901 §10.1 requires this for SD-JWT batches. It is recommended for
+// mdoc.
 func issuanceProofKeys(holderKey *ecdsa.PrivateKey, metadata map[string]any) ([]*ecdsa.PrivateKey, error) {
 	keys := []*ecdsa.PrivateKey{holderKey}
 	batchSize := advertisedBatchSize(metadata)
@@ -132,9 +132,9 @@ func proofKeyIndex(raw string, keys []*ecdsa.PrivateKey) int {
 	return -1
 }
 
-// primaryBindingKeyPEM returns the PEM of the proof key a credential is bound to
-// when it is not the holder key (index 0), and "" otherwise. The holder key
-// needs no per-copy record because batchSigningKey falls back to it.
+// primaryBindingKeyPEM returns the PEM of the credential's binding key when it
+// is not the holder key (index 0), and "" otherwise. The holder key needs no
+// per-copy record because batchSigningKey falls back to it.
 func primaryBindingKeyPEM(raw string, keys []*ecdsa.PrivateKey) string {
 	if idx := proofKeyIndex(raw, keys); idx > 0 {
 		if pem, err := encodeECPrivateKeyPEM(keys[idx]); err == nil {
@@ -297,8 +297,8 @@ func (w *Wallet) setBatchFields(id, group, bindingKeyPEM string) {
 }
 
 // credentialStringsFromResponse extracts the credentials from a credential
-// response in the shape §8.3 defines. That is a credentials array whose
-// "elements of the array MUST be objects", each with a credential member.
+// response. §8.3 defines a credentials array whose "elements of the array MUST
+// be objects", each with a credential member.
 func credentialStringsFromResponse(resp map[string]any) []string {
 	rawCreds, ok := resp["credentials"].([]any)
 	if !ok {

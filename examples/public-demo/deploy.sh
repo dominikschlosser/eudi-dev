@@ -15,8 +15,8 @@
 #   setup     install Docker, copy the stack, start it (first deployment)
 #   push      copy Caddyfile, compose file and imprint, then apply them
 #   update    pull the latest image and restart (no file changes)
-#   preview [tag]   run a release on the preview host (default latest), leaving
-#             the main site as it is, so a big change can be tried there first
+#   preview [tag]   run a release on the preview host (default beta, the newest
+#             release including betas), leaving the main site as it is
 #   promote   move the main site to the release the preview host runs
 #   strict [tag]    run a release on the strict conformance host (default
 #             latest), the wallet the hosted OIDF suite tests for certification
@@ -108,7 +108,8 @@ set_preview_tag() {
   remote "touch .env && sed -i.bak '/^PREVIEW_TAG=/d' .env && rm -f .env.bak && printf 'PREVIEW_TAG=%s\n' '${tag}' >> .env"
 }
 
-# Resolve latest to the preview's actual version so promotion deploys the tested image.
+# Resolve a moving tag such as beta to the preview's actual version, so
+# promotion deploys the tested image.
 preview_version() {
   [[ -n "${PREVIEW_URL:-}" ]] || return 0
   curl -fsS --max-time 15 "${PREVIEW_URL%/}/api/version" 2>/dev/null |
@@ -200,7 +201,7 @@ case "${COMMAND}" in
 
   preview)
     require_host
-    target="${2:-latest}"
+    target="${2:-beta}"
     # Copy the stack so the host has the Caddy preview block and the
     # wallet-preview service, then prepare its data volume.
     copy_stack

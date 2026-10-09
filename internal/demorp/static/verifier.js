@@ -51,8 +51,8 @@ function renderResult(doc) {
   renderPresentationLink(doc.presentation);
 }
 
-// Include the complete presentation in the decoder link. It is not stored as a wallet
-// credential.
+// The decoder link carries the complete presentation, because the wallet does
+// not store it as a credential.
 function renderPresentationLink(presentation) {
   const box = document.getElementById("presentation-box");
   const label = document.getElementById("presentation-label");

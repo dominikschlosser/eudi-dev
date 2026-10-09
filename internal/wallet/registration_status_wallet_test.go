@@ -82,8 +82,8 @@ func TestRevokingARegistrationCertificate(t *testing.T) {
 	}
 }
 
-// A status the wallet cannot read is a finding, since the wallet cannot verify
-// that the certificate is not revoked.
+// An unreadable status list is a finding, because the wallet then cannot check
+// whether the certificate is revoked.
 func TestAnUnreachableStatusListIsAFinding(t *testing.T) {
 	srv, ts := registrarServer(t)
 	cert := issuedCertificate(t, srv.wallet, registerTestRelyingParty(t, srv.wallet))

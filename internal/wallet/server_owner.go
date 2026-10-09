@@ -131,8 +131,9 @@ func callerOwners(r *http.Request) []string {
 	return owners
 }
 
-// Unowned requests remain visible to all callers for compatibility. A redirected
-// browser can also access the request by its ID if cookies are unavailable.
+// Unowned requests stay visible to all callers, such as API clients without a
+// browser session. A redirected browser can also access the request by its ID
+// if cookies are unavailable.
 func ownsRequest(owners []string, req *ConsentRequest, named string) bool {
 	if req == nil {
 		return false

@@ -108,8 +108,8 @@ func TestStatusesAreListedUnderEveryIdentifier(t *testing.T) {
 	}
 }
 
-// When an intended use changes, its old certificate describes content that is
-// not registered any more, so Activate leaves it revoked.
+// When an intended use changes, its old certificate describes outdated
+// content, so Activate leaves it revoked.
 func TestActivatingLeavesChangedIntendedUsesRevoked(t *testing.T) {
 	w := generateTestWallet(t)
 	rp := registerTestRelyingParty(t, w)

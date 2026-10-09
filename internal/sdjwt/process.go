@@ -16,8 +16,8 @@ package sdjwt
 
 import "fmt"
 
-// processor carries the state RFC 9901 §7.1 step 3 needs while it walks the
-// Issuer-signed JWT payload and the Disclosure values reached from it.
+// processor holds the state for RFC 9901 §7.1 step 3. It walks the
+// Issuer-signed JWT payload and every Disclosure value reached from it.
 type processor struct {
 	byDigest map[string]*Disclosure
 	// seen records every embedded digest in the credential, for step 4.

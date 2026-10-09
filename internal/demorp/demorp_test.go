@@ -1079,7 +1079,7 @@ func TestVerifierRejectsInjectedDisclosure(t *testing.T) {
 		t.Fatalf("signing ticket: %v", err)
 	}
 
-	// A well-formed disclosure the issuer never created.
+	// A well-formed disclosure that the issuer never created.
 	forged, err := json.Marshal([]any{"injectedsalt", "tier", "vip-forged"})
 	if err != nil {
 		t.Fatalf("building disclosure: %v", err)
@@ -2084,7 +2084,7 @@ func TestTheDemoVerifierSendsItsRegistrationCertificate(t *testing.T) {
 }
 
 // A strict wallet with --arf accepts the demo verifier's preset requests, so
-// its intended use registers every claim they ask for (ARF RPRC_21).
+// its intended use registers every requested claim (ARF RPRC_21).
 func TestAStrictARFWalletAcceptsTheDemoVerifier(t *testing.T) {
 	w := newIssuanceWallet(t)
 	w.RequireARF = true

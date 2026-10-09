@@ -68,7 +68,7 @@ type RegistrationScope struct {
 	IntendedUseIdentifier string `json:"intendedUseIdentifier,omitempty"`
 }
 
-// certificateKey names what one certificate certifies: an intended use, or for
+// certificateKey identifies what one certificate certifies: an intended use, or for
 // an attestation provider, a service.
 type certificateKey struct {
 	service, intendedUse string

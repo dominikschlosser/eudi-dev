@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package credtype lists the EUDI credential types this tool knows and models
-// the inheritance between them.
+// Package credtype lists the known EUDI credential types and models the
+// inheritance between them.
 //
 // ARF v3.0.0 Annex 2, PID_14 says the vct "SHALL be urn:eudi:pid:1 for the
 // type defined in this document or a domestic type that extends it". A
@@ -74,7 +74,7 @@ func isNumber(s string) bool {
 }
 
 // Chain returns every type of a credential with type vct. The list starts with
-// vct, then the types in aka_vcts, then the types vct extends. It has no
+// vct, then the types in aka_vcts, then the base types from Extends. It has no
 // duplicates. An empty vct yields an empty chain.
 func Chain(vct string, akaVCTs []string) []string {
 	if vct == "" {

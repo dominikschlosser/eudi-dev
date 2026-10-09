@@ -27,10 +27,11 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// holderBinding is the key the issuer bound a credential to. It signs the KB-JWT
-// of an SD-JWT (RFC 9901 §4.3) and the DeviceSigned of an mdoc (ISO 18013-5
-// §9.1.3). Bound with a nil Key means the credential uses a key type this wallet
-// cannot hold, such as a cnf with only a kid or a JWK on another curve.
+// holderBinding is the holder key that the issuer put in a credential. It
+// signs the KB-JWT of an SD-JWT (RFC 9901 §4.3) and the DeviceSigned of an
+// mdoc (ISO 18013-5 §9.1.3). Bound with a nil Key means that this wallet
+// cannot hold the key type, for example a cnf with only a kid or a JWK on
+// another curve.
 type holderBinding struct {
 	Bound bool
 	Key   *ecdsa.PublicKey
@@ -94,8 +95,8 @@ func mdocHolderBinding(raw string) holderBinding {
 	return holderBinding{Bound: true, Key: key}
 }
 
-// mdocNamesDeviceKey reports whether the MSO contains a device key. This tells an
-// mdoc without holder binding apart from one whose device key the wallet cannot read.
+// mdocNamesDeviceKey reports whether the MSO contains a device key. It tells an
+// mdoc without holder binding apart from an mdoc with an unreadable device key.
 func mdocNamesDeviceKey(doc *mdoc.Document) bool {
 	if doc == nil || doc.IssuerAuth == nil || doc.IssuerAuth.MSO == nil {
 		return false

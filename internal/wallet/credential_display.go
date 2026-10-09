@@ -90,8 +90,8 @@ func mergeCredentialDisplay(base, over *CredentialDisplay) *CredentialDisplay {
 	if over.TextColor != "" {
 		out.TextColor = over.TextColor
 	}
-	// A new logo brings its own alt text, even an empty one. Alt text alone
-	// describes the template's logo.
+	// A new logo brings its own alt text, even an empty one. Alt text without a
+	// logo describes the logo of the template.
 	if over.LogoURI != "" {
 		out.LogoURI = over.LogoURI
 		out.LogoAltText = over.LogoAltText
@@ -110,7 +110,7 @@ const maxDisplayImageBytes = 256 << 10
 // maxDisplayImageBytes.
 const maxDisplayImageFetchBytes = 4 << 20
 
-// displayImageMaxSide is the largest side a credential card shows.
+// displayImageMaxSide is the longest image side shown on a credential card.
 const displayImageMaxSide = 1024
 
 // maxDisplayImagePixels guards against decompression bombs. Decoding takes

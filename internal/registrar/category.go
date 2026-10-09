@@ -16,8 +16,8 @@ package registrar
 
 import "github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 
-// Category is what the wallet, the registrar and the UI know about a
-// credential category.
+// Category describes a credential category for the wallet, the registrar and
+// the UI.
 type Category struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
@@ -58,7 +58,7 @@ func CategoryOf(id string) Category {
 	return categories[len(categories)-1]
 }
 
-// CategoryOfEntitlement names the category of a provider entitlement.
+// CategoryOfEntitlement returns the category of a provider entitlement.
 func CategoryOfEntitlement(entitlement string) (string, bool) {
 	for _, c := range categories {
 		if c.Entitlement == entitlement {

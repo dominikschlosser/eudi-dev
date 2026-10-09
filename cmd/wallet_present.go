@@ -62,8 +62,8 @@ type dispatchOID4Opts struct {
 	// host.docker.internal. A verifier in a container can reach them there, and
 	// the status list token subject matches the URI in the credential.
 	docker bool
-	// resolvedOffer is the offer a transaction code prompt already read from the
-	// URI. Issuance falls back to it when reading the URI again fails.
+	// resolvedOffer holds the offer read for the transaction code prompt.
+	// Issuance uses it when reading the URI again fails.
 	resolvedOffer *oid4vc.CredentialOffer
 }
 
@@ -156,7 +156,7 @@ func runPresent(w *wallet.Wallet, store *wallet.WalletStore, uri string, port in
 
 	dim := color.New(color.Faint)
 
-	// Start server so the trust list is available during verification
+	// Start the server so the verifier can fetch the trust list.
 	setLocalPresentationIssuerURL(w, port, docker)
 	srv := wallet.NewServer(w, port, nil)
 	if err := configureIssuerTLSCertificate(srv, store, w.IssuerURL); err != nil {
@@ -700,8 +700,8 @@ func navigatesHere(browserWaiting bool) bool {
 	return !noOpen && !browserWaiting
 }
 
-// applyARFOptions turns on --arf and loads the PEM files of
-// --relying-party-ca and --trust-list-ca.
+// applyARFOptions applies --arf, the PEM files of --relying-party-ca and
+// --trust-list-ca, and the --trusted-list URLs.
 func applyARFOptions(w *wallet.Wallet, arf bool, relyingPartyCAs, trustListCAs, trustedLists []string) error {
 	if arf {
 		w.RequireARF = true

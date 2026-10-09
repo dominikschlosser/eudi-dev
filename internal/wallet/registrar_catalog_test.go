@@ -126,8 +126,8 @@ func TestTheCatalogueIsStored(t *testing.T) {
 	}
 }
 
-// A user template joins the catalogue only when it is saved with catalogue
-// fields. Bad fields store neither the template nor the entry.
+// A user template is added to the catalogue only when it is saved with
+// catalogue fields. Bad fields store neither the template nor the entry.
 func TestASavedTemplateJoinsTheCatalogueOnRequest(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())

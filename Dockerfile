@@ -11,7 +11,7 @@ FROM alpine:3.21
 # there is writable.
 RUN adduser -D -h /home/app app && mkdir /home/app/.eudi-dev && chown app /home/app/.eudi-dev
 COPY --from=build /app/eudi /usr/local/bin/
-# Legacy binary name
+# oid4vc-dev is the former name of the binary.
 RUN ln -s /usr/local/bin/eudi /usr/local/bin/oid4vc-dev
 USER app
 ENV PORT=8085

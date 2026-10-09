@@ -1731,7 +1731,7 @@ test.describe("Verifier redirect after an error response", () => {
 });
 
 // OpenID4VP 1.0 §6.4.1 lets the verifier list claim_sets in preference order.
-// Debug mode lets the user send another set the credential satisfies.
+// Debug mode lets the user send another matching set.
 test.describe("Claim set choice in the consent dialog", () => {
   let verifier;
   let verifierURL;
@@ -2184,7 +2184,8 @@ test.describe("Registrar", () => {
 
     await page.locator("#registrar-search").fill("EUDI Dev Demo Verifier");
     await expect(page.locator(verifier + "-status")).toHaveText("Active");
-    // A long credential list shows three credentials, and each opens its claims.
+    // A long credential list shows three credentials and a "more" button. Each
+    // credential opens its claims.
     const credentials = page.locator(verifier + "-credentials > li:not([hidden])");
     await expect(credentials).toHaveCount(4);
     await expect(page.locator(verifier + "-credential-0-claims")).toBeHidden();

@@ -311,7 +311,7 @@ func TestRunningWalletPresentationPayloadIncludesNonDefaultOverrides(t *testing.
 }
 
 // A running wallet applies its own conformance settings to every step of a
-// flow, so the flags name what to change instead.
+// flow, so it refuses these flags. The error says how to change its settings.
 func TestARunningWalletRefusesConformanceFlags(t *testing.T) {
 	if err := checkRemoteConformanceFlags(nil); err != nil {
 		t.Fatal(err)

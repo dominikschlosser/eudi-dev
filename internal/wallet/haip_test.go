@@ -132,7 +132,7 @@ func TestValidateHAIPCompliance(t *testing.T) {
 		{
 			// HAIP §5.2: "The Wallet MUST support unsigned, signed, and
 			// multi-signed requests." An unsigned one carries no client_id.
-			// The origin the platform reports identifies the caller.
+			// The origin reported by the platform identifies the caller.
 			name: "unsigned Digital Credentials API request",
 			modifyParams: func(p *AuthorizationRequestParams) {
 				p.ClientID = ""

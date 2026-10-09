@@ -34,7 +34,7 @@ import (
 
 // RegistrationCertificateRequest selects what to certify. A verifier gets one
 // certificate per intended use (ARF RPRC_09). An attestation provider gets one
-// per service (ARF RPRC_13), so the request names the service and no intended
+// per service (ARF RPRC_13), so the request sets the service and no intended
 // use.
 type RegistrationCertificateRequest struct {
 	Identifier            string `json:"identifier"`
@@ -229,11 +229,11 @@ func (r *Registrar) issueCertificate(rp WalletRelyingParty, key certificateKey, 
 	return signed, nil
 }
 
-// ProviderCertificateContent returns what a provider certificate for the service contains.
-// A provider certificate has no intended use (ARF RPRC_05). TS05 registers the
-// purpose, the privacy policy and the credentials with an intended use, so the
-// register holds none of them for the certificate (ETSI TS 119 475 V1.2.1
-// GEN-5.2.4-01 fills the certificate from the register).
+// ProviderCertificateContent returns the content of a provider certificate
+// for the service. A provider certificate has no intended use (ARF RPRC_05).
+// TS05 stores the purpose, the privacy policy and the credentials per intended
+// use, so a provider certificate has none of them. ETSI TS 119 475 V1.2.1
+// GEN-5.2.4-01 fills a certificate from the register.
 func ProviderCertificateContent(rp WalletRelyingParty, service WalletRelyingPartyService) RegistrationCertificateContent {
 	content := registrationContent(rp, service, IntendedUse{})
 	content.Entitlements = service.Entitlements

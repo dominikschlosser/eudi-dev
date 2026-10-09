@@ -497,8 +497,8 @@ func TestWalletGeneratePID_PrintsDeprecationWarning(t *testing.T) {
 	}
 }
 
-// The equivalent command has to list the templates the requested PID type is
-// generated from. Otherwise following it produces a different credential.
+// The suggested command must name the templates of the requested PID type.
+// Otherwise it produces a different credential.
 func TestWalletGeneratePID_DeprecationWarningNamesTheGermanTemplates(t *testing.T) {
 	wDir := t.TempDir()
 	prevDir := walletDir

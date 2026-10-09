@@ -113,7 +113,7 @@ strict.eudi-test.dev {
 	}
 }
 
-# Preview uses its own release and data. deploy.sh promote moves the main site to the tested release. Caddy provisions HTTPS automatically.
+# The preview host runs the newest beta. Caddy provisions HTTPS automatically.
 preview.eudi-test.dev {
 	handle {
 		reverse_proxy wallet-preview:8085

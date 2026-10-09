@@ -41,7 +41,7 @@ const (
 )
 
 // ClientHeader identifies the client behind an API call as "<name>/<version>".
-// OwnerHeader identifies the browser a client submits on behalf of. The wallet
+// OwnerHeader identifies the browser when a client submits on its behalf. The wallet
 // reads both and the CLI sends both.
 const (
 	ClientHeader = "X-Eudi-Client"

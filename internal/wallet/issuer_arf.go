@@ -29,8 +29,8 @@ import (
 )
 
 // issuerAuthentication is what the wallet knows about an issuer before it
-// requests a credential: its metadata, the certificate chain that signed the
-// metadata (nil for unsigned metadata) and the offered configurations.
+// requests a credential: its metadata, the certificate chain of the metadata
+// signature (nil for unsigned metadata) and the offered configurations.
 type issuerAuthentication struct {
 	metadata       map[string]any
 	signerChain    []*x509.Certificate
@@ -39,8 +39,8 @@ type issuerAuthentication struct {
 	registrarCAs   []*x509.Certificate
 	statusCAs      []*x509.Certificate
 	statusClient   *http.Client
-	// category names the credential category of an offered type. The rules
-	// of a PID Provider apply to the pid category.
+	// category returns the category of an offered type. The pid category
+	// gets the rules of a PID Provider.
 	category func(format string, types []string) string
 }
 
@@ -195,7 +195,8 @@ func issuerARFFindings(a issuerAuthentication) []string {
 
 // providesType reports whether a listed attestation has the format and one of
 // the types. A listed entry without a type matches nothing, because
-// provides_attestations names the types a provider may issue (ARF RPRC_15).
+// provides_attestations lists the types that a provider may issue (ARF
+// RPRC_15).
 func providesType(provided []registeredCredential, format string, types []string) bool {
 	return slices.ContainsFunc(provided, func(p registeredCredential) bool {
 		return p.format == format && len(p.types) > 0 && slices.ContainsFunc(types, func(t string) bool { return slices.Contains(p.types, t) })
@@ -213,8 +214,8 @@ func providedAttestationsOf(cert map[string]any) []registeredCredential {
 	return out
 }
 
-// providerCertificateContentFindings checks the content ETSI TS 119 475 V1.2.1
-// §5.2.4 and ARF Topic 44 require of a provider's registration certificate.
+// providerCertificateContentFindings checks a provider's registration
+// certificate against ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44.
 // RPRC_11 and RPRC_12 apply to relying parties only, and a provider
 // certificate has no intended use (RPRC_05).
 func providerCertificateContentFindings(cert map[string]any) []string {

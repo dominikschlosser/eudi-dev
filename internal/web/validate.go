@@ -515,7 +515,8 @@ func statusCheckNotRun(ref *statuslist.StatusRef, opts ValidateOpts) (CheckResul
 	return CheckResult{}, false
 }
 
-// The credential status is reported apart from trust in the status list signature.
+// The credential status and the trust in the status list signature are
+// separate checks.
 func checkStatusRef(ref *statuslist.StatusRef, tlCerts []trustlist.CertInfo) []CheckResult {
 	if ref == nil {
 		return []CheckResult{{Name: "status", Status: "skipped", Detail: "No status list reference in credential"}}

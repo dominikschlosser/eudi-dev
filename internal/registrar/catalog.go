@@ -49,7 +49,7 @@ type SchemaURI struct {
 	URI              string `json:"uri"`
 }
 
-// TrustAuthority names the trust framework of an attestation type (TS11 v1.0
+// TrustAuthority identifies the trust framework of an attestation type (TS11 v1.0
 // §4.3.3). The Annex A.2 schema spells the qualifier isLOTE.
 type TrustAuthority struct {
 	FrameworkType string `json:"frameworkType"`
@@ -57,19 +57,19 @@ type TrustAuthority struct {
 	IsLOTE        *bool  `json:"isLOTE,omitempty"`
 }
 
-// CatalogAttestation is a catalogue entry. Schema is the SchemaMeta of the TS11
-// API. Name and Credentials fill the format-specific schemas at its schemaURIs
-// (TS11 v1.0 §4.3.4).
+// CatalogAttestation is a catalogue entry. Schema is its SchemaMeta in the
+// TS11 API. Name and Credentials make up the format-specific schemas behind
+// its schema URIs (TS11 v1.0 §4.3.4).
 type CatalogAttestation struct {
 	Name        string              `json:"name"`
 	Credentials []CatalogCredential `json:"credentials"`
 	Schema      AttestationSchema   `json:"schema"`
-	// Category is a credtemplate category. The wallet signs the attestation
-	// under the category's provider CA, and an entry without trusted
-	// authorities names the category's trusted list.
+	// Category is pid, qeaa, pub-eaa or eaa. The wallet signs the attestation
+	// with the provider CA of that category. An entry without trusted
+	// authorities links the wallet's trusted list of that category.
 	Category string `json:"category,omitempty"`
-	// Template marks an entry that comes from one of the wallet's credential
-	// templates. It changes with the template, not in the catalogue.
+	// Template marks an entry built from a credential template. Editing the
+	// template changes the entry. The catalogue API can't change it.
 	Template bool `json:"template,omitempty"`
 }
 
@@ -97,8 +97,8 @@ var (
 	frameworkTypes    = []string{"aki", "etsi_tl", "openid_federation"}
 )
 
-// CatalogAttestations lists the entries of the credential templates followed
-// by the added ones. base is the URL the schema URIs point to.
+// CatalogAttestations lists the template entries first, then the added
+// entries.
 func (r *Registrar) CatalogAttestations() []CatalogAttestation {
 	base := r.env.RegistrarBase()
 	entries := r.templateCatalog(base)
@@ -263,8 +263,8 @@ func (r *Registrar) isTemplateCatalogID(id, base string) bool {
 }
 
 // normalizeCatalogAttestation checks an entry against the TS11 v1.0 §4.3 data
-// model and fills in defaults. The catalogue takes the two formats of the EUDI
-// stack.
+// model and fills in defaults. It accepts the two EUDI formats, dc+sd-jwt and
+// mso_mdoc.
 func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	entry.Name = strings.TrimSpace(entry.Name)
 	if entry.Name == "" {
@@ -332,8 +332,8 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 		if a.IsLOTE != nil && a.FrameworkType != "etsi_tl" {
 			return fmt.Errorf("isLOTE applies only to the etsi_tl framework type (TS11 v1.0 §4.3.3)")
 		}
-		// An aki value is a key identifier. The other two name a list or an
-		// entity by URI, and the UI links them.
+		// An aki value is a key identifier. The other framework types identify
+		// a list or an entity by URI, and the UI links them.
 		if a.FrameworkType != "aki" && !IsWebURL(a.Value) {
 			return fmt.Errorf("the %s value %q is not an http or https URL", a.FrameworkType, a.Value)
 		}
@@ -342,9 +342,8 @@ func normalizeCatalogAttestation(entry *CatalogAttestation, base string) error {
 	return nil
 }
 
-// completed fills in what follows from the entry: the formats and their
-// schema URIs on the wallet, and the trusted list of its category unless it
-// names trusted authorities itself.
+// completed fills in the formats with their schema URIs on the wallet. An
+// entry without trusted authorities gets the trusted list of its category.
 func completed(entry CatalogAttestation, base string) CatalogAttestation {
 	entry.Category = firstNonEmpty(entry.Category, credtemplate.CategoryEAA)
 	if len(entry.Schema.TrustedAuthorities) == 0 {
@@ -363,7 +362,8 @@ func completed(entry CatalogAttestation, base string) CatalogAttestation {
 	return entry
 }
 
-// CategoryTrustListURL is the wallet's trusted list of a credential category.
+// CategoryTrustListURL returns the URL of the wallet's trusted list for a
+// credential category.
 func CategoryTrustListURL(base, category string) string {
 	return base + "/api/trustlists/" + category
 }
@@ -375,8 +375,8 @@ func catalogSchemaURL(base, id, format string) string {
 // FormatSchema is the format-specific schema behind a schema URI (TS11 v1.0
 // §4.3.4). For dc+sd-jwt it is SD-JWT VC Type Metadata
 // (draft-ietf-oauth-sd-jwt-vc-19 §5.2), with the claims of §5.6. For mso_mdoc
-// TS11 names the DocType format of ISO 23220-2, which eudi-dev has not
-// checked. It serves the doctype with its namespaces and element identifiers.
+// TS11 refers to the DocType format of ISO 23220-2. eudi-dev serves the
+// doctype with its namespaces and element identifiers instead.
 func (entry CatalogAttestation) FormatSchema(format string) (map[string]any, bool) {
 	i := slices.IndexFunc(entry.Credentials, func(c CatalogCredential) bool { return c.Format == format })
 	if i < 0 {

@@ -418,8 +418,8 @@ func TestIssuanceRemembersHowToRenew(t *testing.T) {
 	}
 }
 
-// §9.1 holds a Deferred Credential Request to the same encryption as the one
-// that started the issuance: "The Client MAY encrypt the request when
+// §9.1 applies the encryption rules of the Credential Request to the Deferred
+// Credential Request: "The Client MAY encrypt the request when
 // encryption_required is false and MUST do so when encryption_required is
 // true", and it "MUST [provide its encryption parameters] when
 // encryption_required is true. Note that this object will be used for

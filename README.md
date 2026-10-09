@@ -23,7 +23,7 @@
 
 A wallet for testing EUDI issuers and verifiers, in the browser, on the command line and over an HTTP API. It speaks OpenID4VP 1.0, OpenID4VCI 1.0 and HAIP 1.0 with SD-JWT VC and mdoc credentials, and it comes with the parts of the ecosystem around a wallet: a registrar, PID templates, a demo issuer and verifier, a decoder and a debug proxy.
 
-> **Try it online:** a shared public demo runs at **<https://eudi-test.dev>**.
+> **Try it online:** a shared public demo runs at **<https://eudi-test.dev>**. The newest beta runs at <https://preview.eudi-test.dev>.
 
 ![Wallet UI](docs/assets/wallet-ui.png)
 
@@ -78,6 +78,20 @@ docker run -p 8085:8085 -p 8086:8086 ghcr.io/dominikschlosser/eudi-dev
 | Source | `git clone https://github.com/dominikschlosser/eudi-dev.git && cd eudi-dev && go build -o eudi .` |
 
 The Go module path is `github.com/dominikschlosser/eudi-dev/v3`. Each major version has its own suffix, so v2 releases install from `github.com/dominikschlosser/eudi-dev/v2`. Earlier v2 tags (up to v2.4.2) have an incorrect module path. Install them from release binaries or build them from source.
+
+### Beta releases
+
+A new major version comes out as betas first, for example `v3.0.0-beta.1`. A beta is a prerelease on GitHub. You only get it when you ask for it:
+
+| Method | Command |
+|---|---|
+| Online | <https://preview.eudi-test.dev> runs the newest beta |
+| Docker | `docker pull ghcr.io/dominikschlosser/eudi-dev:beta` gets the newest release, betas included. For repeatable runs, pin the exact tag, such as `:v3.0.0-beta.1` |
+| Go | `go install github.com/dominikschlosser/eudi-dev/v3@v3.0.0-beta.1`. Go treats `/v3` as its own module, so until 3.0.0 is out, `/v3@latest` installs the newest beta too |
+| Binaries | Download them from the prerelease on [GitHub Releases](https://github.com/dominikschlosser/eudi-dev/releases). The binaries aren't signed, so macOS blocks one you downloaded in the browser. Run `xattr -d com.apple.quarantine eudi` to unblock it |
+| Java tests | [testcontainers-eudi](https://github.com/dominikschlosser/testcontainers-eudi) publishes a matching beta, such as `3.0.0-beta.1`. Maven only uses it when you set that version |
+
+Homebrew and the `latest` Docker tag stay on the newest stable release. If you installed with Homebrew, try a beta with Docker or `go install`. Once the final release is out, `beta` points to it, so beta testers end up on the stable version.
 
 ## Commands
 

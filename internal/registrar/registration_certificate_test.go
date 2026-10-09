@@ -21,7 +21,7 @@ import (
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 )
 
-// registerTestRelyingParty registers a relying party whose intended use asks
+// registerTestRelyingParty registers a relying party. Its intended use asks
 // for the PID's given_name.
 func registerTestRelyingParty(t *testing.T, w *testWallet) WalletRelyingParty {
 	t.Helper()

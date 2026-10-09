@@ -112,8 +112,8 @@ type offerState struct {
 	// configIDs are the credential configurations in the offer. Nil means
 	// the ticket.
 	configIDs []string
-	// jkt is the DPoP key thumbprint the access token is bound to. It is
-	// empty for a bearer token.
+	// jkt is the thumbprint of the DPoP key that binds the access token. It
+	// is empty for a bearer token.
 	jkt string
 	// withStatus adds a reference to the wallet status list so the
 	// credential can be revoked.
@@ -202,9 +202,8 @@ func (d *DemoRP) handleIssuerMetadata(w http.ResponseWriter, r *http.Request) {
 		// Wallets read client authentication, PAR and DPoP metadata from the
 		// authorization server, so the issuer lists itself.
 		"authorization_servers": []string{issuer},
-		// §12.2.4 defines no token_endpoint parameter in Credential Issuer
-		// Metadata. A 1.0 wallet gets its key proof challenge from the Nonce
-		// Endpoint of §7.
+		// A 1.0 wallet gets its key proof challenge from the Nonce Endpoint
+		// (§7).
 		"nonce_endpoint": issuer + "/nonce",
 		// OpenID4VCI 1.0 §8.3: one credential copy per key proof, up to batch_size.
 		"batch_credential_issuance": map[string]any{"batch_size": demoBatchSize},
@@ -659,9 +658,9 @@ func (d *DemoRP) verifyProofJWT(raw string) (*ecdsa.PublicKey, *proofError) {
 	return holderKey, nil
 }
 
-// proofKeyMaterial reads the key a proof is bound to. Appendix F.1 allows
-// exactly one of jwk, kid and x5c. A kid is a DID URL this issuer cannot
-// resolve, so the error says that kid is unsupported.
+// proofKeyMaterial reads the key that a proof is bound to. Appendix F.1
+// allows exactly one of jwk, kid and x5c. A kid is a DID URL, and this issuer
+// can't resolve DIDs, so the error says that kid is unsupported.
 func proofKeyMaterial(header map[string]any) (*ecdsa.PublicKey, *proofError) {
 	jwk, hasJWK := header["jwk"].(map[string]any)
 	x5c, hasX5C := header["x5c"]

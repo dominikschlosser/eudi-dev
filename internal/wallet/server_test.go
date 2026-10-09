@@ -2093,8 +2093,8 @@ func TestRegistrarWRPList_FiltersByProvidedAttestation(t *testing.T) {
 	}
 }
 
-// An EAA type is registered with the EAA entitlement and is on the EAA list,
-// which has the local type and no PID URIs.
+// An EAA type is registered with the EAA entitlement and is on the EAA list.
+// That list has the EAA list type and no PID URIs.
 func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	w := generateTestWallet(t)
 	w.IssuerURL = "https://localhost:8443"
@@ -2149,15 +2149,15 @@ func TestAnEAATypeIsRegisteredAndListedAsAnEAA(t *testing.T) {
 	}
 	decodeCompactJWTPayload(t, trustListResp.Body.String(), &list)
 	scheme := list.LoTE.ListAndSchemeInformation
-	if scheme["LoTEType"] != localTrustListType || scheme["StatusDeterminationApproach"] != nil {
-		t.Fatalf("scheme %v, want the local type without a status determination approach", scheme)
+	if scheme["LoTEType"] != eaaTrustListType || scheme["StatusDeterminationApproach"] != nil {
+		t.Fatalf("scheme %v, want the EAA list type without a status determination approach", scheme)
 	}
 	if len(list.LoTE.TrustedEntitiesList) != 1 || len(list.LoTE.TrustedEntitiesList[0].TrustedEntityServices) != 2 {
 		t.Fatalf("entities %+v, want one entity with two services", list.LoTE.TrustedEntitiesList)
 	}
 	services := list.LoTE.TrustedEntitiesList[0].TrustedEntityServices
-	if services[0].ServiceInformation.ServiceTypeIdentifier != localIssuanceServiceType || services[1].ServiceInformation.ServiceTypeIdentifier != localRevocationServiceType {
-		t.Fatalf("services %+v, want the local issuance and revocation types", services)
+	if services[0].ServiceInformation.ServiceTypeIdentifier != eaaIssuanceServiceType || services[1].ServiceInformation.ServiceTypeIdentifier != eaaRevocationServiceType {
+		t.Fatalf("services %+v, want the EAA issuance and revocation types", services)
 	}
 }
 
@@ -2260,7 +2260,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 		t.Fatalf("expected top-level LoTE object, got %T", selectedPayload["LoTE"])
 	}
 	selectedScheme := selectedLoTE["ListAndSchemeInformation"].(map[string]any)
-	if selectedScheme["LoTEType"] != localTrustListType {
+	if selectedScheme["LoTEType"] != eaaTrustListType {
 		t.Fatalf("doctype-selected list has LoTEType %v, want the EAA list type", selectedScheme["LoTEType"])
 	}
 
@@ -2275,7 +2275,7 @@ func TestTrustListsAPI_ListsEveryCategoryWithThePIDListAsDefault(t *testing.T) {
 		t.Fatalf("expected top-level LoTE object, got %T", byIDPayload["LoTE"])
 	}
 	byIDScheme := byIDLoTE["ListAndSchemeInformation"].(map[string]any)
-	if byIDScheme["LoTEType"] != localTrustListType {
+	if byIDScheme["LoTEType"] != eaaTrustListType {
 		t.Fatalf("/api/trustlists/eaa has LoTEType %v, want the EAA list type", byIDScheme["LoTEType"])
 	}
 	uris, ok := byIDScheme["SchemeInformationURI"].([]any)

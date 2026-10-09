@@ -38,9 +38,9 @@ func generateEAATrustListJWT(signingKey *ecdsa.PrivateKey, caCert *x509.Certific
 	return generateTrustListJWTWithOptions(signingKey, caCert, trustListOptions{
 		OperatorName: "EUDI Dev Wallet",
 		Profile: trustListProfile{
-			LoTEType:              localTrustListType,
-			IssuanceServiceType:   localIssuanceServiceType,
-			RevocationServiceType: localRevocationServiceType,
+			LoTEType:              eaaTrustListType,
+			IssuanceServiceType:   eaaIssuanceServiceType,
+			RevocationServiceType: eaaRevocationServiceType,
 			IssuanceServiceName:   "Issuance Service",
 			RevocationServiceName: "Revocation Service",
 			EntityName:            "EUDI Dev Wallet Issuer",
@@ -146,8 +146,8 @@ func TestGenerateTrustListJWT_PayloadStructure(t *testing.T) {
 	if schemeInfo["LoTESequenceNumber"] != float64(1) {
 		t.Errorf("expected LoTESequenceNumber 1, got %v", schemeInfo["LoTESequenceNumber"])
 	}
-	if schemeInfo["LoTEType"] != localTrustListType {
-		t.Errorf("expected local LoTEType %s, got %v", localTrustListType, schemeInfo["LoTEType"])
+	if schemeInfo["LoTEType"] != eaaTrustListType {
+		t.Errorf("expected the EAA list type %s, got %v", eaaTrustListType, schemeInfo["LoTEType"])
 	}
 	if _, ok := schemeInfo["ListIssueDateTime"].(string); !ok {
 		t.Errorf("expected ListIssueDateTime string, got %T", schemeInfo["ListIssueDateTime"])
@@ -396,8 +396,8 @@ func TestGenerateTrustListJWT_WrongKeyVerification(t *testing.T) {
 }
 
 // A credential is on the list of its category. The category comes from the
-// template or the catalogue entry, and a credential without either is on no
-// list.
+// template or the catalogue entry. A credential without either is an EAA, and
+// an unlisted credential is on no list.
 func TestACredentialIsOnTheListOfItsCategory(t *testing.T) {
 	t.Run("generated root", func(t *testing.T) { checkCategoryLists(t, generateTestWallet(t)) })
 	// A root with path length zero signs the leaves directly.
@@ -469,5 +469,51 @@ func checkCategoryLists(t *testing.T, w *Wallet) {
 				t.Errorf("on the lists %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// A list type stored by an eudi-dev 2 wallet moves to the list of the spec's
+// category.
+func TestAnEudiDev2ListTypeMovesToTheListOfItsCategory(t *testing.T) {
+	legacy := IssuedAttestationSpec{
+		Format:                "dc+sd-jwt",
+		VCT:                   "urn:test:1",
+		TrustListType:         legacyTrustListType,
+		IssuanceServiceType:   legacyIssuanceServiceType,
+		RevocationServiceType: legacyRevocationService,
+		EntityName:            "EUDI Dev Wallet Issuer",
+	}
+	for _, tc := range []struct {
+		category string
+		want     trustListProfile
+	}{
+		{"", eaaTrustListProfile()},
+		{credtemplate.CategoryQEAA, categoryTrustListProfile(credtemplate.CategoryQEAA)},
+	} {
+		spec := legacy
+		spec.Category = tc.category
+		got, err := NormalizeIssuedAttestationSpec(spec, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.TrustListType != tc.want.LoTEType || got.IssuanceServiceType != tc.want.IssuanceServiceType || got.RevocationServiceType != tc.want.RevocationServiceType || got.EntityName != tc.want.EntityName {
+			t.Errorf("category %q: got %+v, want the list of %s", tc.category, got, tc.want.Category)
+		}
+	}
+}
+
+// An imported PID leaves the wallet's own PID types on the PID list, because
+// the wallet lists only what it issues.
+func TestAnImportedPIDLeavesTheWalletsPIDList(t *testing.T) {
+	w := generateTestWalletWithPID(t)
+	for _, c := range generateTestWalletWithPID(t).GetCredentials() {
+		if _, err := w.ImportCredential(c.Raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, spec := range w.issuedAttestationSpecs() {
+		if spec.Category != credtemplate.CategoryPID {
+			t.Errorf("%s %s%s has category %q, want pid", spec.Format, spec.VCT, spec.DocType, spec.Category)
+		}
 	}
 }

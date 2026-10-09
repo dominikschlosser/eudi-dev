@@ -26,7 +26,7 @@ import (
 )
 
 // captureVerifier stands in for a verifier waiting on its response_uri. Every
-// refusal the wallet decides on must arrive here. OpenID4VP 1.0 §5.6 says
+// refusal of the wallet must arrive here. OpenID4VP 1.0 §5.6 says
 // "Both successful and error responses SHOULD be returned using the supplied
 // Response Mode, or if none is supplied, using the default Response Mode". A
 // verifier that gets no answer waits until it times out.
@@ -97,7 +97,7 @@ func dcqlQueryParam(t *testing.T, query map[string]any) string {
 	return string(encoded)
 }
 
-// unsatisfiableRequest asks for a credential type no wallet holds.
+// unsatisfiableRequest asks for a credential type that no wallet holds.
 func unsatisfiableRequest(t *testing.T, verifierURL string) url.Values {
 	t.Helper()
 	return url.Values{
@@ -242,7 +242,7 @@ func TestValidationFailuresAreNotSentToTheVerifier(t *testing.T) {
 }
 
 // A profile violation is found during request validation, so the same rule
-// applies. The wallet sends nothing to an endpoint it could not validate.
+// applies. The wallet sends nothing to an unvalidated endpoint.
 func TestAHAIPViolationIsNotSentToTheVerifier(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.RequireHAIP = true

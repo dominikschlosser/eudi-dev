@@ -316,8 +316,8 @@ func TestBuildIssueAttestationSpec_CategoryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeIssuedAttestationSpec: %v", err)
 	}
-	if spec.Category != "eaa" || spec.TrustListType != "http://uri.etsi.org/19602/LoTEType/local" {
-		t.Fatalf("category %q and trust-list type %q, want eaa and the local type", spec.Category, spec.TrustListType)
+	if spec.Category != "eaa" || spec.TrustListType != "https://eudi-test.dev/LoTEType/EAAProvidersList" {
+		t.Fatalf("category %q and trust-list type %q, want eaa and the EAA list type", spec.Category, spec.TrustListType)
 	}
 	if len(spec.Entitlements) != 1 || spec.Entitlements[0] != "https://uri.etsi.org/19475/Entitlement/Non_Q_EAA_Provider" {
 		t.Fatalf("expected Non_Q_EAA entitlement, got %v", spec.Entitlements)

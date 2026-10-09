@@ -91,8 +91,8 @@ func ParseDailySchedule(value string) (*DailySchedule, error) {
 
 type demoState struct {
 	opts DemoOptions
-	// fixedTemplates names the templates the demo started with. Visitors can't
-	// change them, and a reset keeps them.
+	// fixedTemplates holds the operator's templates (those present at startup).
+	// Visitors can't change them, and a reset keeps them.
 	fixedTemplates map[string]bool
 	mu             sync.Mutex
 	nextReset      time.Time
@@ -140,13 +140,13 @@ func (s *Server) Handler() http.Handler {
 	}, inner)
 }
 
-// guardAPI wraps a handler with the cross-origin guard. It passes the URLs this
-// wallet is served under, so a deployment behind a reverse proxy works when the
-// proxy does not pass the public Host through.
+// guardAPI wraps a handler with the cross-origin guard. It passes the wallet's
+// public URLs, so a deployment behind a reverse proxy works when the proxy
+// does not pass the public Host through.
 func (s *Server) guardAPI(next http.Handler) http.Handler {
 	// /api/dc-api is the Digital Credentials API endpoint. A verifier's page
 	// invokes it from its own origin, so it is exempt. It relies on the origin
-	// the platform reports and on the consent dialog.
+	// reported by the platform and on the consent dialog.
 	return httpsec.GuardAPIExcept(next, []string{"/api/dc-api"}, s.wallet.BaseURL, s.wallet.IssuerURL)
 }
 
@@ -317,10 +317,10 @@ func (s *Server) demoConfig() map[string]any {
 
 const maxDemoTemplates = 50
 
-// checkDemoTemplate applies the demo limits to a template a visitor saves.
-// Visitors share the templates the demo started with, so they can't replace
-// them. A template image can only be the art of a built-in template, because
-// visitors can't upload images.
+// checkDemoTemplate applies the demo limits to a template saved by a visitor.
+// Visitors share the operator's templates, so they can't replace them. A
+// template image can only be the art of a built-in template, because visitors
+// can't upload images.
 func (s *Server) checkDemoTemplate(t credtemplate.Template) error {
 	if s.demo == nil {
 		return nil
@@ -352,8 +352,8 @@ func (s *Server) checkDemoTemplate(t credtemplate.Template) error {
 	return nil
 }
 
-// checkDemoTemplateDelete keeps visitors from deleting the templates the
-// demo started with.
+// checkDemoTemplateDelete keeps visitors from deleting the operator's
+// templates.
 func (s *Server) checkDemoTemplateDelete(name string) error {
 	if s.demo != nil && s.demo.fixedTemplates[strings.TrimSpace(name)] {
 		return fmt.Errorf("%q is a predefined template, and the public demo can't delete it", name)
@@ -361,7 +361,6 @@ func (s *Server) checkDemoTemplateDelete(name string) error {
 	return nil
 }
 
-// deleteVisitorTemplates removes the templates visitors saved.
 func (s *Server) deleteVisitorTemplates() error {
 	templates, err := credtemplate.List(s.wallet.Templates)
 	if err != nil {

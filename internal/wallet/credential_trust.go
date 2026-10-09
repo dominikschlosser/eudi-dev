@@ -74,8 +74,8 @@ func mdocIssuerCertIdentity(raw string) map[string]any {
 }
 
 // credentialSignatureState reports self_consistent when the signature
-// verifies against the embedded key. That is no issuer trust (ADR-0009). It
-// returns nil when the algorithm is unknown.
+// verifies against the embedded key. That does not mean the issuer is trusted
+// (ADR-0009). It returns nil when the algorithm is unknown.
 func credentialSignatureState(c StoredCredential) map[string]any {
 	if c.Format == "mso_mdoc" {
 		return mdocSignatureState(c.Raw)
@@ -130,8 +130,8 @@ func mdocSignatureState(raw string) map[string]any {
 	}
 }
 
-// credentialHolderBindingState reports whether this wallet holds the key a
-// credential is bound to.
+// credentialHolderBindingState reports whether the wallet holds the binding
+// key of a credential.
 func (w *Wallet) credentialHolderBindingState(c StoredCredential) string {
 	binding := credentialHolderBinding(c.Raw)
 	if !binding.Bound {

@@ -85,7 +85,7 @@ func TestPushedAuthorizationRequestRejections(t *testing.T) {
 	}
 }
 
-// A request_uri nobody pushed cannot be resolved. The error is shown on the
+// A request_uri that nobody pushed cannot be resolved. The error is shown on the
 // authorization endpoint because the caller supplied the redirect URL.
 func TestAuthorizeRejectsAnUnknownRequestURI(t *testing.T) {
 	d, _, _ := newDemoRP(t)
@@ -170,9 +170,9 @@ func foreignWalletProvider(t *testing.T) walletProvider {
 	return walletProvider{key: signingKey, leaf: leaf}
 }
 
-// attest issues a Client Attestation JWT for a client and the key it holds.
-// The claims are those draft-ietf-oauth-attestation-based-client-auth-10 §4
-// requires, which from draft -08 on do not include iss.
+// attest issues a Client Attestation JWT for a client and its key. It carries
+// the claims required by draft-ietf-oauth-attestation-based-client-auth-10 §4.
+// From draft -08 on, iss is not one of them.
 func (p walletProvider) attest(t *testing.T, clientID string, clientKey *ecdsa.PrivateKey) string {
 	t.Helper()
 	return signES256(t, p.key,
@@ -190,8 +190,8 @@ func (p walletProvider) attest(t *testing.T, clientID string, clientKey *ecdsa.P
 	)
 }
 
-// attestationPoP proves possession of the attested key for one request, with
-// the claims §5.1 requires and no others.
+// attestationPoP proves possession of the attested key for one request. It
+// carries only the claims required by §5.1.
 func attestationPoP(t *testing.T, clientKey *ecdsa.PrivateKey, audience string) string {
 	t.Helper()
 	return signES256(t, clientKey,
@@ -205,8 +205,8 @@ func dpopProof(t *testing.T, key *ecdsa.PrivateKey, method, htu string) string {
 	return dpopProofForToken(t, key, method, htu, "")
 }
 
-// dpopProofForToken adds the ath claim RFC 9449 requires of a proof that
-// accompanies an access token.
+// dpopProofForToken adds the ath claim. RFC 9449 requires it in a proof sent
+// with an access token.
 func dpopProofForToken(t *testing.T, key *ecdsa.PrivateKey, method, htu, accessToken string) string {
 	t.Helper()
 	payload := map[string]any{"htm": method, "htu": htu, "iat": time.Now().Unix(), "jti": "dpop-" + htu}
@@ -221,7 +221,7 @@ func dpopProofForToken(t *testing.T, key *ecdsa.PrivateKey, method, htu, accessT
 }
 
 // pushAuthorizationRequest pushes a minimal but complete authorization request
-// with whatever client authentication the headers carry. A nil dpopKey pushes
+// with the client authentication from the headers. A nil dpopKey pushes
 // without a DPoP proof, which RFC 9449 §10.1 leaves to the client.
 func pushAuthorizationRequest(t *testing.T, h http.Handler, clientID string, dpopKey *ecdsa.PrivateKey, challenge string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()

@@ -54,11 +54,20 @@ func (s *signingStore) trustList(key *ecdsa.PrivateKey, ca *x509.Certificate, op
 	if err != nil {
 		return "", err
 	}
+	return s.sequencedList(s.trustListDir(opts.Issuer, opts.TrustListPath), ca, options, func(sequence int) (string, error) {
+		opts.Sequence = sequence
+		return generateTrustListJWTWithOptions(key, ca, opts)
+	})
+}
+
+// sequencedList returns the current list of the directory. It signs a new one
+// with the next sequence number when the content changed or the list reached
+// its next update (ETSI TS 119 602 V1.1.1 §6.3.2 and §6.3.15).
+func (s *signingStore) sequencedList(dir string, ca *x509.Certificate, content []byte, sign func(sequence int) (string, error)) (string, error) {
 	hash := sha256.New()
 	hash.Write(ca.Raw)
-	hash.Write(options)
+	hash.Write(content)
 	identity := fmt.Sprintf("%x", hash.Sum(nil))
-	dir := s.trustListDir(opts.Issuer, opts.TrustListPath)
 	at := path.Join(dir, "current.json")
 	for range 5 {
 		blobs, err := s.backend.ReadAll(dir)
@@ -78,12 +87,12 @@ func (s *signingStore) trustList(key *ecdsa.PrivateKey, ca *x509.Certificate, op
 				return current.JWT, nil
 			}
 		}
-		opts.Sequence = current.Sequence + 1
-		jwt, err := generateTrustListJWTWithOptions(key, ca, opts)
+		sequence := current.Sequence + 1
+		jwt, err := sign(sequence)
 		if err != nil {
 			return "", err
 		}
-		updated := storedTrustList{Identity: identity, Sequence: opts.Sequence, NextUpdate: time.Now().UTC().Truncate(time.Second).Add(24 * time.Hour), JWT: jwt}
+		updated := storedTrustList{Identity: identity, Sequence: sequence, NextUpdate: time.Now().UTC().Truncate(time.Second).Add(24 * time.Hour), JWT: jwt}
 		data, err := json.Marshal(updated) //nolint:gosec // The signed trust list is public data.
 		if err != nil {
 			return "", err

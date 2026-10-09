@@ -68,8 +68,8 @@ func verifyRegistrationEntries(entries []map[string]any) (registrations []verifi
 	return registrations, problems
 }
 
-// verifyToAnchor verifies the leaf of chain to one of roots, with the rest of
-// chain as intermediates.
+// verifyToAnchor checks that the chain's leaf chains to one of the anchors,
+// with the rest of the chain as intermediates.
 func verifyToAnchor(chain []*x509.Certificate, anchors []*x509.Certificate) error {
 	if len(chain) == 0 {
 		return errors.New("no certificate")
@@ -163,9 +163,10 @@ func registrationPurposes(certs []map[string]any) (purposes, privacyPolicies []s
 	return purposes, privacyPolicies
 }
 
-// ARFFindings checks how a request authenticates its relying party against
-// the ARF and ETSI TS 119 475. --arf runs them. The ARF leaves refusing to the
-// Wallet Provider (RPA_06a, RPRC_17, RPRC_21), and strict mode refuses.
+// ARFFindings checks the relying party authentication of a request against
+// the ARF and ETSI TS 119 475. --arf turns these checks on. The ARF leaves
+// refusing to the Wallet Provider (RPA_06a, RPRC_17, RPRC_21), and strict mode
+// refuses.
 func ARFFindings(authReq *AuthorizationRequestParams) []string {
 	if authReq == nil {
 		return nil
@@ -259,8 +260,8 @@ func organizationIdentifier(cert *x509.Certificate) string {
 	return ""
 }
 
-// Check required content from ETSI TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44.
-// Missing fields are ARF findings.
+// registrationCertificateContentFindings checks the required content of ETSI
+// TS 119 475 V1.2.1 §5.2.4 and ARF Topic 44. Missing fields are ARF findings.
 func registrationCertificateContentFindings(cert map[string]any) []string {
 	var findings []string
 	miss := func(field, rule string) {
@@ -291,10 +292,9 @@ func registrationCertificateContentFindings(cert map[string]any) []string {
 	return append(findings, registrationValidityFindings(cert, "ARF RPRC_17")...)
 }
 
-// registeredPartyFindings checks the fields of Table 7 of ETSI TS 119 475
-// V1.2.1 that every registered relying party has, a verifier or a provider
-// (GEN-5.2.4-01). The registry has no infoURI for every party, so info_uri is
-// optional.
+// registeredPartyFindings checks the fields of ETSI TS 119 475 V1.2.1 Table 7
+// (GEN-5.2.4-01). Every registered relying party has them, verifier or
+// provider. Not every registry entry has an infoURI, so info_uri is optional.
 func registeredPartyFindings(cert map[string]any, miss func(field, rule string)) {
 	const table7 = "ETSI TS 119 475 V1.2.1 GEN-5.2.4-01"
 	if stringClaim(cert["country"]) == "" {
@@ -422,8 +422,8 @@ func registeredCredentials(cert map[string]any) []registeredCredential {
 	return out
 }
 
-// registeredCovers reports whether the claim is registered for every type the
-// query accepts.
+// registeredCovers reports whether the claim is registered for every type
+// accepted by the query.
 func registeredCovers(registered []registeredCredential, format string, types []string, path []any) bool {
 	for _, t := range types {
 		if !slices.ContainsFunc(registeredFor(registered, format, t), func(rc registeredCredential) bool {
@@ -511,7 +511,7 @@ func listOfMaps(v any) []map[string]any {
 	return out
 }
 
-// toAnyList also takes []string, which in-memory records hold before a JSON
+// toAnyList also takes []string. In-memory records hold []string until a JSON
 // round trip.
 func toAnyList(v any) []any {
 	if strs, ok := v.([]string); ok {

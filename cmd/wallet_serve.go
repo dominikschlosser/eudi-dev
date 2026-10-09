@@ -292,8 +292,8 @@ func urlHostPort(raw string) string {
 	return u.Host
 }
 
-// isLocalTestHostPort reports whether the host is one this tool generates
-// URLs for. Foreign issuers keep their own URLs and are never flagged.
+// isLocalTestHostPort reports whether eudi-dev generates URLs for this host.
+// Foreign issuers keep their own URLs and are never flagged.
 func isLocalTestHostPort(hostport string) bool {
 	host := hostport
 	if h, _, err := net.SplitHostPort(hostport); err == nil {

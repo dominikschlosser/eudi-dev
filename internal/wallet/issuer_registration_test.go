@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dominikschlosser/eudi-dev/v3/internal/credtemplate"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/mock"
 	"github.com/dominikschlosser/eudi-dev/v3/internal/registrar"
 )
@@ -235,5 +236,22 @@ func TestProviderCertificatesFollowTheRegistration(t *testing.T) {
 	}
 	if n, err := w.Registrar().SetRegistrationCertificatesRevoked(rp.Identifier[0].Identifier, scope, false); err != nil || n != 0 {
 		t.Fatalf("activating a superseded certificate: %d %v", n, err)
+	}
+}
+
+// The demo issuer registers a template without a category as an EAA before
+// it issued one, so its first offer passes the RPRC_23 check.
+func TestTheDemoIssuerRegistersAnUncategorizedTemplateAsAnEAA(t *testing.T) {
+	w := generateTestWallet(t)
+	if _, err := credtemplate.Save(w.Templates, credtemplate.Template{Name: "badge", Format: "sdjwt", VCT: "urn:example:badge:1", Claims: map[string]any{"level": 1}}); err != nil {
+		t.Fatal(err)
+	}
+	rp, _, err := w.demoIssuerRegistration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := rp.Services[0]
+	if !slices.ContainsFunc(service.ProvidesAttestations, func(p registrar.ProvidedAttestation) bool { return p.Type == "urn:example:badge:1" }) || !slices.Contains(service.Entitlements, registrar.NonQEAAProviderEntitlement) {
+		t.Errorf("provides %v with entitlements %v, want the badge as an EAA", service.ProvidesAttestations, service.Entitlements)
 	}
 }

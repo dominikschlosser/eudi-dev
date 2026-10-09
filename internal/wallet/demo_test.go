@@ -76,8 +76,8 @@ func TestDemoAllowsVisitorFlows(t *testing.T) {
 	}
 }
 
-// Visitors can save templates without images. The templates the demo started
-// with stay as they are, and a reset removes the visitors' templates.
+// Visitors can save templates without images. The operator's templates stay
+// as they are, and a reset removes the visitors' templates.
 func TestDemoVisitorTemplates(t *testing.T) {
 	srv := newTestServer(t, true)
 	srv.wallet.Templates = credtemplate.FileLocation(t.TempDir())
@@ -290,8 +290,8 @@ func TestStartDemoResetUsesDailySchedule(t *testing.T) {
 func TestProtectedCredentials(t *testing.T) {
 	srv := newDemoTestServer(t)
 	srv.SetStore(NewWalletStore(t.TempDir()))
-	// Requests reload the store, so changes are saved the way the serve
-	// command wires it up.
+	// Requests reload the store, so the test saves changes like wallet serve
+	// does.
 	srv.onSave = func() {
 		if err := srv.store.Load().Save(srv.wallet); err != nil {
 			t.Errorf("saving wallet: %v", err)
@@ -703,5 +703,15 @@ func TestDemoCapsVisitorTemplates(t *testing.T) {
 	}
 	if w := serverRequest(t, srv, "PUT", "/api/templates/visitor-0", `{"format":"sdjwt","claims":{"a":1}}`); w.Code != http.StatusOK {
 		t.Errorf("replacing a visitor template at the cap = %d, want 200", w.Code)
+	}
+}
+
+func TestDemoCapsAddedTrustedLists(t *testing.T) {
+	srv := newDemoTestServer(t)
+	for i := range maxDemoTrustedLists {
+		srv.wallet.AddedTrustedLists = append(srv.wallet.AddedTrustedLists, fmt.Sprintf("https://lists.example/%d", i))
+	}
+	if w := serverRequest(t, srv, "POST", "/api/trust/lists", `{"url":"https://lists.example/more"}`); w.Code != http.StatusForbidden {
+		t.Errorf("list %d = %d, want 403", maxDemoTrustedLists+1, w.Code)
 	}
 }

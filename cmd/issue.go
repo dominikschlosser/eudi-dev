@@ -715,8 +715,8 @@ func issueAPIRequestFromFlags(cmd *cobra.Command, format string) (map[string]any
 	if issueCategory != "" {
 		req["category"] = issueCategory
 	}
-	// The server fills in Format, VCT and DocType and applies the trust profile. An
-	// empty trust object therefore behaves like an omitted one.
+	// The server fills in Format, VCT, DocType and the list fields of the
+	// category, so an empty trust object works like an omitted one.
 	req["trust"] = issueTrustSpecFromFlags()
 
 	display := map[string]any{}

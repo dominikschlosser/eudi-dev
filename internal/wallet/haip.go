@@ -96,7 +96,7 @@ func ValidateHAIPCompliance(params *AuthorizationRequestParams, reqObj *oid4vc.R
 
 // haipEncryptionKeyViolations checks §5's requirement that the response is
 // encrypted with ECDH-ES to the Verifier's key on the P-256 curve. It checks
-// the key that findEncryptionJWK picks for the response.
+// the key chosen by findEncryptionJWK.
 func haipEncryptionKeyViolations(reqObj *oid4vc.RequestObjectJWT, clientMetadata map[string]any) []string {
 	jwk := findEncryptionJWK(reqObj, clientMetadata)
 	if jwk == nil {
@@ -125,9 +125,8 @@ func haipSignedRequestViolations(reqObj *oid4vc.RequestObjectJWT) []string {
 	// the x5c JOSE header of the signed request. The X.509 certificate
 	// signing the request MUST NOT be self-signed."
 	//
-	// The trust anchor depends on what the checking party trusts. This wallet
-	// holds no trust list, so it reports what it can see: a self-signed
-	// certificate.
+	// Which certificate is the trust anchor depends on the party that checks the
+	// chain. The wallet can only see whether the signer is self-signed.
 	certs, _ := extractCertChain(reqObj)
 	if len(certs) > 0 {
 		leaf := certs[0]
@@ -147,8 +146,8 @@ func haipSignedRequestViolations(reqObj *oid4vc.RequestObjectJWT) []string {
 	return violations
 }
 
-// haipCredentialFormatViolations checks the credential formats a DCQL query
-// asks for. §5.3.1: "The Credential Format identifier MUST be mso_mdoc."
+// haipCredentialFormatViolations checks the credential formats requested by a
+// DCQL query. §5.3.1: "The Credential Format identifier MUST be mso_mdoc."
 // §5.3.2: "The Credential Format identifier MUST be dc+sd-jwt." HAIP 1.0
 // profiles only these two formats.
 func haipCredentialFormatViolations(query map[string]any) []string {
@@ -168,8 +167,8 @@ func haipCredentialFormatViolations(query map[string]any) []string {
 	return violations
 }
 
-// haipClientMetadataViolations reports client metadata that lists neither of
-// the encryption algorithms HAIP 1.0 §5 requires.
+// haipClientMetadataViolations reports client metadata without A128GCM and
+// A256GCM, the encryption algorithms required by HAIP 1.0 §5.
 func haipClientMetadataViolations(metadata map[string]any) []string {
 	if metadata == nil {
 		return nil
@@ -294,9 +293,9 @@ func usesAuthorizationEndpoint(offer *oid4vc.CredentialOffer) bool {
 }
 
 // supportsAuthorizationCodeFlow reports whether the authorization server
-// advertises the flow HAIP 1.0 §4 requires it to support. Metadata that
-// omits grant_types_supported defaults to authorization_code per RFC 8414,
-// so an authorization endpoint alone is enough to satisfy it.
+// advertises the authorization code flow, which HAIP 1.0 §4 requires. Metadata
+// without grant_types_supported defaults to authorization_code (RFC 8414), so
+// an authorization endpoint is enough.
 func supportsAuthorizationCodeFlow(oauthMeta map[string]any) bool {
 	if _, declared := oauthMeta["grant_types_supported"]; declared {
 		return metadataListContains(oauthMeta, "grant_types_supported", "authorization_code")
@@ -346,8 +345,8 @@ func metadataListContains(meta map[string]any, key, want string) bool {
 }
 
 // haipCredentialViolations checks a received credential against §6.1.1. That
-// section profiles IETF SD-JWT VC, so other formats and credentials the wallet
-// cannot parse get no findings here.
+// section profiles IETF SD-JWT VC, so other formats and unparseable
+// credentials get no findings here.
 func (w *Wallet) haipCredentialViolations(raw string) []string {
 	token, err := sdjwt.ParseLenient(strings.TrimSpace(raw))
 	if err != nil {

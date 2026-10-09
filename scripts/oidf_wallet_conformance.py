@@ -55,7 +55,7 @@ class WalletMaterials:
     holder_jwk: dict
     issuer_jwk: dict
     ca_pem: str
-    # The release under test, as the plan description names it.
+    # The release under test, shown in the plan description.
     version: str
 
 
@@ -315,7 +315,7 @@ def vci_final_scenarios() -> list[PlanScenario]:
                                     "authorization_request_type": vci_authorization_request_type(kind, grant),
                                     "fapi_profile": "vci",
                                     "vci_grant_type": grant,
-                                                                        # Pre-authorized offers are issuer initiated because
+                                    # Pre-authorized offers are issuer initiated because
                                     # they have no authorization endpoint to start from.
                                     "vci_authorization_code_flow_variant": "issuer_initiated",
                                     "vci_credential_offer_variant": offer,
@@ -383,7 +383,7 @@ def final_scenarios() -> list[PlanScenario]:
                 credential_kind="mdoc",
                 requires_haip=True,
             ),
-                        # Cover HAIP formats and issuer or wallet initiated flows. The plan fixes
+            # Cover HAIP formats and issuer or wallet initiated flows. The plan fixes
             # client attestation and DPoP and includes immediate, deferred and encrypted
             # issuance as modules.
             *[
@@ -538,7 +538,7 @@ def load_config_template(source: Path) -> dict:
 
 
 def ssl_context_for_ca(ca_path: Path) -> ssl.SSLContext:
-        # Add the wallet CA to system roots. Hosted runs also need the public tunnel's
+    # Add the wallet CA to system roots. Hosted runs also need the public tunnel's
     # certificate to remain trusted.
     context = ssl.create_default_context()
     context.load_verify_locations(cafile=str(ca_path))
@@ -692,11 +692,11 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
     config.setdefault("client", {})
     config["client"]["dcql"] = build_vp_dcql_query(scenario.credential_kind)
     if scenario.requires_haip or scenario.variant.get("client_id_prefix") == "x509_san_dns":
-                # Use the configured client_id for x509_san_dns, including DC API variants without
+        # Use the configured client_id for x509_san_dns, including DC API variants without
         # a response_uri.
         config["client"]["client_id"] = conformance_server_host()
     if scenario.variant.get("request_method") == "url_query":
-                # URL query requests have no request_uri to observe. Configure the wallet's
+        # URL query requests have no request_uri to observe. Configure the wallet's
         # reachable authorization endpoint so the suite can deliver the request directly.
         config.setdefault("server", {})
         config["server"]["authorization_endpoint"] = args.wallet_issuer_url.rstrip("/") + "/authorize"
@@ -709,7 +709,7 @@ def create_vp_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanSc
         keys = secondary_jwks.get("keys", [])
         if keys and isinstance(keys[0], dict) and isinstance(keys[0].get("kid"), str):
             keys[0]["kid"] = keys[0]["kid"] + "-second"
-                # For x509_hash, the suite derives the second signer's client_id from its
+        # For x509_hash, the suite derives the second signer's client_id from its
         # certificate.
         config["client2"] = {"jwks": secondary_jwks}
         if "client_id" in config["client"]:
@@ -755,7 +755,7 @@ def create_vci_config(args: argparse.Namespace, suite_dir: Path, scenario: PlanS
     config.setdefault("client_attestation", {})
     config["vci"]["credential_offer_endpoint"] = credential_offer_endpoint
     if scenario.credential_kind == "mdoc":
-                # The attestation proof configuration issues one credential per attested key,
+        # The attestation proof configuration issues one credential per attested key,
         # covering key attestation and batch issuance together (Appendix F.3).
         config["vci"]["credential_configuration_id"] = "eu.europa.ec.eudi.pid.mdoc.1.attestation.keyattest"
     else:
@@ -834,7 +834,7 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
     if forced:
         return tuple(name.strip() for name in forced.split(",") if name.strip())
 
-        # Certification runs use complete HAIP plans. The suite defines applicable modules, so
+    # Certification runs use complete HAIP plans. The suite defines applicable modules, so
     # apply no additional filter.
     if scenario.requires_haip:
         return None
@@ -881,7 +881,7 @@ def vp_modules_for_scenario(scenario: PlanScenario) -> tuple[str, ...] | None:
         if VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS in modules:
             modules.remove(VP_FINAL_MODULE_WRONG_EXPECTED_ORIGINS)
     if request_method == "url_query":
-                # These negative modules create screenshot placeholders when request_uri is
+        # These negative modules create screenshot placeholders when request_uri is
         # fetched. URL query requests have no such fetch and would wait forever. The
         # request_uri variants cover them instead.
         for module in (
@@ -1020,7 +1020,7 @@ def tx_code_from_offer(request_url: str) -> str | None:
         except (TypeError, ValueError):
             return None
     else:
-                # Suite offer URLs remain readable after fetching, so resolving one here does not
+        # Suite offer URLs remain readable after fetching, so resolving one here does not
         # consume it.
         offer_uri = (query.get("credential_offer_uri") or [None])[0]
         if not offer_uri:
@@ -1041,7 +1041,7 @@ def tx_code_from_offer(request_url: str) -> str | None:
     match = TX_CODE_IN_DESCRIPTION.search(str(tx_code.get("description", "")))
     if match:
         return match.group(1)
-        # When no code is provided, send the declared length so the issuer tests a wrong code
+    # When no code is provided, send the declared length so the issuer tests a wrong code
     # rather than a missing parameter.
     length = tx_code.get("length")
     return "0" * length if isinstance(length, int) and 0 < length <= 12 else None
@@ -1097,7 +1097,7 @@ def submit_wallet_request(wallet_url: str, request_url: str, requires_haip: bool
     response = result.get("response", {})
     redirect_uri = response.get("redirect_uri")
     if redirect_uri:
-                # The suite expects the redirect within 30 seconds. Short retries fit this
+        # The suite expects the redirect within 30 seconds. Short retries fit this
         # deadline even when individual requests stall.
         for attempt in range(1, 4):
             try:
@@ -1363,7 +1363,7 @@ def main() -> int:
     wallet_request(args.wallet_url, "DELETE", "/api/log")
     scenarios = final_scenarios()
     if "www.certification.openid.net" in base_url:
-                # Run only certification plans on the production service. Final alpha plans use
+        # Run only certification plans on the production service. Final alpha plans use
         # the local suite or hosted demo service.
         scenarios = [scenario for scenario in scenarios if scenario.requires_haip]
         print("[runner] production certification service: running the certifiable HAIP plans only", flush=True)
@@ -1469,7 +1469,7 @@ def main() -> int:
                 break
 
             if proc.poll() is None and idle_timeout > 0 and time.monotonic() - last_runner_output > idle_timeout:
-                                # Cancel stalled modules first. The suite marks them INTERRUPTED so the
+                # Cancel stalled modules first. The suite marks them INTERRUPTED so the
                 # runner can continue. Terminate the run only if it remains unresponsive.
                 stalled = [
                     module_id

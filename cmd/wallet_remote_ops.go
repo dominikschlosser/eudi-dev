@@ -193,9 +193,8 @@ func credDisplayDescription(cred map[string]any) string {
 	return desc
 }
 
-// credClaimCount returns the subject attribute count the server reports,
-// which leaves out protocol members. Without that field it returns the full
-// claim count.
+// credClaimCount returns the number of subject attributes from the server's
+// listing, without protocol members. Without that field it counts every claim.
 func credClaimCount(cred map[string]any) int {
 	if n, ok := docNumber(cred, "claim_count"); ok {
 		return int(n)

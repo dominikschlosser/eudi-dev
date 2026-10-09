@@ -85,3 +85,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for package layout and data flow.
 ## Sign-off (DCO)
 
 Every commit needs a [Developer Certificate of Origin](https://developercertificate.org/) sign-off. `git commit -s` adds the `Signed-off-by` trailer. Pull requests are checked for it. To sign off an existing branch: `git rebase --signoff main`.
+
+## Releases
+
+A `v*` tag starts the release workflow. It builds the binaries and the Docker image and picks the channels from the version:
+
+| Tag | GitHub release | Docker tags | Homebrew |
+|---|---|---|---|
+| Newest stable version, such as `v3.0.0` | latest | `v3.0.0`, `latest`, `beta` | updated |
+| Older line, such as `v2.6.3` after 3.0.0 | regular | `v2.6.3` | unchanged |
+| Prerelease, such as `v3.0.0-beta.1` | prerelease | `v3.0.0-beta.1`, and `beta` while it is the newest version | unchanged |
+
+A major version lives on its own branch, such as `3.0.0`, until its betas are done. `main` keeps the stable line meanwhile.
