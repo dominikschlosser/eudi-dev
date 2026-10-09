@@ -61,7 +61,10 @@ A signed JWT from the registrar (ETSI TS 119 475). A verifier's certificate list
 A list of attestation types (EC TS11 catalogue of attestations). Each entry has a credential category and links a schema for each format, a rulebook and a trusted list, by default the list of its category. Every predefined credential template has an entry.
 
 **Relying party access CA**:
-Signs the access certificates from the wallet's registrar. It is separate from the wallet CA.
+Signs the access certificates from the wallet's registrar, including those of the demo issuer and the demo verifier. It is a root of its own, separate from the wallet CA. The wallet's `access-ca` list names it.
+
+**Registrar CA**:
+Signs the registrar's signing certificate, which signs registration certificates and their status list. It is a root of its own. The wallet's `registrar` list names it.
 
 **Instance**:
 A running wallet server registered on this machine. The CLI uses the registration to find and control it. Several instances can serve the same wallet state.
@@ -100,18 +103,19 @@ _Avoid_: Refresh (for the credential operation)
 ### Trust and status
 
 **Trusted list**:
-A signed list that names providers and their certificates. ETSI TS 119 602 calls it a **list of trusted entities** (LoTE). The names mean the same thing. A wallet or verifier checks that a credential's certificate chains to a certificate on the list for the credential's kind. This wallet publishes one list per credential category and one for wallet providers ([ADR-0022](docs/adr/0022-one-trusted-list-per-credential-category.md)). A trusted list operator signs it.
+A signed list that names providers and their certificates. ETSI TS 119 602 calls it a **list of trusted entities** (LoTE). The names mean the same thing. A wallet or verifier checks that a certificate chains to a certificate on the list for its kind. This wallet publishes one list per credential category ([ADR-0022](docs/adr/0022-one-trusted-list-per-credential-category.md)) and the lists `wallet-provider`, `access-ca` and `registrar`. It takes every trust anchor from trusted lists ([ADR-0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)). A trusted list operator signs a list.
 _Avoid_: Trust list, trust profile
 
+**List of trusted lists**:
+A trusted list that points to other trusted lists, each with the certificate of its signer (ETSI TS 119 602 §6.3.13). The wallet publishes one that points to its own lists and to the added external lists. It follows the pointers of an external list of trusted lists one level deep.
+
 **Credential category**:
-The kind of attestation: `pid`, `qeaa`, `pub-eaa` or `eaa` (ARF ISSU_07 to ISSU_10). Each category has its own signing key, provider CA and trusted list. A credential gets its category from its template or its catalogue entry. A credential without one is on no list.
+The kind of attestation: `pid`, `qeaa`, `pub-eaa` or `eaa` (ARF ISSU_07 to ISSU_10). Each category has its own signing key, provider CA and trusted list. A credential gets its category from `--category`, its template or its catalogue entry. A credential without one is an EAA. The category `unlisted` keeps a credential off every list.
+_Avoid_: Trust profile
 
 **Provider role**:
-A signer of this wallet with its own key and provider CA under the wallet CA. The roles are the four credential categories, `wallet` (the wallet provider), `unlisted` (credentials without a category) and `tl-<8 hex>` (a custom trusted list).
+A signer of this wallet with its own key and provider CA under the wallet CA. The roles are the four credential categories, `wallet` (the wallet provider, whose list is `wallet-provider`), `unlisted` (unlisted credentials) and `tl-<8 hex>` (a custom trusted list).
 _Avoid_: Trust profile (for the role)
-
-**Trust profile**:
-The `--trust-profile` value of `issue ... --wallet`: a credential category, or `auto` for the category of the template or catalogue entry. It is unrelated to the **demo profile** (a hosting configuration) and to **HAIP** (a specification profile). Always qualify "profile".
 
 **Status list**:
 The published bitstring a verifier fetches to check whether a credential is still valid. The wallet manages the entries on its own list and reads the lists of other issuers.
@@ -125,7 +129,7 @@ Marking a credential invalid on a status list. Revocation informs verifiers. The
 Controls whether normative findings in incoming messages are warnings and the flow continues (`debug`), or errors that stop the flow (`strict`). Both modes collect the same findings. **HAIP enforcement** (`--haip`) adds profile checks. Most findings follow the validation mode. Advisory findings are always warnings.
 
 **Demo profile**:
-The hardened configuration for hosting a wallet publicly. A deployment setting, unrelated to validation mode and trust profile.
+The hardened configuration for hosting a wallet publicly. A deployment setting, unrelated to validation mode and to **HAIP** (a specification profile). Always qualify "profile".
 _Avoid_: Demo mode, public mode
 
 ### State

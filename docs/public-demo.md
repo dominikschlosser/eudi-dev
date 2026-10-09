@@ -38,7 +38,7 @@ Use `--mode strict` to reject violations, or `--haip=false` and `--arf=false` to
 
 Resets run every hour by default. `--demo-reset` accepts an interval such as `24h`, a daily time such as `00:00`, or a time with a zone such as `"00:00 Europe/Berlin"`. `0` disables resets. Daily schedules follow local time, including daylight saving changes, and retain their schedule across restarts.
 
-A reset removes visitor credentials and registered relying parties, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed. The footer shows the reset schedule.
+A reset removes visitor credentials, registered relying parties and the providers and lists added to the trusted lists, regenerates the protected PID baseline and clears the activity log. The CA, keys and URLs stay stable. The credential signing certificate is renewed. The footer shows the reset schedule.
 
 ## Browser hardening
 
@@ -90,7 +90,7 @@ The consent dialog shows these choices.
 
 All four baseline credentials are protected. The UI, the API and the CLI refuse to delete or revoke them. Visitor credentials can be deleted. Removing baseline protection requires direct access to `wallet.json`.
 
-All visitors share credentials, registered relying parties and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
+All visitors share credentials, registered relying parties, trusted lists and the activity log. Anyone can issue credentials, delete unprotected credentials, register, revoke and delete relying parties, and read the log. Anyone can also put providers and external lists on the wallet's [trusted lists](wallet/serve.md#trusted-lists). They then anchor the `--arf` checks for every visitor. The demo holds at most 20 added providers and 5 added lists. Use test data only. The UI lists ten credentials per page, and the periodic reset clears visitor data.
 
 ## Rate limits
 
@@ -153,9 +153,9 @@ The access token is bound to the DPoP key. The credential request must prove pos
 
 ### Wallets from other providers
 
-The demo issuer trusts the shared wallet CA. It also accepts attestations from other providers when their signature verifies against the included leaf certificate. The demo issuer can then test other wallets without trusting their provider.
+The demo issuer trusts the providers on the wallet provider lists of the wallet's [list of trusted lists](wallet/serve.md#trusted-lists). That is the wallet's own `wallet-provider` list at `/api/trustlists/wallet-provider`, providers added with `wallet trust add-ca --list wallet-provider`, and external wallet provider lists. It also accepts attestations from other providers when their signature verifies against the included leaf certificate. The demo issuer can then test other wallets without trusting their provider.
 
-The ticket records the result in `wallet_attestation`: `trusted` for a chain reaching the wallet CA, `untrusted` for another signer, or `none` when authentication was optional and omitted. The wallet provider's trusted list is available at `/api/trustlists/wallet-provider`.
+The ticket records the result in `wallet_attestation`: `trusted` for a chain reaching a trusted wallet provider, `untrusted` for another signer, or `none` when authentication was optional and omitted.
 
 To test a wallet without attestation, use `--demo-issuer-client-auth optional`. The authorization server then also advertises and accepts `none`. It still verifies any attestation that is sent. The default is `required` (HAIP 1.0 §4.4.1).
 
@@ -176,10 +176,11 @@ The certificate chain is included in the attestation. These endpoints publish th
 | Wallet provider certificates | `/api/trustlists/wallet-provider` |
 | Credential signing keys, one JWK per trusted list | `/.well-known/jwt-vc-issuer` |
 | Trusted list index | `/api/trustlists` |
+| List of trusted lists | `/api/trustlists/lists` |
 
 Pin the CA through an out-of-band exchange. It is self-signed and persists across restarts and resets. Signing certificates can be renewed without changing that anchor.
 
-Trusted lists are grouped by provider role. Each category has its own signing key and provider CA. The `pid`, `qeaa`, `pub-eaa` and `eaa` lists publish the credential signing certificates of their category and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
+Trusted lists are grouped by provider role. Each category has its own signing key and provider CA. The `pid`, `qeaa`, `pub-eaa` and `eaa` lists publish the credential signing certificates of their category and their provider CAs. The `wallet-provider` list publishes wallet provider certificates. The `access-ca` list names the relying party access CA and the `registrar` list the registrar CA. A separate list operator signs the lists. Their sequence numbers and retained history let clients test trust updates.
 
 The issuer metadata endpoints return JSON by default and a JWT signed with the access certificate key when the `Accept` header prefers `application/jwt`. They include a registration certificate from the registrar. Its identifier, legal name and country match the access certificate. The demo issuer and the demo verifier are registered with the registrar like any relying party. If a visitor revokes one of their registration certificates, the wallet issues a new one. See [test certificates](test-certificates.md) for the exact profiles and versions.
 

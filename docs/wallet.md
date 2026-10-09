@@ -30,6 +30,7 @@ For interaction diagrams of the implemented OID4VP and OID4VCI flows, see [docs/
 | `deferred`     | Manage deferred credentials the wallet has not received yet (`check`, `abandon`) |
 | `logs`         | Show persisted wallet OID4VP/OID4VCI interaction logs      |
 | `trust-list`   | Print a trusted list JWT (`--list` for all lists, `--url` for the URL) |
+| `trust`        | Put your CAs on the wallet's trusted lists and add external lists ([trusted lists](wallet/serve.md#your-providers-and-lists)) |
 | `ca-cert`      | Print or export the shared wallet CA certificate                |
 | `tls-cert`     | Print or export the HTTPS wallet certificate used by HTTPS wallet endpoints |
 | `ps`           | List running wallet instances                                   |
@@ -146,7 +147,7 @@ On the file backend the activity log is the top-level `log` field of `wallet.jso
 
 Keys are P-256 EC keys, generated on first use and reused across invocations. Wallets under the same parent directory share a persisted root CA. The generated root permits one intermediate CA. Credential and wallet provider certificates use provider intermediates for their role and country. A configured root with a path length of zero signs those leaves directly.
 
-Generated credentials are signed with the key of their provider role. A PID uses the wallet's issuer key. The other categories, custom lists and credentials without a category have their own keys in `signing-keys/` (see [trusted lists](wallet/serve.md#trusted-lists)). SD-JWT credentials carry a deterministic `kid` and a certificate chain in `x5c`, with the self-signed root omitted. The wallet's trusted lists publish the corresponding signing certificates and provider CAs. JWT VC issuer metadata lists one key per list.
+Generated credentials are signed with the key of their provider role. A PID uses the wallet's issuer key. The other categories, custom lists and unlisted credentials have their own keys in `signing-keys/` (see [trusted lists](wallet/serve.md#trusted-lists)). SD-JWT credentials carry a deterministic `kid` and a certificate chain in `x5c`, with the self-signed root omitted. The wallet's trusted lists publish the corresponding signing certificates and provider CAs. JWT VC issuer metadata lists one key per list.
 
 Wallet attestations, access signatures, registrar responses, status lists and trusted lists use separate keys and certificates. File and Postgres storage keep signing certificates across restarts. Published certificate URLs stay available after renewal. See [test certificates](test-certificates.md) for the signing roles, EUDI specification versions and ISO certificate profile difference.
 

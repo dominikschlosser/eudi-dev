@@ -26,13 +26,15 @@ Credentials, logs, keys, certificates and revision markers all use this table. T
 
 ## Saving and reloading
 
-The file backend stores the wallet as one `wallet.json`. Memory and Postgres store each credential, log entry, status entry, deferred issuance, issued attestation and settings record separately under `state/`. A save writes changed entities, deletes removed entities and updates a revision marker for each affected section. Adding a credential writes its row, revision markers and related status or log entries. Other credential rows stay unchanged.
+The file backend stores the wallet as one `wallet.json`. Memory and Postgres store each credential, log entry, status entry, deferred issuance, issued attestation and settings record separately under `state/`. The registrar state, the catalogue and the providers and lists added to the trusted lists have a section each. A save writes changed entities, deletes removed entities and updates a revision marker for each affected section. Adding a credential writes its row, revision markers and related status or log entries. Other credential rows stay unchanged.
 
 At request boundaries ([ADR-0005](0005-the-server-reloads-its-store-on-every-request.md)), the server compares section revisions and row versions with its cached values. It reads changed rows individually, or the whole section when more than 16 rows changed. Unchanged credentials keep their parsed form. The activity log loads on demand. Appending an entry writes the entry and its revision marker. The store trims old log entries every 64 saves or appends.
 
 Postgres writes are atomic per row. A wallet save spans several statements and is not a transaction across all entities. Concurrent writes to the same entity can overwrite each other. Revision markers tell a server when to reload. They do not lock entity writes. The status list counter uses compare-and-swap to allocate distinct indices across servers.
 
-Use the file or memory backend for one wallet server. A server using file storage checks the wallet file's modification time and size, with a reload at least every two seconds while handling requests. Use Postgres to share persisted state across servers. Pending browser flows and demo issuer/verifier requests remain in memory, so requests in one flow must reach the same server.
+Use the file or memory backend for one wallet server. A server using file storage checks the wallet file's modification time and size, with a reload at least every two seconds while handling requests. Use Postgres to share persisted state across servers. Pending browser flows and demo issuer/verifier requests remain in memory, so requests in one flow must reach the same server. Each server also keeps fetched external trusted lists in memory for 5 minutes.
+
+Servers that share a database must start with the same `--relying-party-ca` and `--trusted-list` flags. These flags are part of the signed `access-ca`, `registrar` and list of trusted lists content. Servers with different flags sign different content and keep replacing each other's list instance, so its sequence number grows on every request.
 
 File compare-and-swap operations use a lock shared by processes for signing keys, certificates and counters. A wallet save still writes one `wallet.json`, so this does not make file storage suitable for multiple wallet servers.
 

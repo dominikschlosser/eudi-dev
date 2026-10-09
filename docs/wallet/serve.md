@@ -93,42 +93,128 @@ To serve the wallet under a path prefix on a shared host, include the prefix in 
 
 For a local https origin without an external TLS terminator, add `--serve-tls`. The wallet then also listens on the base URL's port with its own TLS certificate. The plain HTTP port stays open. `--serve-tls` requires an https `--base-url` with an explicit port. The [demo issuer and verifier conformance run](../conformance-run-demorp.md) uses this because the OIDF suite requires https endpoints.
 
-The demo verifier accepts credentials issued under the wallet's own CA. `--demo-verifier-issuer-ca <pem>` (repeatable) adds the CAs of issuers outside this wallet (for example, the OIDF conformance suite signs its credentials under its own CAs).
+The demo verifier accepts a credential when its certificate chains to an issuance service on a credential provider list of the wallet's [list of trusted lists](#trusted-lists). That includes the wallet's own issuers, added providers and the providers on external lists. A status list may also chain to a revocation service. `--demo-verifier-issuer-ca <pem>` (repeatable) adds more CAs directly (for example, the OIDF conformance suite signs its credentials under its own CAs).
 
 `wallet ca-cert` exports the shared wallet CA for verifier trust stores or CI fixtures. `wallet tls-cert` exports the per-wallet HTTPS leaf certificate.
 
 ### Trusted lists
 
-The wallet publishes one trusted list (a list of trusted entities, ETSI TS 119 602) per credential category. Each category is a provider role with its own signing key and its own provider CA under the wallet CA. A credential's category decides which key signs it, so its certificate is on the list of its category:
+The wallet publishes lists of trusted entities (ETSI TS 119 602). It takes every trust anchor from such lists ([ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md)). That covers the `--arf` checks of received credentials and of the access and registration certificates of verifiers and issuers. It also covers the checks of the demo issuer and the demo verifier.
 
-| Category | List ID | LoTE type |
+| List ID | Lists | LoTE type |
 |---|---|---|
-| PID | `pid` | `EUPIDProvidersList` (ETSI TS 119 602 Annex D) |
-| QEAA | `qeaa` | `local` |
-| PuB-EAA | `pub-eaa` | `EUPubEAAProvidersList` (ETSI TS 119 602 Annex H) |
-| EAA | `eaa` | `local` |
+| `pid` | PID providers | `http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList` (Annex D) |
+| `qeaa` | QEAA providers | `https://eudi-test.dev/LoTEType/QEAAProvidersList` |
+| `pub-eaa` | PuB-EAA providers | `http://uri.etsi.org/19602/LoTEType/EUPubEAAProvidersList` (Annex H) |
+| `eaa` | Other EAA providers | `https://eudi-test.dev/LoTEType/EAAProvidersList` |
+| `wallet-provider` | Wallet providers | `http://uri.etsi.org/19602/LoTEType/EUWalletProvidersList` (Annex E) |
+| `access-ca` | Providers of access certificates | `http://uri.etsi.org/19602/LoTEType/EUWRPACProvidersList` (Annex F) |
+| `registrar` | Providers of registration certificates | `http://uri.etsi.org/19602/LoTEType/EUWRPRCProvidersList` (Annex G) |
 
-TS 119 602 has no list type for QEAA or other EAA providers (QEAA providers are on TS 119 612 trusted lists). Their lists use `http://uri.etsi.org/19602/LoTEType/local`, a type URI of this wallet.
+TS 119 602 registers no list type for QEAA or other EAA providers (QEAA providers are on TS 119 612 trusted lists). Annex C.1 lets a scheme operator create its own URIs, and §6.3.3 asks for one type per profile. So the `qeaa` and `eaa` lists have types of their own, with the service types `https://eudi-test.dev/SvcType/QEAA/Issuance`, `.../QEAA/Revocation`, `.../EAA/Issuance` and `.../EAA/Revocation`. These URIs name the list profile. They are the same on every deployment, whatever its base URL. A wallet state from eudi-dev 2 stores `http://uri.etsi.org/19602/LoTEType/local` for its EAA list, and the wallet reads that as the `eaa` list.
 
-The PID role signs with the wallet's issuer key (`issuer.pem`). The other roles have keys named `issuer-<role>` in the signing store, and the wallet provider has `wallet-provider`. `/.well-known/jwt-vc-issuer` lists one JWK per category list, per custom list and for credentials without a category. The wallet serves each provider CA certificate at `/api/certificates/providers/{role}/{country}.der`.
+The `access-ca` list names the relying party access CA of the [registrar](registrar.md) and the `registrar` list names the registrar CA. CAs from `--relying-party-ca` are on both lists.
+
+#### Credential categories
+
+Each credential category (`pid`, `qeaa`, `pub-eaa` and `eaa`) is a provider role with its own signing key and its own provider CA under the wallet CA. A credential's category decides which key signs it, so its certificate is on the list of its category.
+
+The PID role signs with the wallet's issuer key (`issuer.pem`). The other roles have keys named `issuer-<role>` in the signing store, and the wallet provider has `wallet-provider`. `/.well-known/jwt-vc-issuer` lists one JWK per category list, per custom list and for unlisted credentials. The wallet serves each provider CA certificate at `/api/certificates/providers/{role}/{country}.der`.
 
 A credential gets its category in this order:
 
-- `--trust-profile` of `issue ... --wallet`, or `trust_profile` in the issue API
+- `--category` of `issue ... --wallet`, or `category` in the issue API
 - the `category` of its [template](../templates.md)
 - the category of its entry in the [attestation catalogue](registrar.md#attestation-catalogue)
+- otherwise it is an EAA
 
-A credential without a category is on no list. That is the case for an ad hoc credential without a template, and for a template without a catalogue entry. Its signer has its own provider role (`unlisted`) and provider CA. No list names them.
+The category `unlisted` keeps a credential off every list. Its signer has its own provider role (`unlisted`) and provider CA. Use it to test how a verifier handles an issuer without a trust anchor.
 
-The wallet also keeps an issued-attestation registry. It lists each issued credential type with its category and trusted list data. The trusted lists name these types:
+The wallet also keeps an issued-attestation registry. It lists the type of each credential issued by the wallet, with its category and trusted list data. The trusted lists name these types:
 
 - `wallet generate-pid` and `wallet serve --pid` register the PID types
 - `issue ... --wallet` registers the type of the issued credential
-- `wallet import` registers the type of an imported credential without a category
 
-Each trusted list publishes its service's signing certificates, provider CAs and status signing certificates. With a configured root of path length zero, the list names only the signing certificates. A separate list operator key under the wallet CA signs the list. An unchanged list keeps its signed instance until it expires. Changed content or expiry increments the sequence number. Previous instances are available at the list's `/history` endpoint.
+An imported credential and a credential signed with your own `--key` and `--cert` are on none of the wallet's lists, because the wallet did not sign them.
+
+Each trusted list publishes its service's signing certificates, provider CAs and status signing certificates. With a configured root of path length zero, the list names only the signing certificates. A separate list operator key under the wallet CA signs the list. An unchanged list keeps its signed instance until it expires. Changed content or expiry increments the sequence number. Previous instances are available at the list's `/history` endpoint. Every list except `pub-eaa` points to itself. Tables D.1 to G.1 require that for the lists of Annexes D to G, and Table H.1 forbids pointers.
 
 Wallet and key attestations use a separate wallet provider key. Their `x5c` contains the leaf and any intermediate certificates, with the self-signed root omitted. Issuers can pin the root from `/api/certificates/ca` or use `/api/trustlists/wallet-provider`.
+
+#### Your providers and lists
+
+`eudi wallet trust` puts your own providers on the wallet's lists and external lists on its list of trusted lists:
+
+```bash
+eudi wallet trust add-ca --list pid --name "Example PID Provider" --ca pid-ca.pem
+eudi wallet trust add-ca --list registrar --ca registrar-ca.pem
+eudi wallet trust add-list https://lists.example/pid
+eudi wallet trust                       # or: eudi wallet trust list
+eudi wallet trust rm-ca fc390242d2ad08ab
+eudi wallet trust rm-list https://lists.example/pid
+```
+
+`add-ca` takes a PEM file with CA certificates and one of the list IDs above. The wallet signs the list with the CA on it as a provider with an issuance and a revocation service. So the CA anchors the issued certificates and their status lists. The same certificates on the same list replace the earlier entry. The name defaults to the CA's common name.
+
+`add-list` puts an external list of trusted entities on the list of trusted lists. With `--arf` its providers anchor the checks of its list type, for example a PID provider list for received PIDs. Its signer must chain to the wallet CA or to a CA from `--trust-list-ca`. In `--mode strict` the wallet refuses an unreadable list. In `--mode debug` it adds the list and reports the reason. `wallet serve --trusted-list <url>` (repeatable) adds lists at startup. They can't be removed through the API.
+
+`eudi wallet trust` shows the added providers and lists:
+
+```
+ID                LIST  NAME                CERTIFICATES
+fc390242d2ad08ab  eaa   Example University  1
+
+List of trusted lists: https://localhost:8086/api/trustlists/lists
+```
+
+The UI has the same functions under **Trust & certificates**. The HTTP API:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/trust` | `entities` (the added providers), `entity_lists` (the list IDs), `lists` (the external lists) and `lists_url` |
+| `POST` | `/api/trust/entities` | Add a provider: `list`, `name` and `certificates` (PEM). Answers `201` with the entity and its `id` |
+| `DELETE` | `/api/trust/entities/{id}` | Remove a provider |
+| `POST` | `/api/trust/lists` | Add an external list: `url`. Answers `201` with the list |
+| `DELETE` | `/api/trust/lists?url=<url>` | Remove an external list |
+
+Each entry of `lists` has `url` and, where they apply, `configured` (from `--trusted-list`), `via` (the list of trusted lists that points to it) and `error` (why the wallet can't use it):
+
+```json
+{
+  "entities": [
+    { "id": "fc390242d2ad08ab", "list": "eaa", "name": "Example University", "certificates": ["MIICCTCCAa+gAwIBAgIU..."] }
+  ],
+  "entity_lists": ["pid", "qeaa", "pub-eaa", "eaa", "wallet-provider", "access-ca", "registrar"],
+  "lists": [
+    {
+      "url": "https://lists.example/pid",
+      "error": "fetching the trusted list: fetching https://lists.example/pid: Get \"https://lists.example/pid\": dial tcp: lookup lists.example: no such host"
+    }
+  ],
+  "lists_url": "https://localhost:8086/api/trustlists/lists"
+}
+```
+
+The wallet keeps a fetched external list for 5 minutes. A list past its `NextUpdate` is expired and anchors nothing (ETSI TS 119 602 V1.1.1 §6.3.15). A withdrawn service anchors nothing either. The public demo holds at most 20 added providers and 5 added lists.
+
+#### List of trusted lists
+
+`/api/trustlists/lists` is a list of trusted lists (ETSI TS 119 602 V1.1.1 §6.3.13). Its type is `https://eudi-test.dev/LoTEType/ListOfTrustedLists`. It points to every list of the wallet and to every readable external list. Each pointer has the list's location, the certificate of its signer, and the list type, scheme operator name, scheme territory and MIME type as qualifiers:
+
+```json
+{
+  "LoTELocation": "https://localhost:8086/api/trustlists/pid",
+  "ServiceDigitalIdentities": [{ "X509Certificates": [{ "val": "MIIC..." }] }],
+  "LoTEQualifiers": [{
+    "LoTEType": "http://uri.etsi.org/19602/LoTEType/EUPIDProvidersList",
+    "SchemeOperatorName": [{ "lang": "en", "value": "EUDI Dev Wallet" }],
+    "SchemeTerritory": "EU",
+    "MimeType": "application/jwt"
+  }]
+}
+```
+
+The wallet follows the pointers of an external list of this type, one level deep. A pointed-to list must be signed by a certificate of its pointer (§6.3.13). `GET /api/trust` shows such a list with `via`. Put another eudi-dev wallet's `/api/trustlists/lists` on the list to trust all its lists at once.
 
 `wallet serve` reuses persisted issuer and status list URLs unless `--base-url` or `--docker` overrides them. Credentials generated earlier then keep resolving against the same endpoints. Issuance commands (`issue ... --wallet`, `wallet generate-pid`) follow the same rule. They print a note when no server serves the embedded URLs.
 
@@ -138,17 +224,21 @@ Each list is served at `/api/trustlists/{id}`:
 
 - `pid`, `qeaa`, `pub-eaa` and `eaa` for the categories
 - `wallet-provider` for the Wallet Provider list, which issuers use to verify the wallet attestation
+- `access-ca` and `registrar` for the providers of relying party certificates
+- `lists` for the list of trusted lists
 - `tl-<hash>` for a credential type with its own trusted list fields, such as `--trust-list-type`
 
 `eudi wallet trust-list --list` shows these lists for the selected local or remote wallet:
 
 ```
-ID               DEFAULT  CATEGORY              PATH
-pid              yes      Credential providers  /api/trustlists/pid
-qeaa                      Credential providers  /api/trustlists/qeaa
-pub-eaa                   Credential providers  /api/trustlists/pub-eaa
-eaa                       Credential providers  /api/trustlists/eaa
-wallet-provider           Wallet providers      /api/trustlists/wallet-provider
+ID               DEFAULT  CATEGORY                    PATH
+pid              yes      Credential providers        /api/trustlists/pid
+qeaa                      Credential providers        /api/trustlists/qeaa
+pub-eaa                   Credential providers        /api/trustlists/pub-eaa
+eaa                       Credential providers        /api/trustlists/eaa
+wallet-provider           Wallet providers            /api/trustlists/wallet-provider
+access-ca                 Relying party certificates  /api/trustlists/access-ca
+registrar                 Relying party certificates  /api/trustlists/registrar
 ```
 
 With `--json` it prints the `/api/trustlists` body unchanged.
@@ -193,7 +283,7 @@ Example discovery response:
       "path": "/api/trustlists/eaa",
       "advertised_url": "https://localhost:8086/api/trustlists/eaa",
       "url": "https://localhost:8086/api/trustlists/eaa",
-      "loTEType": "http://uri.etsi.org/19602/LoTEType/local"
+      "loTEType": "https://eudi-test.dev/LoTEType/EAAProvidersList"
     },
     {
       "id": "wallet-provider",
@@ -207,7 +297,7 @@ Example discovery response:
 }
 ```
 
-The example leaves out the `qeaa` and `pub-eaa` entries.
+The example leaves out the `qeaa`, `pub-eaa`, `access-ca` and `registrar` entries.
 
 `--register` also registers OS URL scheme handlers. `openid4vp://`, `eudi-openid4vp://`, `haip-vp://`, `openid-credential-offer://`, `haip-vci://` and `eu-eaa-offer://` links then open the wallet on macOS. On Linux and Windows, `--register` is a no-op.
 
@@ -250,8 +340,9 @@ eudi wallet serve -d                   # run in the background (stop with `eudi 
 | `--vci-version`         | `1.0`    | OpenID4VCI feature level the wallet uses as a client: `1.0` (the published version) or `1.1` (also uses 1.1 draft features the issuer supports). See [OpenID4VCI feature level](issuing.md#openid4vci-feature-level) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled. Strict aborts the flow. Debug reports the violation and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [verifiers](presenting.md#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
-| `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
+| `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. The wallet puts them on its `access-ca` and `registrar` lists (repeatable) |
 | `--trust-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
+| `--trusted-list`        | None     | URL of an external list of trusted entities for the [list of trusted lists](#list-of-trusted-lists) (repeatable) |
 | `--client-attestation`  | `false`  | Send the wallet attestation on OID4VCI token requests even when the issuer does not advertise `attest_jwt_client_auth` (see [wallet attestation](issuing.md#wallet-attestation)) |
 | `--adhoc-display-images` | `false` | Fetch HTTPS display images on demand instead of storing them. The issuer sees each render. See [display images](#display-images) |
 | `--require-encrypted-request` | `false` | Refuse an unencrypted Request Object. The wallet always sends an encryption key in `wallet_metadata`, so this requires the Verifier to use it |
@@ -322,7 +413,7 @@ Data URIs, template images and HTTP URLs are stored in both modes. Storing HTTP 
 
 Prints a trusted list of the wallet (ETSI TS 119 602) as a signed JWT. It contains the signing certificates, provider CAs and status signing certificates of the selected list. Verifiers use its provider CAs to validate the `x5c` or `x5chain` embedded in credentials. Issuer authorization data such as provider entitlements and `providesAttestations` comes from signed `/.well-known/openid-credential-issuer` metadata and `/api/registrar/wrp`. See [test certificates](../test-certificates.md).
 
-Without selection flags it prints the PID list, like `/api/trustlist`. `--id`, `--vct` or `--doctype` selects another list. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider` and the `tl-` IDs of custom lists. `--list` shows all lists of the wallet.
+Without selection flags it prints the PID list, like `/api/trustlist`. `--id`, `--vct` or `--doctype` selects another list. The IDs are `pid`, `qeaa`, `pub-eaa`, `eaa`, `wallet-provider`, `access-ca`, `registrar` and the `tl-` IDs of custom lists. `--list` shows all lists of the wallet. The list of trusted lists is at `/api/trustlists/lists`.
 
 Pipe the output to a file or pass it to `validate --trust-list`. `--url` prints only the URL for a running wallet server.
 

@@ -44,8 +44,9 @@ eudi wallet accept 'openid-credential-offer://...' --tx-code 123456
 | `--key-attestation-level` | Issuer requirements | Test claims for key storage and user authentication: issuer requirements (default), `none`, or a level such as `iso_18045_high`. A running wallet uses its own setting. See [key attestation claims](serve.md#key-attestation-claims) |
 | `--haip`                | `false`  | Check incoming presentations and credential offers against HAIP 1.0. `--mode` sets how violations are handled: strict refuses the flow, debug reports them and continues |
 | `--arf`                 | `false`  | Check the access and registration certificates of verifiers and issuers against the ARF (see [ARF checks](#arf-checks) and [issuers](issuing.md#arf-checks)). With `--mode strict` the wallet refuses the request or the offer on any finding |
-| `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. `--arf` trusts them in addition to the wallet's own CAs (repeatable) |
+| `--relying-party-ca`    | None     | PEM file with CA certificates that issue relying party access and registration certificates. The wallet puts them on its `access-ca` and `registrar` lists (repeatable) |
 | `--trust-list-ca`       | None     | PEM file with CA certificates of trusted list operators. With `--arf` the wallet also accepts trusted lists signed under these CAs (repeatable) |
+| `--trusted-list`        | None     | URL of an external list of trusted entities (ETSI TS 119 602) for the wallet's list of trusted lists (repeatable). See [trusted lists](serve.md#trusted-lists) |
 
 Pre-authorized code offers work directly with `wallet accept`. Authorization code offers require a running `wallet serve` instance. The client ID defaults to the wallet origin and the redirect URI to its `/callback` endpoint. Override them with `--vci-client-id` and `--vci-redirect-uri`. The wallet uses PAR and DPoP when advertised by the issuer.
 
@@ -55,7 +56,7 @@ For pre-authorized code offers, HAIP validation checks HTTPS transport. PAR, PKC
 
 Strict mode verifies HTTPS certificates. Debug mode skips verification by default. For local flows, `--tls-verify=true|false` overrides either default and `--tls-ca dev-ca.pem` adds trusted CA certificates. See [HTTPS certificate verification](serve.md#https-certificate-verification).
 
-When `accept` or `scan` forwards a flow to a running wallet, that wallet uses its own TLS and proxy settings. Set the flags on `wallet serve` or change verification in its Conformance panel. Passing TLS or proxy flags to `accept` or `scan` in this case returns an error.
+When `accept` or `scan` forwards a flow to a running wallet, that wallet uses its own settings for every step of the flow. Passing `--mode`, `--haip`, `--arf`, `--key-attestation-level`, the CA flags, `--trusted-list`, TLS or proxy flags in this case returns an error. Set them on `wallet serve`, change them in its Conformance panel, or put CAs and lists on its trusted lists with [`wallet trust`](serve.md#trusted-lists).
 
 ## `wallet scan`
 
@@ -75,7 +76,7 @@ eudi wallet scan --screen --auto-accept # auto-approve if it's a presentation
 
 The wallet handling the flow fetches the offer and prompts for a transaction code when one is required. For a local flow, the CLI prompts when stdin is a terminal and `--tx-code` was not given. See [ADR-0012](../adr/0012-every-entry-point-runs-the-same-flow.md).
 
-`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf`, `--relying-party-ca` and `--trust-list-ca` flags as `accept`.
+`wallet scan` uses the persistent `wallet --mode` setting and accepts the same `--auto-accept`, `--tx-code`, `--haip`, `--arf`, `--relying-party-ca`, `--trust-list-ca` and `--trusted-list` flags as `accept`.
 
 ## Invoking the wallet by URL
 
@@ -131,7 +132,7 @@ For **presentations** (OID4VP `direct_post.jwt` and Browser API `dc_api.jwt`) th
 
 In `--mode strict` a non-compliant request is refused with HTTP 400. `POST /api/presentations` then returns `{"error": "<code>", "error_description": "<failed checks>"}`, with an OpenID4VP 1.0 §8.5 error code such as `invalid_request`. In `--mode debug` the same findings are logged as warnings and the flow continues.
 
-For **issuance**, HAIP §6.1.1 checks the received credential. An SD-JWT VC must include its issuer signing certificate and chain in `x5c`, without the trust anchor. The signing certificate must not be self-signed.
+For **issuance**, HAIP §6.1.1 checks every received credential. That covers every issuance flow and every copy of a batch. An SD-JWT VC must include its issuer signing certificate and chain in `x5c`, without the trust anchor. The signing certificate must not be self-signed.
 
 The credential issuer must use HTTPS, with a loopback exception. Authorization code flows also require the authorization server to support that grant and offer PAR when using the authorization endpoint.
 
@@ -167,11 +168,15 @@ The wallet checks that:
 - the registrar has not revoked the registration certificate (RPRC_17). Its status list must be readable and chain to a trusted registrar (RPACANot_03b)
 - the request asks only for credentials and claims registered in that certificate (RPRC_21)
 
-In `--mode debug` the findings are logged as warnings. The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). Strict mode refuses. If the CLI passes a request to a running wallet, that wallet's `--arf`, `--relying-party-ca` and `--trust-list-ca` settings apply.
+The ARF lets the Wallet Provider decide whether to refuse (RPA_06a). In `--mode debug` the wallet logs the findings as warnings and goes on. The consent dialog lists them under a collapsed line, and `POST /api/presentations` returns them in `findings`. This works for requests by URL, over the Digital Credentials API and during [interactive authorization](issuing.md#interactive-authorization). Strict mode refuses.
 
-How strict mode refuses depends on the verifier. When only ARF findings remain and the request is signed with a trusted access certificate, the wallet sends the verifier an `access_denied` error response (OpenID4VP 1.0 §8.5, RFC 6749 §4.1.2.1). Its `error_description` is "The request does not meet the ARF registration rules: " followed by the findings, for example `ARF RPRC_19: ...`. `POST /api/presentations` answers with status `refused` and the same description. Any other strict refusal stays in the wallet. The caller gets HTTP 400 as described under [HAIP 1.0 Enforcement](#haip-10-enforcement).
+How strict mode refuses depends on the verifier. When only ARF findings remain and the request is signed with a trusted access certificate, the wallet sends the verifier an `access_denied` error response (OpenID4VP 1.0 §8.5, RFC 6749 §4.1.2.1). Its `error_description` is "The request does not meet the ARF registration rules: " followed by the findings, for example `ARF RPRC_19: ...`. `POST /api/presentations` answers with status `refused` and the same description. `wallet accept` and `wallet scan` send the same response. Over the Digital Credentials API, the error is in the API result (OpenID4VP 1.0 Appendix A). Any other strict refusal stays in the wallet. The caller gets HTTP 400 as described under [HAIP 1.0 Enforcement](#haip-10-enforcement).
+
+The [registrar API walkthrough](registrar-api.md) shows both outcomes with real requests.
 
 The consent dialog shows the purposes and privacy policies of the registration certificates. Only certificates that belong to the access certificate of the signed request count. An unsigned request shows none.
 
-Access certificates must chain to the relying party access CA of the [registrar](registrar.md), the wallet CA (which signs the access certificates of the demo verifier and the demo issuer) or a CA from `--relying-party-ca`. Registration certificates must chain to the wallet CA (which signs the registrar certificate) or a CA from `--relying-party-ca`. The relying party access CA signs any visitor's CSR, so it doesn't count as a registrar. Use `--relying-party-ca` for the CAs of an external ecosystem, such as a member state's sandbox. It applies to both checks. See [ADR 0021](../adr/0021-arf-checks-are-a-separate-profile.md).
+The wallet takes its anchors from [trusted lists](serve.md#trusted-lists) only. An access certificate must chain to a CA on an access certificate provider list (`access-ca`, ETSI TS 119 602 V1.1.1 Annex F). The wallet's own list names the relying party access CA of its [registrar](registrar.md). The demo issuer and the demo verifier get their access certificates from that CA too. A registration certificate and its status list must chain to a CA on a registration certificate provider list (`registrar`, Annex G). The wallet's own list names the registrar CA. The relying party access CA signs any visitor's CSR, so it is not on the `registrar` list.
+
+For the CAs of another ecosystem, such as a member state's sandbox, use `wallet trust add-ca --list access-ca` and `--list registrar`, or `--relying-party-ca`, which puts its CAs on both lists. An external list on the list of trusted lists works too. See [ADR 0023](../adr/0023-trust-anchors-come-from-trusted-lists.md).
 
