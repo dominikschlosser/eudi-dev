@@ -85,7 +85,7 @@ type walletServeOptions struct {
 
 const (
 	arfFlagUsage            = "Check the access and registration certificates of verifiers and issuers against the ARF, including over-asking and revocation. With --mode strict the wallet refuses the request or the offer on any finding"
-	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. --arf trusts them in addition to the wallet's own CAs (repeatable)"
+	relyingPartyCAFlagUsage = "PEM file with CA certificates for relying party access and registration certificates. The wallet puts them on its access-ca and registrar lists (repeatable)"
 	trustListCAFlagUsage    = "PEM file with CA certificates of trusted list operators. With --arf the wallet also accepts trusted lists signed under these CAs (repeatable)"
 	trustedListFlagUsage    = "URL of an external list of trusted entities (ETSI TS 119 602) for the wallet's list of trusted lists. With --arf its providers anchor the checks of their list type (repeatable)"
 )
