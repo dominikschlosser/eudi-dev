@@ -5,6 +5,80 @@ Notable changes by release.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-beta.1] - 2026-10-09
+
+### Highlights
+
+Version 3.0.0 adds a registrar, ARF checks, a catalogue of attestations and a trust model built on trusted lists. It comes out as betas first. The newest beta runs at <https://preview.eudi-test.dev> (see [beta releases](README.md#beta-releases)).
+
+- **Registrar for verifiers and issuers.** Register a verifier or an issuer and get its access and registration certificates, ready for `verifier_info` or `issuer_info` (see [registrar](docs/wallet/registrar.md) and the [registrar walkthrough](docs/wallet/registrar-api.md)).
+- **ARF checks.** `--arf` checks how verifiers and issuers authenticate, the way `--haip` checks HAIP (see [presenting](docs/wallet/presenting.md#arf-checks) and [issuing](docs/wallet/issuing.md#arf-checks)).
+- **Trust through trusted lists.** Every trust anchor comes from a list of trusted entities (ETSI TS 119 602): one per credential category, one for wallet providers, access certificate providers and registrars, and a list of trusted lists that points to all of them. Put your own CAs and lists on them with `wallet trust` (see [ADR 0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)).
+- **Catalogue of attestations.** The registrar lists attestation types with their schemas, rulebooks and trusted lists, following the EC TS11 catalogue (see [attestation catalogue](docs/wallet/registrar.md#attestation-catalogue)).
+- **Findings in debug mode.** The API response and a collapsible part of the consent dialog list the failed checks of a verifier or issuer.
+- **Italian and Dutch PIDs and startup credentials.** Italian and Dutch PID templates, and `wallet serve --credentials` loads credentials on every start (see [templates](docs/templates.md)).
+- **Go module path.** The module path ends in `/v3`.
+
+### Breaking changes
+
+- **Go module path.** Install with `go install github.com/dominikschlosser/eudi-dev/v3@latest`.
+- **`--category` replaces `--trust-profile`.** `issue --category` and the API field `category` replace `--trust-profile` and `trust_profile`. They take `pid`, `qeaa`, `pub-eaa`, `eaa` or `unlisted`. A credential without a category is an EAA. `unlisted` keeps it off every list (see [ADR 0022](docs/adr/0022-one-trusted-list-per-credential-category.md)).
+- **Trusted lists.** Each category signs with its own key and has its own list. Only PIDs are signed with `issuer.pem`. The `local` list is now `eaa`. The QEAA list, the EAA list and the list of trusted lists use the types `https://eudi-test.dev/LoTEType/QEAAProvidersList`, `EAAProvidersList` and `ListOfTrustedLists` instead of the unregistered `http://uri.etsi.org/19602/LoTEType/local`. A wallet of eudi-dev 2 moves its stored types to the new ones.
+- **Trust anchors of the ARF checks.** Access certificates anchor only through the access certificate provider list, and registration certificates only through the registrar list. The wallet CA anchors neither. The registrar signs under its own registrar CA, and the CAs from `--relying-party-ca` are on both lists (see [ADR 0023](docs/adr/0023-trust-anchors-come-from-trusted-lists.md)).
+- **Imported credentials.** An imported credential is on none of the wallet's lists.
+- **A running wallet keeps its settings.** CLI commands that talk to a running wallet refuse `--mode`, `--haip`, `--arf`, the CA flags, `--trusted-list` and `--key-attestation-level`. Change them on `wallet serve`, through `PUT /api/config/conformance` or with `wallet trust`.
+- **Registrar API.** `GET /api/registrar/wrp` returns the TS05 v1.5 format. Its filter `providesattestation` is renamed to `providedattestation`. A provided attestation is `{"format", "type"}`, and `supportURI` is a single string.
+- **`issuer_info` dataset.** The `registrar_dataset` holds only `identifier`, `srvDescription`, `registryURI` and `providesAttestations` (ETSI TS 119 472-3 V1.1.1 §4.2.3).
+- **JSON output.** `validate`, `wallet deferred check`, `wallet list` and one-shot `wallet accept` print a different `--json` document (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
+- **Presentation API errors.** `POST /api/presentations` refuses an invalid request with `{"error": "<code>", "error_description": "<message>"}` (see [presenting](docs/wallet/presenting.md)).
+
+### Added
+
+- **Relying party registrar.** The wallet registers verifiers and issuers and issues their access and registration certificates, with revocation through a status list. An issuer gets its registration certificate in an `issuer_info` value for its metadata. The consent dialog links the registered privacy policy. An issuer gets the provider entitlements of the categories of its attestation types (see [registrar](docs/wallet/registrar.md)).
+- **Registrar walkthrough.** Every registrar request with curl and its response, from registering to a signed request and signed issuer metadata (see [registrar walkthrough](docs/wallet/registrar-api.md)). **How to use** has a registrar tab.
+- **ARF checks.** `--arf` checks verifiers and issuers against the ARF, the way `--haip` checks HAIP. It covers access and registration certificates, signed issuer metadata and the trusted list of each received credential. `--demo` turns the checks on (see [presenting](docs/wallet/presenting.md#arf-checks) and [issuing](docs/wallet/issuing.md#arf-checks)).
+- **Your own trust.** `wallet trust add-ca` puts the CA of your issuer or registrar on one of the wallet's lists. `wallet trust add-list` adds an external list. `GET /api/trust` and the **Trust & certificates** section show both (see [trusted lists](docs/wallet/serve.md#trusted-lists)).
+- **List of trusted lists.** `/api/trustlists/lists` points to every list of the wallet (ETSI TS 119 602 §6.3.13). The wallet follows the pointers of an external list of trusted lists. `wallet serve --trusted-list` adds a list on start.
+- **Findings in debug mode.** The presentation and issuance results list the checks that failed as `findings`. The consent dialog shows them in a collapsible part.
+- **Trust check in the decoder.** The decoder and `validate` check whether the trusted lists of a type's catalogue entry anchor the credential (see [validate](docs/validate.md#catalogue-trust)).
+- **Attestation catalogue.** The registrar keeps a catalogue of attestation types with their schemas, rulebooks and trusted lists, following the EC TS11 catalogue of attestations. Every predefined template is in it. Saving a user template can add it too, and `wallet catalog add` adds other types (see [attestation catalogue](docs/wallet/registrar.md#attestation-catalogue)).
+- **Registered demo issuer and verifier.** **EUDI Dev Demo Issuer** and **EUDI Dev Demo Verifier** register like any relying party, each with its own access certificate from the relying party access CA. The demo verifier sends its registration certificate by default, and its requests pass the `--arf` checks (see [the demo issuer and verifier](docs/wallet/registrar.md#the-demo-issuer-and-verifier)).
+- **Startup credentials.** `wallet serve --credentials` issues or imports credentials on every start (see [startup credentials](docs/wallet/serve.md#startup-credentials)).
+- **Italian and Dutch PIDs.** Templates for the IT-Wallet 1.4.7 PID and the NL Wallet PID draft, with specimen card images (see [templates](docs/templates.md)).
+- **More control in debug mode.** The consent dialog lets you pick another `claim_sets` option and credentials that don't match.
+- **Beta channel.** A tag such as `v3.0.0-beta.1` is a GitHub prerelease. The Docker tag `beta` follows the newest release, betas included. `latest` and Homebrew stay on the newest stable release. The wallet footer marks a beta (see [beta releases](README.md#beta-releases)).
+
+### Changed
+
+- **Unbound credentials and signed metadata without `iat` in debug mode.** Debug mode presents an unbound credential to a query that requires holder binding and marks it. It reads signed issuer metadata without `iat` or past `exp` with a finding. Strict mode refuses both (OpenID4VP 1.0 §6.1, OpenID4VCI 1.0 §12.2.3).
+- **Strict `--arf` refusals.** An issuer that fails the checks is refused before the consent dialog. An authenticated verifier gets `access_denied` on `/authorize`, over the Digital Credentials API and from `wallet present`.
+- **HAIP checks of received credentials.** With `--haip` every received SD-JWT VC follows HAIP 1.0 §6.1.1, on every issuance path and for every copy of a batch.
+- **Status list format.** The wallet asks for a JWT status list for an SD-JWT VC and a CWT status list for an mdoc, and accepts the other one.
+- **JSON output for more commands.** Most commands print one JSON document with `--json`. `serve` and `wallet serve` refuse it (see [ADR 0020](docs/adr/0020-cli-output-can-be-automated.md)).
+- **Failed flows exit non-zero.** `wallet accept` and `wallet scan` exit non-zero when a flow fails or is denied.
+- **Templates.** The default PIDs and the demo ticket come from templates. `--pid --vct` and `wallet generate-pid --vct` find the PID templates by their type. The template field `unique_claims` gives a claim a fresh random value in every credential. **New template** and **Edit** open the issue form with a builder and the template JSON (see [templates](docs/templates.md#wallet-ui)).
+- **Public demo.** Visitors can save templates without their own images. The predefined templates can't be changed, and a reset deletes the visitor templates. Visitors can add at most 20 providers and 5 lists. The GitHub Sponsors link appears only with `--demo`.
+- **Conformance dialog.** The settings have clearer names, and the key attestation levels match the catalogue's levels of security.
+- **Signed issuer metadata.** The wallet's issuers sign their metadata when the `Accept` header ranks `application/jwt` above `application/json`. With `--arf` the wallet asks for signed metadata first.
+- **Demo verifier issuer CAs.** `--demo-verifier-issuer-ca` replaces `--demo-verifier-trust-anchor`, which stays as a deprecated alias.
+
+### Fixed
+
+- **Registration certificates.** They carry a `jti`, the `intended_use_id`, the contact details of the supervisory authority and `srv_description` as an array of arrays (ETSI TS 119 475 V1.2.1 GEN-6.2.6.1-03, Tables 7 and 9, TS05). The wallet checks the Table 7 fields and the shape of `issuer_info` (ETSI TS 119 472-3 V1.1.1 §4.2.3). A revoked certificate stays the current one, and a superseded one is dropped.
+- **Imported PIDs.** Importing a PID leaves the wallet's own PID types on the PID list.
+- **Renewals and deferred credentials.** A renewal checks the issuer before it uses the refresh token. In strict mode a deferred request waits for usable issuer metadata, so it stays encrypted.
+- **Verifier redirect after a refusal.** The wallet follows the `redirect_uri` of an error response (OpenID4VP 1.0 §8.2).
+- **mdoc without deviceKey in strict mode.** Strict mode refuses to present it (ISO 18013-5 §9.1.2.4).
+- **HAIP checks of an mdoc.** `validate --haip` checks the `x5c` rules of HAIP 1.0 §6.1.1 only for SD-JWT VCs. That section does not cover mdocs.
+- **Conformance settings for offers.** `wallet accept` and `wallet scan` apply `--mode`, `--haip` and `--arf` to credential offers too.
+- **Running wallet presentations.** `wallet accept` passes `--session-transcript` to a running wallet and keeps the flow local with `--remote local`.
+- **Long decoder links.** **Open in decoder** links carry the credential in the URL fragment, so a proxy's URL length limit can't cut off a long request object. Links with `?credential=` open too.
+- **Demo issuer offer scheme.** The demo issuer's offer links use `openid-credential-offer://`. The wallet also accepts `eu-eaa-offer://`.
+- **Offer dialog.** A long credential description shows two lines with a **More** button. The status badges of a consent row don't overlap the **Show** button at phone width.
+- **Provider identifier in the issuer metadata.** The `registrar_dataset` in `issuer_info` names the wallet's issuer by its access certificate's identifier, as ETSI TS 119 472-3 requires.
+- **Card images in the demo issuer metadata.** The issuer metadata lists the logo and card image of each template (see [templates](docs/templates.md)).
+- **`wallet trust-list --id lists`.** It prints the list of trusted lists.
+
 ## [2.6.1] - 2026-10-06
 
 ### Fixed
