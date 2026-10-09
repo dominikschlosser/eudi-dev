@@ -2659,3 +2659,40 @@ header h1 {
   flex-basis: 100%;
   min-height: 60px;
 }
+
+.howto-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 8px 0 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.howto-tab {
+  padding: 6px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.howto-tab:hover {
+  color: var(--text);
+}
+
+.howto-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.howto-panel pre {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.howto-panel pre.howto-commands {
+  white-space: pre;
+  overflow-x: auto;
+}

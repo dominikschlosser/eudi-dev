@@ -138,6 +138,11 @@
   <div class="consent-overlay" id="howto-overlay">
     <div class="consent-dialog">
       <div class="consent-title">How to use this wallet</div>
+      <div class="howto-tabs" role="tablist" aria-label="How to use">
+        <button type="button" class="howto-tab active" role="tab" id="howto-tab-basics" aria-selected="true" aria-controls="howto-panel-basics">Issuance and presentation</button>
+        <button type="button" class="howto-tab" role="tab" id="howto-tab-registrar" aria-selected="false" aria-controls="howto-panel-registrar" tabindex="-1">Registrar</button>
+      </div>
+      <div class="howto-panel" role="tabpanel" id="howto-panel-basics" aria-labelledby="howto-tab-basics">
       <p class="dialog-hint">Test issuance with OpenID4VCI and presentations with OpenID4VP. This wallet supports SD-JWT VC, mdoc, holder binding, status lists and trust lists.</p>
       <div class="cli-install">
         <div class="cli-install-label">Deliver a credential offer (OpenID4VCI)</div>
@@ -154,8 +159,27 @@
         <div class="cli-install-label">System URL handler (macOS)</div>
         <pre>eudi wallet register</pre>
       </div>
-      <p class="dialog-hint">On macOS, <code>wallet register</code> makes <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, <code>haip-vci://</code> and <code>eu-eaa-offer://</code> links open in this wallet. See the <a href="https://github.com/dominikschlosser/eudi-dev/blob/main/docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for all endpoints.</p>
+      <p class="dialog-hint">On macOS, <code>wallet register</code> makes <code>openid4vp://</code>, <code>eudi-openid4vp://</code>, <code>haip-vp://</code>, <code>openid-credential-offer://</code>, <code>haip-vci://</code> and <code>eu-eaa-offer://</code> links open in this wallet. See the <a data-doc="docs/wallet.md" target="_blank" rel="noopener">wallet documentation</a> for all endpoints.</p>
       <p class="dialog-hint">Try the <a href="issuer/" target="_blank">demo issuer</a> or <a href="verifier/" target="_blank">demo verifier</a>.</p>
+      </div>
+      <div class="howto-panel" role="tabpanel" id="howto-panel-registrar" aria-labelledby="howto-tab-registrar" hidden>
+      <p class="dialog-hint">Register your verifier or issuer with the wallet's registrar. You get an access certificate and a registration certificate. With <code>--arf</code> the wallet checks both, as the ARF asks.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">1. Register the relying party</div>
+        <pre>POST <span class="howto-origin"></span>/api/registrar/wrp</pre>
+        <div class="cli-install-label">2. Get an access certificate for your key (send a CSR)</div>
+        <pre>POST <span class="howto-origin"></span>/api/registrar/access-certificates</pre>
+        <div class="cli-install-label">3. Get a registration certificate (verifier_info or issuer_info)</div>
+        <pre>POST <span class="howto-origin"></span>/api/registrar/registration-certificates</pre>
+      </div>
+      <p class="dialog-hint">4. A verifier signs its request object with the access certificate's key, puts the chain in <code>x5c</code> and adds <code>verifier_info</code>. An issuer signs its metadata the same way and adds <code>issuer_info</code>.</p>
+      <div class="cli-install">
+        <div class="cli-install-label">The same from the CLI</div>
+        <pre class="howto-commands">eudi wallet registrar verifiers add --name "Example Shop" --purpose "Age check" --dcql query.json
+eudi wallet registrar issuers add --name "Example University" --attestation dc+sd-jwt:urn:example:diploma:1</pre>
+      </div>
+      <p class="dialog-hint">The Registrar section of this page does the same with forms. The <a data-doc="docs/wallet/registrar-api.md" target="_blank" rel="noopener">registrar walkthrough</a> shows every request with curl and its response.</p>
+      </div>
       <div class="consent-buttons">
         <button class="btn" id="howto-close">Close</button>
       </div>
