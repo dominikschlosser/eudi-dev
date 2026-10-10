@@ -16,6 +16,7 @@ examples/      Keycloak and web-wallet integration examples
 
 | Package | Responsibility |
 |---|---|
+| `certchain` | Certificate chains of JOSE (x5c) and COSE (x5chain) messages and their verification against trust anchors |
 | `config` | Defaults (ports, timeouts) |
 | `credtemplate` | Credential templates, predefined and user-supplied |
 | `credtype` | The EUDI credential type identifiers and which type extends which |
@@ -42,7 +43,8 @@ examples/      Keycloak and web-wallet integration examples
 | `statuslist` | Token Status List encoding and decoding, in JWT and CWT form |
 | `storage` | Blob storage backed by files, memory or Postgres (ADR-0016) |
 | `trustlist` | Parsing of trusted lists (ETSI TS 119 602). The wallet keeps one list per credential category (ADR-0022) |
-| `validate` | Checks signatures, expiry and revocation |
+| `validate` | The credential checks shared by `validate` and the web decoder: type, validity, digests, signature, catalogue trust, revocation and HAIP |
+| `validity` | Time claims against the current time, with one clock skew rule |
 | `wallet` | Wallet state (persisted through `storage`), HTTP server, OID4VP and OID4VCI protocol logic, the wallet's trusted lists, provider keys and ARF checks |
 | `web` | Decoder and validator web UI |
 
